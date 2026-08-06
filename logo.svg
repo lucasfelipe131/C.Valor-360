@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="180" viewBox="0 0 640 180">
+  <rect width="640" height="180" rx="28" fill="#073b78"/>
+  <g transform="translate(35,20)">
+    <circle cx="70" cy="70" r="54" fill="none" stroke="#ffffff" stroke-width="14" stroke-dasharray="270 80" stroke-linecap="round"/>
+    <circle cx="70" cy="70" r="13" fill="#2d8cff"/>
+    <text x="145" y="72" font-family="Arial, Helvetica, sans-serif" font-size="54" font-weight="700" fill="#ffffff">C.Valor</text>
+    <text x="470" y="72" font-family="Arial, Helvetica, sans-serif" font-size="37" font-weight="700" fill="#6fb3ff">360</text>
+    <text x="147" y="112" font-family="Arial, Helvetica, sans-serif" font-size="19" letter-spacing="2.2" fill="#cfe5ff">CONHECER • PERSONALIZAR • GERAR VALOR</text>
+  </g>
+</svg>

@@ -1,0 +1,12 @@
+{
+  "name": "cvalor-360",
+  "version": "0.1.0",
+  "private": true,
+  "description": "C.Valor 360 — inteligência comercial para gerar valor ao produtor",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
