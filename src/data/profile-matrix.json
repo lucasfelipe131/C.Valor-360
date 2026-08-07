@@ -1,0 +1,422 @@
+[
+  {
+    "Pergunta": 7,
+    "Título": "7. Ao escolher um produto ou tecnologia, o que mais influencia sua decisão?",
+    "Alternativa": "Segurança de utilizar algo que já conheço.",
+    "Código": "C",
+    "Perfil": "Conservador"
+  },
+  {
+    "Pergunta": 7,
+    "Título": "7. Ao escolher um produto ou tecnologia, o que mais influencia sua decisão?",
+    "Alternativa": "Resultados técnicos, números e retorno financeiro.",
+    "Código": "A",
+    "Perfil": "Analítico"
+  },
+  {
+    "Pergunta": 7,
+    "Título": "7. Ao escolher um produto ou tecnologia, o que mais influencia sua decisão?",
+    "Alternativa": "Potencial de produtividade e inovação.",
+    "Código": "I",
+    "Perfil": "Inovador"
+  },
+  {
+    "Pergunta": 7,
+    "Título": "7. Ao escolher um produto ou tecnologia, o que mais influencia sua decisão?",
+    "Alternativa": "Confiança na pessoa que está recomendando.",
+    "Código": "R",
+    "Perfil": "Relacional"
+  },
+  {
+    "Pergunta": 7,
+    "Título": "7. Ao escolher um produto ou tecnologia, o que mais influencia sua decisão?",
+    "Alternativa": "Rapidez e facilidade para receber as informações.",
+    "Código": "D",
+    "Perfil": "Digital"
+  },
+  {
+    "Pergunta": 8,
+    "Título": "8. Qual tipo de apresentação técnica mais ajuda na sua decisão?",
+    "Alternativa": "Resultados de produtos já utilizados por vários anos.",
+    "Código": "C",
+    "Perfil": "Conservador"
+  },
+  {
+    "Pergunta": 8,
+    "Título": "8. Qual tipo de apresentação técnica mais ajuda na sua decisão?",
+    "Alternativa": "Comparativos, custos, gráficos e dados de produtividade.",
+    "Código": "A",
+    "Perfil": "Analítico"
+  },
+  {
+    "Pergunta": 8,
+    "Título": "8. Qual tipo de apresentação técnica mais ajuda na sua decisão?",
+    "Alternativa": "Demonstrações de novas tecnologias e lançamentos.",
+    "Código": "I",
+    "Perfil": "Inovador"
+  },
+  {
+    "Pergunta": 8,
+    "Título": "8. Qual tipo de apresentação técnica mais ajuda na sua decisão?",
+    "Alternativa": "Conversa pessoal e visita do consultor à propriedade.",
+    "Código": "R",
+    "Perfil": "Relacional"
+  },
+  {
+    "Pergunta": 8,
+    "Título": "8. Qual tipo de apresentação técnica mais ajuda na sua decisão?",
+    "Alternativa": "Vídeos, imagens e materiais enviados pelo celular.",
+    "Código": "D",
+    "Perfil": "Digital"
+  },
+  {
+    "Pergunta": 9,
+    "Título": "9. Como você prefere planejar o manejo da sua lavoura?",
+    "Alternativa": "Repetir manejos que já funcionaram anteriormente.",
+    "Código": "C",
+    "Perfil": "Conservador"
+  },
+  {
+    "Pergunta": 9,
+    "Título": "9. Como você prefere planejar o manejo da sua lavoura?",
+    "Alternativa": "Comparar diferentes cenários antes de decidir.",
+    "Código": "A",
+    "Perfil": "Analítico"
+  },
+  {
+    "Pergunta": 9,
+    "Título": "9. Como você prefere planejar o manejo da sua lavoura?",
+    "Alternativa": "Reservar áreas para testar novas soluções.",
+    "Código": "I",
+    "Perfil": "Inovador"
+  },
+  {
+    "Pergunta": 9,
+    "Título": "9. Como você prefere planejar o manejo da sua lavoura?",
+    "Alternativa": "Planejar junto com o consultor de confiança.",
+    "Código": "R",
+    "Perfil": "Relacional"
+  },
+  {
+    "Pergunta": 9,
+    "Título": "9. Como você prefere planejar o manejo da sua lavoura?",
+    "Alternativa": "Receber uma proposta organizada por WhatsApp ou meio digital.",
+    "Código": "D",
+    "Perfil": "Digital"
+  },
+  {
+    "Pergunta": 10,
+    "Título": "10. Como você se comporta diante de uma nova tecnologia?",
+    "Alternativa": "Prefiro esperar que outros produtores testem primeiro.",
+    "Código": "C",
+    "Perfil": "Conservador"
+  },
+  {
+    "Pergunta": 10,
+    "Título": "10. Como você se comporta diante de uma nova tecnologia?",
+    "Alternativa": "Adoto quando os resultados e custos comprovam a vantagem.",
+    "Código": "A",
+    "Perfil": "Analítico"
+  },
+  {
+    "Pergunta": 10,
+    "Título": "10. Como você se comporta diante de uma nova tecnologia?",
+    "Alternativa": "Gosto de testar novidades que possam melhorar a produtividade.",
+    "Código": "I",
+    "Perfil": "Inovador"
+  },
+  {
+    "Pergunta": 10,
+    "Título": "10. Como você se comporta diante de uma nova tecnologia?",
+    "Alternativa": "Adoto quando recebo uma recomendação de alguém em quem confio.",
+    "Código": "R",
+    "Perfil": "Relacional"
+  },
+  {
+    "Pergunta": 10,
+    "Título": "10. Como você se comporta diante de uma nova tecnologia?",
+    "Alternativa": "Pesquiso informações e vídeos antes de decidir.",
+    "Código": "D",
+    "Perfil": "Digital"
+  },
+  {
+    "Pergunta": 11,
+    "Título": "11. Qual é sua forma preferida de receber atendimento?",
+    "Alternativa": "Visitas ou telefonemas apenas nos momentos mais importantes.",
+    "Código": "C",
+    "Perfil": "Conservador"
+  },
+  {
+    "Pergunta": 11,
+    "Título": "11. Qual é sua forma preferida de receber atendimento?",
+    "Alternativa": "Reuniões programadas com informações detalhadas.",
+    "Código": "A",
+    "Perfil": "Analítico"
+  },
+  {
+    "Pergunta": 11,
+    "Título": "11. Qual é sua forma preferida de receber atendimento?",
+    "Alternativa": "Acompanhamento de testes, tecnologias e áreas demonstrativas.",
+    "Código": "I",
+    "Perfil": "Inovador"
+  },
+  {
+    "Pergunta": 11,
+    "Título": "11. Qual é sua forma preferida de receber atendimento?",
+    "Alternativa": "Visitas presenciais frequentes.",
+    "Código": "R",
+    "Perfil": "Relacional"
+  },
+  {
+    "Pergunta": 11,
+    "Título": "11. Qual é sua forma preferida de receber atendimento?",
+    "Alternativa": "WhatsApp, vídeos e atendimento remoto.",
+    "Código": "D",
+    "Perfil": "Digital"
+  },
+  {
+    "Pergunta": 12,
+    "Título": "12. Com que frequência você gostaria de receber contato da equipe da C.Vale?",
+    "Alternativa": "Nos principais momentos da cultura.",
+    "Código": "C",
+    "Perfil": "Conservador"
+  },
+  {
+    "Pergunta": 12,
+    "Título": "12. Com que frequência você gostaria de receber contato da equipe da C.Vale?",
+    "Alternativa": "De acordo com um calendário previamente combinado.",
+    "Código": "A",
+    "Perfil": "Analítico"
+  },
+  {
+    "Pergunta": 12,
+    "Título": "12. Com que frequência você gostaria de receber contato da equipe da C.Vale?",
+    "Alternativa": "Sempre que houver uma novidade ou oportunidade técnica.",
+    "Código": "I",
+    "Perfil": "Inovador"
+  },
+  {
+    "Pergunta": 12,
+    "Título": "12. Com que frequência você gostaria de receber contato da equipe da C.Vale?",
+    "Alternativa": "Com frequência, mantendo proximidade durante toda a safra.",
+    "Código": "R",
+    "Perfil": "Relacional"
+  },
+  {
+    "Pergunta": 12,
+    "Título": "12. Com que frequência você gostaria de receber contato da equipe da C.Vale?",
+    "Alternativa": "Por mensagens rápidas durante a semana.",
+    "Código": "D",
+    "Perfil": "Digital"
+  },
+  {
+    "Pergunta": 13,
+    "Título": "13. Quando aparece um problema na lavoura, qual costuma ser sua primeira atitude?",
+    "Alternativa": "Utilizar uma solução que já funcionou anteriormente.",
+    "Código": "C",
+    "Perfil": "Conservador"
+  },
+  {
+    "Pergunta": 13,
+    "Título": "13. Quando aparece um problema na lavoura, qual costuma ser sua primeira atitude?",
+    "Alternativa": "Buscar identificar a causa e analisar tecnicamente o problema.",
+    "Código": "A",
+    "Perfil": "Analítico"
+  },
+  {
+    "Pergunta": 13,
+    "Título": "13. Quando aparece um problema na lavoura, qual costuma ser sua primeira atitude?",
+    "Alternativa": "Procurar uma solução nova ou diferente.",
+    "Código": "I",
+    "Perfil": "Inovador"
+  },
+  {
+    "Pergunta": 13,
+    "Título": "13. Quando aparece um problema na lavoura, qual costuma ser sua primeira atitude?",
+    "Alternativa": "Entrar em contato com o consultor de confiança.",
+    "Código": "R",
+    "Perfil": "Relacional"
+  },
+  {
+    "Pergunta": 13,
+    "Título": "13. Quando aparece um problema na lavoura, qual costuma ser sua primeira atitude?",
+    "Alternativa": "Enviar fotos ou vídeos pelo celular.",
+    "Código": "D",
+    "Perfil": "Digital"
+  },
+  {
+    "Pergunta": 14,
+    "Título": "14. O que mais aumenta sua confiança em uma recomendação?",
+    "Alternativa": "Histórico de bons resultados do produto.",
+    "Código": "C",
+    "Perfil": "Conservador"
+  },
+  {
+    "Pergunta": 14,
+    "Título": "14. O que mais aumenta sua confiança em uma recomendação?",
+    "Alternativa": "Dados técnicos e retorno sobre o investimento.",
+    "Código": "A",
+    "Perfil": "Analítico"
+  },
+  {
+    "Pergunta": 14,
+    "Título": "14. O que mais aumenta sua confiança em uma recomendação?",
+    "Alternativa": "Potencial de inovação e aumento de produtividade.",
+    "Código": "I",
+    "Perfil": "Inovador"
+  },
+  {
+    "Pergunta": 14,
+    "Título": "14. O que mais aumenta sua confiança em uma recomendação?",
+    "Alternativa": "Presença e acompanhamento do consultor.",
+    "Código": "R",
+    "Perfil": "Relacional"
+  },
+  {
+    "Pergunta": 14,
+    "Título": "14. O que mais aumenta sua confiança em uma recomendação?",
+    "Alternativa": "Agilidade para receber informações e respostas.",
+    "Código": "D",
+    "Perfil": "Digital"
+  },
+  {
+    "Pergunta": 15,
+    "Título": "15. Qual tipo de evento técnico mais desperta seu interesse?",
+    "Alternativa": "Evento prático próximo à minha propriedade.",
+    "Código": "C",
+    "Perfil": "Conservador"
+  },
+  {
+    "Pergunta": 15,
+    "Título": "15. Qual tipo de evento técnico mais desperta seu interesse?",
+    "Alternativa": "Palestras com dados, pesquisas e resultados.",
+    "Código": "A",
+    "Perfil": "Analítico"
+  },
+  {
+    "Pergunta": 15,
+    "Título": "15. Qual tipo de evento técnico mais desperta seu interesse?",
+    "Alternativa": "Lançamentos, demonstrações e novas tecnologias.",
+    "Código": "I",
+    "Perfil": "Inovador"
+  },
+  {
+    "Pergunta": 15,
+    "Título": "15. Qual tipo de evento técnico mais desperta seu interesse?",
+    "Alternativa": "Encontros que permitam conversar com técnicos e produtores.",
+    "Código": "R",
+    "Perfil": "Relacional"
+  },
+  {
+    "Pergunta": 15,
+    "Título": "15. Qual tipo de evento técnico mais desperta seu interesse?",
+    "Alternativa": "Eventos rápidos, vídeos ou transmissões on-line.",
+    "Código": "D",
+    "Perfil": "Digital"
+  },
+  {
+    "Pergunta": 16,
+    "Título": "16. Na hora de comprar insumos, qual comportamento mais combina com você?",
+    "Alternativa": "Prefiro produtos e marcas que já utilizo.",
+    "Código": "C",
+    "Perfil": "Conservador"
+  },
+  {
+    "Pergunta": 16,
+    "Título": "16. Na hora de comprar insumos, qual comportamento mais combina com você?",
+    "Alternativa": "Comparo preços, doses, resultados e custo por hectare.",
+    "Código": "A",
+    "Perfil": "Analítico"
+  },
+  {
+    "Pergunta": 16,
+    "Título": "16. Na hora de comprar insumos, qual comportamento mais combina com você?",
+    "Alternativa": "Estou aberto a novas soluções com maior potencial.",
+    "Código": "I",
+    "Perfil": "Inovador"
+  },
+  {
+    "Pergunta": 16,
+    "Título": "16. Na hora de comprar insumos, qual comportamento mais combina com você?",
+    "Alternativa": "Considero muito a recomendação do consultor.",
+    "Código": "R",
+    "Perfil": "Relacional"
+  },
+  {
+    "Pergunta": 16,
+    "Título": "16. Na hora de comprar insumos, qual comportamento mais combina com você?",
+    "Alternativa": "Valorizo orçamento e resposta rápida pelo celular.",
+    "Código": "D",
+    "Perfil": "Digital"
+  },
+  {
+    "Pergunta": 17,
+    "Título": "17. Que tipo de conteúdo você gostaria de receber da C.Vale?",
+    "Alternativa": "Recomendações práticas e seguras para cada fase da cultura.",
+    "Código": "C",
+    "Perfil": "Conservador"
+  },
+  {
+    "Pergunta": 17,
+    "Título": "17. Que tipo de conteúdo você gostaria de receber da C.Vale?",
+    "Alternativa": "Comparativos técnicos, custos e resultados de áreas.",
+    "Código": "A",
+    "Perfil": "Analítico"
+  },
+  {
+    "Pergunta": 17,
+    "Título": "17. Que tipo de conteúdo você gostaria de receber da C.Vale?",
+    "Alternativa": "Informações sobre lançamentos e novas tecnologias.",
+    "Código": "I",
+    "Perfil": "Inovador"
+  },
+  {
+    "Pergunta": 17,
+    "Título": "17. Que tipo de conteúdo você gostaria de receber da C.Vale?",
+    "Alternativa": "Acompanhamento pessoal e orientações específicas da propriedade.",
+    "Código": "R",
+    "Perfil": "Relacional"
+  },
+  {
+    "Pergunta": 17,
+    "Título": "17. Que tipo de conteúdo você gostaria de receber da C.Vale?",
+    "Alternativa": "Alertas rápidos, imagens, vídeos e mensagens curtas.",
+    "Código": "D",
+    "Perfil": "Digital"
+  },
+  {
+    "Pergunta": 18,
+    "Título": "18. Como deveria ser o acompanhamento após a compra?",
+    "Alternativa": "Contato nos momentos críticos para verificar o desempenho.",
+    "Código": "C",
+    "Perfil": "Conservador"
+  },
+  {
+    "Pergunta": 18,
+    "Título": "18. Como deveria ser o acompanhamento após a compra?",
+    "Alternativa": "Avaliação dos resultados e do retorno obtido.",
+    "Código": "A",
+    "Perfil": "Analítico"
+  },
+  {
+    "Pergunta": 18,
+    "Título": "18. Como deveria ser o acompanhamento após a compra?",
+    "Alternativa": "Acompanhamento detalhado de áreas de teste.",
+    "Código": "I",
+    "Perfil": "Inovador"
+  },
+  {
+    "Pergunta": 18,
+    "Título": "18. Como deveria ser o acompanhamento após a compra?",
+    "Alternativa": "Retorno presencial e acompanhamento próximo.",
+    "Código": "R",
+    "Perfil": "Relacional"
+  },
+  {
+    "Pergunta": 18,
+    "Título": "18. Como deveria ser o acompanhamento após a compra?",
+    "Alternativa": "Mensagens rápidas para saber se está tudo funcionando.",
+    "Código": "D",
+    "Perfil": "Digital"
+  }
+]

@@ -1,12 +1,21 @@
 {
-  "name": "cvalor-360",
-  "version": "0.1.0",
+  "name": "valor360",
   "private": true,
-  "description": "C.Valor 360 — inteligência comercial para gerar valor ao produtor",
+  "version": "0.1.0",
+  "type": "module",
   "scripts": {
-    "start": "node server.js"
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "start": "serve -s dist -l ${PORT:-3000}"
   },
-  "engines": {
-    "node": ">=20"
-  }
+  "dependencies": {
+    "@vitejs/plugin-react": "latest",
+    "vite": "latest",
+    "react": "latest",
+    "react-dom": "latest",
+    "lucide-react": "latest",
+    "serve": "latest"
+  },
+  "devDependencies": {}
 }

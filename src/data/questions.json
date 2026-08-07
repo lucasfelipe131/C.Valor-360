@@ -1,0 +1,110 @@
+[
+  {
+    "id": 1,
+    "text": "1. Nome do produtor"
+  },
+  {
+    "id": 2,
+    "text": "2. Município ou localidade da propriedade"
+  },
+  {
+    "id": 3,
+    "text": "3. Qual é aproximadamente a área total cultivada?"
+  },
+  {
+    "id": 4,
+    "text": "4. Quais são as principais culturas da propriedade?"
+  },
+  {
+    "id": 5,
+    "text": "5. Há quanto tempo você mantém relacionamento com a C.Vale?"
+  },
+  {
+    "id": 6,
+    "text": "6. Quem normalmente participa das decisões de compra da propriedade?"
+  },
+  {
+    "id": 7,
+    "text": "7. Ao escolher um produto ou tecnologia, o que mais influencia sua decisão?"
+  },
+  {
+    "id": 8,
+    "text": "8. Qual tipo de apresentação técnica mais ajuda na sua decisão?"
+  },
+  {
+    "id": 9,
+    "text": "9. Como você prefere planejar o manejo da sua lavoura?"
+  },
+  {
+    "id": 10,
+    "text": "10. Como você se comporta diante de uma nova tecnologia?"
+  },
+  {
+    "id": 11,
+    "text": "11. Qual é sua forma preferida de receber atendimento?"
+  },
+  {
+    "id": 12,
+    "text": "12. Com que frequência você gostaria de receber contato da equipe da C.Vale?"
+  },
+  {
+    "id": 13,
+    "text": "13. Quando aparece um problema na lavoura, qual costuma ser sua primeira atitude?"
+  },
+  {
+    "id": 14,
+    "text": "14. O que mais aumenta sua confiança em uma recomendação?"
+  },
+  {
+    "id": 15,
+    "text": "15. Qual tipo de evento técnico mais desperta seu interesse?"
+  },
+  {
+    "id": 16,
+    "text": "16. Na hora de comprar insumos, qual comportamento mais combina com você?"
+  },
+  {
+    "id": 17,
+    "text": "17. Que tipo de conteúdo você gostaria de receber da C.Vale?"
+  },
+  {
+    "id": 18,
+    "text": "18. Como deveria ser o acompanhamento após a compra?"
+  },
+  {
+    "id": 19,
+    "text": "19. Em uma escala de 0 a 10, quanto você confia nas recomendações técnicas da C.Vale?"
+  },
+  {
+    "id": 20,
+    "text": "20. Em uma escala de 0 a 10, como você avalia a frequência de contato da equipe da C.Vale?"
+  },
+  {
+    "id": 21,
+    "text": "21. Em uma escala de 0 a 10, quanto o atendimento da C.Vale gera valor para sua propriedade?"
+  },
+  {
+    "id": 22,
+    "text": "22. Em uma escala de 0 a 10, qual é sua abertura para receber e testar novas tecnologias?"
+  },
+  {
+    "id": 23,
+    "text": "23. Em uma escala de 0 a 10, qual é sua intenção de continuar fazendo negócios com a C.Vale?"
+  },
+  {
+    "id": 24,
+    "text": "24. Em uma escala de 0 a 10, qual é a probabilidade de você recomendar a C.Vale para outro produtor?"
+  },
+  {
+    "id": 25,
+    "text": "25. Qual aspecto do atendimento da C.Vale você mais valoriza?"
+  },
+  {
+    "id": 26,
+    "text": "26. O que a C.Vale precisaria fazer para receber nota 10 no atendimento?"
+  },
+  {
+    "id": 27,
+    "text": "27. Existe alguma necessidade da sua propriedade em que a C.Vale poderia ajudar mais?"
+  }
+]
