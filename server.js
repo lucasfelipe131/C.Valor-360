@@ -89,4 +89,4 @@ createServer(async(request,response)=>{
  const extension=extname(target).toLowerCase()
  response.writeHead(200,{...securityHeaders,'Content-Type':mime[extension]||'application/octet-stream','Cache-Control':extension==='.html'?'no-cache':'public, max-age=31536000, immutable'})
  createReadStream(target).pipe(response)
-}).listen(port,'0.0.0.0',()=>console.log(`VALOR 360 disponível na porta ${port}`))
+}).listen(port,'0.0.0.0',()=>console.log(`Cliente 360 Cvale disponível na porta ${port}`))

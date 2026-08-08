@@ -29,7 +29,7 @@ const readLocal=(key,fallback)=>{
 }
 
 const meta={
- dashboard:['Dashboard','Visão geral do seu desempenho'],
+ dashboard:['Hoje','Sua central de relacionamento e resultado'],
  clients:['Clientes','Conheça o produtor antes de oferecer uma solução'],
  datahub:['Base Inteligente','Importe históricos e ensine a VAL com a sua própria carteira'],
  client360:['Cliente 360','Perfil, relacionamento, contexto técnico e oportunidades'],
@@ -63,25 +63,25 @@ export default function App(){
   const next=[...map.values()];setClientList(next);localStorage.setItem('valor360-clients',JSON.stringify(next))
  }
  const updateVisits=next=>{setVisits(next);localStorage.setItem('valor360-visits',JSON.stringify(next))}
- const login=()=>{localStorage.setItem('valor360-session','open');setAuthenticated(true);notify('Bem-vindo ao VALOR 360.')}
+ const login=()=>{localStorage.setItem('valor360-session','open');setAuthenticated(true);notify('Bem-vindo ao Cliente 360 Cvale.')}
  const logout=()=>{localStorage.setItem('valor360-session','closed');setAuthenticated(false);setPage('dashboard')}
  useEffect(()=>{if(!selected&&clientList.length)setSelected(clientList[0])},[clientList,selected])
  useEffect(()=>{fetch('/api/intelligence').then(response=>response.ok?response.json():null).then(data=>data?.clients?.length&&importClients(data.clients)).catch(()=>null)},[])
- const [title,subtitle]=meta[page]||['VALOR 360','']
+ const [title,subtitle]=meta[page]||['Cliente 360 Cvale','']
  if(publicSurveyToken)return <PublicSurvey token={publicSurveyToken}/>
  if(!authenticated)return <Login onLogin={login}/>
  return <div className="app-shell">
   <Sidebar page={page} setPage={p=>{setPage(p); if(p!=='client360') setSelected(null)}}/>
   <main className="main">
-   <Topbar title={title} subtitle={subtitle}/>
+   <Topbar title={title} subtitle={subtitle} onNavigate={setPage}/>
    <div className="content">
     {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} setPage={setPage} onClient={openClient} onPrepare={prepareClient}/>}
-    {page==='clients'&&<Clients clients={clientList} onClient={openClient} onNew={()=>setPage('questionnaire')}/>} 
-    {page==='datahub'&&<DataHub onImport={importClients} onNotify={notify}/>} 
+    {page==='clients'&&<Clients clients={clientList} onClient={openClient} onNew={()=>setPage('questionnaire')}/>}
+    {page==='datahub'&&<DataHub onImport={importClients} onNotify={notify}/>}
     {page==='client360'&&selected&&<Client360 key={selected.id} client={selected} onBack={()=>setPage('clients')} onPrepare={()=>prepareClient(selected)} onSaved={()=>notify('Complemento técnico salvo neste dispositivo.')}/>}
     {page==='val'&&<ValPanel clients={clientList} selectedClient={selected} onSelect={openClient}/>}
     {page==='agro'&&<Agro/>}
-    {page==='questionnaire'&&<Questionnaire onCreate={addClient} onOpen={openClient} onNotify={notify}/>} 
+    {page==='questionnaire'&&<Questionnaire onCreate={addClient} onOpen={openClient} onNotify={notify}/>}
     {page==='visits'&&<Visits clients={clientList} visits={visits} setVisits={updateVisits} onPrepare={prepareClient} onSaved={()=>notify('Visita registrada na agenda.')}/>}
     {page==='opportunities'&&<Opportunities clients={clientList} onClient={openClient} onSaved={notify}/>}
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
