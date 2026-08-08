@@ -226,6 +226,16 @@ b,strong,.kpi-card strong,.pipeline-page b{font-weight:700}
 .f-step-track{grid-column:2/-1;height:3px;margin-top:8px;overflow:hidden;border-radius:99px;background:#e9eff4}.f-step-track i{display:block;width:var(--stage-share);height:100%;border-radius:99px;background:var(--stage-color)}
 .funnel-note{margin:13px 2px 0;color:#718498;font-size:9.5px;line-height:1.45}
 
+/* Assisted import: structured batch review instead of an unstyled inline list */
+.import-record-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));gap:8px;margin:14px 0 16px}
+.import-record-list>span{min-width:0;padding:11px 12px;border:1px solid rgba(139,204,246,.16);border-radius:12px;background:linear-gradient(145deg,rgba(255,255,255,.085),rgba(255,255,255,.035));box-shadow:inset 0 1px rgba(255,255,255,.04);display:grid;gap:4px;text-align:left}
+.import-record-list b{overflow:hidden;color:#f4f9fd;font-size:10.5px;line-height:1.35;text-overflow:ellipsis;white-space:nowrap}
+.import-record-list small{color:#94b8d2;font-size:8px;line-height:1.35}
+.import-batch-progress{padding:14px 17px;border:1px solid #d7e6f2;border-radius:15px;background:linear-gradient(135deg,#fff,#f5f9fc);box-shadow:var(--shadow);display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:3px 12px}
+.import-batch-progress>span{grid-row:1/3;padding:7px 9px;border-radius:9px;background:#e9f4fd;color:#0870c7;font-size:8px;font-weight:800;letter-spacing:.1em;white-space:nowrap}
+.import-batch-progress>b{color:#183b59;font-size:13px;line-height:1.3}
+.import-batch-progress>small{color:#71879a;font-size:9px;line-height:1.4}
+
 /* Opportunity pipeline: legible stages and responsive board */
 .pipeline-page{gap:18px}
 .pipeline-hero{min-height:360px;padding:40px 42px;grid-template-columns:minmax(0,1.15fr) minmax(320px,.72fr);gap:34px;border-radius:30px;box-shadow:0 24px 62px rgba(3,31,62,.2)}
@@ -290,6 +300,8 @@ b,strong,.kpi-card strong,.pipeline-page b{font-weight:700}
  .pipeline-board{display:block}.pipeline-column{display:none}.pipeline-column.active{display:block}.pipeline-card{padding:15px}.pipeline-card h3{min-height:0;font-size:13px}.pipeline-advance,.pipeline-won{min-height:44px;font-size:11px}
  .pipeline-roi{padding:18px}.pipeline-roi-copy p{font-size:11px}.pipeline-roi-inputs label>span{font-size:11px}
  .f-step{min-height:70px;padding-right:10px;grid-template-columns:30px minmax(0,1fr) auto;gap:8px}.f-step-copy b{font-size:12px}.f-step-copy small{font-size:9px}.f-step-metric b{font-size:17px}.funnel-note{font-size:10px}
+ .import-record-list{grid-template-columns:1fr;gap:7px}.import-record-list>span{text-align:left}
+ .import-batch-progress{grid-template-columns:1fr;gap:5px;padding:13px 14px}.import-batch-progress>span{grid-row:auto;width:max-content}.import-batch-progress>b{font-size:12px}
 }
 
 @media(max-width:460px){

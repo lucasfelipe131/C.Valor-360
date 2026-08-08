@@ -41,6 +41,19 @@ test('assisted review keeps question 27 optional through the final screen',()=>{
  assert.match(surveyForm,/question\.id===27\?' \(opcional\)'/)
 })
 
+test('batch import has a responsive visual hierarchy and keeps the VALOR 360 PWA brand',()=>{
+ const styles=read('src/styles.css')
+ const app=read('src/App.jsx')
+ const html=read('index.html')
+ const manifest=JSON.parse(read('public/manifest.webmanifest'))
+ assert.match(styles,/\.import-record-list\{display:grid/)
+ assert.match(styles,/\.import-batch-progress\{padding:/)
+ assert.match(styles,/@media\(max-width:700px\)[\s\S]*\.import-record-list\{grid-template-columns:1fr/)
+ assert.match(app,/value!==''&&value!==null&&value!==undefined/)
+ assert.match(html,/apple-mobile-web-app-title" content="VALOR 360"/)
+ assert.equal(manifest.short_name,'VALOR 360')
+})
+
 test('production bundle receives the protected portfolio only from the server',()=>{
  const app=read('src/App.jsx')
  const dashboard=read('src/pages/Dashboard.jsx')
