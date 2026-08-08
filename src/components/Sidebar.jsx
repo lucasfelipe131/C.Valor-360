@@ -1,8 +1,8 @@
 import React from 'react'
-import { LayoutDashboard, Users, CalendarDays, Target, BrainCircuit, Sprout, FileBarChart, Settings, ClipboardList } from 'lucide-react'
+import { LayoutDashboard, Users, CalendarDays, Target, BrainCircuit, Sprout, FileBarChart, Settings, ClipboardList, DatabaseZap } from 'lucide-react'
 import Logo from './Logo'
 const items=[
- ['dashboard','Dashboard',LayoutDashboard],['clients','Clientes',Users],['visits','Visitas',CalendarDays],
+ ['dashboard','Dashboard',LayoutDashboard],['clients','Clientes',Users],['datahub','Base Inteligente',DatabaseZap],['visits','Visitas',CalendarDays],
  ['opportunities','Oportunidades',Target],['val','Inteligência (VAL)',BrainCircuit],
  ['agro','Inteligência Agronômica',Sprout],['questionnaire','Produtor 360',ClipboardList],
  ['reports','Relatórios',FileBarChart],['settings','Configurações',Settings]
