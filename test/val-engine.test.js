@@ -24,7 +24,15 @@ test('perfil é hipótese adaptativa, não diagnóstico',()=>{
   const advice=buildFallbackAdvice({client:{name:'Teste',primaryProfile:'Conservador'},message:'Como abordar?',signals:[],learning:{}})
   assert.equal(advice.decision_profile.legacy_tag,'Conservador')
   assert.match(advice.decision_profile.adaptation,/não adapte somente/i)
-  assert.equal(advice.confidence.level,'not_calibrated')
+ assert.equal(advice.confidence.level,'not_calibrated')
+})
+
+test('negação genérica nunca vira hipótese comercial da VAL',()=>{
+  const advice=buildFallbackAdvice({client:{name:'Teste',additionalNeed:'Não.',additionalNeedStatus:'none_declared',commercial:{opportunity:'Não.'}},message:'Como abordar?',signals:[],learning:{}})
+  assert.doesNotMatch(JSON.stringify(advice),/Onde [“\"]não[.\”\"]|hipótese cadastrada: não/i)
+  assert.match(advice.answer,/não declarou necessidade adicional/i)
+  assert.match(advice.next_question.question,/surgiu alguma prioridade|prefere manter/i)
+  assert.match(advice.value_hypothesis.problem,/oportunidade não confirmada/i)
 })
 
 test('barreira técnica bloqueia conteúdo agronômico até revisão humana',()=>{

@@ -54,6 +54,35 @@ test('batch import has a responsive visual hierarchy and keeps the VALOR 360 PWA
  assert.equal(manifest.short_name,'VALOR 360')
 })
 
+test('negative optional answers use discovery labels instead of false opportunities',()=>{
+ const profile=read('src/lib/profile.js')
+ const client360=read('src/pages/Client360.jsx')
+ const dashboard=read('src/pages/Dashboard.jsx')
+ const opportunities=read('src/pages/Opportunities.jsx')
+ assert.match(profile,/noAdditionalNeedPatterns/)
+ assert.match(client360,/Nenhuma necessidade adicional declarada/)
+ assert.match(client360,/Ainda não identificada/)
+ assert.match(dashboard,/reconcilePipeline\(clients,/)
+ assert.match(opportunities,/reconcilePipeline\(clients,/)
+ assert.doesNotMatch(dashboard,/fallbackOpportunities|pipelineStages\[Math\.min\(index,2\)\]/)
+ assert.doesNotMatch(opportunities,/clients\.map\(\(client,index\).*stage:/s)
+})
+
+test('commercial cache is scoped and technical drafts expire with the browser session',()=>{
+ const app=read('src/App.jsx')
+ const settings=read('src/pages/Settings.jsx')
+ const client360=read('src/pages/Client360.jsx')
+ const server=read('server.js')
+ assert.match(app,/opportunityCacheKey\(effectiveScope\)/)
+ assert.match(app,/clearSessionPortfolioCache\(currentUser\?\.storageScope\)/)
+ assert.match(app,/invalidateSession=notice=>\{clearSessionPortfolioCache[\s\S]*setClientList\(\[\]\);setVisits\(\[\]\);setSelected\(null\)/)
+ assert.match(app,/if\(session\?\.authenticated\)rememberStorageScope\(session\.user\);else clearSessionPortfolioCache\(\)/)
+ assert.match(settings,/opportunityCacheKey\(currentUser\?\.storageScope\)/)
+ assert.match(client360,/sessionStorage\.setItem\(storageKey/)
+ assert.doesNotMatch(client360,/localStorage/)
+ assert.match(server,/storageScope:auth\.storageScope\(session\)/)
+})
+
 test('production bundle receives the protected portfolio only from the server',()=>{
  const app=read('src/App.jsx')
  const dashboard=read('src/pages/Dashboard.jsx')

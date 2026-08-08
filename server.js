@@ -39,6 +39,7 @@ const validatedSurveyAnswers=input=>validateSurveyAnswers(input,surveyOptions)
 
 const database=createDatabase(config)
 const auth=createAuth(config)
+const userPayload=session=>session?{email:session.email,demo:false,storageScope:auth.storageScope(session)}:{email:null,demo:true,storageScope:'demo'}
 const repository=new ValRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const valEngine=new ValEngine({runtimeConfig:config,repository})
 const rateBuckets=new Map()
@@ -78,14 +79,14 @@ async function handleApi(request,response,url){
  if(url.pathname==='/api/auth/session'&&request.method==='GET'){
   const session=auth.configured?auth.session(request):null
   const demoAllowed=!auth.configured&&config.demoMode
-  return json(response,200,{authenticated:auth.configured?Boolean(session):demoAllowed,required:!demoAllowed,demo:demoAllowed,misconfigured:!auth.configured&&!demoAllowed,user:session?{email:session.email,demo:false}:demoAllowed?{email:null,demo:true}:null})
+  return json(response,200,{authenticated:auth.configured?Boolean(session):demoAllowed,required:!demoAllowed,demo:demoAllowed,misconfigured:!auth.configured&&!demoAllowed,user:session?userPayload(session):demoAllowed?userPayload(null):null})
  }
  if(url.pathname==='/api/auth/login'&&request.method==='POST'){
-  if(!auth.configured)return config.demoMode?json(response,200,{authenticated:true,required:false,demo:true,user:{email:null,demo:true}}):json(response,503,{error:'Configure o acesso seguro do VALOR 360 antes de entrar.'})
+  if(!auth.configured)return config.demoMode?json(response,200,{authenticated:true,required:false,demo:true,user:userPayload(null)}):json(response,503,{error:'Configure o acesso seguro do VALOR 360 antes de entrar.'})
   if(!consumeRateLimit('login',requestIdentity(request),config.loginAttemptsPerTenMinutes))return json(response,429,{error:'Muitas tentativas de acesso. Aguarde alguns minutos.'})
   const payload=await body(request)
   if(!auth.verifyCredentials(payload.email,payload.password))return json(response,401,{error:'E-mail ou senha inválidos.'})
-  const email=String(payload.email).trim().toLowerCase();const token=auth.issue(email);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{authenticated:true,required:true,demo:false,user:{email,demo:false}})
+  const email=String(payload.email).trim().toLowerCase();const token=auth.issue(email);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{authenticated:true,required:true,demo:false,user:userPayload({email,tenantId:config.defaultTenantId})})
  }
  if(url.pathname==='/api/auth/logout'&&request.method==='POST'){response.setHeader('Set-Cookie',auth.clearCookie(request));return json(response,200,{authenticated:false})}
  const storageScope=publicStorageScope(url.pathname,request.method)

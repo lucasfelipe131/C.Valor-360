@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import KpiCard from '../components/KpiCard'
 import ValPanel from '../components/ValPanel'
+import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline,resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
 const greeting=()=>{
  const hour=new Date().getHours()
@@ -43,7 +44,7 @@ export default function Dashboard({clients,visits,currentUser,setPage,onClient,o
  const firstName=String(currentUser?.name||currentUser?.email?.split('@')[0]||'Equipe').trim().split(/\s+/)[0]
  const totalPotential=clients.reduce((sum,client)=>sum+(client.commercial?.potentialValidated===false?0:Number(client.commercial?.potential||0)),0)
  const irt=(clients.reduce((sum,client)=>sum+Number(client.irt||0),0)/Math.max(clients.length,1)).toFixed(1)
- const priorities=[...clients].sort((a,b)=>(b.commercial?.potential||0)-(a.commercial?.potential||0)).slice(0,3)
+ const priorities=clients.map(client=>({client,candidate:resolveOpportunityCandidate(client)})).filter(item=>item.candidate).sort((a,b)=>(b.client.commercial?.potential||0)-(a.client.commercial?.potential||0)).slice(0,3)
  const nextVisit=[...(visits||[])].sort((a,b)=>`${a.date||''}${a.time||''}`.localeCompare(`${b.date||''}${b.time||''}`))[0]
  const nextClient=clients.find(client=>client.id===nextVisit?.clientId)||clients[0]
  const quickActions=[
@@ -52,12 +53,8 @@ export default function Dashboard({clients,visits,currentUser,setPage,onClient,o
   {page:'datahub',label:'Importar carteira',detail:'Clientes e negócios',icon:DatabaseZap},
   {page:'val',label:'Perguntar à Val',detail:'Próxima melhor ação',icon:BrainCircuit}
  ]
- const fallbackOpportunities=clients.map((client,index)=>({
-  id:`o-${client.id}`,
-  stage:pipelineStages[Math.min(index,2)].name,
-  value:client.commercial?.potentialValidated===false?0:Number(client.commercial?.potential||0)
- }))
- const pipelineItems=(()=>{try{const stored=JSON.parse(localStorage.getItem('valor360-opportunities'));return Array.isArray(stored)?stored:fallbackOpportunities}catch{return fallbackOpportunities}})()
+ const cacheKey=opportunityCacheKey(currentUser?.storageScope)
+ const pipelineItems=reconcilePipeline(clients,cacheKey?parseOpportunityCache(localStorage.getItem(cacheKey)):[])
  const pipelineSummary=pipelineStages.map(stage=>{
   const stageItems=pipelineItems.filter(item=>item.stage===stage.name)
   return {...stage,count:stageItems.length,value:stageItems.reduce((sum,item)=>sum+Number(item.value||0),0)}
@@ -102,7 +99,7 @@ export default function Dashboard({clients,visits,currentUser,setPage,onClient,o
    <KpiCard icon={Percent} label="IRT médio" value={irt} delta="Relacionamento estratégico" tone="green"/>
   </section>
 
-  <section className="priority-strip"><div className="priority-copy"><span className="eyebrow">PRIORIDADE DA VAL</span><h3>Quem merece sua atenção agora</h3><p>Valor validado, recência e índice de triagem — com hipóteses explícitas.</p></div>{priorities.map((client,index)=><button key={client.id} onClick={()=>onClient(client)}><span>{String(index+1).padStart(2,'0')}</span><div><b>{client.name}</b><small>{client.commercial?.opportunity}</small></div><strong>{client.commercial?.potentialValidated===false?`Índice ${client.commercial?.score||0}`:`R$ ${Math.round((client.commercial?.potential||0)/1000)}k`}</strong><ArrowUpRight/></button>)}</section>
+  <section className="priority-strip"><div className="priority-copy"><span className="eyebrow">PRIORIDADE DA VAL</span><h3>Quem merece sua atenção agora</h3><p>Somente oportunidades com uma necessidade ou evidência comercial registrada.</p></div>{priorities.map(({client,candidate},index)=><button key={client.id} onClick={()=>onClient(client)}><span>{String(index+1).padStart(2,'0')}</span><div><b>{client.name}</b><small>{candidate.title}</small></div><strong>{client.commercial?.potentialValidated===false?`Índice ${client.commercial?.score||0}`:`R$ ${Math.round((client.commercial?.potential||0)/1000)}k`}</strong><ArrowUpRight/></button>)}{!priorities.length&&<div className="priority-empty"><Target/><div><b>Nenhuma oportunidade confirmada</b><small>Use a descoberta consultiva antes de abrir um negócio no pipeline.</small></div></div>}</section>
 
   <section className="dashboard-grid home-analysis">
    <article className="panel chart-panel">

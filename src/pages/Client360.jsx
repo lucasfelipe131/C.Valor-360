@@ -5,17 +5,19 @@ const contextFields=['property','crops','area','weeds','diseases','insects','soi
 const contextBase=client=>({property:client.commercial?.property||'',crops:client.cultures||'',area:client.area||'',weeds:'',diseases:'',insects:'',soil:'',goal:'',competitors:'',notes:''})
 const contextValues=value=>Object.fromEntries(contextFields.map(field=>[field,String(value?.[field]??'')]))
 const contextDate=value=>{if(!value)return '';const parsed=new Date(value);return Number.isNaN(parsed.getTime())?'':parsed.toLocaleString('pt-BR')}
-export default function Client360({client,onBack,onPrepare,onSaved}){
- const storageKey=`valor360-tech-${client.id}`
+const localId=value=>{let hash=2166136261;for(const char of String(value||''))hash=Math.imul(hash^char.codePointAt(0),16777619);return (hash>>>0).toString(36)}
+export default function Client360({client,storageScope,onBack,onPrepare,onSaved}){
+ const storageKey=`valor360-tech-${storageScope||'session'}-${localId(client.id)}`
  const [tech,setTech]=useState(()=>{
-  try{const draft=JSON.parse(localStorage.getItem(storageKey));return draft?{...contextBase(client),...contextValues(draft)}:contextBase(client)}catch{return contextBase(client)}
+  try{const draft=JSON.parse(sessionStorage.getItem(storageKey));return draft?{...contextBase(client),...contextValues(draft)}:contextBase(client)}catch{return contextBase(client)}
  })
  const revisions=useRef(Object.fromEntries(contextFields.map(field=>[field,0])))
  const [contextMeta,setContextMeta]=useState({status:'',updatedAt:''})
  const [loadingContext,setLoadingContext]=useState(true)
  const [saving,setSaving]=useState(false)
  const [error,setError]=useState('')
- const edit=(field,value)=>{revisions.current[field]=(revisions.current[field]||0)+1;setTech(current=>{const next={...current,[field]:value};localStorage.setItem(storageKey,JSON.stringify(next));return next})}
+ const additionalNeedLabel=client.additionalNeedStatus==='none_declared'?'Nenhuma necessidade adicional declarada':client.additionalNeed||'Não informado'
+ const edit=(field,value)=>{revisions.current[field]=(revisions.current[field]||0)+1;setTech(current=>{const next={...current,[field]:value};sessionStorage.setItem(storageKey,JSON.stringify(next));return next})}
  const mergeRemote=(remote,started)=>setTech(current=>{const next={...current};contextFields.forEach(field=>{if(revisions.current[field]===started[field]&&remote?.[field]!==undefined)next[field]=String(remote[field]??'')});return next})
  useEffect(()=>{
   const controller=new AbortController();const started={...revisions.current};setLoadingContext(true);setError('')
@@ -23,7 +25,7 @@ export default function Client360({client,onBack,onPrepare,onSaved}){
   fetch(`/api/clients/${encodeURIComponent(client.id)}/context`,{signal}).then(async response=>{if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error('O complemento salvo não pôde ser carregado.');return response.json()}).then(payload=>{if(payload.context){mergeRemote(payload.context,started);setContextMeta({status:payload.context.status||'',updatedAt:payload.context.updatedAt||''})}}).catch(exception=>{if(exception.name!=='AbortError')setError(exception.name==='TimeoutError'?'O servidor demorou para carregar o complemento.':exception.message)}).finally(()=>{if(!controller.signal.aborted)setLoadingContext(false)})
   return()=>controller.abort()
  },[client.id])
- const save=async()=>{const snapshot=contextValues(tech);const started={...revisions.current};setSaving(true);setError('');try{const response=await fetch(`/api/clients/${encodeURIComponent(client.id)}/context`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(snapshot),signal:AbortSignal.timeout(10000)});if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível salvar o complemento.');if(payload.context){mergeRemote(payload.context,started);setContextMeta({status:payload.context.status||'',updatedAt:payload.context.updatedAt||''})}if(contextFields.every(field=>revisions.current[field]===started[field]))localStorage.removeItem(storageKey);onSaved?.(payload.context)}catch(exception){setError(exception.message)}finally{setSaving(false)}}
+ const save=async()=>{const snapshot=contextValues(tech);const started={...revisions.current};setSaving(true);setError('');try{const response=await fetch(`/api/clients/${encodeURIComponent(client.id)}/context`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(snapshot),signal:AbortSignal.timeout(10000)});if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível salvar o complemento.');if(payload.context){mergeRemote(payload.context,started);setContextMeta({status:payload.context.status||'',updatedAt:payload.context.updatedAt||''})}if(contextFields.every(field=>revisions.current[field]===started[field]))sessionStorage.removeItem(storageKey);onSaved?.(payload.context)}catch(exception){setError(exception.message)}finally{setSaving(false)}}
  return <div className="page-stack">
   <button className="back-btn" onClick={onBack}><ArrowLeft size={17}/>Voltar</button>
   <section className="client-hero">
@@ -33,7 +35,7 @@ export default function Client360({client,onBack,onPrepare,onSaved}){
   <section className="four-grid">
    <div className="mini-stat"><HeartHandshake/><small>Relacionamento</small><b>{client.irtBand}</b></div>
    <div className="mini-stat"><MessageSquare/><small>Atendimento preferido</small><b>{client.servicePreference}</b></div>
-   <div className="mini-stat"><Target/><small>Oportunidade</small><b>{client.commercial?.opportunity}</b></div>
+   <div className="mini-stat"><Target/><small>Oportunidade</small><b>{client.commercial?.opportunity||'Ainda não identificada'}</b></div>
    <div className="mini-stat"><BadgeDollarSign/><small>{client.commercial?.potentialValidated===false?'Índice de triagem':'Potencial validado'}</small><b>{client.commercial?.potentialValidated===false?`${client.commercial?.score||0}/100`:`R$ ${Number(client.commercial?.potential||0).toLocaleString('pt-BR')}`}</b></div>
   </section>
   <div className="detail-grid">
@@ -49,7 +51,7 @@ export default function Client360({client,onBack,onPrepare,onSaved}){
   <div className="detail-grid">
    <Section title="NPS e percepção de valor"><dl className="info-list">
     <div><dt>NPS</dt><dd>{client.nps} — {client.npsClass}</dd></div><div><dt>Mais valorizado</dt><dd>{client.valuedAspect}</dd></div>
-    <div><dt>Para nota 10</dt><dd>{client.missingFor10||'—'}</dd></div><div><dt>Necessidade adicional</dt><dd>{client.additionalNeed||'—'}</dd></div>
+    <div><dt>Para nota 10</dt><dd>{client.missingFor10||'—'}</dd></div><div><dt>Necessidade adicional</dt><dd>{additionalNeedLabel}</dd></div>
    </dl></Section>
    <Section title="Escalas do relacionamento"><div className="score-bars">
     {Object.entries(client.scoresScale||{}).map(([k,v])=><div key={k}><span>{({trust:'Confiança',contact:'Contato',value:'Valor',innovation:'Inovação',continuity:'Continuidade',recommendation:'Recomendação'})[k]}</span><div><i style={{width:(Number(v||0)*10)+'%'}}></i></div><b>{v}/10</b></div>)}

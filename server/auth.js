@@ -23,6 +23,11 @@ export function createAuth(runtimeConfig){
   }
 
   function verifyCredentials(email,password){return configured&&safeEqual(String(email).trim().toLowerCase(),runtimeConfig.adminEmail.trim().toLowerCase())&&safeEqual(password,runtimeConfig.adminPassword)}
+  function storageScope(identity){
+    const tenantId=String(identity?.tenantId||runtimeConfig.defaultTenantId||'default').trim().toLowerCase()
+    const email=String(identity?.email||'demo').trim().toLowerCase()
+    return createHmac('sha256',runtimeConfig.sessionSecret).update(`valor360:browser-storage:v1:${tenantId}:${email}`).digest('base64url').slice(0,24)
+  }
   function session(request){return verifyToken(cookies(request).valor360_session)}
   function cookie(request,token){
     const secure=process.env.NODE_ENV==='production'||String(request.headers['x-forwarded-proto']||'').includes('https')
@@ -30,5 +35,5 @@ export function createAuth(runtimeConfig){
   }
   function clearCookie(request){const secure=process.env.NODE_ENV==='production'||String(request.headers['x-forwarded-proto']||'').includes('https');return `valor360_session=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0${secure?'; Secure':''}`}
 
-  return {configured,issue,verifyCredentials,session,cookie,clearCookie}
+  return {configured,issue,verifyCredentials,storageScope,session,cookie,clearCookie}
 }

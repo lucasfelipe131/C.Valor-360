@@ -3,6 +3,7 @@ import {
  BrainCircuit,CheckCircle2,Database,Download,KeyRound,Layers3,LoaderCircle,
  LogOut,RefreshCw,Server,ShieldCheck,Trash2,UserCog,Zap
 } from 'lucide-react'
+import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline} from '../lib/opportunity-pipeline'
 
 function displayValue(value,fallback='Não informado'){
  if(value===null||value===undefined||value==='')return fallback
@@ -44,6 +45,7 @@ function databaseState(value,error){
 
 export default function Settings({clients,visits,currentUser,onLogout,onNotify}){
  const [valStatus,setValStatus]=useState({loading:true,data:null,error:''})
+ const scopedOpportunityKey=opportunityCacheKey(currentUser?.storageScope)
 
  const loadValStatus=()=>{
   setValStatus(current=>({...current,loading:true,error:''}))
@@ -60,10 +62,11 @@ export default function Settings({clients,visits,currentUser,onLogout,onNotify})
  useEffect(()=>{loadValStatus()},[])
 
  const backup=()=>{
-  const payload={version:'0.4.0',exportedAt:new Date().toISOString(),clients,visits,opportunities:JSON.parse(localStorage.getItem('valor360-opportunities')||'[]')}
+  const cached=scopedOpportunityKey?parseOpportunityCache(localStorage.getItem(scopedOpportunityKey)):[]
+  const payload={version:'0.4.0',exportedAt:new Date().toISOString(),clients,visits,opportunities:reconcilePipeline(clients,cached)}
   const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='valor360-backup.json';a.click();URL.revokeObjectURL(url);onNotify?.('Backup do piloto gerado com sucesso.')
  }
- const clear=()=>{if(window.confirm('Limpar rascunhos e dados locais deste dispositivo? Os registros do PostgreSQL não serão apagados.')){Object.keys(localStorage).filter(key=>['valor360-clients','valor360-visits','valor360-opportunities'].includes(key)||key.startsWith('valor360-client-context:')).forEach(key=>localStorage.removeItem(key));window.location.reload()}}
+ const clear=()=>{if(window.confirm('Limpar rascunhos e dados locais deste dispositivo? Os registros do PostgreSQL não serão apagados.')){for(const key of ['valor360-clients','valor360-visits','valor360-opportunities',scopedOpportunityKey])if(key)localStorage.removeItem(key);Object.keys(localStorage).filter(key=>key.startsWith('valor360-tech-')||key.startsWith('valor360-client-context:')).forEach(key=>localStorage.removeItem(key));Object.keys(sessionStorage).filter(key=>key.startsWith('valor360-tech-')).forEach(key=>sessionStorage.removeItem(key));window.location.reload()}}
 
  const statusKnown=Boolean(valStatus.data)&&!valStatus.error
  const keyConfigured=statusKnown?Boolean(valStatus.data?.keyConfigured??valStatus.data?.aiConfigured):null
