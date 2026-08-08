@@ -7,10 +7,12 @@ const items=[
  ['agro','Inteligência Agronômica',Sprout],['questionnaire','Produtor 360',ClipboardList],
  ['reports','Relatórios',FileBarChart],['settings','Configurações',Settings]
 ]
-export default function Sidebar({page,setPage}){
+export default function Sidebar({page,setPage,currentUser}){
+ const account=currentUser?.email||'Ambiente demonstrativo'
+ const initials=currentUser?.email?currentUser.email.split('@')[0].split(/[._-]/).slice(0,2).map(part=>part[0]).join('').toUpperCase():'VA'
  return <aside className="sidebar">
   <Logo/>
   <nav>{items.map(([id,label,Icon])=><button key={id} className={page===id?'active':''} onClick={()=>setPage(id)}><Icon size={18}/><span>{label}</span></button>)}</nav>
-  <div className="user-card"><div className="user-avatar">LF</div><div><strong>Lucas Felipe</strong><small>Eng. Agrônomo • RT</small></div></div>
+  <div className="user-card"><div className="user-avatar">{initials}</div><div><strong>{account}</strong><small>{currentUser?.demo?'Modo demonstrativo':'Acesso protegido do piloto'}</small></div></div>
  </aside>
 }

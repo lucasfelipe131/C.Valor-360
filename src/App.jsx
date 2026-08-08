@@ -1,4 +1,5 @@
 import React,{useEffect,useState} from 'react'
+import {BrainCircuit} from 'lucide-react'
 import clients from './data/clients.json'
 import Sidebar from './components/Sidebar'
 import MobileNav from './components/MobileNav'
@@ -31,19 +32,22 @@ const readLocal=(key,fallback)=>{
 const meta={
  dashboard:['Hoje','Sua central de relacionamento e resultado'],
  clients:['Clientes','Conheça o produtor antes de oferecer uma solução'],
- datahub:['Base Inteligente','Importe históricos e ensine a VAL com a sua própria carteira'],
+ datahub:['Base Inteligente','Importe históricos e organize contexto verificável da carteira'],
  client360:['Cliente 360','Perfil, relacionamento, contexto técnico e oportunidades'],
  visits:['Visitas','Planejamento, roteiro e próximos compromissos'],
  opportunities:['Oportunidades','Transforme necessidade em proposta de valor'],
  val:['Inteligência (VAL)','Value Agriculture Intelligence'],
- agro:['Inteligência Agronômica','Motores técnicos integrados à plataforma'],
+ agro:['Inteligência Agronômica','Dados técnicos estruturados e roadmap de módulos'],
  questionnaire:['Produtor 360','Perfil e preferências do produtor'],
  reports:['Relatórios','Indicadores, NPS, IRT e execução comercial'],
  settings:['Configurações','Usuários, unidades e parâmetros']
 }
 export default function App(){
  const publicSurveyToken=new URLSearchParams(window.location.search).get('responder')
- const [authenticated,setAuthenticated]=useState(()=>localStorage.getItem('valor360-session')!=='closed')
+ const [authenticated,setAuthenticated]=useState(null)
+ const [currentUser,setCurrentUser]=useState(null)
+ const [portfolioReady,setPortfolioReady]=useState(false)
+ const [authNotice,setAuthNotice]=useState('')
  const [page,setPage]=useState('dashboard')
  const [selected,setSelected]=useState(null)
  const [clientList,setClientList]=useState(()=>readLocal('valor360-clients',clients))
@@ -63,29 +67,35 @@ export default function App(){
   const next=[...map.values()];setClientList(next);localStorage.setItem('valor360-clients',JSON.stringify(next))
  }
  const updateVisits=next=>{setVisits(next);localStorage.setItem('valor360-visits',JSON.stringify(next))}
- const login=()=>{localStorage.setItem('valor360-session','open');setAuthenticated(true);notify('Bem-vindo ao VALOR 360.')}
- const logout=()=>{localStorage.setItem('valor360-session','closed');setAuthenticated(false);setPage('dashboard')}
+ const login=async credentials=>{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials),signal:AbortSignal.timeout(10000)});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível autenticar.');setAuthNotice('');setCurrentUser(payload.user||null);setPortfolioReady(Boolean(payload.user?.demo));setAuthenticated(true);notify('Bem-vindo ao VALOR 360.')}
+ const logout=async()=>{try{const response=await fetch('/api/auth/logout',{method:'POST',signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error();setAuthNotice('');setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}catch{notify('Não foi possível encerrar a sessão no servidor. Tente novamente.')}}
+ const expireSession=()=>{setAuthNotice('Sua sessão expirou. Entre novamente.');setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}
  useEffect(()=>{if(!selected&&clientList.length)setSelected(clientList[0])},[clientList,selected])
- useEffect(()=>{fetch('/api/intelligence').then(response=>response.ok?response.json():null).then(data=>data?.clients?.length&&importClients(data.clients)).catch(()=>null)},[])
+ useEffect(()=>{fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{setCurrentUser(session?.user||null);setPortfolioReady(Boolean(session?.user?.demo));setAuthenticated(Boolean(session?.authenticated));if(!session?.authenticated&&session?.misconfigured)setAuthNotice('O acesso seguro do servidor ainda não foi configurado.')}).catch(()=>{setAuthNotice('Não foi possível validar o servidor. O acesso permaneceu bloqueado.');setPortfolioReady(false);setAuthenticated(false)})},[])
+ useEffect(()=>{window.addEventListener('valor360:unauthorized',expireSession);return()=>window.removeEventListener('valor360:unauthorized',expireSession)},[])
+ useEffect(()=>{if(authenticated!==true)return;const revalidate=()=>fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(!session?.authenticated)expireSession()}).catch(()=>{setAuthNotice('Não foi possível revalidar o servidor. Entre novamente para proteger os dados.');setCurrentUser(null);setAuthenticated(false);setPage('dashboard')});window.addEventListener('focus',revalidate);const timer=window.setInterval(revalidate,300000);return()=>{window.removeEventListener('focus',revalidate);window.clearInterval(timer)}},[authenticated])
+ useEffect(()=>{if(authenticated!==true)return;fetch('/api/intelligence',{signal:AbortSignal.timeout(12000)}).then(async response=>{if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));return null}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'A carteira protegida não pôde ser carregada.');return payload}).then(data=>{if(!data)return;if(currentUser?.demo){if(data.clients?.length)importClients(data.clients)}else{const serverClients=Array.isArray(data.clients)?data.clients:[];setClientList(serverClients);localStorage.setItem('valor360-clients',JSON.stringify(serverClients));setSelected(serverClients[0]||null)}setPortfolioReady(true)}).catch(error=>{if(currentUser?.demo){setPortfolioReady(true);return}setClientList([]);setSelected(null);setPortfolioReady(true);notify(error.name==='TimeoutError'?'A carteira demorou além do limite e permaneceu bloqueada.':error.message)})},[authenticated,currentUser?.demo])
  const [title,subtitle]=meta[page]||['VALOR 360','']
  if(publicSurveyToken)return <PublicSurvey token={publicSurveyToken}/>
- if(!authenticated)return <Login onLogin={login}/>
+ if(authenticated===null)return <main className="auth-loading" role="status"><BrainCircuit/><span>Validando acesso seguro…</span></main>
+ if(!authenticated)return <Login onLogin={login} notice={authNotice}/>
+ if(!portfolioReady)return <main className="auth-loading" role="status"><BrainCircuit/><span>Carregando carteira protegida…</span></main>
  return <div className="app-shell">
-  <Sidebar page={page} setPage={p=>{setPage(p); if(p!=='client360') setSelected(null)}}/>
+  <Sidebar page={page} currentUser={currentUser} setPage={p=>{setPage(p); if(p!=='client360') setSelected(null)}}/>
   <main className="main">
    <Topbar title={title} subtitle={subtitle} onNavigate={setPage}/>
    <div className="content">
     {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} setPage={setPage} onClient={openClient} onPrepare={prepareClient}/>}
     {page==='clients'&&<Clients clients={clientList} onClient={openClient} onNew={()=>setPage('questionnaire')}/>}
     {page==='datahub'&&<DataHub onImport={importClients} onNotify={notify}/>}
-    {page==='client360'&&selected&&<Client360 key={selected.id} client={selected} onBack={()=>setPage('clients')} onPrepare={()=>prepareClient(selected)} onSaved={()=>notify('Complemento técnico salvo neste dispositivo.')}/>}
+    {page==='client360'&&selected&&<Client360 key={selected.id} client={selected} onBack={()=>setPage('clients')} onPrepare={()=>prepareClient(selected)} onSaved={()=>notify('Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}/>}
     {page==='val'&&<ValPanel clients={clientList} selectedClient={selected} onSelect={openClient}/>}
     {page==='agro'&&<Agro/>}
     {page==='questionnaire'&&<Questionnaire onCreate={addClient} onOpen={openClient} onNotify={notify}/>}
     {page==='visits'&&<Visits clients={clientList} visits={visits} setVisits={updateVisits} onPrepare={prepareClient} onSaved={()=>notify('Visita registrada na agenda.')}/>}
     {page==='opportunities'&&<Opportunities clients={clientList} onClient={openClient} onSaved={notify}/>}
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
-    {page==='settings'&&<Settings clients={clientList} visits={visits} onLogout={logout} onNotify={notify}/>}
+    {page==='settings'&&<Settings clients={clientList} visits={visits} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
    </div>
   </main>
   <MobileNav page={page} setPage={setPage}/>

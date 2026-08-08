@@ -10,11 +10,16 @@
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
     "preview": "vite preview --host 0.0.0.0",
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node --test",
+    "db:migrate": "node server/migrate.js",
+    "knowledge:sync": "node server/sync-knowledge.js"
   },
   "dependencies": {
     "lucide-react": "0.468.0",
+    "openai": "^7.4.0",
     "pdfjs-dist": "^4.10.38",
+    "pg": "^8.22.0",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "read-excel-file": "^9.3.8"

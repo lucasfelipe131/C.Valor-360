@@ -41,7 +41,7 @@ export function calculateProfile(answers,matrix,source='Produtor 360'){
   contentPreference:String(answers[17]||''),
   postSalePreference:String(answers[18]||''),
   scoresScale:{trust:answers[19],contact:answers[20],value:answers[21],innovation:answers[22],continuity:answers[23],recommendation:answers[24]},
-  commercial:{potential:0,lastContactDays:0,priority:'Nova',opportunity:String(answers[27]||'Diagnóstico inicial'),property:'A cadastrar'},
+  commercial:{potential:0,lastContactDays:null,priority:'Nova',opportunity:String(answers[27]||'Descoberta inicial'),property:'A cadastrar'},
   source,
   profileUpdatedAt:new Date().toISOString()
  }
