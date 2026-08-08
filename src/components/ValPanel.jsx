@@ -28,7 +28,7 @@ export default function ValPanel({clients,selectedClient,onSelect}){
  const plan=useMemo(()=>planFor(client),[client])
  const ask=type=>{
   const prompt=String(type||question).toLowerCase();setShowPlan(prompt.includes('visita')||prompt.includes('roteiro'))
-  if(prompt.includes('oportunidade'))setReply(`${client.name}: priorize ${client.commercial?.opportunity||'o diagnóstico inicial'}. Potencial mapeado de R$ ${Number(client.commercial?.potential||0).toLocaleString('pt-BR')}. Valide o impacto antes de apresentar a solução.`)
+  if(prompt.includes('oportunidade'))setReply(`${client.name}: priorize ${client.commercial?.opportunity||'o diagnóstico inicial'}. Potencial mapeado de R$ ${Number(client.commercial?.potential||0).toLocaleString('pt-BR')}${client.commercial?.score!==undefined?` e score adaptativo ${client.commercial.score}/100, calculado com ${client.commercial.frequency||0} negócios do histórico`:''}. Valide o impacto antes de apresentar a solução.`)
   else if(prompt.includes('risco'))setReply(`${client.name}: o principal risco é conduzir uma abordagem genérica. ${approach(client)}`)
   else if(prompt.includes('mensagem'))setReply(`Mensagem sugerida: “Olá, ${client.name.split(' ')[0]}. Separei uma análise curta sobre ${String(client.commercial?.opportunity||'a próxima safra').toLowerCase()}. Podemos conversar 20 minutos para validar se faz sentido para sua área?”`)
   else setReply(`${client.name}: ${approach(client)} O objetivo é sair da interação com um compromisso claro, responsável e prazo.`)
