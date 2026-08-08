@@ -14,6 +14,9 @@ import Opportunities from './pages/Opportunities'
 import Reports from './pages/Reports'
 import Settings from './pages/Settings'
 import Login from './pages/Login'
+import DataHub from './pages/DataHub'
+import PublicSurvey from './pages/PublicSurvey'
+import {normalizeText} from './lib/profile'
 
 const initialVisits=[
  {id:'v1',clientId:'genor-brum-filho',date:'2026-08-08',time:'14:00',objective:'Revisar manejo e definir área de avaliação',status:'Agendada'},
@@ -28,6 +31,7 @@ const readLocal=(key,fallback)=>{
 const meta={
  dashboard:['Dashboard','Visão geral do seu desempenho'],
  clients:['Clientes','Conheça o produtor antes de oferecer uma solução'],
+ datahub:['Base Inteligente','Importe históricos e ensine a VAL com a sua própria carteira'],
  client360:['Cliente 360','Perfil, relacionamento, contexto técnico e oportunidades'],
  visits:['Visitas','Planejamento, roteiro e próximos compromissos'],
  opportunities:['Oportunidades','Transforme necessidade em proposta de valor'],
@@ -38,6 +42,7 @@ const meta={
  settings:['Configurações','Usuários, unidades e parâmetros']
 }
 export default function App(){
+ const publicSurveyToken=new URLSearchParams(window.location.search).get('responder')
  const [authenticated,setAuthenticated]=useState(()=>localStorage.getItem('valor360-session')!=='closed')
  const [page,setPage]=useState('dashboard')
  const [selected,setSelected]=useState(null)
@@ -48,14 +53,22 @@ export default function App(){
  const notify=message=>{setToast(message);window.clearTimeout(window.__valorToast);window.__valorToast=window.setTimeout(()=>setToast(''),2800)}
  const prepareClient=c=>{setSelected(c);setPage('val')}
  const addClient=client=>{
-  const next=[...clientList,client]
-  setClientList(next);localStorage.setItem('valor360-clients',JSON.stringify(next));setSelected(client);notify('Perfil calculado e cliente adicionado à carteira.')
+  let saved
+  const next=clientList.some(item=>normalizeText(item.name)===normalizeText(client.name))?clientList.map(item=>normalizeText(item.name)===normalizeText(client.name)?(saved={...item,...client,id:item.id,commercial:{...item.commercial,...client.commercial,potential:Math.max(Number(item.commercial?.potential||0),Number(client.commercial?.potential||0))}},saved):item):[...clientList,(saved=client)]
+  setClientList(next);localStorage.setItem('valor360-clients',JSON.stringify(next));setSelected(saved);notify('Perfil compilado e incorporado à carteira.')
+ }
+ const importClients=imported=>{
+  const map=new Map(clientList.map(client=>[normalizeText(client.name),client]))
+  imported.forEach(client=>{const current=map.get(normalizeText(client.name));map.set(normalizeText(client.name),current?{...client,...current,commercial:{...client.commercial,...current.commercial,potential:Math.max(Number(client.commercial?.potential||0),Number(current.commercial?.potential||0)),score:client.commercial?.score??current.commercial?.score}}:client)})
+  const next=[...map.values()];setClientList(next);localStorage.setItem('valor360-clients',JSON.stringify(next))
  }
  const updateVisits=next=>{setVisits(next);localStorage.setItem('valor360-visits',JSON.stringify(next))}
  const login=()=>{localStorage.setItem('valor360-session','open');setAuthenticated(true);notify('Bem-vindo ao VALOR 360.')}
  const logout=()=>{localStorage.setItem('valor360-session','closed');setAuthenticated(false);setPage('dashboard')}
  useEffect(()=>{if(!selected&&clientList.length)setSelected(clientList[0])},[clientList,selected])
+ useEffect(()=>{fetch('/api/intelligence').then(response=>response.ok?response.json():null).then(data=>data?.clients?.length&&importClients(data.clients)).catch(()=>null)},[])
  const [title,subtitle]=meta[page]||['VALOR 360','']
+ if(publicSurveyToken)return <PublicSurvey token={publicSurveyToken}/>
  if(!authenticated)return <Login onLogin={login}/>
  return <div className="app-shell">
   <Sidebar page={page} setPage={p=>{setPage(p); if(p!=='client360') setSelected(null)}}/>
@@ -63,11 +76,12 @@ export default function App(){
    <Topbar title={title} subtitle={subtitle}/>
    <div className="content">
     {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} setPage={setPage} onClient={openClient} onPrepare={prepareClient}/>}
-    {page==='clients'&&<Clients clients={clientList} onClient={openClient} onNew={()=>setPage('questionnaire')}/>}
+    {page==='clients'&&<Clients clients={clientList} onClient={openClient} onNew={()=>setPage('questionnaire')}/>} 
+    {page==='datahub'&&<DataHub onImport={importClients} onNotify={notify}/>} 
     {page==='client360'&&selected&&<Client360 key={selected.id} client={selected} onBack={()=>setPage('clients')} onPrepare={()=>prepareClient(selected)} onSaved={()=>notify('Complemento técnico salvo neste dispositivo.')}/>}
     {page==='val'&&<ValPanel clients={clientList} selectedClient={selected} onSelect={openClient}/>}
     {page==='agro'&&<Agro/>}
-    {page==='questionnaire'&&<Questionnaire onCreate={addClient} onOpen={openClient}/>}
+    {page==='questionnaire'&&<Questionnaire onCreate={addClient} onOpen={openClient} onNotify={notify}/>} 
     {page==='visits'&&<Visits clients={clientList} visits={visits} setVisits={updateVisits} onPrepare={prepareClient} onSaved={()=>notify('Visita registrada na agenda.')}/>}
     {page==='opportunities'&&<Opportunities clients={clientList} onClient={openClient} onSaved={notify}/>}
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}

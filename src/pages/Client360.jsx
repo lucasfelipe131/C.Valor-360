@@ -38,6 +38,7 @@ export default function Client360({client,onBack,onPrepare,onSaved}){
     {Object.entries(client.scoresScale||{}).map(([k,v])=><div key={k}><span>{({trust:'Confiança',contact:'Contato',value:'Valor',innovation:'Inovação',continuity:'Continuidade',recommendation:'Recomendação'})[k]}</span><div><i style={{width:(Number(v||0)*10)+'%'}}></i></div><b>{v}/10</b></div>)}
    </div></Section>
   </div>
+  {client.commercial?.score!==undefined&&<Section title="Inteligência aprendida com o histórico de negócios"><div className="learned-business-grid"><div><small>SCORE DE POTENCIAL</small><b>{client.commercial.score}/100</b><span>{client.commercial.priority} prioridade</span></div><div><small>VOLUME HISTÓRICO</small><b>R$ {Number(client.commercial.revenue||0).toLocaleString('pt-BR')}</b><span>{client.commercial.frequency||0} negócios reconhecidos</span></div><div><small>TICKET MÉDIO</small><b>R$ {Number(client.commercial.averageTicket||0).toLocaleString('pt-BR',{maximumFractionDigits:0})}</b><span>{client.commercial.conversion||0}% de conversão</span></div><div><small>CONFIANÇA DA VAL</small><b>{client.commercial.learningConfidence||0}%</b><span>{(client.commercial.categories||[]).join(' • ')||'Categorias a reconhecer'}</span></div></div></Section>}
   <Section title="Complemento técnico preenchido pelo consultor">
    <div className="form-grid">
     <label>Propriedade<input value={tech.property} onChange={e=>setTech({...tech,property:e.target.value})}/></label>
