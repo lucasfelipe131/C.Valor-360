@@ -10,6 +10,7 @@ import {deriveSignals,normalizeIntegrationEvent,requiresTechnicalSignature,verif
 import {ValRepository} from './server/repository.js'
 import {publicStorageScope} from './server/storage-policy.js'
 import {ValEngine} from './server/val-engine.js'
+import {buildSurveyOptions,validateSurveyAnswers} from './server/survey-validation.js'
 import {calculateProfile} from './src/lib/profile.js'
 import {buildCommercialIntelligence,summarizeLearning} from './src/lib/commercial-intelligence.js'
 
@@ -19,7 +20,7 @@ const root=resolve(appRoot,'dist')
 const dataRoot=process.env.DATA_DIR||join(appRoot,'.data')
 const storePath=join(dataRoot,'valor360-store.json')
 const profileMatrix=JSON.parse(readFileSync(join(appRoot,'src','data','profile-matrix.json'),'utf8'))
-const surveyOptions=profileMatrix.reduce((map,item)=>{(map[item.Pergunta]??=new Set()).add(item.Alternativa);return map},{})
+const surveyOptions=buildSurveyOptions(profileMatrix)
 const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp','.woff2':'font/woff2'}
 const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=()','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"}
 
@@ -34,17 +35,7 @@ async function body(request){const raw=await rawBody(request);try{return raw?JSO
 async function limitedResponseText(upstream,limit){const reader=upstream.body?.getReader();if(!reader)return upstream.text();const chunks=[];let size=0;while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>limit){await reader.cancel();throw Object.assign(new Error('A planilha excede o limite seguro de importação.'),{statusCode:413})}chunks.push(value)}return new TextDecoder().decode(Buffer.concat(chunks.map(chunk=>Buffer.from(chunk))))}
 const clean=value=>String(value||'').trim().slice(0,240)
 const feedbackOutcomes={used:'executed',adapted:'edited',scheduled:'scheduled',discarded:'rejected',accepted:'accepted',edited:'edited',rejected:'rejected',executed:'executed',won:'won',lost:'lost'}
-function validatedSurveyAnswers(input){
- const answers={}
- for(let id=1;id<=27;id++){
-  const raw=input?.[id]
-  if(id>=19&&id<=24){const value=Number(raw);if(!Number.isInteger(value)||value<0||value>10)throw new Error(`A resposta ${id} precisa estar entre 0 e 10.`);answers[id]=value;continue}
-  const value=String(raw??'').trim().slice(0,2000);if(!value)throw new Error('Todas as 27 respostas são obrigatórias.')
-  if(id>=6&&id<=18&&!surveyOptions[id]?.has(value))throw new Error(`A alternativa da resposta ${id} não é válida.`)
-  answers[id]=value
- }
- return answers
-}
+const validatedSurveyAnswers=input=>validateSurveyAnswers(input,surveyOptions)
 
 const database=createDatabase(config)
 const auth=createAuth(config)

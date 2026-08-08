@@ -12,7 +12,7 @@ export default function Sidebar({page,setPage,currentUser}){
  const initials=currentUser?.email?currentUser.email.split('@')[0].split(/[._-]/).slice(0,2).map(part=>part[0]).join('').toUpperCase():'VA'
  return <aside className="sidebar">
   <Logo/>
-  <nav>{items.map(([id,label,Icon])=><button key={id} className={page===id?'active':''} onClick={()=>setPage(id)}><Icon size={18}/><span>{label}</span></button>)}</nav>
+  <nav aria-label="Módulos">{items.map(([id,label,Icon])=><button type="button" key={id} className={page===id?'active':''} aria-current={page===id?'page':undefined} onClick={()=>setPage(id)}><Icon size={18}/><span>{label}</span></button>)}</nav>
   <div className="user-card"><div className="user-avatar">{initials}</div><div><strong>{account}</strong><small>{currentUser?.demo?'Modo demonstrativo':'Acesso protegido do piloto'}</small></div></div>
  </aside>
 }

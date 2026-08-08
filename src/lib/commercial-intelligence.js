@@ -27,6 +27,7 @@ export function parseMoney(value){
  let raw=String(value||'').replace(/R\$|\s/g,'')
  if(raw.includes(',')&&raw.includes('.'))raw=raw.lastIndexOf(',')>raw.lastIndexOf('.')?raw.replace(/\./g,'').replace(',','.'):raw.replace(/,/g,'')
  else if(raw.includes(','))raw=raw.replace(',','.')
+ else if(/^-?\d{1,3}(?:\.\d{3})+$/.test(raw))raw=raw.replace(/\./g,'')
  const normalized=raw.replace(/[^0-9.-]/g,'');if(!normalized||!/\d/.test(normalized))return 0
  const number=Number(normalized);return Number.isFinite(number)?number:0
 }
@@ -67,7 +68,7 @@ export function buildCommercialIntelligence(rows,mapping){
   else if(mapping.product&&group.products.size===1)opportunity='Hipótese: verificar se existe necessidade em outras categorias'
   else if(conversion!==null&&conversion<.5)opportunity='Hipótese: revisar motivos registrados e proposta de valor'
   else if(score>=75)opportunity='Hipótese: confirmar janela e planejamento da próxima decisão'
-  return {id:`${slug(group.name)}-importado`,name:group.name,municipality:group.municipality,area:group.area,cultures:group.culture,relationshipTime:'Histórico importado',primaryProfile:'A classificar',secondaryProfile:'Aguardando Produtor 360',scores:{},irt:0,irtBand:'Aguardando Produtor 360',nps:0,npsClass:'A medir',servicePreference:'A reconhecer',contactFrequency:days===null?'A confirmar; nenhuma data válida importada':'A confirmar; recência histórica disponível',contentPreference:'A confirmar com o produtor',postSalePreference:'A reconhecer',commercial:{potential:0,potentialValidated:false,lastContactDays:days,priority:score>=75?'Alta':score>=50?'Média':'Nutrir',opportunity,property:group.municipality,score,revenue:group.revenue,frequency:group.rows.length,averageTicket:avgTicket,conversion:conversion===null?null:Math.round(conversion*100),knownOutcomes:group.knownOutcomes,categories:[...group.products],lastBusinessAt:group.lastDate?.toISOString()||null,evidenceCoverage},source:'Base Inteligente'}
+  return {id:slug(group.name),name:group.name,municipality:group.municipality,area:group.area,cultures:group.culture,relationshipTime:'Histórico importado',primaryProfile:'A classificar',secondaryProfile:'Aguardando Produtor 360',scores:{},irt:0,irtBand:'Aguardando Produtor 360',nps:0,npsClass:'A medir',servicePreference:'A reconhecer',contactFrequency:days===null?'A confirmar; nenhuma data válida importada':'A confirmar; recência histórica disponível',contentPreference:'A confirmar com o produtor',postSalePreference:'A reconhecer',commercial:{potential:0,potentialValidated:false,lastContactDays:days,priority:score>=75?'Alta':score>=50?'Média':'Nutrir',opportunity,property:'',score,revenue:group.revenue,frequency:group.rows.length,averageTicket:avgTicket,conversion:conversion===null?null:Math.round(conversion*100),knownOutcomes:group.knownOutcomes,categories:[...group.products],lastBusinessAt:group.lastDate?.toISOString()||null,evidenceCoverage},source:'Base Inteligente'}
  })
 }
 

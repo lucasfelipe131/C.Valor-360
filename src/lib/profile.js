@@ -10,10 +10,11 @@ export function calculateProfile(answers,matrix,source='Produtor 360'){
  const irt=Math.round(scale.reduce((sum,value)=>sum+value,0)*2)
  const nps=Number(answers[24]||0)
  const name=String(answers[1]||'Produtor sem nome').trim()
+ const municipality=String(answers[2]||'A definir').trim()
  return {
-  id:`${slug(name)||'produtor'}-${Date.now()}`,
+  id:slug(name)||`produtor-${slug(municipality)||'sem-localidade'}`,
   name,
-  municipality:String(answers[2]||'A definir'),
+  municipality,
   area:String(answers[3]||'A definir'),
   cultures:String(answers[4]||'A definir'),
   relationshipTime:String(answers[5]||'A definir'),
@@ -26,7 +27,7 @@ export function calculateProfile(answers,matrix,source='Produtor 360'){
   npsClass:nps>=9?'Promotor':nps>=7?'Neutro':'Detrator',
   valuedAspect:String(answers[25]||'A registrar'),
   missingFor10:String(answers[26]||''),
-  additionalNeed:String(answers[27]||''),
+  additionalNeed:answers[27]==null?null:String(answers[27]),
   decisionParticipants:String(answers[6]||''),
   decisionDriver:String(answers[7]||''),
   technicalPresentation:String(answers[8]||''),
@@ -41,7 +42,7 @@ export function calculateProfile(answers,matrix,source='Produtor 360'){
   contentPreference:String(answers[17]||''),
   postSalePreference:String(answers[18]||''),
   scoresScale:{trust:answers[19],contact:answers[20],value:answers[21],innovation:answers[22],continuity:answers[23],recommendation:answers[24]},
-  commercial:{potential:0,lastContactDays:null,priority:'Nova',opportunity:String(answers[27]||'Descoberta inicial'),property:'A cadastrar'},
+  commercial:{potential:0,potentialValidated:false,lastContactDays:null,priority:'A avaliar',opportunity:String(answers[27]||''),property:''},
   source,
   profileUpdatedAt:new Date().toISOString()
  }

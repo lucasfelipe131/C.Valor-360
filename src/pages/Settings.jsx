@@ -63,7 +63,7 @@ export default function Settings({clients,visits,currentUser,onLogout,onNotify})
   const payload={version:'0.4.0',exportedAt:new Date().toISOString(),clients,visits,opportunities:JSON.parse(localStorage.getItem('valor360-opportunities')||'[]')}
   const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='valor360-backup.json';a.click();URL.revokeObjectURL(url);onNotify?.('Backup do piloto gerado com sucesso.')
  }
- const clear=()=>{if(window.confirm('Limpar os dados adicionados neste dispositivo e voltar à base piloto?')){['valor360-clients','valor360-visits','valor360-opportunities'].forEach(key=>localStorage.removeItem(key));window.location.reload()}}
+ const clear=()=>{if(window.confirm('Limpar rascunhos e dados locais deste dispositivo? Os registros do PostgreSQL não serão apagados.')){Object.keys(localStorage).filter(key=>['valor360-clients','valor360-visits','valor360-opportunities'].includes(key)||key.startsWith('valor360-client-context:')).forEach(key=>localStorage.removeItem(key));window.location.reload()}}
 
  const statusKnown=Boolean(valStatus.data)&&!valStatus.error
  const keyConfigured=statusKnown?Boolean(valStatus.data?.keyConfigured??valStatus.data?.aiConfigured):null
@@ -108,6 +108,6 @@ export default function Settings({clients,visits,currentUser,onLogout,onNotify})
    <article className="panel setting-card"><div className="setting-icon cyan-icon"><ShieldCheck/></div><h3>Governança da VAL</h3><ul className="guardrail-list"><li><CheckCircle2/>Premissas e confiança visíveis</li><li><CheckCircle2/>Evidências rastreáveis</li><li><CheckCircle2/>Decisão final do consultor</li><li><CheckCircle2/>Sem inventar dado agronômico</li></ul><span className="version-chip">VAL Engine • ambiente controlado</span></article>
   </section>
 
-  <article className="panel admin-panel"><div><span className="eyebrow">ADMINISTRAÇÃO</span><h3>Portabilidade e controle</h3><p>Exporte os dados antes de restaurar a base deste dispositivo. A remoção local não apaga registros mantidos por integrações corporativas.</p></div><div className="admin-actions"><button className="soft-btn danger-text" onClick={clear}><Trash2 size={16}/>Restaurar base piloto</button></div></article>
+  <article className="panel admin-panel"><div><span className="eyebrow">ADMINISTRAÇÃO</span><h3>Portabilidade e controle</h3><p>Exporte os dados antes de limpar este dispositivo. A remoção local não apaga registros mantidos no PostgreSQL ou por integrações corporativas.</p></div><div className="admin-actions"><button className="soft-btn danger-text" onClick={clear}><Trash2 size={16}/>Limpar dados locais</button></div></article>
  </div>
 }

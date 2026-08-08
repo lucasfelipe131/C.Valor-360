@@ -12,6 +12,8 @@ test('importação comercial preserva data e resultado ausentes como desconhecid
   assert.equal(client.commercial.lastBusinessAt,null)
   assert.equal(client.commercial.conversion,null)
   assert.equal(client.commercial.knownOutcomes,0)
+  assert.equal(client.id,'fazenda-horizonte')
+  assert.equal(client.commercial.property,'')
   assert.doesNotMatch(client.commercial.opportunity,/reativar|motivos registrados/i)
 })
 
