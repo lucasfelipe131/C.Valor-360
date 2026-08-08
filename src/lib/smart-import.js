@@ -73,7 +73,7 @@ function questionFor(label){
 function normalizeAnswer(question,value){
  if(value===undefined||value===null)return ''
  const raw=String(value).trim();if(!raw)return ''
- if(question.id>=19&&question.id<=24){const number=Math.max(0,Math.min(10,Number(raw.replace(',','.'))));return Number.isFinite(number)?number:''}
+ if(question.id>=19&&question.id<=24){const number=Number(raw.replace(',','.'));return Number.isFinite(number)&&number>=0&&number<=10?number:''}
  const options=[...new Set(matrix.filter(item=>item.Pergunta===question.id).map(item=>item.Alternativa))]
  if(!options.length)return raw
  const ranked=options.map(option=>({option,score:similarity(raw,option)+(normalizeText(raw)===normalizeText(option)?1:0)})).sort((a,b)=>b.score-a.score)

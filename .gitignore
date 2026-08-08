@@ -1,5 +1,9 @@
 node_modules/
 dist/
-.DS_Store
-*.log
 .data/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.log
+coverage/

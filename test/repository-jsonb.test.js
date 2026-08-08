@@ -1,0 +1,196 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import {ValRepository,jsonbParameter} from '../server/repository.js'
+
+const repositoryWith=db=>new ValRepository({
+  db,
+  tenantId:'00000000-0000-4000-8000-000000000001',
+  readStore:()=>({surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[]}}),
+  saveStore:()=>{}
+})
+
+test('parâmetro JSONB serializa objetos e arrays vazios ou preenchidos como JSON válido',()=>{
+  assert.equal(jsonbParameter([]),'[]')
+  assert.equal(jsonbParameter({}),'{}')
+  assert.deepEqual(JSON.parse(jsonbParameter(['signal-1',{source:'field'}])),['signal-1',{source:'field'}])
+  assert.equal(jsonbParameter(undefined),null)
+})
+
+test('perfil assistido envia answers, evidence e snapshot como strings JSONB',async()=>{
+  const calls=[]
+  const query=async(sql,params=[])=>{
+    calls.push({sql,params})
+    if(sql.includes('INSERT INTO clients'))return {rowCount:1,rows:[{id:'client-db-id'}]}
+    return {rowCount:1,rows:[]}
+  }
+  const db={configured:true,transaction:work=>work({query})}
+  const repository=repositoryWith(db)
+  await repository.saveSurveyProfile({
+    answers:{7:'Segurança'},
+    result:{id:'cliente-externo',name:'Cliente Canônico',decisionDriver:'Segurança',scores:{analitico:4},commercial:{priority:'Alta'}},
+    source:'assisted_survey'
+  })
+
+  const clientCall=calls.find(call=>call.sql.includes('INSERT INTO clients'))
+  const profileCall=calls.find(call=>call.sql.includes('INSERT INTO client_profiles'))
+  assert.deepEqual(JSON.parse(clientCall.params[7]),{priority:'Alta'})
+  assert.deepEqual(JSON.parse(profileCall.params[6]),{7:'Segurança'})
+  assert.deepEqual(JSON.parse(profileCall.params[7]),[{source:'assisted_survey',self_reported:true}])
+  assert.equal(JSON.parse(profileCall.params[8]).decisionDriver,'Segurança')
+  assert.equal(JSON.parse(profileCall.params[8]).profileVersion,'producer-360-v1')
+})
+
+test('recomendação e model_run serializam arrays e detalhes de erro explicitamente',async()=>{
+  const calls=[]
+  const query=async(sql,params=[])=>{
+    calls.push({sql,params})
+    if(sql.startsWith('SELECT id,external_key FROM clients'))return {rowCount:1,rows:[{id:'client-db-id',external_key:'client-ext'}]}
+    return {rowCount:1,rows:[]}
+  }
+  const repository=repositoryWith({configured:true,transaction:work=>work({query})})
+  await repository.recordRecommendation({
+    clientId:'client-ext',question:'Próxima ação?',mode:'daily',model:'model-test',context:{signals:[]},
+    advice:{evidence_used:[{source_id:'signal-1'}],confidence:{score:60},human_review:{required:false}},
+    modelRun:{model:'model-test',status:'failed',errorDetails:{causes:['timeout']}}
+  })
+
+  const recommendation=calls.find(call=>call.sql.includes('INSERT INTO val_recommendations'))
+  const modelRun=calls.find(call=>call.sql.includes('INSERT INTO model_runs'))
+  assert.deepEqual(JSON.parse(recommendation.params[8]),{signals:[]})
+  assert.deepEqual(JSON.parse(recommendation.params[9]),['signal-1'])
+  assert.equal(JSON.parse(recommendation.params[10]).confidence.score,60)
+  assert.deepEqual(JSON.parse(modelRun.params[10]),{causes:['timeout']})
+})
+
+test('ingestão especializada serializa payload, arrays validados, achados e evidências',async()=>{
+  const calls=[]
+  const query=async(sql,params=[])=>{
+    calls.push({sql,params})
+    if(sql.includes('INSERT INTO integration_events'))return {rowCount:1,rows:[{id:'event-db-id'}]}
+    if(sql.includes('INSERT INTO field_reports'))return {rowCount:1,rows:[{id:'report-db-id'}]}
+    return {rowCount:1,rows:[]}
+  }
+  const repository=repositoryWith({configured:true,transaction:work=>work({query})})
+  const event={
+    externalId:'field-001',type:'field_report.completed',schemaVersion:1,source:'manual-do-agronomo',
+    occurredAt:'2026-08-08T12:00:00.000Z',payloadHash:'hash',
+    payload:{
+      validatedActions:['vistoria'],findings:[{type:'weed',confidence:70}],
+      validation:{status:'approved',reviewerId:'agronomo-1',reviewedAt:'2026-08-08T12:00:00.000Z'}
+    }
+  }
+  await repository.ingestEvent({event,signals:[{type:'field_follow_up',severity:'attention',title:'Vistoria',evidence:{actions:['vistoria']},commercialHypothesis:'Confirmar em campo',requiresAgronomist:true,status:'new'}]})
+
+  const envelope=calls.find(call=>call.sql.includes('INSERT INTO integration_events'))
+  const report=calls.find(call=>call.sql.includes('INSERT INTO field_reports'))
+  const finding=calls.find(call=>call.sql.includes('INSERT INTO field_observations'))
+  const signal=calls.find(call=>call.sql.includes('INSERT INTO agronomic_signals'))
+  assert.equal(JSON.parse(envelope.params[9]).validatedActions[0],'vistoria')
+  assert.deepEqual(JSON.parse(report.params[12]),['vistoria'])
+  assert.equal(JSON.parse(report.params[13]).status,'approved')
+  assert.equal(JSON.parse(finding.params[3]).type,'weed')
+  assert.deepEqual(JSON.parse(signal.params[11]),{actions:['vistoria']})
+})
+
+test('idempotência rejeita o mesmo externalId quando o payload_hash diverge',async()=>{
+  const event={externalId:'event-001',type:'business.closed',schemaVersion:1,source:'manual',occurredAt:'2026-08-08T12:00:00.000Z',payload:{value:100},payloadHash:'hash-novo'}
+  const makeRepository=existingHash=>repositoryWith({configured:true,transaction:work=>work({query:async sql=>{
+    if(sql.includes('INSERT INTO integration_events'))return {rowCount:0,rows:[]}
+    if(sql.startsWith('SELECT payload_hash'))return {rowCount:1,rows:[{payload_hash:existingHash}]}
+    return {rowCount:1,rows:[]}
+  }})})
+
+  assert.deepEqual(await makeRepository('hash-novo').ingestEvent({event,signals:[]}),{duplicate:true,signals:0})
+  await assert.rejects(makeRepository('hash-antigo').ingestEvent({event,signals:[]}),error=>error.statusCode===409&&/conteúdo diferente/.test(error.message))
+})
+
+test('feedback atualizado retorna o id persistido pelo UPSERT',async()=>{
+  const repository=repositoryWith({configured:true,query:async()=>({rowCount:1,rows:[{id:'feedback-existente'}]})})
+  const id=await repository.recordFeedback({recommendationId:'recommendation-id',rating:5})
+  assert.equal(id,'feedback-existente')
+})
+
+test('contexto técnico expira a versão ativa e insere uma nova memória append-only',async()=>{
+  const calls=[]
+  const query=async(sql,params=[])=>{
+    calls.push({sql,params})
+    if(sql.startsWith('SELECT id FROM clients'))return {rowCount:1,rows:[{id:'client-db-id'}]}
+    if(sql.startsWith('UPDATE val_memories'))return {rowCount:2,rows:[{id:'memory-1'},{id:'memory-2'}]}
+    return {rowCount:1,rows:[]}
+  }
+  const repository=repositoryWith({configured:true,transaction:work=>work({query})})
+  await repository.saveTechnicalContext('client-ext',{property:'Fazenda Sul',soil:'Argiloso',goal:'Produtividade'})
+
+  const clientLock=calls.find(call=>call.sql.startsWith('SELECT id FROM clients'))
+  const expiration=calls.find(call=>call.sql.startsWith('UPDATE val_memories'))
+  const insertion=calls.find(call=>call.sql.includes('INSERT INTO val_memories'))
+  assert.match(clientLock.sql,/FOR UPDATE/)
+  assert.match(expiration.sql,/status='expired'/)
+  assert.match(expiration.sql,/valid_until=NOW\(\)/)
+  assert.doesNotMatch(expiration.sql,/SET value=/)
+  assert.deepEqual(JSON.parse(insertion.params[2]),{property:'Fazenda Sul',crops:'',area:'',weeds:'',diseases:'',insects:'',soil:'Argiloso',goal:'Produtividade',competitors:'',notes:''})
+  assert.deepEqual(JSON.parse(insertion.params[3])[0].supersedes,['memory-1','memory-2'])
+})
+
+test('fallback demonstrativo também mantém histórico do contexto técnico',async()=>{
+  let store={surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[],technicalContexts:{}}}
+  const repository=new ValRepository({db:{configured:false},tenantId:'tenant',readStore:()=>store,saveStore:next=>{store=next}})
+  await repository.saveTechnicalContext('client-ext',{property:'Versão 1'})
+  await repository.saveTechnicalContext('client-ext',{property:'Versão 2'})
+  assert.equal(store.val.technicalContexts['client-ext'].property,'Versão 2')
+  assert.equal(store.val.technicalContextHistory.length,1)
+  assert.equal(store.val.technicalContextHistory[0].property,'Versão 1')
+  assert.equal(store.val.technicalContextHistory[0].status,'expired')
+})
+
+test('importação não fabrica data ou desfecho e serializa o registro aceito',async()=>{
+  const calls=[]
+  const query=async(sql,params=[])=>{
+    calls.push({sql,params})
+    if(sql.includes('INSERT INTO clients'))return {rowCount:1,rows:[{id:'client-db-id',external_key:'fazenda-a-importado'}]}
+    return {rowCount:1,rows:[]}
+  }
+  const repository=repositoryWith({configured:true,transaction:work=>work({query})})
+  await repository.ingestCommercialImport({
+    summary:{id:'import-1',fileName:'historico.xlsx',rowCount:3,createdAt:'2026-08-08T12:00:00.000Z'},
+    clients:[{id:'fazenda-a-importado',name:'Fazenda A',commercial:{categories:[]}}],
+    mapping:{client:'Cliente',status:'Status',date:'Data',value:'Valor'},
+    rows:[
+      {Cliente:'Fazenda A',Status:'Fechado',Data:'01/08/2026',Valor:'100'},
+      {Cliente:'Fazenda A',Status:'Em análise',Data:'02/08/2026',Valor:'200'},
+      {Cliente:'Fazenda A',Status:'Perdido',Data:'',Valor:'300'}
+    ]
+  })
+
+  const imports=calls.find(call=>call.sql.includes('INSERT INTO import_jobs'))
+  const client=calls.find(call=>call.sql.includes('INSERT INTO clients'))
+  const events=calls.filter(call=>call.sql.includes('INSERT INTO business_events'))
+  assert.equal(JSON.parse(imports.params[5]).fileName,'historico.xlsx')
+  assert.deepEqual(JSON.parse(client.params[5]),{categories:[]})
+  assert.equal(events.length,1)
+  assert.equal(events[0].params[5],'won')
+  assert.match(events[0].params[4],/^2026-08-01T/)
+  assert.equal(JSON.parse(events[0].params[10]).status,'Fechado')
+})
+
+test('leitura reidrata o snapshot sem permitir que ele substitua campos canônicos',async()=>{
+  const db={configured:true,query:async sql=>{
+    if(sql.startsWith('SELECT summary'))return {rows:[]}
+    return {rows:[{
+      external_key:'client-ext',name:'Nome Canônico',municipality:'Município Canônico',total_area_ha:'150',cultures:'Soja',preferred_channel:'Visita',
+      commercial_profile:{priority:'Média'},primary_profile:'Analítico',secondary_profile:'Relacional',irt_score:'72',nps_score:9,
+      profile_snapshot:{name:'Nome Antigo',municipality:'Município Antigo',decisionDriver:'Segurança',servicePreference:'WhatsApp',scoresScale:{trust:8},commercial:{priority:'Alta',property:'Talhão 1'},profileVersion:'producer-360-v1'},
+      profile_assessed_at:new Date('2026-08-01T12:00:00Z'),profile_valid_until:new Date('2027-02-01T12:00:00Z')
+    }]}
+  }}
+  const result=await repositoryWith(db).getIntelligence()
+  const [client]=result.clients
+  assert.equal(client.name,'Nome Canônico')
+  assert.equal(client.municipality,'Município Canônico')
+  assert.equal(client.decisionDriver,'Segurança')
+  assert.deepEqual(client.scoresScale,{trust:8})
+  assert.equal(client.servicePreference,'Visita')
+  assert.deepEqual(client.commercial,{priority:'Média',property:'Talhão 1'})
+  assert.equal(client.profileVersion,'producer-360-v1')
+  assert.equal(client.profileUpdatedAt,'2026-08-01T12:00:00.000Z')
+})

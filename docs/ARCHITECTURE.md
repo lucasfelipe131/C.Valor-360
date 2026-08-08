@@ -4,13 +4,13 @@
 **VALOR 360 = CRM empresarial + Cliente 360 + Inteligência Agronômica + VAL**
 
 - **Cliente 360:** perfil, NPS, IRT, preferências, histórico e contexto do produtor.
-- **Inteligência Agronômica:** conjunto completo de motores técnicos dentro do VALOR 360.
+- **Inteligência Agronômica:** sinais, integrações e futuros motores técnicos dentro do VALOR 360, sempre sob validação habilitada.
 - **VAL — Value Agriculture Intelligence:** cérebro que transforma dados em próxima melhor ação.
 
 ## Portfólio de produtos
 
 ### VALOR 360
-Plataforma completa para empresas. Reúne CRM, gestão de carteira, visitas, oportunidades, indicadores, VAL e todos os módulos de inteligência agronômica na mesma experiência, autenticação e base de dados.
+Visão de produto empresarial. O piloto reúne CRM, carteira, visitas, oportunidades, indicadores e VAL na mesma experiência; os módulos agronômicos exibidos no aplicativo são roadmap, enquanto a integração técnica atual recebe eventos JSON estruturados do Manual.
 
 ### Manual do Agrônomo
 Produto independente e de menor ticket, voltado ao uso técnico individual ou por pequenas equipes. Mantém marca, planos, autenticação, implantação e dados separados. Não inclui CRM empresarial, pipeline comercial nem a inteligência gerencial da VAL.
@@ -30,7 +30,7 @@ As regras agronômicas, calculadoras, conectores oficiais e validações devem e
 9. Configurações
 
 ## Estratégia de dados
-Por enquanto, as 27 perguntas atuais do Produtor 360 são mantidas.
+As 27 perguntas atuais do Produtor 360 são mantidas por compatibilidade. Os cinco perfis são tags legadas de preferência, não diagnóstico psicológico nem evidência suficiente para decidir abordagem, preço, crédito ou condição. A VAL prioriza objetivo, preferência de prova declarada, reversibilidade, governança, horizonte, prontidão e confiança observada.
 O consultor complementa na ficha Cliente 360:
 - propriedade;
 - plantas daninhas;
@@ -41,13 +41,16 @@ O consultor complementa na ficha Cliente 360:
 - concorrentes e categorias adquiridas fora da empresa;
 - observações.
 
-## MVP
-A versão atual é frontend navegável com dados reais das primeiras respostas.
-O próximo passo é:
-- PostgreSQL;
-- login;
-- persistência;
-- API;
-- VAL com modelo de IA;
-- migração gradual dos motores agronômicos para componentes compartilhados;
+## Estado da versão 0.4
+
+O piloto já possui API, autenticação mínima, PostgreSQL, engine da VAL, feedback, importação comercial e webhook JSON estruturado do Manual. Sem banco, só funciona quando `VAL_DEMO_MODE=true` foi ativado explicitamente; fora desse modo, banco e acesso falham fechados. A chave da OpenAI é opcional apenas para o fallback demonstrativo.
+
+Próximas camadas empresariais:
+
+- identidade corporativa, papéis e tenant autenticado;
+- RLS e testes de isolamento entre empresas;
+- object storage, quarentena, antivírus e OCR;
+- PostGIS e processamento de raster/COG;
+- feature store e ranker offline com joins point-in-time;
+- avaliação contínua, shadow mode, canário e rollback;
 - licenciamento independente por produto, plano, empresa e usuário.

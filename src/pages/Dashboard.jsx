@@ -34,7 +34,7 @@ const compactDate=value=>{
 }
 
 export default function Dashboard({clients,visits,setPage,onClient,onPrepare}){
- const totalPotential=clients.reduce((sum,client)=>sum+Number(client.commercial?.potential||0),0)
+ const totalPotential=clients.reduce((sum,client)=>sum+(client.commercial?.potentialValidated===false?0:Number(client.commercial?.potential||0)),0)
  const irt=(clients.reduce((sum,client)=>sum+Number(client.irt||0),0)/Math.max(clients.length,1)).toFixed(1)
  const priorities=[...clients].sort((a,b)=>(b.commercial?.potential||0)-(a.commercial?.potential||0)).slice(0,3)
  const nextVisit=[...(visits||[])].sort((a,b)=>`${a.date||''}${a.time||''}`.localeCompare(`${b.date||''}${b.time||''}`))[0]
@@ -77,7 +77,7 @@ export default function Dashboard({clients,visits,setPage,onClient,onPrepare}){
    <KpiCard icon={Percent} label="IRT médio" value={irt} delta="Relacionamento estratégico" tone="green"/>
   </section>
 
-  <section className="priority-strip"><div className="priority-copy"><span className="eyebrow">PRIORIDADE DA VAL</span><h3>Quem merece sua atenção agora</h3><p>Potencial, tempo sem contato e oportunidade combinados.</p></div>{priorities.map((client,index)=><button key={client.id} onClick={()=>onClient(client)}><span>{String(index+1).padStart(2,'0')}</span><div><b>{client.name}</b><small>{client.commercial?.opportunity}</small></div><strong>R$ {Math.round((client.commercial?.potential||0)/1000)}k</strong><ArrowUpRight/></button>)}</section>
+  <section className="priority-strip"><div className="priority-copy"><span className="eyebrow">PRIORIDADE DA VAL</span><h3>Quem merece sua atenção agora</h3><p>Valor validado, recência e índice de triagem — com hipóteses explícitas.</p></div>{priorities.map((client,index)=><button key={client.id} onClick={()=>onClient(client)}><span>{String(index+1).padStart(2,'0')}</span><div><b>{client.name}</b><small>{client.commercial?.opportunity}</small></div><strong>{client.commercial?.potentialValidated===false?`Índice ${client.commercial?.score||0}`:`R$ ${Math.round((client.commercial?.potential||0)/1000)}k`}</strong><ArrowUpRight/></button>)}</section>
 
   <section className="dashboard-grid home-analysis">
    <article className="panel chart-panel">
@@ -97,7 +97,7 @@ export default function Dashboard({clients,visits,setPage,onClient,onPrepare}){
 
   <section className="dashboard-grid lower home-analysis">
    <article className="panel segment-panel">
-    <div className="panel-head"><div><span className="eyebrow">CARTEIRA</span><h3>Perfis dos produtores</h3></div></div>
+    <div className="panel-head"><div><span className="eyebrow">CARTEIRA</span><h3>Tags autodeclaradas</h3></div></div>
     <div className="donut-wrap"><div className="donut"><div><b>{clients.length}</b><small>Produtores</small></div></div>
     <div className="legend">{['Analítico','Relacional','Conservador','Digital'].map((profile,index)=><span key={profile}><i className={`dot d${index}`}/>{profile}</span>)}</div></div>
    </article>
