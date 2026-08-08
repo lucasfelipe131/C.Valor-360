@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {ValRepository,jsonbParameter} from '../server/repository.js'
+import {ValRepository,jsonbParameter,parseCultivatedArea} from '../server/repository.js'
 
 const repositoryWith=db=>new ValRepository({
   db,
@@ -14,6 +14,12 @@ test('parâmetro JSONB serializa objetos e arrays vazios ou preenchidos como JSO
   assert.equal(jsonbParameter({}),'{}')
   assert.deepEqual(JSON.parse(jsonbParameter(['signal-1',{source:'field'}])),['signal-1',{source:'field'}])
   assert.equal(jsonbParameter(undefined),null)
+})
+
+test('faixa de área permanece texto e hectare exato permanece número',()=>{
+  assert.deepEqual(parseCultivatedArea('Acima de 1.000 hectares'),{totalAreaHa:null,areaBand:'Acima de 1.000 hectares'})
+  assert.deepEqual(parseCultivatedArea('De 501 a 1.000 hectares'),{totalAreaHa:null,areaBand:'De 501 a 1.000 hectares'})
+  assert.deepEqual(parseCultivatedArea('1.000 hectares'),{totalAreaHa:1000,areaBand:null})
 })
 
 test('perfil assistido envia answers, evidence e snapshot como strings JSONB',async()=>{
@@ -33,11 +39,13 @@ test('perfil assistido envia answers, evidence e snapshot como strings JSONB',as
 
   const clientCall=calls.find(call=>call.sql.includes('INSERT INTO clients'))
   const profileCall=calls.find(call=>call.sql.includes('INSERT INTO client_profiles'))
-  assert.deepEqual(JSON.parse(clientCall.params[7]),{priority:'Alta'})
+  assert.deepEqual(JSON.parse(clientCall.params[8]),{priority:'Alta'})
   assert.deepEqual(JSON.parse(profileCall.params[6]),{7:'Segurança'})
   assert.deepEqual(JSON.parse(profileCall.params[7]),[{source:'assisted_survey',self_reported:true}])
   assert.equal(JSON.parse(profileCall.params[8]).decisionDriver,'Segurança')
   assert.equal(JSON.parse(profileCall.params[8]).profileVersion,'producer-360-v1')
+  assert.match(profileCall.params[9],/^assisted_survey:cliente-externo:[a-f0-9]{64}$/)
+  assert.match(profileCall.sql,/ON CONFLICT \(tenant_id,source_key\)/)
 })
 
 test('recomendação e model_run serializam arrays e detalhes de erro explicitamente',async()=>{
@@ -166,7 +174,7 @@ test('importação não fabrica data ou desfecho e serializa o registro aceito',
   const client=calls.find(call=>call.sql.includes('INSERT INTO clients'))
   const events=calls.filter(call=>call.sql.includes('INSERT INTO business_events'))
   assert.equal(JSON.parse(imports.params[5]).fileName,'historico.xlsx')
-  assert.deepEqual(JSON.parse(client.params[5]),{categories:[]})
+  assert.deepEqual(JSON.parse(client.params[6]),{categories:[]})
   assert.equal(events.length,1)
   assert.equal(events[0].params[5],'won')
   assert.match(events[0].params[4],/^2026-08-01T/)

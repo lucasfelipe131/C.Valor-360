@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS clients (
   name VARCHAR(180) NOT NULL,
   municipality VARCHAR(140),
   total_area_ha NUMERIC(14,2),
+  area_band VARCHAR(120),
   cultures TEXT,
   preferred_channel VARCHAR(60),
   commercial_profile JSONB NOT NULL DEFAULT '{}'::jsonb,
@@ -100,6 +101,7 @@ CREATE TABLE IF NOT EXISTS clients (
 );
 
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS commercial_profile JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS area_band VARCHAR(120);
 
 CREATE TABLE IF NOT EXISTS client_profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -112,6 +114,7 @@ CREATE TABLE IF NOT EXISTS client_profiles (
   answers JSONB NOT NULL DEFAULT '{}'::jsonb,
   evidence JSONB NOT NULL DEFAULT '[]'::jsonb,
   profile_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+  source_key VARCHAR(240),
   confidence INTEGER CHECK (confidence BETWEEN 0 AND 100),
   valid_until TIMESTAMPTZ,
   assessed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -122,6 +125,7 @@ ALTER TABLE survey_invitations DROP CONSTRAINT IF EXISTS survey_invitations_clie
 ALTER TABLE survey_invitations ADD CONSTRAINT survey_invitations_client_id_fkey FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL;
 ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS source_survey_id UUID REFERENCES survey_invitations(id) ON DELETE SET NULL;
 ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS profile_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE client_profiles ADD COLUMN IF NOT EXISTS source_key VARCHAR(240);
 UPDATE client_profiles profile
 SET profile_snapshot=survey.result
 FROM survey_invitations survey
@@ -583,6 +587,7 @@ CREATE INDEX IF NOT EXISTS idx_clients_tenant_name ON clients(tenant_id,name);
 CREATE INDEX IF NOT EXISTS idx_surveys_tenant_status ON survey_invitations(tenant_id,status,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_profiles_client_date ON client_profiles(tenant_id,client_id,assessed_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_source_survey ON client_profiles(source_survey_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_tenant_source_key ON client_profiles(tenant_id,source_key);
 CREATE INDEX IF NOT EXISTS idx_visits_client_date ON visits(tenant_id,client_id,scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_opportunities_stage ON opportunities(tenant_id,stage,next_action_at);
 CREATE INDEX IF NOT EXISTS idx_business_client_date ON business_events(tenant_id,client_external_key,occurred_at DESC);

@@ -54,22 +54,22 @@ export default function Opportunities({clients,onClient,onSaved}){
  return <div className="page-stack pipeline-page">
   <section className="pipeline-hero">
    <div className="pipeline-hero-copy">
-    <span className="pipeline-live"><i></i> PIPELINE INTELIGENTE</span>
-    <h2>Transforme potencial<br/>em valor realizado.</h2>
-    <p>Acompanhe cada oportunidade com clareza, priorize o próximo movimento e conduza a carteira até o fechamento.</p>
+    <span className="pipeline-live"><i></i> GESTÃO DO PIPELINE</span>
+    <h2>Negócios em movimento,<br/>sem ruído.</h2>
+    <p>Veja o que está em cada etapa, qual valor foi informado e qual compromisso precisa avançar com o produtor.</p>
     <div className="pipeline-hero-metrics">
-     <div><small>POTENCIAL MAPEADO</small><b>{money(metrics.total)}</b></div>
-     <div><small>VALOR INFORMADO EM ABERTO</small><b>{money(metrics.openValue)}</b></div>
-     <div><small>EM MOVIMENTO</small><b>{metrics.open} <span>negócios</span></b></div>
+     <div><small>VALOR TOTAL INFORMADO</small><b>{money(metrics.total)}</b></div>
+     <div><small>VALOR EM ABERTO</small><b>{money(metrics.openValue)}</b></div>
+     <div><small>OPORTUNIDADES ABERTAS</small><b>{metrics.open} <span>negócios</span></b></div>
     </div>
    </div>
    <div className="pipeline-focus-card">
-    <div className="pipeline-focus-head"><span><Sparkles/> PRÓXIMO MELHOR MOVIMENTO</span><b>{focus?`Etapa ${stages.indexOf(focus.stage)+1}/4`:'—'}</b></div>
+    <div className="pipeline-focus-head"><span><Sparkles/> MAIOR VALOR EM ABERTO</span><b>{focus?`Etapa ${stages.indexOf(focus.stage)+1} de 4`:'—'}</b></div>
     {focus?<>
      <div className="pipeline-focus-client"><span>{initials(clientOf(focus.clientId)?.name)}</span><div><small>{focus.stage}</small><h3>{clientOf(focus.clientId)?.name||'Produtor'}</h3></div></div>
      <p>{focus.title}</p>
      <div className="pipeline-focus-value"><span>Potencial da oportunidade</span><b>{money(focus.value)}</b></div>
-     <button onClick={()=>{const client=clientOf(focus.clientId);if(client)onClient(client)}}>Abrir visão 360 <ChevronRight/></button>
+     <button type="button" onClick={()=>{const client=clientOf(focus.clientId);if(client)onClient(client)}}>Abrir visão 360 <ChevronRight/></button>
     </>:<div className="pipeline-focus-empty"><CheckCircle2/><b>Carteira em dia</b><span>Não há oportunidades abertas.</span></div>}
    </div>
   </section>
@@ -77,7 +77,7 @@ export default function Opportunities({clients,onClient,onSaved}){
   <section className="pipeline-journey" aria-label="Etapas do pipeline">
    {stageConfig.map((stage,index)=>{
     const Icon=stage.icon
-    return <button key={stage.name} className={activeStage===stage.name?'active':''} onClick={()=>setActiveStage(stage.name)}>
+    return <button type="button" key={stage.name} className={activeStage===stage.name?'active':''} aria-pressed={activeStage===stage.name} onClick={()=>setActiveStage(stage.name)}>
      <span className={`pipeline-stage-icon stage-${index}`}><Icon/></span>
      <span><small>0{index+1} · {stage.label}</small><b>{stage.name}</b><em>{stage.hint}</em></span>
      <strong>{stageTotals[stage.name].items.length}</strong>
@@ -88,7 +88,7 @@ export default function Opportunities({clients,onClient,onSaved}){
   <section className="pipeline-workspace">
    <header className="pipeline-board-head">
     <div><span className="eyebrow">VISÃO DA CARTEIRA</span><h2>Fluxo de oportunidades</h2><p>Avance cada negociação conforme o compromisso assumido com o produtor.</p></div>
-    <div><BarChart3/><span><small>VALOR JÁ CONVERTIDO</small><b>{money(metrics.closedValue)}</b></span></div>
+    <div><BarChart3/><span><small>VALOR MARCADO COMO FECHADO</small><b>{money(metrics.closedValue)}</b></span></div>
    </header>
    <div className="pipeline-board">
     {stageConfig.map((stage,index)=>{
@@ -107,12 +107,12 @@ export default function Opportunities({clients,onClient,onSaved}){
         return <article className="pipeline-card" key={item.id}>
          <div className="pipeline-card-client">
           <span>{initials(client?.name)}</span>
-          <button onClick={()=>client&&onClient(client)}>{client?.name||'Produtor'}<ChevronRight/></button>
+          <button type="button" onClick={()=>client&&onClient(client)}>{client?.name||'Produtor'}<ChevronRight/></button>
          </div>
          <h3>{item.title}</h3>
-         <div className="pipeline-card-value"><span><small>VALOR INFORMADO</small><b>{money(item.value)}</b></span><strong>Etapa {index+1}/4</strong></div>
-         <div className="pipeline-probability" aria-label={`Progresso no pipeline: etapa ${index+1} de 4`}><i style={{width:`${item.stageProgress}%`}}></i></div>
-         {stage.name!=='Fechado'?<button className="pipeline-advance" onClick={()=>advance(item)}>Avançar para {stageConfig[index+1].name}<ArrowRight/></button>:<div className="pipeline-won"><CheckCircle2/> Valor convertido</div>}
+         <div className="pipeline-card-value"><span><small>VALOR INFORMADO</small><b>{money(item.value)}</b></span><strong>Etapa {index+1} de 4</strong></div>
+         <div className="pipeline-stage-progress" aria-label={`Etapa ${index+1} de 4 no pipeline`}>{stageConfig.map((segment,segmentIndex)=><i className={segmentIndex<=index?'reached':''} key={segment.name}/>)}</div>
+         {stage.name!=='Fechado'?<button type="button" className="pipeline-advance" onClick={()=>advance(item)}>Avançar para {stageConfig[index+1].name}<ArrowRight/></button>:<div className="pipeline-won"><CheckCircle2/> Marcado como fechado</div>}
         </article>
        })}
        {!column.items.length&&<div className="pipeline-empty"><Target/><b>Nenhuma oportunidade</b><span>Os próximos negócios aparecerão aqui.</span></div>}

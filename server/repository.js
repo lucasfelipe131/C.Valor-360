@@ -1,4 +1,4 @@
-import {randomUUID} from 'node:crypto'
+import {createHash,randomUUID} from 'node:crypto'
 import {hasTechnicalApproval} from './ingestion.js'
 
 export function jsonbParameter(value){
@@ -14,8 +14,16 @@ const parseMoney=value=>{
   if(!raw)return null
   if(raw.includes(',')&&raw.includes('.'))raw=raw.lastIndexOf(',')>raw.lastIndexOf('.')?raw.replace(/\./g,'').replace(',','.'):raw.replace(/,/g,'')
   else if(raw.includes(','))raw=raw.replace(',','.')
+  else if(/^-?\d{1,3}(?:\.\d{3})+$/.test(raw))raw=raw.replace(/\./g,'')
   const normalized=raw.replace(/[^0-9.-]/g,'');if(!normalized||!/\d/.test(normalized))return null
   const number=Number(normalized);return Number.isFinite(number)?number:null
+}
+export const parseCultivatedArea=value=>{
+  const raw=String(value??'').trim()
+  if(!raw)return {totalAreaHa:null,areaBand:null}
+  if(/\b(?:acima|abaixo|até|ate|entre)\b/i.test(raw)||/\bde\s+\d[\d.,]*\s+a\s+\d/i.test(raw))return {totalAreaHa:null,areaBand:raw.slice(0,120)}
+  const numeric=raw.match(/-?\d[\d.,]*/)?.[0]||raw
+  return {totalAreaHa:parseMoney(numeric),areaBand:null}
 }
 const parsedDate=value=>{
   if(value instanceof Date&&!Number.isNaN(value.getTime()))return value.toISOString()
@@ -32,13 +40,14 @@ const domainError=(message,statusCode)=>Object.assign(new Error(message),{status
 const iso=value=>value instanceof Date?value.toISOString():value
 const jsonObject=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{}
 const snapshotFor=(result,source)=>({...jsonObject(result),profileVersion:String(result?.profileVersion||'producer-360-v1'),profileSource:source})
+const profileSourceKey=(source,externalKey,answers)=>`${source}:${externalKey}:${createHash('sha256').update(JSON.stringify(answers||{})).digest('hex')}`.slice(0,240)
 const clientFromRow=(row,{defaults=false}={})=>{
   const snapshot=jsonObject(row.profile_snapshot)
   return {...snapshot,
     id:row.external_key||row.id,
     name:row.name||snapshot.name,
     municipality:row.municipality||snapshot.municipality||(defaults?'A definir':null),
-    area:row.total_area_ha??snapshot.area??(defaults?'A definir':null),
+    area:row.area_band||(row.total_area_ha==null?(snapshot.area??(defaults?'A definir':null)):Number(row.total_area_ha)),
     cultures:row.cultures||snapshot.cultures||(defaults?'A definir':null),
     primaryProfile:row.primary_profile||snapshot.primaryProfile||(defaults?'A classificar':null),
     secondaryProfile:row.secondary_profile||snapshot.secondaryProfile||(defaults?'Aguardando observação':null),
@@ -88,8 +97,8 @@ export class ValRepository{
       const selected=await connection.query('SELECT id,status,answers,result FROM survey_invitations WHERE tenant_id=$1 AND token=$2 FOR UPDATE',[this.tenantId,token]);if(!selected.rowCount)throw domainError('Resposta não encontrada.',404)
       const survey=selected.rows[0];if(!survey.result)throw domainError('O questionário ainda não foi respondido.',409)
       if(survey.status!=='integrado'){
-        const result=survey.result;const externalKey=String(result.id||normalize(result.name).replace(/\s+/g,'-')||randomUUID()).slice(0,180)
-        const client=await connection.query(`INSERT INTO clients (tenant_id,external_key,name,municipality,total_area_ha,cultures,preferred_channel,commercial_profile,status,source,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active','producer_360',NOW()) ON CONFLICT (tenant_id,external_key) DO UPDATE SET name=EXCLUDED.name,municipality=EXCLUDED.municipality,total_area_ha=EXCLUDED.total_area_ha,cultures=EXCLUDED.cultures,preferred_channel=EXCLUDED.preferred_channel,commercial_profile=EXCLUDED.commercial_profile,updated_at=NOW() RETURNING id`,[this.tenantId,externalKey,String(result.name||'Produtor').slice(0,180),String(result.municipality||'').slice(0,140)||null,parseMoney(result.area),String(result.cultures||'').slice(0,1000)||null,String(result.servicePreference||'').slice(0,60)||null,jsonbParameter(result.commercial||{})])
+        const result=survey.result;const externalKey=String(result.id||normalize(result.name).replace(/\s+/g,'-')||randomUUID()).slice(0,180);const area=parseCultivatedArea(result.area)
+        const client=await connection.query(`INSERT INTO clients (tenant_id,external_key,name,municipality,total_area_ha,area_band,cultures,preferred_channel,commercial_profile,status,source,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'active','producer_360',NOW()) ON CONFLICT (tenant_id,external_key) DO UPDATE SET name=EXCLUDED.name,municipality=EXCLUDED.municipality,total_area_ha=COALESCE(EXCLUDED.total_area_ha,clients.total_area_ha),area_band=COALESCE(EXCLUDED.area_band,clients.area_band),cultures=EXCLUDED.cultures,preferred_channel=EXCLUDED.preferred_channel,commercial_profile=EXCLUDED.commercial_profile||clients.commercial_profile,updated_at=NOW() RETURNING id`,[this.tenantId,externalKey,String(result.name||'Produtor').slice(0,180),String(result.municipality||'').slice(0,140)||null,area.totalAreaHa,area.areaBand,String(result.cultures||'').slice(0,1000)||null,String(result.servicePreference||'').slice(0,60)||null,jsonbParameter(result.commercial||{})])
         await connection.query(`INSERT INTO client_profiles (tenant_id,client_id,primary_profile,secondary_profile,irt_score,nps_score,answers,evidence,profile_snapshot,valid_until,assessed_at,source_survey_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()+INTERVAL '180 days',NOW(),$10) ON CONFLICT (source_survey_id) DO NOTHING`,[this.tenantId,client.rows[0].id,result.primaryProfile||null,result.secondaryProfile||null,Number.isFinite(Number(result.irt))?Number(result.irt):null,Number.isFinite(Number(result.nps))?Number(result.nps):null,jsonbParameter(survey.answers||{}),jsonbParameter([{source:'producer_360',survey_id:survey.id,self_reported:true}]),jsonbParameter(snapshotFor(result,'producer_360')),survey.id])
         await connection.query(`UPDATE survey_invitations SET client_id=$3,status='integrado',integrated_at=NOW() WHERE tenant_id=$1 AND token=$2`,[this.tenantId,token,client.rows[0].id])
       }
@@ -99,7 +108,14 @@ export class ValRepository{
 
   async saveSurveyProfile({answers,result,source='assisted_survey'}){
     if(!this.db.configured)return result
-    try{return await this.db.transaction(async connection=>{const externalKey=String(result.id||normalize(result.name).replace(/\s+/g,'-')||randomUUID()).slice(0,180);const client=await connection.query(`INSERT INTO clients (tenant_id,external_key,name,municipality,total_area_ha,cultures,preferred_channel,commercial_profile,status,source,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',$9,NOW()) ON CONFLICT (tenant_id,external_key) DO UPDATE SET name=EXCLUDED.name,municipality=EXCLUDED.municipality,total_area_ha=EXCLUDED.total_area_ha,cultures=EXCLUDED.cultures,preferred_channel=EXCLUDED.preferred_channel,commercial_profile=EXCLUDED.commercial_profile,updated_at=NOW() RETURNING id`,[this.tenantId,externalKey,String(result.name||'Produtor').slice(0,180),String(result.municipality||'').slice(0,140)||null,parseMoney(result.area),String(result.cultures||'').slice(0,1000)||null,String(result.servicePreference||'').slice(0,60)||null,jsonbParameter(result.commercial||{}),source]);await connection.query(`INSERT INTO client_profiles (tenant_id,client_id,primary_profile,secondary_profile,irt_score,nps_score,answers,evidence,profile_snapshot,valid_until,assessed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,NOW()+INTERVAL '180 days',NOW())`,[this.tenantId,client.rows[0].id,result.primaryProfile||null,result.secondaryProfile||null,Number.isFinite(Number(result.irt))?Number(result.irt):null,Number.isFinite(Number(result.nps))?Number(result.nps):null,jsonbParameter(answers||{}),jsonbParameter([{source,self_reported:true}]),jsonbParameter(snapshotFor(result,source))]);return {...result,id:externalKey}})}catch{throw serviceError('O perfil assistido não pôde ser salvo no PostgreSQL configurado.')}
+    try{return await this.db.transaction(async connection=>{
+      const externalKey=String(result.id||normalize(result.name).replace(/\s+/g,'-')||randomUUID()).slice(0,180)
+      const area=parseCultivatedArea(result.area)
+      const client=await connection.query(`INSERT INTO clients (tenant_id,external_key,name,municipality,total_area_ha,area_band,cultures,preferred_channel,commercial_profile,status,source,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'active',$10,NOW()) ON CONFLICT (tenant_id,external_key) DO UPDATE SET name=EXCLUDED.name,municipality=EXCLUDED.municipality,total_area_ha=COALESCE(EXCLUDED.total_area_ha,clients.total_area_ha),area_band=COALESCE(EXCLUDED.area_band,clients.area_band),cultures=EXCLUDED.cultures,preferred_channel=EXCLUDED.preferred_channel,commercial_profile=EXCLUDED.commercial_profile||clients.commercial_profile,updated_at=NOW() RETURNING id`,[this.tenantId,externalKey,String(result.name||'Produtor').slice(0,180),String(result.municipality||'').slice(0,140)||null,area.totalAreaHa,area.areaBand,String(result.cultures||'').slice(0,1000)||null,String(result.servicePreference||'').slice(0,60)||null,jsonbParameter(result.commercial||{}),source])
+      const sourceKey=profileSourceKey(source,externalKey,answers)
+      await connection.query(`INSERT INTO client_profiles (tenant_id,client_id,primary_profile,secondary_profile,irt_score,nps_score,answers,evidence,profile_snapshot,source_key,valid_until,assessed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,NOW()+INTERVAL '180 days',NOW()) ON CONFLICT (tenant_id,source_key) DO UPDATE SET client_id=EXCLUDED.client_id,primary_profile=EXCLUDED.primary_profile,secondary_profile=EXCLUDED.secondary_profile,irt_score=EXCLUDED.irt_score,nps_score=EXCLUDED.nps_score,answers=EXCLUDED.answers,evidence=EXCLUDED.evidence,profile_snapshot=EXCLUDED.profile_snapshot,valid_until=EXCLUDED.valid_until`,[this.tenantId,client.rows[0].id,result.primaryProfile||null,result.secondaryProfile||null,Number.isFinite(Number(result.irt))?Number(result.irt):null,Number.isFinite(Number(result.nps))?Number(result.nps):null,jsonbParameter(answers||{}),jsonbParameter([{source,self_reported:true}]),jsonbParameter(snapshotFor(result,source)),sourceKey])
+      return {...result,id:externalKey}
+    })}catch{throw serviceError('O perfil assistido não pôde ser salvo no PostgreSQL configurado.')}
   }
 
   async getIntelligence(){
@@ -107,7 +123,7 @@ export class ValRepository{
     try{
       const [importResult,clientResult]=await Promise.all([
         this.db.query('SELECT summary FROM import_jobs WHERE tenant_id=$1 ORDER BY created_at DESC LIMIT 20',[this.tenantId]),
-        this.db.query(`SELECT c.external_key,c.name,c.municipality,c.total_area_ha,c.cultures,c.preferred_channel,c.commercial_profile,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,
+        this.db.query(`SELECT c.external_key,c.name,c.municipality,c.total_area_ha,c.area_band,c.cultures,c.preferred_channel,c.commercial_profile,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,
             COALESCE(NULLIF(p.profile_snapshot,'{}'::jsonb),survey.result,'{}'::jsonb) profile_snapshot
           FROM clients c LEFT JOIN LATERAL (SELECT * FROM client_profiles WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY assessed_at DESC LIMIT 1) p ON true
           LEFT JOIN survey_invitations survey ON survey.tenant_id=c.tenant_id AND survey.id=p.source_survey_id
@@ -238,7 +254,7 @@ export class ValRepository{
       await this.db.transaction(async connection=>{
         await connection.query(`INSERT INTO import_jobs (id,tenant_id,source_type,file_name,status,row_count,recognized_count,summary,completed_at) VALUES ($1,$2,'commercial_history',$3,'completed',$4,$5,$6,NOW()) ON CONFLICT (id) DO NOTHING`,[summary.id,tenantId,summary.fileName,summary.rowCount,clients.length,jsonbParameter(summary)])
         const clientInternalIds=new Map()
-        for(const item of clients.slice(0,2000)){const upserted=await connection.query(`INSERT INTO clients (tenant_id,external_key,name,municipality,total_area_ha,commercial_profile,status,source,updated_at) VALUES ($1,$2,$3,$4,$5,$6,'active','commercial_import',NOW()) ON CONFLICT (tenant_id,external_key) DO UPDATE SET name=EXCLUDED.name,municipality=COALESCE(EXCLUDED.municipality,clients.municipality),total_area_ha=COALESCE(EXCLUDED.total_area_ha,clients.total_area_ha),commercial_profile=EXCLUDED.commercial_profile,updated_at=NOW() RETURNING id,external_key`,[tenantId,String(item.id||'').slice(0,180),String(item.name||'').slice(0,180),item.municipality||null,parseMoney(item.area),jsonbParameter(item.commercial||{})]);clientInternalIds.set(upserted.rows[0].external_key,upserted.rows[0].id)}
+        for(const item of clients.slice(0,2000)){const area=parseCultivatedArea(item.area);const upserted=await connection.query(`INSERT INTO clients (tenant_id,external_key,name,municipality,total_area_ha,area_band,commercial_profile,status,source,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,'active','commercial_import',NOW()) ON CONFLICT (tenant_id,external_key) DO UPDATE SET name=EXCLUDED.name,municipality=COALESCE(EXCLUDED.municipality,clients.municipality),total_area_ha=COALESCE(EXCLUDED.total_area_ha,clients.total_area_ha),area_band=COALESCE(EXCLUDED.area_band,clients.area_band),commercial_profile=(clients.commercial_profile||EXCLUDED.commercial_profile)||CASE WHEN clients.commercial_profile?'property' THEN jsonb_build_object('property',clients.commercial_profile->'property') ELSE '{}'::jsonb END,updated_at=NOW() RETURNING id,external_key`,[tenantId,String(item.id||'').slice(0,180),String(item.name||'').slice(0,180),item.municipality||null,area.totalAreaHa,area.areaBand,jsonbParameter(item.commercial||{})]);clientInternalIds.set(upserted.rows[0].external_key,upserted.rows[0].id)}
         const clientKeys=new Map(clients.map(item=>[normalize(item.name),item.id]))
         for(let index=0;index<rows.slice(0,5000).length;index++){
           const row=rows[index]||{};const name=String(row[mapping.client]||'').trim();if(!name)continue

@@ -21,11 +21,12 @@ export default function SurveyForm({initialAnswers={},producerName='',onSubmit,e
  const optionMap=useMemo(buildOptionMap,[])
  const current=sections[step]
  const currentQuestions=questions.slice(current.from,current.to)
- const answered=questions.filter(question=>String(answers[question.id]??'').trim()!=='').length
- const progress=Math.round(answered/questions.length*100)
+ const requiredQuestions=questions.filter(question=>question.id!==27)
+ const answered=requiredQuestions.filter(question=>String(answers[question.id]??'').trim()!=='').length
+ const progress=Math.round(answered/requiredQuestions.length*100)
  const update=(id,value)=>{setAnswers(previous=>({...previous,[id]:value}));setError('')}
  const validateStep=()=>{
-  const missing=currentQuestions.filter(question=>String(answers[question.id]??'').trim()==='')
+  const missing=currentQuestions.filter(question=>question.id!==27&&String(answers[question.id]??'').trim()==='')
   if(missing.length){setError(`Faltam ${missing.length} ${missing.length===1?'resposta':'respostas'} nesta etapa.`);return false}
   return true
  }
@@ -47,7 +48,7 @@ export default function SurveyForm({initialAnswers={},producerName='',onSubmit,e
   <div className="survey-progress"><div><span>ETAPA {step+1} DE {sections.length}</span><b>{progress}% concluído</b></div><div className="survey-progress-track"><i style={{width:`${progress}%`}}/></div><div className="survey-dots">{sections.map((section,index)=><button type="button" key={section.title} className={index===step?'active':index<step?'done':''} onClick={()=>index<step&&setStep(index)}>{index<step?<Check size={12}/>:index+1}</button>)}</div></div>
   <section className="survey-stage">
    <div className="survey-section-title"><div className="survey-section-icon">{step===3?<Sparkles/>:step===2?<ShieldCheck/>:<ClipboardList/>}</div><div><span>{current.kicker}</span><h2>{current.title}</h2><p>{current.subtitle}</p></div></div>
-   <div className="survey-question-list">{currentQuestions.map((question,index)=><article className="survey-question" key={question.id}><div className="question-number">{String(question.id).padStart(2,'0')}</div><label><strong>{question.text.replace(/^\d+\.\s*/,'')}</strong>{field(question)}</label></article>)}</div>
+   <div className="survey-question-list">{currentQuestions.map(question=><article className="survey-question" key={question.id}><div className="question-number">{String(question.id).padStart(2,'0')}</div><label><strong>{question.text.replace(/^\d+\.\s*/,'')}{question.id===27?' (opcional)':''}</strong>{field(question)}</label></article>)}</div>
    {error&&<div className="survey-error" role="alert">{error}</div>}
    <div className="survey-navigation">{step>0?<button type="button" className="ghost-btn" onClick={()=>setStep(value=>value-1)}><ArrowLeft size={17}/>Voltar</button>:<span/>}{step<sections.length-1?<button type="button" className="survey-next" onClick={next}>Continuar<ChevronRight size={18}/></button>:<button type="button" className="survey-next finish" disabled={sending} onClick={finish}>{sending?'Compilando...':submitLabel}<ArrowRight size={18}/></button>}</div>
   </section>

@@ -1,12 +1,15 @@
 import React,{useMemo,useState} from 'react'
 import {BrainCircuit,CalendarPlus,Clock3,MapPin,Route,Save,Sparkles} from 'lucide-react'
 
-const today='2026-08-08'
+const today=()=>{
+ const date=new Date();const offset=date.getTimezoneOffset()*60_000
+ return new Date(date.getTime()-offset).toISOString().slice(0,10)
+}
 const pretty=date=>new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'short'}).format(new Date(`${date}T12:00:00`))
 
 export default function Visits({clients,visits,setVisits,onPrepare,onSaved}){
  const [showForm,setShowForm]=useState(false)
- const [form,setForm]=useState({clientId:clients[0]?.id||'',date:today,time:'14:00',objective:''})
+ const [form,setForm]=useState({clientId:clients[0]?.id||'',date:today(),time:'14:00',objective:''})
  const ordered=useMemo(()=>[...visits].sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time)),[visits])
  const save=e=>{
   e.preventDefault();if(!form.clientId||!form.date||!form.objective)return

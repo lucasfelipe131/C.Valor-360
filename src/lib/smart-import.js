@@ -1,6 +1,6 @@
-import questions from '../data/questions.json'
-import matrix from '../data/profile-matrix.json'
-import {normalizeText} from './profile'
+import questions from '../data/questions.json' with {type:'json'}
+import matrix from '../data/profile-matrix.json' with {type:'json'}
+import {normalizeText} from './profile.js'
 
 const aliases={
  1:['nome','produtor','nome produtor','cliente','razao social'],
@@ -25,11 +25,25 @@ function parseDelimited(text,delimiter){
  return rows
 }
 
+export function normalizeImportRows(value){
+ const sheets=Array.isArray(value)?value.filter(item=>item&&typeof item==='object'&&Array.isArray(item.data)):[]
+ const selectedSheet=sheets.find(item=>/\b(form\s*responses?|respostas?)\b/i.test(String(item.sheet||item.name||'')))
+  ||sheets.find(item=>item.data.length>1&&Array.isArray(item.data[0])&&item.data[0].length>=10)
+  ||sheets[0]
+ const candidate=selectedSheet?.data
+  ||(Array.isArray(value?.data)?value.data:null)
+  ||(Array.isArray(value?.rows)?value.rows:null)
+  ||(Array.isArray(value)?value:[])
+ return candidate.map(row=>Array.isArray(row)?row:row&&typeof row==='object'?Object.values(row):[row]).filter(row=>row.some(cell=>String(cell??'').trim()))
+}
+
 export async function parseImportFile(file){
  const extension=file.name.split('.').pop().toLowerCase()
  if(extension==='xlsx'){
   const {default:readXlsxFile}=await import('read-excel-file/browser')
-  return {rows:await readXlsxFile(file),format:'Excel'}
+  const rows=normalizeImportRows(await readXlsxFile(file))
+  if(!rows.length)throw new Error('Nenhuma aba da planilha contém linhas reconhecíveis.')
+  return {rows,format:'Excel'}
  }
  if(extension==='pdf'){
   const [pdfjs,worker]=await Promise.all([import('pdfjs-dist/legacy/build/pdf.mjs'),import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')])
@@ -81,25 +95,32 @@ function normalizeAnswer(question,value){
 }
 
 export function recognizeQuestionnaire(source){
- const candidates=[]
- if(source.rows?.length){
-  const rows=source.rows.map(row=>row.map(value=>value??''))
-  if(rows[0]?.length>2&&rows[1])rows[0].forEach((header,index)=>candidates.push([header,rows[1][index]]))
-  rows.forEach(row=>{if(row.length>=2)candidates.push([row[0],row.slice(1).filter(Boolean).join(' ')])})
- }
- if(source.text){
-  source.text.split(/\r?\n/).forEach(line=>{
-   const match=line.match(/^\s*(.{2,180}?)[\s]*[:;=\-–][\s]*(.+)$/)
-   if(match)candidates.push([match[1],match[2]])
+ const recognizePairs=candidates=>{
+  const answers={};const recognized=[]
+  candidates.forEach(([label,value])=>{
+   const question=questionFor(label);if(!question||answers[question.id]!==undefined||String(value??'').trim()==='')return
+   const normalized=normalizeAnswer(question,value);if(normalized==='')return
+   answers[question.id]=normalized;recognized.push({id:question.id,question:question.text.replace(/^\d+\.\s*/,''),value:normalized})
   })
+  const missing=questions.filter(question=>answers[question.id]===undefined)
+  return {answers,recognized,missing,requiredMissing:missing.filter(question=>question.id!==27),confidence:Math.round(recognized.length/questions.length*100),producerName:String(answers[1]||'Produtor sem nome')}
  }
- const answers={};const recognized=[]
- candidates.forEach(([label,value])=>{
-  const question=questionFor(label);if(!question||answers[question.id]!==undefined||String(value).trim()==='')return
-  const normalized=normalizeAnswer(question,value);if(normalized==='')return
-  answers[question.id]=normalized;recognized.push({id:question.id,question:question.text.replace(/^\d+\.\s*/,''),value:normalized})
- })
- return {answers,recognized,missing:questions.filter(question=>answers[question.id]===undefined),confidence:Math.round(recognized.length/questions.length*100),format:source.format}
+ const rows=normalizeImportRows(source.rows).map(row=>row.map(value=>value??''))
+ let records=[]
+ if(rows[0]?.length>2&&rows.length>1){
+  const headers=rows[0]
+  records=rows.slice(1).filter(row=>row.some(value=>String(value??'').trim())).map(row=>recognizePairs(headers.map((header,index)=>[header,row[index]]))).filter(record=>record.recognized.length)
+ }else if(rows.length){
+  records=[recognizePairs(rows.filter(row=>row.length>=2).map(row=>[row[0],row.slice(1).filter(value=>String(value??'').trim()).join(' ')]))]
+ }
+ if(!records.length&&source.text){
+  const pairs=[]
+  source.text.split(/\r?\n/).forEach(line=>{const match=line.match(/^\s*(.{2,180}?)[\s]*[:;=\-–][\s]*(.+)$/);if(match)pairs.push([match[1],match[2]])})
+  records=[recognizePairs(pairs)]
+ }
+ records=records.filter(record=>record.recognized.length)
+ const first=records[0]||recognizePairs([])
+ return {...first,records,recordCount:records.length,format:source.format}
 }
 
 export function tableToObjects(rows){
