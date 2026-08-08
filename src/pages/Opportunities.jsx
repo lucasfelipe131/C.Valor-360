@@ -1,5 +1,6 @@
-import React,{useMemo,useState} from 'react'
+import React,{useEffect,useMemo,useState} from 'react'
 import {ArrowRight,BarChart3,Calculator,CheckCircle2,ChevronRight,FileText,Handshake,Search,Sparkles,Target,TrendingUp} from 'lucide-react'
+import {advancePipelineItem,opportunityCacheKey,parseOpportunityCache,reconcilePipeline} from '../lib/opportunity-pipeline'
 
 const stageConfig=[
  {name:'Diagnóstico',label:'Entender',hint:'Dor e impacto',progress:25,icon:Search},
@@ -10,23 +11,14 @@ const stageConfig=[
 const stages=stageConfig.map(stage=>stage.name)
 const money=value=>Number(value||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0})
 const initials=name=>String(name||'Produtor').split(' ').filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase()
-const normalizeOpportunity=item=>{
- const stage=stages.includes(item?.stage)?item.stage:stages[0]
- return {...item,stage,stageProgress:stageConfig.find(config=>config.name===stage)?.progress||25,probability:undefined}
-}
 
-export default function Opportunities({clients,onClient,onSaved}){
- const fallback=clients.map((client,index)=>({
-  id:`o-${client.id}`,
-  clientId:client.id,
-  title:client.commercial?.opportunity||'Oportunidade a qualificar',
-  value:client.commercial?.potentialValidated===false?0:client.commercial?.potential||0,
-  stage:stages[Math.min(index,2)],
-  stageProgress:stageConfig[Math.min(index,2)].progress
- }))
- const [items,setItems]=useState(()=>{try{return (JSON.parse(localStorage.getItem('valor360-opportunities'))||fallback).map(normalizeOpportunity)}catch{return fallback.map(normalizeOpportunity)}})
+export default function Opportunities({clients,storageScope,onClient,onSaved}){
+ const cacheKey=opportunityCacheKey(storageScope)
+ const [items,setItems]=useState(()=>reconcilePipeline(clients,cacheKey?parseOpportunityCache(localStorage.getItem(cacheKey)):[]))
  const [activeStage,setActiveStage]=useState(stages[0])
  const [roi,setRoi]=useState({area:100,investment:180,returnPerHa:420})
+ useEffect(()=>{setItems(current=>reconcilePipeline(clients,current))},[clients])
+ useEffect(()=>{if(cacheKey)localStorage.setItem(cacheKey,JSON.stringify(items))},[cacheKey,items])
  const metrics=useMemo(()=>{
   const total=items.reduce((sum,item)=>sum+Number(item.value||0),0)
   const openItems=items.filter(item=>item.stage!=='Fechado')
@@ -42,13 +34,11 @@ export default function Opportunities({clients,onClient,onSaved}){
  const ratio=Number(roi.investment)>0?(Number(roi.returnPerHa)/Number(roi.investment)).toFixed(1):'0.0'
  const clientOf=id=>clients.find(client=>client.id===id)
  const advance=item=>{
-  const current=stages.indexOf(item.stage)
-  const nextConfig=stageConfig[Math.min(current+1,stageConfig.length-1)]
-  const updated=items.map(opportunity=>opportunity.id===item.id?{...opportunity,stage:nextConfig.name,stageProgress:nextConfig.progress}:opportunity)
+  const updated=advancePipelineItem(items,item.id)
+  const nextStage=updated.find(opportunity=>opportunity.id===item.id)?.stage||item.stage
   setItems(updated)
-  setActiveStage(nextConfig.name)
-  localStorage.setItem('valor360-opportunities',JSON.stringify(updated))
-  onSaved?.(`${item.title}: etapa atualizada para ${nextConfig.name}.`)
+  setActiveStage(nextStage)
+  onSaved?.(`${item.title}: etapa atualizada para ${nextStage}.`)
  }
 
  return <div className="page-stack pipeline-page">

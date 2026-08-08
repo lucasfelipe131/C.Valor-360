@@ -16,11 +16,22 @@ import Settings from './pages/Settings'
 import Login from './pages/Login'
 import DataHub from './pages/DataHub'
 import PublicSurvey from './pages/PublicSurvey'
-import {normalizeText} from './lib/profile'
+import {normalizeText,reconcileOpportunityProjection} from './lib/profile'
+import {opportunityCacheKey} from './lib/opportunity-pipeline'
 
+const activeStorageScopeKey='valor360-active-storage-scope'
 const clearLegacyPortfolioCache=()=>{
- for(const key of ['valor360-clients','valor360-visits'])localStorage.removeItem(key)
+ for(const key of ['valor360-clients','valor360-visits','valor360-opportunities'])localStorage.removeItem(key)
+ Object.keys(localStorage).filter(key=>key.startsWith('valor360-tech-')||key.startsWith('valor360-client-context:')).forEach(key=>localStorage.removeItem(key))
 }
+const clearSessionPortfolioCache=storageScope=>{
+ clearLegacyPortfolioCache()
+ const effectiveScope=storageScope||sessionStorage.getItem(activeStorageScopeKey)
+ const scopedOpportunityKey=opportunityCacheKey(effectiveScope);if(scopedOpportunityKey)localStorage.removeItem(scopedOpportunityKey)
+ Object.keys(sessionStorage).filter(key=>key.startsWith('valor360-tech-')).forEach(key=>sessionStorage.removeItem(key))
+ sessionStorage.removeItem(activeStorageScopeKey)
+}
+const rememberStorageScope=user=>{if(user?.storageScope)sessionStorage.setItem(activeStorageScopeKey,user.storageScope)}
 
 const resetPageViewport=()=>{
  window.scrollTo({top:0,left:0,behavior:'auto'})
@@ -58,22 +69,23 @@ export default function App(){
  const addClient=client=>{
   let saved
   const incomingCommercial=Object.fromEntries(Object.entries(client.commercial||{}).filter(([,value])=>value!==''&&value!==null&&value!==undefined))
-  const next=clientList.some(item=>normalizeText(item.name)===normalizeText(client.name))?clientList.map(item=>normalizeText(item.name)===normalizeText(client.name)?(saved={...item,...client,id:item.id,commercial:{...item.commercial,...incomingCommercial,potential:Math.max(Number(item.commercial?.potential||0),Number(incomingCommercial.potential||0))}},saved):item):[...clientList,(saved=client)]
+  const next=clientList.some(item=>normalizeText(item.name)===normalizeText(client.name))?clientList.map(item=>normalizeText(item.name)===normalizeText(client.name)?(saved={...item,...client,id:item.id,commercial:{...item.commercial,...incomingCommercial,...reconcileOpportunityProjection(item,client),potential:Math.max(Number(item.commercial?.potential||0),Number(incomingCommercial.potential||0))}},saved):item):[...clientList,(saved=client)]
   setClientList(next);setSelected(saved);notify('Perfil compilado e incorporado à carteira.')
  }
  const importClients=imported=>{
   const map=new Map(clientList.map(client=>[normalizeText(client.name),client]))
-  imported.forEach(client=>{const current=map.get(normalizeText(client.name));map.set(normalizeText(client.name),current?{...client,...current,commercial:{...client.commercial,...current.commercial,potential:Math.max(Number(client.commercial?.potential||0),Number(current.commercial?.potential||0)),score:client.commercial?.score??current.commercial?.score}}:client)})
+  imported.forEach(client=>{const current=map.get(normalizeText(client.name));map.set(normalizeText(client.name),current?{...client,...current,commercial:{...client.commercial,...current.commercial,...reconcileOpportunityProjection(current,client),potential:Math.max(Number(client.commercial?.potential||0),Number(current.commercial?.potential||0)),score:client.commercial?.score??current.commercial?.score}}:client)})
   setClientList([...map.values()])
  }
  const updateVisits=next=>setVisits(next)
- const login=async credentials=>{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials),signal:AbortSignal.timeout(10000)});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível autenticar.');setAuthNotice('');setCurrentUser(payload.user||null);setPortfolioReady(Boolean(payload.user?.demo));setAuthenticated(true);notify('Bem-vindo ao VALOR 360.')}
- const logout=async()=>{try{const response=await fetch('/api/auth/logout',{method:'POST',signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error();clearLegacyPortfolioCache();setClientList([]);setVisits([]);setSelected(null);setAuthNotice('');setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}catch{notify('Não foi possível encerrar a sessão no servidor. Tente novamente.')}}
- const expireSession=()=>{clearLegacyPortfolioCache();setClientList([]);setVisits([]);setSelected(null);setAuthNotice('Sua sessão expirou. Entre novamente.');setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}
+ const login=async credentials=>{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials),signal:AbortSignal.timeout(10000)});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível autenticar.');rememberStorageScope(payload.user);setAuthNotice('');setCurrentUser(payload.user||null);setPortfolioReady(Boolean(payload.user?.demo));setAuthenticated(true);notify('Bem-vindo ao VALOR 360.')}
+ const logout=async()=>{try{const response=await fetch('/api/auth/logout',{method:'POST',signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error();clearSessionPortfolioCache(currentUser?.storageScope);setClientList([]);setVisits([]);setSelected(null);setAuthNotice('');setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}catch{notify('Não foi possível encerrar a sessão no servidor. Tente novamente.')}}
+ const invalidateSession=notice=>{clearSessionPortfolioCache(currentUser?.storageScope);setClientList([]);setVisits([]);setSelected(null);setAuthNotice(notice);setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}
+ const expireSession=()=>invalidateSession('Sua sessão expirou. Entre novamente.')
  useEffect(()=>{if(!selected&&clientList.length)setSelected(clientList[0])},[clientList,selected])
- useEffect(()=>{fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{setCurrentUser(session?.user||null);setPortfolioReady(Boolean(session?.user?.demo));setAuthenticated(Boolean(session?.authenticated));if(!session?.authenticated&&session?.misconfigured)setAuthNotice('O acesso seguro do servidor ainda não foi configurado.')}).catch(()=>{setAuthNotice('Não foi possível validar o servidor. O acesso permaneceu bloqueado.');setPortfolioReady(false);setAuthenticated(false)})},[])
- useEffect(()=>{window.addEventListener('valor360:unauthorized',expireSession);return()=>window.removeEventListener('valor360:unauthorized',expireSession)},[])
- useEffect(()=>{if(authenticated!==true)return;const revalidate=()=>fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(!session?.authenticated)expireSession()}).catch(()=>{setAuthNotice('Não foi possível revalidar o servidor. Entre novamente para proteger os dados.');setCurrentUser(null);setAuthenticated(false);setPage('dashboard')});window.addEventListener('focus',revalidate);const timer=window.setInterval(revalidate,300000);return()=>{window.removeEventListener('focus',revalidate);window.clearInterval(timer)}},[authenticated])
+ useEffect(()=>{fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(session?.authenticated)rememberStorageScope(session.user);else clearSessionPortfolioCache();setCurrentUser(session?.user||null);setPortfolioReady(Boolean(session?.user?.demo));setAuthenticated(Boolean(session?.authenticated));if(!session?.authenticated&&session?.misconfigured)setAuthNotice('O acesso seguro do servidor ainda não foi configurado.')}).catch(()=>{clearSessionPortfolioCache();setClientList([]);setVisits([]);setSelected(null);setCurrentUser(null);setAuthNotice('Não foi possível validar o servidor. O acesso permaneceu bloqueado.');setPortfolioReady(false);setAuthenticated(false)})},[])
+ useEffect(()=>{window.addEventListener('valor360:unauthorized',expireSession);return()=>window.removeEventListener('valor360:unauthorized',expireSession)},[currentUser?.storageScope])
+ useEffect(()=>{if(authenticated!==true)return;const revalidate=()=>fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(!session?.authenticated)expireSession()}).catch(()=>invalidateSession('Não foi possível revalidar o servidor. Entre novamente para proteger os dados.'));window.addEventListener('focus',revalidate);const timer=window.setInterval(revalidate,300000);return()=>{window.removeEventListener('focus',revalidate);window.clearInterval(timer)}},[authenticated,currentUser?.storageScope])
  useEffect(()=>{if(authenticated!==true)return;clearLegacyPortfolioCache();fetch('/api/intelligence',{signal:AbortSignal.timeout(12000)}).then(async response=>{if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));return null}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'A carteira protegida não pôde ser carregada.');return payload}).then(data=>{if(!data)return;const serverClients=Array.isArray(data.clients)?data.clients:[];setClientList(serverClients);setSelected(serverClients[0]||null);setPortfolioReady(true)}).catch(error=>{if(currentUser?.demo){setPortfolioReady(true);return}setClientList([]);setSelected(null);setPortfolioReady(true);notify(error.name==='TimeoutError'?'A carteira demorou além do limite e permaneceu bloqueada.':error.message)})},[authenticated,currentUser?.demo])
  useEffect(()=>{if(authenticated!==true)return;const frame=window.requestAnimationFrame(resetPageViewport);return()=>window.cancelAnimationFrame(frame)},[page,authenticated])
  const [title,subtitle]=meta[page]||['VALOR 360','']
@@ -90,12 +102,12 @@ export default function App(){
     {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient}/>}
     {page==='clients'&&<Clients clients={clientList} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
     {page==='datahub'&&<DataHub onImport={importClients} onNotify={notify}/>}
-    {page==='client360'&&selected&&<Client360 key={selected.id} client={selected} onBack={()=>navigate('clients')} onPrepare={()=>prepareClient(selected)} onSaved={()=>notify('Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}/>}
+    {page==='client360'&&selected&&<Client360 key={selected.id} client={selected} storageScope={currentUser?.storageScope} onBack={()=>navigate('clients')} onPrepare={()=>prepareClient(selected)} onSaved={()=>notify('Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}/>}
     {page==='val'&&<ValPanel clients={clientList} selectedClient={selected} onSelect={openClient}/>}
     {page==='agro'&&<Agro/>}
     {page==='questionnaire'&&<Questionnaire onCreate={addClient} onOpen={openClient} onNotify={notify}/>}
     {page==='visits'&&<Visits clients={clientList} visits={visits} setVisits={updateVisits} onPrepare={prepareClient} onSaved={()=>notify('Visita registrada na agenda.')}/>}
-    {page==='opportunities'&&<Opportunities clients={clientList} onClient={openClient} onSaved={notify}/>}
+    {page==='opportunities'&&<Opportunities clients={clientList} storageScope={currentUser?.storageScope} onClient={openClient} onSaved={notify}/>}
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
     {page==='settings'&&<Settings clients={clientList} visits={visits} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
    </div>

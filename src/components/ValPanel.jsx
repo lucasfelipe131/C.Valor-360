@@ -4,6 +4,7 @@ import {
  FileSearch,Gauge,Lightbulb,LoaderCircle,MessageSquareText,Route,Send,
  ShieldCheck,Sparkles,Target,ThumbsDown,ThumbsUp,UserRoundSearch,Zap
 } from 'lucide-react'
+import {resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
 const MODES={
  daily:{label:'Modo diário',short:'Diário',description:'Direto ao ponto para visitas, mensagens e próximos passos.'},
@@ -24,25 +25,28 @@ function approach(client){
 
 function fallbackAdvice(client,mode,prompt=''){
  const firstName=client?.name?.split(' ')[0]||'Produtor'
- const opportunity=client?.commercial?.opportunity||'diagnóstico técnico e comercial da propriedade'
+ const candidate=resolveOpportunityCandidate(client)
+ const opportunity=candidate?.title||''
+ const noNeedDeclared=!opportunity&&client?.additionalNeedStatus==='none_declared'
  const strategic=mode==='strategic'
- const nextQuestion={stage:'problema',question:`Onde “${String(opportunity).toLowerCase()}” afeta uma decisão concreta hoje?`,ask_when:'Depois de alinhar objetivo e permissão para usar os dados.',purpose:'Validar se a hipótese cadastrada é prioridade real.',evidence_needed:'Exemplo, área, frequência e decisão afetada.'}
+ const nextQuestion=opportunity?{stage:'problema',question:`Onde “${String(opportunity).toLowerCase()}” afeta uma decisão concreta hoje?`,ask_when:'Depois de alinhar objetivo e permissão para usar os dados.',purpose:'Validar se a hipótese cadastrada é prioridade real.',evidence_needed:'Exemplo, área, frequência e decisão afetada.'}:noNeedDeclared?{stage:'situação',question:'Desde a última resposta, surgiu alguma prioridade que valha explorar ou prefere manter o acompanhamento atual?',ask_when:'Depois de reconhecer a resposta anterior.',purpose:'Verificar mudança sem fabricar uma oportunidade.',evidence_needed:'Nova prioridade declarada ou preferência por não avançar.'}:{stage:'situação',question:'Qual decisão ou resultado merece mais atenção neste ciclo?',ask_when:'Na abertura da descoberta.',purpose:'Identificar uma prioridade sem pressupor um problema.',evidence_needed:'Decisão, resultado desejado e contexto.'}
+ const valueProblem=opportunity?opportunity:noNeedDeclared?'Nenhuma necessidade adicional declarada; oportunidade não confirmada.':'Oportunidade ainda não identificada.'
  return {
-  answer:`${approach(client)} ${strategic?'Compare agir, esperar e manter com as mesmas premissas antes de propor qualquer solução.':'Faça somente a próxima pergunta útil e preserve a decisão do produtor.'}`,
-  objective:`Validar a necessidade em ${String(opportunity).toLowerCase()} e definir como a hipótese seria comprovada ou descartada.`,
+  answer:opportunity?`${approach(client)} ${strategic?'Compare agir, esperar e manter com as mesmas premissas antes de propor qualquer solução.':'Faça somente a próxima pergunta útil e preserve a decisão do produtor.'}`:noNeedDeclared?`${firstName} não declarou necessidade adicional. Confirme apenas se o contexto mudou e preserve a opção de manter o acompanhamento.`:'Ainda não há oportunidade registrada. Faça uma descoberta aberta antes de propor solução ou urgência.',
+  objective:opportunity?`Validar a necessidade em ${String(opportunity).toLowerCase()} e definir como a hipótese seria comprovada ou descartada.`:noNeedDeclared?'Confirmar se o contexto mudou sem converter a resposta negativa em hipótese comercial.':'Identificar uma prioridade real antes de abrir uma oportunidade.',
   decision_profile:{decision_context_summary:'Preferências decisórias ainda não confirmadas nesta decisão.',legacy_tag:client?.primaryProfile||'',evidence_ids:[],observed_dimensions:[],adaptation:approach(client)},
   next_question:nextQuestion,
-  questions:[nextQuestion,{stage:'implicação',question:'Como você compara os riscos de agir agora, esperar e manter a prática?',ask_when:'Depois de confirmar o problema.',purpose:'Evitar pressupor que mudar é melhor.',evidence_needed:'Custo, risco, janela e reversibilidade de cada alternativa.'}],
+  questions:opportunity?[nextQuestion,{stage:'implicação',question:'Como você compara os riscos de agir agora, esperar e manter a prática?',ask_when:'Depois de confirmar o problema.',purpose:'Evitar pressupor que mudar é melhor.',evidence_needed:'Custo, risco, janela e reversibilidade de cada alternativa.'}]:[nextQuestion],
   constructive_tension:{status:'not_applicable',consent_status:'unknown',permission_prompt:'Posso testar uma hipótese quando tivermos uma linha de base?',evidence_ids:[],reframe:'',autonomy:'A escolha continua com o produtor.',stop_reason:'Falta evidência comparável e consentimento registrado.',uncertainty:'A oportunidade ainda não foi confirmada.'},
-  value_hypothesis:{problem:opportunity,baseline:'Não confirmada.',act_now:'A medir.',wait:'A medir.',maintain:'A medir.',impact_to_quantify:'R$/ha, sc/ha, tempo, janela e risco.',value_metric:'Valor realizado contra a mesma linha de base.',time_horizon:'A definir.',proof_plan:'Comparação controlada antes de escalar.',double_counting_guard:'Não somar duas vezes o mesmo benefício.',uncertainty:'Sem contrafactual não há estimativa defensável.'},
-  next_best_action:`Convide ${firstName} para uma conversa de 20 minutos e defina uma única métrica que será levantada antes da visita.`,
+  value_hypothesis:{problem:valueProblem,baseline:'Não confirmada.',act_now:opportunity?'A medir.':'Não aplicável antes da descoberta.',wait:opportunity?'A medir.':'Manter acompanhamento sem presumir perda.',maintain:opportunity?'A medir.':'Respeitar a situação atual.',impact_to_quantify:opportunity?'R$/ha, sc/ha, tempo, janela e risco.':'Nenhum impacto a quantificar sem oportunidade.',value_metric:opportunity?'Valor realizado contra a mesma linha de base.':'A definir após uma prioridade real.',time_horizon:'A definir.',proof_plan:opportunity?'Comparação controlada antes de escalar.':'Não abrir prova comercial antes da descoberta.',double_counting_guard:'Não somar duas vezes o mesmo benefício.',uncertainty:opportunity?'Sem contrafactual não há estimativa defensável.':'Ausência de oportunidade confirmada.'},
+  next_best_action:opportunity?`Convide ${firstName} para uma conversa de 20 minutos e defina uma única métrica que será levantada antes da visita.`:noNeedDeclared?'Mantenha o acompanhamento combinado e só reabra a descoberta se houver mudança de contexto ou permissão do produtor.':'Faça uma pergunta aberta de situação antes de registrar qualquer oportunidade.',
   commitment:null,
   confidence:{level:'not_calibrated',rationale:'Pré-análise local sem validação retrospectiva.',evidence_quality:'Hipótese cadastrada ainda não confirmada.',relevance:'A validar com o produtor.',freshness:'Datas completas não disponíveis.',source_agreement:'Não avaliada.',missing_data:['linha de base','alternativas comparáveis','preferência de prova'],calibration_status:'not_calibrated'},
   assumptions:[
    'A oportunidade cadastrada ainda precisa ser validada pelo produtor.',
    prompt?'A recomendação considera o pedido atual, mas não substitui diagnóstico de campo.':'Ainda não há uma pergunta específica do consultor.'
   ],
-  evidence_used:[{claim_supported:client?.commercial?.opportunity?`Hipótese cadastrada: ${client.commercial.opportunity}`:'Oportunidade ainda em descoberta',quality:'low',uncertainty:'Precisa ser confirmada pelo produtor.'}],
+  evidence_used:[{claim_supported:opportunity?`Hipótese cadastrada: ${opportunity}`:noNeedDeclared?'Nenhuma necessidade adicional foi declarada na última resposta.':'Oportunidade ainda em descoberta',quality:'low',uncertainty:opportunity?'Precisa ser confirmada pelo produtor.':'O contexto pode mudar e deve ser verificado sem pressão.'}],
   human_review:{required:false,reason:'Pré-análise comercial interna.',required_role:'none',status:'not_required'},blocked_actions:[],
   guardrails:[
    'Validar toda premissa financeira com dados reais da propriedade.',

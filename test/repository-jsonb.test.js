@@ -46,6 +46,36 @@ test('perfil assistido envia answers, evidence e snapshot como strings JSONB',as
   assert.equal(JSON.parse(profileCall.params[8]).profileVersion,'producer-360-v1')
   assert.match(profileCall.params[9],/^assisted_survey:cliente-externo:[a-f0-9]{64}$/)
   assert.match(profileCall.sql,/ON CONFLICT \(tenant_id,source_key\)/)
+  assert.match(profileCall.sql,/assessed_at=NOW\(\)/)
+  assert.ok(calls.find(call=>call.sql.includes('pg_advisory_xact_lock')))
+})
+
+test('perfil 360 mantém Q27 no snapshot e não sobrescreve oportunidade comercial canônica',async()=>{
+  const run=async currentCommercial=>{
+    const calls=[]
+    const query=async(sql,params=[])=>{
+      calls.push({sql,params})
+      if(sql.startsWith('SELECT c.commercial_profile'))return {rowCount:1,rows:[{commercial_profile:currentCommercial,profile_snapshot:{additionalNeed:'Ampliar armazenagem',commercial:{opportunity:'Ampliar armazenagem'}}}]}
+      if(sql.includes('INSERT INTO clients'))return {rowCount:1,rows:[{id:'client-db-id'}]}
+      return {rowCount:1,rows:[]}
+    }
+    const repository=repositoryWith({configured:true,transaction:work=>work({query})})
+    await repository.saveSurveyProfile({answers:{27:'Não.'},result:{id:'cliente',name:'Cliente',additionalNeed:'Não.',commercial:{priority:'A avaliar',opportunity:'Não.'}}})
+    return calls
+  }
+
+  const legacyCalls=await run({property:'Talhão 1',opportunity:'Ampliar armazenagem'})
+  const legacyClient=legacyCalls.find(call=>call.sql.includes('INSERT INTO clients'))
+  const legacySnapshot=legacyCalls.find(call=>call.sql.includes('INSERT INTO client_profiles'))
+  assert.deepEqual(JSON.parse(legacyClient.params[8]),{priority:'A avaliar',property:'Talhão 1'})
+  assert.equal(JSON.parse(legacySnapshot.params[8]).commercial.opportunity,'')
+  assert.deepEqual(JSON.parse(legacySnapshot.params[8]).commercial.opportunityProvenance,{origin:'producer_360',field:'q27',state:'none_declared'})
+
+  const independentCalls=await run({property:'Talhão 1',opportunity:'Comparativos técnicos',opportunityProvenance:{origin:'consultant',field:'validated_opportunity',state:'reported'},potential:50_000,potentialValidated:true})
+  const independent=JSON.parse(independentCalls.find(call=>call.sql.includes('INSERT INTO clients')).params[8])
+  assert.equal(independent.opportunity,'Comparativos técnicos')
+  assert.equal(independent.opportunityProvenance.origin,'consultant')
+  assert.equal(independent.potential,50_000)
 })
 
 test('recomendação e model_run serializam arrays e detalhes de erro explicitamente',async()=>{
@@ -186,8 +216,8 @@ test('leitura reidrata o snapshot sem permitir que ele substitua campos canônic
     if(sql.startsWith('SELECT summary'))return {rows:[]}
     return {rows:[{
       external_key:'client-ext',name:'Nome Canônico',municipality:'Município Canônico',total_area_ha:'150',cultures:'Soja',preferred_channel:'Visita',
-      commercial_profile:{priority:'Média'},primary_profile:'Analítico',secondary_profile:'Relacional',irt_score:'72',nps_score:9,
-      profile_snapshot:{name:'Nome Antigo',municipality:'Município Antigo',decisionDriver:'Segurança',servicePreference:'WhatsApp',scoresScale:{trust:8},commercial:{priority:'Alta',property:'Talhão 1'},profileVersion:'producer-360-v1'},
+      commercial_profile:{priority:'Média',opportunity:'Não.'},primary_profile:'Analítico',secondary_profile:'Relacional',irt_score:'72',nps_score:9,
+      profile_snapshot:{name:'Nome Antigo',municipality:'Município Antigo',decisionDriver:'Segurança',servicePreference:'WhatsApp',scoresScale:{trust:8},additionalNeed:'Não.',commercial:{priority:'Alta',property:'Talhão 1',opportunity:'Não.'},profileVersion:'producer-360-v1'},
       profile_assessed_at:new Date('2026-08-01T12:00:00Z'),profile_valid_until:new Date('2027-02-01T12:00:00Z')
     }]}
   }}
@@ -198,7 +228,31 @@ test('leitura reidrata o snapshot sem permitir que ele substitua campos canônic
   assert.equal(client.decisionDriver,'Segurança')
   assert.deepEqual(client.scoresScale,{trust:8})
   assert.equal(client.servicePreference,'Visita')
-  assert.deepEqual(client.commercial,{priority:'Média',property:'Talhão 1'})
+  assert.equal(client.additionalNeed,'Não.')
+  assert.equal(client.additionalNeedStatus,'none_declared')
+  assert.deepEqual(client.commercial,{priority:'Média',property:'Talhão 1',opportunity:'',opportunityProvenance:{origin:'producer_360',field:'q27',state:'none_declared'}})
   assert.equal(client.profileVersion,'producer-360-v1')
   assert.equal(client.profileUpdatedAt,'2026-08-01T12:00:00.000Z')
+})
+
+test('contexto entregue à VAL também neutraliza oportunidade negativa persistida',async()=>{
+  const db={configured:true,query:async()=>({rowCount:1,rows:[{
+    external_key:'client-ext',name:'Cliente',commercial_profile:{opportunity:'Não.'},profile_snapshot:{additionalNeed:'Não.',commercial:{opportunity:'Não.'}},
+    profile_evidence:[],signals:[],learning:{},feedback_learning:{},memories:[]
+  }]})}
+  const context=await repositoryWith(db).getClientContext({clientId:'client-ext'})
+  assert.equal(context.client.additionalNeedStatus,'none_declared')
+  assert.equal(context.client.commercial.opportunity,'')
+  assert.equal(context.client.commercial.opportunityProvenance.state,'none_declared')
+})
+
+test('oportunidade comercial legada com evidência vence Q27 negativa',async()=>{
+  const db={configured:true,query:async sql=>sql.startsWith('SELECT summary')?{rows:[]}:{rows:[{
+    external_key:'client-ext',name:'Cliente',commercial_profile:{opportunity:'Comparativos técnicos e condições',potential:96_000,potentialValidated:true},
+    profile_snapshot:{additionalNeed:'Não.',commercial:{opportunity:'Não.'}}
+  }]}}
+  const [client]=(await repositoryWith(db).getIntelligence()).clients
+  assert.equal(client.additionalNeedStatus,'none_declared')
+  assert.equal(client.commercial.opportunity,'Comparativos técnicos e condições')
+  assert.equal(client.commercial.opportunityProvenance.origin,'legacy_commercial')
 })
