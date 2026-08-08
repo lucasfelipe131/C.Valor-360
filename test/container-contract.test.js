@@ -25,6 +25,7 @@ test('imagem final contém os artefatos exigidos por migrate e start',()=>{
   'src/lib ./src/lib'
  ])assert.ok(dockerfile.includes(required),`COPY ausente: ${required}`)
  assert.match(dockerfile,/mkdir -p \/app\/\.data/)
+ assert.match(dockerfile,/^EXPOSE 8080$/m)
  assert.match(dockerfile,/CMD \["npm", "start"\]/)
 })
 
