@@ -57,7 +57,8 @@ export default function App(){
  const navigate=next=>{if(next!=='client360')setSelected(null);setPage(next);if(next===page)window.requestAnimationFrame(resetPageViewport)}
  const addClient=client=>{
   let saved
-  const next=clientList.some(item=>normalizeText(item.name)===normalizeText(client.name))?clientList.map(item=>normalizeText(item.name)===normalizeText(client.name)?(saved={...item,...client,id:item.id,commercial:{...item.commercial,...client.commercial,potential:Math.max(Number(item.commercial?.potential||0),Number(client.commercial?.potential||0))}},saved):item):[...clientList,(saved=client)]
+  const incomingCommercial=Object.fromEntries(Object.entries(client.commercial||{}).filter(([,value])=>value!==''&&value!==null&&value!==undefined))
+  const next=clientList.some(item=>normalizeText(item.name)===normalizeText(client.name))?clientList.map(item=>normalizeText(item.name)===normalizeText(client.name)?(saved={...item,...client,id:item.id,commercial:{...item.commercial,...incomingCommercial,potential:Math.max(Number(item.commercial?.potential||0),Number(incomingCommercial.potential||0))}},saved):item):[...clientList,(saved=client)]
   setClientList(next);setSelected(saved);notify('Perfil compilado e incorporado à carteira.')
  }
  const importClients=imported=>{
