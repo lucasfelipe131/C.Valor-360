@@ -15,7 +15,7 @@ export default function Questionnaire({onCreate,onOpen,onNotify}){
  const [assistedResult,setAssistedResult]=useState(null)
  const [importedAnswers,setImportedAnswers]=useState({})
  const refresh=()=>fetch('/api/surveys').then(response=>response.ok?response.json():[]).then(setSurveys).catch(()=>setSurveys([]))
- useEffect(refresh,[])
+ useEffect(()=>{refresh()},[])
  const stats=useMemo(()=>({total:surveys.length,pending:surveys.filter(item=>item.status==='aguardando').length,answered:surveys.filter(item=>item.status!=='aguardando').length,irt:Math.round(surveys.filter(item=>item.result).reduce((sum,item)=>sum+Number(item.result.irt||0),0)/Math.max(surveys.filter(item=>item.result).length,1))}),[surveys])
  const createInvitation=async()=>{
   setLoading(true);setError('')
