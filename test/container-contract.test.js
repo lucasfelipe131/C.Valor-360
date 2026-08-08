@@ -34,4 +34,6 @@ test('contexto Docker exclui segredos e Railway usa o Dockerfile',()=>{
  assert.deepEqual(railway.build,{builder:'DOCKERFILE',dockerfilePath:'Dockerfile'})
  assert.equal(railway.deploy.preDeployCommand,'npm run db:migrate')
  assert.equal(railway.deploy.startCommand,'npm run start')
+ assert.equal(railway.deploy.healthcheckPath,'/live')
+ assert.match(readFileSync(new URL('../server.js',import.meta.url),'utf8'),/url\.pathname==='\/live'.*return json\(response,200,/)
 })

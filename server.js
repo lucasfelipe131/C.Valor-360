@@ -60,6 +60,7 @@ function parseCsv(text){
 }
 
 async function handleApi(request,response,url){
+ if(url.pathname==='/live'&&request.method==='GET')return json(response,200,{status:'ok',service:'valor360'})
  if(url.pathname==='/health'&&request.method==='GET'){
   const databaseHealth=await database.health()
   const securityReady=auth.configured||config.demoMode
@@ -178,7 +179,7 @@ async function handleApi(request,response,url){
 createServer(async(request,response)=>{
  let url
  try{url=new URL(request.url||'/',`http://${request.headers.host||'localhost'}`)}catch{return json(response,400,{error:'URL inválida.'})}
- if(url.pathname==='/health'||url.pathname.startsWith('/api/')){
+ if(url.pathname==='/live'||url.pathname==='/health'||url.pathname.startsWith('/api/')){
   try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){return json(response,Number(exception.statusCode)||400,{error:exception.message||'Não foi possível processar a solicitação.'})}
   return json(response,404,{error:'Rota não encontrada.'})
  }
