@@ -1,4 +1,4 @@
--- C.Valor 360 — Modelo inicial PostgreSQL
+-- VALOR 360 — Modelo inicial PostgreSQL
 CREATE TABLE users (
   id UUID PRIMARY KEY,
   name VARCHAR(120) NOT NULL,

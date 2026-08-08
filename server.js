@@ -40,7 +40,7 @@ async function handleApi(request,response,url){
   const payload=await body(request);const token=clean(payload.token).replace(/[^a-zA-Z0-9_-]/g,'')
   if(token.length<8)return json(response,400,{error:'Token de convite inválido.'})
   const store=readStore();const existing=store.surveys.find(item=>item.token===token);if(existing)return json(response,200,existing)
-  const invitation={token,producerName:clean(payload.producerName),consultantName:clean(payload.consultantName)||'Equipe C.Vale',status:'aguardando',createdAt:new Date().toISOString()}
+  const invitation={token,producerName:clean(payload.producerName),consultantName:clean(payload.consultantName)||'Equipe VALOR 360',status:'aguardando',createdAt:new Date().toISOString()}
   store.surveys.push(invitation);saveStore(store);return json(response,201,invitation)
  }
  const surveyMatch=url.pathname.match(/^\/api\/surveys\/([a-zA-Z0-9_-]+)$/)
@@ -89,4 +89,4 @@ createServer(async(request,response)=>{
  const extension=extname(target).toLowerCase()
  response.writeHead(200,{...securityHeaders,'Content-Type':mime[extension]||'application/octet-stream','Cache-Control':extension==='.html'?'no-cache':'public, max-age=31536000, immutable'})
  createReadStream(target).pipe(response)
-}).listen(port,'0.0.0.0',()=>console.log(`Cliente 360 Cvale disponível na porta ${port}`))
+}).listen(port,'0.0.0.0',()=>console.log(`VALOR 360 disponível na porta ${port}`))

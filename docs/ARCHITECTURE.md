@@ -1,11 +1,22 @@
 # VALOR 360 — Estrutura do Projeto
 
 ## Proposta central
-**VALOR 360 = Cliente 360 + Inteligência Agronômica + VAL**
+**VALOR 360 = CRM empresarial + Cliente 360 + Inteligência Agronômica + VAL**
 
 - **Cliente 360:** perfil, NPS, IRT, preferências, histórico e contexto do produtor.
-- **Inteligência Agronômica:** motor técnico herdado do Manual do Agrônomo.
+- **Inteligência Agronômica:** conjunto completo de motores técnicos dentro do VALOR 360.
 - **VAL — Value Agriculture Intelligence:** cérebro que transforma dados em próxima melhor ação.
+
+## Portfólio de produtos
+
+### VALOR 360
+Plataforma completa para empresas. Reúne CRM, gestão de carteira, visitas, oportunidades, indicadores, VAL e todos os módulos de inteligência agronômica na mesma experiência, autenticação e base de dados.
+
+### Manual do Agrônomo
+Produto independente e de menor ticket, voltado ao uso técnico individual ou por pequenas equipes. Mantém marca, planos, autenticação, implantação e dados separados. Não inclui CRM empresarial, pipeline comercial nem a inteligência gerencial da VAL.
+
+### Núcleo técnico compartilhado
+As regras agronômicas, calculadoras, conectores oficiais e validações devem evoluir como componentes reutilizáveis e versionados. Cada produto consome somente o que seu plano autoriza, sem iframe, redirecionamento externo ou duplicação de lógica.
 
 ## Navegação
 1. Dashboard
@@ -27,7 +38,7 @@ O consultor complementa na ficha Cliente 360:
 - pragas;
 - solo;
 - metas do produtor;
-- concorrentes/categorias fora da C.Vale;
+- concorrentes e categorias adquiridas fora da empresa;
 - observações.
 
 ## MVP
@@ -38,4 +49,5 @@ O próximo passo é:
 - persistência;
 - API;
 - VAL com modelo de IA;
-- integração gradual das ferramentas do Manual do Agrônomo.
+- migração gradual dos motores agronômicos para componentes compartilhados;
+- licenciamento independente por produto, plano, empresa e usuário.

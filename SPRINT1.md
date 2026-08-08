@@ -1,12 +1,12 @@
-# C.Valor 360 — Sprint 1
+# VALOR 360 — Sprint 1
 
 ## 1. Visão do produto
 
-**C.Valor 360** é uma plataforma web de inteligência comercial para transformar conhecimento do produtor em preparação de visitas, personalização da abordagem e venda de valor.
+**VALOR 360** é uma plataforma web de inteligência comercial para transformar conhecimento do produtor em preparação de visitas, personalização da abordagem e venda de valor.
 
 **Slogan:** Conhecer. Personalizar. Gerar Valor.
 
-**IA:** VAL — assistente de inteligência comercial do C.Valor 360.
+**IA:** VAL — assistente de inteligência comercial do VALOR 360.
 
 ## 2. Problema central
 
@@ -144,7 +144,7 @@ Rotas paralelas:
 “Uma carteira pode ter centenas de produtores, mas cada um decide de forma diferente. O problema não é a falta de dados; é transformar dados em uma conversa relevante.”
 
 ### 0:30–1:10 — Solução
-“O C.Valor 360 identifica o perfil, organiza o contexto e usa a VAL para preparar cada visita com objetivo, perguntas, argumento e próximo compromisso.”
+“O VALOR 360 identifica o perfil, organiza o contexto e usa a VAL para preparar cada visita com objetivo, perguntas, argumento e próximo compromisso.”
 
 ### 1:10–2:10 — Demonstração
 Abrir dashboard → escolher João → mostrar perfil → clicar em Preparar visita → exibir roteiro da VAL.
@@ -154,7 +154,7 @@ Abrir dashboard → escolher João → mostrar perfil → clicar em Preparar vis
 
 ### 3:10–4:00 — Validação e futuro
 Apresentar resultados do piloto, aprendizados e possibilidade de expansão. Encerrar:
-“C.Valor 360: conhecer o cliente é o começo; gerar valor é o objetivo.”
+“VALOR 360: conhecer o cliente é o começo; gerar valor é o objetivo.”
 
 ## 11. Backlog da Sprint 2
 
