@@ -1,14 +1,17 @@
 import React,{useState} from 'react'
 import { ArrowLeft, BrainCircuit, MapPin, Sprout, BadgeDollarSign, HeartHandshake, MessageSquare, Target, FlaskConical, ClipboardPlus, Save } from 'lucide-react'
 const Section=({title,children})=><article className="panel detail-section"><h3>{title}</h3>{children}</article>
-export default function Client360({client,onBack,setPage}){
- const [tech,setTech]=useState({property:client.commercial?.property||'', crops:client.cultures||'', area:client.area||'', weeds:'', diseases:'', insects:'', soil:'', goal:'', competitors:'', notes:''})
- const save=()=>alert('Dados complementares salvos localmente no protótipo.')
+export default function Client360({client,onBack,onPrepare,onSaved}){
+ const storageKey=`valor360-tech-${client.id}`
+ const [tech,setTech]=useState(()=>{
+  try{return JSON.parse(localStorage.getItem(storageKey))||{property:client.commercial?.property||'',crops:client.cultures||'',area:client.area||'',weeds:'',diseases:'',insects:'',soil:'',goal:'',competitors:'',notes:''}}catch{return {property:'',crops:client.cultures||'',area:client.area||''}}
+ })
+ const save=()=>{localStorage.setItem(storageKey,JSON.stringify(tech));onSaved?.()}
  return <div className="page-stack">
   <button className="back-btn" onClick={onBack}><ArrowLeft size={17}/>Voltar</button>
   <section className="client-hero">
    <div><span className="eyebrow">CLIENTE 360</span><h2>{client.name}</h2><p><MapPin size={15}/>{client.municipality} • {client.area} • {client.cultures}</p><div className="tag-row"><span>{client.primaryProfile}</span><span>{client.secondaryProfile}</span><span>IRT {client.irt}</span><span>NPS {client.nps}</span></div></div>
-   <div className="hero-actions"><button onClick={()=>setPage('val')}><BrainCircuit size={17}/>Preparar com a VAL</button></div>
+   <div className="hero-actions"><button onClick={onPrepare}><BrainCircuit size={17}/>Preparar com a VAL</button></div>
   </section>
   <section className="four-grid">
    <div className="mini-stat"><HeartHandshake/><small>Relacionamento</small><b>{client.irtBand}</b></div>

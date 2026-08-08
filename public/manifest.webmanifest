@@ -1,0 +1,18 @@
+{
+  "name": "VALOR 360 — Inteligência Comercial",
+  "short_name": "VALOR 360",
+  "description": "Inteligência comercial e agronômica para gerar valor em cada relação.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#061c38",
+  "theme_color": "#061c38",
+  "lang": "pt-BR",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

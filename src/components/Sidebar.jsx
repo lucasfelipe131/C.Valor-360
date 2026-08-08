@@ -11,6 +11,6 @@ export default function Sidebar({page,setPage}){
  return <aside className="sidebar">
   <Logo/>
   <nav>{items.map(([id,label,Icon])=><button key={id} className={page===id?'active':''} onClick={()=>setPage(id)}><Icon size={18}/><span>{label}</span></button>)}</nav>
-  <div className="user-card"><div className="user-avatar">LF</div><div><strong>Lucas Felipe</strong><small>Consultor</small></div></div>
+  <div className="user-card"><div className="user-avatar">LF</div><div><strong>Lucas Felipe</strong><small>Eng. Agrônomo • RT</small></div></div>
  </aside>
 }

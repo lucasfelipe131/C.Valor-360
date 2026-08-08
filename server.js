@@ -1,56 +1,24 @@
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
+import {createReadStream,existsSync,statSync} from 'node:fs'
+import {createServer} from 'node:http'
+import {dirname,extname,join,normalize} from 'node:path'
+import {fileURLToPath} from 'node:url'
 
-const port = process.env.PORT || 3000;
-const root = __dirname;
-const mime = {
-  '.html': 'text/html; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.js': 'application/javascript; charset=utf-8',
-  '.svg': 'image/svg+xml',
-  '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.ico': 'image/x-icon'
-};
+const port=Number(process.env.PORT||3000)
+const root=join(dirname(fileURLToPath(import.meta.url)),'dist')
+const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp'}
 
-const server = http.createServer((req, res) => {
-  const rawPath = decodeURIComponent(req.url.split('?')[0]);
-  const requested = rawPath === '/' ? '/index.html' : rawPath;
-  const safePath = path.normalize(requested).replace(/^([.][.][/\\])+/, '');
-  let filePath = path.join(root, safePath);
-
-  if (!filePath.startsWith(root)) {
-    res.writeHead(403);
-    return res.end('Forbidden');
-  }
-
-  fs.stat(filePath, (statErr, stat) => {
-    if (!statErr && stat.isDirectory()) filePath = path.join(filePath, 'index.html');
-    fs.readFile(filePath, (err, data) => {
-      if (err) {
-        fs.readFile(path.join(root, 'index.html'), (fallbackErr, fallback) => {
-          if (fallbackErr) {
-            res.writeHead(404);
-            return res.end('Not found');
-          }
-          res.writeHead(200, { 'Content-Type': mime['.html'] });
-          res.end(fallback);
-        });
-        return;
-      }
-      const ext = path.extname(filePath).toLowerCase();
-      res.writeHead(200, {
-        'Content-Type': mime[ext] || 'application/octet-stream',
-        'Cache-Control': ext === '.html' ? 'no-cache' : 'public, max-age=3600'
-      });
-      res.end(data);
-    });
-  });
-});
-
-server.listen(port, '0.0.0.0', () => {
-  console.log(`C.Valor 360 rodando na porta ${port}`);
-});
+createServer((request,response)=>{
+ const headers={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin'}
+ if(request.url==='/health'){
+  response.writeHead(200,{...headers,'Content-Type':'application/json; charset=utf-8'})
+  return response.end(JSON.stringify({status:'ok',service:'valor360'}))
+ }
+ let pathname='/'
+ try{pathname=decodeURIComponent(new URL(request.url||'/',`http://${request.headers.host||'localhost'}`).pathname)}catch{}
+ const relative=normalize(pathname==='/'?'index.html':pathname.replace(/^\/+/,''))
+ let target=join(root,relative)
+ if(!target.startsWith(root)||!existsSync(target)||statSync(target).isDirectory())target=join(root,'index.html')
+ const extension=extname(target).toLowerCase()
+ response.writeHead(200,{...headers,'Content-Type':mime[extension]||'application/octet-stream','Cache-Control':extension==='.html'?'no-cache':'public, max-age=31536000, immutable'})
+ createReadStream(target).pipe(response)
+}).listen(port,'0.0.0.0',()=>console.log(`VALOR 360 disponível na porta ${port}`))

@@ -16,7 +16,17 @@ O frontend foi criado para seguir a identidade aprovada:
 - layout responsivo para desktop e iPhone.
 
 ## Dados incorporados
-Esta versão já usa as respostas existentes da planilha **Projeto Produtor 360 – C.Vale** para montar a base inicial de clientes, perfis, IRT, NPS e preferências.
+Esta versão usa as respostas existentes do **Projeto Produtor 360 – C.Vale** para montar a base piloto de clientes, perfis, IRT, NPS e preferências. Novos questionários, visitas, complementos técnicos e oportunidades ficam persistidos no dispositivo do usuário.
+
+## Fluxos demonstráveis
+- Dashboard e priorização comercial.
+- Carteira e ficha Cliente 360.
+- Questionário de 27 perguntas com cálculo de perfil, IRT e NPS.
+- Preparação de visita pela VAL com objetivo, SPIN, reframe e fechamento.
+- Agenda de visitas e rota priorizada.
+- Pipeline de oportunidades e simulador de ROI.
+- Relatório executivo do piloto para impressão/PDF.
+- Backup local e governança do ambiente demonstrativo.
 
 ## Rodar localmente
 ```bash
@@ -45,4 +55,4 @@ npm run start
 - `railway.json` configuração de deploy
 
 ## Estado
-**Alpha 0.2 — frontend navegável**
+**MVP 0.3 — piloto funcional e responsivo**

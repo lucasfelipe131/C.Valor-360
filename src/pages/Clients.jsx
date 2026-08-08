@@ -1,10 +1,11 @@
 import React,{useState} from 'react'
 import { Search, ChevronRight, MapPin, Sprout, Star, MessageCircle } from 'lucide-react'
-export default function Clients({clients,onClient}){
+export default function Clients({clients,onClient,onNew}){
  const [q,setQ]=useState('')
  const list=clients.filter(c=>(c.name+c.municipality+c.cultures).toLowerCase().includes(q.toLowerCase()))
  return <div className="page-stack">
-  <div className="search-row"><div className="search-box"><Search size={18}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar produtor, município ou cultura..."/></div><button className="primary-btn">+ Novo cliente</button></div>
+  <div className="search-row"><div className="search-box"><Search size={18}/><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar produtor, município ou cultura..."/></div><button className="primary-btn" onClick={onNew}>+ Novo cliente</button></div>
+  <div className="list-summary"><span><b>{list.length}</b> produtores encontrados</span><span>Carteira piloto • São Luiz Gonzaga/RS</span></div>
   <section className="client-grid">{list.map(c=><article className="client-card" key={c.id} onClick={()=>onClient(c)}>
    <div className="client-top"><div className="initials">{c.name.split(' ').slice(0,2).map(x=>x[0]).join('')}</div><span className="profile-pill">{c.primaryProfile}</span></div>
    <h3>{c.name}</h3><p><MapPin size={14}/>{c.municipality}</p><p><Sprout size={14}/>{c.cultures}</p>

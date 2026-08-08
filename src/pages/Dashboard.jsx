@@ -2,16 +2,22 @@ import React from 'react'
 import { Users, CalendarCheck2, Target, Percent, ArrowUpRight, BrainCircuit, CheckCircle2, FileText, CalendarDays } from 'lucide-react'
 import KpiCard from '../components/KpiCard'
 import ValPanel from '../components/ValPanel'
-export default function Dashboard({clients,setPage,onClient}){
+export default function Dashboard({clients,visits,setPage,onClient,onPrepare}){
  const totalPotential=clients.reduce((s,c)=>s+(c.commercial?.potential||0),0)
  const irt=(clients.reduce((s,c)=>s+Number(c.irt||0),0)/Math.max(clients.length,1)).toFixed(1)
+ const priorities=[...clients].sort((a,b)=>(b.commercial?.potential||0)-(a.commercial?.potential||0)).slice(0,3)
+ const nextVisit=visits?.[0]
+ const nextClient=clients.find(c=>c.id===nextVisit?.clientId)||clients[0]
  return <div className="page-stack">
+  <section className="mobile-welcome"><div><span>Olá, Lucas!</span><h2>Vamos transformar relacionamentos em resultados hoje?</h2></div><div className="mobile-next"><small>PRÓXIMA VISITA</small><b>{nextClient?.name}</b><span>{nextVisit?.time||'14:00'} • {nextClient?.commercial?.property||nextClient?.municipality}</span><button onClick={()=>onPrepare(nextClient)}>Abrir roteiro</button></div></section>
   <section className="kpi-grid">
    <KpiCard icon={Users} label="Clientes ativos" value={clients.length} delta="Base piloto atual"/>
    <KpiCard icon={CalendarCheck2} label="Visitas realizadas" value="32" delta="+8 no mês"/>
    <KpiCard icon={Target} label="Oportunidades" value="18" delta={`R$ ${(totalPotential/1000).toFixed(0)} mil mapeados`} tone="cyan"/>
    <KpiCard icon={Percent} label="IRT médio" value={irt} delta="Relacionamento estratégico" tone="green"/>
   </section>
+
+  <section className="priority-strip"><div className="priority-copy"><span className="eyebrow">PRIORIDADE DA VAL</span><h3>Quem merece sua atenção agora</h3><p>Potencial, tempo sem contato e oportunidade combinados.</p></div>{priorities.map((client,index)=><button key={client.id} onClick={()=>onClient(client)}><span>{String(index+1).padStart(2,'0')}</span><div><b>{client.name}</b><small>{client.commercial?.opportunity}</small></div><strong>R$ {Math.round((client.commercial?.potential||0)/1000)}k</strong><ArrowUpRight size={17}/></button>)}</section>
 
   <section className="dashboard-grid">
    <article className="panel chart-panel">
@@ -44,6 +50,6 @@ export default function Dashboard({clients,setPage,onClient}){
    </article>
   </section>
 
-  <ValPanel clients={clients} onSelect={onClient}/>
+  <ValPanel clients={clients} selectedClient={nextClient} onSelect={onClient}/>
  </div>
 }
