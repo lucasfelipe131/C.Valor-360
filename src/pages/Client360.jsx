@@ -48,7 +48,7 @@ export default function Client360({client,onBack,onPrepare,onSaved}){
     <label>Insetos / pragas<input value={tech.insects} onChange={e=>setTech({...tech,insects:e.target.value})}/></label>
     <label>Resumo de solo<input value={tech.soil} onChange={e=>setTech({...tech,soil:e.target.value})}/></label>
     <label>Meta do produtor<input value={tech.goal} onChange={e=>setTech({...tech,goal:e.target.value})}/></label>
-    <label>Concorrentes / categorias fora da C.Vale<input value={tech.competitors} onChange={e=>setTech({...tech,competitors:e.target.value})}/></label>
+    <label>Concorrentes / categorias adquiridas fora da empresa<input value={tech.competitors} onChange={e=>setTech({...tech,competitors:e.target.value})}/></label>
     <label className="wide">Observações<textarea value={tech.notes} onChange={e=>setTech({...tech,notes:e.target.value})}/></label>
    </div>
    <button className="primary-btn" onClick={save}><Save size={16}/>Salvar complemento</button>

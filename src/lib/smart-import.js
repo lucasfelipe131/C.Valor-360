@@ -7,7 +7,7 @@ const aliases={
  2:['municipio','localidade','cidade','localizacao'],
  3:['area','area total','area cultivada','hectares','ha'],
  4:['culturas','principais culturas','cultura'],
- 5:['tempo relacionamento','relacionamento c vale','tempo de relacionamento'],
+ 5:['tempo relacionamento','relacionamento empresa','tempo de relacionamento'],
  6:['decisores','participantes decisao','quem decide']
 }
 

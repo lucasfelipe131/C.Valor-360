@@ -49,7 +49,7 @@ export default function Dashboard({clients,visits,setPage,onClient,onPrepare}){
  return <div className="page-stack home-page">
   <section className="home-command">
    <div className="home-command-copy">
-    <span className="home-live"><i/> CLIENTE 360 CVALE • CENTRAL ATIVA</span>
+    <span className="home-live"><i/> VALOR 360 • CENTRAL ATIVA</span>
     <h2>{greeting()}, Lucas.</h2>
     <p>Seu dia já está priorizado. Comece pela ação com maior impacto no relacionamento e no resultado.</p>
     <div className="home-command-actions">

@@ -38,7 +38,7 @@ export default function MobileNav({page,setPage}){
  return <>
   {open&&<><button className="mobile-more-backdrop" aria-label="Fechar menu" onClick={()=>setOpen(false)}/>
   <section className="mobile-more-sheet open" aria-label="Todos os módulos">
-   <header><div><small>CLIENTE 360 CVALE</small><h2>Todos os módulos</h2></div><button aria-label="Fechar menu" onClick={()=>setOpen(false)}><X/></button></header>
+   <header><div><small>VALOR 360</small><h2>Todos os módulos</h2></div><button aria-label="Fechar menu" onClick={()=>setOpen(false)}><X/></button></header>
    <div>{secondary.map(([id,label,Icon])=><button key={id} className={page===id?'active':''} onClick={()=>navigate(id)}><span><Icon/></span><b>{label}</b></button>)}</div>
   </section></>}
   <nav className="mobile-nav" aria-label="Navegação principal">

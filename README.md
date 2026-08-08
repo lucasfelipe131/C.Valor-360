@@ -16,7 +16,7 @@ O frontend foi criado para seguir a identidade aprovada:
 - layout responsivo para desktop e iPhone.
 
 ## Dados incorporados
-Esta versão usa as respostas existentes do **Projeto Produtor 360 – C.Vale** para montar a base piloto de clientes, perfis, IRT, NPS e preferências. Novos questionários, visitas, complementos técnicos e oportunidades ficam persistidos no dispositivo do usuário.
+Esta versão usa as respostas existentes do **Projeto Produtor 360** para montar a base piloto de clientes, perfis, IRT, NPS e preferências. Novos questionários, visitas, complementos técnicos e oportunidades ficam persistidos no dispositivo do usuário.
 
 ## Fluxos demonstráveis
 - Dashboard e priorização comercial.

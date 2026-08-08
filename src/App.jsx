@@ -36,7 +36,7 @@ const meta={
  visits:['Visitas','Planejamento, roteiro e próximos compromissos'],
  opportunities:['Oportunidades','Transforme necessidade em proposta de valor'],
  val:['Inteligência (VAL)','Value Agriculture Intelligence'],
- agro:['Inteligência Agronômica','Motor técnico integrado ao Manual do Agrônomo'],
+ agro:['Inteligência Agronômica','Motores técnicos integrados à plataforma'],
  questionnaire:['Produtor 360','Perfil e preferências do produtor'],
  reports:['Relatórios','Indicadores, NPS, IRT e execução comercial'],
  settings:['Configurações','Usuários, unidades e parâmetros']
@@ -63,11 +63,11 @@ export default function App(){
   const next=[...map.values()];setClientList(next);localStorage.setItem('valor360-clients',JSON.stringify(next))
  }
  const updateVisits=next=>{setVisits(next);localStorage.setItem('valor360-visits',JSON.stringify(next))}
- const login=()=>{localStorage.setItem('valor360-session','open');setAuthenticated(true);notify('Bem-vindo ao Cliente 360 Cvale.')}
+ const login=()=>{localStorage.setItem('valor360-session','open');setAuthenticated(true);notify('Bem-vindo ao VALOR 360.')}
  const logout=()=>{localStorage.setItem('valor360-session','closed');setAuthenticated(false);setPage('dashboard')}
  useEffect(()=>{if(!selected&&clientList.length)setSelected(clientList[0])},[clientList,selected])
  useEffect(()=>{fetch('/api/intelligence').then(response=>response.ok?response.json():null).then(data=>data?.clients?.length&&importClients(data.clients)).catch(()=>null)},[])
- const [title,subtitle]=meta[page]||['Cliente 360 Cvale','']
+ const [title,subtitle]=meta[page]||['VALOR 360','']
  if(publicSurveyToken)return <PublicSurvey token={publicSurveyToken}/>
  if(!authenticated)return <Login onLogin={login}/>
  return <div className="app-shell">

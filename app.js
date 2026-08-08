@@ -22,7 +22,7 @@ const screenMeta = {
 function showScreen(id){
   screens.forEach(s=>s.classList.toggle('active',s.id===id));
   navItems.forEach(n=>n.classList.toggle('active',n.dataset.screen===id));
-  const meta=screenMeta[id]||['C.Valor 360',''];
+  const meta=screenMeta[id]||['VALOR 360',''];
   title.textContent=meta[0]; subtitle.textContent=meta[1];
   window.scrollTo({top:0,behavior:'smooth'});
 }
