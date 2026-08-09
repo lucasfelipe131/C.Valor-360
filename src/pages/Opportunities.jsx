@@ -12,12 +12,14 @@ const stages=stageConfig.map(stage=>stage.name)
 const money=value=>Number(value||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0})
 const initials=name=>String(name||'Produtor').split(' ').filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase()
 
-export default function Opportunities({clients,storageScope,onClient,onSaved}){
+export default function Opportunities({clients,storageScope,persistedItems=[],onPersist,onClient,onSaved}){
  const cacheKey=opportunityCacheKey(storageScope)
- const [items,setItems]=useState(()=>reconcilePipeline(clients,cacheKey?parseOpportunityCache(localStorage.getItem(cacheKey)):[]))
+ const [items,setItems]=useState(()=>reconcilePipeline(clients,[...(cacheKey?parseOpportunityCache(localStorage.getItem(cacheKey)):[]),...persistedItems]))
  const [activeStage,setActiveStage]=useState(stages[0])
  const [roi,setRoi]=useState({area:100,investment:180,returnPerHa:420})
- useEffect(()=>{setItems(current=>reconcilePipeline(clients,current))},[clients])
+ const [savingId,setSavingId]=useState('')
+ const [error,setError]=useState('')
+ useEffect(()=>{setItems(current=>reconcilePipeline(clients,[...current,...persistedItems]))},[clients,persistedItems])
  useEffect(()=>{if(cacheKey)localStorage.setItem(cacheKey,JSON.stringify(items))},[cacheKey,items])
  const metrics=useMemo(()=>{
   const total=items.reduce((sum,item)=>sum+Number(item.value||0),0)
@@ -33,12 +35,11 @@ export default function Opportunities({clients,storageScope,onClient,onSaved}){
  const result=Math.max(0,(Number(roi.returnPerHa)-Number(roi.investment))*Number(roi.area))
  const ratio=Number(roi.investment)>0?(Number(roi.returnPerHa)/Number(roi.investment)).toFixed(1):'0.0'
  const clientOf=id=>clients.find(client=>client.id===id)
- const advance=item=>{
+ const advance=async item=>{
   const updated=advancePipelineItem(items,item.id)
-  const nextStage=updated.find(opportunity=>opportunity.id===item.id)?.stage||item.stage
-  setItems(updated)
-  setActiveStage(nextStage)
-  onSaved?.(`${item.title}: etapa atualizada para ${nextStage}.`)
+  const next=updated.find(opportunity=>opportunity.id===item.id);if(!next)return
+  setSavingId(item.id);setError('')
+  try{await onPersist?.(next);setItems(updated);setActiveStage(next.stage);onSaved?.(`${item.title}: etapa atualizada para ${next.stage} e incorporada ao contexto da VAL.`)}catch(exception){setError(exception.message||'Não foi possível atualizar a oportunidade.')}finally{setSavingId('')}
  }
 
  return <div className="page-stack pipeline-page">
@@ -75,6 +76,7 @@ export default function Opportunities({clients,storageScope,onClient,onSaved}){
    })}
   </section>
 
+  {error&&<div className="form-error" role="alert">{error}</div>}
   <section className="pipeline-workspace">
    <header className="pipeline-board-head">
     <div><span className="eyebrow">VISÃO DA CARTEIRA</span><h2>Fluxo de oportunidades</h2><p>Avance cada negociação conforme o compromisso assumido com o produtor.</p></div>
@@ -102,7 +104,7 @@ export default function Opportunities({clients,storageScope,onClient,onSaved}){
          <h3>{item.title}</h3>
          <div className="pipeline-card-value"><span><small>VALOR INFORMADO</small><b>{money(item.value)}</b></span><strong>Etapa {index+1} de 4</strong></div>
          <div className="pipeline-stage-progress" aria-label={`Etapa ${index+1} de 4 no pipeline`}>{stageConfig.map((segment,segmentIndex)=><i className={segmentIndex<=index?'reached':''} key={segment.name}/>)}</div>
-         {stage.name!=='Fechado'?<button type="button" className="pipeline-advance" onClick={()=>advance(item)}>Avançar para {stageConfig[index+1].name}<ArrowRight/></button>:<div className="pipeline-won"><CheckCircle2/> Marcado como fechado</div>}
+         {stage.name!=='Fechado'?<button type="button" className="pipeline-advance" disabled={savingId===item.id} onClick={()=>advance(item)}>{savingId===item.id?'Salvando…':`Avançar para ${stageConfig[index+1].name}`}<ArrowRight/></button>:<div className="pipeline-won"><CheckCircle2/> Marcado como fechado</div>}
         </article>
        })}
        {!column.items.length&&<div className="pipeline-empty"><Target/><b>Nenhuma oportunidade</b><span>Os próximos negócios aparecerão aqui.</span></div>}

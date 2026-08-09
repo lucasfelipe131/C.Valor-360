@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {enforceValSafety,selectValModel,ValEngine} from '../server/val-engine.js'
+import {enforceValSafety,selectValModel,summarizeContextCoverage,ValEngine} from '../server/val-engine.js'
 import {buildFallbackAdvice} from '../server/sales-playbook.js'
 
 const config={modelDaily:'terra',modelStrategic:'sol',modelFast:'luna'}
@@ -72,6 +72,31 @@ test('conversa comercial comum não recebe falso bloqueio pelo texto dos guardra
   const advice=buildFallbackAdvice({client:{name:'Teste'},message:'Como abordar?',signals:[],learning:{}})
   const safe=enforceValSafety(advice,{client:{name:'Teste'},signals:[],learning:{}},'Como devo abordar este produtor?')
   assert.equal(safe.human_review.required,false)
+})
+
+test('sinal técnico pendente enriquece a estratégia sem apagar a recomendação comercial',()=>{
+  const context={client:{name:'Teste'},signals:[{id:'soil-1',title:'Ponto de solo para validar',requires_agronomist:true}],learning:{}}
+  const advice=buildFallbackAdvice({...context,message:'Como abordar este produtor usando o contexto da análise de solo?'})
+  const safe=enforceValSafety(advice,context,'Como abordar este produtor usando o contexto da análise de solo?')
+  assert.doesNotMatch(safe.answer,/reteve qualquer orientação|adaptação comercial foi suspensa/i)
+  assert.match(safe.next_best_action,/pergunta|conversa|acompanhamento/i)
+  assert.equal(safe.human_review.required,true)
+  assert.ok(safe.blocked_actions.some(item=>/diagnóstico/i.test(item)))
+})
+
+test('linguagem de recomendação comercial não é confundida com prescrição agronômica',()=>{
+  const context={client:{name:'Teste'},signals:[{id:'soil-1',title:'Solo recente',requires_agronomist:true}],learning:{}}
+  const advice=buildFallbackAdvice({...context,message:'Como devo preparar a próxima visita?'})
+  advice.answer='Recomendo usar perguntas sobre a análise de solo para preparar a visita e confirmar a prioridade com o produtor.'
+  advice.next_best_action='Use o registro apenas para organizar a descoberta comercial.'
+  const safe=enforceValSafety(advice,context,'Como devo preparar a próxima visita?')
+  assert.equal(safe.answer,advice.answer)
+  assert.doesNotMatch(safe.answer,/reteve qualquer orientação/i)
+})
+
+test('cobertura do dossiê contabiliza todas as fontes conectadas',()=>{
+  const coverage=summarizeContextCoverage({client:{id:'cliente'},profile:{answers:{1:'Nome',2:'Cidade'}},businessHistory:[{}],visits:[{}],interactions:[{}],opportunities:[{}],properties:[{}],fieldReports:[{}],soilAnalyses:[{}],ndviObservations:[{}],manualRecords:[{}],signals:[{}],memories:[{}],priorRecommendations:[{}]})
+  assert.deepEqual(coverage,{profile:true,questionnaire:2,businessEvents:1,visits:1,interactions:1,opportunities:1,properties:1,fieldReports:1,soilAnalyses:1,ndvi:1,manualRecords:1,signals:1,memories:1,priorRecommendations:1})
 })
 
 test('resposta incompleta da OpenAI cai em fallback e preserva metadados de auditoria',async()=>{

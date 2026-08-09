@@ -238,12 +238,15 @@ test('leitura reidrata o snapshot sem permitir que ele substitua campos canônic
 test('contexto entregue à VAL também neutraliza oportunidade negativa persistida',async()=>{
   const db={configured:true,query:async()=>({rowCount:1,rows:[{
     external_key:'client-ext',name:'Cliente',commercial_profile:{opportunity:'Não.'},profile_snapshot:{additionalNeed:'Não.',commercial:{opportunity:'Não.'}},
-    profile_evidence:[],signals:[],learning:{},feedback_learning:{},memories:[]
+    answers:{1:'Cliente',2:'Município'},profile_evidence:[{source:'producer_360',self_reported:true}],profile_assessed_at:new Date('2026-08-01T12:00:00Z'),signals:[],learning:{},feedback_learning:{},memories:[],business_history:[{id:'business-1'}],visits:[{id:'visit-1'}],interactions:[{id:'interaction-1'}],opportunities:[{id:'opportunity-1'}],properties:[{id:'property-1'}],field_reports:[{id:'report-1'}],soil_analyses:[{id:'soil-1'}],ndvi_observations:[{id:'ndvi-1'}],manual_records:[{id:'manual-1'}],prior_recommendations:[{id:'recommendation-1'}]
   }]})}
   const context=await repositoryWith(db).getClientContext({clientId:'client-ext'})
   assert.equal(context.client.additionalNeedStatus,'none_declared')
   assert.equal(context.client.commercial.opportunity,'')
   assert.equal(context.client.commercial.opportunityProvenance.state,'none_declared')
+  assert.deepEqual(context.profile.answers,{1:'Cliente',2:'Município'})
+  assert.equal(context.profile.assessedAt,'2026-08-01T12:00:00.000Z')
+  for(const key of ['businessHistory','visits','interactions','opportunities','properties','fieldReports','soilAnalyses','ndviObservations','manualRecords','priorRecommendations'])assert.equal(context[key].length,1,key)
 })
 
 test('oportunidade comercial legada com evidência vence Q27 negativa',async()=>{
@@ -255,4 +258,18 @@ test('oportunidade comercial legada com evidência vence Q27 negativa',async()=>
   assert.equal(client.additionalNeedStatus,'none_declared')
   assert.equal(client.commercial.opportunity,'Comparativos técnicos e condições')
   assert.equal(client.commercial.opportunityProvenance.origin,'legacy_commercial')
+})
+
+test('visitas e avanço do pipeline são persistidos como contexto canônico da VAL',async()=>{
+  const calls=[]
+  const db={configured:true,query:async(sql,params=[])=>{calls.push({sql,params});if(sql.includes('INSERT INTO visits'))return {rowCount:1,rows:[{id:'visit-db',client_external_key:'client-ext',scheduled_at:new Date('2026-08-10T17:00:00Z'),objective:'Validar prioridade',status:'Agendada',created_at:new Date(),updated_at:new Date()}]};return {rowCount:1,rows:[{id:'opp-db',client_external_key:'client-ext',external_key:'pipeline:key',title:'Ampliar armazenagem',estimated_value:50_000,stage:'Proposta',evidence:[{type:'manual_advance',from:'Diagnóstico',to:'Proposta',at:'2026-08-08T12:00:00.000Z',candidateKey:'producer_360_q27:ampliar armazenagem'}],updated_at:new Date()}]}}}
+  const repository=repositoryWith(db)
+  const visit=await repository.saveVisit({clientId:'client-ext',scheduledAt:'2026-08-10T14:00:00-03:00',objective:'Validar prioridade'})
+  const opportunity=await repository.saveOpportunity({clientId:'client-ext',title:'Ampliar armazenagem',value:50_000,stage:'Proposta',candidateKey:'producer_360_q27:ampliar armazenagem',stageEvidence:{type:'manual_advance',from:'Diagnóstico',to:'Proposta',at:'2026-08-08T12:00:00.000Z',candidateKey:'producer_360_q27:ampliar armazenagem'}})
+  assert.equal(visit.clientId,'client-ext')
+  assert.equal(opportunity.stage,'Proposta')
+  assert.ok(calls.some(call=>call.sql.includes('INSERT INTO visits')))
+  const opportunityCall=calls.find(call=>call.sql.includes('INSERT INTO opportunities'))
+  assert.match(opportunityCall.params[2],/^pipeline:/)
+  assert.deepEqual(JSON.parse(opportunityCall.params[10])[0],{type:'manual_advance',from:'Diagnóstico',to:'Proposta',at:'2026-08-08T12:00:00.000Z',candidateKey:'producer_360_q27:ampliar armazenagem'})
 })

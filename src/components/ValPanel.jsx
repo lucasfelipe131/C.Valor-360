@@ -1,6 +1,6 @@
 import React,{useEffect,useMemo,useState} from 'react'
 import {
- AlertCircle,BrainCircuit,Check,ChevronRight,ClipboardCheck,
+ AlertCircle,BrainCircuit,Check,ChevronRight,ClipboardCheck,DatabaseZap,
  FileSearch,Gauge,Lightbulb,LoaderCircle,MessageSquareText,Route,Send,
  ShieldCheck,Sparkles,Target,ThumbsDown,ThumbsUp,UserRoundSearch,Zap
 } from 'lucide-react'
@@ -68,7 +68,8 @@ function asList(value,fallback=[]){
  return list.map(textValue).filter(Boolean)
 }
 
-const sourceLabels={client_record:'cadastro do cliente',business_history:'histórico de negócios',field_report:'relatório de campo',soil_analysis:'análise de solo',ndvi:'NDVI',producer_statement:'declaração do produtor',approved_playbook:'playbook aprovado',missing:'dado ausente',unknown:'origem não confirmada'}
+const sourceLabels={client_record:'cadastro do cliente',producer_questionnaire:'Produtor 360',business_history:'histórico de negócios',visit:'visita',interaction:'interação',opportunity:'oportunidade',field_report:'relatório de campo',soil_analysis:'análise de solo',ndvi:'NDVI',manual_record:'Manual do Agrônomo',producer_statement:'declaração do produtor',approved_playbook:'playbook aprovado',missing:'dado ausente',unknown:'origem não confirmada'}
+const coverageLabels={questionnaire:'respostas 360',businessEvents:'negócios',visits:'visitas',interactions:'interações',opportunities:'oportunidades',properties:'propriedades',fieldReports:'relatórios de campo',soilAnalyses:'análises de solo',ndvi:'leituras NDVI',manualRecords:'registros do Manual',signals:'sinais',memories:'memórias',priorRecommendations:'análises anteriores'}
 const confidenceLabels={not_calibrated:'não calibrada',insufficient:'insuficiente',low:'baixa',moderate:'moderada',high:'alta'}
 const reviewerLabels={technical_reviewer:'responsável técnico habilitado',manager:'gestor',consultant:'consultor',none:'não exigido'}
 function dateValue(value){if(!value||value==='unknown')return 'data não informada';const date=new Date(value);return Number.isNaN(date.getTime())?String(value):date.toLocaleDateString('pt-BR')}
@@ -208,6 +209,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const configured=Boolean(status.data?.configured)
  const engineReady=configured&&!status.error
  const recommendationRegistered=Boolean(response?.recommendationId)
+ const contextSources=Object.entries(response?.contextCoverage||{}).filter(([key,value])=>key!=='profile'&&Number(value)>0).map(([key,value])=>({key,label:coverageLabels[key]||key,value}))
 
  const ask=async(rawMessage)=>{
   const prompt=String(rawMessage||message).trim()
@@ -307,6 +309,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
    <span className="sr-only" role="status">{loading?'Análise em andamento.':recommendationRegistered?'Nova recomendação registrada.':response?'Nova orientação não registrada.':'Pré-análise local.'}</span>
    <div className="val-response-heading"><div><span className="val-section-icon"><Sparkles/></span><div><span>{recommendationRegistered?'RECOMENDAÇÃO REGISTRADA':response?'ORIENTAÇÃO NÃO REGISTRADA':'PRÉ-ANÁLISE LOCAL'}</span><h3>Direção comercial explicável</h3></div></div><div className="val-response-meta"><span>{response?modeLabel(response.engineMode):'Ainda não enviada à engine'}</span>{response&&!recommendationRegistered&&<span>Somente neste dispositivo</span>}{response?.model&&<span>{response.model}</span>}</div></div>
    <div className="val-internal-banner"><ShieldCheck/><span><b>Uso interno do consultor</b><small>Esta saída não está aprovada para apresentação direta ao produtor.</small></span></div>
+   {response&&<div className="val-context-coverage"><div><DatabaseZap/><span><b>Dossiê cruzado pela VAL</b><small>Cadastro canônico{response.contextCoverage?.profile?' + perfil Produtor 360':''}</small></span></div><ul>{contextSources.length?contextSources.map(item=><li key={item.key}><b>{item.value}</b><span>{item.label}</span></li>):<li><b>1</b><span>cadastro do produtor</span></li>}</ul></div>}
 
    <div className="val-insight-grid">
     <article className="val-insight-card val-answer-card">

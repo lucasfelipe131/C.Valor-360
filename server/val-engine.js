@@ -13,9 +13,29 @@ export function selectValModel(message,mode,runtimeConfig){
 
 function truncate(value,max){const text=JSON.stringify(value);return text.length<=max?value:{truncated:true,content:text.slice(0,max)}}
 function safeError(error){const status=Number(error?.status||0);return status===401?'A chave da OpenAI foi recusada.':status===429?'Limite de uso da OpenAI atingido.':'A IA ficou indisponível nesta tentativa.'}
-const agronomicRisk=/\b(dose|dosagem|mistura|receita agron[oô]mica|prescri[cç][aã]o|aplicar|aplica[cç][aã]o|aduba[cç][aã]o|calagem|defensivo|fungicida|herbicida|inseticida|diagn[oó]stico|ndvi|an[aá]lise de solo)\b/i
 const applicationRate=/\b\d+(?:[.,]\d+)?\s*(?:l|ml|kg|g|t|sc|sacas?)\s*\/\s*(?:ha|hectares?|alqueires?)\b/i
-const actionableAgronomy=/\b(?:recomendo|use|utilize|aplique|misture|prescreva|deve aplicar|dose de|diagn[oó]stico (?:é|indica|confirma)|(?:é|indica|confirma) (?:defici[eê]ncia|doen[cç]a|praga|compacta[cç][aã]o))\b/i
+const actionableAgronomy=/\b(?:(?:recomendo|use|utilize|aplique|misture|prescreva|deve aplicar)\b.{0,100}\b(?:produto|dose|dosagem|mistura|defensivo|fungicida|herbicida|inseticida|aduba[cç][aã]o|calagem|receita agron[oô]mica)\b|dose de\s+\d|diagn[oó]stico (?:é|indica|confirma)|(?:é|indica|confirma) (?:defici[eê]ncia|doen[cç]a|praga|compacta[cç][aã]o))\b/i
+const explicitAgronomyRequest=/\b(?:(?:qual|quais|quanto|quantos|calcule|indique|recomende|prescreva|defina|monte|fa[cç]a|devo|posso|como)\b.{0,80}\b(?:dose|dosagem|mistura|produto|defensivo|fungicida|herbicida|inseticida|aduba[cç][aã]o|calagem|receita agron[oô]mica|diagn[oó]stico)\b|(?:aplique|misture|prescreva|diagnostique)\b)/i
+
+const count=value=>Array.isArray(value)?value.length:0
+export function summarizeContextCoverage(context={}){
+  return {
+    profile:Boolean(context.client?.id),
+    questionnaire:Object.keys(context.profile?.answers||{}).length,
+    businessEvents:count(context.businessHistory),
+    visits:count(context.visits),
+    interactions:count(context.interactions),
+    opportunities:count(context.opportunities),
+    properties:count(context.properties),
+    fieldReports:count(context.fieldReports),
+    soilAnalyses:count(context.soilAnalyses),
+    ndvi:count(context.ndviObservations),
+    manualRecords:count(context.manualRecords),
+    signals:count(context.signals),
+    memories:count(context.memories),
+    priorRecommendations:count(context.priorRecommendations)
+  }
+}
 
 function technicalReviewShell(_context,_message,signalRequiresReview){
   const nextQuestion={stage:'situação',question:'Quais dados, método, unidade e contexto o responsável técnico precisa validar antes de orientar qualquer ação?',ask_when:'Antes de discutir produto, dose, mistura, diagnóstico ou aplicação.',purpose:'Transformar a solicitação em um pacote de revisão verificável.',evidence_needed:'Fonte, data, talhão, cultura, estágio, método e responsável pela validação.'}
@@ -45,9 +65,9 @@ export function enforceValSafety(advice,context,message=''){
   const signalRequiresReview=(context.signals||[]).some(item=>item.requires_agronomist!==false)
   const generatedAction=[result.answer,result.next_best_action,result.next_question?.question,...(result.questions||[]).map(item=>item?.question)].filter(Boolean).join('\n')
   const generatedContent=JSON.stringify(result)
-  const contentRequiresReview=agronomicRisk.test(String(message))||applicationRate.test(`${message}\n${generatedContent}`)||actionableAgronomy.test(`${generatedAction}\n${generatedContent}`)
-  const requiresReview=signalRequiresReview||contentRequiresReview||result.human_review?.required===true
-  if(requiresReview)return technicalReviewShell(context,message,signalRequiresReview)
+  const requestRequiresReview=explicitAgronomyRequest.test(String(message))||applicationRate.test(String(message))
+  const outputRequiresReview=applicationRate.test(generatedContent)||actionableAgronomy.test(`${generatedAction}\n${generatedContent}`)
+  if(requestRequiresReview||outputRequiresReview)return technicalReviewShell(context,message,signalRequiresReview)
   result.audience='internal';result.safe_to_show_customer=false
   if(result.constructive_tension?.status==='applicable'){
     result.constructive_tension.evidence_ids=(result.constructive_tension.evidence_ids||[]).filter(id=>evidenceIds.has(id))
@@ -56,7 +76,11 @@ export function enforceValSafety(advice,context,message=''){
   }
   result.confidence=result.confidence||{};result.confidence.level='not_calibrated';result.confidence.calibration_status='not_calibrated'
   if(!result.evidence_used.length)result.confidence.rationale='Nenhuma evidência auditável sustenta uma recomendação além da próxima pergunta.'
-  result.human_review={...(result.human_review||{}),required:false,required_role:'none',status:'not_required'}
+  if(signalRequiresReview){
+    result.human_review={required:true,reason:'Há sinais técnicos no contexto que podem orientar a prioridade comercial, mas qualquer interpretação agronômica ou recomendação de execução continua sujeita ao responsável técnico.',required_role:'technical_reviewer',status:'pending'}
+    result.blocked_actions=[...new Set([...(result.blocked_actions||[]),'Converter sinal técnico em diagnóstico','Prescrever produto, dose, mistura ou aplicação sem validação técnica'])]
+    result.guardrails=[...new Set([...(result.guardrails||[]),'Usar sinais técnicos somente para priorizar perguntas, visitas e validações; nunca como prescrição.'])]
+  }else result.human_review={...(result.human_review||{}),required:false,required_role:'none',status:'not_required'}
   return result
 }
 
@@ -70,6 +94,7 @@ export class ValEngine{
 
   async answer({tenantId,clientId,client,message,mode='daily',signal}){
     const context=await this.repository.getClientContext({tenantId,clientId,client})
+    const contextCoverage=summarizeContextCoverage(context)
     const route=selectValModel(message,mode,this.config)
     let advice,engineMode='demonstration',warning='',responseMetadata={}
     if(!this.client)advice=buildFallbackAdvice({...context,message})
@@ -98,6 +123,6 @@ export class ValEngine{
     advice=enforceValSafety(advice,context,message)
     const modelRun={model:this.client?route.model:'rules-v2',promptVersion:'val-playbook-v2',status:engineMode==='openai'?'completed':this.client?'fallback':'demonstration',...responseMetadata}
     const recommendationId=await this.repository.recordRecommendation({tenantId,clientId,question:message,mode:route.tier,model:engineMode==='openai'?route.model:'rules-v2',context,advice,responseMetadata,promptHash:createHash('sha256').update(buildValInstructions()).digest('hex'),modelRun})
-    return {recommendationId,engineMode,route:route.tier,model:engineMode==='openai'?route.model:'rules-v2',warning,advice}
+    return {recommendationId,engineMode,route:route.tier,model:engineMode==='openai'?route.model:'rules-v2',warning,contextCoverage,advice}
   }
 }

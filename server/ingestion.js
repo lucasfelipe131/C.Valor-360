@@ -2,9 +2,10 @@ import {createHash,createHmac,timingSafeEqual} from 'node:crypto'
 
 export const supportedIntegrationEvents=new Set([
   'business.closed','business.lost','business.updated',
-  'field_report.completed','soil_analysis.completed','ndvi.observation'
+  'field_report.completed','soil_analysis.completed','ndvi.observation',
+  'manual.record.saved','manual.producer.updated','manual.workspace.updated'
 ])
-const signedTechnicalEvents=new Set(['field_report.completed','soil_analysis.completed'])
+const signedTechnicalEvents=new Set(['field_report.completed','soil_analysis.completed','manual.record.saved','manual.producer.updated','manual.workspace.updated'])
 
 const clean=value=>String(value??'').trim().slice(0,500)
 const externalKey=value=>clean(value).slice(0,180)
