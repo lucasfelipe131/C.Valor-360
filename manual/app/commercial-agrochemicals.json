@@ -1,0 +1,1465 @@
+[
+  {
+    "id": "aq-abacus-hc",
+    "name": "ABACUS HC",
+    "active": "EPOXICONAZOL 160 + PIRACLOSTROBINA 260",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-accent",
+    "name": "ACCENT",
+    "active": "NICOSSULFUROM 750",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-aclamado-br",
+    "name": "ACLAMADO BR",
+    "active": "ATRAZINA 500",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-across",
+    "name": "ACROSS",
+    "active": "AZOXISTROBINA 40+DIFENOCONAZOL 40+CLOROTALONIL 500",
+    "maker": "ADAMA",
+    "source": ""
+  },
+  {
+    "id": "aq-adengo",
+    "name": "ADENGO",
+    "active": "ISOXAFLUTOL 225,0 G/L + TIENCARBAZONA-METÍLICA 90 G/L",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-alade",
+    "name": "ALADE",
+    "active": "CIPROCONAZOL 90 + DIFENOCONAZOL 150 + BENZOVINDIFLUPIR 60",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-almada",
+    "name": "ALMADA",
+    "active": "PROTIOCONAZOL 31,5+FLUXAPIROXADE 22,5+MANCOZEBE 440",
+    "maker": "ADAMA",
+    "source": ""
+  },
+  {
+    "id": "aq-ampligo",
+    "name": "AMPLIGO",
+    "active": "CLORANTRANIPROLE 100 + LAMBDA-CIALOTRINA 50",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-approve",
+    "name": "APPROVE",
+    "active": "FLUAZINAM 375 + TIOFANATO-METÍLICO 375",
+    "maker": "IHARA",
+    "source": ""
+  },
+  {
+    "id": "aq-apresa",
+    "name": "APRESA",
+    "active": "FLUMIOXAZINA + S-METOLACLORO",
+    "maker": "ADAMA",
+    "source": ""
+  },
+  {
+    "id": "aq-aproach-power",
+    "name": "APROACH POWER",
+    "active": "CIPROCONAZOLE 40 + PICOXISTROBINA 90",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-aproach-premium",
+    "name": "APROACH PREMIUM",
+    "active": "CIPROCONAZOL 40 + OXI COBRE 420 + PICOXISTROBINA 60",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-araddo",
+    "name": "ARADDO",
+    "active": "CLETODIM 140 + FLUROXIPIR 288",
+    "maker": "ADAMA",
+    "source": ""
+  },
+  {
+    "id": "aq-aslan-sl",
+    "name": "ASLAN SL",
+    "active": "ACETAMIPRIDO 100 + BIFENTRINA 67",
+    "maker": "CROPCHEM",
+    "source": ""
+  },
+  {
+    "id": "aq-assist-ec",
+    "name": "ASSIST EC",
+    "active": "OLEO MINERAL",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-ativum",
+    "name": "ATIVUM",
+    "active": "EPOXICONAZOL 50+PIRACLOSTROBINA 81+FLUXAPIROXADE 50",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-audace",
+    "name": "AUDACE",
+    "active": "Glufosinato 200",
+    "maker": "ALTA",
+    "source": ""
+  },
+  {
+    "id": "aq-aureo",
+    "name": "AUREO",
+    "active": "ESTÉR METÍLICO DE ÓLEO DE SOJA 720",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-aurora-400-ec",
+    "name": "AURORA 400 EC",
+    "active": "CARFENTRAZONA-ETILICA 400",
+    "maker": "FMC",
+    "source": ""
+  },
+  {
+    "id": "aq-azimut",
+    "name": "AZIMUT",
+    "active": "AZOXISTROBINA 120 + TEBUCONAZOL 200",
+    "maker": "ADAMA",
+    "source": ""
+  },
+  {
+    "id": "aq-basagran-600",
+    "name": "BASAGRAN 600",
+    "active": "BENTAZONA 600",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-belt",
+    "name": "BELT",
+    "active": "FLUBENDIAMIDA 480",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-belyan",
+    "name": "BELYAN",
+    "active": "MEFENTRIFLUCONAZOL 133,30 + PIRACLOSTROBINA 177,8 + FLUXAPIROXADE 88,9",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-bimmax",
+    "name": "BIMMAX",
+    "active": "TRICICLAZOL 200 + TEBUCONAZOL 160",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-blavity",
+    "name": "BLAVITY",
+    "active": "PROTIOCONAZOLE 280 + FLUXAPIROXADE 200",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-blindado-tov",
+    "name": "BLINDADO TOV",
+    "active": "MANCOZEBE 400+TEBUCONAZOL 33,33+PICOXISTROBINA 26,66",
+    "maker": "ADAMA",
+    "source": ""
+  },
+  {
+    "id": "aq-blowout",
+    "name": "BLOWOUT",
+    "active": "DIQUATE 200",
+    "maker": "RAINBOW",
+    "source": ""
+  },
+  {
+    "id": "aq-bravonil-720",
+    "name": "BRAVONIL 720",
+    "active": "CLOROTALONIL 720",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-brilhante-br",
+    "name": "BRILHANTE BR",
+    "active": "METOMIL 215",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-brio",
+    "name": "BRIO",
+    "active": "CREZOXIM-METÍLICO 125 + EPOXICONAZOLE 125",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-brucia",
+    "name": "BRUCIA",
+    "active": "Tolpiralate 400",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-bulldock-125-sc",
+    "name": "BULLDOCK 125 SC",
+    "active": "BETA-CIFLUTRINA 125",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-calaris",
+    "name": "CALARIS",
+    "active": "ATRAZINA 500 + MESOTRIONA 50",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-capatazbr",
+    "name": "CAPATAZBR",
+    "active": "CLORPIRIFOS 480",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-carnadine",
+    "name": "CARNADINE",
+    "active": "ACETAMIPRIDO 200",
+    "maker": "SUMITOMO",
+    "source": ""
+  },
+  {
+    "id": "aq-cartago-240-ec",
+    "name": "CARTAGO 240 EC",
+    "active": "Cletodim 240",
+    "maker": "ALTA",
+    "source": ""
+  },
+  {
+    "id": "aq-cercobin-875-wg",
+    "name": "CERCOBIN 875 WG",
+    "active": "TIOFANATO-METILICO 875",
+    "maker": "IHARA",
+    "source": ""
+  },
+  {
+    "id": "aq-certero",
+    "name": "CERTERO",
+    "active": "TRIFLUMUROM 480",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-certeza-n",
+    "name": "CERTEZA N",
+    "active": "FLUAZINAM 52,5 + TIOFANATO METILICO 350",
+    "maker": "IHARA",
+    "source": ""
+  },
+  {
+    "id": "aq-charrua-max-sc",
+    "name": "CHARRUA MAX SC",
+    "active": "Tebuconazol 200 + Trifloxistrobina 100",
+    "maker": "CROPCHEM",
+    "source": ""
+  },
+  {
+    "id": "aq-cipermetrina-nortox-250-ec",
+    "name": "CIPERMETRINA NORTOX 250 EC",
+    "active": "CIPERMETRINA 250 G/L",
+    "maker": "NORTOX",
+    "source": ""
+  },
+  {
+    "id": "aq-classic",
+    "name": "CLASSIC",
+    "active": "CLORIMUROM 250",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-clincher",
+    "name": "CLINCHER",
+    "active": "CIALOFOPE BUTILICO 180",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-clorfenapir-nortox",
+    "name": "CLORFENAPIR NORTOX",
+    "active": "CLORFENAPIR 240 G/L",
+    "maker": "NORTOX",
+    "source": ""
+  },
+  {
+    "id": "aq-clorimuron-max-nortox",
+    "name": "CLORIMURON MAX NORTOX",
+    "active": "CLORIMUROM 750",
+    "maker": "NORTOX",
+    "source": ""
+  },
+  {
+    "id": "aq-connect",
+    "name": "CONNECT",
+    "active": "IMIDACLOPRIDO 100 + BETA-CIFLUTRINA 12,5",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-convintro-duo",
+    "name": "CONVINTRO DUO",
+    "active": "Metribuzim 400 + Diflufenicam 200",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-coronelbr",
+    "name": "CORONELBR",
+    "active": "METRIBUZIM 480 G/L",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-cropstar",
+    "name": "CROPSTAR",
+    "active": "IMIDACLOPRIDO 150 + TIODICARBE 450",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-crossover",
+    "name": "CROSSOVER",
+    "active": "AMETRINA 300 + CLOMAZONA 200",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-cruiser-350-fs",
+    "name": "CRUISER 350 FS",
+    "active": "TIAMETOXAM 350",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-cruiser-advanced",
+    "name": "CRUISER ADVANCED",
+    "active": "TIAMETOXAM 350+TIABENDAZOL 150+METALAXIL-M 20+FLUDIOXONIL 25",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-cruiser-opti",
+    "name": "CRUISER OPTI",
+    "active": "TIAMETOXAM 210 + LAMBDA CIALOTRINA 37,5",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-curbix-200-sc",
+    "name": "CURBIX 200 SC",
+    "active": "ETIPROLE 200",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-cypress-400-ec",
+    "name": "CYPRESS 400 EC",
+    "active": "CIPROCONAZOLE 150 + DIFENOCONAZOLE 250",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-cyptrin-250-ce",
+    "name": "CYPTRIN 250 CE",
+    "active": "CIPERMETRINA 250",
+    "maker": "SUMITOMO",
+    "source": ""
+  },
+  {
+    "id": "aq-dermacor",
+    "name": "DERMACOR",
+    "active": "CLORANTRANILIPROLE 625",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-dimilin-80-wg",
+    "name": "DIMILIN 80 WG",
+    "active": "DIFLUBENZURON 800",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-distinto-br",
+    "name": "DISTINTO BR",
+    "active": "ISOXAFLUTOL 750",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-dotte",
+    "name": "DOTTE",
+    "active": "Picoxistrobina 200 + PROTIOCONAZOL 240",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-dual-gold",
+    "name": "DUAL GOLD",
+    "active": "METOLACLORO 960",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-eddus",
+    "name": "EDDUS",
+    "active": "FOMESAFEM 113,85 + S-METALACLORO 517,83",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-elatus",
+    "name": "ELATUS",
+    "active": "AZOXISTROBINA 300 + BENZOVINDIFLUPIR 150",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-elevore",
+    "name": "ELEVORE",
+    "active": "HALAUXIFENO METÍLICO 71,40 G/L",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-eliminate",
+    "name": "ELIMINATE",
+    "active": "GLUFOSINATO DE AMONIO 200",
+    "maker": "CHDS",
+    "source": ""
+  },
+  {
+    "id": "aq-eliminate-ultra",
+    "name": "ELIMINATE ULTRA",
+    "active": "Glufosinato 850",
+    "maker": "CHDS",
+    "source": ""
+  },
+  {
+    "id": "aq-eminent-gold",
+    "name": "EMINENT GOLD",
+    "active": "TETRACONAZOL 230",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-engeo-pleno-s",
+    "name": "ENGEO PLENO S",
+    "active": "TIAMETOXAM 141 + LAMBDA-CIALOTRINA 106",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-enlist-colex-d",
+    "name": "ENLIST COLEX-D",
+    "active": "2,4-D 668,62 G/L",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-epingle-100-ew",
+    "name": "EPINGLE 100 EW",
+    "active": "PIRIPROXIFEM 100",
+    "maker": "SUMITOMO",
+    "source": ""
+  },
+  {
+    "id": "aq-evolution-600wg",
+    "name": "EVOLUTION 600WG",
+    "active": "AZOXISTROBINA 37,5 + MANCOZEBE 525 + PROTIOCONAZOL 37,5",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-exalt",
+    "name": "EXALT",
+    "active": "ESPINETORAM 120",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-excalia-max",
+    "name": "EXCALIA MAX",
+    "active": "TEBUCONAZOL 200 + IMPIRFLUXAM 60",
+    "maker": "SUMITOMO",
+    "source": ""
+  },
+  {
+    "id": "aq-expedition",
+    "name": "EXPEDITION",
+    "active": "LAMBDA CIALOTRINA 150 + SULFOXAFLOR 100",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-extravon",
+    "name": "EXTRAVON",
+    "active": "ESPALHANTE ADESIVO",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-facet",
+    "name": "FACET",
+    "active": "QUINCLORAQUE 500",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-fastac-100-sc",
+    "name": "FASTAC 100 SC",
+    "active": "ALFACIPERMETRINA 100",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-fastac-duo-sc",
+    "name": "FASTAC DUO SC",
+    "active": "ALFACIPERMETRINA 100 + ACETAMIPRIDO 200",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-feroce",
+    "name": "FEROCE",
+    "active": "ACEFATO 850 + BIFENTRINA 30",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-finale",
+    "name": "FINALE",
+    "active": "GLUFOSINATO DE AMONIO 200",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-fipronil-alta-250-fs",
+    "name": "FIPRONIL ALTA 250 FS",
+    "active": "FIPRONIL 250",
+    "maker": "ALTA",
+    "source": ""
+  },
+  {
+    "id": "aq-flexstar-gt",
+    "name": "FLEXSTAR GT",
+    "active": "FOMESAFEM 67,7 + GLIFOSATO 271,1",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-fortenza-600-fs",
+    "name": "FORTENZA 600 FS",
+    "active": "CIANTRANILIPROLE 600",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-fox-supra-sc-360",
+    "name": "FOX SUPRA SC 360",
+    "active": "PROTIOCONAZOL 240 + IMPIRFLUXAM 120",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-fox-supra-sc-360",
+    "name": "FOX SUPRA SC 360",
+    "active": "PROTIOCONAZOLE 240 + IMPIRFLUXAM 120",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-fox-ultra",
+    "name": "FOX ULTRA",
+    "active": "Trifloxistrobina 155+PROTIOCONAZOL 175+Impirfluxam90",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-fox-xpro",
+    "name": "FOX XPRO",
+    "active": "PROTIOCONAZOLE 175+TRIFLOXISTROBINA 150+BIXAFEN 126",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-fusao-ec",
+    "name": "FUSAO EC",
+    "active": "TEBUCONAZOL 165 + METOMINOSTROBIN 110",
+    "maker": "IHARA",
+    "source": ""
+  },
+  {
+    "id": "aq-galil-sc",
+    "name": "GALIL SC",
+    "active": "BIFENTRINA 50 + IMIDACLOPRIDO 250",
+    "maker": "ADAMA",
+    "source": ""
+  },
+  {
+    "id": "aq-gameover",
+    "name": "GAMEOVER",
+    "active": "Sulfentrazona 500",
+    "maker": "CHDS",
+    "source": ""
+  },
+  {
+    "id": "aq-gapper",
+    "name": "GAPPER",
+    "active": "FLORPYRAUXIFEN-BENZIL 25 G/L",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-hampton",
+    "name": "HAMPTON",
+    "active": "CARFENTRAZONA-ETILICA 400",
+    "maker": "TECNOMYL",
+    "source": ""
+  },
+  {
+    "id": "aq-heat",
+    "name": "HEAT",
+    "active": "SAFLUFENACIL 700",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-hero",
+    "name": "HERO",
+    "active": "BIFENTRINA 180 + ZETACIPERMETRINA 200",
+    "maker": "FMC",
+    "source": ""
+  },
+  {
+    "id": "aq-iharol-gold",
+    "name": "IHAROL GOLD",
+    "active": "OLEO MINERAL",
+    "maker": "IHARA",
+    "source": ""
+  },
+  {
+    "id": "aq-imidacloprid-nortox",
+    "name": "IMIDACLOPRID NORTOX",
+    "active": "IMIDACLOPRID 480",
+    "maker": "NORTOX",
+    "source": ""
+  },
+  {
+    "id": "aq-instivo",
+    "name": "INSTIVO",
+    "active": "ABAMECTINA 18 + CLORANTRANILIPROLE 45",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-intrepid-240-sc",
+    "name": "INTREPID 240 SC",
+    "active": "METOXIFENOZIDA 240",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-joint-ultra",
+    "name": "JOINT ULTRA",
+    "active": "OLEO MINERAL",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-kaiso-max",
+    "name": "KAISO MAX",
+    "active": "IMIDACLOPRIDO 350 + LAMBDA CIALOTRINA 100",
+    "maker": "SUMITOMO",
+    "source": ""
+  },
+  {
+    "id": "aq-kaivana",
+    "name": "KAIVANA",
+    "active": "CLOMAZONA 360",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-kasumin",
+    "name": "KASUMIN",
+    "active": "CASUGAMICINA 20",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-kennox",
+    "name": "KENNOX",
+    "active": "CLETODIM 240 + HALOXIFOPE 123,6",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-keyra",
+    "name": "KEYRA",
+    "active": "FENPROPIMORFE 400 + MEFENTRIFLUCONAZOL 150",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-klorpan-480-ec",
+    "name": "KLORPAN 480 EC",
+    "active": "CLORPIRIFOS 480",
+    "maker": "SUMITOMO",
+    "source": ""
+  },
+  {
+    "id": "aq-lannate-br",
+    "name": "LANNATE BR",
+    "active": "METOMIL 215",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-larvin-800-wg",
+    "name": "LARVIN 800 WG",
+    "active": "TIODICARBE 800",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-loyant",
+    "name": "LOYANT",
+    "active": "FLORPYRAUXIFEN-BENZIL 25",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-magma-500-sc",
+    "name": "MAGMA 500 SC",
+    "active": "FLUMIOXAZINA 500",
+    "maker": "TECNOMYL",
+    "source": ""
+  },
+  {
+    "id": "aq-magnum",
+    "name": "MAGNUM",
+    "active": "ACEFATO 970",
+    "maker": "ADAMA",
+    "source": ""
+  },
+  {
+    "id": "aq-match-ec",
+    "name": "MATCH EC",
+    "active": "LUFENUROM 50",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-mateno-pos",
+    "name": "MATENO POS",
+    "active": "Iodosulfurom 10 + Diflufenicam 150",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-maxim-advanced",
+    "name": "MAXIM ADVANCED",
+    "active": "FLUDIOXONIL 25 + METALAXIL 20 + TIABENDAZOL 150",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-maxim-xl",
+    "name": "MAXIM XL",
+    "active": "FLUDIOXONIL 25 + METALAXIL 10",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-mees",
+    "name": "MEES",
+    "active": "OLEO VEGETAL",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-minos-caps-360-cs",
+    "name": "MINOS CAPS 360 CS",
+    "active": "Clomazona 360",
+    "maker": "CROPCHEM",
+    "source": ""
+  },
+  {
+    "id": "aq-miravis",
+    "name": "MIRAVIS",
+    "active": "PIDIFLUMETOFEM 200 G/L",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-miravis-duo",
+    "name": "MIRAVIS DUO",
+    "active": "PIDIFLUMETOFEM 75 + DIFENOCONAZOLE 125",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-miravis-pro",
+    "name": "MIRAVIS PRO",
+    "active": "PIDIFLUMETOFEM 62,5 + PROTIOCONAZOL 75",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-miravis-xtra",
+    "name": "MIRAVIS XTRA",
+    "active": "Azoxistrobina 100 + Propiconazol 125 + PIDIFLUMETOFEM 75",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-mitrion",
+    "name": "MITRION",
+    "active": "PROTIOCONAZOL 150 + BENZOVINDIFLUPIR 75",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-nativo",
+    "name": "NATIVO",
+    "active": "TEBUCONAZOL 200 + TRIFLOXISTROBINA 100",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-nativo-plus-sc",
+    "name": "NATIVO PLUS SC",
+    "active": "TEBUCONAZOL 90 + TRIFLOXISTROBINA 75 + OXI CU 420",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-nomolt-150",
+    "name": "NOMOLT 150",
+    "active": "TRIFLUBENZURON 150",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-oberon",
+    "name": "OBERON",
+    "active": "ESPIROMESIFENO 240",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-ochima",
+    "name": "OCHIMA",
+    "active": "OLEO MINERAL",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-off-road",
+    "name": "OFF ROAD",
+    "active": "GLUFOSINATO DE AMONIO 200",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-oranis",
+    "name": "ORANIS",
+    "active": "PICOXISTROBINA 250 G/L",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-orkestra-sc",
+    "name": "ORKESTRA SC",
+    "active": "PIRACLOSTROBINA 333 + FLUXAPIROXADE 167",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-pacto",
+    "name": "PACTO",
+    "active": "CLORANSULAM-METILICO 840",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-parrudo-br",
+    "name": "PARRUDO BR",
+    "active": "PROCIMIDONA 500",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-paxeo",
+    "name": "PAXEO",
+    "active": "DICLOSULAM 580 + HALAUXIFENO METILICO 115",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-perito-970-sg",
+    "name": "PERITO 970 SG",
+    "active": "ACEFATO 970",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-pirate-sc",
+    "name": "PIRATE SC",
+    "active": "CLORFENAPIR 240",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-plethora-br",
+    "name": "PLETHORA BR",
+    "active": "INDOXACARBE 240 + NOVALUROM 80",
+    "maker": "ADAMA",
+    "source": ""
+  },
+  {
+    "id": "aq-polytrin",
+    "name": "POLYTRIN",
+    "active": "CIPERMETRINA 40 + PROFENOFOS 400",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-ponteirobr",
+    "name": "PONTEIROBR",
+    "active": "SULFENTRAZONA 500",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-premio",
+    "name": "PREMIO",
+    "active": "CLORANTRANIPROLE 200",
+    "maker": "FMC",
+    "source": ""
+  },
+  {
+    "id": "aq-premio-star",
+    "name": "PREMIO STAR",
+    "active": "CLORANTRANIPROLE 60 + BIFENTRINA 195",
+    "maker": "FMC",
+    "source": ""
+  },
+  {
+    "id": "aq-primatop-sc",
+    "name": "PRIMATOP SC",
+    "active": "ATRAZINA 250 + SIMAZINA 250",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-primoleo",
+    "name": "PRIMOLEO",
+    "active": "ATRAZINA 400",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-priori-top",
+    "name": "PRIORI TOP",
+    "active": "AZOXISTROBINA 200 + DIFENOCONAZOL 125",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-priori-xtra",
+    "name": "PRIORI XTRA",
+    "active": "AZOXISTROBINA 200 + CIPROCONAZOLE 80",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-proclaim-50",
+    "name": "PROCLAIM 50",
+    "active": "BENZOATO DE EMAMECTINA 80",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-progibb-400",
+    "name": "PROGIBB 400",
+    "active": "ÁCIDO GIBERÉLICO 400 G/KG",
+    "maker": "SUMITOMO",
+    "source": ""
+  },
+  {
+    "id": "aq-propiconazole-nortox-500-ec",
+    "name": "PROPICONAZOLE NORTOX 500 EC",
+    "active": "PROPICONAZOL 500",
+    "maker": "NORTOX",
+    "source": ""
+  },
+  {
+    "id": "aq-propose",
+    "name": "PROPOSE",
+    "active": "Clorfenapir 490 + Clorantraniliprole 24",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-raster",
+    "name": "RASTER",
+    "active": "PENOXSULAM 30 + CIALOFOPE BUTILICO 214",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-reator-360-cs",
+    "name": "REATOR 360 CS",
+    "active": "CLOMAZONA 360",
+    "maker": "FMC",
+    "source": ""
+  },
+  {
+    "id": "aq-reglone",
+    "name": "REGLONE",
+    "active": "DIQUATE 200",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-ricer",
+    "name": "RICER",
+    "active": "PENOXSULAM 240",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-roundup-original-mais",
+    "name": "ROUNDUP ORIGINAL MAIS",
+    "active": "GLIFOSATO 480",
+    "maker": "BAYER/MON",
+    "source": ""
+  },
+  {
+    "id": "aq-roundup-transorb-r",
+    "name": "ROUNDUP TRANSORB R",
+    "active": "GLIFOSATO 480",
+    "maker": "BAYER/MON",
+    "source": ""
+  },
+  {
+    "id": "aq-roundup-wg",
+    "name": "ROUNDUP WG",
+    "active": "GLIFOSATO 720",
+    "maker": "BAYER/MON",
+    "source": ""
+  },
+  {
+    "id": "aq-score-flexi",
+    "name": "SCORE FLEXI",
+    "active": "DIFENOCONAZOL 250 + PROPICONAZOL 250",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-seeker",
+    "name": "SEEKER",
+    "active": "Fenpropidina 750",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-seizer-100-ec",
+    "name": "SEIZER 100 EC",
+    "active": "BIFENTRINA 100",
+    "maker": "ADAMA",
+    "source": ""
+  },
+  {
+    "id": "aq-select-240-ec",
+    "name": "SELECT 240 EC",
+    "active": "CLETODIM 240",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-sencor-sc",
+    "name": "SENCOR SC",
+    "active": "METRIBUZIM 480",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-sensus",
+    "name": "SENSUS",
+    "active": "CLOMAZONA 250 + SULFENTRAZONA 100",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-sinerge-ec",
+    "name": "SINERGE EC",
+    "active": "AMETRINA 300 + CLOMAZONA 200",
+    "maker": "FMC",
+    "source": ""
+  },
+  {
+    "id": "aq-sistiva",
+    "name": "SISTIVA",
+    "active": "FLUXAPIROXADE 333",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-soberan",
+    "name": "SOBERAN",
+    "active": "TEMBOTRIONA 420",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-sombrero",
+    "name": "SOMBRERO",
+    "active": "IMIDACLOPRID 600",
+    "maker": "ADAMA",
+    "source": ""
+  },
+  {
+    "id": "aq-sonda-ht",
+    "name": "SONDA HT",
+    "active": "TERBUTILAZINA 500",
+    "maker": "IHARA",
+    "source": ""
+  },
+  {
+    "id": "aq-sperto",
+    "name": "SPERTO",
+    "active": "ACETAMIPRIDO 250 + BIFENTRINA 250",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-sphere-max",
+    "name": "SPHERE MAX",
+    "active": "CIPROCONAZOL 160 + TRIFLOXISTROBINA 375",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-spider-840-wg",
+    "name": "SPIDER 840 WG",
+    "active": "DICLOSULAM 840",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-standak-top",
+    "name": "STANDAK TOP",
+    "active": "PIRACLOSTROBINA 25 + TIOFANATO-MET 225 + FIPRONIL 250",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-stone",
+    "name": "STONE",
+    "active": "DIUROM 350 + SULFENTRAZONA 175",
+    "maker": "FMC",
+    "source": ""
+  },
+  {
+    "id": "aq-strides",
+    "name": "STRIDES",
+    "active": "OLEO MINERAL",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-sugoy",
+    "name": "SUGOY",
+    "active": "CLOROTALONIL 571,4 + METOMINOSTROBIN 34,3 + IMPIRFLUXAM 17,1",
+    "maker": "IHARA",
+    "source": ""
+  },
+  {
+    "id": "aq-talisman",
+    "name": "TALISMAN",
+    "active": "BIFENTRINA 50 + CARBOSULFANO 150",
+    "maker": "FMC",
+    "source": ""
+  },
+  {
+    "id": "aq-talstar-400",
+    "name": "TALSTAR 400",
+    "active": "BIFENTRINA 400",
+    "maker": "FMC",
+    "source": ""
+  },
+  {
+    "id": "aq-tebuco-a-nortox",
+    "name": "TEBUCO A NORTOX",
+    "active": "AZOXISTROBINA 125 + TEBUCONAZOL 240",
+    "maker": "NORTOX",
+    "source": ""
+  },
+  {
+    "id": "aq-terra-forte-nf",
+    "name": "TERRA FORTE NF",
+    "active": "Fipronil 500",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-terrad-or-339-sc",
+    "name": "TERRAD'OR 339 SC",
+    "active": "TIAFENACIL 339",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-thunder",
+    "name": "THUNDER",
+    "active": "Asulam 400",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-tilt",
+    "name": "TILT",
+    "active": "PROPICONAZOL 250",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-triclon",
+    "name": "TRICLON",
+    "active": "TRICLOPIR-BUTOTILICO 680",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-tridium",
+    "name": "TRIDIUM",
+    "active": "AZOXISTROBINA 47 + TEBUCONAZOL 56 + MANCOZEBE 597",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-trinca-caps",
+    "name": "TRINCA CAPS",
+    "active": "LAMBDA-CIALOTRINA 250",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-trivor",
+    "name": "TRIVOR",
+    "active": "ACETAMIPRIDO 186 + PIRIPROXIFEM 124",
+    "maker": "ADAMA",
+    "source": ""
+  },
+  {
+    "id": "aq-trunfo",
+    "name": "TRUNFO",
+    "active": "GLUFOSINATO DE AMONIO 280",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-u-46-br",
+    "name": "U 46 BR",
+    "active": "2,4-D",
+    "maker": "SUMITOMO",
+    "source": ""
+  },
+  {
+    "id": "aq-unizeb-flow",
+    "name": "UNIZEB FLOW",
+    "active": "MANCOZEBE 420",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-unizeb-gold",
+    "name": "UNIZEB GOLD",
+    "active": "MANCOZEBE 750",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-vegetoil",
+    "name": "VEGETOIL",
+    "active": "OLEO VEGETAL",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-verango-prime-sc-500",
+    "name": "VERANGO PRIME SC 500",
+    "active": "FLUOPIRAM 500",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-verdavis",
+    "name": "VERDAVIS",
+    "active": "ISOCICLOSERAM 100 + LAMBDA CIALOTRINA 150",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-verdict-ultra",
+    "name": "VERDICT ULTRA",
+    "active": "HALOXIFOP-P-METÍLICO 934,58",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-verdum-wg",
+    "name": "VERDUM WG",
+    "active": "Imazapique 175 + Imazapir 525",
+    "maker": "CROPCHEM",
+    "source": ""
+  },
+  {
+    "id": "aq-versatilis",
+    "name": "VERSATILIS",
+    "active": "FENPROPIMORFE 750",
+    "maker": "BASF",
+    "source": ""
+  },
+  {
+    "id": "aq-vertimec-84-sc",
+    "name": "VERTIMEC 84 SC",
+    "active": "ABAMECTINA 84",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-vessarya",
+    "name": "VESSARYA",
+    "active": "BENZOVINDIFLUPIR 50 + PICOXISTROBINA 100",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-vezir",
+    "name": "VEZIR",
+    "active": "IMAZETAPIR 106",
+    "maker": "ADAMA",
+    "source": ""
+  },
+  {
+    "id": "aq-victrato",
+    "name": "VICTRATO",
+    "active": "Ciclobutrifluram",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-victrato",
+    "name": "VICTRATO",
+    "active": "Ciclobutrifluram 500",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-viovan",
+    "name": "VIOVAN",
+    "active": "PICOXISTROBINA 100 + PROTIOCONAZOL 116,7",
+    "maker": "CORTEVA",
+    "source": ""
+  },
+  {
+    "id": "aq-vitavax-ultra",
+    "name": "VITAVAX ULTRA",
+    "active": "CARBOXINA 200 + TIRAM 200",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-vivantha",
+    "name": "VIVANTHA",
+    "active": "TIAMETOXAM 500",
+    "maker": "OURO FINO",
+    "source": ""
+  },
+  {
+    "id": "aq-xeque-mate-ht",
+    "name": "XEQUE MATE HT",
+    "active": "GLIFOSATO 588",
+    "maker": "IHARA",
+    "source": ""
+  },
+  {
+    "id": "aq-xtendimax-2-10l-xtend-protect",
+    "name": "XTENDIMAX 2 10L + XTEND PROTECT",
+    "active": "DICAMBA 480 G/L + ADJUVANTE",
+    "maker": "BAYER",
+    "source": ""
+  },
+  {
+    "id": "aq-yamato-sc",
+    "name": "YAMATO SC",
+    "active": "PIROXASULFONA 500",
+    "maker": "IHARA",
+    "source": ""
+  },
+  {
+    "id": "aq-zapp-qi-620",
+    "name": "ZAPP QI 620",
+    "active": "GLIFOSATO 500",
+    "maker": "SYNGENTA",
+    "source": ""
+  },
+  {
+    "id": "aq-zartan",
+    "name": "ZARTAN",
+    "active": "METSULFUROM 600",
+    "maker": "UPL",
+    "source": ""
+  },
+  {
+    "id": "aq-zethamaxx",
+    "name": "ZETHAMAXX",
+    "active": "FLUMIOXAZINA 100 + IMAZETAPIR 200",
+    "maker": "SUMITOMO",
+    "source": ""
+  },
+  {
+    "id": "aq-zethamaxx-evo",
+    "name": "ZETHAMAXX EVO",
+    "active": "FLUMIOXAZINA 25 + IMAZETAPIR 53 + S-METOLACLORO 576",
+    "maker": "SUMITOMO",
+    "source": ""
+  },
+  {
+    "id": "aq-zeus",
+    "name": "ZEUS",
+    "active": "LAMBDA CIALOTRINA 48 + DINOTEFURAN 84",
+    "maker": "IHARA",
+    "source": ""
+  }
+]

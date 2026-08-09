@@ -313,3 +313,42 @@ b,strong,.kpi-card strong,.pipeline-page b{font-weight:700}
 }
 
 @media(max-width:760px){.priority-empty{grid-column:auto}}
+
+/* Núcleo agronômico incorporado */
+.val-executive-brief{margin:16px 0;border:1px solid #dce6ef;border-radius:22px;background:linear-gradient(145deg,#fff,#f7fbff);overflow:hidden;box-shadow:0 14px 34px rgba(6,47,83,.07)}
+.val-executive-brief>header{padding:24px 26px 20px;border-bottom:1px solid #e7edf2}.val-executive-brief>header>span{display:inline-flex;padding:6px 9px;border-radius:999px;background:#edf5fb;color:#306681;font-size:8px;font-weight:850;letter-spacing:.09em;text-transform:uppercase}.val-executive-brief.priority-imediata>header>span{background:#fff0ed;color:#b6432f}.val-executive-brief.priority-esta_semana>header>span{background:#fff7df;color:#8d6611}.val-executive-brief.priority-sem_acao>header>span{background:#edf1f4;color:#617383}
+.val-executive-brief h3{max-width:850px;margin:11px 0 7px;color:#092b49;font-family:var(--font-display);font-size:clamp(25px,2.8vw,38px);line-height:1.08;letter-spacing:-.04em}.val-executive-brief>header p{max-width:900px;margin:0;color:#60768a;font-size:12px;line-height:1.55}
+.val-brief-actions{display:grid;grid-template-columns:1.3fr .65fr 1.15fr;gap:1px;background:#e6edf3}.val-brief-actions article{display:grid;grid-template-columns:36px minmax(0,1fr);gap:11px;align-items:start;min-height:118px;padding:20px;background:#fff}.val-brief-actions article>svg{width:36px;height:36px;padding:9px;border-radius:11px;background:#eaf5ff;color:#0877db}.val-brief-actions span{display:grid;gap:6px}.val-brief-actions small,.val-brief-proof small{color:#8294a3;font-size:8px;font-weight:850;letter-spacing:.11em}.val-brief-actions b{color:#25475f;font-size:11.5px;line-height:1.5}.val-brief-actions article.is-empty{background:#f8fafb}.val-brief-actions article.is-empty>svg{background:#edf1f4;color:#8a9aa7}
+.val-brief-proof{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:14px;background:#f5f8fb}.val-brief-proof>div{display:grid;grid-template-columns:28px minmax(0,1fr);gap:9px;padding:13px;border:1px solid #e2e9ef;border-radius:13px;background:#fff}.val-brief-proof>div>svg{width:17px;color:#16815a}.val-brief-proof>div:last-child>svg{color:#be7424}.val-brief-proof span{display:grid;gap:7px}.val-brief-proof ul{display:grid;gap:4px;margin:0;padding-left:15px;color:#526b7d;font-size:9.5px;line-height:1.45}.val-brief-proof b{color:#667b8d;font-size:9.5px;line-height:1.45}
+.val-brief-review{display:flex;gap:10px;align-items:center;padding:13px 17px;border-top:1px solid #f0d8c2;background:#fff8f0;color:#92521e}.val-brief-review>svg{width:19px}.val-brief-review span{display:grid;gap:2px}.val-brief-review b{font-size:10px}.val-brief-review small{font-size:9px;line-height:1.4}
+.val-analysis-details{margin:13px 0 18px;border:1px solid #dce6ee;border-radius:16px;background:#fff;overflow:hidden}.val-analysis-details>summary{display:flex;align-items:center;gap:9px;padding:14px 16px;color:#46657d;font-size:10px;font-weight:800;cursor:pointer;list-style:none}.val-analysis-details>summary::-webkit-details-marker{display:none}.val-analysis-details>summary:after{content:'+';margin-left:auto;display:grid;width:24px;height:24px;place-items:center;border-radius:8px;background:#edf4f8;color:#347092;font-size:16px}.val-analysis-details[open]>summary:after{content:'–'}.val-analysis-details>summary svg{width:16px;color:#0876d8}.val-analysis-details[open]>summary{border-bottom:1px solid #e5edf3}.val-analysis-details .val-context-coverage{margin:14px}.val-analysis-details .val-insight-grid{padding:0 14px 14px}
+
+.agro-native{gap:16px}
+.agro-native-hero{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:24px;align-items:end;padding:30px 32px;border:1px solid rgba(15,84,142,.12);border-radius:26px;background:linear-gradient(135deg,rgba(255,255,255,.98),rgba(239,248,255,.96));box-shadow:0 18px 42px rgba(4,41,76,.08)}
+.agro-native-hero h2{max-width:760px;margin:8px 0 9px;color:#092b4b;font-family:var(--font-display);font-size:clamp(27px,3vw,42px);line-height:1.04;letter-spacing:-.045em}
+.agro-native-hero p{max-width:800px;margin:0;color:#587086;font-size:13px;line-height:1.6}
+.agro-native-status{display:grid;gap:8px;min-width:220px}
+.agro-native-status span{display:flex;align-items:center;gap:8px;padding:10px 12px;border:1px solid #dbe6ef;border-radius:12px;background:#fff;color:#536b80;font-size:10px;font-weight:800}
+.agro-native-status span.is-ready{border-color:#b9e4cf;color:#147a4b;background:#f2fbf6}.agro-native-status svg{width:16px;height:16px}
+.agro-capability-strip{display:flex;gap:8px;padding:4px 1px;overflow-x:auto;scrollbar-width:none}.agro-capability-strip::-webkit-scrollbar{display:none}
+.agro-capability-strip span{display:flex;align-items:center;gap:7px;flex:0 0 auto;padding:9px 12px;border:1px solid #dde7ef;border-radius:999px;background:rgba(255,255,255,.9);color:#49677f;font-size:9px;font-weight:800}.agro-capability-strip svg{width:14px;height:14px;color:#0878dc}
+.agro-native-workspace{position:relative;min-height:780px;overflow:hidden;border:1px solid rgba(10,67,111,.14);border-radius:24px;background:#f4f7fb;box-shadow:0 24px 60px rgba(4,39,72,.12)}
+.agro-native-workspace>header{display:flex;align-items:center;justify-content:space-between;gap:20px;min-height:70px;padding:12px 18px;border-bottom:1px solid rgba(16,72,117,.12);background:#fff}
+.agro-native-workspace>header>div,.agro-native-workspace>header>span{display:flex;align-items:center;gap:10px}.agro-native-workspace>header>div>div{display:grid;gap:2px}.agro-native-workspace>header small{color:#8194a5;font-size:8px;font-weight:850;letter-spacing:.14em}.agro-native-workspace>header strong{color:#173d5c;font-size:13px}.agro-native-workspace>header>span{padding:8px 10px;border-radius:10px;background:#f0f7fc;color:#53738c;font-size:9px;font-weight:750}.agro-native-workspace>header>span svg{width:15px}
+.workspace-orbit{display:grid;width:38px;height:38px;place-items:center;border-radius:12px;background:linear-gradient(145deg,#0a72ed,#034aa5);color:#fff}.workspace-orbit svg{width:19px}
+.agro-native-workspace iframe{display:block;width:100%;height:calc(100vh - 150px);min-height:710px;border:0;background:#f4f7fb}
+.agro-frame-loading{position:absolute;inset:70px 0 0;z-index:2;display:grid;place-content:center;justify-items:center;gap:8px;background:#f4f7fb;color:#264b68}.agro-frame-loading svg{width:28px;animation:spin .8s linear infinite}.agro-frame-loading b{font-size:13px}.agro-frame-loading small{color:#738a9c;font-size:10px}
+.agro-native-footnote{display:flex;align-items:center;gap:11px;padding:13px 15px;border:1px solid #d9e4ec;border-radius:14px;background:#fff;color:#3c5b71}.agro-native-footnote>svg{width:19px;color:#14885b}.agro-native-footnote span{display:grid;gap:2px}.agro-native-footnote b{font-size:10px}.agro-native-footnote small{color:#71879a;font-size:9px;line-height:1.45}
+
+@media(max-width:900px){
+ .val-brief-actions{grid-template-columns:1fr}.val-brief-actions article{min-height:0}.val-brief-proof{grid-template-columns:1fr}
+ .agro-native-hero{grid-template-columns:1fr;padding:22px}.agro-native-status{grid-template-columns:1fr 1fr;min-width:0}
+ .agro-native-workspace{min-height:calc(100vh - 170px);border-radius:18px}.agro-native-workspace>header{min-height:60px;padding:10px 12px}.agro-native-workspace>header>span{display:none}
+ .agro-native-workspace iframe{height:calc(100vh - 136px);min-height:640px}
+ .agro-frame-loading{inset:60px 0 0}
+}
+@media(max-width:560px){
+ .val-executive-brief>header{padding:20px 18px 17px}.val-executive-brief h3{font-size:27px}.val-brief-actions article{padding:16px}.val-brief-proof{padding:10px}.val-analysis-details .val-insight-grid{padding:0 9px 9px}
+ .agro-native-hero{padding:19px 17px;border-radius:20px}.agro-native-hero h2{font-size:30px}.agro-native-status{grid-template-columns:1fr}
+ .agro-native-workspace{margin-inline:-8px;border-radius:16px}.agro-native-workspace iframe{min-height:690px}
+}

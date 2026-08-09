@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+
+<rect width="1024" height="1024" rx="220" fill="#063C33"/>
+<path d="M65 744 C240 592 374 835 542 694 C696 566 780 649 959 522" fill="none" stroke="#0B4B40" stroke-width="34" opacity="0.70"/>
+<path d="M40 819 C230 664 390 902 565 752 C708 629 827 708 992 570" fill="none" stroke="#0B4B40" stroke-width="34" opacity="0.55"/>
+<g transform="translate(154 152) scale(1.40)">
+<defs>
+  <clipPath id="app-clip"><path d="M118 98 C108 99 104 105 103 116 C100 139 91 158 77 179 C70 190 69 199 73 211 L101 299 C104 309 111 315 122 318 L183 337 C207 345 223 357 237 378 L260 412 C265 420 272 423 282 420 L369 397 C380 394 386 387 388 376 L427 151 C429 141 421 134 411 136 L292 156 C260 161 237 157 210 145 L128 102 C124 100 121 98 118 98 Z"/></clipPath>
+</defs>
+<g>
+  <path d="M109 65 C92 66 82 77 80 95 C77 120 66 142 51 164 C39 181 38 198 44 216 L76 318 C82 338 96 348 114 353 L173 371 C191 377 202 386 213 402 L237 438 C248 455 264 463 283 459 L390 430 C411 424 423 409 427 389 L466 161 C472 124 442 101 407 106 L286 126 C263 130 246 127 226 118 L133 71 C124 67 116 65 109 65 Z" fill="#FFFFFF"/>
+  <path d="M118 98 C108 99 104 105 103 116 C100 139 91 158 77 179 C70 190 69 199 73 211 L101 299 C104 309 111 315 122 318 L183 337 C207 345 223 357 237 378 L260 412 C265 420 272 423 282 420 L369 397 C380 394 386 387 388 376 L427 151 C429 141 421 134 411 136 L292 156 C260 161 237 157 210 145 L128 102 C124 100 121 98 118 98 Z" fill="#063C33" stroke="#FFFFFF" stroke-width="13" stroke-linejoin="round"/>
+  <g clip-path="url(#app-clip)">
+    <path d="M55 214 C158 188 253 218 335 282 L302 438 L84 365 Z" fill="#A6D92B"/>
+    <path d="M74 272 C166 253 250 291 321 365 L300 448 L98 382 Z" fill="#7FB51C" opacity="0.86"/>
+    <path d="M79 213 C171 197 251 222 326 281" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round"/>
+    <path d="M92 268 C179 255 253 287 319 352" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round"/>
+  </g>
+  <path d="M305 280 L414 137 L371 323 Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="5" stroke-linejoin="round"/>
+  <path d="M326 270 L390 177 L368 292 Z" fill="#063C33"/>
+  <circle cx="305" cy="280" r="45" fill="#FFFFFF"/>
+  <circle cx="305" cy="280" r="26" fill="#063C33"/>
+</g></g>
+</svg>

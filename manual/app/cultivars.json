@@ -1,0 +1,1884 @@
+{
+  "soybean": [
+    {
+      "id": "soja-as-3599-xtd",
+      "crop": "Soja",
+      "name": "AS 3599 XTD",
+      "brand": "Agroeste",
+      "registrationName": "5902 XTD",
+      "gmr": 5.9,
+      "cycleDays": 131,
+      "cycleRangeDays": [
+        124,
+        138
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "GMR 5,9 individual confirmado na fonte indicada. 131 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "Agro Bayer / estudo regional no RS",
+      "source": "https://www.agro.bayer.com.br/d/soja-agroeste-as-3599-xtd-br"
+    },
+    {
+      "id": "soja-53ix55rsf-i2x",
+      "crop": "Soja",
+      "name": "53IX55RSF I2X",
+      "brand": "GDM",
+      "registrationName": "53IX55RSF I2X",
+      "gmr": 5.3,
+      "cycleDays": 120,
+      "cycleRangeDays": [
+        113,
+        127
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Superprecoce",
+      "dataBasis": "GMR 5,3 individual confirmado na fonte indicada. 120 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "MAPA — ZARC Soja RS 2025/2026",
+      "source": "https://www.gov.br/agricultura/pt-br/assuntos/riscos-seguro/programa-nacional-de-zoneamento-agricola-de-risco-climatico/portarias/safra-vigente/rio-grande-do-sul/PORTN379SOJARS.ret2.pdf"
+    },
+    {
+      "id": "soja-54ix57rsf-i2x",
+      "crop": "Soja",
+      "name": "54IX57RSF I2X",
+      "brand": "GDM",
+      "registrationName": "54IX57RSF I2X",
+      "gmr": 5.4,
+      "cycleDays": 122,
+      "cycleRangeDays": [
+        115,
+        129
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Superprecoce",
+      "dataBasis": "GMR 5,4 individual confirmado na fonte indicada. 122 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "MAPA — ZARC Soja RS 2025/2026",
+      "source": "https://www.gov.br/agricultura/pt-br/assuntos/riscos-seguro/programa-nacional-de-zoneamento-agricola-de-risco-climatico/portarias/safra-vigente/rio-grande-do-sul/PORTN379SOJARS.ret2.pdf"
+    },
+    {
+      "id": "soja-55i57rsf-ipro",
+      "crop": "Soja",
+      "name": "55I57RSF IPRO",
+      "brand": "GDM",
+      "registrationName": "55I57RSF IPRO",
+      "gmr": 5.5,
+      "cycleDays": 124,
+      "cycleRangeDays": [
+        117,
+        131
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "GMR 5,5 individual confirmado na fonte indicada. 124 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "UNICRUZ — avaliação regional de cultivares",
+      "source": "https://home.unicruz.edu.br/wp-content/uploads/2025/04/DISSERTACAO_MPDR_GYLSON_GYSLEY_GARCIA_2024_pdf-1.pdf"
+    },
+    {
+      "id": "soja-56ix58rsf-i2x",
+      "crop": "Soja",
+      "name": "56IX58RSF I2X",
+      "brand": "GDM",
+      "registrationName": "56IX58RSF I2X",
+      "gmr": 5.6,
+      "cycleDays": 125,
+      "cycleRangeDays": [
+        118,
+        132
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "GMR 5,6 individual confirmado na fonte indicada. 125 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "MAPA — ZARC Soja RS 2025/2026",
+      "source": "https://www.gov.br/agricultura/pt-br/assuntos/riscos-seguro/programa-nacional-de-zoneamento-agricola-de-risco-climatico/portarias/safra-vigente/rio-grande-do-sul/PORTN379SOJARS.ret2.pdf"
+    },
+    {
+      "id": "soja-60ix64rsf-i2x",
+      "crop": "Soja",
+      "name": "DM 60IX64 RSF I2X",
+      "brand": "GDM",
+      "registrationName": "60IX64RSF I2X",
+      "gmr": 6,
+      "cycleDays": 132,
+      "cycleRangeDays": [
+        125,
+        139
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "GMR 6 individual confirmado na fonte indicada. 132 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "UNICRUZ — avaliação regional de cultivares",
+      "source": "https://home.unicruz.edu.br/wp-content/uploads/2025/04/DISSERTACAO_MPDR_GYLSON_GYSLEY_GARCIA_2024_pdf-1.pdf"
+    },
+    {
+      "id": "soja-st-616-i2x",
+      "crop": "Soja",
+      "name": "ST 616 I2X",
+      "brand": "SoyTech",
+      "registrationName": "616 I2X",
+      "gmr": 6.1,
+      "cycleDays": 134,
+      "cycleRangeDays": [
+        127,
+        141
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "GMR 6,1 individual confirmado na fonte indicada. 134 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "UNICRUZ — avaliação regional de cultivares",
+      "source": "https://home.unicruz.edu.br/wp-content/uploads/2025/04/DISSERTACAO_MPDR_GYLSON_GYSLEY_GARCIA_2024_pdf-1.pdf"
+    },
+    {
+      "id": "soja-bmx-fibra-ipro",
+      "crop": "Soja",
+      "name": "BMX Fibra IPRO",
+      "brand": "GDM",
+      "registrationName": "64I61RSF IPRO",
+      "gmr": 6.3,
+      "cycleDays": 138,
+      "cycleRangeDays": [
+        131,
+        145
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "GMR 6,3 individual confirmado na fonte indicada. 138 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "UNICRUZ — avaliação regional de cultivares",
+      "source": "https://home.unicruz.edu.br/wp-content/uploads/2025/04/DISSERTACAO_MPDR_GYLSON_GYSLEY_GARCIA_2024_pdf-1.pdf"
+    },
+    {
+      "id": "soja-dm-nexus-i2x",
+      "crop": "Soja",
+      "name": "DM Nexus I2X",
+      "brand": "GDM",
+      "registrationName": "64IX66RSF I2X",
+      "gmr": 6.4,
+      "cycleDays": 139,
+      "cycleRangeDays": [
+        132,
+        146
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "GMR 6,4 individual confirmado na fonte indicada. 139 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "Intacta — portfólio varietal",
+      "source": "https://www.intactarr2pro.com.py/es-py/intacta2-xtend/variedades.html"
+    },
+    {
+      "id": "soja-65i65rsf-ipro",
+      "crop": "Soja",
+      "name": "65I65RSF IPRO",
+      "brand": "GDM",
+      "registrationName": "65I65RSF IPRO",
+      "gmr": 6.5,
+      "cycleDays": 141,
+      "cycleRangeDays": [
+        134,
+        148
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "GMR 6,5 individual confirmado na fonte indicada. 141 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "MAPA — ZARC Soja RS 2025/2026",
+      "source": "https://www.gov.br/agricultura/pt-br/assuntos/riscos-seguro/programa-nacional-de-zoneamento-agricola-de-risco-climatico/portarias/safra-vigente/rio-grande-do-sul/PORTN379SOJARS.ret2.pdf"
+    },
+    {
+      "id": "soja-65k67rsf-ce",
+      "crop": "Soja",
+      "name": "65K67RSF CE",
+      "brand": "GDM",
+      "registrationName": "65K67RSF CE",
+      "gmr": 6.5,
+      "cycleDays": 141,
+      "cycleRangeDays": [
+        134,
+        148
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "GMR 6,5 individual confirmado na fonte indicada. 141 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "MAPA — ZARC Soja RS 2025/2026",
+      "source": "https://www.gov.br/agricultura/pt-br/assuntos/riscos-seguro/programa-nacional-de-zoneamento-agricola-de-risco-climatico/portarias/safra-vigente/rio-grande-do-sul/PORTN379SOJARS.ret2.pdf"
+    },
+    {
+      "id": "soja-p95y95-ipro",
+      "crop": "Soja",
+      "name": "P 95Y95 IPRO",
+      "brand": "Pioneer",
+      "registrationName": "95Y95IPRO",
+      "gmr": 5.9,
+      "cycleDays": 131,
+      "cycleRangeDays": [
+        124,
+        138
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "GMR 5,9 individual confirmado na fonte indicada. 131 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "UNICRUZ — avaliação regional de cultivares",
+      "source": "https://home.unicruz.edu.br/wp-content/uploads/2025/04/DISSERTACAO_MPDR_GYLSON_GYSLEY_GARCIA_2024_pdf-1.pdf"
+    },
+    {
+      "id": "soja-p96r10-ipro",
+      "crop": "Soja",
+      "name": "P 96R10 IPRO",
+      "brand": "Pioneer",
+      "registrationName": "96R10IPRO",
+      "gmr": 6.2,
+      "cycleDays": 136,
+      "cycleRangeDays": [
+        129,
+        143
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "GMR 6,2 individual confirmado na fonte indicada. 136 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "UNICRUZ — avaliação regional de cultivares",
+      "source": "https://home.unicruz.edu.br/wp-content/uploads/2025/04/DISSERTACAO_MPDR_GYLSON_GYSLEY_GARCIA_2024_pdf-1.pdf"
+    },
+    {
+      "id": "soja-p96y90",
+      "crop": "Soja",
+      "name": "P 96Y90",
+      "brand": "Pioneer",
+      "registrationName": "96Y90",
+      "gmr": 6.9,
+      "cycleDays": 148,
+      "cycleRangeDays": [
+        141,
+        155
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/tardio",
+      "dataBasis": "GMR 6,9 individual confirmado na fonte indicada. 148 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "Pioneer Sementes",
+      "source": "https://www.pioneer.com/br/portfolio-de-produtos/soja/96Y90.html"
+    },
+    {
+      "id": "soja-c2550-e",
+      "crop": "Soja",
+      "name": "C2550 E",
+      "brand": "Credenz",
+      "registrationName": "C2550 E",
+      "gmr": 5.5,
+      "cycleDays": 124,
+      "cycleRangeDays": [
+        117,
+        131
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "GMR 5,5 individual confirmado na fonte indicada. 124 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "MAPA — ZARC Soja RS 2025/2026",
+      "source": "https://www.gov.br/agricultura/pt-br/assuntos/riscos-seguro/programa-nacional-de-zoneamento-agricola-de-risco-climatico/portarias/safra-vigente/rio-grande-do-sul/PORTN379SOJARS.ret2.pdf"
+    },
+    {
+      "id": "soja-gh2459-i2x",
+      "crop": "Soja",
+      "name": "GH 2459 I2X",
+      "brand": "Golden Harvest",
+      "registrationName": "GH2459 I2X",
+      "gmr": 5.9,
+      "cycleDays": 131,
+      "cycleRangeDays": [
+        124,
+        138
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "GMR 5,9 individual confirmado na fonte indicada. 131 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "MAPA — ZARC Soja RS 2025/2026",
+      "source": "https://www.gov.br/agricultura/pt-br/assuntos/riscos-seguro/programa-nacional-de-zoneamento-agricola-de-risco-climatico/portarias/safra-vigente/rio-grande-do-sul/PORTN379SOJARS.ret2.pdf"
+    },
+    {
+      "id": "soja-ns5933-ipro",
+      "crop": "Soja",
+      "name": "NS 5933 IPRO",
+      "brand": "Nidera",
+      "registrationName": "GH5933 IPRO",
+      "gmr": 5.9,
+      "cycleDays": 131,
+      "cycleRangeDays": [
+        124,
+        138
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "GMR 5,9 individual confirmado na fonte indicada. 131 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "UNICRUZ — avaliação regional de cultivares",
+      "source": "https://home.unicruz.edu.br/wp-content/uploads/2025/04/DISSERTACAO_MPDR_GYLSON_GYSLEY_GARCIA_2024_pdf-1.pdf"
+    },
+    {
+      "id": "soja-m5921-i2x",
+      "crop": "Soja",
+      "name": "M 5921 I2X",
+      "brand": "Monsoy",
+      "registrationName": "M5921 I2X",
+      "gmr": 5.9,
+      "cycleDays": 131,
+      "cycleRangeDays": [
+        124,
+        138
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "GMR 5,9 individual confirmado na fonte indicada. 131 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "Agro Bayer — Monsoy",
+      "source": "https://www.agro.bayer.com.br/d/soja-monsoy-m-5921-i2x-br"
+    },
+    {
+      "id": "soja-m5947-ipro",
+      "crop": "Soja",
+      "name": "M 5947 IPRO",
+      "brand": "Monsoy",
+      "registrationName": "M5947 IPRO",
+      "gmr": 5.9,
+      "cycleDays": 131,
+      "cycleRangeDays": [
+        124,
+        138
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "GMR 5,9 individual confirmado na fonte indicada. 131 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "UNICRUZ — avaliação regional de cultivares",
+      "source": "https://home.unicruz.edu.br/wp-content/uploads/2025/04/DISSERTACAO_MPDR_GYLSON_GYSLEY_GARCIA_2024_pdf-1.pdf"
+    },
+    {
+      "id": "soja-m6131-i2x",
+      "crop": "Soja",
+      "name": "M 6131 I2X",
+      "brand": "Monsoy",
+      "registrationName": "M6131 I2X",
+      "gmr": 6.2,
+      "cycleDays": 136,
+      "cycleRangeDays": [
+        129,
+        143
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "GMR 6,2 individual confirmado na fonte indicada. 136 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "Agro Bayer — Monsoy",
+      "source": "https://www.agro.bayer.com.br/d/soja-monsoy-m-6131-i2x-br"
+    },
+    {
+      "id": "soja-m6202-i2x",
+      "crop": "Soja",
+      "name": "M 6202 I2X",
+      "brand": "Monsoy",
+      "registrationName": "M6202 I2X",
+      "gmr": 6.2,
+      "cycleDays": 136,
+      "cycleRangeDays": [
+        129,
+        143
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "GMR 6,2 individual confirmado na fonte indicada. 136 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "Agro Bayer — Monsoy",
+      "source": "https://www.agro.bayer.com.br/d/soja-monsoy-m-6202-i2x-br"
+    },
+    {
+      "id": "soja-m6601-i2x",
+      "crop": "Soja",
+      "name": "M 6620 I2X",
+      "brand": "Monsoy",
+      "registrationName": "6601 I2X",
+      "gmr": 6.6,
+      "cycleDays": 143,
+      "cycleRangeDays": [
+        136,
+        150
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/tardio",
+      "dataBasis": "GMR 6,6 individual confirmado na fonte indicada. 143 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "Embrapa Soja — identificação varietal",
+      "source": "https://www.infoteca.cnptia.embrapa.br/infoteca/bitstream/doc/1154477/1/CiT-78.pdf"
+    },
+    {
+      "id": "soja-tmg-guanandi-i2x",
+      "crop": "Soja",
+      "name": "TMG Guanandi I2X",
+      "brand": "TMG",
+      "registrationName": "23306 I2X",
+      "gmr": 6.6,
+      "cycleDays": 143,
+      "cycleRangeDays": [
+        136,
+        150
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/tardio",
+      "dataBasis": "GMR 6,6 individual confirmado na fonte indicada. 143 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "TMG",
+      "source": "https://www.tmg.agr.br/en/cultivar/tmg-guanandi-i2x/"
+    },
+    {
+      "id": "soja-tmg-imbuia-i2x",
+      "crop": "Soja",
+      "name": "TMG Imbuia I2X",
+      "brand": "TMG",
+      "registrationName": "24403 I2X",
+      "gmr": 6.1,
+      "cycleDays": 134,
+      "cycleRangeDays": [
+        127,
+        141
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "GMR 6,1 individual confirmado na fonte indicada. 134 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "TMG",
+      "source": "https://www.tmg.agr.br/en/cultivar/tmg-imbuia-i2x/"
+    },
+    {
+      "id": "soja-tmg-7362-ipro",
+      "crop": "Soja",
+      "name": "TMG 7362 IPRO",
+      "brand": "TMG",
+      "registrationName": "TMG7362IPRO",
+      "gmr": 6.1,
+      "cycleDays": 134,
+      "cycleRangeDays": [
+        127,
+        141
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "GMR 6,1 individual confirmado na fonte indicada. 134 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "TMG",
+      "source": "https://www.tmg.agr.br/en/cultivar/tmg-7362-ipro/"
+    },
+    {
+      "id": "soja-raca-63e66rsf-e",
+      "crop": "Soja",
+      "name": "Raça 63E66RSF E",
+      "brand": "GDM",
+      "registrationName": "63E66RSF E",
+      "gmr": 6.3,
+      "cycleDays": 138,
+      "cycleRangeDays": [
+        131,
+        145
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "GMR 6,3 individual confirmado na fonte indicada. 138 dias é referência regional de planejamento para a Macrorregião Sojícola 1; a cultivar responde a latitude, época e fotoperíodo.",
+      "sourceLabel": "MAPA — ZARC Soja RS 2025/2026",
+      "source": "https://www.gov.br/agricultura/pt-br/assuntos/riscos-seguro/programa-nacional-de-zoneamento-agricola-de-risco-climatico/portarias/safra-vigente/rio-grande-do-sul/PORTN379SOJARS.ret2.pdf"
+    }
+  ],
+  "corn": [
+    {
+      "id": "milho-2200rr2",
+      "crop": "Milho",
+      "name": "2200 RR2",
+      "brand": "Portfólio regional",
+      "registrationName": "2200RR2",
+      "gmr": null,
+      "cycleDays": 127,
+      "cycleRangeDays": [
+        120,
+        134
+      ],
+      "thermalSum": 780,
+      "thermalStage": "até o florescimento masculino",
+      "cycleClass": "Hiperprecoce",
+      "dataBasis": "A indicação técnica oficial classifica o híbrido como hiperprecoce e publica 780 GD até o florescimento. A referência de 127 dias é operacional e não deve ser lida como ciclo fixo.",
+      "sourceLabel": "Indicações Técnicas Milho e Sorgo — RS/Embrapa",
+      "source": "https://www.agricultura.rs.gov.br/upload/arquivos/202003/12103455-livro-indicacoes-tecnicas-milho-sorgo-2017-18-e-18-2019.pdf",
+      "cycleEvidence": "official-relative",
+      "officialMaturity": "Hiperprecoce · 780 GD até o florescimento"
+    },
+    {
+      "id": "milho-ag8701-pro4",
+      "crop": "Milho",
+      "name": "AG 8701 PRO4",
+      "brand": "Agroceres",
+      "registrationName": "AG8701 PRO4",
+      "gmr": null,
+      "cycleDays": 130,
+      "cycleRangeDays": [
+        120,
+        140
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "A Bayer publica Grupo de Maturação 136–137, não dias fixos. Para planejamento no Sul, o aplicativo usa 130 dias dentro da faixa regional e mantém o GM separado.",
+      "sourceLabel": "Agro Bayer — AG 8701 PRO4",
+      "source": "https://www.agro.bayer.com.br/d/milho-agroceres-ag-8701-pro4-ver-o-subtropical-br",
+      "cycleEvidence": "official-relative",
+      "officialMaturity": "GM 136–137, conforme ambiente"
+    },
+    {
+      "id": "milho-ag9021-pro3",
+      "crop": "Milho",
+      "name": "AG 9021 PRO3",
+      "brand": "Agroceres",
+      "registrationName": "AG9021 PRO3",
+      "gmr": null,
+      "cycleDays": 115,
+      "cycleRangeDays": [
+        105,
+        125
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Hiperprecoce",
+      "dataBasis": "A Bayer publica Grupo de Maturação 126. O valor não é convertido em 126 dias oficiais; 115 dias é referência operacional regional para o segmento hiperprecoce.",
+      "sourceLabel": "Agro Bayer — AG 9021 PRO3",
+      "source": "https://www.agro.bayer.com.br/d/milho-agroceres-ag-9021-pro3-ver-o-tropical-br",
+      "cycleEvidence": "official-relative",
+      "officialMaturity": "GM 126"
+    },
+    {
+      "id": "milho-ag9070-pro4",
+      "crop": "Milho",
+      "name": "AG 9070 PRO4",
+      "brand": "Agroceres",
+      "registrationName": "AG9070 PRO4",
+      "gmr": null,
+      "cycleDays": 120,
+      "cycleRangeDays": [
+        110,
+        130
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Superprecoce",
+      "dataBasis": "A Bayer publica Grupo de Maturação 131, e não ciclo fixo em dias. O planejamento usa referência regional do segmento superprecoce.",
+      "sourceLabel": "Agro Bayer — AG 9070 PRO4",
+      "source": "https://www.agro.bayer.com.br/d/milho-agroceres-ag-9070-pro4-ver-o-subtropical-br",
+      "cycleEvidence": "official-relative",
+      "officialMaturity": "GM 131"
+    },
+    {
+      "id": "milho-as1666-pro3",
+      "crop": "Milho",
+      "name": "AS 1666 PRO3",
+      "brand": "Agroeste",
+      "registrationName": "AS1666 PRO3",
+      "gmr": null,
+      "cycleDays": 129,
+      "cycleRangeDays": [
+        103,
+        138
+      ],
+      "thermalSum": 1702,
+      "thermalStage": "até a maturação fisiológica (mediana do ensaio)",
+      "cycleClass": "Superprecoce",
+      "dataBasis": "Ensaio regional com seis épocas mediu 103 a 138 dias da semeadura à maturação. Ao informar a data de plantio, a calculadora usa o resultado observado para aquele mês.",
+      "sourceLabel": "UFFS — seis épocas de semeadura, 2019",
+      "source": "https://rd.uffs.edu.br/bitstream/prefix/4378/1/WELTER.pdf",
+      "cycleByMonth": {
+        "8": 136,
+        "9": 128,
+        "10": 113,
+        "11": 130,
+        "12": 103
+      },
+      "cycleEvidence": "observed",
+      "officialMaturity": "GM 129",
+      "manufacturerSourceLabel": "Agro Bayer — AS 1666 PRO3",
+      "manufacturerSource": "https://www.agro.bayer.com.br/d/milho-agroeste-as-1666-pro3-ver-o-subtropical-br"
+    },
+    {
+      "id": "milho-as1730-pro4",
+      "crop": "Milho",
+      "name": "AS 1730 PRO4",
+      "brand": "Agroeste",
+      "registrationName": "AS1730 PRO4",
+      "gmr": null,
+      "cycleDays": 121,
+      "cycleRangeDays": [
+        111,
+        141
+      ],
+      "thermalSum": 1743,
+      "thermalStage": "até a maturação fisiológica (mediana do ensaio)",
+      "cycleClass": "Precoce",
+      "dataBasis": "A base genética AS 1730 foi observada em seis épocas com 111 a 141 dias até a maturação. A calculadora ajusta o ciclo ao mês de plantio; GM 130 permanece como métrica separada do obtentor.",
+      "sourceLabel": "UFFS — seis épocas de semeadura, 2019",
+      "source": "https://rd.uffs.edu.br/bitstream/prefix/4378/1/WELTER.pdf",
+      "cycleByMonth": {
+        "8": 138,
+        "9": 121,
+        "10": 120,
+        "11": 114,
+        "12": 111
+      },
+      "cycleEvidence": "observed",
+      "officialMaturity": "GM 130",
+      "manufacturerSourceLabel": "Agro Bayer — AS 1730 PRO4",
+      "manufacturerSource": "https://www.agro.bayer.com.br/d/milho-agroeste-as-1730-pro4-ver-o-subtropical-br"
+    },
+    {
+      "id": "milho-as1757-pro4",
+      "crop": "Milho",
+      "name": "AS 1757 PRO4",
+      "brand": "Agroeste",
+      "registrationName": "AS1757 PRO4",
+      "gmr": null,
+      "cycleDays": 130,
+      "cycleRangeDays": [
+        120,
+        140
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "A Bayer publica Grupo de Maturação 134, não dias exatos. O valor em dias é referência regional de planejamento e fica identificado como tal.",
+      "sourceLabel": "Agro Bayer — AS 1757 PRO4",
+      "source": "https://www.agro.bayer.com.br/d/silagem-agroeste-as-1757-pro4-ver-o-subtropical-br",
+      "cycleEvidence": "official-relative",
+      "officialMaturity": "GM 134"
+    },
+    {
+      "id": "milho-as1955-pro4",
+      "crop": "Milho",
+      "name": "AS 1955 PRO4",
+      "brand": "Agroeste",
+      "registrationName": "AS1955 PRO4",
+      "gmr": null,
+      "cycleDays": 120,
+      "cycleRangeDays": [
+        110,
+        130
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Superprecoce",
+      "dataBasis": "A Bayer publica Grupo de Maturação 129 e posiciona o híbrido como superprecoce. O aplicativo não apresenta GM 129 como 129 dias oficiais.",
+      "sourceLabel": "Agro Bayer — AS 1955 PRO4",
+      "source": "https://www.agro.bayer.com.br/d/silagem-agroeste-as-1955-pro4-ver-o-subtropical-br",
+      "cycleEvidence": "official-relative",
+      "officialMaturity": "GM 129"
+    },
+    {
+      "id": "milho-b2315-pwu",
+      "crop": "Milho",
+      "name": "B 2315 PWU",
+      "brand": "Biomatrix",
+      "registrationName": "B2315 PWU",
+      "gmr": null,
+      "cycleDays": 115,
+      "cycleRangeDays": [
+        105,
+        125
+      ],
+      "thermalSum": 1420,
+      "thermalStage": "até a maturação fisiológica",
+      "cycleClass": "Hiperprecoce",
+      "dataBasis": "A Brevant publica ciclo hiperprecoce, 698 GDU até o florescimento e 1.420 GDU até a maturação; não publica um número fixo de dias. Os dias exibidos são referência regional.",
+      "sourceLabel": "Brevant — Guia Milho Verão Sul 2025",
+      "source": "https://www.brevant.com.br/content/dam/dpagco/corteva/la/br/pt/brevant/documentos-milho-ver%C3%A3o/Guia%20Milho%20Ver%C3%A3o%20Sul%202025.pdf",
+      "cycleEvidence": "regional-reference",
+      "officialMaturity": "1.420 GDU até a maturação fisiológica"
+    },
+    {
+      "id": "milho-b2401-pwu",
+      "crop": "Milho",
+      "name": "B 2401 PWU",
+      "brand": "Biomatrix",
+      "registrationName": "B2401 PWU",
+      "gmr": null,
+      "cycleDays": 126,
+      "cycleRangeDays": [
+        117,
+        141
+      ],
+      "thermalSum": 1498,
+      "thermalStage": "até a maturação fisiológica",
+      "cycleClass": "Superprecoce",
+      "dataBasis": "O obtentor publica 1.498 GDU; o ensaio regional mediu 117 a 141 dias até a maturação em seis épocas. A calculadora ajusta o ciclo ao mês de semeadura.",
+      "sourceLabel": "UFFS — seis épocas de semeadura, 2019",
+      "source": "https://rd.uffs.edu.br/bitstream/prefix/4378/1/WELTER.pdf",
+      "cycleByMonth": {
+        "8": 134,
+        "9": 124,
+        "10": 120,
+        "11": 130,
+        "12": 117
+      },
+      "cycleEvidence": "observed",
+      "officialMaturity": "1.498 GDU até a maturação fisiológica",
+      "manufacturerSourceLabel": "Brevant — B 2401 PWU",
+      "manufacturerSource": "https://www.brevant.com.br/content/dam/dpagco/brevant/la/br/pt/products/files/Brevant-Guia-Milho-B2401PWU.pdf"
+    },
+    {
+      "id": "milho-b2620-pwu",
+      "crop": "Milho",
+      "name": "B 2620 PWU",
+      "brand": "Biomatrix",
+      "registrationName": "B2620 PWU",
+      "gmr": null,
+      "cycleDays": 120,
+      "cycleRangeDays": [
+        110,
+        130
+      ],
+      "thermalSum": 1452,
+      "thermalStage": "até a maturação fisiológica",
+      "cycleClass": "Superprecoce",
+      "dataBasis": "A ficha técnica publica 693 GDU até o florescimento e 1.452 GDU até a maturação, classificando o híbrido como superprecoce. Não há dias fixos publicados.",
+      "sourceLabel": "Brevant — B 2620 PWU",
+      "source": "https://www.brevant.com.br/content/dam/dpagco/brevant/la/br/pt/products/files/Brevant-Guia-Milho-B2620PWU.pdf",
+      "cycleEvidence": "regional-reference",
+      "officialMaturity": "1.452 GDU até a maturação fisiológica"
+    },
+    {
+      "id": "milho-dkb177-tre",
+      "crop": "Milho",
+      "name": "DKB 177 TRE",
+      "brand": "Dekalb",
+      "registrationName": "DKB177 TRE",
+      "gmr": null,
+      "cycleDays": 130,
+      "cycleRangeDays": [
+        120,
+        140
+      ],
+      "thermalSum": 860,
+      "thermalStage": "até o florescimento masculino (base genética DKB 177)",
+      "cycleClass": "Precoce",
+      "dataBasis": "A Bayer publica Grupo de Maturação 139. A indicação técnica do RS registra 860 GD até o florescimento para a base genética DKB 177; nenhuma das fontes publica dias fixos.",
+      "sourceLabel": "Agro Bayer — DKB 177 TRE",
+      "source": "https://www.agro.bayer.com.br/d/milho-dekalb-dkb-177-tre-safrinha-tropical-terras-baixas-br",
+      "cycleEvidence": "official-relative",
+      "officialMaturity": "GM 139",
+      "manufacturerSourceLabel": "Indicações Técnicas RS/Embrapa",
+      "manufacturerSource": "https://www.agricultura.rs.gov.br/upload/arquivos/202003/12103455-livro-indicacoes-tecnicas-milho-sorgo-2017-18-e-18-2019.pdf"
+    },
+    {
+      "id": "milho-dkb230-pro3",
+      "crop": "Milho",
+      "name": "DKB 230 PRO3",
+      "brand": "Dekalb",
+      "registrationName": "DKB230 PRO3",
+      "gmr": null,
+      "cycleDays": 115,
+      "cycleRangeDays": [
+        105,
+        125
+      ],
+      "thermalSum": 780,
+      "thermalStage": "até o florescimento masculino",
+      "cycleClass": "Hiperprecoce",
+      "dataBasis": "A Bayer publica GM 124 para verão subtropical; a indicação técnica do RS registra 780 GD até o florescimento. O aplicativo não converte GM 124 em 124 dias oficiais.",
+      "sourceLabel": "Agro Bayer — DKB 230 PRO3",
+      "source": "https://www.agro.bayer.com.br/d/milho-dekalb-dkb-230-pro3-ver-o-subtropical-br",
+      "cycleEvidence": "official-relative",
+      "officialMaturity": "GM 124 no ambiente subtropical",
+      "manufacturerSourceLabel": "Indicações Técnicas RS/Embrapa",
+      "manufacturerSource": "https://www.agricultura.rs.gov.br/upload/arquivos/202003/12103455-livro-indicacoes-tecnicas-milho-sorgo-2017-18-e-18-2019.pdf"
+    },
+    {
+      "id": "milho-dkb235-pro3",
+      "crop": "Milho",
+      "name": "DKB 235 PRO3",
+      "brand": "Dekalb",
+      "registrationName": "DKB235 PRO3",
+      "gmr": null,
+      "cycleDays": 120,
+      "cycleRangeDays": [
+        110,
+        130
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Superprecoce",
+      "dataBasis": "A Bayer publica Grupo de Maturação 128, não ciclo fixo em dias. A referência operacional regional fica separada do GM.",
+      "sourceLabel": "Agro Bayer — DKB 235 PRO3",
+      "source": "https://www.agro.bayer.com.br/d/milho-dekalb-dkb-235-pro3-ver-o-subtropical-br",
+      "cycleEvidence": "official-relative",
+      "officialMaturity": "GM 128"
+    },
+    {
+      "id": "milho-dkb242-pro4",
+      "crop": "Milho",
+      "name": "DKB 242 PRO4",
+      "brand": "Dekalb",
+      "registrationName": "DKB242 PRO4",
+      "gmr": null,
+      "cycleDays": 120,
+      "cycleRangeDays": [
+        110,
+        130
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Superprecoce",
+      "dataBasis": "A Bayer publica Grupo de Maturação 128. O aplicativo mantém GM e dias como grandezas distintas.",
+      "sourceLabel": "Agro Bayer — DKB 242 PRO4",
+      "source": "https://www.agro.bayer.com.br/d/milho-dekalb-dkb-242-pro4-ver-o-subtropical-br",
+      "cycleEvidence": "official-relative",
+      "officialMaturity": "GM 128"
+    },
+    {
+      "id": "milho-dkb260-pro4",
+      "crop": "Milho",
+      "name": "DKB 260 PRO4",
+      "brand": "Dekalb",
+      "registrationName": "DKB260 PRO4",
+      "gmr": null,
+      "cycleDays": 130,
+      "cycleRangeDays": [
+        120,
+        140
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "A Bayer publica GM 132–133 conforme o ambiente. Como não há dias fixos publicados, o calendário usa referência regional identificada.",
+      "sourceLabel": "Agro Bayer — DKB 260 PRO4",
+      "source": "https://www.agro.bayer.com.br/d/milho-dekalb-dkb-260-pro4-ver-o-subtropical-br",
+      "cycleEvidence": "official-relative",
+      "officialMaturity": "GM 132–133, conforme ambiente"
+    },
+    {
+      "id": "milho-fs395-pwu",
+      "crop": "Milho",
+      "name": "FS 395 PWU",
+      "brand": "Forseed",
+      "registrationName": "FS395 PWU",
+      "gmr": null,
+      "cycleDays": 120,
+      "cycleRangeDays": [
+        110,
+        130
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Superprecoce",
+      "dataBasis": "A Forseed publica somente a classe superprecoce, sem dias ou GDU de maturação. Os dias são referência regional, não dado do obtentor.",
+      "sourceLabel": "Forseed — FS 395",
+      "source": "https://www.forseedsementes.com.br/portfolio/produtos/fs395/",
+      "cycleEvidence": "regional-reference",
+      "officialMaturity": "Classe oficial: superprecoce"
+    },
+    {
+      "id": "milho-fs400-pwu",
+      "crop": "Milho",
+      "name": "FS 400 PWU",
+      "brand": "Forseed",
+      "registrationName": "FS400 PWU",
+      "gmr": null,
+      "cycleDays": 120,
+      "cycleRangeDays": [
+        110,
+        130
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Superprecoce",
+      "dataBasis": "A Forseed publica somente a classe superprecoce, sem dias ou GDU de maturação. Os dias são referência regional.",
+      "sourceLabel": "Forseed — FS 400",
+      "source": "https://www.forseedsementes.com.br/portfolio/produtos/fs400pw/",
+      "cycleEvidence": "regional-reference",
+      "officialMaturity": "Classe oficial: superprecoce"
+    },
+    {
+      "id": "milho-fs533-pwu",
+      "crop": "Milho",
+      "name": "FS 533 PWU",
+      "brand": "Forseed",
+      "registrationName": "FS533 PWU",
+      "gmr": null,
+      "cycleDays": 130,
+      "cycleRangeDays": [
+        120,
+        140
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "A Forseed publica a classe precoce e não informa dias ou GDU de maturação. O calendário usa uma faixa regional explícita.",
+      "sourceLabel": "Forseed — FS 533",
+      "source": "https://www.forseedsementes.com.br/portfolio/produtos/fs533pwu/",
+      "cycleEvidence": "regional-reference",
+      "officialMaturity": "Classe oficial: precoce"
+    },
+    {
+      "id": "milho-mg300-pwu",
+      "crop": "Milho",
+      "name": "MG 300 PWU",
+      "brand": "Morgan",
+      "registrationName": "MG300 PWU",
+      "gmr": null,
+      "cycleDays": 120,
+      "cycleRangeDays": [
+        110,
+        130
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Superprecoce",
+      "dataBasis": "A Morgan publica a classe superprecoce, mas não dias ou GDU de maturação. O valor em dias é referência regional.",
+      "sourceLabel": "Morgan — MG 300",
+      "source": "https://www.morgansementes.com.br/produtos/mg300",
+      "cycleEvidence": "regional-reference",
+      "officialMaturity": "Classe oficial: superprecoce"
+    },
+    {
+      "id": "milho-mg357-pwu",
+      "crop": "Milho",
+      "name": "MG 357 PWU",
+      "brand": "Morgan",
+      "registrationName": "MG357 PWU",
+      "gmr": null,
+      "cycleDays": 120,
+      "cycleRangeDays": [
+        110,
+        130
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Superprecoce",
+      "dataBasis": "O catálogo Morgan 2026 informa ciclo superprecoce, sem publicar dias ou GDU de maturação. Os dias são referência regional.",
+      "sourceLabel": "Morgan — Catálogo de Híbridos 2026",
+      "source": "https://www.morgansementes.com.br/assets/download/catalogo-de-hibridos.pdf",
+      "cycleEvidence": "regional-reference",
+      "officialMaturity": "Classe oficial: superprecoce"
+    },
+    {
+      "id": "milho-p2501",
+      "crop": "Milho",
+      "name": "P 2501",
+      "brand": "Pioneer",
+      "registrationName": "P2501",
+      "gmr": null,
+      "cycleDays": 120,
+      "cycleRangeDays": [
+        110,
+        130
+      ],
+      "thermalSum": 1493,
+      "thermalStage": "até a maturação fisiológica",
+      "cycleClass": "Superprecoce",
+      "dataBasis": "A Pioneer publica ciclo superprecoce, 760 GDU até o florescimento e 1.493 GDU até a maturação. Não publica dias fixos.",
+      "sourceLabel": "Pioneer — P 2501",
+      "source": "https://www.pioneer.com/br/portfolio-de-produtos/milho-todos/P2501.html",
+      "cycleEvidence": "regional-reference",
+      "officialMaturity": "1.493 GDU até a maturação fisiológica"
+    },
+    {
+      "id": "milho-p30001-pwue",
+      "crop": "Milho",
+      "name": "P 30001 PWUE",
+      "brand": "Pioneer",
+      "registrationName": "P30001 PWUE",
+      "gmr": null,
+      "cycleDays": 130,
+      "cycleRangeDays": [
+        120,
+        140
+      ],
+      "thermalSum": 1557,
+      "thermalStage": "até a maturação fisiológica",
+      "cycleClass": "Precoce",
+      "dataBasis": "A Pioneer publica RM 103 e 1.557 GDU. RM 103 é maturidade relativa, não 103 dias; o planejamento em dias usa referência regional do ciclo precoce.",
+      "sourceLabel": "Pioneer — P 30001 PWUE",
+      "source": "https://www.pioneer.com/br/portfolio-de-produtos/milho-todos/P30001PWUE.html",
+      "cycleEvidence": "regional-reference",
+      "officialMaturity": "RM 103 · 1.557 GDU até a maturação"
+    },
+    {
+      "id": "milho-p3016-vyhr",
+      "crop": "Milho",
+      "name": "P 3016 VYHR",
+      "brand": "Pioneer",
+      "registrationName": "P3016 VYHR",
+      "gmr": null,
+      "cycleDays": 124,
+      "cycleRangeDays": [
+        113,
+        155
+      ],
+      "thermalSum": 1498,
+      "thermalStage": "até a maturação fisiológica",
+      "cycleClass": "Precoce",
+      "dataBasis": "A Pioneer publica 1.498 GDU; o ensaio regional mediu 113 a 155 dias em seis épocas. A calculadora usa o resultado observado do mês de plantio.",
+      "sourceLabel": "UFFS — seis épocas de semeadura, 2019",
+      "source": "https://rd.uffs.edu.br/bitstream/prefix/4378/1/WELTER.pdf",
+      "cycleByMonth": {
+        "8": 148,
+        "9": 124,
+        "10": 113,
+        "11": 123,
+        "12": 117
+      },
+      "cycleEvidence": "observed",
+      "officialMaturity": "1.498 GDU até a maturação fisiológica",
+      "manufacturerSourceLabel": "Pioneer — P 3016 VYHR",
+      "manufacturerSource": "https://www.pioneer.com/br/portfolio-de-produtos/milho-todos/P3016VYHR.html"
+    },
+    {
+      "id": "milho-p3322-pwu",
+      "crop": "Milho",
+      "name": "P 3322 PWU",
+      "brand": "Pioneer",
+      "registrationName": "P3322 PWU",
+      "gmr": null,
+      "cycleDays": 130,
+      "cycleRangeDays": [
+        120,
+        140
+      ],
+      "thermalSum": 1582,
+      "thermalStage": "até a maturação fisiológica",
+      "cycleClass": "Precoce",
+      "dataBasis": "A Pioneer publica ciclo precoce, 815 GDU até o florescimento e 1.582 GDU até a maturação. A empresa não publica dias fixos.",
+      "sourceLabel": "Pioneer — P 3322 PWU",
+      "source": "https://www.pioneer.com/br/portfolio-de-produtos/milho-todos/P3322PWU.html",
+      "cycleEvidence": "regional-reference",
+      "officialMaturity": "1.582 GDU até a maturação fisiológica"
+    },
+    {
+      "id": "milho-p3565-pwu",
+      "crop": "Milho",
+      "name": "P 3565 PWU",
+      "brand": "Pioneer",
+      "registrationName": "P3565 PWU",
+      "gmr": null,
+      "cycleDays": 127,
+      "cycleRangeDays": [
+        110,
+        141
+      ],
+      "thermalSum": 1522,
+      "thermalStage": "até a maturação fisiológica",
+      "cycleClass": "Precoce",
+      "dataBasis": "A Pioneer publica 1.522 GDU; o ensaio regional mediu 110 a 141 dias em seis épocas. A calculadora ajusta o ciclo ao mês de plantio.",
+      "sourceLabel": "UFFS — seis épocas de semeadura, 2019",
+      "source": "https://rd.uffs.edu.br/bitstream/prefix/4378/1/WELTER.pdf",
+      "cycleByMonth": {
+        "8": 138,
+        "9": 124,
+        "10": 121,
+        "11": 130,
+        "12": 110
+      },
+      "cycleEvidence": "observed",
+      "officialMaturity": "1.522 GDU até a maturação fisiológica",
+      "manufacturerSourceLabel": "Pioneer — P 3565 PWU",
+      "manufacturerSource": "https://www.pioneer.com/br/portfolio-de-produtos/milho-todos/P3565PWU.html"
+    },
+    {
+      "id": "milho-ss2222e-vip3",
+      "crop": "Milho",
+      "name": "SS 2222E VIP3",
+      "brand": "NK",
+      "registrationName": "SS2222E VIP3",
+      "gmr": null,
+      "cycleDays": 130,
+      "cycleRangeDays": [
+        120,
+        140
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "O cadastro oficial atual identifica SS2222E VIP3 como NK501 VIP3 e publica somente a classe precoce. Os dias são referência regional.",
+      "sourceLabel": "NK Sementes — NK 501 / SS 2222E VIP3",
+      "source": "https://sementesnk.com.br/produtos/nk501-vip3/",
+      "cycleEvidence": "regional-reference",
+      "officialMaturity": "Classe oficial: precoce"
+    },
+    {
+      "id": "milho-ss2328s-vip3",
+      "crop": "Milho",
+      "name": "NK 401 VIP3",
+      "brand": "NK",
+      "registrationName": "SS2328S VIP3",
+      "gmr": null,
+      "cycleDays": 120,
+      "cycleRangeDays": [
+        110,
+        130
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Superprecoce",
+      "dataBasis": "A NK publica a classe superprecoce e alerta que o ciclo em dias varia com ambiente, época e manejo. Nenhum número fixo é atribuído ao obtentor.",
+      "sourceLabel": "NK Sementes — NK 401 VIP3",
+      "source": "https://sementesnk.com.br/produtos/nk401-vip3/",
+      "cycleEvidence": "regional-reference",
+      "officialMaturity": "Classe oficial: superprecoce"
+    },
+    {
+      "id": "milho-syn8a98-tltg-vip",
+      "crop": "Milho",
+      "name": "Feroz Viptera 3",
+      "brand": "NK",
+      "registrationName": "SYN8A98 TLTG VIPTERA",
+      "gmr": null,
+      "cycleDays": 130,
+      "cycleRangeDays": [
+        120,
+        140
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "A Syngenta publica a classe precoce, sem dias ou GDU de maturação. O calendário usa referência regional claramente identificada.",
+      "sourceLabel": "Syngenta — Feroz Viptera 3",
+      "source": "https://portal.syngenta.com.br/sementes/nk-milho/feroz-viptera-3/",
+      "cycleEvidence": "regional-reference",
+      "officialMaturity": "Classe oficial: precoce"
+    }
+  ],
+  "wheat": [
+    {
+      "id": "trigo-brs-belajoia",
+      "crop": "Trigo",
+      "name": "BRS Belajoia",
+      "brand": "Embrapa",
+      "registrationName": "BRS Belajoia",
+      "gmr": null,
+      "cycleDays": 128,
+      "cycleRangeDays": [
+        121,
+        135
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce/médio",
+      "dataBasis": "Maturação média publicada pelo obtentor",
+      "sourceLabel": "Embrapa",
+      "source": "https://www.embrapa.br/busca-de-solucoes-tecnologicas/-/produto-servico/6232/strongbrs-belajoiastrong"
+    },
+    {
+      "id": "trigo-brs-marcante",
+      "crop": "Trigo",
+      "name": "BRS Marcante",
+      "brand": "Embrapa",
+      "registrationName": "BRS Marcante",
+      "gmr": null,
+      "cycleDays": 130,
+      "cycleRangeDays": [
+        123,
+        137
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "80 dias ao espigamento e 130 dias à maturação",
+      "sourceLabel": "Embrapa Trigo",
+      "source": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1029756/1/ID434402013reuniaotrigomelhoramento51.pdf"
+    },
+    {
+      "id": "trigo-brs-parrudo",
+      "crop": "Trigo",
+      "name": "BRS Parrudo",
+      "brand": "Embrapa",
+      "registrationName": "BRS Parrudo",
+      "gmr": null,
+      "cycleDays": 135,
+      "cycleRangeDays": [
+        128,
+        142
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "85 dias ao espigamento e 135 dias à maturação em Passo Fundo",
+      "sourceLabel": "Embrapa Trigo",
+      "source": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1029769/1/ID434422013reuniaotrigomelhoramento152.pdf"
+    },
+    {
+      "id": "trigo-brs-harmonia",
+      "crop": "Trigo",
+      "name": "BRS Harmonia",
+      "brand": "Embrapa",
+      "registrationName": "BRS Harmonia",
+      "gmr": null,
+      "cycleDays": 130,
+      "cycleRangeDays": [
+        123,
+        137
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "67 dias ao espigamento e 130 dias à maturação",
+      "sourceLabel": "Embrapa Trigo",
+      "source": "https://www.infoteca.cnptia.embrapa.br/infoteca/bitstream/doc/1089247/1/LivretoTrigo2018.pdf"
+    },
+    {
+      "id": "trigo-brs-jacana",
+      "crop": "Trigo",
+      "name": "BRS Jacana",
+      "brand": "Embrapa",
+      "registrationName": "BRS Jacana",
+      "gmr": null,
+      "cycleDays": 95,
+      "cycleRangeDays": [
+        90,
+        102
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "59 dias ao espigamento e 95 dias à maturação",
+      "sourceLabel": "Embrapa Soja",
+      "source": "https://www.embrapa.br/web/soja/tecnologias/trigo"
+    },
+    {
+      "id": "trigo-xiru-capataz",
+      "crop": "Trigo",
+      "name": "Xiru Capataz",
+      "brand": "Biomatrix",
+      "registrationName": "Xiru Capataz",
+      "gmr": null,
+      "cycleDays": 132,
+      "cycleRangeDays": [
+        125,
+        139
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/precoce",
+      "dataBasis": "Maturação média publicada em avaliação da Região Sul",
+      "sourceLabel": "Embrapa Trigo",
+      "source": "https://www.embrapa.br/cultivos/busca-de-noticias/-/noticia/116253894/avaliacao-elenca-as-cultivares-de-trigo-mais-produtivas-na-regiao-sul"
+    },
+    {
+      "id": "trigo-tbio-ponteiro",
+      "crop": "Trigo",
+      "name": "TBIO Ponteiro",
+      "brand": "Biotrigo",
+      "registrationName": "TBIO Ponteiro",
+      "gmr": null,
+      "cycleDays": 140,
+      "cycleRangeDays": [
+        131,
+        150
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/tardio",
+      "dataBasis": "Classe de ciclo publicada pelo obtentor; valor central do grupo ZARC Região 1",
+      "sourceLabel": "Biotrigo / MAPA ZARC Trigo RS",
+      "source": "https://biotrigo.com.br/cultivares/tbio-ponteiro/"
+    },
+    {
+      "id": "trigo-tbio-motriz",
+      "crop": "Trigo",
+      "name": "TBIO Motriz",
+      "brand": "Biotrigo",
+      "registrationName": "TBIO Motriz",
+      "gmr": null,
+      "cycleDays": 140,
+      "cycleRangeDays": [
+        131,
+        150
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/tardio",
+      "dataBasis": "Classe de ciclo publicada pelo obtentor; valor central do grupo ZARC Região 1",
+      "sourceLabel": "Biotrigo / MAPA ZARC Trigo RS",
+      "source": "https://biotrigo.com.br/cultivares/tbio-motriz/"
+    },
+    {
+      "id": "trigo-ors-senna",
+      "crop": "Trigo",
+      "name": "ORS Senna",
+      "brand": "OR Sementes",
+      "registrationName": "ORS Senna",
+      "gmr": null,
+      "cycleDays": 103,
+      "cycleRangeDays": [
+        100,
+        105
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Hiperprecoce",
+      "dataBasis": "Ciclo médio oficial de 100 a 105 dias publicado pela OR Sementes.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/3/ors%2Bsenna"
+    },
+    {
+      "id": "trigo-ors-falcao",
+      "crop": "Trigo",
+      "name": "ORS Falcão",
+      "brand": "OR Sementes",
+      "registrationName": "ORS Falcão",
+      "gmr": null,
+      "cycleDays": 110,
+      "cycleRangeDays": [
+        105,
+        115
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Superprecoce",
+      "dataBasis": "Classe superprecoce oficial; dias são faixa de planejamento coerente com a classe.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/15/ors%2Bfalc%C3%A3o"
+    },
+    {
+      "id": "trigo-ors-turbo",
+      "crop": "Trigo",
+      "name": "ORS Turbo",
+      "brand": "OR Sementes",
+      "registrationName": "ORS Turbo",
+      "gmr": null,
+      "cycleDays": 112,
+      "cycleRangeDays": [
+        107,
+        117
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Superprecoce",
+      "dataBasis": "Classe superprecoce oficial; dias são faixa de planejamento coerente com a classe.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/14/ors%2Bturbo"
+    },
+    {
+      "id": "trigo-ors-feroz",
+      "crop": "Trigo",
+      "name": "ORS Feroz",
+      "brand": "OR Sementes",
+      "registrationName": "ORS Feroz",
+      "gmr": null,
+      "cycleDays": 123,
+      "cycleRangeDays": [
+        115,
+        130
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "Classe precoce oficial; dias são faixa regional de planejamento.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/2/ors%2Bferoz"
+    },
+    {
+      "id": "trigo-ors-agile",
+      "crop": "Trigo",
+      "name": "ORS Agile",
+      "brand": "OR Sementes",
+      "registrationName": "ORS Agile",
+      "gmr": null,
+      "cycleDays": 122,
+      "cycleRangeDays": [
+        115,
+        130
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "Classe precoce oficial; dias são faixa regional de planejamento.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/8/ors%2Bagile"
+    },
+    {
+      "id": "trigo-ors-absoluto",
+      "crop": "Trigo",
+      "name": "ORS Absoluto",
+      "brand": "OR Sementes",
+      "registrationName": "ORS Absoluto",
+      "gmr": null,
+      "cycleDays": 125,
+      "cycleRangeDays": [
+        118,
+        132
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "Classe precoce oficial; dias são faixa regional de planejamento.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/5/ors%2Babsoluto"
+    },
+    {
+      "id": "trigo-ors-destak",
+      "crop": "Trigo",
+      "name": "ORS Destak",
+      "brand": "OR Sementes",
+      "registrationName": "ORS Destak",
+      "gmr": null,
+      "cycleDays": 130,
+      "cycleRangeDays": [
+        123,
+        137
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/precoce",
+      "dataBasis": "Classe médio/precoce oficial; dias são faixa regional de planejamento.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/10/ors%2Bdestak"
+    },
+    {
+      "id": "trigo-ors-guardiao",
+      "crop": "Trigo",
+      "name": "ORS Guardião",
+      "brand": "OR Sementes",
+      "registrationName": "ORS Guardião",
+      "gmr": null,
+      "cycleDays": 132,
+      "cycleRangeDays": [
+        125,
+        139
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/precoce",
+      "dataBasis": "Classe médio/precoce oficial; dias são faixa regional de planejamento.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/1/ors%2Bguardi%C3%A3o"
+    },
+    {
+      "id": "trigo-ors-madreperola",
+      "crop": "Trigo",
+      "name": "ORS MadrePérola",
+      "brand": "OR Sementes",
+      "registrationName": "ORS MadrePérola",
+      "gmr": null,
+      "cycleDays": 131,
+      "cycleRangeDays": [
+        124,
+        138
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/precoce",
+      "dataBasis": "Classe médio/precoce oficial; dias são faixa regional de planejamento.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/12/ors%2Bmadrep%C3%A9rola"
+    },
+    {
+      "id": "trigo-ors-premium-ors-2101",
+      "crop": "Trigo",
+      "name": "ORS Premium ORS 2101",
+      "brand": "OR Sementes",
+      "registrationName": "ORS Premium ORS 2101",
+      "gmr": null,
+      "cycleDays": 133,
+      "cycleRangeDays": [
+        126,
+        140
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/precoce",
+      "dataBasis": "Classe médio/precoce oficial; dias são faixa regional de planejamento.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/4/ors%2Bpremium%2Bors%2B2101"
+    },
+    {
+      "id": "trigo-ors-confeitaria",
+      "crop": "Trigo",
+      "name": "ORS Confeitaria",
+      "brand": "OR Sementes",
+      "registrationName": "ORS Confeitaria",
+      "gmr": null,
+      "cycleDays": 138,
+      "cycleRangeDays": [
+        130,
+        145
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "Classe média oficial; dias são faixa regional de planejamento.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/6/ors%2Bconfeitaria"
+    },
+    {
+      "id": "trigo-ors-soberano",
+      "crop": "Trigo",
+      "name": "ORS Soberano",
+      "brand": "OR Sementes",
+      "registrationName": "ORS Soberano",
+      "gmr": null,
+      "cycleDays": 140,
+      "cycleRangeDays": [
+        132,
+        147
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "Classe média oficial; dias são faixa regional de planejamento.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/11/ors%2Bsoberano"
+    },
+    {
+      "id": "trigo-ors-1403",
+      "crop": "Trigo",
+      "name": "ORS 1403",
+      "brand": "OR Sementes",
+      "registrationName": "ORS 1403",
+      "gmr": null,
+      "cycleDays": 148,
+      "cycleRangeDays": [
+        140,
+        155
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/tardio",
+      "dataBasis": "Classe médio/tardio oficial; dias são faixa regional de planejamento.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/9/ors%2B1403"
+    },
+    {
+      "id": "trigo-ors-gladiador",
+      "crop": "Trigo",
+      "name": "ORS Gladiador",
+      "brand": "OR Sementes",
+      "registrationName": "ORS Gladiador",
+      "gmr": null,
+      "cycleDays": 150,
+      "cycleRangeDays": [
+        142,
+        157
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/tardio",
+      "dataBasis": "Classe médio/tardio oficial; dias são faixa regional de planejamento.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/16/ors%2Bgladiador"
+    },
+    {
+      "id": "trigo-ors-selvagem",
+      "crop": "Trigo",
+      "name": "ORS Selvagem",
+      "brand": "OR Sementes",
+      "registrationName": "ORS Selvagem",
+      "gmr": null,
+      "cycleDays": 152,
+      "cycleRangeDays": [
+        144,
+        160
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/tardio",
+      "dataBasis": "Classe médio/tardio oficial; dias são faixa regional de planejamento.",
+      "sourceLabel": "OR Sementes — ficha oficial",
+      "source": "https://www.orsementes.com.br/cultivares/17/ors%2Bselvagem"
+    },
+    {
+      "id": "trigo-dm-3026",
+      "crop": "Trigo",
+      "name": "DM 3026",
+      "brand": "DONMARIO",
+      "registrationName": "DM 3026",
+      "gmr": null,
+      "cycleDays": 125,
+      "cycleRangeDays": [
+        118,
+        132
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "Classe precoce publicada pela DONMARIO; dias são faixa regional de planejamento.",
+      "sourceLabel": "DONMARIO — portfólio de trigo",
+      "source": "https://www.donmario.com.br/cultivares-trigo/"
+    },
+    {
+      "id": "trigo-dm-4025",
+      "crop": "Trigo",
+      "name": "DM 4025",
+      "brand": "DONMARIO",
+      "registrationName": "DM 4025",
+      "gmr": null,
+      "cycleDays": 140,
+      "cycleRangeDays": [
+        132,
+        147
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "Classe média publicada pela DONMARIO; dias são faixa regional de planejamento.",
+      "sourceLabel": "DONMARIO — portfólio de trigo",
+      "source": "https://www.donmario.com.br/cultivares-trigo/"
+    }
+  ],
+  "canola": [
+    {
+      "id": "canola-diamond",
+      "crop": "Canola",
+      "name": "Diamond",
+      "brand": "Advanta",
+      "registrationName": "Diamond",
+      "gmr": null,
+      "cycleDays": 117,
+      "cycleRangeDays": [
+        110,
+        128
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "Ciclos observados de 110 a 128 dias em quatro ambientes de Cerrado.",
+      "sourceLabel": "Embrapa Agroenergia — ensaio 2025",
+      "source": "https://www.infoteca.cnptia.embrapa.br/infoteca/bitstream/doc/1181770/1/desempenho-cultivares-canola-2025.pdf"
+    },
+    {
+      "id": "canola-hyola-433",
+      "crop": "Canola",
+      "name": "Hyola 433",
+      "brand": "Advanta",
+      "registrationName": "Hyola 433",
+      "gmr": null,
+      "cycleDays": 129,
+      "cycleRangeDays": [
+        116,
+        135
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce/médio",
+      "dataBasis": "Ciclos observados de 116 a 135 dias em quatro ambientes de Cerrado.",
+      "sourceLabel": "Embrapa Agroenergia — ensaio 2025",
+      "source": "https://www.infoteca.cnptia.embrapa.br/infoteca/bitstream/doc/1181770/1/desempenho-cultivares-canola-2025.pdf"
+    },
+    {
+      "id": "canola-hyola-571cl",
+      "crop": "Canola",
+      "name": "Hyola 571CL",
+      "brand": "Advanta",
+      "registrationName": "Hyola 571CL",
+      "gmr": null,
+      "cycleDays": 132,
+      "cycleRangeDays": [
+        126,
+        139
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce/médio",
+      "dataBasis": "Ciclos de 125,5 a 138,7 dias observados em duas épocas de semeadura.",
+      "sourceLabel": "Embrapa — fenologia de híbridos de canola",
+      "source": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1085129/1/artigo2017.Caracteristicasagronomicasrendimentosdeoleoeproteinadecanolaemdiferentesepocasdesemeadura.pdf"
+    },
+    {
+      "id": "canola-hyola-575cl",
+      "crop": "Canola",
+      "name": "Hyola 575CL",
+      "brand": "Advanta",
+      "registrationName": "Hyola 575CL",
+      "gmr": null,
+      "cycleDays": 123,
+      "cycleRangeDays": [
+        107,
+        140
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce",
+      "dataBasis": "Ciclos de 106,5 a 139,5 dias observados em duas épocas de semeadura.",
+      "sourceLabel": "Embrapa — fenologia de híbridos de canola",
+      "source": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1085129/1/artigo2017.Caracteristicasagronomicasrendimentosdeoleoeproteinadecanolaemdiferentesepocasdesemeadura.pdf"
+    },
+    {
+      "id": "canola-hyola-61",
+      "crop": "Canola",
+      "name": "Hyola 61",
+      "brand": "Advanta",
+      "registrationName": "Hyola 61",
+      "gmr": null,
+      "cycleDays": 148,
+      "cycleRangeDays": [
+        120,
+        150
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/tardio",
+      "dataBasis": "148 dias da emergência à maturação no ensaio de Passo Fundo; a faixa varia com época e fotoperíodo.",
+      "sourceLabel": "Embrapa Trigo — ensaio fenológico",
+      "source": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1039055/1/ID435842014SLACPoster24.pdf"
+    },
+    {
+      "id": "canola-hyola-50",
+      "crop": "Canola",
+      "name": "Hyola 50",
+      "brand": "Advanta",
+      "registrationName": "Hyola 50",
+      "gmr": null,
+      "cycleDays": 137,
+      "cycleRangeDays": [
+        129,
+        146
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "Ciclos de 129,2 a 145,5 dias observados em duas épocas de semeadura.",
+      "sourceLabel": "Embrapa — fenologia de híbridos de canola",
+      "source": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1085129/1/artigo2017.Caracteristicasagronomicasrendimentosdeoleoeproteinadecanolaemdiferentesepocasdesemeadura.pdf"
+    },
+    {
+      "id": "canola-alht-b4",
+      "crop": "Canola",
+      "name": "ALHT B4",
+      "brand": "Híbrido comercial",
+      "registrationName": "ALHT B4",
+      "gmr": null,
+      "cycleDays": 130,
+      "cycleRangeDays": [
+        122,
+        138
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce/médio",
+      "dataBasis": "Ciclo central observado em ensaio brasileiro; variação dependente de ambiente.",
+      "sourceLabel": "Embrapa — ensaios de canola",
+      "source": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1137919/1/2019-PA-VI-Uniao-da-Vitoria-INFLUENCIA-DE-HIBRIDOS-Dembeski-TCC-1.pdf"
+    },
+    {
+      "id": "canola-nuola-300",
+      "crop": "Canola",
+      "name": "Nuola 300",
+      "brand": "Híbrido comercial",
+      "registrationName": "Nuola 300",
+      "gmr": null,
+      "cycleDays": 136,
+      "cycleRangeDays": [
+        121,
+        139
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "Ciclos observados de 121 a 139 dias em quatro ambientes de Cerrado.",
+      "sourceLabel": "Embrapa Agroenergia — ensaio 2025",
+      "source": "https://www.infoteca.cnptia.embrapa.br/infoteca/bitstream/doc/1181770/1/desempenho-cultivares-canola-2025.pdf"
+    },
+    {
+      "id": "canola-hyola-401",
+      "crop": "Canola",
+      "name": "Hyola 401",
+      "brand": "Advanta",
+      "registrationName": "Hyola 401",
+      "gmr": null,
+      "cycleDays": 144,
+      "cycleRangeDays": [
+        144,
+        144
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "144 dias da emergência à maturação em ensaio de Passo Fundo.",
+      "sourceLabel": "Embrapa — ensaio de híbridos de canola",
+      "source": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1039055/1/ID435842014SLACPoster24.pdf"
+    },
+    {
+      "id": "canola-hyola-76",
+      "crop": "Canola",
+      "name": "Hyola 76",
+      "brand": "Advanta",
+      "registrationName": "Hyola 76",
+      "gmr": null,
+      "cycleDays": 150,
+      "cycleRangeDays": [
+        150,
+        150
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio/tardio",
+      "dataBasis": "150 dias da emergência à maturação em ensaio de Passo Fundo.",
+      "sourceLabel": "Embrapa — ensaio de híbridos de canola",
+      "source": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1039055/1/ID435842014SLACPoster24.pdf"
+    },
+    {
+      "id": "canola-hyola-555tt",
+      "crop": "Canola",
+      "name": "Hyola 555TT",
+      "brand": "Advanta",
+      "registrationName": "Hyola 555TT",
+      "gmr": null,
+      "cycleDays": 146,
+      "cycleRangeDays": [
+        146,
+        146
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "146 dias da emergência à maturação em ensaio de Passo Fundo.",
+      "sourceLabel": "Embrapa — ensaio de híbridos de canola",
+      "source": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1039055/1/ID435842014SLACPoster24.pdf"
+    },
+    {
+      "id": "canola-hyola-411",
+      "crop": "Canola",
+      "name": "Hyola 411",
+      "brand": "Advanta",
+      "registrationName": "Hyola 411",
+      "gmr": null,
+      "cycleDays": 128,
+      "cycleRangeDays": [
+        119,
+        137
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Precoce/médio",
+      "dataBasis": "Classe intermediária/curta e faixa regional baseada em ensaios brasileiros; valor central para planejamento.",
+      "sourceLabel": "Embrapa — ensaio de híbridos de canola",
+      "source": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1084101/1/CNPTID44250.pdf"
+    },
+    {
+      "id": "canola-hyola-474cl",
+      "crop": "Canola",
+      "name": "Hyola 474CL",
+      "brand": "Advanta",
+      "registrationName": "Hyola 474CL",
+      "gmr": null,
+      "cycleDays": 136,
+      "cycleRangeDays": [
+        123,
+        155
+      ],
+      "thermalSum": null,
+      "thermalStage": null,
+      "cycleClass": "Médio",
+      "dataBasis": "Faixa de 123 a 155 dias da emergência à maturação em ensaios no Sul; 136 dias é o centro para planejamento.",
+      "sourceLabel": "Embrapa — ensaio de híbridos de canola",
+      "source": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1083977/1/CNPTID44246.pdf"
+    }
+  ]
+}

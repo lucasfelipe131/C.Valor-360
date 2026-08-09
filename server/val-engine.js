@@ -40,6 +40,7 @@ export function summarizeContextCoverage(context={}){
 function technicalReviewShell(_context,_message,signalRequiresReview){
   const nextQuestion={stage:'situação',question:'Quais dados, método, unidade e contexto o responsável técnico precisa validar antes de orientar qualquer ação?',ask_when:'Antes de discutir produto, dose, mistura, diagnóstico ou aplicação.',purpose:'Transformar a solicitação em um pacote de revisão verificável.',evidence_needed:'Fonte, data, talhão, cultura, estágio, método e responsável pela validação.'}
   return {
+    executive_brief:{priority:'imediata',headline:'Revisão técnica necessária antes de orientar qualquer execução',reason:'A solicitação ou a saída contém diagnóstico, produto, dose, mistura ou aplicação que exige responsável habilitado.',action:'Organizar fonte, data, talhão, cultura, método e pergunta para revisão técnica.',deadline:'Antes de qualquer orientação ao produtor',question:'Quais dados ainda faltam para o responsável técnico validar esta decisão?',evidence_ids:[],missing_data:['fonte e método','contexto do talhão','validação técnica']},
     answer:'A VAL reteve qualquer orientação técnica acionável. O consultor pode organizar o contexto e as dúvidas, mas diagnóstico, produto, dose, mistura ou aplicação só podem aparecer depois de revisão por responsável habilitado.',
     objective:'Reunir fonte, método, unidade, contexto do talhão e pergunta técnica para uma revisão humana rastreável.',
     decision_profile:{decision_context_summary:'A adaptação comercial foi suspensa enquanto o conteúdo técnico aguarda revisão.',legacy_tag:'',tag_origin:'',self_reported:false,evidence_ids:[],observed_dimensions:[],adaptation:'Não apresentar a orientação original nem inferir preferência decisória nesta etapa.'},
@@ -68,6 +69,9 @@ export function enforceValSafety(advice,context,message=''){
   const requestRequiresReview=explicitAgronomyRequest.test(String(message))||applicationRate.test(String(message))
   const outputRequiresReview=applicationRate.test(generatedContent)||actionableAgronomy.test(`${generatedAction}\n${generatedContent}`)
   if(requestRequiresReview||outputRequiresReview)return technicalReviewShell(context,message,signalRequiresReview)
+  result.executive_brief=result.executive_brief||{priority:'acompanhar',headline:String(result.answer||'Próxima ação em definição').split(/[.!?]/)[0].slice(0,180),reason:String(result.objective||'A base ainda precisa de confirmação.'),action:String(result.next_best_action||'Registrar a próxima informação útil.'),deadline:'No próximo contato',question:String(result.next_question?.question||''),evidence_ids:[],missing_data:(result.confidence?.missing_data||[]).slice(0,3)}
+  result.executive_brief.evidence_ids=(result.executive_brief.evidence_ids||[]).filter(id=>evidenceIds.has(id)).slice(0,3)
+  result.executive_brief.missing_data=(result.executive_brief.missing_data||[]).slice(0,3)
   result.audience='internal';result.safe_to_show_customer=false
   if(result.constructive_tension?.status==='applicable'){
     result.constructive_tension.evidence_ids=(result.constructive_tension.evidence_ids||[]).filter(id=>evidenceIds.has(id))
@@ -121,7 +125,7 @@ export class ValEngine{
       }catch(error){if(signal?.aborted)throw Object.assign(new Error('A solicitação foi cancelada pelo cliente.'),{statusCode:499});advice=buildFallbackAdvice({...context,message});engineMode='fallback';warning=safeError(error);responseMetadata={...responseMetadata,...(error.responseMetadata||{}),latencyMs:error.responseMetadata?.latencyMs||responseMetadata.latencyMs||Date.now()-startedAt,errorCode:String(error.code||error.status||'provider_error').slice(0,80),errorDetails:error.details||null}}
     }
     advice=enforceValSafety(advice,context,message)
-    const modelRun={model:this.client?route.model:'rules-v2',promptVersion:'val-playbook-v2',status:engineMode==='openai'?'completed':this.client?'fallback':'demonstration',...responseMetadata}
+    const modelRun={model:this.client?route.model:'rules-v2',promptVersion:'val-playbook-v3',status:engineMode==='openai'?'completed':this.client?'fallback':'demonstration',...responseMetadata}
     const recommendationId=await this.repository.recordRecommendation({tenantId,clientId,question:message,mode:route.tier,model:engineMode==='openai'?route.model:'rules-v2',context,advice,responseMetadata,promptHash:createHash('sha256').update(buildValInstructions()).digest('hex'),modelRun})
     return {recommendationId,engineMode,route:route.tier,model:engineMode==='openai'?route.model:'rules-v2',warning,contextCoverage,advice}
   }

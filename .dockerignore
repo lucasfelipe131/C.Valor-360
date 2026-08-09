@@ -10,6 +10,7 @@
 *.pem
 *.p12
 node_modules
+.next
 dist
 coverage
 *.log

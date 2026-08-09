@@ -10,6 +10,7 @@ import {deriveSignals,normalizeIntegrationEvent,requiresTechnicalSignature,verif
 import {ValRepository} from './server/repository.js'
 import {publicStorageScope} from './server/storage-policy.js'
 import {ValEngine} from './server/val-engine.js'
+import {createTechnicalWorkspace} from './server/technical-workspace.js'
 import {buildSurveyOptions,validateSurveyAnswers} from './server/survey-validation.js'
 import {calculateProfile} from './src/lib/profile.js'
 import {buildCommercialIntelligence,summarizeLearning} from './src/lib/commercial-intelligence.js'
@@ -22,7 +23,7 @@ const storePath=join(dataRoot,'valor360-store.json')
 const profileMatrix=JSON.parse(readFileSync(join(appRoot,'src','data','profile-matrix.json'),'utf8'))
 const surveyOptions=buildSurveyOptions(profileMatrix)
 const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp','.woff2':'font/woff2'}
-const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(), microphone=(), geolocation=()','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"}
+const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(self), microphone=(), geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"}
 
 mkdirSync(dataRoot,{recursive:true})
 if(!existsSync(storePath))writeFileSync(storePath,JSON.stringify({surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[]}},null,2))
@@ -43,6 +44,7 @@ const auth=createAuth(config)
 const userPayload=session=>session?{email:session.email,demo:false,storageScope:auth.storageScope(session)}:{email:null,demo:true,storageScope:'demo'}
 const repository=new ValRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const valEngine=new ValEngine({runtimeConfig:config,repository})
+const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,auth,runtimeConfig:config,json})
 const rateBuckets=new Map()
 function consumeRateLimit(scope,key,limit){const now=Date.now();const bucketKey=`${scope}:${key}`;const current=rateBuckets.get(bucketKey);if(!current||current.resetAt<=now){rateBuckets.set(bucketKey,{count:1,resetAt:now+600_000});return true}if(current.count>=limit)return false;current.count+=1;return true}
 const requestIdentity=request=>String(request.socket.remoteAddress||'unknown')
@@ -91,13 +93,24 @@ async function handleApi(request,response,url){
  }
  if(url.pathname==='/api/auth/logout'&&request.method==='POST'){response.setHeader('Set-Cookie',auth.clearCookie(request));return json(response,200,{authenticated:false})}
  const storageScope=publicStorageScope(url.pathname,request.method)
- const protectedPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+\/context$/.test(url.pathname)
+ const protectedPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+\/context$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  if(protectedPath&&auth.configured&&!auth.session(request))return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
  if(protectedPath&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para operar dados fora do modo demonstrativo.'})}
  if(storageScope==='public-survey'&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para acessar questionários fora do modo demonstrativo.'})}
  if((url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations')&&config.openaiApiKey&&!auth.configured)return json(response,503,{error:'Configure VAL_ADMIN_EMAIL, VAL_ADMIN_PASSWORD e VAL_SESSION_SECRET antes de ativar a IA em produção.'})
  if((url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations')&&config.openaiApiKey&&!database.configured)return json(response,503,{error:'Configure DATABASE_URL antes de ativar a IA com dados reais.'})
+ if(url.pathname==='/api/technical/bootstrap'&&request.method==='GET'){
+  const intelligence=await repository.getIntelligence()
+  const producers=(intelligence.clients||[]).map(client=>{
+   const rawArea=typeof client.area==='number'?client.area:Number(String(client.area||'').replace(/\./g,'').replace(',','.').match(/\d+(?:\.\d+)?/)?.[0]||0)
+   const cultures=Array.isArray(client.cultures)?client.cultures:String(client.cultures||'').split(/[,;/|]+/).map(item=>item.trim()).filter(Boolean)
+   return {
+    id:String(client.id),name:String(client.name||'Produtor'),crmCode:String(client.id),document:'',phone:String(client.commercial?.phone||''),email:String(client.commercial?.email||''),city:String(client.municipality||''),properties:String(client.commercial?.property||''),area:Number.isFinite(rawArea)?rawArea:0,cultures,notes:[client.primaryProfile&&`Perfil Produtor 360: ${client.primaryProfile}`,client.additionalNeed&&`Necessidade declarada: ${client.additionalNeed}`].filter(Boolean).join('\n'),fields:[],registrations:[],mappingStatus:'pending',crmSource:'VALOR 360'
+   }
+  })
+  return json(response,200,{producers,source:'valor360',syncedAt:new Date().toISOString()})
+ }
  if((url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations')&&request.method==='POST'){
   const sessionIdentity=auth.session(request)?.email||requestIdentity(request)
   if(!consumeRateLimit('val',sessionIdentity,config.aiRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de análises atingido. Aguarde alguns minutos.'})
@@ -188,9 +201,12 @@ async function handleApi(request,response,url){
  return false
 }
 
+technicalWorkspace.start()
+
 createServer(async(request,response)=>{
  let url
  try{url=new URL(request.url||'/',`http://${request.headers.host||'localhost'}`)}catch{return json(response,400,{error:'URL inválida.'})}
+ if(technicalWorkspace.handle(request,response,url))return
  if(url.pathname==='/live'||url.pathname==='/health'||url.pathname.startsWith('/api/')){
   try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){return json(response,Number(exception.statusCode)||400,{error:exception.message||'Não foi possível processar a solicitação.'})}
   return json(response,404,{error:'Rota não encontrada.'})
@@ -203,4 +219,4 @@ createServer(async(request,response)=>{
  createReadStream(target).pipe(response)
 }).listen(port,'0.0.0.0',()=>console.log(`VALOR 360 disponível na porta ${port}`))
 
-for(const signal of ['SIGTERM','SIGINT'])process.on(signal,async()=>{await database.close();process.exit(0)})
+for(const signal of ['SIGTERM','SIGINT'])process.on(signal,async()=>{technicalWorkspace.close();await database.close();process.exit(0)})

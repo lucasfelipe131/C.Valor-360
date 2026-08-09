@@ -46,7 +46,7 @@ const meta={
  visits:['Visitas','Planejamento, roteiro e próximos compromissos'],
  opportunities:['Oportunidades','Transforme necessidade em proposta de valor'],
  val:['Inteligência (VAL)','Value Agriculture Intelligence'],
- agro:['Inteligência Agronômica','Dados técnicos estruturados e roadmap de módulos'],
+ agro:['Inteligência Agronômica','Análises, mapas, cálculos e decisões técnicas no mesmo ambiente'],
  questionnaire:['Produtor 360','Perfil e preferências do produtor'],
  reports:['Relatórios','Indicadores, NPS, IRT e execução comercial'],
  settings:['Configurações','Usuários, unidades e parâmetros']
@@ -106,7 +106,7 @@ export default function App(){
     {page==='datahub'&&<DataHub onImport={importClients} onNotify={notify}/>}
     {page==='client360'&&selected&&<Client360 key={selected.id} client={selected} storageScope={currentUser?.storageScope} onBack={()=>navigate('clients')} onPrepare={()=>prepareClient(selected)} onSaved={()=>notify('Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}/>}
     {page==='val'&&<ValPanel clients={clientList} selectedClient={selected} onSelect={openClient}/>}
-    {page==='agro'&&<Agro/>}
+    {page==='agro'&&<Agro clients={clientList}/>}
     {page==='questionnaire'&&<Questionnaire onCreate={addClient} onOpen={openClient} onNotify={notify}/>}
     {page==='visits'&&<Visits clients={clientList} visits={visits} onSave={saveVisit} onPrepare={prepareClient}/>}
     {page==='opportunities'&&<Opportunities clients={clientList} storageScope={currentUser?.storageScope} persistedItems={opportunities} onPersist={saveOpportunity} onClient={openClient} onSaved={notify}/>}

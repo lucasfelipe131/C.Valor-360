@@ -22,7 +22,10 @@ test('imagem final contém os artefatos exigidos por migrate e start',()=>{
   'server ./server',
   'database ./database',
   'src/data ./src/data',
-  'src/lib ./src/lib'
+  'src/lib ./src/lib',
+  '/app/manual/.next/standalone/manual ./manual',
+  '/app/manual/.next/static ./manual/.next/static',
+  '/app/manual/public ./manual/public'
  ])assert.ok(dockerfile.includes(required),`COPY ausente: ${required}`)
  assert.match(dockerfile,/mkdir -p \/app\/\.data/)
  assert.match(dockerfile,/^EXPOSE 8080$/m)
