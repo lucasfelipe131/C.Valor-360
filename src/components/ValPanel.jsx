@@ -68,8 +68,8 @@ function asList(value,fallback=[]){
  return list.map(textValue).filter(Boolean)
 }
 
-const sourceLabels={client_record:'cadastro do cliente',producer_questionnaire:'Produtor 360',business_history:'histórico de negócios',visit:'visita',interaction:'interação',opportunity:'oportunidade',field_report:'relatório de campo',soil_analysis:'análise de solo',ndvi:'NDVI',manual_record:'Manual do Agrônomo',producer_statement:'declaração do produtor',approved_playbook:'playbook aprovado',missing:'dado ausente',unknown:'origem não confirmada'}
-const coverageLabels={questionnaire:'respostas 360',businessEvents:'negócios',visits:'visitas',interactions:'interações',opportunities:'oportunidades',properties:'propriedades',fieldReports:'relatórios de campo',soilAnalyses:'análises de solo',ndvi:'leituras NDVI',manualRecords:'registros do Manual',signals:'sinais',memories:'memórias',priorRecommendations:'análises anteriores'}
+const sourceLabels={client_record:'cadastro do cliente',producer_questionnaire:'Produtor 360',business_history:'histórico de negócios',visit:'visita',interaction:'interação',opportunity:'oportunidade',field_report:'relatório de campo',soil_analysis:'análise de solo',ndvi:'NDVI',manual_record:'núcleo técnico do VALOR 360',producer_statement:'declaração do produtor',approved_playbook:'playbook aprovado',missing:'dado ausente',unknown:'origem não confirmada'}
+const coverageLabels={questionnaire:'respostas 360',businessEvents:'negócios',visits:'visitas',interactions:'interações',opportunities:'oportunidades',properties:'propriedades',fieldReports:'relatórios de campo',soilAnalyses:'análises de solo',ndvi:'leituras NDVI',manualRecords:'registros técnicos',signals:'sinais',memories:'memórias',priorRecommendations:'análises anteriores'}
 const confidenceLabels={not_calibrated:'não calibrada',insufficient:'insuficiente',low:'baixa',moderate:'moderada',high:'alta'}
 const reviewerLabels={technical_reviewer:'responsável técnico habilitado',manager:'gestor',consultant:'consultor',none:'não exigido'}
 function dateValue(value){if(!value||value==='unknown')return 'data não informada';const date=new Date(value);return Number.isNaN(date.getTime())?String(value):date.toLocaleDateString('pt-BR')}
@@ -159,6 +159,21 @@ function modeLabel(value){
  return String(value)
 }
 
+const priorityLabels={imediata:'Prioridade imediata',esta_semana:'Fazer nesta semana',acompanhar:'Acompanhar',sem_acao:'Sem ação comercial agora'}
+function briefData(advice){
+ const source=advice?.executive_brief||{}
+ return {
+  priority:source.priority||'acompanhar',
+  headline:textValue(source.headline)||textValue(advice?.answer).split(/[.!?]/)[0]||'Próxima ação em definição',
+  reason:textValue(source.reason)||textValue(advice?.objective),
+  action:textValue(source.action)||textValue(advice?.next_best_action),
+  deadline:textValue(source.deadline)||'No próximo contato',
+  question:textValue(source.question)||textValue(advice?.next_question?.question),
+  evidenceIds:asList(source.evidence_ids).slice(0,3),
+  missing:asList(source.missing_data,advice?.confidence?.missing_data||[]).slice(0,3)
+ }
+}
+
 export default function ValPanel({clients=[],selectedClient,onSelect}){
  const [selected,setSelected]=useState(selectedClient?.id||clients[0]?.id||'')
  const [mode,setMode]=useState('daily')
@@ -202,6 +217,8 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const tension=tensionData(advice?.constructive_tension)
  const commitment=commitmentData(advice?.commitment)
  const evidence=evidenceData(advice?.evidence_used,response?[]:localAdvice.evidence_used)
+ const brief=briefData(advice)
+ const briefEvidence=(brief.evidenceIds.length?brief.evidenceIds.map(id=>evidence.find(item=>item.id===id)).filter(Boolean):evidence).slice(0,3)
  const assumptions=asList(advice?.assumptions,localAdvice.assumptions)
  const guardrails=asList(advice?.guardrails,localAdvice.guardrails)
  const blockedActions=asList(advice?.blocked_actions)
@@ -307,9 +324,23 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
 
   <div className="val-response" aria-busy={loading}>
    <span className="sr-only" role="status">{loading?'Análise em andamento.':recommendationRegistered?'Nova recomendação registrada.':response?'Nova orientação não registrada.':'Pré-análise local.'}</span>
-   <div className="val-response-heading"><div><span className="val-section-icon"><Sparkles/></span><div><span>{recommendationRegistered?'RECOMENDAÇÃO REGISTRADA':response?'ORIENTAÇÃO NÃO REGISTRADA':'PRÉ-ANÁLISE LOCAL'}</span><h3>Direção comercial explicável</h3></div></div><div className="val-response-meta"><span>{response?modeLabel(response.engineMode):'Ainda não enviada à engine'}</span>{response&&!recommendationRegistered&&<span>Somente neste dispositivo</span>}{response?.model&&<span>{response.model}</span>}</div></div>
+   <div className="val-response-heading"><div><span className="val-section-icon"><Sparkles/></span><div><span>{recommendationRegistered?'RECOMENDAÇÃO REGISTRADA':response?'ORIENTAÇÃO NÃO REGISTRADA':'PRÉ-ANÁLISE LOCAL'}</span><h3>O que fazer agora</h3></div></div><div className="val-response-meta"><span>{response?modeLabel(response.engineMode):'Ainda não enviada à engine'}</span>{response&&!recommendationRegistered&&<span>Somente neste dispositivo</span>}{response?.model&&<span>{response.model}</span>}</div></div>
    <div className="val-internal-banner"><ShieldCheck/><span><b>Uso interno do consultor</b><small>Esta saída não está aprovada para apresentação direta ao produtor.</small></span></div>
-   {response&&<div className="val-context-coverage"><div><DatabaseZap/><span><b>Dossiê cruzado pela VAL</b><small>Cadastro canônico{response.contextCoverage?.profile?' + perfil Produtor 360':''}</small></span></div><ul>{contextSources.length?contextSources.map(item=><li key={item.key}><b>{item.value}</b><span>{item.label}</span></li>):<li><b>1</b><span>cadastro do produtor</span></li>}</ul></div>}
+
+   <section className={`val-executive-brief priority-${brief.priority}`} aria-label="Recomendação objetiva da VAL">
+    <header><span>{priorityLabels[brief.priority]||priorityLabels.acompanhar}</span><h3>{brief.headline}</h3><p>{brief.reason}</p></header>
+    <div className="val-brief-actions">
+     <article><ClipboardCheck/><span><small>AÇÃO</small><b>{brief.action}</b></span></article>
+     <article><Route/><span><small>PRAZO</small><b>{brief.deadline}</b></span></article>
+     <article className={!brief.question?'is-empty':''}><MessageSquareText/><span><small>PERGUNTE</small><b>{brief.question||'Nenhuma pergunta necessária agora.'}</b></span></article>
+    </div>
+    <div className="val-brief-proof"><div><FileSearch/><span><small>BASE DA DECISÃO</small>{briefEvidence.length?<ul>{briefEvidence.map(item=><li key={item.id}>{item.summary}</li>)}</ul>:<b>Não há evidência suficiente para recomendar avanço.</b>}</span></div>{brief.missing.length>0&&<div><AlertCircle/><span><small>DADOS QUE FALTAM</small><ul>{brief.missing.map((item,index)=><li key={`${item}-${index}`}>{item}</li>)}</ul></span></div>}</div>
+    {humanReview?.required&&<div className="val-brief-review"><ShieldCheck/><span><b>Revisão técnica antes de executar</b><small>{humanReview.reason}</small></span></div>}
+   </section>
+
+   <details className="val-analysis-details">
+    <summary><DatabaseZap/>Ver dossiê, evidências e critérios completos</summary>
+    {response&&<div className="val-context-coverage"><div><DatabaseZap/><span><b>Dossiê cruzado pela VAL</b><small>Cadastro canônico{response.contextCoverage?.profile?' + perfil Produtor 360':''}</small></span></div><ul>{contextSources.length?contextSources.map(item=><li key={item.key}><b>{item.value}</b><span>{item.label}</span></li>):<li><b>1</b><span>cadastro do produtor</span></li>}</ul></div>}
 
    <div className="val-insight-grid">
     <article className="val-insight-card val-answer-card">
@@ -363,6 +394,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
      <ul>{guardrails.map((item,index)=><li key={`${item}-${index}`}><ShieldCheck/><span>{item}</span></li>)}</ul>
     </article>
    </div>
+   </details>
 
    <div className="val-response-footer">
     <form className={`val-feedback ${feedback.sent?'is-sent':''}`} onSubmit={sendFeedback}>

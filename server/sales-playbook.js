@@ -2,10 +2,12 @@ import {resolveOpportunityCandidate} from '../src/lib/opportunity-pipeline.js'
 
 const evidenceItem={type:'object',additionalProperties:false,properties:{id:{type:'string'},claim_supported:{type:'string'},source_type:{type:'string',enum:['client_record','producer_questionnaire','business_history','visit','interaction','opportunity','field_report','soil_analysis','ndvi','manual_record','producer_statement','approved_playbook','missing','unknown']},source_id:{type:'string'},observed_at:{type:'string'},direct_observation:{type:'boolean'},quality:{type:'string',enum:['insufficient','low','moderate','high']},relevance:{type:'string',enum:['low','moderate','high']},uncertainty:{type:'string'}},required:['id','claim_supported','source_type','source_id','observed_at','direct_observation','quality','relevance','uncertainty']}
 const questionItem={type:'object',additionalProperties:false,properties:{stage:{type:'string',enum:['situação','problema','implicação','necessidade','compromisso']},question:{type:'string'},ask_when:{type:'string'},purpose:{type:'string'},evidence_needed:{type:'string'}},required:['stage','question','ask_when','purpose','evidence_needed']}
+const executiveBrief={type:'object',additionalProperties:false,properties:{priority:{type:'string',enum:['imediata','esta_semana','acompanhar','sem_acao']},headline:{type:'string'},reason:{type:'string'},action:{type:'string'},deadline:{type:'string'},question:{type:'string'},evidence_ids:{type:'array',items:{type:'string'},maxItems:3},missing_data:{type:'array',items:{type:'string'},maxItems:3}},required:['priority','headline','reason','action','deadline','question','evidence_ids','missing_data']}
 
 export const valAdviceSchema={
   type:'object',additionalProperties:false,
   properties:{
+    executive_brief:executiveBrief,
     answer:{type:'string'},
     objective:{type:'string'},
     decision_profile:{type:'object',additionalProperties:false,properties:{decision_context_summary:{type:'string'},legacy_tag:{type:'string'},tag_origin:{type:'string'},self_reported:{type:'boolean'},evidence_ids:{type:'array',items:{type:'string'},maxItems:10},observed_dimensions:{type:'array',maxItems:8,items:{type:'object',additionalProperties:false,properties:{dimension:{type:'string',enum:['business_objective','proof_preference','uncertainty_tolerance','decision_governance','time_horizon','reversibility','readiness','trust_state']},observation:{type:'string'},source_id:{type:'string'},observed_at:{type:'string'},expires_at:{type:'string'},confidence:{type:'string',enum:['insufficient','low','moderate','high']}},required:['dimension','observation','source_id','observed_at','expires_at','confidence']}},adaptation:{type:'string'}},required:['decision_context_summary','legacy_tag','tag_origin','self_reported','evidence_ids','observed_dimensions','adaptation']},
@@ -22,13 +24,23 @@ export const valAdviceSchema={
     blocked_actions:{type:'array',items:{type:'string'},maxItems:10},
     guardrails:{type:'array',items:{type:'string'},maxItems:10}
   },
-  required:['answer','objective','decision_profile','next_question','questions','constructive_tension','value_hypothesis','next_best_action','commitment','confidence','assumptions','evidence_used','human_review','blocked_actions','guardrails']
+  required:['executive_brief','answer','objective','decision_profile','next_question','questions','constructive_tension','value_hypothesis','next_best_action','commitment','confidence','assumptions','evidence_used','human_review','blocked_actions','guardrails']
 }
 
 export const valStructuredFormat={type:'json_schema',name:'val_commercial_guidance',strict:true,schema:valAdviceSchema}
 
 export function buildValInstructions(){return `
 Você é VAL, inteligência interna, comercial e agronômica auditável do VALOR 360. Responda ao consultor; nunca finja falar diretamente com o produtor. Você prepara e explica; pessoas decidem, aprovam e executam.
+
+RESPOSTA EXECUTIVA OBRIGATÓRIA
+- executive_brief é o conteúdo principal da tela. Seja curto, concreto e acionável.
+- headline: uma conclusão específica em até 14 palavras; não use slogans, jargão ou frases como “gerar valor”, “explorar oportunidades” e “fortalecer relacionamento”.
+- reason: cite o fato do dossiê que explica a prioridade e a incerteza relevante, em no máximo duas frases.
+- action: comece com um verbo e diga exatamente o que o consultor fará, por qual canal ou ocasião e qual resultado deve registrar.
+- deadline: use uma janela operacional objetiva (por exemplo “antes da visita de 12/08” ou “nos próximos 3 dias”); se a base não trouxer data, diga “definir data no próximo contato”.
+- question: uma única pergunta curta, pronta para ser dita ao produtor. Se não houver motivo legítimo para abordar, deixe vazia.
+- evidence_ids: no máximo três IDs existentes em evidence_used. missing_data: somente os três dados que realmente mudariam a decisão.
+- priority=imediata somente com janela, compromisso vencendo ou risco atual documentado; esta_semana para próximo passo relevante; acompanhar sem urgência; sem_acao quando não houver hipótese sustentada.
 
 MÉTODO OPERACIONAL VAL, INSPIRADO EM ESTRUTURAS DE TERCEIROS
 - OPC organiza Objetivo, Processo e possível Compromisso verificável.
@@ -93,6 +105,7 @@ export function buildFallbackAdvice({client={},profile={},message='',signals=[],
   const valueProblem=opportunity?opportunity:noNeedDeclared?'Nenhuma necessidade adicional declarada; oportunidade não confirmada.':'Oportunidade ainda não identificada.'
   return {
     audience:'internal',safe_to_show_customer:false,
+    executive_brief:{priority:opportunity?'esta_semana':noNeedDeclared?'sem_acao':'acompanhar',headline:opportunity?`Confirmar se ${String(opportunity).toLowerCase()} é prioridade real`:noNeedDeclared?'Nenhuma nova necessidade foi declarada':'Descobrir uma prioridade antes de propor solução',reason:opportunity?`A hipótese “${opportunity}” está registrada, mas ainda não foi confirmada pelo produtor.`:noNeedDeclared?'A resposta mais recente não indicou necessidade adicional; não há evidência para abrir oportunidade.':'A base não contém uma oportunidade atual sustentada por evidência.',action:opportunity?'Agendar uma conversa breve e registrar problema, área afetada e critério de prova.':noNeedDeclared?'Manter o acompanhamento combinado e registrar somente uma mudança declarada pelo produtor.':'Fazer uma pergunta aberta no próximo contato e registrar a decisão ou resultado citado.',deadline:opportunity?'Nos próximos 3 dias':noNeedDeclared?'Na próxima revisão da carteira':'No próximo contato',question:nextQuestion.question,evidence_ids:evidenceUsed.slice(0,3).map(item=>item.id),missing_data:['prioridade declarada','linha de base','critério de prova'].slice(0,opportunity?3:1)},
     answer,
     objective,
     decision_profile:{decision_context_summary:'Preferências decisórias ainda não confirmadas nesta decisão.',legacy_tag:legacyTag,tag_origin:legacyTag?(selfReported?'Produtor 360 autodeclarado':'registro legado; origem não verificada'):'nenhuma tag registrada',self_reported:selfReported,evidence_ids:legacyTag?['legacy-profile']:[],observed_dimensions:[],adaptation:'Pergunte qual prova, grau de reversibilidade e participantes importam agora; não adapte somente pela tag legada.'},

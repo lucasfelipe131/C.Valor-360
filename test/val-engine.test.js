@@ -18,6 +18,8 @@ test('modo demonstrativo explicita evidências e limites',()=>{
   assert.match(advice.constructive_tension.permission_prompt,/Posso/i)
   assert.ok(advice.evidence_used.length>=3)
   assert.ok(advice.guardrails.some(item=>/demonstrativo/i.test(item)))
+  assert.match(advice.executive_brief.action,/Agendar|Registrar/i)
+  assert.ok(advice.executive_brief.evidence_ids.length<=3)
 })
 
 test('perfil é hipótese adaptativa, não diagnóstico',()=>{
@@ -42,6 +44,7 @@ test('barreira técnica bloqueia conteúdo agronômico até revisão humana',()=
   assert.equal(safe.human_review.required,true)
   assert.equal(safe.human_review.required_role,'technical_reviewer')
   assert.ok(safe.blocked_actions.some(item=>/dose/i.test(item)))
+  assert.match(safe.executive_brief.headline,/revisão técnica/i)
 })
 
 test('barreira remove uma taxa de aplicação mesmo sem a palavra dose',()=>{
