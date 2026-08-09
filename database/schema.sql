@@ -229,6 +229,9 @@ CREATE TABLE IF NOT EXISTS opportunities (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS external_key VARCHAR(180);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_opportunities_tenant_external_key ON opportunities(tenant_id,external_key) WHERE external_key IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS value_cases (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,

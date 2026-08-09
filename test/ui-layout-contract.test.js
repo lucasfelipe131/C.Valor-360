@@ -75,7 +75,7 @@ test('commercial cache is scoped and technical drafts expire with the browser se
  const server=read('server.js')
  assert.match(app,/opportunityCacheKey\(effectiveScope\)/)
  assert.match(app,/clearSessionPortfolioCache\(currentUser\?\.storageScope\)/)
- assert.match(app,/invalidateSession=notice=>\{clearSessionPortfolioCache[\s\S]*setClientList\(\[\]\);setVisits\(\[\]\);setSelected\(null\)/)
+ assert.match(app,/invalidateSession=notice=>\{clearSessionPortfolioCache[\s\S]*setClientList\(\[\]\);setVisits\(\[\]\);setOpportunities\(\[\]\);setSelected\(null\)/)
  assert.match(app,/if\(session\?\.authenticated\)rememberStorageScope\(session\.user\);else clearSessionPortfolioCache\(\)/)
  assert.match(settings,/opportunityCacheKey\(currentUser\?\.storageScope\)/)
  assert.match(client360,/sessionStorage\.setItem\(storageKey/)

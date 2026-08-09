@@ -25,6 +25,15 @@ test('tipo técnico com espaços continua exigindo HMAC depois da normalização
   assert.equal(requiresTechnicalSignature(event.type),true)
 })
 
+test('registros e produtores do Manual entram como eventos autenticados sem fabricar sinal técnico',()=>{
+  const record=normalizeIntegrationEvent({type:'manual.record.saved',externalId:'manual-record-001',clientExternalKey:'produtor-1',payload:{recordType:'season_report',title:'Safra 2025/26'}})
+  const producer=normalizeIntegrationEvent({type:'manual.producer.updated',externalId:'manual-producer-001',clientExternalKey:'produtor-1',payload:{producer:{name:'Produtor 1',areaHa:120}}})
+  assert.equal(requiresTechnicalSignature(record.type),true)
+  assert.equal(requiresTechnicalSignature(producer.type),true)
+  assert.deepEqual(deriveSignals(record),[])
+  assert.deepEqual(deriveSignals(producer),[])
+})
+
 test('IDs externos e origem respeitam os limites do schema PostgreSQL',()=>{
   const event=normalizeIntegrationEvent({
     type:'business.closed',externalId:`event-${'x'.repeat(300)}`,source:`source-${'y'.repeat(100)}`,

@@ -35,6 +35,7 @@ async function body(request){const raw=await rawBody(request);try{return raw?JSO
 async function limitedResponseText(upstream,limit){const reader=upstream.body?.getReader();if(!reader)return upstream.text();const chunks=[];let size=0;while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>limit){await reader.cancel();throw Object.assign(new Error('A planilha excede o limite seguro de importação.'),{statusCode:413})}chunks.push(value)}return new TextDecoder().decode(Buffer.concat(chunks.map(chunk=>Buffer.from(chunk))))}
 const clean=value=>String(value||'').trim().slice(0,240)
 const feedbackOutcomes={used:'executed',adapted:'edited',scheduled:'scheduled',discarded:'rejected',accepted:'accepted',edited:'edited',rejected:'rejected',executed:'executed',won:'won',lost:'lost'}
+const pipelineStages=new Set(['Diagnóstico','Proposta','Negociação','Fechado'])
 const validatedSurveyAnswers=input=>validateSurveyAnswers(input,surveyOptions)
 
 const database=createDatabase(config)
@@ -90,7 +91,7 @@ async function handleApi(request,response,url){
  }
  if(url.pathname==='/api/auth/logout'&&request.method==='POST'){response.setHeader('Set-Cookie',auth.clearCookie(request));return json(response,200,{authenticated:false})}
  const storageScope=publicStorageScope(url.pathname,request.method)
- const protectedPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+\/context$/.test(url.pathname)
+ const protectedPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+\/context$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  if(protectedPath&&auth.configured&&!auth.session(request))return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
  if(protectedPath&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para operar dados fora do modo demonstrativo.'})}
@@ -152,6 +153,16 @@ async function handleApi(request,response,url){
  }
  if(url.pathname==='/api/intelligence'&&request.method==='GET'){
   return json(response,200,await repository.getIntelligence())
+ }
+ if(url.pathname==='/api/visits'&&request.method==='POST'){
+  const payload=await body(request);const clientId=clean(payload.clientId);const objective=String(payload.objective||'').trim().slice(0,2000)
+  if(!clientId||!objective)return json(response,400,{error:'Selecione o produtor e informe o objetivo da visita.'})
+  return json(response,201,{saved:true,visit:await repository.saveVisit({clientId,scheduledAt:payload.scheduledAt,objective,status:'Agendada'})})
+ }
+ if(url.pathname==='/api/opportunities'&&request.method==='POST'){
+  const payload=await body(request);const clientId=clean(payload.clientId);const title=String(payload.title||'').trim().slice(0,220);const stage=String(payload.stage||'Diagnóstico')
+  if(!clientId||!title||!pipelineStages.has(stage))return json(response,400,{error:'Oportunidade, produtor ou etapa inválida.'})
+  return json(response,201,{saved:true,opportunity:await repository.saveOpportunity({...payload,clientId,title,stage})})
  }
  if(url.pathname==='/api/clients/from-survey'&&request.method==='POST'){
   const payload=await body(request);const answers=validatedSurveyAnswers(payload.answers);const result=calculateProfile(answers,profileMatrix,'Aplicação assistida validada no servidor');return json(response,201,{saved:true,client:await repository.saveSurveyProfile({answers,result})})
