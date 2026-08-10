@@ -1,12 +1,15 @@
 import React,{useEffect,useRef,useState} from 'react'
-import { ArrowLeft, BrainCircuit, MapPin, Sprout, BadgeDollarSign, HeartHandshake, MessageSquare, Target, FlaskConical, ClipboardPlus, Save } from 'lucide-react'
+import { ArrowLeft, BrainCircuit, MapPin, BadgeDollarSign, HeartHandshake, MessageSquare, Target, Save, ShoppingCart, WalletCards, Trophy, Fish, Gamepad2 } from 'lucide-react'
+import ProducerProfileEditor from '../components/ProducerProfileEditor'
 const Section=({title,children})=><article className="panel detail-section"><h3>{title}</h3>{children}</article>
 const contextFields=['property','crops','area','weeds','diseases','insects','soil','goal','competitors','notes']
 const contextBase=client=>({property:client.commercial?.property||'',crops:client.cultures||'',area:client.area||'',weeds:'',diseases:'',insects:'',soil:'',goal:'',competitors:'',notes:''})
 const contextValues=value=>Object.fromEntries(contextFields.map(field=>[field,String(value?.[field]??'')]))
 const contextDate=value=>{if(!value)return '';const parsed=new Date(value);return Number.isNaN(parsed.getTime())?'':parsed.toLocaleString('pt-BR')}
 const localId=value=>{let hash=2166136261;for(const char of String(value||''))hash=Math.imul(hash^char.codePointAt(0),16777619);return (hash>>>0).toString(36)}
-export default function Client360({client,storageScope,onBack,onPrepare,onSaved}){
+const money=value=>`R$ ${Number(value||0).toLocaleString('pt-BR',{maximumFractionDigits:2})}`
+const shown=value=>value===null||value===undefined||value===''?'Não informado':String(value)
+export default function Client360({client,storageScope,onBack,onPrepare,onUpdate,onSaved}){
  const storageKey=`valor360-tech-${storageScope||'session'}-${localId(client.id)}`
  const [tech,setTech]=useState(()=>{
   try{const draft=JSON.parse(sessionStorage.getItem(storageKey));return draft?{...contextBase(client),...contextValues(draft)}:contextBase(client)}catch{return contextBase(client)}
@@ -38,6 +41,15 @@ export default function Client360({client,storageScope,onBack,onPrepare,onSaved}
    <div className="mini-stat"><Target/><small>Oportunidade</small><b>{client.commercial?.opportunity||'Ainda não identificada'}</b></div>
    <div className="mini-stat"><BadgeDollarSign/><small>{client.commercial?.potentialValidated===false?'Índice de triagem':'Potencial validado'}</small><b>{client.commercial?.potentialValidated===false?`${client.commercial?.score||0}/100`:`R$ ${Number(client.commercial?.potential||0).toLocaleString('pt-BR')}`}</b></div>
   </section>
+  <Section title="Visão global de compras e potencial"><div className="commerce-overview-grid">
+   <div><ShoppingCart/><small>Compras globais registradas</small><b>{money(client.commercial?.purchaseTotal)}</b><span>{Number(client.commercial?.purchaseCount||0)} negócios reconhecidos</span></div>
+   <div><BadgeDollarSign/><small>Compras da safra atual</small><b>{money(client.commercial?.purchaseCurrentSeason)}</b><span>Valor informado no cadastro</span></div>
+   <div><WalletCards/><small>Potencial total</small><b>{money(client.commercial?.potentialTotal)}</b><span>Estimativa comercial declarada</span></div>
+   <div><Target/><small>Potencial em aberto</small><b>{money(client.commercial?.openPotential??client.commercial?.openPipeline)}</b><span>Pipeline aberto: {money(client.commercial?.openPipeline)}</span></div>
+  </div><dl className="info-list commerce-detail-list"><div><dt>Safra anterior</dt><dd>{money(client.commercial?.purchasePreviousSeason)}</dd></div><div><dt>Ticket médio global</dt><dd>{money(Number(client.commercial?.purchaseTotal||0)/Math.max(Number(client.commercial?.purchaseCount||0),1))}</dd></div><div><dt>Última compra</dt><dd>{client.commercial?.lastPurchaseAt?new Date(client.commercial.lastPurchaseAt).toLocaleDateString('pt-BR'):'Não informada'}</dd></div><div><dt>Participação na carteira</dt><dd>{client.commercial?.walletShare===null||client.commercial?.walletShare===undefined?'Não informada':`${client.commercial.walletShare}%`}</dd></div><div><dt>Categorias principais</dt><dd>{shown(client.commercial?.mainCategories)}</dd></div><div><dt>Concorrentes</dt><dd>{shown(client.commercial?.competitors)}</dd></div><div><dt>Telefone</dt><dd>{shown(client.commercial?.phone)}</dd></div><div><dt>E-mail</dt><dd>{shown(client.commercial?.email)}</dd></div></dl></Section>
+  <Section title="Preferências pessoais para um relacionamento próximo"><div className="relationship-glance">
+   <div><Trophy/><small>Time do coração</small><b>{shown(client.relationship?.favoriteTeam)}</b></div><div><Fish/><small>Pescaria</small><b>{client.relationship?.likesFishing?'Gosta':client.relationship?.fishingStyle?'Preferência registrada':'Não informado'}</b><span>{shown(client.relationship?.fishingStyle)}</span></div><div><Gamepad2/><small>Hobbies</small><b>{shown(client.relationship?.hobbies)}</b></div><div><HeartHandshake/><small>Família</small><b>{shown(client.relationship?.family)}</b></div>
+  </div><dl className="info-list relationship-detail-list"><div><dt>Como prefere ser chamado</dt><dd>{shown(client.relationship?.preferredName)}</dd></div><div><dt>Aniversário</dt><dd>{shown(client.relationship?.birthday)}</dd></div><div><dt>Lazer</dt><dd>{shown(client.relationship?.leisure)}</dd></div><div><dt>Comidas e bebidas</dt><dd>{[client.relationship?.favoriteFoods,client.relationship?.favoriteDrinks].filter(Boolean).join(' • ')||'Não informado'}</dd></div><div><dt>Valores pessoais</dt><dd>{shown(client.relationship?.personalValues)}</dd></div><div><dt>Preferência de negociação</dt><dd>{shown(client.relationship?.negotiationPreferences)}</dd></div></dl></Section>
   <div className="detail-grid">
    <Section title="Como esse produtor quer ser atendido"><dl className="info-list">
     <div><dt>Canal</dt><dd>{client.servicePreference}</dd></div><div><dt>Frequência</dt><dd>{client.contactFrequency}</dd></div>
@@ -58,6 +70,7 @@ export default function Client360({client,storageScope,onBack,onPrepare,onSaved}
    </div></Section>
   </div>
   {client.commercial?.score!==undefined&&<Section title="Indicadores descritivos do histórico de negócios"><div className="learned-business-grid"><div><small>ÍNDICE HEURÍSTICO</small><b>{client.commercial.score}/100</b><span>{client.commercial.priority} prioridade de triagem</span></div><div><small>VOLUME INFORMADO</small><b>R$ {Number(client.commercial.revenue||0).toLocaleString('pt-BR')}</b><span>{client.commercial.frequency||0} registros reconhecidos</span></div><div><small>TICKET MÉDIO INFORMADO</small><b>{client.commercial.averageTicket===null?'Não calculado':`R$ ${Number(client.commercial.averageTicket||0).toLocaleString('pt-BR',{maximumFractionDigits:0})}`}</b><span>{client.commercial.conversion===null?'Status de ganho/perda não informado':`${client.commercial.conversion}% entre os ${client.commercial.knownOutcomes||0} resultados classificados`}</span></div><div><small>COBERTURA DE EVIDÊNCIA</small><b>{client.commercial.evidenceCoverage||0}%</b><span>{(client.commercial.categories||[]).join(' • ')||'Categorias a reconhecer'}</span></div></div></Section>}
+  <Section title="Editar cadastro do produtor"><ProducerProfileEditor client={client} onSave={async(id,input)=>{await onUpdate?.(id,input);onSaved?.('Cadastro completo salvo na nuvem e atualizado para a VAL.')}}/></Section>
   <Section title="Complemento técnico preenchido pelo consultor">
    <div className="tag-row"><span>{loadingContext?'Carregando memória':contextMeta.status==='verified'?'Memória verificada':contextMeta.status==='proposed'?'Entrada do consultor • verificação pendente':'Ainda não registrada'}</span>{contextDate(contextMeta.updatedAt)&&<span>Atualizada em {contextDate(contextMeta.updatedAt)}</span>}</div>
    <div className="form-grid">

@@ -228,7 +228,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const recommendationRegistered=Boolean(response?.recommendationId)
  const contextSources=Object.entries(response?.contextCoverage||{}).filter(([key,value])=>key!=='profile'&&Number(value)>0).map(([key,value])=>({key,label:coverageLabels[key]||key,value}))
 
- const ask=async(rawMessage)=>{
+ const ask=async(rawMessage,requestedMode=mode)=>{
   const prompt=String(rawMessage||message).trim()
   if(!prompt||!client||loading)return
   setLoading(true)
@@ -238,8 +238,8 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
    const result=await fetch('/api/val/chat',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({clientId:client.id,client,message:prompt,mode}),
-    signal:AbortSignal.timeout(65000)
+    body:JSON.stringify({clientId:client.id,client,message:prompt,mode:requestedMode}),
+    signal:AbortSignal.timeout(120000)
    })
    const payload=await result.json().catch(()=>({}))
    if(result.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}
@@ -253,10 +253,15 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
     engineMode:'fallback',
     model:null,
     warning:'Resposta construída com o contexto disponível neste dispositivo.',
-    advice:fallbackAdvice(client,mode,prompt)
+    advice:fallbackAdvice(client,requestedMode,prompt)
    })
    setError(`${requestError.message} Mantive uma orientação segura em modo resiliente.`)
   }finally{setLoading(false)}
+ }
+
+ const chooseMode=value=>{
+  setMode(value)
+  if(value==='strategic')ask('Construa um pensamento estratégico completo para esta conta: cenário, compras globais, potencial em aberto, riscos, alternativas, plano de validação e próxima melhor ação.',value)
  }
 
  const sendFeedback=async event=>{
@@ -308,7 +313,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
   <div className="val-command-zone">
    <div className="val-toolbar">
     <label className="val-client-select"><span>Produtor em análise</span><select value={selected} onChange={event=>setSelected(event.target.value)} aria-label="Selecionar produtor">{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-    <div className="val-mode-picker"><div><span>Profundidade da análise</span><small>{MODES[mode].description}</small></div><div role="group" aria-label="Escolher modo da VAL">{Object.entries(MODES).map(([value,item])=><button key={value} type="button" className={mode===value?'active':''} aria-pressed={mode===value} onClick={()=>setMode(value)}>{value==='daily'?<Zap/>:<BrainCircuit/>}{item.short}</button>)}</div></div>
+    <div className="val-mode-picker"><div><span>Profundidade da análise</span><small>{MODES[mode].description}</small></div><div role="group" aria-label="Escolher modo da VAL">{Object.entries(MODES).map(([value,item])=><button key={value} type="button" disabled={loading} className={mode===value?'active':''} aria-pressed={mode===value} onClick={()=>chooseMode(value)}>{value==='daily'?<Zap/>:<BrainCircuit/>}{item.short}</button>)}</div></div>
    </div>
 
    <div className="val-quick-prompts" aria-label="Perguntas rápidas">{QUICK_PROMPTS.map(item=>{const Icon=item.icon;return <button key={item.label} type="button" onClick={()=>ask(item.prompt)} disabled={loading}><Icon aria-hidden="true"/><span>{item.label}</span><ChevronRight aria-hidden="true"/></button>})}</div>

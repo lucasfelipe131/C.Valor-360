@@ -4,6 +4,7 @@ import {
  LogOut,RefreshCw,Server,ShieldCheck,Trash2,UserCog,Zap
 } from 'lucide-react'
 import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline} from '../lib/opportunity-pipeline'
+import AccessManagement from '../components/AccessManagement'
 
 function displayValue(value,fallback='Não informado'){
  if(value===null||value===undefined||value==='')return fallback
@@ -104,6 +105,8 @@ export default function Settings({clients,visits,currentUser,onLogout,onNotify})
     <div className="val-models"><div><Server/><span><small>ROTEAMENTO DE MODELOS</small><b>{!statusKnown?'Estado desconhecido':models.length?'Modelos definidos pela engine':'Aguardando configuração da engine'}</b></span></div>{statusKnown&&models.length>0&&<ul>{models.map(model=><li key={`${model.label}-${model.value}`}><span>{model.label}</span><b>{model.value}</b></li>)}</ul>}</div>
    </div>
   </section>
+
+  <AccessManagement currentUser={currentUser} onNotify={onNotify}/>
 
   <section className="settings-grid">
    <article className="panel setting-card"><div className="setting-icon"><UserCog/></div><h3>Acesso atual</h3><div className="user-setting"><div className="user-avatar">{accountInitials}</div><div><b>{accountLabel}</b><span>{currentUser?.demo?'Modo demonstrativo sem credencial configurada':'Acesso protegido do piloto'}</span></div></div><button className="soft-btn danger-text" onClick={onLogout}><LogOut size={16}/>Encerrar sessão</button></article>

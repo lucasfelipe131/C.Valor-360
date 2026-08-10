@@ -23,16 +23,38 @@
 }
 
 /* Experiência incorporada ao VALOR 360: mesma sessão, sem segundo portal. */
+.valor360-embedded {
+  color-scheme: dark;
+  background: var(--bg);
+}
+
 .valor360-embedded body {
-  background: #f4f7fb;
+  background:
+    radial-gradient(circle at 80% -10%, rgba(42, 188, 138, 0.08), transparent 34rem),
+    var(--bg);
+  color: var(--text);
 }
 
 .valor360-embedded .access-screen {
-  background: #f4f7fb;
+  background: var(--bg);
 }
 
 .valor360-embedded .app-shell {
   min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.valor360-embedded input,
+.valor360-embedded select,
+.valor360-embedded textarea {
+  caret-color: var(--lime);
+}
+
+.valor360-embedded input::placeholder,
+.valor360-embedded textarea::placeholder {
+  color: var(--muted-2);
+  opacity: 1;
 }
 
 .valor360-embedded .developer-signature,

@@ -34,11 +34,11 @@ test('navigation resets long pages and the responsive shell retains scroll clear
  assert.match(styles,/\.pipeline-journey\{display:grid;grid-template-columns:repeat\(2,minmax\(0,1fr\)\);max-width:100%;overflow:visible/)
 })
 
-test('assisted review keeps question 27 optional through the final screen',()=>{
+test('assisted review keeps all relationship fields optional through the final screen',()=>{
  const surveyForm=read('src/components/SurveyForm.jsx')
- assert.match(surveyForm,/requiredQuestions=questions\.filter\(question=>question\.id!==27\)/)
- assert.match(surveyForm,/currentQuestions\.filter\(question=>question\.id!==27&&/)
- assert.match(surveyForm,/question\.id===27\?' \(opcional\)'/)
+ assert.match(surveyForm,/requiredQuestions=questions\.filter\(question=>question\.id<=26\)/)
+ assert.match(surveyForm,/currentQuestions\.filter\(question=>question\.id<=26&&/)
+ assert.match(surveyForm,/question\.id>=27\?' \(opcional\)'/)
 })
 
 test('batch import has a responsive visual hierarchy and keeps the VALOR 360 PWA brand',()=>{
@@ -66,6 +66,25 @@ test('negative optional answers use discovery labels instead of false opportunit
  assert.match(opportunities,/reconcilePipeline\(clients,/)
  assert.doesNotMatch(dashboard,/fallbackOpportunities|pipelineStages\[Math\.min\(index,2\)\]/)
  assert.doesNotMatch(opportunities,/clients\.map\(\(client,index\).*stage:/s)
+})
+
+test('producer dossier, access release and strategic action are exposed in the interface',()=>{
+ const client360=read('src/pages/Client360.jsx')
+ const dataHub=read('src/pages/DataHub.jsx')
+ const settings=read('src/pages/Settings.jsx')
+ const editor=read('src/components/ProducerProfileEditor.jsx')
+ const access=read('src/components/AccessManagement.jsx')
+ const val=read('src/components/ValPanel.jsx')
+ assert.match(client360,/Visão global de compras e potencial/)
+ assert.match(dataHub,/onUpdate=\{updateClient\}|ProducerProfileEditor/)
+ assert.match(dataHub,/Excluir/)
+ assert.match(editor,/Time do coração/)
+ assert.match(editor,/Potencial em aberto/)
+ assert.match(settings,/AccessManagement/)
+ assert.match(access,/carteira zerada|zero produtores/)
+ assert.match(val,/chooseMode/)
+ assert.match(val,/pensamento estratégico completo/)
+ assert.match(val,/AbortSignal\.timeout\(120000\)/)
 })
 
 test('commercial cache is scoped and technical drafts expire with the browser session',()=>{
@@ -110,9 +129,13 @@ test('inteligência agronômica executa o Manual dentro da sessão do VALOR 360'
  const app=read('src/App.jsx')
  const manualConfig=read('manual/next.config.ts')
  const manualPage=read('manual/app/page.tsx')
+ const manualStyles=read('manual/app/globals.css')
 assert.match(agro,/src="\/tecnico\?embedded=1"/)
  assert.match(agro,/Mesmo login ativo/)
  assert.match(app,/<Agro clients=\{clientList\}\/>/)
  assert.match(manualConfig,/basePath: "\/tecnico"/)
  assert.match(manualPage,/fetch\("\/api\/technical\/bootstrap"/)
+ assert.match(manualStyles,/\.valor360-embedded body \{[\s\S]*var\(--bg\)/)
+ assert.match(manualStyles,/\.valor360-embedded \.app-shell \{[\s\S]*background: var\(--bg\)/)
+ assert.match(manualStyles,/\.valor360-embedded input,[\s\S]*caret-color: var\(--lime\)/)
 })

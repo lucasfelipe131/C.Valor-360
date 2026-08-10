@@ -25,5 +25,8 @@ test('identidade interna é curta, assinada e vinculada à sessão do VALOR 360'
  assert.ok(identity.exp>Math.floor(Date.now()/1000))
  const consultant=JSON.parse(Buffer.from(signedTechnicalIdentity({session:{email:'campo@exemplo.com'},tenantId:'tenant-1',secret}).payload,'base64url').toString('utf8'))
  assert.equal(consultant.role,'tester')
+ const linked=JSON.parse(Buffer.from(signedTechnicalIdentity({session:{id:'00000000-0000-4000-8000-000000000321',email:'campo@exemplo.com',name:'Campo Norte'},tenantId:'tenant-1',secret}).payload,'base64url').toString('utf8'))
+ assert.equal(linked.id,'00000000-0000-4000-8000-000000000321')
+ assert.equal(linked.displayName,'Campo Norte')
  assert.equal(signedTechnicalIdentity({session:{email:'consultor@exemplo.com'},tenantId:'tenant-1',secret:'curto'}),null)
 })

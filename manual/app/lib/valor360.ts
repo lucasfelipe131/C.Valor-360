@@ -175,6 +175,7 @@ function event(input: {
   clientExternalKey?: string;
   propertyExternalKey?: string;
   fieldExternalKey?: string;
+  ownerUserId?: string;
   payload: JsonRecord;
 }) {
   return {
@@ -183,6 +184,7 @@ function event(input: {
     externalId: input.externalId.slice(0, 180),
     occurredAt: date(input.occurredAt),
     source: "manual-do-agronomo",
+    ownerUserId: text(input.ownerUserId, 36),
     clientExternalKey: input.clientExternalKey || "",
     propertyExternalKey: input.propertyExternalKey || "",
     fieldExternalKey: input.fieldExternalKey || "",
@@ -242,7 +244,7 @@ function propertyKey(clientKey: string, value: unknown) {
   return name ? `${clientKey}:${name}`.slice(0, 180) : "";
 }
 
-function specializedRecordEvent(record: ManualRecordForValor) {
+function specializedRecordEvent(record: ManualRecordForValor, ownerUserId = "") {
   const payload = object(record.payload);
   const clientExternalKey = recordProducerKey(record);
   const occurredAt = record.updatedAt || payload.savedAt || record.createdAt;
@@ -263,6 +265,7 @@ function specializedRecordEvent(record: ManualRecordForValor) {
       externalId: `manual-soil:${record.id}:${fingerprint(specializedPayload)}`,
       occurredAt,
       clientExternalKey,
+      ownerUserId,
       propertyExternalKey: propertyKey(clientExternalKey, payload.property),
       fieldExternalKey: propertyKey(clientExternalKey, payload.fieldId),
       payload: specializedPayload,
@@ -285,6 +288,7 @@ function specializedRecordEvent(record: ManualRecordForValor) {
       externalId: `manual-field:${record.id}:${fingerprint(specializedPayload)}`,
       occurredAt,
       clientExternalKey,
+      ownerUserId,
       fieldExternalKey: propertyKey(clientExternalKey, payload.fieldName),
       payload: specializedPayload,
     });
@@ -309,6 +313,7 @@ function specializedRecordEvent(record: ManualRecordForValor) {
       externalId: `manual-report:${record.id}:${fingerprint(specializedPayload)}`,
       occurredAt,
       clientExternalKey,
+      ownerUserId,
       propertyExternalKey: propertyKey(clientExternalKey, payload.property),
       fieldExternalKey: propertyKey(clientExternalKey, payload.fieldName || payload.fieldId),
       payload: specializedPayload,
@@ -317,7 +322,7 @@ function specializedRecordEvent(record: ManualRecordForValor) {
   return null;
 }
 
-export async function publishManualRecordToValor(record: ManualRecordForValor) {
+export async function publishManualRecordToValor(record: ManualRecordForValor, ownerUserId = "") {
   const clientExternalKey = recordProducerKey(record);
   const safePayload = cleanForStrategy(record.payload) as JsonRecord;
   const genericPayload = {
@@ -333,9 +338,10 @@ export async function publishManualRecordToValor(record: ManualRecordForValor) {
     externalId: `manual-record:${record.id}:${fingerprint(genericPayload)}`,
     occurredAt: record.updatedAt || record.createdAt,
     clientExternalKey,
+    ownerUserId,
     payload: genericPayload,
   });
-  const specialized = specializedRecordEvent(record);
+  const specialized = specializedRecordEvent(record, ownerUserId);
   const results = [await publish(generic)];
   if (specialized) results.push(await publish(specialized));
   return results;
@@ -344,6 +350,7 @@ export async function publishManualRecordToValor(record: ManualRecordForValor) {
 export async function publishProducerToValor(
   input: unknown,
   soilAnalyses: unknown[] = [],
+  ownerUserId = "",
 ) {
   const producer = object(input);
   const clientExternalKey = clientKeyFor(producer);
@@ -379,6 +386,7 @@ export async function publishProducerToValor(
     type: "manual.producer.updated",
     externalId: `manual-producer:${clientExternalKey}:${fingerprint(payload)}`,
     clientExternalKey,
+    ownerUserId,
     payload,
   });
   return [await publish(producerEvent)];
@@ -387,6 +395,7 @@ export async function publishProducerToValor(
 export async function publishWorkspaceToValor(
   producers: unknown[],
   soilAnalyses: unknown[],
+  ownerUserId = "",
 ) {
   const queue = producers.slice(0, 1000);
   const results: ValorPublishResult[] = [];
@@ -394,7 +403,7 @@ export async function publishWorkspaceToValor(
   for (let index = 0; index < queue.length; index += concurrency) {
     const batch = queue.slice(index, index + concurrency);
     const published = await Promise.all(
-      batch.map((producer) => publishProducerToValor(producer, soilAnalyses)),
+      batch.map((producer) => publishProducerToValor(producer, soilAnalyses, ownerUserId)),
     );
     results.push(...published.flat());
   }

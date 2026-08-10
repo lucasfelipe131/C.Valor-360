@@ -65,6 +65,7 @@ export function calculateProfile(answers,matrix,source='Produtor 360'){
  const municipality=String(answers[2]||'A definir').trim()
  const additionalNeed=String(answers[27]??'').trim()||null
  const needState=additionalNeedState(additionalNeed)
+ const fishingAnswer=normalizeText(answers[34])
  return {
   id:slug(name)||`produtor-${slug(municipality)||'sem-localidade'}`,
   name,
@@ -97,7 +98,13 @@ export function calculateProfile(answers,matrix,source='Produtor 360'){
   contentPreference:String(answers[17]||''),
   postSalePreference:String(answers[18]||''),
   scoresScale:{trust:answers[19],contact:answers[20],value:answers[21],innovation:answers[22],continuity:answers[23],recommendation:answers[24]},
-  commercial:{potential:0,potentialValidated:false,lastContactDays:null,priority:'A avaliar',opportunity:opportunityFromAdditionalNeed(additionalNeed),opportunityProvenance:q27OpportunityProvenance(needState),property:''},
+  relationship:{
+   preferredName:String(answers[28]||''),birthday:String(answers[31]||''),family:String(answers[32]||''),spouse:'',children:'',favoriteTeam:String(answers[33]||''),
+   ...(fishingAnswer?{likesFishing:!/(?:^|\b)(?:nao|nunca|nenhum)(?:\b|$)/.test(fishingAnswer)&&/(?:sim|gost|ador|pesc)/.test(fishingAnswer)}:{}),fishingStyle:String(answers[35]||''),hobbies:String(answers[36]||''),leisure:String(answers[37]||''),
+   favoriteFoods:String(answers[38]||''),favoriteDrinks:String(answers[39]||''),events:String(answers[40]||''),communicationNotes:String(answers[41]||''),
+   personalValues:String(answers[42]||''),negotiationPreferences:String(answers[43]||''),importantDates:String(answers[44]||''),personalNotes:String(answers[45]||'')
+  },
+  commercial:{phone:String(answers[29]||''),email:String(answers[30]||''),potential:0,potentialValidated:false,lastContactDays:null,priority:'A avaliar',opportunity:opportunityFromAdditionalNeed(additionalNeed),opportunityProvenance:q27OpportunityProvenance(needState),property:''},
   source,
   profileUpdatedAt:new Date().toISOString()
  }
