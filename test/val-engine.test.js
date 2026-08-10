@@ -103,14 +103,14 @@ test('cobertura do dossiê contabiliza todas as fontes conectadas',()=>{
 })
 
 test('resposta incompleta da OpenAI cai em fallback e preserva metadados de auditoria',async()=>{
-  let modelRun
+  let modelRun,providerOptions
   const repository={
     getClientContext:async()=>({client:{name:'Teste'},signals:[],learning:{}}),
     recordRecommendation:async record=>{modelRun=record.modelRun;return '00000000-0000-4000-8000-000000000099'}
   }
   const runtimeConfig={openaiApiKey:'sk-test',openaiProject:'',openaiTimeoutMs:1000,openaiMaxRetries:0,modelDaily:'terra',modelStrategic:'sol',modelFast:'luna',knowledgeVectorStoreId:'',maxContextChars:10000,maxOutputTokens:26000,strategicMaxOutputTokens:32000,openaiStoreResponses:false}
   const engine=new ValEngine({runtimeConfig,repository})
-  engine.client={responses:{create:async()=>({id:'resp-incomplete',_request_id:'req-1',status:'incomplete',incomplete_details:{reason:'max_output_tokens'},usage:{input_tokens:10,output_tokens:20},output_text:''})}}
+  engine.client={responses:{create:async(_request,options)=>{providerOptions=options;return {id:'resp-incomplete',_request_id:'req-1',status:'incomplete',incomplete_details:{reason:'max_output_tokens'},usage:{input_tokens:10,output_tokens:20},output_text:''}}}}
   const result=await engine.answer({tenantId:'tenant',clientId:'client',client:{},message:'Prepare a visita'})
   assert.equal(result.engineMode,'fallback')
   assert.equal(modelRun.status,'incomplete')
@@ -118,4 +118,5 @@ test('resposta incompleta da OpenAI cai em fallback e preserva metadados de audi
   assert.equal(modelRun.responseId,'resp-incomplete')
   assert.equal(modelRun.errorCode,'incomplete_response')
   assert.deepEqual(modelRun.errorDetails,{reason:'max_output_tokens'})
+  assert.deepEqual(providerOptions,{maxRetries:0,timeout:1000})
 })

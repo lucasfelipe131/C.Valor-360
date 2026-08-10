@@ -116,7 +116,11 @@ export class ValEngine{
           max_output_tokens:route.tier==='strategic'?this.config.strategicMaxOutputTokens:this.config.maxOutputTokens,
           safety_identifier:createHash('sha256').update(`${tenantId}:${clientId}`).digest('hex'),
           ...(tools?{tools}: {})
-        },signal?{signal}:undefined)
+        },{
+          maxRetries:0,
+          timeout:Math.min(Math.max(Number(this.config.openaiTimeoutMs)||100_000,1_000),100_000),
+          ...(signal?{signal}:{})
+        })
         const providerMetadata={responseId:response.id,requestId:response._request_id||null,latencyMs:Date.now()-startedAt,inputTokens:response.usage?.input_tokens||null,outputTokens:response.usage?.output_tokens||null,status:response.status}
         responseMetadata=providerMetadata
         if(response.status!=='completed')throw Object.assign(new Error('Resposta incompleta da OpenAI.'),{code:'incomplete_response',details:response.incomplete_details,responseMetadata:providerMetadata})
