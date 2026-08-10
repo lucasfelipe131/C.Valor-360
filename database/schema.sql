@@ -647,6 +647,20 @@ COMMENT ON TABLE val_memories IS 'Memória auditável: inferências nunca sobres
 COMMENT ON TABLE agronomic_signals IS 'Sinais para triagem e oportunidade; não substituem diagnóstico ou recomendação de responsável técnico.';
 COMMENT ON TABLE integration_events IS 'Envelope idempotente de eventos do Manual do Agrônomo e outras fontes.';
 
+-- O produtor técnico do Manual continua disponível no núcleo agronômico, mas
+-- só vira cliente comercial quando for cadastrado ou importado no VALOR 360.
+-- Esta correção desfaz a atribuição transitória feita pelo primeiro bootstrap
+-- de carteiras sem excluir o histórico técnico ou os eventos de integração.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version='separate-manual-technical-portfolio-v1') THEN
+    UPDATE clients
+    SET consultant_id=NULL,updated_at=NOW()
+    WHERE source='manual-do-agronomo';
+    INSERT INTO schema_migrations (version) VALUES ('separate-manual-technical-portfolio-v1') ON CONFLICT (version) DO NOTHING;
+  END IF;
+END $$;
+
 -- Copia os registros do schema 0.3 uma única vez. As tabelas antigas ficam
 -- disponíveis para auditoria e só devem ser removidas em migração posterior.
 DO $$

@@ -142,6 +142,24 @@ test('idempotência rejeita o mesmo externalId quando o payload_hash diverge',as
   await assert.rejects(makeRepository('hash-antigo').ingestEvent({event,signals:[]}),error=>error.statusCode===409&&/conteúdo diferente/.test(error.message))
 })
 
+test('sincronização do Manual enriquece cliente existente sem criar carteira comercial',async()=>{
+  const calls=[]
+  const query=async(sql,params=[])=>{
+    calls.push({sql,params})
+    if(sql.includes('INSERT INTO integration_events'))return {rowCount:1,rows:[{id:'event-db-id'}]}
+    if(sql.startsWith('SELECT id FROM clients'))return {rowCount:0,rows:[]}
+    return {rowCount:1,rows:[]}
+  }
+  const repository=repositoryWith({configured:true,transaction:work=>work({query})})
+  await repository.ingestEvent({
+    ownerId:'00000000-0000-4000-8000-000000000010',
+    event:{externalId:'producer-001',type:'manual.producer.updated',schemaVersion:1,source:'manual-do-agronomo',occurredAt:'2026-08-10T12:00:00.000Z',payloadHash:'hash',clientExternalKey:'producer-1',payload:{producer:{name:'Produtor 1',areaHa:120}}},
+    signals:[]
+  })
+  assert.ok(calls.some(call=>call.sql.startsWith('UPDATE clients SET name=')))
+  assert.equal(calls.some(call=>call.sql.includes('INSERT INTO clients')),false)
+})
+
 test('feedback atualizado retorna o id persistido pelo UPSERT',async()=>{
   const repository=repositoryWith({configured:true,query:async()=>({rowCount:1,rows:[{id:'feedback-existente'}]})})
   const id=await repository.recordFeedback({recommendationId:'recommendation-id',rating:5})
