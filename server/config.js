@@ -17,7 +17,7 @@ export const config=Object.freeze({
   openaiApiKey:String(process.env.OPENAI_API_KEY||''),
   openaiProject:String(process.env.OPENAI_PROJECT||''),
   openaiStoreResponses:readBoolean(process.env.OPENAI_STORE_RESPONSES,false),
-  openaiTimeoutMs:Number(process.env.OPENAI_TIMEOUT_MS||60_000),
+  openaiTimeoutMs:Number(process.env.OPENAI_TIMEOUT_MS||100_000),
   openaiMaxRetries:Number(process.env.OPENAI_MAX_RETRIES||1),
   modelDaily:String(process.env.VAL_MODEL_DAILY||process.env.OPENAI_MODEL||'gpt-5.6-terra'),
   modelStrategic:String(process.env.VAL_MODEL_STRATEGIC||'gpt-5.6-sol'),

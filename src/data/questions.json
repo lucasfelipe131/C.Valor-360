@@ -106,5 +106,77 @@
   {
     "id": 27,
     "text": "27. Existe alguma necessidade da sua propriedade em que poderíamos ajudar mais?"
+  },
+  {
+    "id": 28,
+    "text": "28. Como você prefere ser chamado?"
+  },
+  {
+    "id": 29,
+    "text": "29. Qual telefone ou WhatsApp prefere usar no contato?"
+  },
+  {
+    "id": 30,
+    "text": "30. Qual e-mail prefere usar no relacionamento?"
+  },
+  {
+    "id": 31,
+    "text": "31. Qual é a sua data de aniversário?"
+  },
+  {
+    "id": 32,
+    "text": "32. O que você gostaria que soubéssemos sobre sua família?"
+  },
+  {
+    "id": 33,
+    "text": "33. Qual é o seu time do coração?"
+  },
+  {
+    "id": 34,
+    "text": "34. Você gosta de pescaria?"
+  },
+  {
+    "id": 35,
+    "text": "35. Se gosta de pescar, que tipo de pescaria prefere?"
+  },
+  {
+    "id": 36,
+    "text": "36. Quais são seus principais hobbies?"
+  },
+  {
+    "id": 37,
+    "text": "37. Como gosta de aproveitar o tempo livre?"
+  },
+  {
+    "id": 38,
+    "text": "38. Quais comidas você mais aprecia?"
+  },
+  {
+    "id": 39,
+    "text": "39. Quais bebidas prefere?"
+  },
+  {
+    "id": 40,
+    "text": "40. Que eventos, esportes ou atividades costuma acompanhar?"
+  },
+  {
+    "id": 41,
+    "text": "41. Há algum horário, canal ou jeito de conversar que devemos respeitar?"
+  },
+  {
+    "id": 42,
+    "text": "42. Quais valores são mais importantes para você numa relação de confiança?"
+  },
+  {
+    "id": 43,
+    "text": "43. Como prefere conduzir negociações e decisões comerciais?"
+  },
+  {
+    "id": 44,
+    "text": "44. Há alguma data importante que gostaria de registrar?"
+  },
+  {
+    "id": 45,
+    "text": "45. Quer compartilhar mais alguma preferência ou característica pessoal?"
   }
 ]

@@ -52,6 +52,8 @@ export function normalizeIntegrationEvent(input){
   const timestamp=Date.parse(rawOccurredAt)
   if(Number.isNaN(timestamp))throw new Error('occurredAt precisa ser uma data válida.')
   const payload=compact(input.payload||{})
+  const ownerUserId=externalKey(input.ownerUserId||input.owner_user_id)
+  if(ownerUserId&&!/^[0-9a-f-]{36}$/i.test(ownerUserId))throw new Error('ownerUserId precisa identificar um acesso válido.')
   requireDate(payload.observedAt,'payload.observedAt');requireDate(payload.sampledAt,'payload.sampledAt');requireDate(payload.validation?.reviewedAt,'payload.validation.reviewedAt')
   if(type==='ndvi.observation'){requireRange(payload.cloudPercent,'payload.cloudPercent',0,100);requireRange(payload.resolutionM,'payload.resolutionM',0.01,100_000)}
   if(type==='soil_analysis.completed'){
@@ -66,6 +68,7 @@ export function normalizeIntegrationEvent(input){
     type,
     occurredAt:new Date(timestamp).toISOString(),
     source:clean(input.source).slice(0,80)||'manual-do-agronomo',
+    ownerUserId,
     clientExternalKey:externalKey(input.clientExternalKey||input.client_external_key),
     propertyExternalKey:externalKey(input.propertyExternalKey||input.property_external_key),
     fieldExternalKey:externalKey(input.fieldExternalKey||input.field_external_key),

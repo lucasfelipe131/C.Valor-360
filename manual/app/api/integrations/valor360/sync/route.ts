@@ -67,13 +67,17 @@ export async function POST(request: NextRequest) {
     const workspaceResult = await publishWorkspaceToValor(
       producers,
       soilAnalyses,
+      session.valor360OwnerId ?? session.user.id,
     );
     const recordResults = [];
     const concurrency = 6;
     for (let index = 0; index < records.rows.length; index += concurrency) {
       const batch = records.rows.slice(index, index + concurrency);
       const results = await Promise.all(
-        batch.map((record) => publishManualRecordToValor(record)),
+        batch.map((record) => publishManualRecordToValor(
+          record,
+          session.valor360OwnerId ?? session.user.id,
+        )),
       );
       recordResults.push(...results.flat());
     }

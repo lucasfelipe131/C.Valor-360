@@ -32,10 +32,11 @@ function displayName(email){
 
 export function signedTechnicalIdentity({session,tenantId,secret}){
  if(!session?.email||String(secret||'').length<32)return null
+ const subject=String(session.id||session.sub||'')
  const identity={
-  id:identityUuid(`valor360:${tenantId}:${String(session.email).toLowerCase()}`),
+  id:/^[0-9a-f-]{36}$/i.test(subject)?subject:identityUuid(`valor360:${tenantId}:${String(session.email).toLowerCase()}`),
   email:String(session.email).toLowerCase(),
-  displayName:displayName(session.email),
+  displayName:String(session.name||session.displayName||displayName(session.email)).slice(0,160),
   role:session.role==='admin'?'admin':'tester',
   exp:Math.floor(Date.now()/1000)+120
  }
@@ -43,7 +44,7 @@ export function signedTechnicalIdentity({session,tenantId,secret}){
  return {payload,signature:createHmac('sha256',secret).update(payload).digest('base64url')}
 }
 
-export function createTechnicalWorkspace({appRoot,publicPort,auth,runtimeConfig,json}){
+export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}){
  const manualRoot=join(appRoot,'manual')
  const manualEntry=join(manualRoot,'server.js')
  const enabled=existsSync(manualEntry)
@@ -78,11 +79,11 @@ export function createTechnicalWorkspace({appRoot,publicPort,auth,runtimeConfig,
   return true
  }
 
- function handle(request,response,url){
+ function handle(request,response,url,session){
   if(!isTechnicalWorkspaceRequest(url.pathname))return false
   if(!enabled){json(response,503,{error:'O núcleo técnico ainda não foi incluído neste build.'});return true}
-  const session=auth.configured?auth.session(request):runtimeConfig.demoMode?{email:'demo@valor360.local',tenantId:runtimeConfig.defaultTenantId,role:'admin'}:null
-  const signed=signedTechnicalIdentity({session,tenantId:runtimeConfig.defaultTenantId,secret:embedSecret})
+  const resolvedSession=(session||runtimeConfig.demoMode)?session||{email:'demo@valor360.local',tenantId:runtimeConfig.defaultTenantId,role:'admin'}:null
+  const signed=signedTechnicalIdentity({session:resolvedSession,tenantId:runtimeConfig.defaultTenantId,secret:embedSecret})
   if(!signed){json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'});return true}
   request.headers['x-valor360-identity']=signed.payload
   request.headers['x-valor360-signature']=signed.signature

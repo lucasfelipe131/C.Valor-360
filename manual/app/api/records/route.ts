@@ -145,7 +145,10 @@ export async function POST(request: NextRequest) {
       );
     }
     const record = result.rows[0];
-    const integration = await publishManualRecordToValor(record);
+    const integration = await publishManualRecordToValor(
+      record,
+      session.valor360OwnerId ?? session.user.id,
+    );
     return withWorkspaceCookie(
       NextResponse.json({
         record,

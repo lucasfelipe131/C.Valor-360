@@ -4,7 +4,7 @@ export function buildSurveyOptions(profileMatrix){
 
 export function validateSurveyAnswers(input,surveyOptions){
  const answers={}
- for(let id=1;id<=27;id++){
+ for(let id=1;id<=45;id++){
   const raw=input?.[id]
   if(id>=19&&id<=24){
    const value=Number(raw)
@@ -13,7 +13,7 @@ export function validateSurveyAnswers(input,surveyOptions){
    continue
   }
   const value=String(raw??'').trim().slice(0,2000)
-  if(id===27){answers[id]=value||null;continue}
+  if(id>=27){answers[id]=value||null;continue}
   if(!value)throw new Error(`A resposta ${id} é obrigatória.`)
   if(id>=7&&id<=18&&!surveyOptions[id]?.has(value))throw new Error(`A alternativa da resposta ${id} não é válida.`)
   answers[id]=value

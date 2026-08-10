@@ -82,6 +82,7 @@ export async function PUT(request: NextRequest) {
     const integration = await publishWorkspaceToValor(
       body.producers,
       body.soilAnalyses,
+      session.valor360OwnerId ?? session.user.id,
     );
     return noStore(NextResponse.json({
       saved: true,

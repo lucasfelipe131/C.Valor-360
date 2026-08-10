@@ -138,7 +138,7 @@ async function embeddedSession(request: NextRequest) {
     );
     row = refreshed.rows[0];
   }
-  return { user: rowToUser(row), sessionId: null };
+  return { user: rowToUser(row), sessionId: null, valor360OwnerId: identity.id };
 }
 
 export function normalizeEmail(value: string) {
@@ -429,7 +429,11 @@ export async function sessionFromRequest(request: NextRequest) {
     `UPDATE app_sessions SET last_seen_at = NOW() WHERE id = $1`,
     [row.sessionId],
   );
-  return { user: rowToUser(row), sessionId: String(row.sessionId) };
+  return {
+    user: rowToUser(row),
+    sessionId: String(row.sessionId),
+    valor360OwnerId: undefined as string | undefined,
+  };
 }
 
 export async function requireAdmin(request: NextRequest) {

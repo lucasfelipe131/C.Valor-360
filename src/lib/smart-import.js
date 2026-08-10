@@ -79,7 +79,7 @@ function similarity(a,b){
 function questionFor(label){
  const normalized=normalizeText(label).replace(/^\d+\s*/,'')
  const numeric=Number(String(label).match(/^\s*(\d{1,2})/)?.[1])
- if(numeric>=1&&numeric<=27)return questions.find(question=>question.id===numeric)
+ if(numeric>=1&&numeric<=45)return questions.find(question=>question.id===numeric)
  for(const [id,list] of Object.entries(aliases))if(list.some(alias=>normalized===alias||normalized.includes(alias)))return questions.find(question=>question.id===Number(id))
  return [...questions].map(question=>({question,score:similarity(normalized,question.text)})).sort((a,b)=>b.score-a.score)[0]?.score>=.36?[...questions].map(question=>({question,score:similarity(normalized,question.text)})).sort((a,b)=>b.score-a.score)[0].question:null
 }
@@ -103,7 +103,7 @@ export function recognizeQuestionnaire(source){
    answers[question.id]=normalized;recognized.push({id:question.id,question:question.text.replace(/^\d+\.\s*/,''),value:normalized})
   })
   const missing=questions.filter(question=>answers[question.id]===undefined)
-  return {answers,recognized,missing,requiredMissing:missing.filter(question=>question.id!==27),confidence:Math.round(recognized.length/questions.length*100),producerName:String(answers[1]||'Produtor sem nome')}
+  return {answers,recognized,missing,requiredMissing:missing.filter(question=>question.id<=26),confidence:Math.round(recognized.length/questions.length*100),producerName:String(answers[1]||'Produtor sem nome')}
  }
  const rows=normalizeImportRows(source.rows).map(row=>row.map(value=>value??''))
  let records=[]

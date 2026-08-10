@@ -50,9 +50,20 @@ CREATE TABLE IF NOT EXISTS users (
   name VARCHAR(120) NOT NULL,
   email VARCHAR(180) UNIQUE NOT NULL,
   status VARCHAR(30) NOT NULL DEFAULT 'active',
+  password_hash TEXT,
+  must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+  session_version INTEGER NOT NULL DEFAULT 0,
+  expires_at TIMESTAMPTZ,
+  last_login_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
 
 CREATE TABLE IF NOT EXISTS memberships (
   tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -67,6 +78,7 @@ CREATE TABLE IF NOT EXISTS survey_invitations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
   token VARCHAR(80) NOT NULL,
+  owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   client_id UUID,
   producer_name VARCHAR(240),
   consultant_name VARCHAR(240),
@@ -80,6 +92,8 @@ CREATE TABLE IF NOT EXISTS survey_invitations (
   UNIQUE (tenant_id,token)
 );
 
+ALTER TABLE survey_invitations ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+
 CREATE TABLE IF NOT EXISTS clients (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -92,6 +106,7 @@ CREATE TABLE IF NOT EXISTS clients (
   cultures TEXT,
   preferred_channel VARCHAR(60),
   commercial_profile JSONB NOT NULL DEFAULT '{}'::jsonb,
+  relationship_profile JSONB NOT NULL DEFAULT '{}'::jsonb,
   status VARCHAR(30) NOT NULL DEFAULT 'active',
   source VARCHAR(80),
   last_contact_at TIMESTAMPTZ,
@@ -102,6 +117,9 @@ CREATE TABLE IF NOT EXISTS clients (
 
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS commercial_profile JSONB NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE clients ADD COLUMN IF NOT EXISTS area_band VARCHAR(120);
+ALTER TABLE clients ADD COLUMN IF NOT EXISTS relationship_profile JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_tenant_id_external_key_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_owner_external_key ON clients(tenant_id,consultant_id,external_key);
 
 CREATE TABLE IF NOT EXISTS client_profiles (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -148,6 +166,9 @@ CREATE TABLE IF NOT EXISTS properties (
   UNIQUE (tenant_id,external_key)
 );
 
+ALTER TABLE properties DROP CONSTRAINT IF EXISTS properties_tenant_id_external_key_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_properties_client_external_key ON properties(tenant_id,client_id,external_key) WHERE external_key IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS fields (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
@@ -161,6 +182,9 @@ CREATE TABLE IF NOT EXISTS fields (
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (tenant_id,external_key)
 );
+
+ALTER TABLE fields DROP CONSTRAINT IF EXISTS fields_tenant_id_external_key_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fields_property_external_key ON fields(tenant_id,property_id,external_key) WHERE external_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS crop_seasons (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -230,7 +254,8 @@ CREATE TABLE IF NOT EXISTS opportunities (
 );
 
 ALTER TABLE opportunities ADD COLUMN IF NOT EXISTS external_key VARCHAR(180);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_opportunities_tenant_external_key ON opportunities(tenant_id,external_key) WHERE external_key IS NOT NULL;
+DROP INDEX IF EXISTS idx_opportunities_tenant_external_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_opportunities_client_external_key ON opportunities(tenant_id,client_id,external_key) WHERE external_key IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS value_cases (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -291,6 +316,7 @@ CREATE TABLE IF NOT EXISTS source_documents (
 CREATE TABLE IF NOT EXISTS import_jobs (
   id VARCHAR(180) PRIMARY KEY,
   tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   source_type VARCHAR(80) NOT NULL,
   file_name VARCHAR(300),
   status VARCHAR(40) NOT NULL,
@@ -301,6 +327,8 @@ CREATE TABLE IF NOT EXISTS import_jobs (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   completed_at TIMESTAMPTZ
 );
+
+ALTER TABLE import_jobs ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE;
 
 CREATE TABLE IF NOT EXISTS field_reports (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -422,6 +450,7 @@ ALTER TABLE ndvi_observations ADD COLUMN IF NOT EXISTS field_external_key VARCHA
 CREATE TABLE IF NOT EXISTS integration_events (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   external_id VARCHAR(180) NOT NULL,
   event_type VARCHAR(100) NOT NULL,
   schema_version INTEGER NOT NULL DEFAULT 1,
@@ -437,6 +466,10 @@ CREATE TABLE IF NOT EXISTS integration_events (
   ingested_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (tenant_id,source,external_id)
 );
+
+ALTER TABLE integration_events ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE integration_events DROP CONSTRAINT IF EXISTS integration_events_tenant_id_source_external_id_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_integration_events_owner_external ON integration_events(tenant_id,owner_user_id,source,external_id);
 
 CREATE TABLE IF NOT EXISTS agronomic_signals (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -505,6 +538,7 @@ CREATE TABLE IF NOT EXISTS val_memories (
 CREATE TABLE IF NOT EXISTS val_recommendations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  consultant_id UUID REFERENCES users(id) ON DELETE CASCADE,
   client_id UUID REFERENCES clients(id) ON DELETE SET NULL,
   client_external_key VARCHAR(180),
   conversation_id UUID REFERENCES val_conversations(id) ON DELETE SET NULL,
@@ -521,6 +555,8 @@ CREATE TABLE IF NOT EXISTS val_recommendations (
   approved_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE val_recommendations ADD COLUMN IF NOT EXISTS consultant_id UUID REFERENCES users(id) ON DELETE CASCADE;
 
 CREATE TABLE IF NOT EXISTS val_feedback (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -587,10 +623,15 @@ CREATE TABLE IF NOT EXISTS audit_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_clients_tenant_name ON clients(tenant_id,name);
+CREATE INDEX IF NOT EXISTS idx_clients_owner_name ON clients(tenant_id,consultant_id,name);
+CREATE INDEX IF NOT EXISTS idx_surveys_owner_status ON survey_invitations(tenant_id,owner_user_id,status,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_import_jobs_owner_date ON import_jobs(tenant_id,owner_user_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_val_recommendations_owner_date ON val_recommendations(tenant_id,consultant_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_surveys_tenant_status ON survey_invitations(tenant_id,status,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_profiles_client_date ON client_profiles(tenant_id,client_id,assessed_at DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_source_survey ON client_profiles(source_survey_id);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_tenant_source_key ON client_profiles(tenant_id,source_key);
+DROP INDEX IF EXISTS idx_profiles_tenant_source_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_profiles_client_source_key ON client_profiles(tenant_id,client_id,source_key) WHERE source_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_visits_client_date ON visits(tenant_id,client_id,scheduled_at);
 CREATE INDEX IF NOT EXISTS idx_opportunities_stage ON opportunities(tenant_id,stage,next_action_at);
 CREATE INDEX IF NOT EXISTS idx_business_client_date ON business_events(tenant_id,client_external_key,occurred_at DESC);

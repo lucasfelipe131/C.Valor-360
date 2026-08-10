@@ -6,7 +6,7 @@ const strategicPattern=/estrat[eé]g|plano de conta|risco alto|proposta complexa
 const fastPattern=/classifi|extra[ií]|resum|import|normaliz|tag|categoria/i
 
 export function selectValModel(message,mode,runtimeConfig){
-  if(mode==='strategic'||strategicPattern.test(String(message)))return {model:runtimeConfig.modelStrategic,tier:'strategic',effort:'high'}
+  if(mode==='strategic'||strategicPattern.test(String(message)))return {model:runtimeConfig.modelStrategic,tier:'strategic',effort:'medium'}
   if(mode==='fast'||fastPattern.test(String(message)))return {model:runtimeConfig.modelFast,tier:'fast',effort:'low'}
   return {model:runtimeConfig.modelDaily,tier:'daily',effort:'medium'}
 }
@@ -96,12 +96,12 @@ export class ValEngine{
 
   async status(dbHealth){return {configured:Boolean(this.client),mode:this.client?'openai':'demonstration',database:dbHealth,models:{daily:this.config.modelDaily,strategic:this.config.modelStrategic,fast:this.config.modelFast},knowledgeBase:Boolean(this.config.knowledgeVectorStoreId),storeResponses:this.config.openaiStoreResponses}}
 
-  async answer({tenantId,clientId,client,message,mode='daily',signal}){
-    const context=await this.repository.getClientContext({tenantId,clientId,client})
+  async answer({tenantId,ownerId,clientId,client,message,mode='daily',signal}){
+    const context=await this.repository.getClientContext({tenantId,ownerId,clientId,client})
     const contextCoverage=summarizeContextCoverage(context)
     const route=selectValModel(message,mode,this.config)
     let advice,engineMode='demonstration',warning='',responseMetadata={}
-    if(!this.client)advice=buildFallbackAdvice({...context,message})
+    if(!this.client)advice=buildFallbackAdvice({...context,message,mode:route.tier})
     else{
       const startedAt=Date.now()
       try{
@@ -122,11 +122,11 @@ export class ValEngine{
         if(response.status!=='completed')throw Object.assign(new Error('Resposta incompleta da OpenAI.'),{code:'incomplete_response',details:response.incomplete_details,responseMetadata:providerMetadata})
         if(!response.output_text)throw Object.assign(new Error('A OpenAI não devolveu conteúdo estruturado.'),{code:'empty_response',responseMetadata:providerMetadata})
         advice=JSON.parse(response.output_text);engineMode='openai';responseMetadata=providerMetadata
-      }catch(error){if(signal?.aborted)throw Object.assign(new Error('A solicitação foi cancelada pelo cliente.'),{statusCode:499});advice=buildFallbackAdvice({...context,message});engineMode='fallback';warning=safeError(error);responseMetadata={...responseMetadata,...(error.responseMetadata||{}),latencyMs:error.responseMetadata?.latencyMs||responseMetadata.latencyMs||Date.now()-startedAt,errorCode:String(error.code||error.status||'provider_error').slice(0,80),errorDetails:error.details||null}}
+      }catch(error){if(signal?.aborted)throw Object.assign(new Error('A solicitação foi cancelada pelo cliente.'),{statusCode:499});advice=buildFallbackAdvice({...context,message,mode:route.tier});engineMode='fallback';warning=safeError(error);responseMetadata={...responseMetadata,...(error.responseMetadata||{}),latencyMs:error.responseMetadata?.latencyMs||responseMetadata.latencyMs||Date.now()-startedAt,errorCode:String(error.code||error.status||'provider_error').slice(0,80),errorDetails:error.details||null}}
     }
     advice=enforceValSafety(advice,context,message)
     const modelRun={model:this.client?route.model:'rules-v2',promptVersion:'val-playbook-v3',status:engineMode==='openai'?'completed':this.client?'fallback':'demonstration',...responseMetadata}
-    const recommendationId=await this.repository.recordRecommendation({tenantId,clientId,question:message,mode:route.tier,model:engineMode==='openai'?route.model:'rules-v2',context,advice,responseMetadata,promptHash:createHash('sha256').update(buildValInstructions()).digest('hex'),modelRun})
+    const recommendationId=await this.repository.recordRecommendation({tenantId,ownerId,clientId,question:message,mode:route.tier,model:engineMode==='openai'?route.model:'rules-v2',context,advice,responseMetadata,promptHash:createHash('sha256').update(buildValInstructions()).digest('hex'),modelRun})
     return {recommendationId,engineMode,route:route.tier,model:engineMode==='openai'?route.model:'rules-v2',warning,contextCoverage,advice}
   }
 }

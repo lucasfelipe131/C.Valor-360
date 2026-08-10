@@ -1,11 +1,12 @@
 import React,{useMemo,useRef,useState} from 'react'
-import {ArrowRight,BrainCircuit,CheckCircle2,DatabaseZap,FileSpreadsheet,Lightbulb,RefreshCw,ShieldCheck,Sparkles,UploadCloud} from 'lucide-react'
+import {ArrowRight,BrainCircuit,CheckCircle2,DatabaseZap,FileSpreadsheet,Lightbulb,Pencil,RefreshCw,ShieldCheck,Sparkles,Trash2,UploadCloud,UsersRound} from 'lucide-react'
 import {parseImportFile,tableToObjects} from '../lib/smart-import'
 import {buildCommercialIntelligence,detectColumns,summarizeLearning} from '../lib/commercial-intelligence'
+import ProducerProfileEditor from '../components/ProducerProfileEditor'
 
 const fieldLabels={client:'Cliente / produtor',value:'Valor do negócio',date:'Data',product:'Produto / categoria',status:'Status / resultado',municipality:'Município',culture:'Cultura',area:'Área'}
 
-export default function DataHub({onImport,onNotify}){
+export default function DataHub({clients=[],onImport,onUpdate,onDelete,onNotify}){
  const inputRef=useRef(null)
  const [file,setFile]=useState(null)
  const [rows,setRows]=useState([])
@@ -15,6 +16,8 @@ export default function DataHub({onImport,onNotify}){
  const [error,setError]=useState('')
  const [result,setResult]=useState(null)
  const [saving,setSaving]=useState(false)
+ const [editing,setEditing]=useState(null)
+ const [deleting,setDeleting]=useState('')
  const intelligence=useMemo(()=>rows.length&&mapping.client?buildCommercialIntelligence(rows,mapping):[],[rows,mapping])
  const analyze=async selected=>{
   setError('');setFile(selected);setStage('reading')
@@ -41,6 +44,11 @@ export default function DataHub({onImport,onNotify}){
   }catch(exception){setError(exception.name==='TimeoutError'?'A importação demorou além do limite. Verifique a conexão e tente novamente.':exception.message);setSaving(false)}
  }
  const reset=()=>{setFile(null);setRows([]);setHeaders([]);setMapping({});setResult(null);setStage('drop');setError('');setSaving(false)}
+ const remove=async client=>{
+  if(!window.confirm(`Excluir ${client.name} da sua carteira? O registro sairá das telas, mas continuará auditável no banco.`))return
+  setDeleting(client.id);setError('')
+  try{await onDelete?.(client.id);if(editing===client.id)setEditing(null)}catch(exception){setError(exception.message||'Não foi possível excluir o produtor.')}finally{setDeleting('')}
+ }
  return <div className="page-stack data-hub-page">
   <section className="data-hero"><div className="data-hero-copy"><span className="eyebrow">VAL • CONTEXTO COMERCIAL</span><h2>Seus dados viram contexto verificável.</h2><p>A VAL organiza recência, frequência, valor, resultado e categorias para propor hipóteses que o consultor ainda precisa validar.</p><div className="data-trust"><span><ShieldCheck/>Processamento protegido</span><span><BrainCircuit/>Memória auditável</span></div></div><div className="learning-orbit"><div><BrainCircuit/><b>{result?.clientCount||'IA'}</b><span>{result?'contas organizadas':'motor auditável'}</span></div><i/><i/><i/></div></section>
   <section className="learning-ribbon"><div><Sparkles/><span><small>ÍNDICE DE TRIAGEM</small><b>A VAL cruza recência, frequência, valor, resultado e diversidade.</b></span></div><p>O índice é heurístico e relativo à base importada; não é probabilidade de compra nem potencial financeiro validado.</p></section>
@@ -51,5 +59,12 @@ export default function DataHub({onImport,onNotify}){
    {error&&<div className="form-error" role="alert">{error}</div>}<div className="data-actions"><button className="ghost-btn" onClick={reset}>Cancelar</button><button className="primary-btn" disabled={saving} onClick={finish}>{saving?'Incorporando...':'Incorporar à inteligência'}<ArrowRight size={17}/></button></div></>}
   {stage==='done'&&<section className="learning-result"><div className="result-glow"><DatabaseZap/></div><span className="eyebrow">BASE INCORPORADA</span><h2>O contexto comercial foi atualizado.</h2><p>Os fatos históricos foram incorporados ao Cliente 360; sinais e hipóteses continuam sujeitos à validação do consultor.</p><div className="learning-metrics"><div><small>PRODUTORES</small><b>{result.clientCount}</b></div><div><small>REGISTROS LIDOS</small><b>{result.rowCount}</b></div><div><small>ÍNDICE ALTO</small><b>{result.highIndex??0}</b></div><div><small>VOLUME INFORMADO</small><b>R$ {(result.totalRevenue/1000).toFixed(0)} mil</b></div></div><div className="learning-insight"><Lightbulb/><span><b>O que a VAL registrou</b>Somente datas, valores, resultados e categorias presentes na base — campos ausentes permanecem desconhecidos.</span></div><button className="primary-btn" onClick={reset}>Importar outra base</button></section>}
   {error&&stage==='drop'&&<div className="form-error" role="alert">{error}</div>}
+  <section className="panel producer-base-manager">
+   <div className="panel-head"><div><span className="eyebrow">GESTÃO DA BASE</span><h3>Produtores deste login</h3><p>Edite nome, propriedade, compras, potencial e preferências; ou retire um produtor da carteira.</p></div><span className="mapping-score"><UsersRound/>{clients.length} produtores</span></div>
+   {!clients.length?<div className="inbox-empty"><UsersRound/><h3>Esta carteira está zerada.</h3><p>Preencha o Produtor 360 ou importe uma base para começar.</p></div>:<div className="producer-manage-list">{clients.map(client=><article key={client.id} className={editing===client.id?'is-editing':''}>
+    <div className="producer-manage-summary"><div><b>{client.name}</b><small>{client.municipality||'Município não informado'} • {client.commercial?.property||'Propriedade não informada'}</small></div><div className="producer-manage-metrics"><span>Compras <b>R$ {Number(client.commercial?.purchaseTotal||0).toLocaleString('pt-BR')}</b></span><span>Em aberto <b>R$ {Number(client.commercial?.openPotential??client.commercial?.openPipeline??0).toLocaleString('pt-BR')}</b></span></div><div className="producer-manage-actions"><button type="button" onClick={()=>setEditing(current=>current===client.id?null:client.id)}><Pencil/>Editar</button><button type="button" className="danger-text" disabled={deleting===client.id} onClick={()=>remove(client)}><Trash2/>{deleting===client.id?'Excluindo…':'Excluir'}</button></div></div>
+    {editing===client.id&&<ProducerProfileEditor compact client={client} onSave={async(id,input)=>{await onUpdate?.(id,input);setEditing(null);onNotify?.('Cadastro do produtor atualizado na nuvem.')}} onCancel={()=>setEditing(null)}/>}
+   </article>)}</div>}
+  </section>
  </div>
 }

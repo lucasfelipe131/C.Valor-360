@@ -34,7 +34,7 @@ test('integração PostgreSQL separa Q27 da oportunidade canônica sob o mesmo l
   assert.ok(advisory>=0&&canonicalRead>advisory)
   const clientCall=calls.find(call=>call.sql.includes('INSERT INTO clients'))
   const snapshotCall=calls.find(call=>call.sql.includes('INSERT INTO client_profiles'))
-  assert.deepEqual(JSON.parse(clientCall.params[8]),{property:'Talhão 1'})
+  assert.deepEqual(JSON.parse(clientCall.params[9]),{property:'Talhão 1'})
   assert.equal(JSON.parse(snapshotCall.params[8]).commercial.opportunity,'')
   assert.equal(JSON.parse(snapshotCall.params[8]).commercial.opportunityProvenance.state,'none_declared')
 })
