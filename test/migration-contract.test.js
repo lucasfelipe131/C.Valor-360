@@ -27,6 +27,8 @@ test('migração legacy é versionada, bloqueada e preserva contexto técnico',a
   assert.match(sql,/idx_clients_owner_external_key/)
   assert.match(sql,/owner_user_id UUID REFERENCES users\(id\)/)
   assert.match(sql,/idx_integration_events_owner_external/)
+  assert.match(sql,/separate-manual-technical-portfolio-v1/)
+  assert.match(sql,/WHERE source='manual-do-agronomo'/)
   assert.match(sql,/password_hash TEXT/)
   assert.match(sql,/session_version INTEGER/)
   assert.match(sql,/SET profile_snapshot=survey\.result/)

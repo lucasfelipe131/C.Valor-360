@@ -38,7 +38,7 @@ export class AccessRepository{
         row=updated.rows[0]
       }
       await connection.query(`INSERT INTO memberships (tenant_id,user_id,role) VALUES ($1,$2,'admin') ON CONFLICT (tenant_id,user_id) DO UPDATE SET role='admin'`,[this.tenantId,row.id])
-      await connection.query(`UPDATE clients client SET consultant_id=$2,updated_at=NOW() WHERE client.tenant_id=$1 AND (client.consultant_id IS NULL OR NOT EXISTS (SELECT 1 FROM users owner JOIN memberships membership ON membership.user_id=owner.id AND membership.tenant_id=client.tenant_id WHERE owner.id=client.consultant_id AND owner.password_hash IS NOT NULL))`,[this.tenantId,row.id])
+      await connection.query(`UPDATE clients client SET consultant_id=$2,updated_at=NOW() WHERE client.tenant_id=$1 AND COALESCE(client.source,'')<>'manual-do-agronomo' AND (client.consultant_id IS NULL OR NOT EXISTS (SELECT 1 FROM users owner JOIN memberships membership ON membership.user_id=owner.id AND membership.tenant_id=client.tenant_id WHERE owner.id=client.consultant_id AND owner.password_hash IS NOT NULL))`,[this.tenantId,row.id])
       await connection.query('UPDATE survey_invitations SET owner_user_id=$2 WHERE tenant_id=$1 AND owner_user_id IS NULL',[this.tenantId,row.id])
       await connection.query('UPDATE import_jobs SET owner_user_id=$2 WHERE tenant_id=$1 AND owner_user_id IS NULL',[this.tenantId,row.id])
       await connection.query('UPDATE integration_events SET owner_user_id=$2 WHERE tenant_id=$1 AND owner_user_id IS NULL',[this.tenantId,row.id])

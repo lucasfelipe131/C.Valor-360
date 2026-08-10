@@ -34,3 +34,18 @@ test('usuário sem papel administrativo não libera novos logins',async()=>{
  const repository=new AccessRepository({db:{configured:true},tenantId:'tenant',runtimeConfig:{}})
  await assert.rejects(()=>repository.createUser({id:'user',role:'consultant'},{name:'Outro',email:'outro@example.com'}),error=>error.statusCode===403)
 })
+
+test('bootstrap atribui a carteira comercial sem promover produtores técnicos do Manual',async()=>{
+ const calls=[]
+ const connection={query:async(sql,params=[])=>{
+  calls.push({sql,params})
+  if(sql.includes('SELECT * FROM users'))return {rowCount:1,rows:[{id:'00000000-0000-4000-8000-000000000010',name:'Administrador',email:'admin@example.com',status:'active',password_hash:'hash',session_version:0}]}
+  return {rowCount:1,rows:[]}
+ }}
+ const db={configured:true,transaction:work=>work(connection)}
+ const repository=new AccessRepository({db,tenantId:'00000000-0000-4000-8000-000000000001',runtimeConfig:{adminEmail:'admin@example.com'}})
+ await repository.ensureBootstrapAdmin()
+ const portfolioAssignment=calls.find(call=>call.sql.includes('UPDATE clients client SET consultant_id'))
+ assert.ok(portfolioAssignment)
+ assert.match(portfolioAssignment.sql,/COALESCE\(client\.source,''\)<>'manual-do-agronomo'/)
+})
