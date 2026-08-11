@@ -108,7 +108,7 @@ async function handleApi(request,response,url){
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
- const protectedPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname.startsWith('/api/admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/context)?$/.test(url.pathname)
+ const protectedPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const identity=protectedPath?await sessionIdentity(request):null
  if(protectedPath&&auth.configured&&!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
@@ -117,11 +117,15 @@ async function handleApi(request,response,url){
  if(storageScope==='public-survey'&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para acessar questionários fora do modo demonstrativo.'})}
  if((url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations')&&config.openaiApiKey&&!auth.configured)return json(response,503,{error:'Configure VAL_ADMIN_EMAIL, VAL_ADMIN_PASSWORD e VAL_SESSION_SECRET antes de ativar a IA em produção.'})
  if((url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations')&&config.openaiApiKey&&!database.configured)return json(response,503,{error:'Configure DATABASE_URL antes de ativar a IA com dados reais.'})
+ if(url.pathname==='/api/admin/metrics'&&request.method==='GET')return json(response,200,await accessRepository.getAdminMetrics(identity,Number(url.searchParams.get('days')||30)))
  if(url.pathname==='/api/admin/users'&&request.method==='GET')return json(response,200,{users:await accessRepository.listUsers(identity)})
  if(url.pathname==='/api/admin/users'&&request.method==='POST')return json(response,201,await accessRepository.createUser(identity,await body(request)))
  if(url.pathname==='/api/admin/users'&&request.method==='PATCH')return json(response,200,{saved:true,user:await accessRepository.updateUser(identity,await body(request))})
  if(url.pathname==='/api/admin/users/reset-password'&&request.method==='POST'){
   const payload=await body(request);return json(response,200,{saved:true,...await accessRepository.resetPassword(identity,payload.id)})
+ }
+ if(url.pathname==='/api/usage/events'&&request.method==='POST'){
+  const payload=await body(request);await accessRepository.recordUsage(identity,{eventType:'page_view',page:clean(payload.page),entityType:clean(payload.entityType),entityId:clean(payload.entityId)});return json(response,202,{accepted:true})
  }
  if(url.pathname==='/api/technical/bootstrap'&&request.method==='GET'){
   const intelligence=await repository.getIntelligence(identity?.id)
@@ -142,6 +146,7 @@ async function handleApi(request,response,url){
   if(!clientId)return json(response,400,{error:'Selecione um cliente para ativar o contexto da VAL.'})
   const controller=new AbortController();request.once('aborted',()=>controller.abort());response.once('close',()=>{if(!response.writableEnded)controller.abort()})
   const result=await valEngine.answer({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,client:payload.client||{},message,mode:clean(payload.mode)||'daily',signal:controller.signal})
+  await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:clean(payload.mode)||'daily',engineMode:result.engineMode}})
   return json(response,200,result)
  }
  if(url.pathname==='/api/val/feedback'&&request.method==='POST'){
@@ -151,6 +156,7 @@ async function handleApi(request,response,url){
   const requestedOutcome=clean(payload.outcome);const normalizedOutcome=requestedOutcome?feedbackOutcomes[requestedOutcome]:null
   if(requestedOutcome&&!normalizedOutcome)return json(response,400,{error:'Resultado de feedback inválido.'})
   const id=await repository.recordFeedback({tenantId:config.defaultTenantId,ownerId:identity?.id,recommendationId,rating,outcome:normalizedOutcome,value:Number.isFinite(Number(payload.value))?Number(payload.value):null,reason:clean(payload.reason)||null,notes:String(payload.notes||'').slice(0,2000)})
+  await accessRepository.recordUsage(identity,{eventType:'val_feedback',page:'val',entityType:'recommendation',entityId:recommendationId})
   return json(response,201,{saved:true,id})
  }
  if(['/api/v1/integrations/manual/events','/api/integrations/manual/events'].includes(url.pathname)&&request.method==='POST'){
@@ -164,13 +170,14 @@ async function handleApi(request,response,url){
   if(requiresTechnicalSignature(event.type)&&!signed)return json(response,401,{error:'Eventos técnicos validados exigem assinatura HMAC do corpo.'})
   const ownerId=database.configured?await accessRepository.resolveIntegrationOwner(event.ownerUserId):null
   const signals=deriveSignals(event);const result=await repository.ingestEvent({tenantId:config.defaultTenantId,ownerId,event,signals})
+  if(!result.duplicate)await accessRepository.recordUsage(ownerId,{eventType:'manual_sync',page:'agro',entityType:'client',entityId:event.clientExternalKey||null,metadata:{eventType:event.type}})
   return json(response,result.duplicate?200:202,{accepted:true,...result,eventType:event.type,externalId:event.externalId})
  }
  if(url.pathname==='/api/surveys'&&request.method==='GET')return json(response,200,await repository.listSurveys(identity?.id))
  if(url.pathname==='/api/surveys/invitations'&&request.method==='POST'){
   const payload=await body(request);const token=randomBytes(24).toString('base64url')
   const createdAt=new Date();const invitation={token,producerName:clean(payload.producerName),consultantName:clean(payload.consultantName)||'Equipe VALOR 360',status:'aguardando',createdAt:createdAt.toISOString(),expiresAt:new Date(createdAt.getTime()+30*86_400_000).toISOString()}
-  return json(response,201,await repository.createSurvey(invitation,identity?.id))
+  const survey=await repository.createSurvey(invitation,identity?.id);await accessRepository.recordUsage(identity,{eventType:'survey_created',page:'questionnaire'});return json(response,201,survey)
  }
  const surveyMatch=url.pathname.match(/^\/api\/surveys\/([a-zA-Z0-9_-]+)$/)
  if(surveyMatch&&request.method==='GET'){
@@ -186,7 +193,7 @@ async function handleApi(request,response,url){
  }
  const integrateMatch=url.pathname.match(/^\/api\/surveys\/([a-zA-Z0-9_-]+)\/integrate$/)
  if(integrateMatch&&request.method==='POST'){
-  const survey=await repository.integrateSurvey(integrateMatch[1],identity?.id);return json(response,200,{saved:true,status:survey.status})
+  const survey=await repository.integrateSurvey(integrateMatch[1],identity?.id);await accessRepository.recordUsage(identity,{eventType:'survey_integrated',page:'questionnaire'});return json(response,200,{saved:true,status:survey.status})
  }
  if(url.pathname==='/api/intelligence'&&request.method==='GET'){
   return json(response,200,await repository.getIntelligence(identity?.id))
@@ -194,28 +201,34 @@ async function handleApi(request,response,url){
  if(url.pathname==='/api/visits'&&request.method==='POST'){
   const payload=await body(request);const clientId=clean(payload.clientId);const objective=String(payload.objective||'').trim().slice(0,2000)
   if(!clientId||!objective)return json(response,400,{error:'Selecione o produtor e informe o objetivo da visita.'})
-  return json(response,201,{saved:true,visit:await repository.saveVisit({clientId,scheduledAt:payload.scheduledAt,objective,status:'Agendada'},identity?.id)})
+  const visit=await repository.saveVisit({clientId,scheduledAt:payload.scheduledAt,objective,status:'Agendada'},identity?.id);await accessRepository.recordUsage(identity,{eventType:'visit_saved',page:'visits',entityType:'client',entityId:clientId});return json(response,201,{saved:true,visit})
  }
  if(url.pathname==='/api/opportunities'&&request.method==='POST'){
   const payload=await body(request);const clientId=clean(payload.clientId);const title=String(payload.title||'').trim().slice(0,220);const stage=String(payload.stage||'Diagnóstico')
   if(!clientId||!title||!pipelineStages.has(stage))return json(response,400,{error:'Oportunidade, produtor ou etapa inválida.'})
-  return json(response,201,{saved:true,opportunity:await repository.saveOpportunity({...payload,clientId,title,stage},identity?.id)})
+  const opportunity=await repository.saveOpportunity({...payload,clientId,title,stage},identity?.id);await accessRepository.recordUsage(identity,{eventType:'opportunity_saved',page:'opportunities',entityType:'client',entityId:clientId,metadata:{stage}});return json(response,201,{saved:true,opportunity})
  }
  if(url.pathname==='/api/clients/from-survey'&&request.method==='POST'){
   const payload=await body(request);const answers=validatedSurveyAnswers(payload.answers);const result=calculateProfile(answers,profileMatrix,'Aplicação assistida validada no servidor');return json(response,201,{saved:true,client:await repository.saveSurveyProfile({answers,result},identity?.id)})
  }
  const clientMatch=url.pathname.match(/^\/api\/clients\/([^/]+)$/)
- if(clientMatch&&request.method==='PUT')return json(response,200,{saved:true,client:await repository.updateClient(decodeURIComponent(clientMatch[1]),await body(request),identity?.id)})
+ if(clientMatch&&request.method==='PUT'){
+  const clientId=decodeURIComponent(clientMatch[1]);const client=await repository.updateClient(clientId,await body(request),identity?.id);await accessRepository.recordUsage(identity,{eventType:'client_updated',page:'client360',entityType:'client',entityId:clientId});return json(response,200,{saved:true,client})
+ }
  if(clientMatch&&request.method==='DELETE')return json(response,200,{saved:true,archived:await repository.archiveClient(decodeURIComponent(clientMatch[1]),identity?.id)})
  const contextMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/context$/)
  if(contextMatch&&request.method==='GET')return json(response,200,{context:await repository.getTechnicalContext(decodeURIComponent(contextMatch[1]),identity?.id)})
- if(contextMatch&&request.method==='PUT')return json(response,200,{saved:true,context:await repository.saveTechnicalContext(decodeURIComponent(contextMatch[1]),await body(request),identity?.id)})
+ if(contextMatch&&request.method==='PUT'){
+  const clientId=decodeURIComponent(contextMatch[1]);const context=await repository.saveTechnicalContext(clientId,await body(request),identity?.id);await accessRepository.recordUsage(identity,{eventType:'memory_saved',page:'client360',entityType:'client',entityId:clientId});return json(response,200,{saved:true,context})
+ }
+ const overviewMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/overview$/)
+ if(overviewMatch&&request.method==='GET')return json(response,200,await repository.getClientOverview(decodeURIComponent(overviewMatch[1]),identity?.id))
  if(url.pathname==='/api/intelligence/imports'&&request.method==='POST'){
   const payload=await body(request);const rows=Array.isArray(payload.rows)?payload.rows.slice(0,5000):[];const mapping=payload.mapping||{};if(!rows.length||!mapping.client||!payload.summary)return json(response,400,{error:'Importação inválida ou sem linhas para validação no servidor.'})
   const clients=buildCommercialIntelligence(rows,mapping);const learned=summarizeLearning(clients,rows.length,clean(payload.summary.fileName)||'importação comercial');const summary={...learned,id:randomUUID(),rawRowCount:rows.length,rawRowsSent:rows.length,truncated:Boolean(payload.summary.truncated)}
   const persistence=await repository.ingestCommercialImport({tenantId:config.defaultTenantId,ownerId:identity?.id,summary,clients,rows,mapping})
   if(!database.configured){const store=readStore();store.imports.push({...summary,clients:clients.slice(0,500)});store.imports=store.imports.slice(-20);saveStore(store)}
-  return json(response,201,{saved:true,clientCount:clients.length,database:persistence.persisted,clients,summary})
+  await accessRepository.recordUsage(identity,{eventType:'commercial_import',page:'datahub',metadata:{clientCount:clients.length,rowCount:rows.length}});return json(response,201,{saved:true,clientCount:clients.length,database:persistence.persisted,clients,summary})
  }
  if(url.pathname==='/api/import/google-sheet'&&request.method==='POST'){
   const payload=await body(request);const source=clean(payload.url);const match=source.match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)

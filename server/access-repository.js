@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto'
 import {generateTemporaryPassword,hashPassword,normalizeEmail,validEmail,validPassword,verifyPassword} from './auth.js'
 
 const roles=new Set(['admin','manager','consultant','technical_reviewer'])
+const usageTypes=new Set(['login','page_view','client_updated','memory_saved','visit_saved','opportunity_saved','val_analysis','val_feedback','manual_sync','survey_created','survey_integrated','commercial_import'])
 const domainError=(message,statusCode=400)=>Object.assign(new Error(message),{statusCode})
 const safeName=value=>String(value||'').trim().replace(/\s+/g,' ').slice(0,120)
 const accountFromRow=(row,tenantId)=>({
@@ -57,7 +58,9 @@ export class AccessRepository{
     const row=result.rows[0]
     if(!row||row.status!=='active'||(row.expires_at&&new Date(row.expires_at)<=new Date())||!await verifyPassword(password,row.password_hash))return null
     const updated=await this.db.query(`UPDATE users SET last_login_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING last_login_at,updated_at`,[row.id])
-    return accountFromRow({...row,...updated.rows[0]},this.tenantId)
+    const account=accountFromRow({...row,...updated.rows[0]},this.tenantId)
+    await this.recordUsage(account,{eventType:'login',page:'login'})
+    return account
   }
 
   async resolveSession(tokenIdentity){
@@ -84,6 +87,59 @@ export class AccessRepository{
     if(actor?.role!=='admin')throw domainError('Acesso restrito à administração.',403)
     const result=await this.db.query(`SELECT user_record.*,membership.role,COUNT(client.id)::int producer_count FROM users user_record JOIN memberships membership ON membership.user_id=user_record.id AND membership.tenant_id=$1 LEFT JOIN clients client ON client.tenant_id=membership.tenant_id AND client.consultant_id=user_record.id AND client.status='active' GROUP BY user_record.id,membership.role ORDER BY user_record.created_at DESC`,[this.tenantId])
     return result.rows.map(row=>({...accountFromRow(row,this.tenantId),producerCount:Number(row.producer_count||0)}))
+  }
+
+  async recordUsage(actor,input={}){
+    const userId=typeof actor==='string'?actor:actor?.id
+    const eventType=String(input.eventType||'').trim()
+    if(!this.db.configured||!/^[0-9a-f-]{36}$/i.test(String(userId||''))||!usageTypes.has(eventType))return false
+    const page=String(input.page||'').trim().replace(/[^a-z0-9_-]/gi,'').slice(0,80)||null
+    const entityType=String(input.entityType||'').trim().replace(/[^a-z0-9_-]/gi,'').slice(0,80)||null
+    const entityId=String(input.entityId||'').trim().slice(0,180)||null
+    const metadata=input.metadata&&typeof input.metadata==='object'&&!Array.isArray(input.metadata)?input.metadata:{}
+    try{await this.db.query(`INSERT INTO usage_events (tenant_id,user_id,event_type,page,entity_type,entity_id,metadata,occurred_at) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())`,[this.tenantId,userId,eventType,page,entityType,entityId,JSON.stringify(metadata)]);return true}catch{return false}
+  }
+
+  async getAdminMetrics(actor,requestedDays=30){
+    if(actor?.role!=='admin')throw domainError('Acesso restrito à administração.',403)
+    const days=[7,30,90].includes(Number(requestedDays))?Number(requestedDays):30
+    const interval=`${days} days`
+    const [usersResult,dailyResult,pagesResult,operationsResult]=await Promise.all([
+      this.db.query(`SELECT user_record.id,user_record.name,user_record.email,user_record.status,user_record.last_login_at,user_record.created_at,membership.role,
+        (SELECT COUNT(*) FROM clients client WHERE client.tenant_id=$1 AND client.consultant_id=user_record.id AND client.status='active')::int producer_count,
+        (SELECT COUNT(*) FROM usage_events event WHERE event.tenant_id=$1 AND event.user_id=user_record.id AND event.event_type='login' AND event.occurred_at>=NOW()-$2::interval)::int accesses,
+        (SELECT COUNT(*) FROM usage_events event WHERE event.tenant_id=$1 AND event.user_id=user_record.id AND event.event_type='page_view' AND event.occurred_at>=NOW()-$2::interval)::int page_views,
+        (SELECT COUNT(*) FROM usage_events event WHERE event.tenant_id=$1 AND event.user_id=user_record.id AND event.event_type NOT IN ('login','page_view','val_analysis') AND event.occurred_at>=NOW()-$2::interval)::int direct_interactions,
+        (SELECT COUNT(*) FROM val_recommendations recommendation WHERE recommendation.tenant_id=$1 AND recommendation.consultant_id=user_record.id AND recommendation.created_at>=NOW()-$2::interval)::int val_analyses,
+        (SELECT COUNT(*) FROM visits visit WHERE visit.tenant_id=$1 AND visit.consultant_id=user_record.id AND visit.created_at>=NOW()-$2::interval)::int visits,
+        (SELECT COUNT(*) FROM opportunities opportunity JOIN clients client ON client.id=opportunity.client_id AND client.tenant_id=opportunity.tenant_id WHERE opportunity.tenant_id=$1 AND client.consultant_id=user_record.id AND opportunity.updated_at>=NOW()-$2::interval)::int opportunities,
+        (SELECT MAX(event.occurred_at) FROM usage_events event WHERE event.tenant_id=$1 AND event.user_id=user_record.id) last_activity_at
+        FROM users user_record JOIN memberships membership ON membership.user_id=user_record.id AND membership.tenant_id=$1
+        ORDER BY COALESCE(user_record.last_login_at,user_record.created_at) DESC`,[this.tenantId,interval]),
+      this.db.query(`WITH days AS (SELECT GENERATE_SERIES(CURRENT_DATE-($2::int-1),CURRENT_DATE,'1 day')::date day),
+        usage AS (SELECT occurred_at::date day,COUNT(*) FILTER (WHERE event_type='login')::int accesses,COUNT(*) FILTER (WHERE event_type='page_view')::int page_views,COUNT(*) FILTER (WHERE event_type NOT IN ('login','page_view','val_analysis'))::int interactions FROM usage_events WHERE tenant_id=$1 AND occurred_at>=CURRENT_DATE-($2::int-1) GROUP BY occurred_at::date),
+        analyses AS (SELECT created_at::date day,COUNT(*)::int val_analyses FROM val_recommendations WHERE tenant_id=$1 AND created_at>=CURRENT_DATE-($2::int-1) GROUP BY created_at::date)
+        SELECT TO_CHAR(days.day,'YYYY-MM-DD') day,COALESCE(usage.accesses,0)::int accesses,COALESCE(usage.page_views,0)::int page_views,COALESCE(usage.interactions,0)::int interactions,COALESCE(analyses.val_analyses,0)::int val_analyses
+        FROM days LEFT JOIN usage USING(day) LEFT JOIN analyses USING(day) ORDER BY days.day`,[this.tenantId,days]),
+      this.db.query(`SELECT page,COUNT(*)::int views,COUNT(DISTINCT user_id)::int users FROM usage_events WHERE tenant_id=$1 AND event_type='page_view' AND occurred_at>=NOW()-$2::interval AND page IS NOT NULL GROUP BY page ORDER BY views DESC LIMIT 12`,[this.tenantId,interval]),
+      this.db.query(`SELECT
+        (SELECT COUNT(*) FROM users user_record JOIN memberships membership ON membership.user_id=user_record.id AND membership.tenant_id=$1)::int users_total,
+        (SELECT COUNT(*) FROM users user_record JOIN memberships membership ON membership.user_id=user_record.id AND membership.tenant_id=$1 WHERE user_record.status='active')::int users_active,
+        (SELECT COUNT(*) FROM users user_record JOIN memberships membership ON membership.user_id=user_record.id AND membership.tenant_id=$1 WHERE user_record.status='blocked')::int users_blocked,
+        (SELECT COUNT(DISTINCT user_id) FROM usage_events WHERE tenant_id=$1 AND occurred_at>=NOW()-$2::interval)::int active_users_period,
+        (SELECT COUNT(*) FROM clients WHERE tenant_id=$1 AND status='active')::int producers,
+        (SELECT COUNT(*) FROM visits WHERE tenant_id=$1 AND created_at>=NOW()-$2::interval)::int visits,
+        (SELECT COUNT(*) FROM opportunities WHERE tenant_id=$1 AND updated_at>=NOW()-$2::interval)::int opportunities,
+        (SELECT COUNT(*) FROM val_recommendations WHERE tenant_id=$1 AND created_at>=NOW()-$2::interval)::int val_analyses,
+        (SELECT COUNT(*) FROM val_feedback WHERE tenant_id=$1 AND created_at>=NOW()-$2::interval)::int val_feedback,
+        (SELECT COUNT(*) FROM integration_events WHERE tenant_id=$1 AND source='manual-do-agronomo' AND occurred_at>=NOW()-$2::interval)::int manual_syncs,
+        (SELECT COUNT(*) FROM usage_events WHERE tenant_id=$1 AND event_type='login' AND occurred_at>=NOW()-$2::interval)::int accesses,
+        (SELECT COUNT(*) FROM usage_events WHERE tenant_id=$1 AND event_type='page_view' AND occurred_at>=NOW()-$2::interval)::int page_views,
+        (SELECT COUNT(*) FROM usage_events WHERE tenant_id=$1 AND event_type NOT IN ('login','page_view','val_analysis') AND occurred_at>=NOW()-$2::interval)::int direct_interactions`,[this.tenantId,interval])
+    ])
+    const users=usersResult.rows.map(row=>({...accountFromRow(row,this.tenantId),producerCount:Number(row.producer_count||0),accesses:Number(row.accesses||0),pageViews:Number(row.page_views||0),directInteractions:Number(row.direct_interactions||0),valAnalyses:Number(row.val_analyses||0),visits:Number(row.visits||0),opportunities:Number(row.opportunities||0),lastActivityAt:row.last_activity_at?new Date(row.last_activity_at).toISOString():null}))
+    const operations=operationsResult.rows[0]||{}
+    return {generatedAt:new Date().toISOString(),periodDays:days,summary:Object.fromEntries(Object.entries(operations).map(([key,value])=>[key,Number(value||0)])),daily:dailyResult.rows.map(row=>({day:row.day,accesses:Number(row.accesses||0),pageViews:Number(row.page_views||0),interactions:Number(row.interactions||0),valAnalyses:Number(row.val_analyses||0)})),pages:pagesResult.rows.map(row=>({page:row.page,views:Number(row.views||0),users:Number(row.users||0)})),users}
   }
 
   async createUser(actor,input){

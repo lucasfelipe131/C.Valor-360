@@ -41,11 +41,31 @@ const domainError=(message,statusCode)=>Object.assign(new Error(message),{status
 const iso=value=>value instanceof Date?value.toISOString():value
 const jsonObject=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{}
 const relationshipFields=['preferredName','birthday','family','spouse','children','favoriteTeam','likesFishing','fishingStyle','hobbies','leisure','favoriteFoods','favoriteDrinks','events','communicationNotes','personalValues','negotiationPreferences','importantDates','personalNotes']
-const commercialFields=['phone','email','property','purchaseCurrentSeason','purchasePreviousSeason','potentialTotal','openPotential','walletShare','mainCategories','competitors','commercialNotes']
+const commercialFields=['phone','email','property','purchaseCurrentSeason','purchasePreviousSeason','potentialTotal','openPotential','walletShare','targetShare','creditLimit','creditUsed','grossMarginPercent','paymentTerms','decisionWindow','commercialRisk','mainCategories','competitors','commercialNotes']
+const commercialNumbers=new Set(['purchaseCurrentSeason','purchasePreviousSeason','potentialTotal','openPotential','walletShare','targetShare','creditLimit','creditUsed','grossMarginPercent'])
+const commercialPercentages=new Set(['walletShare','targetShare','grossMarginPercent'])
 const limitedText=(value,max=2000)=>String(value??'').trim().slice(0,max)
 const sanitizeRelationship=value=>Object.fromEntries(relationshipFields.filter(key=>Object.prototype.hasOwnProperty.call(value||{},key)).map(key=>[key,key==='likesFishing'?Boolean(value?.[key]):limitedText(value?.[key],key==='personalNotes'?10_000:2000)]))
 const sanitizeSurveyRelationship=value=>Object.fromEntries(Object.entries(sanitizeRelationship(value)).filter(([key,item])=>key==='likesFishing'||item!==''))
-const sanitizeCommercial=value=>Object.fromEntries(commercialFields.filter(key=>Object.prototype.hasOwnProperty.call(value||{},key)).map(key=>[key,['purchaseCurrentSeason','purchasePreviousSeason','potentialTotal','openPotential','walletShare'].includes(key)?parseMoney(value?.[key]):limitedText(value?.[key],key==='commercialNotes'?10_000:2000)]))
+const sanitizeCommercial=value=>Object.fromEntries(commercialFields.filter(key=>Object.prototype.hasOwnProperty.call(value||{},key)).map(key=>{
+  const parsed=commercialNumbers.has(key)?parseMoney(value?.[key]):limitedText(value?.[key],['commercialNotes','commercialRisk'].includes(key)?10_000:2000)
+  return [key,commercialPercentages.has(key)&&parsed!==null?Math.max(0,Math.min(100,parsed)):parsed]
+}))
+const derivedCommercial=value=>{
+  const commercial={...jsonObject(value)}
+  const purchases=parseMoney(commercial.purchaseCurrentSeason)
+  const potential=parseMoney(commercial.potentialTotal)
+  const previous=parseMoney(commercial.purchasePreviousSeason)
+  const creditLimit=parseMoney(commercial.creditLimit)
+  const creditUsed=parseMoney(commercial.creditUsed)
+  if(potential!==null&&purchases!==null){
+    commercial.openPotential=Math.max(0,potential-purchases)
+    commercial.realizedShare=potential>0?Math.min(100,Math.max(0,purchases/potential*100)):0
+  }
+  if(previous!==null&&previous>0&&purchases!==null)commercial.purchaseGrowthPercent=(purchases-previous)/previous*100
+  if(creditLimit!==null&&creditUsed!==null)commercial.creditAvailable=Math.max(0,creditLimit-creditUsed)
+  return commercial
+}
 const snapshotFor=(result,source)=>({...jsonObject(result),profileVersion:String(result?.profileVersion||'producer-360-v1'),profileSource:source})
 const profileSourceKey=(source,externalKey,answers)=>`${source}:${externalKey}:${createHash('sha256').update(JSON.stringify(answers||{})).digest('hex')}`.slice(0,240)
 const sanitizeProfileResult=value=>{
@@ -68,7 +88,7 @@ const canonicalSurveyCommercial=(result,currentValue,previousValue)=>{
   if(isQ27Opportunity(current)||legacyQ27){delete current.opportunity;delete current.opportunityProvenance}
   const merged={...incoming,...current}
   for(const key of ['phone','email'])if(limitedText(incoming[key]))merged[key]=limitedText(incoming[key])
-  return merged
+  return derivedCommercial(merged)
 }
 const surveyCommercialForWrite=async(connection,tenantId,ownerId,externalKey,result)=>{
   await connection.query(`SELECT pg_advisory_xact_lock(hashtextextended($1::text||':'||$2::text||':'||$3::text,0))`,[tenantId,ownerId,externalKey])
@@ -78,7 +98,7 @@ const surveyCommercialForWrite=async(connection,tenantId,ownerId,externalKey,res
 const clientFromRow=(row,{defaults=false}={})=>{
   const snapshot=jsonObject(sanitizeProfileResult(row.profile_snapshot))
   const rowCommercial=jsonObject(row.commercial_profile)
-  const commercial={...jsonObject(snapshot.commercial),...rowCommercial}
+  const commercial=derivedCommercial({...jsonObject(snapshot.commercial),...rowCommercial})
   if(row.purchase_total!==undefined)commercial.purchaseTotal=Number(row.purchase_total||0)
   if(row.purchase_count!==undefined)commercial.purchaseCount=Number(row.purchase_count||0)
   if(row.last_purchase_at)commercial.lastPurchaseAt=iso(row.last_purchase_at)
@@ -110,7 +130,7 @@ const clientFromRow=(row,{defaults=false}={})=>{
 const surveyRecord=row=>({token:row.token,producerName:row.producer_name,consultantName:row.consultant_name,status:row.status,answers:row.answers||undefined,result:sanitizeProfileResult(row.result)||undefined,createdAt:iso(row.created_at),expiresAt:iso(row.expires_at),submittedAt:iso(row.submitted_at),integratedAt:iso(row.integrated_at)})
 const fallbackSurveyRecord=survey=>({...survey,result:sanitizeProfileResult(survey.result)||undefined})
 const visitRecord=row=>({id:row.id,clientId:row.client_external_key||row.client_id,scheduledAt:iso(row.scheduled_at),objective:row.objective||'',processAgreement:row.process_agreement||'',summary:row.summary||'',nextCommitment:row.next_commitment||'',nextActionAt:iso(row.next_action_at),status:row.status||'Agendada',createdAt:iso(row.created_at),updatedAt:iso(row.updated_at)})
-const opportunityRecord=row=>({id:`o-${row.client_external_key||row.client_id}`,databaseId:row.id,clientId:row.client_external_key||row.client_id,title:row.title,value:row.estimated_value==null?0:Number(row.estimated_value),stage:row.stage||'Diagnóstico',candidateKey:row.evidence?.find?.(item=>item?.candidateKey)?.candidateKey||row.external_key||'',stageEvidence:row.evidence?.find?.(item=>item?.type==='manual_advance'||item?.type==='manual_set'||item?.type==='won'),nextAction:row.next_action||'',nextActionAt:iso(row.next_action_at),updatedAt:iso(row.updated_at)})
+const opportunityRecord=row=>({id:`o-${row.client_external_key||row.client_id}`,databaseId:row.id,clientId:row.client_external_key||row.client_id,title:row.title,value:row.estimated_value==null?0:Number(row.estimated_value),probability:row.probability==null?null:Number(row.probability),stage:row.stage||'Diagnóstico',candidateKey:row.evidence?.find?.(item=>item?.candidateKey)?.candidateKey||row.external_key||'',stageEvidence:row.evidence?.find?.(item=>item?.type==='manual_advance'||item?.type==='manual_set'||item?.type==='won'),nextAction:row.next_action||'',nextActionAt:iso(row.next_action_at),updatedAt:iso(row.updated_at)})
 
 export class ValRepository{
   constructor({db,readStore,saveStore,tenantId}){this.db=db;this.readStore=readStore;this.saveStore=saveStore;this.tenantId=tenantId}
@@ -192,6 +212,115 @@ export class ValRepository{
     }catch{throw serviceError('A carteira não pôde ser lida no PostgreSQL configurado.')}
   }
 
+  async getClientOverview(clientId,ownerId){
+    if(!this.db.configured)throw serviceError('O PostgreSQL é obrigatório para consolidar a visão global do produtor.')
+    try{
+      const selected=await this.db.query(`SELECT id,external_key,name,commercial_profile FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND (id::text=$3 OR external_key=$3) AND status='active' LIMIT 1`,[this.tenantId,ownerId,clientId])
+      if(!selected.rowCount)throw domainError('Produtor não encontrado na sua carteira.',404)
+      const client=selected.rows[0]
+      const [businessResult,monthlyResult,categoryResult,pipelineResult,technicalResult,workspaceResult,manualRecordResult]=await Promise.all([
+        this.db.query(`SELECT
+          COALESCE(SUM(value) FILTER (WHERE outcome='won'),0) purchase_total,
+          COUNT(*) FILTER (WHERE outcome='won')::int purchase_count,
+          COUNT(*) FILTER (WHERE outcome IN ('won','lost'))::int known_outcomes,
+          COUNT(*) FILTER (WHERE outcome='won')::int wins,
+          COUNT(*) FILTER (WHERE outcome='lost')::int losses,
+          COALESCE(SUM(margin) FILTER (WHERE outcome='won'),0) margin_total,
+          MAX(occurred_at) FILTER (WHERE outcome='won') last_purchase_at
+          FROM business_events WHERE tenant_id=$1 AND client_id=$2`,[this.tenantId,client.id]),
+        this.db.query(`SELECT TO_CHAR(DATE_TRUNC('month',occurred_at),'YYYY-MM') month,
+          COALESCE(SUM(value) FILTER (WHERE outcome='won'),0) won_value,
+          COALESCE(SUM(value) FILTER (WHERE outcome='open'),0) open_value,
+          COUNT(*) FILTER (WHERE outcome='won')::int won_count
+          FROM business_events WHERE tenant_id=$1 AND client_id=$2 AND occurred_at>=DATE_TRUNC('month',NOW())-INTERVAL '11 months'
+          GROUP BY DATE_TRUNC('month',occurred_at) ORDER BY DATE_TRUNC('month',occurred_at)`,[this.tenantId,client.id]),
+        this.db.query(`SELECT COALESCE(NULLIF(category,''),NULLIF(product,''),'Não categorizado') label,
+          COALESCE(SUM(value) FILTER (WHERE outcome='won'),0) value,
+          COUNT(*) FILTER (WHERE outcome='won')::int count
+          FROM business_events WHERE tenant_id=$1 AND client_id=$2
+          GROUP BY COALESCE(NULLIF(category,''),NULLIF(product,''),'Não categorizado')
+          ORDER BY COALESCE(SUM(value) FILTER (WHERE outcome='won'),0) DESC LIMIT 8`,[this.tenantId,client.id]),
+        this.db.query(`SELECT stage,COUNT(*)::int count,COALESCE(SUM(estimated_value),0) value,
+          COALESCE(SUM(estimated_value*COALESCE(probability,0)/100.0),0) weighted_value,
+          COUNT(*) FILTER (WHERE next_action_at<NOW() AND stage<>'Fechado')::int overdue
+          FROM opportunities WHERE tenant_id=$1 AND client_id=$2 GROUP BY stage ORDER BY stage`,[this.tenantId,client.id]),
+        this.db.query(`SELECT
+          (SELECT COUNT(*) FROM properties WHERE tenant_id=$1 AND client_id=$2)::int properties,
+          (SELECT COUNT(*) FROM fields field JOIN properties property ON property.id=field.property_id AND property.tenant_id=field.tenant_id WHERE field.tenant_id=$1 AND property.client_id=$2)::int fields,
+          (SELECT COUNT(*) FROM crop_seasons season JOIN fields field ON field.id=season.field_id AND field.tenant_id=season.tenant_id JOIN properties property ON property.id=field.property_id AND property.tenant_id=field.tenant_id WHERE season.tenant_id=$1 AND property.client_id=$2)::int crop_seasons,
+          (SELECT COUNT(*) FROM field_reports WHERE tenant_id=$1 AND client_id=$2)::int field_reports,
+          (SELECT COUNT(*) FROM soil_analyses WHERE tenant_id=$1 AND client_id=$2)::int soil_analyses,
+          (SELECT COUNT(*) FROM ndvi_observations WHERE tenant_id=$1 AND client_id=$2)::int ndvi,
+          (SELECT COUNT(*) FROM integration_events WHERE tenant_id=$1 AND owner_user_id=$3 AND source='manual-do-agronomo' AND client_external_key=$4)::int manual_events,
+          (SELECT MAX(occurred_at) FROM integration_events WHERE tenant_id=$1 AND owner_user_id=$3 AND source='manual-do-agronomo' AND client_external_key=$4) last_manual_sync`,[this.tenantId,client.id,ownerId,client.external_key]),
+        this.db.query(`SELECT producers,soil_analyses,updated_at FROM app_workspace_data WHERE workspace_id=$1 LIMIT 1`,[ownerId]),
+        this.db.query(`SELECT id,record_type,title,producer_name,updated_at FROM app_records WHERE workspace_id=$1 ORDER BY updated_at DESC LIMIT 300`,[ownerId])
+      ])
+      const business=businessResult.rows[0]||{}
+      const commercial=derivedCommercial(client.commercial_profile)
+      const currentPurchases=parseMoney(commercial.purchaseCurrentSeason)??0
+      const previousPurchases=parseMoney(commercial.purchasePreviousSeason)??0
+      const potentialTotal=parseMoney(commercial.potentialTotal)??0
+      const openPotential=potentialTotal>0?Math.max(0,potentialTotal-currentPurchases):0
+      const openStages=pipelineResult.rows.filter(item=>String(item.stage||'').toLowerCase()!=='fechado')
+      const openPipeline=openStages.reduce((sum,item)=>sum+Number(item.value||0),0)
+      const weightedPipeline=openStages.reduce((sum,item)=>sum+Number(item.weighted_value||0),0)
+      const purchaseTotal=Number(business.purchase_total||0)
+      const purchaseCount=Number(business.purchase_count||0)
+      const knownOutcomes=Number(business.known_outcomes||0)
+      const wins=Number(business.wins||0)
+      const grossMarginPercent=parseMoney(commercial.grossMarginPercent)
+      const workspace=workspaceResult.rows[0]||{}
+      const normalizeKey=value=>normalize(value).replace(/\s+/g,'-')
+      const clientKey=normalizeKey(client.external_key||client.name)
+      const clientName=normalize(client.name)
+      const producers=Array.isArray(workspace.producers)?workspace.producers:[]
+      const manualProducer=producers.find(item=>{
+        const candidate=jsonObject(item)
+        return [candidate.id,candidate.valor360ExternalKey,candidate.crmCode].some(value=>normalizeKey(value)===clientKey)||normalize(candidate.name||candidate.producerName)===clientName
+      })||null
+      const producerId=String(manualProducer?.id||'')
+      const workspaceSoil=(Array.isArray(workspace.soil_analyses)?workspace.soil_analyses:[]).filter(item=>{
+        const candidate=jsonObject(item)
+        return (producerId&&String(candidate.producerId||'')===producerId)||normalize(candidate.producerName||candidate.producer)===clientName
+      })
+      const directRecords=manualRecordResult.rows.filter(item=>normalize(item.producer_name)===clientName)
+      const technical=technicalResult.rows[0]||{}
+      const manualFields=Array.isArray(manualProducer?.fields)?manualProducer.fields:[]
+      const manualSeasons=new Set(manualFields.map(item=>String(jsonObject(item).season||'').trim()).filter(Boolean))
+      const manualNdvi=manualFields.reduce((sum,item)=>sum+(Array.isArray(jsonObject(item).ndviScenes)?jsonObject(item).ndviScenes.length:0),0)
+      const manualProperties=String(manualProducer?.properties||'').split(/[,;|]+/).map(item=>item.trim()).filter(Boolean).length
+      return {
+        generatedAt:new Date().toISOString(),
+        cloud:{storage:'postgresql',ownerScoped:true,workspaceUpdatedAt:iso(workspace.updated_at)||null},
+        business:{
+          purchaseTotal,purchaseCount,currentPurchases,previousPurchases,potentialTotal,openPotential,
+          openPipeline,weightedPipeline,forecast:currentPurchases+weightedPipeline,
+          averageTicket:purchaseCount?purchaseTotal/purchaseCount:0,
+          wins,losses:Number(business.losses||0),knownOutcomes,conversionRate:knownOutcomes?wins/knownOutcomes*100:null,
+          purchaseGrowthPercent:previousPurchases>0?(currentPurchases-previousPurchases)/previousPurchases*100:null,
+          potentialCoveragePercent:potentialTotal>0?Math.min(100,currentPurchases/potentialTotal*100):null,
+          pipelineCoveragePercent:openPotential>0?openPipeline/openPotential*100:null,
+          marginTotal:Number(business.margin_total||0),estimatedMargin:grossMarginPercent===null?null:currentPurchases*(grossMarginPercent/100),
+          lastPurchaseAt:iso(business.last_purchase_at)||null,
+          creditLimit:Number(commercial.creditLimit||0),creditUsed:Number(commercial.creditUsed||0),creditAvailable:Number(commercial.creditAvailable||0),
+          walletShare:commercial.walletShare??null,targetShare:commercial.targetShare??null,grossMarginPercent:grossMarginPercent,
+          paymentTerms:commercial.paymentTerms||'',decisionWindow:commercial.decisionWindow||'',commercialRisk:commercial.commercialRisk||''
+        },
+        monthly:monthlyResult.rows.map(row=>({month:row.month,wonValue:Number(row.won_value||0),openValue:Number(row.open_value||0),wonCount:Number(row.won_count||0)})),
+        categories:categoryResult.rows.map(row=>({label:row.label,value:Number(row.value||0),count:Number(row.count||0)})),
+        pipeline:pipelineResult.rows.map(row=>({stage:row.stage||'Sem etapa',count:Number(row.count||0),value:Number(row.value||0),weightedValue:Number(row.weighted_value||0),overdue:Number(row.overdue||0)})),
+        technical:{
+          properties:Math.max(Number(technical.properties||0),manualProperties,Number(Boolean(manualProducer))),fields:Math.max(Number(technical.fields||0),manualFields.length),cropSeasons:Math.max(Number(technical.crop_seasons||0),manualSeasons.size),fieldReports:Number(technical.field_reports||0),
+          soilAnalyses:Math.max(Number(technical.soil_analyses||0),workspaceSoil.length),ndvi:Math.max(Number(technical.ndvi||0),manualNdvi),manualEvents:Number(technical.manual_events||0),
+          directRecords:directRecords.length,lastSyncAt:iso(technical.last_manual_sync)||iso(workspace.updated_at)||null,
+          producer:manualProducer?{name:String(manualProducer.name||manualProducer.producerName||client.name).slice(0,180),city:String(manualProducer.city||manualProducer.municipality||'').slice(0,140),area:Number(manualProducer.area||0),cultures:Array.isArray(manualProducer.cultures)?manualProducer.cultures.slice(0,20):String(manualProducer.cultures||'').split(/[,;/|]+/).map(item=>item.trim()).filter(Boolean).slice(0,20),propertyLabel:String(manualProducer.properties||manualProducer.property||'').slice(0,500),fieldCount:Array.isArray(manualProducer.fields)?manualProducer.fields.length:0,mappingStatus:String(manualProducer.mappingStatus||'').slice(0,60)}:null,
+          recentRecords:directRecords.slice(0,6).map(item=>({id:String(item.id),type:String(item.record_type||''),title:String(item.title||'Registro técnico').slice(0,240),updatedAt:iso(item.updated_at)}))
+        }
+      }
+    }catch(error){if(error.statusCode)throw error;throw serviceError('A visão global não pôde ser consolidada no PostgreSQL configurado.')}
+  }
+
   async updateClient(clientId,input,ownerId){
     if(!this.db.configured)throw serviceError('O PostgreSQL é obrigatório para editar produtores.')
     const name=limitedText(input.name,180);if(!name)throw domainError('Informe o nome do produtor.',400)
@@ -200,7 +329,7 @@ export class ValRepository{
         const selected=await connection.query(`SELECT id,commercial_profile,relationship_profile FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND (id::text=$3 OR external_key=$3) AND status='active' LIMIT 1 FOR UPDATE`,[this.tenantId,ownerId,clientId])
         if(!selected.rowCount)throw domainError('Produtor não encontrado na sua carteira.',404)
         const area=parseCultivatedArea(input.area)
-        const commercial={...jsonObject(selected.rows[0].commercial_profile),...sanitizeCommercial(input.commercial||{})}
+        const commercial=derivedCommercial({...jsonObject(selected.rows[0].commercial_profile),...sanitizeCommercial(input.commercial||{})})
         const relationship={...jsonObject(selected.rows[0].relationship_profile),...sanitizeRelationship(input.relationship||{})}
         await connection.query(`UPDATE clients SET name=$1,municipality=$2,total_area_ha=$3,area_band=$4,cultures=$5,preferred_channel=$6,commercial_profile=$7,relationship_profile=$8,updated_at=NOW() WHERE id=$9 AND tenant_id=$10 AND consultant_id=$11`,[name,limitedText(input.municipality,140)||null,area.totalAreaHa,area.areaBand,limitedText(input.cultures,1000)||null,limitedText(input.servicePreference,60)||null,jsonbParameter(commercial),jsonbParameter(relationship),selected.rows[0].id,this.tenantId,ownerId])
         await connection.query(`INSERT INTO audit_events (tenant_id,actor_id,action,entity_type,entity_id,after_data,created_at) VALUES ($1,$2,'client_updated','client',$3,$4,NOW())`,[this.tenantId,ownerId,selected.rows[0].id,jsonbParameter({name,municipality:input.municipality})])
@@ -233,6 +362,10 @@ export class ValRepository{
     try{
       const result=await this.db.query(`SELECT c.*,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.answers,p.evidence profile_evidence,p.source_survey_id,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,
         COALESCE(NULLIF(p.profile_snapshot,'{}'::jsonb),survey.result,'{}'::jsonb) profile_snapshot,
+        COALESCE((SELECT SUM(value) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won'),0) purchase_total,
+        COALESCE((SELECT COUNT(*) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won'),0) purchase_count,
+        (SELECT MAX(occurred_at) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won') last_purchase_at,
+        COALESCE((SELECT SUM(estimated_value) FROM opportunities opportunity WHERE opportunity.tenant_id=c.tenant_id AND opportunity.client_id=c.id AND opportunity.stage<>'Fechado'),0) open_pipeline,
         COALESCE((SELECT jsonb_agg(s ORDER BY s.created_at DESC) FROM (SELECT id,source_event_id,signal_type,severity,title,evidence,commercial_hypothesis,requires_agronomist,status,created_at FROM agronomic_signals WHERE tenant_id=$1 AND client_id=c.id ORDER BY created_at DESC LIMIT 20) s),'[]'::jsonb) signals,
         COALESCE((SELECT jsonb_build_object('wins',count(*) FILTER (WHERE outcome='won'),'losses',count(*) FILTER (WHERE outcome='lost'),'revenue',COALESCE(sum(value) FILTER (WHERE outcome='won'),0)) FROM business_events WHERE tenant_id=$1 AND client_id=c.id),'{}'::jsonb) learning,
         COALESCE((SELECT jsonb_build_object('rated',count(*),'average_rating',round(avg(f.rating)::numeric,2),'accepted',count(*) FILTER (WHERE f.outcome='accepted'),'edited',count(*) FILTER (WHERE f.outcome='edited'),'executed',count(*) FILTER (WHERE f.outcome='executed'),'won',count(*) FILTER (WHERE f.outcome='won'),'lost',count(*) FILTER (WHERE f.outcome='lost')) FROM val_feedback f JOIN val_recommendations r ON r.id=f.recommendation_id AND r.tenant_id=f.tenant_id WHERE f.tenant_id=$1 AND (r.client_id=c.id OR r.client_external_key=c.external_key)),'{}'::jsonb) feedback_learning,
@@ -240,7 +373,7 @@ export class ValRepository{
         COALESCE((SELECT jsonb_agg(b ORDER BY b.occurred_at DESC) FROM (SELECT id,source,external_id,occurred_at,outcome,category,product,quantity,value,margin,currency,loss_reason,payload FROM business_events WHERE tenant_id=$1 AND client_id=c.id ORDER BY occurred_at DESC LIMIT 50) b),'[]'::jsonb) business_history,
         COALESCE((SELECT jsonb_agg(v ORDER BY COALESCE(v.updated_at,v.created_at) DESC) FROM (SELECT id,scheduled_at,objective,process_agreement,summary,next_commitment,next_action_at,status,created_at,updated_at FROM visits WHERE tenant_id=$1 AND client_id=c.id ORDER BY COALESCE(updated_at,created_at) DESC LIMIT 30) v),'[]'::jsonb) visits,
         COALESCE((SELECT jsonb_agg(i ORDER BY i.occurred_at DESC) FROM (SELECT id,visit_id,channel,direction,occurred_at,summary,commitments,source,source_external_id,created_at FROM interactions WHERE tenant_id=$1 AND client_id=c.id ORDER BY occurred_at DESC LIMIT 50) i),'[]'::jsonb) interactions,
-        COALESCE((SELECT jsonb_agg(o ORDER BY o.updated_at DESC) FROM (SELECT opportunity.id,opportunity.external_key,opportunity.title,opportunity.category,opportunity.hypothesis,opportunity.estimated_value,opportunity.estimated_margin,opportunity.stage,opportunity.next_action,opportunity.next_action_at,opportunity.evidence,opportunity.created_at,opportunity.updated_at,(SELECT jsonb_build_object('baseline',value_case.baseline,'alternative',value_case.alternative,'assumptions',value_case.assumptions,'expected_value',value_case.expected_value,'low_value',value_case.low_value,'high_value',value_case.high_value,'total_incremental_cost',value_case.total_incremental_cost,'roi_percent',value_case.roi_percent,'proof_plan',value_case.proof_plan,'validated_at',value_case.validated_at) FROM value_cases value_case WHERE value_case.tenant_id=$1 AND value_case.opportunity_id=opportunity.id ORDER BY value_case.created_at DESC LIMIT 1) value_case FROM opportunities opportunity WHERE opportunity.tenant_id=$1 AND opportunity.client_id=c.id ORDER BY opportunity.updated_at DESC LIMIT 30) o),'[]'::jsonb) opportunities,
+        COALESCE((SELECT jsonb_agg(o ORDER BY o.updated_at DESC) FROM (SELECT opportunity.id,opportunity.external_key,opportunity.title,opportunity.category,opportunity.hypothesis,opportunity.estimated_value,opportunity.estimated_margin,opportunity.probability,opportunity.stage,opportunity.next_action,opportunity.next_action_at,opportunity.evidence,opportunity.created_at,opportunity.updated_at,(SELECT jsonb_build_object('baseline',value_case.baseline,'alternative',value_case.alternative,'assumptions',value_case.assumptions,'expected_value',value_case.expected_value,'low_value',value_case.low_value,'high_value',value_case.high_value,'total_incremental_cost',value_case.total_incremental_cost,'roi_percent',value_case.roi_percent,'proof_plan',value_case.proof_plan,'validated_at',value_case.validated_at) FROM value_cases value_case WHERE value_case.tenant_id=$1 AND value_case.opportunity_id=opportunity.id ORDER BY value_case.created_at DESC LIMIT 1) value_case FROM opportunities opportunity WHERE opportunity.tenant_id=$1 AND opportunity.client_id=c.id ORDER BY opportunity.updated_at DESC LIMIT 200) o),'[]'::jsonb) opportunities,
         COALESCE((SELECT jsonb_agg(prop ORDER BY prop.updated_at DESC) FROM (SELECT property.id,property.external_key,property.name,property.municipality,property.area_ha,property.metadata,property.created_at,property.updated_at,COALESCE((SELECT jsonb_agg(field_record ORDER BY field_record.created_at DESC) FROM (SELECT field.id,field.external_key,field.name,field.area_ha,field.geometry_ref,field.geometry_version,field.created_at,COALESCE((SELECT jsonb_agg(season_record ORDER BY season_record.created_at DESC) FROM (SELECT season,crop,cultivar,area_ha,productivity_target,productivity_actual,unit,planted_at,harvested_at,created_at FROM crop_seasons WHERE tenant_id=$1 AND field_id=field.id ORDER BY created_at DESC LIMIT 12) season_record),'[]'::jsonb) seasons FROM fields field WHERE field.tenant_id=$1 AND field.property_id=property.id ORDER BY field.created_at DESC LIMIT 50) field_record),'[]'::jsonb) fields FROM properties property WHERE property.tenant_id=$1 AND property.client_id=c.id ORDER BY property.updated_at DESC LIMIT 30) prop),'[]'::jsonb) properties,
         COALESCE((SELECT jsonb_agg(report ORDER BY COALESCE(report.observed_at,report.created_at) DESC) FROM (SELECT field_report.id,field_report.source,field_report.external_id,field_report.property_external_key,field_report.field_external_key,field_report.observed_at,field_report.crop_stage,field_report.summary,field_report.validated_actions,field_report.validation_evidence,field_report.validated_at,field_report.created_at,COALESCE((SELECT jsonb_agg(observation ORDER BY observation.created_at DESC) FROM (SELECT id,observation_type,value,unit,confidence,evidence_ref,requires_review,created_at FROM field_observations WHERE tenant_id=$1 AND report_id=field_report.id ORDER BY created_at DESC LIMIT 50) observation),'[]'::jsonb) observations FROM field_reports field_report WHERE field_report.tenant_id=$1 AND field_report.client_id=c.id ORDER BY COALESCE(field_report.observed_at,field_report.created_at) DESC LIMIT 20) report),'[]'::jsonb) field_reports,
         COALESCE((SELECT jsonb_agg(analysis ORDER BY COALESCE(analysis.sampled_at,analysis.created_at::date) DESC) FROM (SELECT soil.id,soil.source,soil.external_id,soil.property_external_key,soil.field_external_key,soil.laboratory,soil.method,soil.depth_from_cm,soil.depth_to_cm,soil.sampled_at,soil.validated_flags,soil.validation_evidence,soil.validated_at,soil.created_at,COALESCE((SELECT jsonb_agg(measurement ORDER BY measurement.created_at DESC) FROM (SELECT id,sample_key,analyte,raw_value,raw_unit,normalized_value,normalized_unit,method,interpretation,confidence,created_at FROM soil_measurements WHERE tenant_id=$1 AND analysis_id=soil.id ORDER BY created_at DESC LIMIT 100) measurement),'[]'::jsonb) measurements FROM soil_analyses soil WHERE soil.tenant_id=$1 AND soil.client_id=c.id ORDER BY COALESCE(soil.sampled_at,soil.created_at::date) DESC LIMIT 20) analysis),'[]'::jsonb) soil_analyses,
@@ -371,7 +504,7 @@ export class ValRepository{
         const importedClients=clients.slice(0,2000)
         const lockKeys=[...new Set(importedClients.map(item=>String(item.id||'').slice(0,180)))].sort()
         for(const externalKey of lockKeys)await connection.query(`SELECT pg_advisory_xact_lock(hashtextextended($1::text||':'||$2::text||':'||$3::text,0))`,[tenantId,ownerId,externalKey])
-        for(const item of importedClients){const area=parseCultivatedArea(item.area);const externalKey=String(item.id||'').slice(0,180);const upserted=await connection.query(`INSERT INTO clients (tenant_id,consultant_id,external_key,name,municipality,total_area_ha,area_band,commercial_profile,status,source,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active','commercial_import',NOW()) ON CONFLICT (tenant_id,consultant_id,external_key) DO UPDATE SET name=EXCLUDED.name,municipality=COALESCE(EXCLUDED.municipality,clients.municipality),total_area_ha=COALESCE(EXCLUDED.total_area_ha,clients.total_area_ha),area_band=COALESCE(EXCLUDED.area_band,clients.area_band),commercial_profile=(clients.commercial_profile||EXCLUDED.commercial_profile)||CASE WHEN clients.commercial_profile?'property' THEN jsonb_build_object('property',clients.commercial_profile->'property') ELSE '{}'::jsonb END,updated_at=NOW() RETURNING id,external_key`,[tenantId,ownerId,externalKey,String(item.name||'').slice(0,180),item.municipality||null,area.totalAreaHa,area.areaBand,jsonbParameter(item.commercial||{})]);clientInternalIds.set(upserted.rows[0].external_key,upserted.rows[0].id)}
+        for(const item of importedClients){const area=parseCultivatedArea(item.area);const externalKey=String(item.id||'').slice(0,180);const upserted=await connection.query(`INSERT INTO clients (tenant_id,consultant_id,external_key,name,municipality,total_area_ha,area_band,commercial_profile,status,source,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active','commercial_import',NOW()) ON CONFLICT (tenant_id,consultant_id,external_key) DO UPDATE SET name=EXCLUDED.name,municipality=COALESCE(EXCLUDED.municipality,clients.municipality),total_area_ha=COALESCE(EXCLUDED.total_area_ha,clients.total_area_ha),area_band=COALESCE(EXCLUDED.area_band,clients.area_band),commercial_profile=(clients.commercial_profile||EXCLUDED.commercial_profile)||CASE WHEN clients.commercial_profile?'property' THEN jsonb_build_object('property',clients.commercial_profile->'property') ELSE '{}'::jsonb END,updated_at=NOW() RETURNING id,external_key`,[tenantId,ownerId,externalKey,String(item.name||'').slice(0,180),item.municipality||null,area.totalAreaHa,area.areaBand,jsonbParameter(derivedCommercial(item.commercial||{}))]);clientInternalIds.set(upserted.rows[0].external_key,upserted.rows[0].id)}
         const clientKeys=new Map(clients.map(item=>[normalize(item.name),item.id]))
         for(let index=0;index<rows.slice(0,5000).length;index++){
           const row=rows[index]||{};const name=String(row[mapping.client]||'').trim();if(!name)continue
