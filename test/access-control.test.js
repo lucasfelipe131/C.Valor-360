@@ -68,7 +68,7 @@ test('painel de métricas é exclusivo do administrador e consolida por tenant',
  const db={configured:true,query:async(sql,params)=>{
   calls.push({sql,params})
   if(sql.includes('SELECT user_record.id,user_record.name'))return {rows:[{id:'00000000-0000-4000-8000-000000000010',name:'Consultor Norte',email:'norte@example.com',status:'active',role:'consultant',producer_count:3,accesses:2,page_views:8,direct_interactions:4,val_analyses:1,visits:2,opportunities:2,last_activity_at:new Date('2026-08-11T12:00:00Z')}]}
-  if(sql.includes('WITH days AS'))return {rows:[{day:'2026-08-11',accesses:2,page_views:8,interactions:4,val_analyses:1}]}
+  if(sql.includes('WITH date_series AS'))return {rows:[{day_key:'2026-08-11',accesses:2,page_views:8,interactions:4,val_analyses:1}]}
   if(sql.includes('SELECT page,COUNT(*)'))return {rows:[{page:'client360',views:8,users:1}]}
   return {rows:[{users_total:2,users_active:2,users_blocked:0,active_users_period:1,producers:3,visits:2,opportunities:2,val_analyses:1,val_feedback:1,manual_syncs:2,accesses:2,page_views:8,direct_interactions:4}]}
  }}
@@ -80,6 +80,11 @@ test('painel de métricas é exclusivo do administrador e consolida por tenant',
  assert.equal(result.users[0].producerCount,3)
  assert.equal(result.users[0].lastActivityAt,'2026-08-11T12:00:00.000Z')
  assert.deepEqual(result.pages,[{page:'client360',views:8,users:1}])
+ assert.equal(result.daily[0].day,'2026-08-11')
+ const dailyCheck=calls.find(call=>call.sql.includes('WITH date_series AS'))
+ assert.match(dailyCheck.sql,/AS event_day/)
+ assert.match(dailyCheck.sql,/AS day_key/)
+ assert.doesNotMatch(dailyCheck.sql,/::date\s+day\b/)
  assert.equal(calls.length,4)
  assert.ok(calls.every(call=>call.params[0]===tenantId))
 })

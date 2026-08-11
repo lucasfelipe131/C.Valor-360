@@ -228,7 +228,7 @@ export class ValRepository{
           COALESCE(SUM(margin) FILTER (WHERE outcome='won'),0) margin_total,
           MAX(occurred_at) FILTER (WHERE outcome='won') last_purchase_at
           FROM business_events WHERE tenant_id=$1 AND client_id=$2`,[this.tenantId,client.id]),
-        this.db.query(`SELECT TO_CHAR(DATE_TRUNC('month',occurred_at),'YYYY-MM') month,
+        this.db.query(`SELECT TO_CHAR(DATE_TRUNC('month',occurred_at),'YYYY-MM') AS month_key,
           COALESCE(SUM(value) FILTER (WHERE outcome='won'),0) won_value,
           COALESCE(SUM(value) FILTER (WHERE outcome='open'),0) open_value,
           COUNT(*) FILTER (WHERE outcome='won')::int won_count
@@ -307,7 +307,7 @@ export class ValRepository{
           walletShare:commercial.walletShare??null,targetShare:commercial.targetShare??null,grossMarginPercent:grossMarginPercent,
           paymentTerms:commercial.paymentTerms||'',decisionWindow:commercial.decisionWindow||'',commercialRisk:commercial.commercialRisk||''
         },
-        monthly:monthlyResult.rows.map(row=>({month:row.month,wonValue:Number(row.won_value||0),openValue:Number(row.open_value||0),wonCount:Number(row.won_count||0)})),
+        monthly:monthlyResult.rows.map(row=>({month:row.month_key,wonValue:Number(row.won_value||0),openValue:Number(row.open_value||0),wonCount:Number(row.won_count||0)})),
         categories:categoryResult.rows.map(row=>({label:row.label,value:Number(row.value||0),count:Number(row.count||0)})),
         pipeline:pipelineResult.rows.map(row=>({stage:row.stage||'Sem etapa',count:Number(row.count||0),value:Number(row.value||0),weightedValue:Number(row.weighted_value||0),overdue:Number(row.overdue||0)})),
         technical:{

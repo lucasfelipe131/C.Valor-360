@@ -116,11 +116,11 @@ export class AccessRepository{
         (SELECT MAX(event.occurred_at) FROM usage_events event WHERE event.tenant_id=$1 AND event.user_id=user_record.id) last_activity_at
         FROM users user_record JOIN memberships membership ON membership.user_id=user_record.id AND membership.tenant_id=$1
         ORDER BY COALESCE(user_record.last_login_at,user_record.created_at) DESC`,[this.tenantId,interval]),
-      this.db.query(`WITH days AS (SELECT GENERATE_SERIES(CURRENT_DATE-($2::int-1),CURRENT_DATE,'1 day')::date day),
-        usage AS (SELECT occurred_at::date day,COUNT(*) FILTER (WHERE event_type='login')::int accesses,COUNT(*) FILTER (WHERE event_type='page_view')::int page_views,COUNT(*) FILTER (WHERE event_type NOT IN ('login','page_view','val_analysis'))::int interactions FROM usage_events WHERE tenant_id=$1 AND occurred_at>=CURRENT_DATE-($2::int-1) GROUP BY occurred_at::date),
-        analyses AS (SELECT created_at::date day,COUNT(*)::int val_analyses FROM val_recommendations WHERE tenant_id=$1 AND created_at>=CURRENT_DATE-($2::int-1) GROUP BY created_at::date)
-        SELECT TO_CHAR(days.day,'YYYY-MM-DD') day,COALESCE(usage.accesses,0)::int accesses,COALESCE(usage.page_views,0)::int page_views,COALESCE(usage.interactions,0)::int interactions,COALESCE(analyses.val_analyses,0)::int val_analyses
-        FROM days LEFT JOIN usage USING(day) LEFT JOIN analyses USING(day) ORDER BY days.day`,[this.tenantId,days]),
+      this.db.query(`WITH date_series AS (SELECT GENERATE_SERIES(CURRENT_DATE-($2::int-1),CURRENT_DATE,'1 day')::date AS event_day),
+        usage AS (SELECT occurred_at::date AS event_day,COUNT(*) FILTER (WHERE event_type='login')::int accesses,COUNT(*) FILTER (WHERE event_type='page_view')::int page_views,COUNT(*) FILTER (WHERE event_type NOT IN ('login','page_view','val_analysis'))::int interactions FROM usage_events WHERE tenant_id=$1 AND occurred_at>=CURRENT_DATE-($2::int-1) GROUP BY occurred_at::date),
+        analyses AS (SELECT created_at::date AS event_day,COUNT(*)::int val_analyses FROM val_recommendations WHERE tenant_id=$1 AND created_at>=CURRENT_DATE-($2::int-1) GROUP BY created_at::date)
+        SELECT TO_CHAR(date_series.event_day,'YYYY-MM-DD') AS day_key,COALESCE(usage.accesses,0)::int accesses,COALESCE(usage.page_views,0)::int page_views,COALESCE(usage.interactions,0)::int interactions,COALESCE(analyses.val_analyses,0)::int val_analyses
+        FROM date_series LEFT JOIN usage USING(event_day) LEFT JOIN analyses USING(event_day) ORDER BY date_series.event_day`,[this.tenantId,days]),
       this.db.query(`SELECT page,COUNT(*)::int views,COUNT(DISTINCT user_id)::int users FROM usage_events WHERE tenant_id=$1 AND event_type='page_view' AND occurred_at>=NOW()-$2::interval AND page IS NOT NULL GROUP BY page ORDER BY views DESC LIMIT 12`,[this.tenantId,interval]),
       this.db.query(`SELECT
         (SELECT COUNT(*) FROM users user_record JOIN memberships membership ON membership.user_id=user_record.id AND membership.tenant_id=$1)::int users_total,
@@ -139,7 +139,7 @@ export class AccessRepository{
     ])
     const users=usersResult.rows.map(row=>({...accountFromRow(row,this.tenantId),producerCount:Number(row.producer_count||0),accesses:Number(row.accesses||0),pageViews:Number(row.page_views||0),directInteractions:Number(row.direct_interactions||0),valAnalyses:Number(row.val_analyses||0),visits:Number(row.visits||0),opportunities:Number(row.opportunities||0),lastActivityAt:row.last_activity_at?new Date(row.last_activity_at).toISOString():null}))
     const operations=operationsResult.rows[0]||{}
-    return {generatedAt:new Date().toISOString(),periodDays:days,summary:Object.fromEntries(Object.entries(operations).map(([key,value])=>[key,Number(value||0)])),daily:dailyResult.rows.map(row=>({day:row.day,accesses:Number(row.accesses||0),pageViews:Number(row.page_views||0),interactions:Number(row.interactions||0),valAnalyses:Number(row.val_analyses||0)})),pages:pagesResult.rows.map(row=>({page:row.page,views:Number(row.views||0),users:Number(row.users||0)})),users}
+    return {generatedAt:new Date().toISOString(),periodDays:days,summary:Object.fromEntries(Object.entries(operations).map(([key,value])=>[key,Number(value||0)])),daily:dailyResult.rows.map(row=>({day:row.day_key,accesses:Number(row.accesses||0),pageViews:Number(row.page_views||0),interactions:Number(row.interactions||0),valAnalyses:Number(row.val_analyses||0)})),pages:pagesResult.rows.map(row=>({page:row.page,views:Number(row.views||0),users:Number(row.users||0)})),users}
   }
 
   async createUser(actor,input){
