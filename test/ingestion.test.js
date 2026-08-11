@@ -68,3 +68,22 @@ test('rejeita datas, profundidades e percentuais fisicamente inválidos',()=>{
   assert.throws(()=>normalizeIntegrationEvent({type:'soil_analysis.completed',externalId:'soil-x',payload:{depthFromCm:30,depthToCm:10}}),/maior/)
   assert.throws(()=>normalizeIntegrationEvent({type:'field_report.completed',externalId:'field-x',payload:{findings:[{confidence:140}]}}),/entre 0 e 100/)
 })
+
+test('fechamento validado transforma o próximo passo em sinal auditável',()=>{
+  const event=normalizeIntegrationEvent({
+    type:'field_report.completed',
+    externalId:'field-report-season-001',
+    clientExternalKey:'produtor-1',
+    payload:{
+      reportId:'report-1',cropStage:'Soja · 2026/2027',summary:'Margem estimada e composição de custos revisadas.',
+      findings:[{type:'margin_per_ha',value:1250,unit:'BRL/ha',confidence:85}],
+      validatedActions:[{action:'Comparar população e custo por saca no talhão norte'}],
+      validation:{status:'approved',reviewerExternalId:'CREA-RS-123',reviewedAt:'2026-08-11T12:00:00-03:00'}
+    }
+  })
+  const signals=deriveSignals(event)
+  assert.equal(signals.length,1)
+  assert.equal(signals[0].type,'field_follow_up')
+  assert.match(signals[0].title,/Comparar população e custo por saca/i)
+  assert.equal(signals[0].evidence.findings[0].value,1250)
+})
