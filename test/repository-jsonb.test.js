@@ -168,7 +168,7 @@ test('visão global calcula o potencial e cruza somente o workspace do mesmo log
     calls.push({sql,params})
     if(sql.includes('SELECT id,external_key,name,commercial_profile FROM clients'))return {rowCount:1,rows:[{id:'00000000-0000-4000-8000-000000000020',external_key:'produtor-teste',name:'Produtor Teste',commercial_profile:{purchaseCurrentSeason:100_000,purchasePreviousSeason:80_000,potentialTotal:250_000,creditLimit:50_000,creditUsed:12_000,grossMarginPercent:15}}]}
     if(sql.includes('MAX(occurred_at) FILTER'))return {rows:[{purchase_total:180_000,purchase_count:3,known_outcomes:3,wins:2,losses:1,margin_total:20_000,last_purchase_at:new Date('2026-08-01T12:00:00Z')}]}
-    if(sql.includes("TO_CHAR(DATE_TRUNC('month'"))return {rows:[{month:'2026-08',won_value:100_000,open_value:0,won_count:1}]}
+    if(sql.includes("TO_CHAR(DATE_TRUNC('month'"))return {rows:[{month_key:'2026-08',won_value:100_000,open_value:0,won_count:1}]}
     if(sql.includes("COALESCE(NULLIF(category,''),NULLIF(product,''),'Não categorizado') label"))return {rows:[{label:'Sementes',value:100_000,count:1}]}
     if(sql.includes('SELECT stage,COUNT(*)'))return {rows:[{stage:'Diagnóstico',count:1,value:50_000,weighted_value:15_000,overdue:0}]}
     if(sql.includes('(SELECT COUNT(*) FROM properties'))return {rows:[{properties:0,fields:0,crop_seasons:0,field_reports:1,soil_analyses:0,ndvi:0,manual_events:2,last_manual_sync:new Date('2026-08-10T12:00:00Z')}]}
@@ -190,6 +190,7 @@ test('visão global calcula o potencial e cruza somente o workspace do mesmo log
   assert.equal(overview.business.creditAvailable,38_000)
   assert.equal(overview.business.estimatedMargin,15_000)
   assert.equal(overview.business.conversionRate,2/3*100)
+  assert.equal(overview.monthly[0].month,'2026-08')
   assert.equal(overview.technical.properties,2)
   assert.equal(overview.technical.fields,3)
   assert.equal(overview.technical.cropSeasons,2)
@@ -198,6 +199,9 @@ test('visão global calcula o potencial e cruza somente o workspace do mesmo log
   assert.equal(overview.technical.recentRecords[0].title,'Fechamento 2025/26')
   assert.equal(overview.cloud.ownerScoped,true)
   assert.equal('ownerId' in overview.cloud,false)
+  const monthlyCheck=calls.find(call=>call.sql.includes("TO_CHAR(DATE_TRUNC('month'"))
+  assert.match(monthlyCheck.sql,/AS month_key/)
+  assert.doesNotMatch(monthlyCheck.sql,/\)\s+month[,\s]/)
 })
 
 test('visão global não consulta métricas quando o produtor pertence a outro login',async()=>{
