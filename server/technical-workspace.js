@@ -7,7 +7,7 @@ import httpProxy from 'http-proxy'
 export const TECHNICAL_BASE_PATH='/tecnico'
 
 const manualApiPrefixes=[
- '/api/access','/api/admin','/api/agro','/api/diagnosis','/api/feedback',
+ '/api/access','/api/admin/usage','/api/admin/users','/api/agro','/api/diagnosis','/api/feedback',
  '/api/integrations/valor360/sync','/api/municipalities','/api/producer-import',
  '/api/profile','/api/records','/api/soil-analysis','/api/weather','/api/workspace','/api/zarc'
 ]
