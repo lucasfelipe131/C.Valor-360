@@ -120,3 +120,19 @@ test('resposta incompleta da OpenAI cai em fallback e preserva metadados de audi
   assert.deepEqual(modelRun.errorDetails,{reason:'max_output_tokens'})
   assert.deepEqual(providerOptions,{maxRetries:0,timeout:1000})
 })
+
+test('relatório de safra estruturado entra como evidência específica da VAL',()=>{
+  const advice=buildFallbackAdvice({
+    client:{name:'Produtor Teste'},signals:[],learning:{},
+    fieldReports:[{
+      id:'report-1',external_id:'manual-report-1',crop_stage:'Soja · 2026/2027',
+      summary:'Custo de R$ 4.800/ha, produtividade de 62 sc/ha e margem estimada de R$ 1.200/ha.',
+      observed_at:'2026-08-11T15:00:00Z',validated_at:'2026-08-11T15:10:00Z'
+    }]
+  })
+  const item=advice.evidence_used.find(evidence=>evidence.id==='latest-field-report')
+  assert.ok(item)
+  assert.match(item.claim_supported,/Soja · 2026\/2027/)
+  assert.match(item.claim_supported,/margem estimada de R\$ 1\.200\/ha/i)
+  assert.equal(item.quality,'high')
+})
