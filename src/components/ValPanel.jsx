@@ -15,6 +15,7 @@ const QUICK_PROMPTS=[
  {label:'Como abordar?',icon:MessageSquareText,prompt:'Como devo abordar este produtor agora e qual tom devo usar?'},
  {label:'Maior oportunidade',icon:Target,prompt:'Qual é a oportunidade de maior valor e como devo validá-la?'},
  {label:'Preparar visita',icon:Route,prompt:'Prepare um roteiro para a próxima visita, com perguntas e compromisso de saída.'},
+ {label:'Roteiro de fechamento',icon:ClipboardCheck,prompt:'Compare todas as oportunidades e gere perguntas, um roteiro da abertura ao fechamento e opções éticas de próximo compromisso.'},
  {label:'Tirar da inércia',icon:Zap,prompt:'Como criar tensão construtiva sem pressionar e tirar este produtor da zona de conforto?'}
 ]
 
@@ -31,12 +32,15 @@ function fallbackAdvice(client,mode,prompt=''){
  const strategic=mode==='strategic'
  const nextQuestion=opportunity?{stage:'problema',question:`Onde “${String(opportunity).toLowerCase()}” afeta uma decisão concreta hoje?`,ask_when:'Depois de alinhar objetivo e permissão para usar os dados.',purpose:'Validar se a hipótese cadastrada é prioridade real.',evidence_needed:'Exemplo, área, frequência e decisão afetada.'}:noNeedDeclared?{stage:'situação',question:'Desde a última resposta, surgiu alguma prioridade que valha explorar ou prefere manter o acompanhamento atual?',ask_when:'Depois de reconhecer a resposta anterior.',purpose:'Verificar mudança sem fabricar uma oportunidade.',evidence_needed:'Nova prioridade declarada ou preferência por não avançar.'}:{stage:'situação',question:'Qual decisão ou resultado merece mais atenção neste ciclo?',ask_when:'Na abertura da descoberta.',purpose:'Identificar uma prioridade sem pressupor um problema.',evidence_needed:'Decisão, resultado desejado e contexto.'}
  const valueProblem=opportunity?opportunity:noNeedDeclared?'Nenhuma necessidade adicional declarada; oportunidade não confirmada.':'Oportunidade ainda não identificada.'
- return {
+  return {
   answer:opportunity?`${approach(client)} ${strategic?'Compare agir, esperar e manter com as mesmas premissas antes de propor qualquer solução.':'Faça somente a próxima pergunta útil e preserve a decisão do produtor.'}`:noNeedDeclared?`${firstName} não declarou necessidade adicional. Confirme apenas se o contexto mudou e preserve a opção de manter o acompanhamento.`:'Ainda não há oportunidade registrada. Faça uma descoberta aberta antes de propor solução ou urgência.',
+  executive_brief:{priority:opportunity?'esta_semana':noNeedDeclared?'sem_acao':'acompanhar',headline:opportunity?`Confirmar se ${String(opportunity).toLowerCase()} é prioridade real`:noNeedDeclared?'Nenhuma nova necessidade foi declarada':'Descobrir a prioridade antes de propor',reason:opportunity?`A hipótese “${opportunity}” existe, mas ainda precisa ser confirmada.`:'Não há oportunidade sustentada por evidência suficiente.',action:opportunity?'Agendar uma conversa breve e registrar prioridade, valor e próximo compromisso.':'Fazer uma pergunta aberta no próximo contato.',deadline:opportunity?'Nos próximos 3 dias':'No próximo contato',question:nextQuestion.question,decision_basis:[opportunity?`Oportunidade registrada → validar antes de propor.`:'Oportunidade não confirmada → iniciar pela descoberta.'],evidence_ids:[],missing_data:opportunity?['prioridade real','linha de base','critério de prova']:['prioridade declarada']},
   objective:opportunity?`Validar a necessidade em ${String(opportunity).toLowerCase()} e definir como a hipótese seria comprovada ou descartada.`:noNeedDeclared?'Confirmar se o contexto mudou sem converter a resposta negativa em hipótese comercial.':'Identificar uma prioridade real antes de abrir uma oportunidade.',
   decision_profile:{decision_context_summary:'Preferências decisórias ainda não confirmadas nesta decisão.',legacy_tag:client?.primaryProfile||'',evidence_ids:[],observed_dimensions:[],adaptation:approach(client)},
   next_question:nextQuestion,
   questions:opportunity?[nextQuestion,{stage:'implicação',question:'Como você compara os riscos de agir agora, esperar e manter a prática?',ask_when:'Depois de confirmar o problema.',purpose:'Evitar pressupor que mudar é melhor.',evidence_needed:'Custo, risco, janela e reversibilidade de cada alternativa.'}]:[nextQuestion],
+  opportunity_review:{total_considered:Number(Boolean(opportunity)),open_count:Number(Boolean(opportunity)),selected_title:opportunity,selected_stage:opportunity?'Descoberta':'',selected_value:Number(client?.commercial?.openPotential||0),why_priority:opportunity?'É a única hipótese disponível; ainda precisa ser validada.':'Nenhuma oportunidade foi priorizada.',alternatives_considered:[]},
+  conversation_plan:{opening:opportunity?`“${firstName}, quero confirmar se ${String(opportunity).toLowerCase()} ainda merece prioridade.”`:`“${firstName}, qual decisão mais merece atenção neste ciclo?”`,steps:[{stage:'abertura',goal:'Alinhar o objetivo.',suggested_line:'“Podemos usar alguns minutos para definir a prioridade e o próximo passo?”',advance_signal:'O produtor confirma tema e tempo.',if_resistance:'Combine outro momento.'},{stage:'diagnóstico',goal:'Confirmar contexto e impacto.',suggested_line:nextQuestion.question,advance_signal:'Surge uma decisão concreta afetada.',if_resistance:'Volte a uma pergunta aberta.'},{stage:'valor',goal:'Definir resultado e prova.',suggested_line:'“Que resultado mensurável faria isso valer a pena?”',advance_signal:'Há métrica e critério de comparação.',if_resistance:'Proponha apenas levantar a linha de base.'},{stage:'fechamento',goal:'Definir o menor próximo compromisso.',suggested_line:'“Qual próximo passo faz sentido e quem precisa participar?”',advance_signal:'Responsável e prazo definidos.',if_resistance:'Mantenha acompanhamento sem proposta.'}],closing_options:[{when:'Quando prioridade e prova estiverem confirmadas.',suggested_line:'“Posso organizar uma proposta com essas premissas?”',commitment:'Definir data de revisão.'},{when:'Quando faltarem dados.',suggested_line:'“Levantamos os dados e decidimos depois, sem compromisso?”',commitment:'Definir dado, responsável e prazo.'}],do_not_say:['Não afirmar que a oportunidade já está confirmada.','Não prometer resultado sem linha de base.']},
   constructive_tension:{status:'not_applicable',consent_status:'unknown',permission_prompt:'Posso testar uma hipótese quando tivermos uma linha de base?',evidence_ids:[],reframe:'',autonomy:'A escolha continua com o produtor.',stop_reason:'Falta evidência comparável e consentimento registrado.',uncertainty:'A oportunidade ainda não foi confirmada.'},
   value_hypothesis:{problem:valueProblem,baseline:'Não confirmada.',act_now:opportunity?'A medir.':'Não aplicável antes da descoberta.',wait:opportunity?'A medir.':'Manter acompanhamento sem presumir perda.',maintain:opportunity?'A medir.':'Respeitar a situação atual.',impact_to_quantify:opportunity?'R$/ha, sc/ha, tempo, janela e risco.':'Nenhum impacto a quantificar sem oportunidade.',value_metric:opportunity?'Valor realizado contra a mesma linha de base.':'A definir após uma prioridade real.',time_horizon:'A definir.',proof_plan:opportunity?'Comparação controlada antes de escalar.':'Não abrir prova comercial antes da descoberta.',double_counting_guard:'Não somar duas vezes o mesmo benefício.',uncertainty:opportunity?'Sem contrafactual não há estimativa defensável.':'Ausência de oportunidade confirmada.'},
   next_best_action:opportunity?`Convide ${firstName} para uma conversa de 20 minutos e defina uma única métrica que será levantada antes da visita.`:noNeedDeclared?'Mantenha o acompanhamento combinado e só reabra a descoberta se houver mudança de contexto ou permissão do produtor.':'Faça uma pergunta aberta de situação antes de registrar qualquer oportunidade.',
@@ -147,6 +151,16 @@ function questionData(value,fallback=[]){
  }:{id:`pergunta-${index}`,stage:'pergunta',question:textValue(item),when:'',purpose:'',evidence:''}).filter(item=>item.question)
 }
 
+function conversationData(value){
+ const source=value&&typeof value==='object'?value:{}
+ return {opening:textValue(source.opening),steps:(Array.isArray(source.steps)?source.steps:[]).map((item,index)=>({id:`${item.stage||'passo'}-${index}`,stage:textValue(item.stage)||'passo',goal:textValue(item.goal),line:textValue(item.suggested_line),signal:textValue(item.advance_signal),resistance:textValue(item.if_resistance)})),closing:(Array.isArray(source.closing_options)?source.closing_options:[]).map((item,index)=>({id:`fechamento-${index}`,when:textValue(item.when),line:textValue(item.suggested_line),commitment:textValue(item.commitment)})),avoid:asList(source.do_not_say)}
+}
+
+function opportunityData(value){
+ const source=value&&typeof value==='object'?value:{}
+ return {total:Number(source.total_considered||0),open:Number(source.open_count||0),title:textValue(source.selected_title),stage:textValue(source.selected_stage),value:Number(source.selected_value||0),reason:textValue(source.why_priority),alternatives:asList(source.alternatives_considered)}
+}
+
 function modeLabel(value){
  if(!value)return 'Pré-análise local'
  const normalized=String(value).toLowerCase()
@@ -162,13 +176,14 @@ function modeLabel(value){
 const priorityLabels={imediata:'Prioridade imediata',esta_semana:'Fazer nesta semana',acompanhar:'Acompanhar',sem_acao:'Sem ação comercial agora'}
 function briefData(advice){
  const source=advice?.executive_brief||{}
- return {
+  return {
   priority:source.priority||'acompanhar',
   headline:textValue(source.headline)||textValue(advice?.answer).split(/[.!?]/)[0]||'Próxima ação em definição',
   reason:textValue(source.reason)||textValue(advice?.objective),
   action:textValue(source.action)||textValue(advice?.next_best_action),
   deadline:textValue(source.deadline)||'No próximo contato',
   question:textValue(source.question)||textValue(advice?.next_question?.question),
+  decisionBasis:asList(source.decision_basis).slice(0,3),
   evidenceIds:asList(source.evidence_ids).slice(0,3),
   missing:asList(source.missing_data,advice?.confidence?.missing_data||[]).slice(0,3)
  }
@@ -216,6 +231,8 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const valueHypothesis=valueData(advice?.value_hypothesis)
  const tension=tensionData(advice?.constructive_tension)
  const commitment=commitmentData(advice?.commitment)
+ const conversation=conversationData(advice?.conversation_plan)
+ const opportunityReview=opportunityData(advice?.opportunity_review)
  const evidence=evidenceData(advice?.evidence_used,response?[]:localAdvice.evidence_used)
  const brief=briefData(advice)
  const briefEvidence=(brief.evidenceIds.length?brief.evidenceIds.map(id=>evidence.find(item=>item.id===id)).filter(Boolean):evidence).slice(0,3)
@@ -339,8 +356,17 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
      <article><Route/><span><small>PRAZO</small><b>{brief.deadline}</b></span></article>
      <article className={!brief.question?'is-empty':''}><MessageSquareText/><span><small>PERGUNTE</small><b>{brief.question||'Nenhuma pergunta necessária agora.'}</b></span></article>
     </div>
-    <div className="val-brief-proof"><div><FileSearch/><span><small>BASE DA DECISÃO</small>{briefEvidence.length?<ul>{briefEvidence.map(item=><li key={item.id}>{item.summary}</li>)}</ul>:<b>Não há evidência suficiente para recomendar avanço.</b>}</span></div>{brief.missing.length>0&&<div><AlertCircle/><span><small>DADOS QUE FALTAM</small><ul>{brief.missing.map((item,index)=><li key={`${item}-${index}`}>{item}</li>)}</ul></span></div>}</div>
+    <div className="val-brief-proof"><div><FileSearch/><span><small>BASE DA DECISÃO</small>{brief.decisionBasis.length?<ul>{brief.decisionBasis.map((item,index)=><li key={`${item}-${index}`}>{item}</li>)}</ul>:briefEvidence.length?<ul>{briefEvidence.map(item=><li key={item.id}>{item.summary}</li>)}</ul>:<b>Não há evidência suficiente para recomendar avanço.</b>}</span></div>{brief.missing.length>0&&<div><AlertCircle/><span><small>DADOS QUE FALTAM</small><ul>{brief.missing.map((item,index)=><li key={`${item}-${index}`}>{item}</li>)}</ul></span></div>}</div>
+    <div className="val-opportunity-review"><Target/><span><small>OPORTUNIDADES COMPARADAS</small><b>{opportunityReview.total} analisada(s) • {opportunityReview.open} aberta(s)</b><em>{opportunityReview.title?`${opportunityReview.title}${opportunityReview.stage?` • ${opportunityReview.stage}`:''}${opportunityReview.value?` • ${opportunityReview.value.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}`:''}`:'Nenhuma oportunidade priorizada'}</em>{opportunityReview.reason&&<p>{opportunityReview.reason}</p>}{opportunityReview.alternatives.length>0&&<ul>{opportunityReview.alternatives.map((item,index)=><li key={`${item}-${index}`}>{item}</li>)}</ul>}</span></div>
     {humanReview?.required&&<div className="val-brief-review"><ShieldCheck/><span><b>Revisão técnica antes de executar</b><small>{humanReview.reason}</small></span></div>}
+   </section>
+
+   <section className="val-conversation-plan" aria-label="Roteiro sugerido para a conversa">
+    <header><div><Route/><span><small>ROTEIRO PARA A CONVERSA</small><h3>Da abertura ao próximo compromisso</h3></span></div><em>{conversation.steps.length} passos</em></header>
+    {conversation.opening&&<blockquote>{conversation.opening}</blockquote>}
+    <ol>{conversation.steps.map((item,index)=><li key={item.id}><span>{String(index+1).padStart(2,'0')}</span><div><small>{item.stage}</small><b>{item.goal}</b><p>{item.line}</p><dl><div><dt>Avance quando</dt><dd>{item.signal}</dd></div><div><dt>Se houver resistência</dt><dd>{item.resistance}</dd></div></dl></div></li>)}</ol>
+    {conversation.closing.length>0&&<div className="val-closing-options"><small>OPÇÕES DE FECHAMENTO</small><div>{conversation.closing.map(item=><article key={item.id}><span>{item.when}</span><b>{item.line}</b><em>{item.commitment}</em></article>)}</div></div>}
+    {conversation.avoid.length>0&&<div className="val-conversation-avoid"><small>EVITE NA CONVERSA</small><ul>{conversation.avoid.map((item,index)=><li key={`${item}-${index}`}>{item}</li>)}</ul></div>}
    </section>
 
    <details className="val-analysis-details">

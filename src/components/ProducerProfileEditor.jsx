@@ -1,9 +1,11 @@
 import React,{useEffect,useState} from 'react'
 import {Save,UserRoundPen} from 'lucide-react'
+import CurrencyInput from './CurrencyInput'
 
 const relationshipKeys=['preferredName','birthday','family','spouse','children','favoriteTeam','likesFishing','fishingStyle','hobbies','leisure','favoriteFoods','favoriteDrinks','events','communicationNotes','personalValues','negotiationPreferences','importantDates','personalNotes']
-const commercialKeys=['phone','email','property','purchaseCurrentSeason','purchasePreviousSeason','potentialTotal','openPotential','walletShare','mainCategories','competitors','commercialNotes']
+const commercialKeys=['phone','email','property','purchaseCurrentSeason','purchasePreviousSeason','potentialTotal','openPotential','walletShare','targetShare','creditLimit','creditUsed','grossMarginPercent','paymentTerms','decisionWindow','commercialRisk','mainCategories','competitors','commercialNotes']
 const cleanObject=(value,keys)=>Object.fromEntries(keys.map(key=>[key,key==='likesFishing'?Boolean(value?.[key]):value?.[key]??'']))
+const finite=value=>Number.isFinite(Number(value))?Math.max(0,Number(value)):0
 const editorValue=client=>({
  name:client?.name||'',municipality:client?.municipality||'',area:client?.area||'',cultures:client?.cultures||'',servicePreference:client?.servicePreference||'',
  commercial:cleanObject(client?.commercial,commercialKeys),relationship:cleanObject(client?.relationship,relationshipKeys)
@@ -16,9 +18,14 @@ export default function ProducerProfileEditor({client,onSave,onCancel,compact=fa
  useEffect(()=>{setForm(editorValue(client));setError('')},[client?.id])
  const base=(key,value)=>setForm(current=>({...current,[key]:value}))
  const nested=(group,key,value)=>setForm(current=>({...current,[group]:{...current[group],[key]:value}}))
+ const currentPurchases=finite(form.commercial.purchaseCurrentSeason)
+ const totalPotential=finite(form.commercial.potentialTotal)
+ const openPotential=Math.max(0,totalPotential-currentPurchases)
+ const calculatedShare=totalPotential>0?Math.min(100,currentPurchases/totalPotential*100):0
+ const availableCredit=Math.max(0,finite(form.commercial.creditLimit)-finite(form.commercial.creditUsed))
  const submit=async event=>{
   event.preventDefault();setSaving(true);setError('')
-  try{await onSave?.(client.id,form)}catch(exception){setError(exception.message||'Não foi possível salvar o produtor.')}finally{setSaving(false)}
+  try{await onSave?.(client.id,{...form,commercial:{...form.commercial,openPotential}})}catch(exception){setError(exception.message||'Não foi possível salvar o produtor.')}finally{setSaving(false)}
  }
  return <form className={`producer-profile-editor ${compact?'is-compact':''}`} onSubmit={submit}>
   <header><span><UserRoundPen/></span><div><b>Cadastro completo do produtor</b><small>Dados pessoais e comerciais ficam disponíveis para a VAL no contexto deste login.</small></div></header>
@@ -33,13 +40,22 @@ export default function ProducerProfileEditor({client,onSave,onCancel,compact=fa
    <label>E-mail<input type="email" value={form.commercial.email} onChange={event=>nested('commercial','email',event.target.value)}/></label>
   </div></fieldset>
   <fieldset><legend>Visão global de compras e potencial</legend><div className="form-grid producer-edit-grid">
-   <label>Compras — safra atual (R$)<input type="number" min="0" step="0.01" value={form.commercial.purchaseCurrentSeason} onChange={event=>nested('commercial','purchaseCurrentSeason',event.target.value)}/></label>
-   <label>Compras — safra anterior (R$)<input type="number" min="0" step="0.01" value={form.commercial.purchasePreviousSeason} onChange={event=>nested('commercial','purchasePreviousSeason',event.target.value)}/></label>
-   <label>Potencial total estimado (R$)<input type="number" min="0" step="0.01" value={form.commercial.potentialTotal} onChange={event=>nested('commercial','potentialTotal',event.target.value)}/></label>
-   <label>Potencial em aberto (R$)<input type="number" min="0" step="0.01" value={form.commercial.openPotential} onChange={event=>nested('commercial','openPotential',event.target.value)}/></label>
-   <label>Participação na carteira (%)<input type="number" min="0" max="100" step="0.1" value={form.commercial.walletShare} onChange={event=>nested('commercial','walletShare',event.target.value)}/></label>
+   <label>Compras — safra atual<CurrencyInput value={form.commercial.purchaseCurrentSeason} onChange={value=>nested('commercial','purchaseCurrentSeason',value)}/></label>
+   <label>Compras — safra anterior<CurrencyInput value={form.commercial.purchasePreviousSeason} onChange={value=>nested('commercial','purchasePreviousSeason',value)}/></label>
+   <label>Potencial total estimado<CurrencyInput value={form.commercial.potentialTotal} onChange={value=>nested('commercial','potentialTotal',value)}/></label>
+   <label>Potencial em aberto — automático<CurrencyInput value={openPotential} readOnly/><small>Potencial total menos compras da safra atual.</small></label>
+   <label>Share realizado — automático<input readOnly value={`${calculatedShare.toLocaleString('pt-BR',{maximumFractionDigits:1})}%`}/><small>Compras atuais divididas pelo potencial total.</small></label>
+   <label>Share atual informado (%)<input type="number" min="0" max="100" step="0.1" value={form.commercial.walletShare} onChange={event=>nested('commercial','walletShare',event.target.value)}/></label>
+   <label>Meta de share (%)<input type="number" min="0" max="100" step="0.1" value={form.commercial.targetShare} onChange={event=>nested('commercial','targetShare',event.target.value)}/></label>
+   <label>Margem bruta estimada (%)<input type="number" min="0" max="100" step="0.1" value={form.commercial.grossMarginPercent} onChange={event=>nested('commercial','grossMarginPercent',event.target.value)}/></label>
+   <label>Limite de crédito<CurrencyInput value={form.commercial.creditLimit} onChange={value=>nested('commercial','creditLimit',value)}/></label>
+   <label>Crédito utilizado<CurrencyInput value={form.commercial.creditUsed} onChange={value=>nested('commercial','creditUsed',value)}/></label>
+   <label>Crédito disponível — automático<CurrencyInput value={availableCredit} readOnly/></label>
+   <label>Condição de pagamento preferida<input value={form.commercial.paymentTerms} onChange={event=>nested('commercial','paymentTerms',event.target.value)}/></label>
+   <label>Janela de decisão / compra<input value={form.commercial.decisionWindow} onChange={event=>nested('commercial','decisionWindow',event.target.value)} placeholder="Ex.: setembro, pré-plantio"/></label>
    <label>Categorias principais<input value={form.commercial.mainCategories} onChange={event=>nested('commercial','mainCategories',event.target.value)}/></label>
    <label>Concorrentes / compras externas<input value={form.commercial.competitors} onChange={event=>nested('commercial','competitors',event.target.value)}/></label>
+   <label className="wide">Riscos e travas comerciais<textarea rows="3" value={form.commercial.commercialRisk} onChange={event=>nested('commercial','commercialRisk',event.target.value)}/></label>
    <label className="wide">Observações comerciais<textarea rows="3" value={form.commercial.commercialNotes} onChange={event=>nested('commercial','commercialNotes',event.target.value)}/></label>
   </div></fieldset>
   <fieldset><legend>Relacionamento e preferências pessoais</legend><div className="form-grid producer-edit-grid">

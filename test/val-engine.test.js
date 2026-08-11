@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {enforceValSafety,selectValModel,summarizeContextCoverage,ValEngine} from '../server/val-engine.js'
-import {buildFallbackAdvice} from '../server/sales-playbook.js'
+import {compactValContext,enforceValSafety,selectValModel,summarizeContextCoverage,ValEngine} from '../server/val-engine.js'
+import {buildFallbackAdvice,valAdviceSchema} from '../server/sales-playbook.js'
 
 const config={modelDaily:'terra',modelStrategic:'sol',modelFast:'luna'}
 
@@ -20,6 +20,37 @@ test('modo demonstrativo explicita evidências e limites',()=>{
   assert.ok(advice.guardrails.some(item=>/demonstrativo/i.test(item)))
   assert.match(advice.executive_brief.action,/Agendar|Registrar/i)
   assert.ok(advice.executive_brief.evidence_ids.length<=3)
+})
+
+test('VAL compara a carteira de oportunidades e entrega roteiro até o próximo compromisso',()=>{
+  const opportunities=[
+    {id:'opp-1',title:'Tratamento de sementes',stage:'Proposta',estimated_value:80_000},
+    {id:'opp-2',title:'Nutrição foliar',stage:'Diagnóstico',estimated_value:50_000},
+    {id:'opp-3',title:'Safra anterior',stage:'Fechado',estimated_value:40_000}
+  ]
+  const advice=buildFallbackAdvice({client:{name:'Produtor Teste',commercial:{openPotential:150_000}},message:'Prepare o fechamento',opportunities,signals:[],learning:{}})
+  assert.equal(advice.opportunity_review.total_considered,3)
+  assert.equal(advice.opportunity_review.open_count,2)
+  assert.equal(advice.opportunity_review.selected_title,'Tratamento de sementes')
+  assert.equal(advice.opportunity_review.alternatives_considered.length,2)
+  assert.ok(advice.executive_brief.decision_basis.every(item=>item.includes('→')))
+  assert.ok(advice.conversation_plan.steps.length>=3)
+  assert.ok(advice.conversation_plan.closing_options.length>=1)
+  assert.ok(advice.conversation_plan.do_not_say.length>=1)
+  assert.ok(valAdviceSchema.required.includes('opportunity_review'))
+  assert.ok(valAdviceSchema.required.includes('conversation_plan'))
+})
+
+test('compactação do prompt preserva todas as oportunidades mesmo sob limite de contexto',()=>{
+  const opportunities=Array.from({length:200},(_,index)=>({id:`opp-${index}`,external_key:`external-${index}`,title:`Oportunidade ${index} com descrição comercial extensa `.repeat(5),stage:index%4===0?'Fechado':'Diagnóstico',estimated_value:index*1_000,probability:index%101,next_action_at:'2026-09-01T12:00:00.000Z',evidence:[{type:'pipeline',summary:'Evidência extensa '.repeat(30)}]}))
+  const compact=compactValContext({client:{id:'cliente',name:'Produtor Teste',commercial:{openPotential:250_000}},opportunities,businessHistory:Array.from({length:80},()=>({detail:'histórico '.repeat(500)}))},30_000)
+  const items=compact.opportunities||compact.opportunityIndex?.items||[]
+  assert.equal(items.length,200)
+  assert.equal(compact.opportunityPortfolio.total,200)
+  assert.equal(compact.opportunityPortfolio.open,150)
+  assert.ok(JSON.stringify(compact).length<=30_000)
+  const last=items.at(-1)
+  assert.match(Array.isArray(last)?String(last[0]):String(last.title),/Oportunidade 199/)
 })
 
 test('perfil é hipótese adaptativa, não diagnóstico',()=>{

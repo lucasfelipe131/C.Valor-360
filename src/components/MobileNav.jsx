@@ -8,6 +8,7 @@ import {
   LayoutDashboard,
   MoreHorizontal,
   Settings,
+  ShieldCheck,
   Sprout,
   Target,
   Users,
@@ -30,16 +31,17 @@ const secondary=[
  ['settings','Configurações',Settings]
 ]
 
-export default function MobileNav({page,setPage}){
+export default function MobileNav({page,setPage,currentUser}){
  const [open,setOpen]=useState(false)
  useEffect(()=>setOpen(false),[page])
  const navigate=id=>{setPage(id);setOpen(false)}
- const secondaryActive=secondary.some(([id])=>id===page)
+ const visibleSecondary=currentUser?.role==='admin'?[...secondary,['admin','Administração',ShieldCheck]]:secondary
+ const secondaryActive=visibleSecondary.some(([id])=>id===page)
  return <>
   {open&&<><button type="button" className="mobile-more-backdrop" aria-label="Fechar menu" onClick={()=>setOpen(false)}/>
   <section className="mobile-more-sheet open" aria-label="Todos os módulos">
    <header><div><small>VALOR 360</small><h2>Todos os módulos</h2></div><button type="button" aria-label="Fechar menu" onClick={()=>setOpen(false)}><X/></button></header>
-   <div>{secondary.map(([id,label,Icon])=><button type="button" key={id} className={page===id?'active':''} aria-current={page===id?'page':undefined} onClick={()=>navigate(id)}><span><Icon/></span><b>{label}</b></button>)}</div>
+   <div>{visibleSecondary.map(([id,label,Icon])=><button type="button" key={id} className={page===id?'active':''} aria-current={page===id?'page':undefined} onClick={()=>navigate(id)}><span><Icon/></span><b>{label}</b></button>)}</div>
   </section></>}
   <nav className="mobile-nav" aria-label="Navegação principal">
    {primary.slice(0,2).map(([id,label,Icon])=><button type="button" key={id} className={page===id?'active':''} aria-current={page===id?'page':undefined} onClick={()=>navigate(id)}><Icon/><span>{label}</span></button>)}

@@ -49,3 +49,37 @@ test('bootstrap atribui a carteira comercial sem promover produtores técnicos d
  assert.ok(portfolioAssignment)
  assert.match(portfolioAssignment.sql,/COALESCE\(client\.source,''\)<>'manual-do-agronomo'/)
 })
+
+test('métricas de uso aceitam somente eventos conhecidos e mantêm o login como proprietário',async()=>{
+ const calls=[]
+ const repository=new AccessRepository({db:{configured:true,query:async(sql,params)=>{calls.push({sql,params});return {rowCount:1,rows:[]}}},tenantId:'00000000-0000-4000-8000-000000000001',runtimeConfig:{}})
+ const actor={id:'00000000-0000-4000-8000-000000000010',role:'consultant'}
+ assert.equal(await repository.recordUsage(actor,{eventType:'page_view',page:'client 360<script>',entityType:'client',entityId:'produtor-1',metadata:{source:'navigation'}}),true)
+ assert.equal(await repository.recordUsage(actor,{eventType:'evento_inventado',page:'admin'}),false)
+ assert.equal(calls.length,1)
+ assert.deepEqual(calls[0].params.slice(0,3),['00000000-0000-4000-8000-000000000001',actor.id,'page_view'])
+ assert.equal(calls[0].params[3],'client360script')
+ assert.deepEqual(JSON.parse(calls[0].params[6]),{source:'navigation'})
+})
+
+test('painel de métricas é exclusivo do administrador e consolida por tenant',async()=>{
+ const tenantId='00000000-0000-4000-8000-000000000001'
+ const calls=[]
+ const db={configured:true,query:async(sql,params)=>{
+  calls.push({sql,params})
+  if(sql.includes('SELECT user_record.id,user_record.name'))return {rows:[{id:'00000000-0000-4000-8000-000000000010',name:'Consultor Norte',email:'norte@example.com',status:'active',role:'consultant',producer_count:3,accesses:2,page_views:8,direct_interactions:4,val_analyses:1,visits:2,opportunities:2,last_activity_at:new Date('2026-08-11T12:00:00Z')}]}
+  if(sql.includes('WITH days AS'))return {rows:[{day:'2026-08-11',accesses:2,page_views:8,interactions:4,val_analyses:1}]}
+  if(sql.includes('SELECT page,COUNT(*)'))return {rows:[{page:'client360',views:8,users:1}]}
+  return {rows:[{users_total:2,users_active:2,users_blocked:0,active_users_period:1,producers:3,visits:2,opportunities:2,val_analyses:1,val_feedback:1,manual_syncs:2,accesses:2,page_views:8,direct_interactions:4}]}
+ }}
+ const repository=new AccessRepository({db,tenantId,runtimeConfig:{}})
+ await assert.rejects(()=>repository.getAdminMetrics({id:'user',role:'consultant'},30),error=>error.statusCode===403)
+ const result=await repository.getAdminMetrics({id:'admin',role:'admin'},30)
+ assert.equal(result.periodDays,30)
+ assert.equal(result.summary.producers,3)
+ assert.equal(result.users[0].producerCount,3)
+ assert.equal(result.users[0].lastActivityAt,'2026-08-11T12:00:00.000Z')
+ assert.deepEqual(result.pages,[{page:'client360',views:8,users:1}])
+ assert.equal(calls.length,4)
+ assert.ok(calls.every(call=>call.params[0]===tenantId))
+})

@@ -622,6 +622,38 @@ CREATE TABLE IF NOT EXISTS audit_events (
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Armazenamento do núcleo agronômico incorporado. As tabelas são as mesmas
+-- usadas pelo Manual dentro do VALOR 360 e permanecem isoladas por login.
+CREATE TABLE IF NOT EXISTS app_workspace_data (
+  workspace_id UUID PRIMARY KEY,
+  producers JSONB NOT NULL DEFAULT '[]'::jsonb,
+  soil_analyses JSONB NOT NULL DEFAULT '[]'::jsonb,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS app_records (
+  id UUID PRIMARY KEY,
+  workspace_id UUID NOT NULL,
+  record_type TEXT NOT NULL,
+  title TEXT NOT NULL DEFAULT '',
+  producer_name TEXT NOT NULL DEFAULT '',
+  payload JSONB NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS usage_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  event_type VARCHAR(80) NOT NULL,
+  page VARCHAR(80),
+  entity_type VARCHAR(80),
+  entity_id VARCHAR(180),
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_clients_tenant_name ON clients(tenant_id,name);
 CREATE INDEX IF NOT EXISTS idx_clients_owner_name ON clients(tenant_id,consultant_id,name);
 CREATE INDEX IF NOT EXISTS idx_surveys_owner_status ON survey_invitations(tenant_id,owner_user_id,status,created_at DESC);
@@ -642,6 +674,10 @@ CREATE INDEX IF NOT EXISTS idx_val_recommendations_client ON val_recommendations
 CREATE UNIQUE INDEX IF NOT EXISTS idx_val_feedback_one_per_recommendation ON val_feedback(tenant_id,recommendation_id);
 CREATE INDEX IF NOT EXISTS idx_val_memory_lookup ON val_memories(tenant_id,client_id,memory_type,key,status);
 CREATE INDEX IF NOT EXISTS idx_integration_events_date ON integration_events(tenant_id,event_type,occurred_at DESC);
+CREATE INDEX IF NOT EXISTS app_records_workspace_type_updated ON app_records(workspace_id,record_type,updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_events_tenant_date ON usage_events(tenant_id,occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_events_user_date ON usage_events(tenant_id,user_id,occurred_at DESC);
+CREATE INDEX IF NOT EXISTS idx_usage_events_page_date ON usage_events(tenant_id,page,occurred_at DESC);
 
 COMMENT ON TABLE val_memories IS 'Memória auditável: inferências nunca sobrescrevem fatos e exigem evidência/confiança.';
 COMMENT ON TABLE agronomic_signals IS 'Sinais para triagem e oportunidade; não substituem diagnóstico ou recomendação de responsável técnico.';

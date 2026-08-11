@@ -16,6 +16,7 @@ import Settings from './pages/Settings'
 import Login from './pages/Login'
 import PasswordChange from './pages/PasswordChange'
 import DataHub from './pages/DataHub'
+import Admin from './pages/Admin'
 import PublicSurvey from './pages/PublicSurvey'
 import {normalizeText,reconcileOpportunityProjection} from './lib/profile'
 import {opportunityCacheKey} from './lib/opportunity-pipeline'
@@ -50,7 +51,8 @@ const meta={
  agro:['Inteligência Agronômica','Análises, mapas, cálculos e decisões técnicas no mesmo ambiente'],
  questionnaire:['Produtor 360','Perfil e preferências do produtor'],
  reports:['Relatórios','Indicadores, NPS, IRT e execução comercial'],
- settings:['Configurações','Usuários, unidades e parâmetros']
+ settings:['Configurações','Conta, governança e parâmetros'],
+ admin:['Administração','Acessos, uso e métricas globais do sistema']
 }
 export default function App(){
  const publicSurveyToken=new URLSearchParams(window.location.search).get('responder')
@@ -65,7 +67,7 @@ export default function App(){
  const [opportunities,setOpportunities]=useState([])
  const [toast,setToast]=useState('')
  const openClient=c=>{setSelected(c);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
- const notify=message=>{setToast(message);window.clearTimeout(window.__valorToast);window.__valorToast=window.setTimeout(()=>setToast(''),2800)}
+ const notify=message=>{const text=typeof message==='string'?message:String(message?.message||'Ação concluída.');setToast(text);window.clearTimeout(window.__valorToast);window.__valorToast=window.setTimeout(()=>setToast(''),2800)}
  const prepareClient=c=>{setSelected(c);setPage('val');if(page==='val')window.requestAnimationFrame(resetPageViewport)}
  const navigate=next=>{if(next!=='client360')setSelected(null);setPage(next);if(next===page)window.requestAnimationFrame(resetPageViewport)}
  const addClient=client=>{
@@ -94,6 +96,12 @@ export default function App(){
  useEffect(()=>{if(authenticated!==true)return;const revalidate=()=>fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(!session?.authenticated){expireSession();return}setCurrentUser(session.user);rememberStorageScope(session.user)}).catch(()=>invalidateSession('Não foi possível revalidar o servidor. Entre novamente para proteger os dados.'));window.addEventListener('focus',revalidate);const timer=window.setInterval(revalidate,300000);return()=>{window.removeEventListener('focus',revalidate);window.clearInterval(timer)}},[authenticated,currentUser?.storageScope])
  useEffect(()=>{if(authenticated!==true||currentUser?.mustChangePassword)return;clearLegacyPortfolioCache();fetch('/api/intelligence',{signal:AbortSignal.timeout(12000)}).then(async response=>{if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));return null}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'A carteira protegida não pôde ser carregada.');return payload}).then(data=>{if(!data)return;const serverClients=Array.isArray(data.clients)?data.clients:[];setClientList(serverClients);setVisits(Array.isArray(data.visits)?data.visits:[]);setOpportunities(Array.isArray(data.opportunities)?data.opportunities:[]);setSelected(serverClients[0]||null);setPortfolioReady(true)}).catch(error=>{if(currentUser?.demo){setPortfolioReady(true);return}setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setPortfolioReady(true);notify(error.name==='TimeoutError'?'A carteira demorou além do limite e permaneceu bloqueada.':error.message)})},[authenticated,currentUser?.demo,currentUser?.mustChangePassword])
  useEffect(()=>{if(authenticated!==true)return;const frame=window.requestAnimationFrame(resetPageViewport);return()=>window.cancelAnimationFrame(frame)},[page,authenticated])
+ useEffect(()=>{
+  if(authenticated!==true||!portfolioReady||currentUser?.demo||!currentUser?.id)return
+  const controller=new AbortController()
+  fetch('/api/usage/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({page,entityType:selected&&page==='client360'?'client':'',entityId:selected&&page==='client360'?selected.id:''}),signal:controller.signal}).catch(()=>null)
+  return()=>controller.abort()
+ },[page,selected?.id,authenticated,portfolioReady,currentUser?.id,currentUser?.demo])
  const [title,subtitle]=meta[page]||['VALOR 360','']
  if(publicSurveyToken)return <PublicSurvey token={publicSurveyToken}/>
  if(authenticated===null)return <main className="auth-loading" role="status"><BrainCircuit/><span>Validando acesso seguro…</span></main>
@@ -117,9 +125,10 @@ export default function App(){
     {page==='opportunities'&&<Opportunities clients={clientList} storageScope={currentUser?.storageScope} persistedItems={opportunities} onPersist={saveOpportunity} onClient={openClient} onSaved={notify}/>}
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
     {page==='settings'&&<Settings clients={clientList} visits={visits} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
+    {page==='admin'&&currentUser?.role==='admin'&&<Admin currentUser={currentUser} onNotify={notify}/>}
    </div>
   </main>
-  <MobileNav page={page} setPage={navigate}/>
+  <MobileNav page={page} setPage={navigate} currentUser={currentUser}/>
   {toast&&<div className="toast" role="status">{toast}</div>}
  </div>
 }
