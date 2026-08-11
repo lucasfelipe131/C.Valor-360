@@ -96,9 +96,13 @@ export function deriveSignals(event){
     const findings=Array.isArray(payload.findings)?payload.findings.slice(0,20):[]
     const actions=hasTechnicalApproval(payload)&&Array.isArray(payload.validatedActions)?payload.validatedActions.slice(0,20):[]
     if(!actions.length)return []
-    return [signal('field_follow_up',clean(payload.severity)||'attention','Relatório de campo aprovado gerou acompanhamento',{findings,validatedActions:actions,reportId:clean(payload.reportId),validation:payload.validation},'Verificar relevância, janela e autonomia antes de converter uma ação validada em oportunidade ou compromisso.')]
+    const firstAction=actions[0]
+    const actionText=clean(firstAction&&typeof firstAction==='object'?(firstAction.action||firstAction.text||firstAction.label):firstAction)
+    const crop=clean(payload.cropStage)
+    const title=actionText?('Acompanhamento validado: '+actionText).slice(0,500):crop?('Relatório de '+crop+' aprovado para acompanhamento'):'Relatório de campo aprovado gerou acompanhamento'
+    return [signal('field_follow_up',clean(payload.severity)||'attention',title,{findings,validatedActions:actions,reportId:clean(payload.reportId),cropStage:crop,summary:clean(payload.summary),validation:payload.validation},'Usar o fechamento para confirmar prioridade, linha de base e próxima decisão; não converter a ação validada em prescrição automática.')]
   }
-  if(event.type==='soil_analysis.completed'){
+    if(event.type==='soil_analysis.completed'){
     const flags=hasTechnicalApproval(payload)&&Array.isArray(payload.validatedFlags)?payload.validatedFlags.slice(0,30):[]
     if(!flags.length)return []
     return [signal('soil_follow_up',clean(payload.severity)||'attention','Análise de solo possui pontos validados para revisão',{validatedFlags:flags,analysisId:clean(payload.analysisId),laboratory:clean(payload.laboratory)},'Preparar conversa de diagnóstico e quantificação; recomendação final depende do responsável técnico.')]
