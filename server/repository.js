@@ -130,13 +130,14 @@ const clientFromRow=(row,{defaults=false}={})=>{
 const surveyRecord=row=>({token:row.token,producerName:row.producer_name,consultantName:row.consultant_name,status:row.status,answers:row.answers||undefined,result:sanitizeProfileResult(row.result)||undefined,createdAt:iso(row.created_at),expiresAt:iso(row.expires_at),submittedAt:iso(row.submitted_at),integratedAt:iso(row.integrated_at)})
 const fallbackSurveyRecord=survey=>({...survey,result:sanitizeProfileResult(survey.result)||undefined})
 const visitRecord=row=>({id:row.id,clientId:row.client_external_key||row.client_id,scheduledAt:iso(row.scheduled_at),objective:row.objective||'',processAgreement:row.process_agreement||'',summary:row.summary||'',nextCommitment:row.next_commitment||'',nextActionAt:iso(row.next_action_at),status:row.status||'Agendada',createdAt:iso(row.created_at),updatedAt:iso(row.updated_at)})
+const attachmentRecord=row=>({id:String(row.id),clientId:row.client_external_key||String(row.client_id||''),originalName:row.original_name,mimeType:row.mime_type,sizeBytes:Number(row.size_bytes||0),sha256:row.sha256,status:row.status,analysis:jsonObject(row.analysis),createdAt:iso(row.created_at),updatedAt:iso(row.updated_at),confirmedAt:iso(row.confirmed_at),...(row.content_base64?{dataBase64:row.content_base64}:{})})
 const opportunityRecord=row=>({id:`o-${row.client_external_key||row.client_id}`,databaseId:row.id,clientId:row.client_external_key||row.client_id,title:row.title,value:row.estimated_value==null?0:Number(row.estimated_value),probability:row.probability==null?null:Number(row.probability),stage:row.stage||'Diagnóstico',candidateKey:row.evidence?.find?.(item=>item?.candidateKey)?.candidateKey||row.external_key||'',stageEvidence:row.evidence?.find?.(item=>item?.type==='manual_advance'||item?.type==='manual_set'||item?.type==='won'),nextAction:row.next_action||'',nextActionAt:iso(row.next_action_at),updatedAt:iso(row.updated_at)})
 
 export class ValRepository{
   constructor({db,readStore,saveStore,tenantId}){this.db=db;this.readStore=readStore;this.saveStore=saveStore;this.tenantId=tenantId}
 
   fallback(){
-    const store=this.readStore();store.val||={recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[],modelRuns:[],technicalContexts:{}};store.val.modelRuns||=[];store.val.technicalContexts||={};return store
+    const store=this.readStore();store.val||={recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[],modelRuns:[],technicalContexts:{}};store.val.modelRuns||=[];store.val.technicalContexts||={};store.val.attachments||=[];return store
   }
 
   async listSurveys(ownerId){
@@ -404,6 +405,34 @@ export class ValRepository{
   fallbackLearning(clientId){
     const events=this.fallback().val.integrationEvents.filter(item=>!clientId||item.clientExternalKey===clientId)
     return {wins:events.filter(item=>item.type==='business.closed').length,losses:events.filter(item=>item.type==='business.lost').length,revenue:events.filter(item=>item.type==='business.closed').reduce((sum,item)=>sum+Number(item.payload?.value||0),0)}
+  }
+
+  async createAttachment({tenantId=this.tenantId,ownerId,clientId,originalName,mimeType,sizeBytes,dataBase64}){
+    const id=randomUUID();const sha256=createHash('sha256').update(dataBase64).digest('hex')
+    if(!this.db.configured){const store=this.fallback();const duplicate=store.val.attachments.find(item=>item.ownerId===ownerId&&item.clientId===clientId&&item.sha256===sha256);if(duplicate)return attachmentRecord(duplicate);const item={id,ownerId,clientId,client_external_key:clientId,original_name:originalName,mime_type:mimeType,size_bytes:sizeBytes,content_base64:dataBase64,sha256,status:'received',analysis:{},created_at:new Date().toISOString(),updated_at:new Date().toISOString()};store.val.attachments.push(item);store.val.attachments=store.val.attachments.slice(-200);this.saveStore(store);return attachmentRecord(item)}
+    try{const result=await this.db.query("INSERT INTO val_attachments (id,tenant_id,consultant_id,client_id,original_name,mime_type,size_bytes,content_base64,sha256,status) SELECT $1,$2,$3,c.id,$5,$6,$7,$8,$9,'received' FROM clients c WHERE c.tenant_id=$2 AND c.consultant_id=$3 AND (c.id::text=$4 OR c.external_key=$4) AND NOT EXISTS (SELECT 1 FROM val_attachments a WHERE a.tenant_id=$2 AND a.consultant_id=$3 AND a.client_id=c.id AND a.sha256=$9 AND a.status<>'rejected') RETURNING *, (SELECT external_key FROM clients WHERE id=client_id) client_external_key",[id,tenantId,ownerId,clientId,originalName,mimeType,sizeBytes,dataBase64,sha256]);if(result.rows[0])return attachmentRecord(result.rows[0]);const duplicate=await this.db.query("SELECT a.*,c.external_key client_external_key FROM val_attachments a JOIN clients c ON c.id=a.client_id AND c.tenant_id=a.tenant_id WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND (c.id::text=$3 OR c.external_key=$3) AND a.sha256=$4 AND a.status<>'rejected' ORDER BY a.created_at DESC LIMIT 1",[tenantId,ownerId,clientId,sha256]);if(duplicate.rows[0])return attachmentRecord(duplicate.rows[0]);throw domainError('Produtor não encontrado na sua carteira.',404)}catch(error){if(error.statusCode)throw error;throw serviceError('O arquivo não pôde ser salvo na nuvem.')}
+  }
+
+  async listAttachments({tenantId=this.tenantId,ownerId,clientId,limit=20}){
+    if(!this.db.configured)return this.fallback().val.attachments.filter(item=>item.ownerId===ownerId&&item.clientId===clientId&&item.status!=='rejected').slice(-limit).reverse().map(attachmentRecord)
+    try{const result=await this.db.query("SELECT a.*,NULL::text content_base64,c.external_key client_external_key FROM val_attachments a JOIN clients c ON c.id=a.client_id AND c.tenant_id=a.tenant_id WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND (c.id::text=$3 OR c.external_key=$3) AND a.status<>'rejected' ORDER BY a.created_at DESC LIMIT $4",[tenantId,ownerId,clientId,Math.max(1,Math.min(100,Number(limit)||20))]);return result.rows.map(attachmentRecord)}catch{throw serviceError('Os arquivos deste produtor não puderam ser lidos.')}
+  }
+
+  async getAttachments({tenantId=this.tenantId,ownerId,clientId,ids=[]}){
+    const unique=[...new Set((ids||[]).map(String))].slice(0,3);if(!unique.length)return []
+    if(!this.db.configured)return this.fallback().val.attachments.filter(item=>item.ownerId===ownerId&&item.clientId===clientId&&unique.includes(String(item.id))).map(attachmentRecord)
+    try{const result=await this.db.query("SELECT a.*,c.external_key client_external_key FROM val_attachments a JOIN clients c ON c.id=a.client_id AND c.tenant_id=a.tenant_id WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND (c.id::text=$3 OR c.external_key=$3) AND a.id=ANY($4::uuid[]) AND a.status<>'rejected' ORDER BY a.created_at",[tenantId,ownerId,clientId,unique]);return result.rows.map(attachmentRecord)}catch{throw serviceError('Os anexos selecionados não puderam ser lidos.')}
+  }
+
+  async getAttachment({tenantId=this.tenantId,ownerId,id}){
+    if(!this.db.configured){const item=this.fallback().val.attachments.find(entry=>entry.ownerId===ownerId&&String(entry.id)===String(id)&&entry.status!=='rejected');return item?attachmentRecord(item):null}
+    try{const result=await this.db.query("SELECT a.*,c.external_key client_external_key FROM val_attachments a JOIN clients c ON c.id=a.client_id AND c.tenant_id=a.tenant_id WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND a.id=$3 AND a.status<>'rejected' LIMIT 1",[tenantId,ownerId,id]);return result.rows[0]?attachmentRecord(result.rows[0]):null}catch{throw serviceError('O arquivo não pôde ser aberto.')}
+  }
+
+  async updateAttachment({tenantId=this.tenantId,ownerId,id,status,analysis}){
+    const allowed=new Set(['interpreted','confirmed','stored','rejected']);if(!allowed.has(status))throw domainError('Estado de arquivo inválido.',400)
+    if(!this.db.configured){const store=this.fallback();const item=store.val.attachments.find(entry=>entry.ownerId===ownerId&&String(entry.id)===String(id));if(!item)throw domainError('Arquivo não encontrado.',404);item.status=status;item.analysis=analysis||item.analysis||{};item.updated_at=new Date().toISOString();if(status==='confirmed')item.confirmed_at=item.updated_at;this.saveStore(store);return attachmentRecord(item)}
+    try{const result=await this.db.query("UPDATE val_attachments a SET status=$4,analysis=COALESCE($5,analysis),updated_at=NOW(),confirmed_at=CASE WHEN $4='confirmed' THEN NOW() ELSE confirmed_at END FROM clients c WHERE c.id=a.client_id AND c.tenant_id=a.tenant_id AND a.tenant_id=$1 AND a.consultant_id=$2 AND a.id=$3 RETURNING a.*,c.external_key client_external_key",[tenantId,ownerId,id,status,analysis===undefined?null:jsonbParameter(analysis)]);if(!result.rows[0])throw domainError('Arquivo não encontrado.',404);return attachmentRecord(result.rows[0])}catch(error){if(error.statusCode)throw error;throw serviceError('O arquivo não pôde ser atualizado.')}
   }
 
   async recordRecommendation(record){
