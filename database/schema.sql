@@ -654,6 +654,26 @@ CREATE TABLE IF NOT EXISTS usage_events (
   occurred_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+CREATE TABLE IF NOT EXISTS val_attachments (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  consultant_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  original_name VARCHAR(240) NOT NULL,
+  mime_type VARCHAR(160) NOT NULL,
+  size_bytes INTEGER NOT NULL CHECK (size_bytes > 0 AND size_bytes <= 6000000),
+  content_base64 TEXT NOT NULL,
+  sha256 CHAR(64) NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'received' CHECK (status IN ('received','interpreted','confirmed','stored','rejected')),
+  analysis JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  confirmed_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS idx_val_attachments_client_date ON val_attachments(tenant_id,consultant_id,client_id,created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_val_attachments_sha ON val_attachments(tenant_id,consultant_id,client_id,sha256);
+
 CREATE INDEX IF NOT EXISTS idx_clients_tenant_name ON clients(tenant_id,name);
 CREATE INDEX IF NOT EXISTS idx_clients_owner_name ON clients(tenant_id,consultant_id,name);
 CREATE INDEX IF NOT EXISTS idx_surveys_owner_status ON survey_invitations(tenant_id,owner_user_id,status,created_at DESC);

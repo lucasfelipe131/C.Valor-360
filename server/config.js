@@ -34,7 +34,7 @@ export const config=Object.freeze({
   strategicMaxOutputTokens:Number(process.env.VAL_STRATEGIC_MAX_OUTPUT_TOKENS||32_000),
   aiRequestsPerTenMinutes:Number(process.env.VAL_AI_REQUESTS_PER_10_MINUTES||30),
   loginAttemptsPerTenMinutes:Number(process.env.VAL_LOGIN_ATTEMPTS_PER_10_MINUTES||8),
-  maxBodyBytes:Number(process.env.VAL_MAX_BODY_BYTES||3_000_000)
+  maxBodyBytes:Number(process.env.VAL_MAX_BODY_BYTES||10_000_000)
 })
 
 export function getPublicEngineConfig(){

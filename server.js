@@ -36,6 +36,20 @@ function rawBody(request){return new Promise((resolve,reject)=>{let raw='';reque
 async function body(request){const raw=await rawBody(request);try{return raw?JSON.parse(raw):{}}catch{throw new Error('Conteúdo inválido.')}}
 async function limitedResponseText(upstream,limit){const reader=upstream.body?.getReader();if(!reader)return upstream.text();const chunks=[];let size=0;while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>limit){await reader.cancel();throw Object.assign(new Error('A planilha excede o limite seguro de importação.'),{statusCode:413})}chunks.push(value)}return new TextDecoder().decode(Buffer.concat(chunks.map(chunk=>Buffer.from(chunk))))}
 const clean=value=>String(value||'').trim().slice(0,240)
+const attachmentMaxBytes=6_000_000
+const attachmentMimeTypes=new Set(['image/jpeg','image/png','image/webp','image/gif','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','text/plain'])
+const attachmentId=value=>/^[0-9a-f-]{36}$/i.test(String(value||''))?String(value):''
+function normalizedAttachment(payload={}){
+ const match=String(payload.dataUrl||'').match(/^data:([^;,]+);base64,([A-Za-z0-9+/=\s]+)$/)
+ if(!match)throw Object.assign(new Error('O arquivo enviado não está em um formato válido.'),{statusCode:400})
+ const mimeType=String(match[1]||payload.mimeType||'').toLowerCase().trim()
+ if(!attachmentMimeTypes.has(mimeType))throw Object.assign(new Error('Use foto, PDF, Word, Excel, CSV ou TXT.'),{statusCode:415})
+ let buffer;try{buffer=Buffer.from(match[2].replace(/\s/g,''),'base64')}catch{throw Object.assign(new Error('Não foi possível ler este arquivo.'),{statusCode:400})}
+ if(!buffer.length)throw Object.assign(new Error('O arquivo está vazio.'),{statusCode:400})
+ if(buffer.length>attachmentMaxBytes)throw Object.assign(new Error('Cada arquivo pode ter até 6 MB.'),{statusCode:413})
+ const originalName=(String(payload.originalName||'arquivo').normalize('NFKC').replace(/[\/\\<>:\"|?*\u0000-\u001f]/g,'-').trim()||'arquivo').slice(0,240)
+ return {originalName,mimeType,sizeBytes:buffer.length,dataBase64:buffer.toString('base64')}
+}
 const feedbackOutcomes={used:'executed',adapted:'edited',scheduled:'scheduled',discarded:'rejected',accepted:'accepted',edited:'edited',rejected:'rejected',executed:'executed',won:'won',lost:'lost'}
 const pipelineStages=new Set(['Diagnóstico','Proposta','Negociação','Fechado'])
 const validatedSurveyAnswers=input=>validateSurveyAnswers(input,surveyOptions)
@@ -108,7 +122,7 @@ async function handleApi(request,response,url){
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
- const protectedPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/val/attachments')||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const identity=protectedPath?await sessionIdentity(request):null
  if(protectedPath&&auth.configured&&!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
@@ -138,15 +152,42 @@ async function handleApi(request,response,url){
   })
   return json(response,200,{producers,source:'valor360',syncedAt:new Date().toISOString()})
  }
+ if(url.pathname==='/api/val/attachments'&&request.method==='GET'){
+  const clientId=clean(url.searchParams.get('clientId'));if(!clientId)return json(response,400,{error:'Selecione um produtor para ver os arquivos.'})
+  const attachments=await repository.listAttachments({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,limit:30})
+  return json(response,200,{attachments})
+ }
+ if(url.pathname==='/api/val/attachments'&&request.method==='POST'){
+  const payload=await body(request);const clientId=clean(payload.clientId);if(!clientId)return json(response,400,{error:'Selecione um produtor antes de anexar.'})
+  const normalized=normalizedAttachment(payload)
+  const attachment=await repository.createAttachment({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,...normalized})
+  await accessRepository.recordUsage(identity,{eventType:'val_attachment_uploaded',page:'val',entityType:'client',entityId:clientId,metadata:{mimeType:normalized.mimeType,sizeBytes:normalized.sizeBytes}})
+  return json(response,201,{attachment})
+ }
+ if(url.pathname==='/api/val/attachments'&&request.method==='PATCH'){
+  const payload=await body(request);const id=attachmentId(payload.id);if(!id)return json(response,400,{error:'Arquivo inválido.'})
+  const status=clean(payload.status);const analysis=payload.analysis&&typeof payload.analysis==='object'?payload.analysis:undefined
+  const attachment=await repository.updateAttachment({tenantId:config.defaultTenantId,ownerId:identity?.id,id,status,analysis})
+  await accessRepository.recordUsage(identity,{eventType:'val_attachment_'+status,page:'val',entityType:'client',entityId:attachment.clientId,metadata:{attachmentId:id}})
+  return json(response,200,{attachment})
+ }
+ const attachmentContentMatch=url.pathname.match(/^\/api\/val\/attachments\/([0-9a-f-]{36})$/i)
+ if(attachmentContentMatch&&request.method==='GET'){
+  const attachment=await repository.getAttachment({tenantId:config.defaultTenantId,ownerId:identity?.id,id:attachmentContentMatch[1]})
+  if(!attachment)return json(response,404,{error:'Arquivo não encontrado.'})
+  const binary=Buffer.from(attachment.dataBase64||'','base64')
+  response.writeHead(200,{...securityHeaders,'Content-Type':attachment.mimeType,'Content-Length':binary.length,'Content-Disposition':"inline; filename*=UTF-8''"+encodeURIComponent(attachment.originalName),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'})
+  response.end(binary);return true
+ }
  if((url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations')&&request.method==='POST'){
   const rateIdentity=identity?.id||identity?.email||requestIdentity(request)
   if(!consumeRateLimit('val',rateIdentity,config.aiRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de análises atingido. Aguarde alguns minutos.'})
-  const payload=await body(request);const message=String(payload.message||payload.question||'Prepare a próxima melhor ação.').trim().slice(0,3000)
+  const payload=await body(request);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const message=String(payload.message||payload.question||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).trim().slice(0,3000)
   const clientId=clean(payload.clientId||payload.client?.id)
   if(!clientId)return json(response,400,{error:'Selecione um cliente para ativar o contexto da VAL.'})
   const controller=new AbortController();request.once('aborted',()=>controller.abort());response.once('close',()=>{if(!response.writableEnded)controller.abort()})
-  const result=await valEngine.answer({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,client:payload.client||{},message,mode:clean(payload.mode)||'daily',signal:controller.signal})
-  await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:clean(payload.mode)||'daily',engineMode:result.engineMode}})
+  const result=await valEngine.answer({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,client:payload.client||{},message,attachmentIds,mode:clean(payload.mode)||'daily',signal:controller.signal})
+  await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:clean(payload.mode)||'daily',engineMode:result.engineMode,attachments:attachmentIds.length}})
   return json(response,200,result)
  }
  if(url.pathname==='/api/val/feedback'&&request.method==='POST'){
