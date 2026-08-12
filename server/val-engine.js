@@ -44,7 +44,7 @@ const attachmentReadIntent=/\b(?:leia|ler|transcreva|transcrever|interprete|inte
 
 const count=value=>Array.isArray(value)?value.length:0
 export function summarizeContextCoverage(context={}){
-  return {
+  const coverage={
     profile:Boolean(context.client?.id),
     questionnaire:Object.keys(context.profile?.answers||{}).length,
     businessEvents:count(context.businessHistory),
@@ -58,10 +58,10 @@ export function summarizeContextCoverage(context={}){
     manualRecords:count(context.manualRecords),
     signals:count(context.signals),
     memories:count(context.memories),
-    priorRecommendations:count(context.priorRecommendations),
-    attachments:count(context.attachments),
-    currentAttachments:count(context.currentAttachments)
+    priorRecommendations:count(context.priorRecommendations)
   }
+  const saved=count(context.attachments);const current=count(context.currentAttachments)
+  return {...coverage,...(saved?{attachments:saved}:{}),...(current?{currentAttachments:current}:{})}
 }
 
 function technicalReviewShell(_context,_message,signalRequiresReview){
@@ -131,8 +131,8 @@ export class ValEngine{
 
   async answer({tenantId,ownerId,clientId,client,message,attachmentIds=[],mode='daily',signal}){
     const context=await this.repository.getClientContext({tenantId,ownerId,clientId,client})
-    const selectedAttachments=await this.repository.getAttachments({tenantId,ownerId,clientId,ids:attachmentIds})
-    const savedAttachments=await this.repository.listAttachments({tenantId,ownerId,clientId,limit:20})
+    const selectedAttachments=attachmentIds.length&&typeof this.repository.getAttachments==='function'?await this.repository.getAttachments({tenantId,ownerId,clientId,ids:attachmentIds}):[]
+    const savedAttachments=typeof this.repository.listAttachments==='function'?await this.repository.listAttachments({tenantId,ownerId,clientId,limit:20}):[]
     context.attachments=savedAttachments.filter(item=>['confirmed','stored'].includes(item.status)).map(compactAttachment)
     context.currentAttachments=selectedAttachments.map(compactAttachment)
     const contextCoverage=summarizeContextCoverage(context)
