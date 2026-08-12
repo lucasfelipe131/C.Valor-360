@@ -1,27 +1,40 @@
-import React,{useEffect,useMemo,useState} from 'react'
+import React,{useEffect,useMemo,useRef,useState} from 'react'
 import {
- AlertCircle,BrainCircuit,Check,ChevronRight,ClipboardCheck,DatabaseZap,
- FileSearch,Gauge,Lightbulb,LoaderCircle,MessageSquareText,Route,Send,
- ShieldCheck,Sparkles,Target,ThumbsDown,ThumbsUp,UserRoundSearch,Zap
+ AlertCircle,BrainCircuit,Camera,Check,ChevronRight,ClipboardCheck,DatabaseZap,
+ FileSearch,FileText,FileUp,Gauge,ImagePlus,Lightbulb,LoaderCircle,MessageSquareText,Paperclip,Plus,Route,Send,
+ ShieldCheck,Sparkles,Target,ThumbsDown,ThumbsUp,UserRoundSearch,X,Zap
 } from 'lucide-react'
 import {resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
 const MODES={
- daily:{label:'Modo diário',short:'Diário',description:'Direto ao ponto para visitas, mensagens e próximos passos.'},
- strategic:{label:'Modo estratégico',short:'Estratégico',description:'Aprofunda cenário, decisão, valor e risco comercial.'}
+ daily:{label:'Resposta rápida',short:'Rápido',description:'Resposta curta pro contato de hoje.'},
+ strategic:{label:'Planejar a conta',short:'Planejar',description:'Olha a conta toda antes do próximo passo.'}
 }
 
 const QUICK_PROMPTS=[
- {label:'Como abordar?',icon:MessageSquareText,prompt:'Como devo abordar este produtor agora e qual tom devo usar?'},
- {label:'Maior oportunidade',icon:Target,prompt:'Qual é a oportunidade de maior valor e como devo validá-la?'},
- {label:'Preparar visita',icon:Route,prompt:'Prepare um roteiro para a próxima visita, com perguntas e compromisso de saída.'},
- {label:'Roteiro de fechamento',icon:ClipboardCheck,prompt:'Compare todas as oportunidades e gere perguntas, um roteiro da abertura ao fechamento e opções éticas de próximo compromisso.'},
- {label:'Tirar da inércia',icon:Zap,prompt:'Como criar tensão construtiva sem pressionar e tirar este produtor da zona de conforto?'}
+ {label:'Puxar assunto',icon:MessageSquareText,prompt:'Como eu puxo esse assunto de um jeito natural agora?'},
+ {label:'Preparar visita',icon:Route,prompt:'Me ajuda a preparar a próxima visita, sem conversa enrolada.'},
+ {label:'Próximo passo',icon:Target,prompt:'O que faz mais sentido eu fazer agora com este produtor?'}
 ]
+
+const ATTACHMENT_TYPES=new Set(['image/jpeg','image/png','image/webp','image/gif','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','text/plain'])
+const MAX_ATTACHMENT_BYTES=6_000_000
+const attachmentStatusLabels={received:'Pronto pra ler',interpreted:'Leitura pronta',confirmed:'Confirmado como evidência',stored:'Só guardado',rejected:'Removido'}
+const firstNameOf=client=>String(client?.name||'produtor').trim().split(/\s+/)[0]
+const formatFileSize=value=>value>=1_000_000?(value/1_000_000).toLocaleString('pt-BR',{maximumFractionDigits:1})+' MB':Math.max(1,Math.round(value/1000))+' KB'
+const mergeAttachment=(list,item)=>[item,...list.filter(entry=>entry.id!==item.id)].sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')))
+function fileDataUrl(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error('Não consegui abrir este arquivo.'));reader.readAsDataURL(file)})}
+function imageFromUrl(url){return new Promise((resolve,reject)=>{const image=new window.Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('Não consegui preparar esta foto.'));image.src=url})}
+async function prepareAttachmentFile(file){
+ if(!ATTACHMENT_TYPES.has(file.type))throw new Error('Use foto, PDF, Word, Excel, CSV ou TXT.')
+ if(!file.type.startsWith('image/')||file.type==='image/gif'||file.size<=4_000_000){if(file.size>MAX_ATTACHMENT_BYTES)throw new Error('Cada arquivo pode ter até 6 MB.');return file}
+ const url=URL.createObjectURL(file)
+ try{const image=await imageFromUrl(url);const scale=Math.min(1,2200/image.naturalWidth,2200/image.naturalHeight);const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.82));if(!blob)throw new Error('Não consegui reduzir esta foto.');if(blob.size>MAX_ATTACHMENT_BYTES)throw new Error('A foto ainda ficou maior que 6 MB.');return new File([blob],(file.name.replace(/\.[^.]+$/,'')||'foto')+'.jpg',{type:'image/jpeg',lastModified:file.lastModified})}finally{URL.revokeObjectURL(url)}
+}
 
 function approach(client){
  const legacy=client?.primaryProfile&&!/^a (confirmar|classificar)/i.test(client.primaryProfile)?client.primaryProfile:''
- return `${legacy?`A tag histórica “${legacy}” é apenas um sinal legado. `:''}Confirme qual prova, ritmo, reversibilidade e participantes importam nesta decisão antes de adaptar a abordagem.`
+ return legacy?'Use essa tag só como pista. Confirma na conversa o que importa pra ele hoje.':'Vai simples: entende o que pega hoje e combina só o próximo passo.'
 }
 
 function fallbackAdvice(client,mode,prompt=''){
@@ -30,17 +43,17 @@ function fallbackAdvice(client,mode,prompt=''){
  const opportunity=candidate?.title||''
  const noNeedDeclared=!opportunity&&client?.additionalNeedStatus==='none_declared'
  const strategic=mode==='strategic'
- const nextQuestion=opportunity?{stage:'problema',question:`Onde “${String(opportunity).toLowerCase()}” afeta uma decisão concreta hoje?`,ask_when:'Depois de alinhar objetivo e permissão para usar os dados.',purpose:'Validar se a hipótese cadastrada é prioridade real.',evidence_needed:'Exemplo, área, frequência e decisão afetada.'}:noNeedDeclared?{stage:'situação',question:'Desde a última resposta, surgiu alguma prioridade que valha explorar ou prefere manter o acompanhamento atual?',ask_when:'Depois de reconhecer a resposta anterior.',purpose:'Verificar mudança sem fabricar uma oportunidade.',evidence_needed:'Nova prioridade declarada ou preferência por não avançar.'}:{stage:'situação',question:'Qual decisão ou resultado merece mais atenção neste ciclo?',ask_when:'Na abertura da descoberta.',purpose:'Identificar uma prioridade sem pressupor um problema.',evidence_needed:'Decisão, resultado desejado e contexto.'}
+ const nextQuestion=opportunity?{stage:'problema',question:'Hoje, onde “'+String(opportunity).toLowerCase()+'” mais aperta na operação?',ask_when:'Depois de abrir o assunto.',purpose:'Ver se isso é prioridade de verdade.',evidence_needed:'Um exemplo recente e a decisão afetada.'}:noNeedDeclared?{stage:'situação',question:'Mudou alguma coisa desde a última conversa ou tá tudo certo por aí?',ask_when:'No começo da conversa.',purpose:'Checar mudança sem forçar oportunidade.',evidence_needed:'Uma mudança dita pelo produtor ou a decisão de seguir como está.'}:{stage:'situação',question:'Qual decisão tá puxando mais sua atenção nesta safra?',ask_when:'Na abertura.',purpose:'Ouvir a prioridade dele.',evidence_needed:'Uma decisão concreta e o resultado buscado.'}
  const valueProblem=opportunity?opportunity:noNeedDeclared?'Nenhuma necessidade adicional declarada; oportunidade não confirmada.':'Oportunidade ainda não identificada.'
   return {
-  answer:opportunity?`${approach(client)} ${strategic?'Compare agir, esperar e manter com as mesmas premissas antes de propor qualquer solução.':'Faça somente a próxima pergunta útil e preserve a decisão do produtor.'}`:noNeedDeclared?`${firstName} não declarou necessidade adicional. Confirme apenas se o contexto mudou e preserve a opção de manter o acompanhamento.`:'Ainda não há oportunidade registrada. Faça uma descoberta aberta antes de propor solução ou urgência.',
+  answer:opportunity?'Com '+firstName+', eu iria direto: confirma se “'+String(opportunity).toLowerCase()+'” tá pegando mesmo e pede um exemplo recente. Se vier algo concreto, combina o próximo passo. Se não, não força proposta.':noNeedDeclared?firstName+' não trouxe necessidade nova da última vez. Só pergunta se mudou alguma coisa e, se estiver tudo certo, segue acompanhando sem cavar problema.':'Ainda não apareceu uma prioridade clara pra '+firstName+'. Começa leve: pergunta qual decisão tá puxando mais atenção nesta safra. Ouve primeiro; proposta vem depois.'
   executive_brief:{priority:opportunity?'esta_semana':noNeedDeclared?'sem_acao':'acompanhar',headline:opportunity?`Confirmar se ${String(opportunity).toLowerCase()} é prioridade real`:noNeedDeclared?'Nenhuma nova necessidade foi declarada':'Descobrir a prioridade antes de propor',reason:opportunity?`A hipótese “${opportunity}” existe, mas ainda precisa ser confirmada.`:'Não há oportunidade sustentada por evidência suficiente.',action:opportunity?'Agendar uma conversa breve e registrar prioridade, valor e próximo compromisso.':'Fazer uma pergunta aberta no próximo contato.',deadline:opportunity?'Nos próximos 3 dias':'No próximo contato',question:nextQuestion.question,decision_basis:[opportunity?`Oportunidade registrada → validar antes de propor.`:'Oportunidade não confirmada → iniciar pela descoberta.'],evidence_ids:[],missing_data:opportunity?['prioridade real','linha de base','critério de prova']:['prioridade declarada']},
   objective:opportunity?`Validar a necessidade em ${String(opportunity).toLowerCase()} e definir como a hipótese seria comprovada ou descartada.`:noNeedDeclared?'Confirmar se o contexto mudou sem converter a resposta negativa em hipótese comercial.':'Identificar uma prioridade real antes de abrir uma oportunidade.',
   decision_profile:{decision_context_summary:'Preferências decisórias ainda não confirmadas nesta decisão.',legacy_tag:client?.primaryProfile||'',evidence_ids:[],observed_dimensions:[],adaptation:approach(client)},
   next_question:nextQuestion,
   questions:opportunity?[nextQuestion,{stage:'implicação',question:'Como você compara os riscos de agir agora, esperar e manter a prática?',ask_when:'Depois de confirmar o problema.',purpose:'Evitar pressupor que mudar é melhor.',evidence_needed:'Custo, risco, janela e reversibilidade de cada alternativa.'}]:[nextQuestion],
   opportunity_review:{total_considered:Number(Boolean(opportunity)),open_count:Number(Boolean(opportunity)),selected_title:opportunity,selected_stage:opportunity?'Descoberta':'',selected_value:Number(client?.commercial?.openPotential||0),why_priority:opportunity?'É a única hipótese disponível; ainda precisa ser validada.':'Nenhuma oportunidade foi priorizada.',alternatives_considered:[]},
-  conversation_plan:{opening:opportunity?`“${firstName}, quero confirmar se ${String(opportunity).toLowerCase()} ainda merece prioridade.”`:`“${firstName}, qual decisão mais merece atenção neste ciclo?”`,steps:[{stage:'abertura',goal:'Alinhar o objetivo.',suggested_line:'“Podemos usar alguns minutos para definir a prioridade e o próximo passo?”',advance_signal:'O produtor confirma tema e tempo.',if_resistance:'Combine outro momento.'},{stage:'diagnóstico',goal:'Confirmar contexto e impacto.',suggested_line:nextQuestion.question,advance_signal:'Surge uma decisão concreta afetada.',if_resistance:'Volte a uma pergunta aberta.'},{stage:'valor',goal:'Definir resultado e prova.',suggested_line:'“Que resultado mensurável faria isso valer a pena?”',advance_signal:'Há métrica e critério de comparação.',if_resistance:'Proponha apenas levantar a linha de base.'},{stage:'fechamento',goal:'Definir o menor próximo compromisso.',suggested_line:'“Qual próximo passo faz sentido e quem precisa participar?”',advance_signal:'Responsável e prazo definidos.',if_resistance:'Mantenha acompanhamento sem proposta.'}],closing_options:[{when:'Quando prioridade e prova estiverem confirmadas.',suggested_line:'“Posso organizar uma proposta com essas premissas?”',commitment:'Definir data de revisão.'},{when:'Quando faltarem dados.',suggested_line:'“Levantamos os dados e decidimos depois, sem compromisso?”',commitment:'Definir dado, responsável e prazo.'}],do_not_say:['Não afirmar que a oportunidade já está confirmada.','Não prometer resultado sem linha de base.']},
+  conversation_plan:{opening:opportunity?`“${firstName}, quero confirmar se ${String(opportunity).toLowerCase()} ainda merece prioridade.”`:`“${firstName}, qual decisão mais merece atenção neste ciclo?”`,steps:[{stage:'abertura',goal:'Alinhar o objetivo.',suggested_line:'“Pode ser direto? Quero só entender o que pega mais e combinar o próximo passo.”',advance_signal:'O produtor confirma tema e tempo.',if_resistance:'Combine outro momento.'},{stage:'diagnóstico',goal:'Confirmar contexto e impacto.',suggested_line:nextQuestion.question,advance_signal:'Surge uma decisão concreta afetada.',if_resistance:'Volte a uma pergunta aberta.'},{stage:'valor',goal:'Definir resultado e prova.',suggested_line:'“Que resultado faria isso valer a pena pra você?”',advance_signal:'Há métrica e critério de comparação.',if_resistance:'Proponha apenas levantar a linha de base.'},{stage:'fechamento',goal:'Definir o menor próximo compromisso.',suggested_line:'“Qual próximo passo faz sentido agora e quem entra junto?”',advance_signal:'Responsável e prazo definidos.',if_resistance:'Mantenha acompanhamento sem proposta.'}],closing_options:[{when:'Quando prioridade e prova estiverem confirmadas.',suggested_line:'“Posso organizar uma proposta com essas premissas?”',commitment:'Definir data de revisão.'},{when:'Quando faltarem dados.',suggested_line:'“Levantamos os dados e decidimos depois, sem compromisso?”',commitment:'Definir dado, responsável e prazo.'}],do_not_say:['Não afirmar que a oportunidade já está confirmada.','Não prometer resultado sem linha de base.']},
   constructive_tension:{status:'not_applicable',consent_status:'unknown',permission_prompt:'Posso testar uma hipótese quando tivermos uma linha de base?',evidence_ids:[],reframe:'',autonomy:'A escolha continua com o produtor.',stop_reason:'Falta evidência comparável e consentimento registrado.',uncertainty:'A oportunidade ainda não foi confirmada.'},
   value_hypothesis:{problem:valueProblem,baseline:'Não confirmada.',act_now:opportunity?'A medir.':'Não aplicável antes da descoberta.',wait:opportunity?'A medir.':'Manter acompanhamento sem presumir perda.',maintain:opportunity?'A medir.':'Respeitar a situação atual.',impact_to_quantify:opportunity?'R$/ha, sc/ha, tempo, janela e risco.':'Nenhum impacto a quantificar sem oportunidade.',value_metric:opportunity?'Valor realizado contra a mesma linha de base.':'A definir após uma prioridade real.',time_horizon:'A definir.',proof_plan:opportunity?'Comparação controlada antes de escalar.':'Não abrir prova comercial antes da descoberta.',double_counting_guard:'Não somar duas vezes o mesmo benefício.',uncertainty:opportunity?'Sem contrafactual não há estimativa defensável.':'Ausência de oportunidade confirmada.'},
   next_best_action:opportunity?`Convide ${firstName} para uma conversa de 20 minutos e defina uma única métrica que será levantada antes da visita.`:noNeedDeclared?'Mantenha o acompanhamento combinado e só reabra a descoberta se houver mudança de contexto ou permissão do produtor.':'Faça uma pergunta aberta de situação antes de registrar qualquer oportunidade.',
@@ -72,8 +85,8 @@ function asList(value,fallback=[]){
  return list.map(textValue).filter(Boolean)
 }
 
-const sourceLabels={client_record:'cadastro do cliente',producer_questionnaire:'Produtor 360',business_history:'histórico de negócios',visit:'visita',interaction:'interação',opportunity:'oportunidade',field_report:'relatório de campo',soil_analysis:'análise de solo',ndvi:'NDVI',manual_record:'núcleo técnico do VALOR 360',producer_statement:'declaração do produtor',approved_playbook:'playbook aprovado',missing:'dado ausente',unknown:'origem não confirmada'}
-const coverageLabels={questionnaire:'respostas 360',businessEvents:'negócios',visits:'visitas',interactions:'interações',opportunities:'oportunidades',properties:'propriedades',fieldReports:'relatórios de campo',soilAnalyses:'análises de solo',ndvi:'leituras NDVI',manualRecords:'registros técnicos',signals:'sinais',memories:'memórias',priorRecommendations:'análises anteriores'}
+const sourceLabels={client_record:'cadastro do cliente',producer_questionnaire:'Produtor 360',business_history:'histórico de negócios',visit:'visita',interaction:'interação',opportunity:'oportunidade',field_report:'relatório de campo',soil_analysis:'análise de solo',ndvi:'NDVI',manual_record:'núcleo técnico do VALOR 360',producer_statement:'declaração do produtor',approved_playbook:'playbook aprovado',consultant_attachment:'arquivo do consultor',missing:'dado ausente',unknown:'origem não confirmada'}
+const coverageLabels={questionnaire:'respostas 360',businessEvents:'negócios',visits:'visitas',interactions:'interações',opportunities:'oportunidades',properties:'propriedades',fieldReports:'relatórios de campo',soilAnalyses:'análises de solo',ndvi:'leituras NDVI',manualRecords:'registros técnicos',signals:'sinais',memories:'memórias',priorRecommendations:'análises anteriores',attachments:'arquivos confirmados',currentAttachments:'arquivos desta pergunta'}
 const confidenceLabels={not_calibrated:'não calibrada',insufficient:'insuficiente',low:'baixa',moderate:'moderada',high:'alta'}
 const reviewerLabels={technical_reviewer:'responsável técnico habilitado',manager:'gestor',consultant:'consultor',none:'não exigido'}
 function dateValue(value){if(!value||value==='unknown')return 'data não informada';const date=new Date(value);return Number.isNaN(date.getTime())?String(value):date.toLocaleDateString('pt-BR')}
@@ -198,6 +211,13 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const [loading,setLoading]=useState(false)
  const [error,setError]=useState('')
  const [feedback,setFeedback]=useState({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})
+ const [attachments,setAttachments]=useState([])
+ const [savedAttachments,setSavedAttachments]=useState([])
+ const [attachmentMenu,setAttachmentMenu]=useState(false)
+ const [attachmentState,setAttachmentState]=useState({loading:false,uploading:false,error:''})
+ const cameraInput=useRef(null)
+ const photoInput=useRef(null)
+ const documentInput=useRef(null)
 
  useEffect(()=>{if(selectedClient?.id)setSelected(selectedClient.id)},[selectedClient])
 
@@ -220,6 +240,17 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
   setError('')
   setFeedback({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})
  },[selected,mode])
+
+ useEffect(()=>{
+  if(!selected){setSavedAttachments([]);return}
+  const controller=new AbortController()
+  setAttachmentState(current=>({...current,loading:true,error:''}))
+  fetch('/api/val/attachments?clientId='+encodeURIComponent(selected),{signal:controller.signal})
+   .then(async result=>{const payload=await result.json().catch(()=>({}));if(result.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!result.ok)throw new Error(payload.error||'Não consegui buscar os arquivos.');return payload})
+   .then(payload=>{setSavedAttachments(payload.attachments||[]);setAttachmentState(current=>({...current,loading:false,error:''}))})
+   .catch(fetchError=>{if(fetchError.name!=='AbortError')setAttachmentState(current=>({...current,loading:false,error:fetchError.message}))})
+  return()=>controller.abort()
+ },[selected])
 
  const client=useMemo(()=>clients.find(item=>item.id===selected)||clients[0]||null,[clients,selected])
  const localAdvice=useMemo(()=>fallbackAdvice(client,mode),[client,mode])
@@ -244,10 +275,33 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const engineReady=configured&&!status.error
  const recommendationRegistered=Boolean(response?.recommendationId)
  const contextSources=Object.entries(response?.contextCoverage||{}).filter(([key,value])=>key!=='profile'&&Number(value)>0).map(([key,value])=>({key,label:coverageLabels[key]||key,value}))
+ const interpretedAttachments=Array.isArray(response?.attachments)?response.attachments.filter(item=>item.status!=='received'||item.analysis?.summary):[]
+
+ const uploadFiles=async event=>{
+  const files=Array.from(event.target.files||[]);event.target.value='';setAttachmentMenu(false)
+  if(!files.length||attachmentState.uploading)return
+  const slots=Math.max(0,3-attachments.length);if(!slots){setAttachmentState(current=>({...current,error:'Envie no máximo 3 arquivos por pergunta.'}));return}
+  setAttachmentState(current=>({...current,uploading:true,error:''}))
+  try{
+   for(const original of files.slice(0,slots)){
+    const file=await prepareAttachmentFile(original);const dataUrl=await fileDataUrl(file)
+    const result=await fetch('/api/val/attachments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:client.id,originalName:file.name,mimeType:file.type,sizeBytes:file.size,dataUrl}),signal:AbortSignal.timeout(60000)})
+    const payload=await result.json().catch(()=>({}));if(result.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!result.ok)throw new Error(payload.error||'Não consegui enviar este arquivo.')
+    setAttachments(current=>current.some(item=>item.id===payload.attachment.id)?current:[...current,payload.attachment].slice(0,3))
+    setSavedAttachments(current=>mergeAttachment(current,payload.attachment))
+   }
+  }catch(uploadError){setAttachmentState(current=>({...current,error:uploadError.message}))}finally{setAttachmentState(current=>({...current,uploading:false}))}
+ }
+
+ const updateAttachmentStatus=async(id,statusValue)=>{
+  setAttachmentState(current=>({...current,error:''}))
+  try{const result=await fetch('/api/val/attachments',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id,status:statusValue}),signal:AbortSignal.timeout(15000)});const payload=await result.json().catch(()=>({}));if(result.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!result.ok)throw new Error(payload.error||'Não consegui atualizar este arquivo.');const item=payload.attachment;if(statusValue==='rejected'){setAttachments(current=>current.filter(entry=>entry.id!==id));setSavedAttachments(current=>current.filter(entry=>entry.id!==id))}else{setAttachments(current=>current.map(entry=>entry.id===id?item:entry));setSavedAttachments(current=>mergeAttachment(current,item));setResponse(current=>current?{...current,attachments:(current.attachments||[]).map(entry=>entry.id===id?item:entry)}:current)}}catch(updateError){setAttachmentState(current=>({...current,error:updateError.message}))}
+ }
 
  const ask=async(rawMessage,requestedMode=mode)=>{
-  const prompt=String(rawMessage||message).trim()
-  if(!prompt||!client||loading)return
+  const attachmentIds=attachments.map(item=>item.id).filter(Boolean).slice(0,3)
+  const prompt=String(rawMessage||message||(attachmentIds.length?'Leia esses arquivos e me diga o que importa.':'')).trim()
+  if((!prompt&&!attachmentIds.length)||!client||loading)return
   setLoading(true)
   setError('')
   setFeedback({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})
@@ -255,31 +309,24 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
    const result=await fetch('/api/val/chat',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({clientId:client.id,client,message:prompt,mode:requestedMode}),
+    body:JSON.stringify({clientId:client.id,client,message:prompt,attachmentIds,mode:requestedMode}),
     signal:AbortSignal.timeout(120000)
    })
    const payload=await result.json().catch(()=>({}))
    if(result.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}
-   if(!result.ok)throw new Error(payload?.error||payload?.message||'A inteligência não respondeu agora.')
+   if(!result.ok)throw new Error(payload?.error||payload?.message||'A VAL não respondeu agora.')
    if(!payload?.advice)throw new Error('A resposta chegou incompleta.')
    setResponse(payload)
    setMessage('')
+   setAttachments(payload.engineMode==='openai'?[]:(payload.attachments||attachments))
+   ;(payload.attachments||[]).forEach(item=>setSavedAttachments(current=>mergeAttachment(current,item)))
   }catch(requestError){
-   setResponse({
-    recommendationId:null,
-    engineMode:'fallback',
-    model:null,
-    warning:'Resposta construída com o contexto disponível neste dispositivo.',
-    advice:fallbackAdvice(client,requestedMode,prompt)
-   })
-   setError(`${requestError.message} Mantive uma orientação segura em modo resiliente.`)
+   if(attachmentIds.length)setError(requestError.message+' Os arquivos continuam salvos com este produtor; tente de novo.')
+   else{setResponse({recommendationId:null,engineMode:'fallback',model:null,warning:'Resposta construída com o contexto disponível neste dispositivo.',advice:fallbackAdvice(client,requestedMode,prompt)});setError(requestError.message+' Mantive uma orientação segura em modo resiliente.')}
   }finally{setLoading(false)}
  }
 
- const chooseMode=value=>{
-  setMode(value)
-  if(value==='strategic')ask('Construa um pensamento estratégico completo para esta conta: cenário, compras globais, potencial em aberto, riscos, alternativas, plano de validação e próxima melhor ação.',value)
- }
+ const chooseMode=value=>setMode(value)
 
  const sendFeedback=async event=>{
   event.preventDefault()
@@ -308,16 +355,16 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  return <section className="val-workspace" aria-labelledby="val-workspace-title">
   <header className="val-hero">
    <div className="val-hero-copy">
-    <div className="val-brand-line"><span className="val-orbit"><BrainCircuit aria-hidden="true"/></span><div><span className="val-kicker">VAL • VALUE AGRICULTURE INTELLIGENCE</span><h2 id="val-workspace-title">Clareza para a próxima conversa.</h2></div></div>
-    <p>A inteligência comercial que lê o contexto, desafia premissas e transforma sinais da propriedade em uma próxima ação responsável.</p>
+    <div className="val-brand-line"><span className="val-orbit"><BrainCircuit aria-hidden="true"/></span><div><span className="val-kicker">VAL • SUA PARCEIRA DE CAMPO</span><h2 id="val-workspace-title">Converse com a VAL.</h2></div></div>
+    <p>Pergunte como você falaria com alguém do time. A VAL lê o contexto e vai direto no que importa.</p>
     <div className="val-engine-line" aria-live="polite">
-     <span className={`val-live-pill ${engineReady?'is-ready':''}`}><i/>{status.loading?'Verificando engine':engineReady?'Engine conectada':'Modo resiliente'}</span>
+     <span className={`val-live-pill ${engineReady?'is-ready':''}`}><i/>{status.loading?'Preparando a VAL':engineReady?'VAL pronta':'VAL disponível'}</span>
      <span>{status.data?.mode?modeLabel(status.data.mode):'Contexto protegido'}</span>
      {status.data?.knowledgeBase&&<span>Base de conhecimento cadastrada</span>}
     </div>
    </div>
    <aside className="val-context-card" aria-label="Contexto do produtor selecionado">
-    <div className="val-context-head"><span>CONTEXTO ATIVO</span><UserRoundSearch aria-hidden="true"/></div>
+    <div className="val-context-head"><span>CONVERSANDO SOBRE</span><UserRoundSearch aria-hidden="true"/></div>
     <div className="val-client-identity"><span>{client.name.split(' ').slice(0,2).map(part=>part[0]).join('').toUpperCase()}</span><div><small>{client.commercial?.property||'Propriedade'}</small><h3>{client.name}</h3></div></div>
     <dl className="val-context-facts">
      <div><dt>Tag Produtor 360</dt><dd>{client.primaryProfile||'Em leitura'}</dd></div>
@@ -329,26 +376,56 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
 
   <div className="val-command-zone">
    <div className="val-toolbar">
-    <label className="val-client-select"><span>Produtor em análise</span><select value={selected} onChange={event=>setSelected(event.target.value)} aria-label="Selecionar produtor">{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-    <div className="val-mode-picker"><div><span>Profundidade da análise</span><small>{MODES[mode].description}</small></div><div role="group" aria-label="Escolher modo da VAL">{Object.entries(MODES).map(([value,item])=><button key={value} type="button" disabled={loading} className={mode===value?'active':''} aria-pressed={mode===value} onClick={()=>chooseMode(value)}>{value==='daily'?<Zap/>:<BrainCircuit/>}{item.short}</button>)}</div></div>
+    <label className="val-client-select"><span>Produtor</span><select value={selected} onChange={event=>setSelected(event.target.value)} aria-label="Selecionar produtor">{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+    <div className="val-mode-picker"><div><span>Tipo de ajuda</span><small>{MODES[mode].description}</small></div><div role="group" aria-label="Escolher modo da VAL">{Object.entries(MODES).map(([value,item])=><button key={value} type="button" disabled={loading} className={mode===value?'active':''} aria-pressed={mode===value} onClick={()=>chooseMode(value)}>{value==='daily'?<Zap/>:<BrainCircuit/>}{item.short}</button>)}</div></div>
    </div>
 
    <div className="val-quick-prompts" aria-label="Perguntas rápidas">{QUICK_PROMPTS.map(item=>{const Icon=item.icon;return <button key={item.label} type="button" onClick={()=>ask(item.prompt)} disabled={loading}><Icon aria-hidden="true"/><span>{item.label}</span><ChevronRight aria-hidden="true"/></button>})}</div>
 
    <form className="val-composer" onSubmit={event=>{event.preventDefault();ask(message)}}>
-    <Sparkles aria-hidden="true"/>
-    <label><span className="sr-only">Pergunte à VAL sobre este produtor</span><textarea rows="2" value={message} maxLength="800" onChange={event=>setMessage(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ask(message)}}} placeholder={`Pergunte à VAL sobre ${client.name.split(' ')[0]}...`}/></label>
-    <button type="submit" disabled={!message.trim()||loading} aria-label="Enviar pergunta">{loading?<LoaderCircle className="val-spinner" aria-hidden="true"/>:<Send aria-hidden="true"/>}<span>{loading?'Analisando':'Analisar'}</span></button>
+    <div className="val-attach-control">
+     <button className="val-attach-button" type="button" onClick={()=>setAttachmentMenu(value=>!value)} disabled={loading||attachmentState.uploading} aria-label="Adicionar foto ou documento" aria-expanded={attachmentMenu}><Plus aria-hidden="true"/></button>
+     {attachmentMenu&&<div className="val-attach-menu" role="menu">
+      <button type="button" role="menuitem" onClick={()=>cameraInput.current?.click()}><Camera/><span><b>Tirar foto</b><small>Abrir a câmera</small></span></button>
+      <button type="button" role="menuitem" onClick={()=>photoInput.current?.click()}><ImagePlus/><span><b>Escolher foto</b><small>Usar uma imagem salva</small></span></button>
+      <button type="button" role="menuitem" onClick={()=>documentInput.current?.click()}><FileUp/><span><b>Enviar documento</b><small>PDF, Word, Excel, CSV ou TXT</small></span></button>
+     </div>}
+     <input ref={cameraInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={uploadFiles}/>
+     <input ref={photoInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple onChange={uploadFiles}/>
+     <input ref={documentInput} className="sr-only" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,text/csv,text/plain" multiple onChange={uploadFiles}/>
+    </div>
+    <label><span className="sr-only">Pergunte à VAL sobre este produtor</span><textarea rows="2" value={message} maxLength="800" onChange={event=>setMessage(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ask(message)}}} placeholder={'Pergunte ou conte algo sobre '+firstNameOf(client)+'…'}/></label>
+    <button type="submit" disabled={(!message.trim()&&!attachments.length)||loading||attachmentState.uploading} aria-label="Enviar para a VAL">{loading?<LoaderCircle className="val-spinner" aria-hidden="true"/>:<Send aria-hidden="true"/>}<span>{loading?'Pensando':'Enviar'}</span></button>
    </form>
-   {loading&&<div className="val-thinking" role="status"><span/><div><b>A VAL está cruzando contexto e objetivo.</b><small>Organizando evidências, perguntas e próximo compromisso…</small></div></div>}
+   {attachments.length>0&&<div className="val-attachment-tray" aria-label="Arquivos desta pergunta">{attachments.map(item=><article key={item.id}>{item.mimeType?.startsWith('image/')?<ImagePlus/>:<FileText/>}<span><b>{item.originalName}</b><small>{formatFileSize(item.sizeBytes)} • {attachmentStatusLabels[item.status]||item.status}</small></span><button type="button" onClick={()=>setAttachments(current=>current.filter(entry=>entry.id!==item.id))} aria-label={'Tirar '+item.originalName+' desta pergunta'}><X/></button></article>)}</div>}
+   {attachmentState.uploading&&<div className="val-file-progress" role="status"><LoaderCircle className="val-spinner"/><span>Enviando arquivo…</span></div>}
+   {attachmentState.error&&<div className="val-warning val-file-warning" role="alert"><AlertCircle/><span>{attachmentState.error}</span></div>}
+   <details className="val-files-panel">
+    <summary><Paperclip/><span>Arquivos de {firstNameOf(client)}</span><b>{savedAttachments.length}</b></summary>
+    {attachmentState.loading?<p>Buscando arquivos…</p>:savedAttachments.length?<ul>{savedAttachments.map(item=><li key={item.id}>{item.mimeType?.startsWith('image/')?<ImagePlus/>:<FileText/>}<span><a href={'/api/val/attachments/'+item.id} target="_blank" rel="noreferrer">{item.originalName}</a><small>{formatFileSize(item.sizeBytes)} • {attachmentStatusLabels[item.status]||item.status}</small></span>{!attachments.some(entry=>entry.id===item.id)&&attachments.length<3&&<button type="button" onClick={()=>setAttachments(current=>[...current,item].slice(0,3))}>Usar</button>}</li>)}</ul>:<p>Nenhum arquivo salvo ainda.</p>}
+   </details>
+   {loading&&<div className="val-thinking" role="status"><span/><div><b>A VAL tá olhando tudo.</b><small>Já volto com uma resposta curta e o próximo passo.</small></div></div>}
    {(error||response?.warning)&&<div className="val-warning" role="status"><AlertCircle aria-hidden="true"/><span>{error||response.warning}</span></div>}
   </div>
 
   <div className="val-response" aria-busy={loading}>
    <span className="sr-only" role="status">{loading?'Análise em andamento.':recommendationRegistered?'Nova recomendação registrada.':response?'Nova orientação não registrada.':'Pré-análise local.'}</span>
-   <div className="val-response-heading"><div><span className="val-section-icon"><Sparkles/></span><div><span>{recommendationRegistered?'RECOMENDAÇÃO REGISTRADA':response?'ORIENTAÇÃO NÃO REGISTRADA':'PRÉ-ANÁLISE LOCAL'}</span><h3>O que fazer agora</h3></div></div><div className="val-response-meta"><span>{response?modeLabel(response.engineMode):'Ainda não enviada à engine'}</span>{response&&!recommendationRegistered&&<span>Somente neste dispositivo</span>}{response?.model&&<span>{response.model}</span>}</div></div>
-   <div className="val-internal-banner"><ShieldCheck/><span><b>Uso interno do consultor</b><small>Esta saída não está aprovada para apresentação direta ao produtor.</small></span></div>
+   <div className="val-response-heading"><div><span className="val-section-icon"><Sparkles/></span><div><span>{recommendationRegistered?'RESPOSTA SALVA':response?'RESPOSTA LOCAL':'PRA COMEÇAR'}</span><h3>Minha leitura</h3></div></div><div className="val-response-meta"><span>Sobre {firstNameOf(client)}</span></div></div>
+   <div className="val-internal-banner"><ShieldCheck/><span><b>Rascunho de trabalho</b><small>Confira antes de usar com o produtor.</small></span></div>
 
+   <section className="val-chat-answer" aria-label="Resposta principal da VAL">
+    <span className="val-chat-avatar">VAL</span>
+    <div><small>VAL</small><p>{advice.answer}</p>{brief.question&&<div className="val-ready-question"><MessageSquareText/><span><small>Se quiser uma frase pronta</small><b>{brief.question}</b></span></div>}</div>
+   </section>
+
+   {interpretedAttachments.length>0&&<section className="val-attachment-reading" aria-label="Leitura dos arquivos">
+    <header><FileSearch/><span><small>ARQUIVOS DESTA PERGUNTA</small><h3>O que eu consegui ler</h3></span></header>
+    <p>Confirme só se a leitura bater com o original. Foto e anotação ajudam a organizar a conversa, mas não viram diagnóstico.</p>
+    <ul>{interpretedAttachments.map(item=><li key={item.id}><div>{item.mimeType?.startsWith('image/')?<ImagePlus/>:<FileText/>}<span><a href={'/api/val/attachments/'+item.id} target="_blank" rel="noreferrer">{item.originalName}</a><small>{attachmentStatusLabels[item.status]||item.status}</small></span></div>{item.analysis?.summary&&<p><b>Li:</b> {item.analysis.summary}</p>}{item.analysis?.uncertainty&&<p><b>Falta confirmar:</b> {item.analysis.uncertainty}</p>}{item.status==='interpreted'&&<div className="val-file-actions"><button type="button" onClick={()=>updateAttachmentStatus(item.id,'confirmed')}><Check/>Confirmar como evidência</button><button type="button" onClick={()=>updateAttachmentStatus(item.id,'stored')}>Só guardar</button></div>}</li>)}</ul>
+   </section>}
+
+   <details className="val-plan-details">
+    <summary><Route/><span><b>Ver roteiro completo e o porquê</b><small>Ação, prazo, perguntas e sinais pra avançar</small></span><ChevronRight/></summary>
    <section className={`val-executive-brief priority-${brief.priority}`} aria-label="Recomendação objetiva da VAL">
     <header><span>{priorityLabels[brief.priority]||priorityLabels.acompanhar}</span><h3>{brief.headline}</h3><p>{brief.reason}</p></header>
     <div className="val-brief-actions">
@@ -368,9 +445,10 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
     {conversation.closing.length>0&&<div className="val-closing-options"><small>OPÇÕES DE FECHAMENTO</small><div>{conversation.closing.map(item=><article key={item.id}><span>{item.when}</span><b>{item.line}</b><em>{item.commitment}</em></article>)}</div></div>}
     {conversation.avoid.length>0&&<div className="val-conversation-avoid"><small>EVITE NA CONVERSA</small><ul>{conversation.avoid.map((item,index)=><li key={`${item}-${index}`}>{item}</li>)}</ul></div>}
    </section>
+   </details>
 
    <details className="val-analysis-details">
-    <summary><DatabaseZap/>Ver dossiê, evidências e critérios completos</summary>
+    <summary><DatabaseZap/>Ver dossiê e detalhes técnicos</summary>
     {response&&<div className="val-context-coverage"><div><DatabaseZap/><span><b>Dossiê cruzado pela VAL</b><small>Cadastro canônico{response.contextCoverage?.profile?' + perfil Produtor 360':''}</small></span></div><ul>{contextSources.length?contextSources.map(item=><li key={item.key}><b>{item.value}</b><span>{item.label}</span></li>):<li><b>1</b><span>cadastro do produtor</span></li>}</ul></div>}
 
    <div className="val-insight-grid">
