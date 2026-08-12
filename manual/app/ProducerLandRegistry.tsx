@@ -1,7 +1,7 @@
 "use client";
 
 import { ChangeEvent, useMemo, useState } from "react";
-import FieldMap, { type MapPoint } from "./FieldMap";
+import FieldMap, { type BoundarySelection, type MapPoint } from "./FieldMap";
 import { saveRecord } from "./records";
 
 export type LandRegistration = {
@@ -18,6 +18,17 @@ export type LandRegistration = {
   documentName: string;
   documentUpdatedAt: string;
   points: MapPoint[];
+  boundaryEvidence?: {
+    sourceKind: BoundarySelection["sourceKind"];
+    sourceLabel: string;
+    registry: string;
+    parcelCode: string;
+    propertyCode: string;
+    status: string;
+    ownerStatus: BoundarySelection["ownerStatus"];
+    checkedAt: string;
+    geometryStatus: "adopted" | "modified";
+  };
 };
 
 export type RegistryField = {
@@ -140,6 +151,38 @@ export default function ProducerLandRegistry({
         registration.id === item.id ? item : registration,
       ),
     );
+  }
+
+  function applyBoundaryEvidence(selection: BoundarySelection) {
+    if (!active) return;
+    const verifiedSigef = selection.sourceKind === "sigef_wfs";
+    const officialCar = selection.sourceKind === "car_wfs";
+    updateRegistration({
+      ...active,
+      points: selection.points,
+      number: verifiedSigef && !active.number.trim() && selection.registry
+        ? selection.registry
+        : active.number,
+      propertyName: verifiedSigef && !active.propertyName.trim() && selection.propertyName
+        ? selection.propertyName
+        : active.propertyName,
+      boundaryEvidence: {
+        sourceKind: selection.sourceKind,
+        sourceLabel: selection.sourceLabel,
+        registry: selection.registry ?? "",
+        parcelCode: selection.parcelCode ?? "",
+        propertyCode: selection.propertyCode ?? "",
+        status: selection.status ?? "",
+        ownerStatus: selection.ownerStatus,
+        checkedAt: selection.queriedAt ?? new Date().toISOString(),
+        geometryStatus: "adopted",
+      },
+    });
+    setMessage(verifiedSigef
+      ? "Limite SIGEF adotado e vinculado à matrícula. A fonte não disponibilizou proprietário; nenhum titular foi inferido."
+      : officialCar
+        ? "Limite declarado no CAR adotado. Ele não comprova domínio e a fonte pública não disponibiliza proprietário."
+        : "Limite do arquivo adotado. A procedência declarada e eventuais metadados de titular ainda precisam de conferência oficial.");
   }
 
   async function saveDraft() {
@@ -318,7 +361,15 @@ export default function ProducerLandRegistry({
 
             <FieldMap
               points={active.points}
-              onChange={(points) => updateRegistration({ ...active, points })}
+              onChange={(points) => updateRegistration({
+                ...active,
+                points,
+                boundaryEvidence: active.boundaryEvidence
+                  ? { ...active.boundaryEvidence, geometryStatus: "modified" }
+                  : undefined,
+              })}
+              contextMunicipality={active.municipality}
+              onBoundaryUse={applyBoundaryEvidence}
               referencePolygons={linkedFields.map((field) => ({
                 id: field.id,
                 label: field.name,
@@ -327,7 +378,28 @@ export default function ProducerLandRegistry({
                 fillColor: "#60a5fa",
               }))}
             />
-            <small className="registry-map-note">Toque no mapa para desenhar o perímetro de referência da matrícula. O croqui não substitui levantamento georreferenciado ou certidão oficial.</small>
+            <small className="registry-map-note">Use Localizar, Importar, Desenhar e Revisar para compor o perímetro. O croqui não substitui levantamento georreferenciado ou certidão oficial.</small>
+
+            {active.boundaryEvidence && (
+              <div className="registry-source-evidence">
+                <span className="eyebrow">RASTREABILIDADE DO LIMITE</span>
+                <b>{active.boundaryEvidence.sourceLabel}</b>
+                <small>
+                  {active.boundaryEvidence.sourceKind === "sigef_wfs"
+                    ? "SIGEF certificado"
+                    : active.boundaryEvidence.sourceKind === "car_wfs"
+                      ? "CAR autodeclarado"
+                      : "Arquivo fornecido pelo usuário"}
+                  {active.boundaryEvidence.registry ? ` · matrícula ${active.boundaryEvidence.registry}` : ""}
+                  {active.boundaryEvidence.parcelCode ? ` · parcela ${active.boundaryEvidence.parcelCode}` : ""}
+                </small>
+                <small>
+                  Geometria {active.boundaryEvidence.geometryStatus === "adopted" ? "igual à fonte adotada" : "alterada depois da importação"}
+                  {active.boundaryEvidence.ownerStatus === "not_provided" ? " · proprietário não disponibilizado pela fonte" : " · titular do arquivo não verificado"}
+                  {` · consulta ${new Date(active.boundaryEvidence.checkedAt).toLocaleString("pt-BR")}`}
+                </small>
+              </div>
+            )}
 
             <div className="registry-alerts">
               {active.points.length < 3 && <p className="warning">Croqui da matrícula ainda não desenhado.</p>}
@@ -353,7 +425,7 @@ export default function ProducerLandRegistry({
       </div>
 
       <p className="registry-legal-note">
-        A pesquisa é interna e usa somente os dados inseridos no aparelho. Validação jurídica, cadeia dominial e emissão de certidão devem ser feitas no cartório ou serviço oficial autorizado.
+        A busca de localização usa IBGE/OpenStreetMap. Limites CAR autodeclarados vêm da Consulta Pública do SICAR; parcelas certificadas vêm do serviço OGC público do Acervo Fundiário/INCRA. Nenhuma dessas geometrias comprova domínio. O sistema não acessa contas, não contorna captcha, não raspa serviços privados e não infere proprietário. Validação jurídica, cadeia dominial e emissão de certidão devem ser feitas no cartório ou serviço oficial autorizado.
       </p>
     </section>
   );

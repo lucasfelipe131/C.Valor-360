@@ -24,6 +24,12 @@ import ProducerCrmImport from "./ProducerCrmImport";
 import NutrientRemovalCalculator from "./NutrientRemovalCalculator";
 import PhotoDiagnosis from "./PhotoDiagnosis";
 import ProducerLandRegistry, { type LandRegistration } from "./ProducerLandRegistry";
+import {
+  BRAZIL_UFS,
+  estimateRegionalHarvest,
+  recommendPlantPopulation,
+  type ProductionEnvironment,
+} from "./agronomy-planning";
 
 const embeddedInValor360 = process.env.NEXT_PUBLIC_VALOR360_EMBEDDED === "1";
 
@@ -42,6 +48,7 @@ type PageKey =
   | "empresa";
 type CalcKey =
   | "semeadora"
+  | "populacao"
   | "sementes"
   | "colheita"
   | "zoneamento"
@@ -3851,6 +3858,23 @@ function Calculators({
   const [harvestAdjustment, setHarvestAdjustment] = useState(7);
   const [expectedEffectiveRain, setExpectedEffectiveRain] = useState(0);
   const [pivotEfficiency, setPivotEfficiency] = useState(85);
+  const [planningUf, setPlanningUf] = useState("RS");
+  const [planningMunicipality, setPlanningMunicipality] = useState("São Luiz Gonzaga");
+  const [planningProducerId, setPlanningProducerId] = useState("");
+  const [planningMunicipalities, setPlanningMunicipalities] = useState<Array<{ id: number; nome: string }>>([]);
+  const [planningMunicipalitiesStatus, setPlanningMunicipalitiesStatus] = useState<"loading" | "ready" | "cached" | "error">("loading");
+  const [planningLatitude, setPlanningLatitude] = useState<number | null>(null);
+  const [planningLatitudeStatus, setPlanningLatitudeStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [idealPopulationCrop, setIdealPopulationCrop] = useState<Cultivar["crop"]>("Soja");
+  const [idealPopulationCultivarId, setIdealPopulationCultivarId] = useState(
+    cultivarCatalog.soybean[0]?.id ?? "",
+  );
+  const [idealPopulationDate, setIdealPopulationDate] = useState("");
+  const [productionEnvironment, setProductionEnvironment] = useState<ProductionEnvironment>("medio");
+  const [yieldGapPercent, setYieldGapPercent] = useState(15);
+  const [idealGermination, setIdealGermination] = useState(90);
+  const [idealEmergence, setIdealEmergence] = useState(88);
+  const [idealSpacing, setIdealSpacing] = useState(45);
   const [quoteProducer, setQuoteProducer] = useState("");
   const [quoteProperty, setQuoteProperty] = useState("");
   const [quoteDueDate, setQuoteDueDate] = useState("");
@@ -3879,6 +3903,80 @@ function Calculators({
       discount: 3,
     },
   ]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const cacheKey = `mp-planning-municipalities-v1-${planningUf}`;
+    setPlanningMunicipalitiesStatus("loading");
+    try {
+      const cached = localStorage.getItem(cacheKey);
+      if (cached) {
+        const items = JSON.parse(cached) as Array<{ id: number; nome: string }>;
+        if (Array.isArray(items) && items.length) {
+          setPlanningMunicipalities(items);
+          setPlanningMunicipalitiesStatus("cached");
+        }
+      }
+    } catch {
+      localStorage.removeItem(cacheKey);
+    }
+    fetch(`/api/municipalities?uf=${encodeURIComponent(planningUf)}`)
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Municípios indisponíveis")))
+      .then((data: { municipalities?: Array<{ id: number; nome: string }> }) => {
+        if (cancelled) return;
+        const items = Array.isArray(data.municipalities) ? data.municipalities : [];
+        setPlanningMunicipalities(items);
+        setPlanningMunicipalitiesStatus("ready");
+        localStorage.setItem(cacheKey, JSON.stringify(items));
+      })
+      .catch(() => {
+        if (!cancelled) setPlanningMunicipalitiesStatus((current) => current === "cached" ? "cached" : "error");
+      });
+    return () => { cancelled = true; };
+  }, [planningUf]);
+
+  useEffect(() => {
+    const normalizedMunicipality = normalizeOcrText(planningMunicipality);
+    const match = planningMunicipalities.find((item) =>
+      normalizeOcrText(item.nome) === normalizedMunicipality,
+    );
+    if (!match) {
+      setPlanningLatitude(null);
+      setPlanningLatitudeStatus("idle");
+      return;
+    }
+    let cancelled = false;
+    setPlanningLatitude(null);
+    setPlanningLatitudeStatus("loading");
+    fetch(`/api/geospatial/ibge-boundary?code=${match.id}`, { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : Promise.reject(new Error("Centroide indisponível")))
+      .then((data: { centroid?: { lat?: number } }) => {
+        if (cancelled) return;
+        const latitude = Number(data.centroid?.lat);
+        if (!Number.isFinite(latitude)) throw new Error("Centroide indisponível");
+        setPlanningLatitude(latitude);
+        setPlanningLatitudeStatus("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setPlanningLatitude(null);
+        setPlanningLatitudeStatus("error");
+      });
+    return () => { cancelled = true; };
+  }, [planningMunicipalities, planningMunicipality]);
+
+  function applyProducerLocation(producerId: string) {
+    setPlanningProducerId(producerId);
+    const producer = producers.find((item) => item.id === producerId);
+    if (!producer?.city) return;
+    const match = producer.city.trim().match(/^(.+?)(?:\s*[,/\-–—]\s*)([A-Za-z]{2})$/);
+    if (match) {
+      setPlanningMunicipality(match[1].trim());
+      setPlanningUf(match[2].toUpperCase());
+      return;
+    }
+    setPlanningMunicipality(producer.city.trim());
+  }
 
   const planterPresets = {
     Milho: { population: 70000, spacing: 45, germination: 95, survival: 92, bagSeeds: 60000 },
@@ -3988,22 +4086,31 @@ function Calculators({
   const selectedCultivar =
     activeCultivars.find((item) => item.id === harvestCultivarId) ??
     activeCultivars[0];
-  const resolvedHarvestCycleDays = useMemo(() => {
-    if (
-      harvestCrop !== "Milho" ||
-      !plantingDate ||
-      !selectedCultivar?.cycleByMonth
-    ) {
-      return harvestCycleDays;
-    }
-    const month = String(Number(plantingDate.slice(5, 7)));
-    return selectedCultivar.cycleByMonth[month] ?? harvestCycleDays;
-  }, [
-    harvestCrop,
-    harvestCycleDays,
-    plantingDate,
-    selectedCultivar,
-  ]);
+  const harvestEstimate = useMemo(() => selectedCultivar
+    ? estimateRegionalHarvest({
+        crop: harvestCrop,
+        cultivar: {
+          ...selectedCultivar,
+          cycleDays: harvestCycleDays,
+        },
+        plantingDate,
+        municipality: planningMunicipality,
+        uf: planningUf,
+        latitude: planningLatitude,
+        harvestConditionDays: harvestAdjustment,
+      })
+    : null, [
+      harvestAdjustment,
+      harvestCrop,
+      harvestCycleDays,
+      plantingDate,
+      planningMunicipality,
+      planningLatitude,
+      planningUf,
+      selectedCultivar,
+    ]);
+  const resolvedHarvestCycleDays =
+    harvestEstimate?.physiologicalCycleDays ?? harvestCycleDays;
   const cornThermalSum =
     harvestCrop === "Milho"
       ? selectedCultivar?.thermalSum ??
@@ -4025,22 +4132,58 @@ function Calculators({
     cornPivotNet /
       Math.max(0.5, Math.min(1, Math.max(0, pivotEfficiency) / 100)),
   );
-  const harvestEstimate = useMemo(() => {
-    if (!plantingDate) return null;
-    const plantedAt = new Date(`${plantingDate}T12:00:00`);
-    if (Number.isNaN(plantedAt.getTime())) return null;
-    const central = new Date(plantedAt);
-    central.setDate(
-      central.getDate() +
-        Math.max(1, resolvedHarvestCycleDays) +
-        Math.max(0, harvestAdjustment),
-    );
-    const start = new Date(central);
-    const end = new Date(central);
-    start.setDate(start.getDate() - 7);
-    end.setDate(end.getDate() + 7);
-    return { central, start, end };
-  }, [harvestAdjustment, plantingDate, resolvedHarvestCycleDays]);
+  const idealPopulationCultivars =
+    idealPopulationCrop === "Soja"
+      ? cultivarCatalog.soybean
+      : idealPopulationCrop === "Milho"
+        ? cultivarCatalog.corn
+        : idealPopulationCrop === "Trigo"
+          ? cultivarCatalog.wheat
+          : cultivarCatalog.canola;
+  const idealPopulationCultivar =
+    idealPopulationCultivars.find((item) => item.id === idealPopulationCultivarId)
+    ?? idealPopulationCultivars[0];
+  const idealPopulationResult = useMemo(() => recommendPlantPopulation({
+    crop: idealPopulationCrop,
+    cultivar: idealPopulationCultivar,
+    plantingDate: idealPopulationDate,
+    municipality: planningMunicipality,
+    uf: planningUf,
+    latitude: planningLatitude,
+    environment: productionEnvironment,
+    yieldGapPercent,
+    germinationPercent: idealGermination,
+    emergencePercent: idealEmergence,
+    spacingCm: idealSpacing,
+  }), [
+    idealEmergence,
+    idealGermination,
+    idealPopulationCrop,
+    idealPopulationCultivar,
+    idealPopulationDate,
+    idealSpacing,
+    planningMunicipality,
+    planningLatitude,
+    planningUf,
+    productionEnvironment,
+    yieldGapPercent,
+  ]);
+
+  function chooseIdealPopulationCrop(nextCrop: Cultivar["crop"]) {
+    const list = nextCrop === "Soja"
+      ? cultivarCatalog.soybean
+      : nextCrop === "Milho"
+        ? cultivarCatalog.corn
+        : nextCrop === "Trigo"
+          ? cultivarCatalog.wheat
+          : cultivarCatalog.canola;
+    const spacingByCrop: Record<Cultivar["crop"], number> = {
+      Soja: 45, Milho: 45, Trigo: 17, Canola: 25,
+    };
+    setIdealPopulationCrop(nextCrop);
+    setIdealPopulationCultivarId(list[0]?.id ?? "");
+    setIdealSpacing(spacingByCrop[nextCrop]);
+  }
 
   function chooseHarvestCrop(nextCrop: Cultivar["crop"]) {
     const list =
@@ -4619,6 +4762,7 @@ function Calculators({
     description: string;
     icon: IconName;
     tag?: string;
+    group: "Fertilizantes" | "Plantabilidade" | "Custos";
   }[] = [
     {
       key: "semeadora",
@@ -4626,12 +4770,22 @@ function Calculators({
       description: "População, sementes por metro, patinagem e teste de coleta.",
       icon: "seed",
       tag: "NOVO",
+      group: "Plantabilidade",
+    },
+    {
+      key: "populacao",
+      title: "População ideal",
+      description: "Faixa técnica por material, local, ambiente e yield gap.",
+      icon: "users",
+      tag: "NOVO",
+      group: "Plantabilidade",
     },
     {
       key: "sementes",
       title: "Demanda de sementes",
       description: "Quantidade total, margem técnica e número de embalagens.",
       icon: "layers",
+      group: "Plantabilidade",
     },
     {
       key: "colheita",
@@ -4639,6 +4793,7 @@ function Calculators({
       description: "Data de plantio, cultivar, GMR/ciclo e janela estimada.",
       icon: "leaf",
       tag: "NOVO",
+      group: "Plantabilidade",
     },
     {
       key: "zoneamento",
@@ -4646,18 +4801,21 @@ function Calculators({
       description: "Melhor época de semeadura por município, solo, ciclo e risco.",
       icon: "map",
       tag: "NOVO",
+      group: "Plantabilidade",
     },
     {
       key: "pulverizacao",
       title: "Pulverização",
       description: "Volume de calda, número de tanques e produto necessário.",
       icon: "spray",
+      group: "Fertilizantes",
     },
     {
       key: "fertilizante",
       title: "Fertilizantes",
       description: "Dose por hectare, quantidade total e sacaria.",
       icon: "flask",
+      group: "Fertilizantes",
     },
     {
       key: "reposicao",
@@ -4665,6 +4823,7 @@ function Calculators({
       description: "Produtividade, demanda de nutrientes e comparação de fórmulas.",
       icon: "leaf",
       tag: "NOVO",
+      group: "Fertilizantes",
     },
     {
       key: "cotacao",
@@ -4672,8 +4831,72 @@ function Calculators({
       description: "Preço de sistema, desconto por produto e proposta em PDF.",
       icon: "file",
       tag: "NOVO",
+      group: "Custos",
     },
   ];
+  const calculatorGroups = (["Fertilizantes", "Plantabilidade", "Custos"] as const).map((group) => ({
+    group,
+    description: group === "Fertilizantes"
+      ? "Nutrição, reposição e aplicações"
+      : group === "Plantabilidade"
+        ? "Sementes, implantação, ZARC e planejamento da colheita"
+        : "Orçamento e decisão financeira",
+    cards: calcCards.filter((card) => card.group === group),
+  }));
+
+  const planningLocationFields = (
+    <>
+      {producers.length > 0 && (
+        <label className="field">
+          <span>Preencher com produtor do Manual</span>
+          <select value={planningProducerId} onChange={(event) => applyProducerLocation(event.target.value)}>
+            <option value="">Local informado manualmente</option>
+            {producers.map((producer) => (
+              <option key={producer.id} value={producer.id}>
+                {producer.name}{producer.city ? ` · ${producer.city}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
+      <label className="field">
+        <span>UF</span>
+        <select value={planningUf} onChange={(event) => {
+          setPlanningUf(event.target.value);
+          setPlanningMunicipality("");
+          setPlanningProducerId("");
+        }}>
+          {BRAZIL_UFS.map((uf) => <option key={uf}>{uf}</option>)}
+        </select>
+      </label>
+      <label className="field">
+        <span>Município</span>
+        <input
+          list="planning-municipalities"
+          value={planningMunicipality}
+          onChange={(event) => {
+            setPlanningMunicipality(event.target.value);
+            setPlanningProducerId("");
+          }}
+          placeholder={planningMunicipalitiesStatus === "loading" ? "Carregando municípios…" : "Digite ou selecione"}
+        />
+        <datalist id="planning-municipalities">
+          {planningMunicipalities.map((municipality) => <option key={municipality.id} value={municipality.nome} />)}
+        </datalist>
+        <small>
+          {planningMunicipalitiesStatus === "ready" || planningMunicipalitiesStatus === "cached"
+            ? `${planningMunicipalities.length} municípios do IBGE · ${planningLatitudeStatus === "ready" && planningLatitude !== null
+                ? `latitude aproximada ${planningLatitude.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}° resolvida pelo centroide`
+                : planningLatitudeStatus === "loading"
+                  ? "resolvendo centroide municipal…"
+                  : "selecione o nome oficial para usar o proxy de latitude"}`
+            : planningMunicipalitiesStatus === "error"
+              ? "Lista do IBGE indisponível; informe o município e valide manualmente."
+              : "Carregando lista oficial do IBGE…"}
+        </small>
+      </label>
+    </>
+  );
 
   async function persistCurrentCalculator() {
     const card = calcCards.find((item) => item.key === active);
@@ -4735,21 +4958,31 @@ function Calculators({
         </button>
       </div>
       {recordMessage && <p className="record-message calculator-record-message">{recordMessage}</p>}
-      <section className="calc-selector">
-        {calcCards.map((card) => (
-          <button
-            key={card.key}
-            className={active === card.key ? "active" : ""}
-            onClick={() => setActive(card.key)}
-          >
-            <span className="calc-card-icon"><Icon name={card.icon} /></span>
-            <div>
-              <strong>{card.title}</strong>
-              <small>{card.description}</small>
+      <section className="calculator-groups" aria-label="Grupos de calculadoras">
+        {calculatorGroups.map(({ group, description, cards }) => (
+          <article className="calculator-group" key={group}>
+            <div className="calculator-group-title">
+              <span>{group}</span>
+              <small>{description}</small>
             </div>
-            {card.tag && <b className="new-tag">{card.tag}</b>}
-            <span className="open-calc"><Icon name="arrow" size={18} /></span>
-          </button>
+            <div className="calc-selector">
+              {cards.map((card) => (
+                <button
+                  key={card.key}
+                  className={active === card.key ? "active" : ""}
+                  onClick={() => setActive(card.key)}
+                >
+                  <span className="calc-card-icon"><Icon name={card.icon} /></span>
+                  <div>
+                    <strong>{card.title}</strong>
+                    <small>{card.description}</small>
+                  </div>
+                  {card.tag && <b className="new-tag">{card.tag}</b>}
+                  <span className="open-calc"><Icon name="arrow" size={18} /></span>
+                </button>
+              ))}
+            </div>
+          </article>
         ))}
       </section>
 
@@ -4839,6 +5072,110 @@ function Calculators({
         </section>
       )}
 
+      {active === "populacao" && idealPopulationCultivar && (
+        <section className="calculator-workspace population-workspace">
+          <div className="calculator-form">
+            <div className="calc-title">
+              <span className="calc-card-icon"><Icon name="users" /></span>
+              <div>
+                <span className="eyebrow">PLANTABILIDADE · CENÁRIO AGRONÔMICO</span>
+                <h2>População ideal por material e ambiente</h2>
+              </div>
+            </div>
+            <div className="formula-note">
+              <Icon name="check" size={18} />
+              <span>
+                A calculadora cruza a base de materiais do Manual com cultura,
+                macrorregião, época, ambiente produtivo e yield gap informado pelo
+                agrônomo. Como o cadastro não possui população oficial por cultivar,
+                o resultado é uma faixa técnica de partida — não um número atribuído
+                ao fabricante.
+              </span>
+            </div>
+            <div className="field-grid-form">
+              <label className="field">
+                <span>Cultura</span>
+                <select value={idealPopulationCrop} onChange={(event) => chooseIdealPopulationCrop(event.target.value as Cultivar["crop"])}>
+                  <option>Soja</option><option>Milho</option><option>Trigo</option><option>Canola</option>
+                </select>
+              </label>
+              <label className="field">
+                <span>Cultivar ou híbrido</span>
+                <select value={idealPopulationCultivarId} onChange={(event) => setIdealPopulationCultivarId(event.target.value)}>
+                  {idealPopulationCultivars.map((cultivar) => (
+                    <option key={cultivar.id} value={cultivar.id}>{cultivar.name}</option>
+                  ))}
+                </select>
+              </label>
+              <label className="field">
+                <span>Data prevista de plantio</span>
+                <input type="date" value={idealPopulationDate} onChange={(event) => setIdealPopulationDate(event.target.value)} />
+                <small>Usada apenas para classificar o cenário de época; confira a janela no ZARC.</small>
+              </label>
+              {planningLocationFields}
+              <label className="field">
+                <span>Ambiente produtivo</span>
+                <select value={productionEnvironment} onChange={(event) => setProductionEnvironment(event.target.value as ProductionEnvironment)}>
+                  <option value="restritivo">Restritivo · limitações conhecidas</option>
+                  <option value="medio">Médio · histórico estável</option>
+                  <option value="alto">Alto potencial · manejo intensivo</option>
+                </select>
+                <small>Cenário informado pelo agrônomo; não é classificação automática do talhão.</small>
+              </label>
+              <NumberField
+                label="Yield gap estimado"
+                value={yieldGapPercent}
+                onChange={setYieldGapPercent}
+                unit="%"
+                min={0}
+                max={80}
+                step={1}
+              />
+              <NumberField label="Germinação do lote" value={idealGermination} onChange={setIdealGermination} unit="%" min={1} max={100} step={1} />
+              <NumberField label="Emergência esperada no campo" value={idealEmergence} onChange={setIdealEmergence} unit="%" min={1} max={100} step={1} />
+              <NumberField label="Espaçamento entre linhas" value={idealSpacing} onChange={setIdealSpacing} unit="cm" min={5} max={100} step={1} />
+            </div>
+            <div className="cultivar-data-card population-material-card">
+              <div><span>Material selecionado</span><strong>{idealPopulationCultivar.brand} · {idealPopulationCultivar.cycleClass}</strong></div>
+              <small>{idealPopulationCultivar.dataBasis}</small>
+              <a href={idealPopulationCultivar.source} target="_blank" rel="noreferrer">
+                Fonte técnica do material: {idealPopulationCultivar.sourceLabel}
+                <Icon name="external" size={13} />
+              </a>
+            </div>
+          </div>
+          <aside className="result-card population-result">
+            <span className="eyebrow">FAIXA PARA VALIDAÇÃO NO TALHÃO</span>
+            <Metric
+              label="Alvo de plantas finais"
+              value={`${formatNumber(idealPopulationResult.finalTarget)} plantas/ha`}
+              emphasis
+            />
+            <div className="result-grid">
+              <Metric label="Faixa sugerida" value={`${formatNumber(idealPopulationResult.finalMin)}–${formatNumber(idealPopulationResult.finalMax)} plantas/ha`} />
+              <Metric label="Sementes para distribuir" value={`${formatNumber(idealPopulationResult.seedsPerHa)} sementes/ha`} />
+              <Metric label="Sementes por metro" value={idealPopulationResult.seedsPerMeter.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} />
+              <Metric label="Plantas finais por metro" value={idealPopulationResult.finalPlantsPerMeter.toLocaleString("pt-BR", { maximumFractionDigits: 2 })} />
+              <Metric label="Estabelecimento usado" value={`${idealPopulationResult.establishmentPercent.toLocaleString("pt-BR", { maximumFractionDigits: 1 })}%`} />
+              <Metric label="Espaçamento geral de referência" value={`${idealPopulationResult.spacingRangeCm[0]}–${idealPopulationResult.spacingRangeCm[1]} cm`} />
+            </div>
+            <div className="planning-breakdown">
+              <span>Como o alvo foi composto</span>
+              <ul>{idealPopulationResult.explanations.map((explanation) => <li key={explanation}>{explanation}</li>)}</ul>
+            </div>
+            <div className="planning-warnings">
+              <strong>Validação agronômica obrigatória</strong>
+              <ul>{idealPopulationResult.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+            </div>
+            <small className="legal-note">
+              Faça aferição de distribuição, profundidade, duplas e falhas. Quando
+              houver recomendação populacional oficial do obtentor para o material e
+              município, ela prevalece sobre esta aproximação.
+            </small>
+          </aside>
+        </section>
+      )}
+
       {active === "sementes" && (
         <section className="calculator-workspace compact-workspace">
           <div className="calculator-form">
@@ -4887,9 +5224,10 @@ function Calculators({
             <div className="formula-note">
               <Icon name="check" size={18} />
               <span>
-                Selecione a cultivar: GMR, soma térmica e ciclo são carregados
-                automaticamente do banco técnico. Use apenas o ajuste local para
-                considerar a condição da lavoura.
+                A data é decomposta em ciclo-base do material + ajuste da
+                macrorregião + proxy de latitude do centroide municipal + ajuste da
+                época + dias pós-maturação. Município e UF vêm do IBGE, sem fingir
+                precisão climática: confira microclima, altitude, adaptação e ZARC.
               </span>
             </div>
             <div className="field-grid-form">
@@ -4943,6 +5281,7 @@ function Calculators({
                   />
                 </div>
               </label>
+              {planningLocationFields}
               {(harvestCrop === "Soja" || harvestCrop === "Milho") && (
                 <NumberField
                   label={
@@ -4960,12 +5299,8 @@ function Calculators({
                 />
               )}
               <NumberField
-                label={
-                  harvestCrop === "Milho"
-                    ? "Ciclo estimado da cultivar"
-                    : "Ciclo esperado até maturação"
-                }
-                value={resolvedHarvestCycleDays}
+                label="Ciclo-base do cadastro"
+                value={harvestCycleDays}
                 onChange={setHarvestCycleDays}
                 unit="dias"
                 step={1}
@@ -5062,6 +5397,10 @@ function Calculators({
                   )}
               </div>
             )}
+            <div className="zarc-boundary-note">
+              <Icon name="map" size={17} />
+              <p><b>ZARC define janela e risco de semeadura — não o ciclo da cultivar.</b> Use a calculadora ZARC para validar se a data é indicada no município; use esta tela apenas para estimar o período de colheita.</p>
+            </div>
           </div>
           <aside className="result-card harvest-result">
             <span className="eyebrow">JANELA ESTIMADA</span>
@@ -5100,8 +5439,30 @@ function Calculators({
                 value={selectedCultivar?.cycleClass ?? "—"}
               />
               <Metric
-                label="Ciclo usado"
-                value={`${resolvedHarvestCycleDays + harvestAdjustment} dias`}
+                label="Ciclo-base"
+                value={`${harvestEstimate?.baseCycleDays ?? harvestCycleDays} dias`}
+              />
+              <Metric
+                label="Ajuste regional"
+                value={harvestEstimate ? `${harvestEstimate.regionalAdjustmentDays >= 0 ? "+" : ""}${harvestEstimate.regionalAdjustmentDays} dias · ${harvestEstimate.region}` : "—"}
+              />
+              <Metric
+                label="Proxy de latitude municipal"
+                value={harvestEstimate && harvestEstimate.municipalityLatitude !== null
+                  ? `${harvestEstimate.municipalityAdjustmentDays >= 0 ? "+" : ""}${harvestEstimate.municipalityAdjustmentDays} dias · ${harvestEstimate.municipalityLatitude.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}°`
+                  : "0 dias · centroide não resolvido"}
+              />
+              <Metric
+                label="Ajuste pela época"
+                value={harvestEstimate ? `${harvestEstimate.seasonAdjustmentDays >= 0 ? "+" : ""}${harvestEstimate.seasonAdjustmentDays} dias` : "—"}
+              />
+              <Metric
+                label="Pós-maturação informado"
+                value={`+${Math.max(0, harvestAdjustment)} dias`}
+              />
+              <Metric
+                label="Intervalo total usado"
+                value={harvestEstimate ? `${harvestEstimate.startCycleDays}–${harvestEstimate.endCycleDays} dias` : "—"}
               />
               {harvestCrop === "Milho" && (
                 <>
@@ -5121,11 +5482,27 @@ function Calculators({
                 </>
               )}
             </div>
+            {harvestEstimate && (
+              <>
+                <div className="planning-breakdown">
+                  <span>Memória do cálculo</span>
+                  <strong>
+                    {harvestEstimate.baseCycleDays} {harvestEstimate.regionalAdjustmentDays >= 0 ? "+" : "−"} {Math.abs(harvestEstimate.regionalAdjustmentDays)} {harvestEstimate.municipalityAdjustmentDays >= 0 ? "+" : "−"} {Math.abs(harvestEstimate.municipalityAdjustmentDays)} {harvestEstimate.seasonAdjustmentDays >= 0 ? "+" : "−"} {Math.abs(harvestEstimate.seasonAdjustmentDays)} + {harvestEstimate.harvestConditionDays} = {harvestEstimate.centralCycleDays} dias
+                  </strong>
+                  <small>Época: {harvestEstimate.seasonBasis}. Local: {harvestEstimate.location} · ajuste por {harvestEstimate.region}.</small>
+                </div>
+                <div className="planning-warnings">
+                  <strong>Premissas e alertas</strong>
+                  <ul>{harvestEstimate.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul>
+                </div>
+              </>
+            )}
             <small className="legal-note">
               Estimativa de planejamento. No milho, RM/GM, GDU e dias não são
               tratados como a mesma grandeza. Quando há ensaio regional por época,
               o ciclo é ajustado ao mês de plantio; nos demais casos, a tela mostra
-              explicitamente que os dias são referência regional. Temperatura,
+              explicitamente que os dias são referência regional. O ZARC não
+              informa o ciclo e não é usado para fabricar uma data de colheita. Temperatura,
               disponibilidade hídrica, sanidade e perda de umidade podem antecipar
               ou alongar a colheita. A necessidade hídrica usa a faixa técnica de
               400–700 mm por ciclo e varia com o ciclo estimado do híbrido; a lâmina
