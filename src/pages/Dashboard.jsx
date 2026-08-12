@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import KpiCard from '../components/KpiCard'
 import ValPanel from '../components/ValPanel'
+import {compactBRL,commercialMetrics} from '../lib/commercial-metrics'
 import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline,resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
 const greeting=()=>{
@@ -42,9 +43,11 @@ const compactMoney=value=>Number(value||0).toLocaleString('pt-BR',{style:'curren
 
 export default function Dashboard({clients,visits,currentUser,setPage,onClient,onPrepare}){
  const firstName=String(currentUser?.name||currentUser?.email?.split('@')[0]||'Equipe').trim().split(/\s+/)[0]
- const totalPotential=clients.reduce((sum,client)=>sum+(client.commercial?.potentialValidated===false?0:Number(client.commercial?.potential||0)),0)
+ const portfolioMetrics=clients.map(client=>({client,metrics:commercialMetrics(client)}))
+ const totalPotential=portfolioMetrics.reduce((sum,item)=>sum+(item.metrics.potentialKnown?item.metrics.potentialTotal:0),0)
+ const potentialKnown=portfolioMetrics.some(item=>item.metrics.potentialKnown)
  const irt=(clients.reduce((sum,client)=>sum+Number(client.irt||0),0)/Math.max(clients.length,1)).toFixed(1)
- const priorities=clients.map(client=>({client,candidate:resolveOpportunityCandidate(client)})).filter(item=>item.candidate).sort((a,b)=>(b.client.commercial?.potential||0)-(a.client.commercial?.potential||0)).slice(0,3)
+ const priorities=portfolioMetrics.map(({client,metrics})=>({client,metrics,candidate:resolveOpportunityCandidate(client)})).filter(item=>item.candidate).sort((a,b)=>b.metrics.openPotential-a.metrics.openPotential).slice(0,3)
  const nextVisit=[...(visits||[])].sort((a,b)=>`${a.date||''}${a.time||''}`.localeCompare(`${b.date||''}${b.time||''}`))[0]
  const nextClient=clients.find(client=>client.id===nextVisit?.clientId)||clients[0]
  const quickActions=[
@@ -95,11 +98,11 @@ export default function Dashboard({clients,visits,currentUser,setPage,onClient,o
   <section className="kpi-grid home-kpis">
    <KpiCard icon={Users} label="Clientes ativos" value={clients.length} delta="Carteira consolidada"/>
    <KpiCard icon={CalendarCheck2} label="Visitas na agenda" value={visits?.length||0} delta="Planejamento atual"/>
-   <KpiCard icon={Target} label="Potencial mapeado" value={`R$ ${(totalPotential/1000).toFixed(0)} mil`} delta={`${priorities.length} prioridades agora`} tone="cyan"/>
+   <KpiCard icon={Target} label="Potencial mapeado" value={compactBRL(totalPotential,{known:potentialKnown})} delta={`${priorities.length} prioridades agora`} tone="cyan"/>
    <KpiCard icon={Percent} label="IRT médio" value={irt} delta="Relacionamento estratégico" tone="green"/>
   </section>
 
-  <section className="priority-strip"><div className="priority-copy"><span className="eyebrow">PRIORIDADE DA VAL</span><h3>Quem merece sua atenção agora</h3><p>Somente oportunidades com uma necessidade ou evidência comercial registrada.</p></div>{priorities.map(({client,candidate},index)=><button key={client.id} onClick={()=>onClient(client)}><span>{String(index+1).padStart(2,'0')}</span><div><b>{client.name}</b><small>{candidate.title}</small></div><strong>{client.commercial?.potentialValidated===false?`Índice ${client.commercial?.score||0}`:`R$ ${Math.round((client.commercial?.potential||0)/1000)}k`}</strong><ArrowUpRight/></button>)}{!priorities.length&&<div className="priority-empty"><Target/><div><b>Nenhuma oportunidade confirmada</b><small>Use a descoberta consultiva antes de abrir um negócio no pipeline.</small></div></div>}</section>
+  <section className="priority-strip"><div className="priority-copy"><span className="eyebrow">PRIORIDADE DA VAL</span><h3>Quem merece sua atenção agora</h3><p>Somente oportunidades com uma necessidade ou evidência comercial registrada.</p></div>{priorities.map(({client,candidate,metrics},index)=><button key={client.id} onClick={()=>onClient(client)}><span>{String(index+1).padStart(2,'0')}</span><div><b>{client.name}</b><small>{candidate.title}</small></div><strong>{compactBRL(metrics.openPotential,{known:metrics.openPotentialKnown})}</strong><ArrowUpRight/></button>)}{!priorities.length&&<div className="priority-empty"><Target/><div><b>Nenhuma oportunidade confirmada</b><small>Use a descoberta consultiva antes de abrir um negócio no pipeline.</small></div></div>}</section>
 
   <section className="dashboard-grid home-analysis">
    <article className="panel chart-panel">

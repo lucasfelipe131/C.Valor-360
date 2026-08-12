@@ -6,6 +6,8 @@ const relationshipKeys=['preferredName','birthday','family','spouse','children',
 const commercialKeys=['phone','email','property','purchaseCurrentSeason','purchasePreviousSeason','potentialTotal','openPotential','walletShare','targetShare','creditLimit','creditUsed','grossMarginPercent','paymentTerms','decisionWindow','commercialRisk','mainCategories','competitors','commercialNotes']
 const cleanObject=(value,keys)=>Object.fromEntries(keys.map(key=>[key,key==='likesFishing'?Boolean(value?.[key]):value?.[key]??'']))
 const finite=value=>Number.isFinite(Number(value))?Math.max(0,Number(value)):0
+const FieldLabel=({children,unit})=><span className="producer-field-label"><span>{children}</span>{unit&&<em>{unit}</em>}</span>
+const PercentInput=({value,onChange,readOnly=false,placeholder='Ex.: 25,0'})=><span className={`producer-unit-input ${readOnly?'is-readonly':''}`}><input type="number" inputMode="decimal" min="0" max="100" step="0.1" value={value} onChange={onChange} readOnly={readOnly} placeholder={placeholder}/><span aria-hidden="true">%</span></span>
 const editorValue=client=>({
  name:client?.name||'',municipality:client?.municipality||'',area:client?.area||'',cultures:client?.cultures||'',servicePreference:client?.servicePreference||'',
  commercial:cleanObject(client?.commercial,commercialKeys),relationship:cleanObject(client?.relationship,relationshipKeys)
@@ -33,27 +35,27 @@ export default function ProducerProfileEditor({client,onSave,onCancel,compact=fa
    <label>Nome completo<input required value={form.name} onChange={event=>base('name',event.target.value)}/></label>
    <label>Como prefere ser atendido<input value={form.servicePreference} onChange={event=>base('servicePreference',event.target.value)}/></label>
    <label>Município / localidade<input value={form.municipality} onChange={event=>base('municipality',event.target.value)}/></label>
-   <label>Área cultivada<input value={form.area} onChange={event=>base('area',event.target.value)} placeholder="Ex.: 480 ha"/></label>
+   <label><FieldLabel unit="ha">Área cultivada</FieldLabel><input value={form.area} onChange={event=>base('area',event.target.value)} placeholder="Ex.: 480 ha ou de 300 a 500 ha"/></label>
    <label>Culturas<input value={form.cultures} onChange={event=>base('cultures',event.target.value)} placeholder="Ex.: soja, milho"/></label>
    <label>Propriedade<input value={form.commercial.property} onChange={event=>nested('commercial','property',event.target.value)}/></label>
    <label>Telefone / WhatsApp<input value={form.commercial.phone} onChange={event=>nested('commercial','phone',event.target.value)}/></label>
    <label>E-mail<input type="email" value={form.commercial.email} onChange={event=>nested('commercial','email',event.target.value)}/></label>
   </div></fieldset>
   <fieldset><legend>Visão global de compras e potencial</legend><div className="form-grid producer-edit-grid">
-   <label>Compras — safra atual<CurrencyInput value={form.commercial.purchaseCurrentSeason} onChange={value=>nested('commercial','purchaseCurrentSeason',value)}/></label>
-   <label>Compras — safra anterior<CurrencyInput value={form.commercial.purchasePreviousSeason} onChange={value=>nested('commercial','purchasePreviousSeason',value)}/></label>
-   <label>Potencial total estimado<CurrencyInput value={form.commercial.potentialTotal} onChange={value=>nested('commercial','potentialTotal',value)}/></label>
-   <label>Potencial em aberto — automático<CurrencyInput value={openPotential} readOnly/><small>Potencial total menos compras da safra atual.</small></label>
-   <label>Share realizado — automático<input readOnly value={`${calculatedShare.toLocaleString('pt-BR',{maximumFractionDigits:1})}%`}/><small>Compras atuais divididas pelo potencial total.</small></label>
-   <label>Share atual informado (%)<input type="number" min="0" max="100" step="0.1" value={form.commercial.walletShare} onChange={event=>nested('commercial','walletShare',event.target.value)}/></label>
-   <label>Meta de share (%)<input type="number" min="0" max="100" step="0.1" value={form.commercial.targetShare} onChange={event=>nested('commercial','targetShare',event.target.value)}/></label>
-   <label>Margem bruta estimada (%)<input type="number" min="0" max="100" step="0.1" value={form.commercial.grossMarginPercent} onChange={event=>nested('commercial','grossMarginPercent',event.target.value)}/></label>
-   <label>Limite de crédito<CurrencyInput value={form.commercial.creditLimit} onChange={value=>nested('commercial','creditLimit',value)}/></label>
-   <label>Crédito utilizado<CurrencyInput value={form.commercial.creditUsed} onChange={value=>nested('commercial','creditUsed',value)}/></label>
-   <label>Crédito disponível — automático<CurrencyInput value={availableCredit} readOnly/></label>
-   <label>Condição de pagamento preferida<input value={form.commercial.paymentTerms} onChange={event=>nested('commercial','paymentTerms',event.target.value)}/></label>
-   <label>Janela de decisão / compra<input value={form.commercial.decisionWindow} onChange={event=>nested('commercial','decisionWindow',event.target.value)} placeholder="Ex.: setembro, pré-plantio"/></label>
-   <label>Categorias principais<input value={form.commercial.mainCategories} onChange={event=>nested('commercial','mainCategories',event.target.value)}/></label>
+   <label><FieldLabel unit="R$">Compras — safra atual</FieldLabel><CurrencyInput value={form.commercial.purchaseCurrentSeason} onChange={value=>nested('commercial','purchaseCurrentSeason',value)} placeholder="Ex.: 125.000,00"/></label>
+   <label><FieldLabel unit="R$">Compras — safra anterior</FieldLabel><CurrencyInput value={form.commercial.purchasePreviousSeason} onChange={value=>nested('commercial','purchasePreviousSeason',value)} placeholder="Ex.: 110.000,00"/></label>
+   <label><FieldLabel unit="R$">Potencial total estimado</FieldLabel><CurrencyInput value={form.commercial.potentialTotal} onChange={value=>nested('commercial','potentialTotal',value)} placeholder="Ex.: 250.000,00"/></label>
+   <label><FieldLabel unit="R$">Potencial em aberto — automático</FieldLabel><CurrencyInput value={openPotential} readOnly/><small>Potencial total menos compras da safra atual.</small></label>
+   <label><FieldLabel unit="%">Share realizado — automático</FieldLabel><PercentInput value={calculatedShare.toFixed(1)} readOnly/><small>Compras atuais divididas pelo potencial total.</small></label>
+   <label><FieldLabel unit="%">Share atual informado</FieldLabel><PercentInput value={form.commercial.walletShare} onChange={event=>nested('commercial','walletShare',event.target.value)} placeholder="Ex.: 40,0"/></label>
+   <label><FieldLabel unit="%">Meta de share</FieldLabel><PercentInput value={form.commercial.targetShare} onChange={event=>nested('commercial','targetShare',event.target.value)} placeholder="Ex.: 55,0"/></label>
+   <label><FieldLabel unit="%">Margem bruta estimada</FieldLabel><PercentInput value={form.commercial.grossMarginPercent} onChange={event=>nested('commercial','grossMarginPercent',event.target.value)} placeholder="Ex.: 12,5"/></label>
+   <label><FieldLabel unit="R$">Limite de crédito</FieldLabel><CurrencyInput value={form.commercial.creditLimit} onChange={value=>nested('commercial','creditLimit',value)} placeholder="Ex.: 200.000,00"/></label>
+   <label><FieldLabel unit="R$">Crédito utilizado</FieldLabel><CurrencyInput value={form.commercial.creditUsed} onChange={value=>nested('commercial','creditUsed',value)} placeholder="Ex.: 75.000,00"/></label>
+   <label><FieldLabel unit="R$">Crédito disponível — automático</FieldLabel><CurrencyInput value={availableCredit} readOnly/></label>
+   <label><FieldLabel unit="dias / condição">Condição de pagamento preferida</FieldLabel><input value={form.commercial.paymentTerms} onChange={event=>nested('commercial','paymentTerms',event.target.value)} placeholder="Ex.: à vista, barter ou 30/60 dias"/></label>
+   <label><FieldLabel unit="dias / período">Janela de decisão / compra</FieldLabel><input value={form.commercial.decisionWindow} onChange={event=>nested('commercial','decisionWindow',event.target.value)} placeholder="Ex.: em 15 dias, setembro ou pré-plantio"/></label>
+   <label>Categorias principais<input value={form.commercial.mainCategories} onChange={event=>nested('commercial','mainCategories',event.target.value)} placeholder="Ex.: sementes, fertilizantes, defensivos"/></label>
    <label>Concorrentes / compras externas<input value={form.commercial.competitors} onChange={event=>nested('commercial','competitors',event.target.value)}/></label>
    <label className="wide">Riscos e travas comerciais<textarea rows="3" value={form.commercial.commercialRisk} onChange={event=>nested('commercial','commercialRisk',event.target.value)}/></label>
    <label className="wide">Observações comerciais<textarea rows="3" value={form.commercial.commercialNotes} onChange={event=>nested('commercial','commercialNotes',event.target.value)}/></label>
