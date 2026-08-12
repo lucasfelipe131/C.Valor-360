@@ -1,4 +1,5 @@
 import {hasIndependentOpportunity,isQ27Opportunity,normalizeText,opportunityFromAdditionalNeed} from './profile.js'
+import {commercialMetrics} from './commercial-metrics.js'
 
 export const PIPELINE_STAGES=['Diagnóstico','Proposta','Negociação','Fechado']
 export const OPPORTUNITY_CACHE_VERSION='v2'
@@ -23,7 +24,7 @@ export function resolveOpportunityCandidate(client={}){
 }
 
 const candidateKey=candidate=>`${candidate.source}:${normalizeText(candidate.title)}`
-const currentValue=client=>client?.commercial?.potentialValidated===false?0:Math.max(0,Number(client?.commercial?.potential)||0)
+const currentValue=client=>{const metrics=commercialMetrics(client);return metrics.openPotentialKnown?metrics.openPotential:0}
 const cleanEvidence=(value,key,stage)=>{
  if(!value||!stageEvidenceTypes.has(value.type)||value.candidateKey!==key||value.to!==stage)return undefined
  return {type:value.type,from:PIPELINE_STAGES.includes(value.from)?value.from:'Diagnóstico',to:stage,at:String(value.at||'').slice(0,40),candidateKey:key}

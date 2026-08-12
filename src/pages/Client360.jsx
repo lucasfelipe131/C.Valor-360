@@ -1,7 +1,9 @@
 import React,{useEffect,useRef,useState} from 'react'
-import { ArrowLeft, BrainCircuit, MapPin, BadgeDollarSign, HeartHandshake, MessageSquare, Target, Save, Trophy, Fish, Gamepad2 } from 'lucide-react'
+import { ArrowLeft, BrainCircuit, MapPin, BadgeDollarSign, HeartHandshake, Percent, Target, Save, Trophy, Fish, Gamepad2 } from 'lucide-react'
 import ProducerProfileEditor from '../components/ProducerProfileEditor'
 import ProducerBusinessOverview from '../components/ProducerBusinessOverview'
+import ProducerFieldGallery from '../components/ProducerFieldGallery'
+import {compactBRL,commercialMetrics,metricValue} from '../lib/commercial-metrics'
 const Section=({title,children})=><article className="panel detail-section"><h3>{title}</h3>{children}</article>
 const contextFields=['property','crops','area','weeds','diseases','insects','soil','goal','competitors','notes']
 const contextBase=client=>({property:client.commercial?.property||'',crops:client.cultures||'',area:client.area||'',weeds:'',diseases:'',insects:'',soil:'',goal:'',competitors:'',notes:''})
@@ -11,6 +13,7 @@ const localId=value=>{let hash=2166136261;for(const char of String(value||''))ha
 const money=value=>`R$ ${Number(value||0).toLocaleString('pt-BR',{maximumFractionDigits:2})}`
 const shown=value=>value===null||value===undefined||value===''?'Não informado':String(value)
 export default function Client360({client,storageScope,onBack,onPrepare,onUpdate,onSaved}){
+ const metrics=commercialMetrics(client)
  const storageKey=`valor360-tech-${storageScope||'session'}-${localId(client.id)}`
  const [tech,setTech]=useState(()=>{
   try{const draft=JSON.parse(sessionStorage.getItem(storageKey));return draft?{...contextBase(client),...contextValues(draft)}:contextBase(client)}catch{return contextBase(client)}
@@ -34,16 +37,17 @@ export default function Client360({client,storageScope,onBack,onPrepare,onUpdate
  return <div className="page-stack">
   <button className="back-btn" onClick={onBack}><ArrowLeft size={17}/>Voltar</button>
   <section className="client-hero">
-   <div><span className="eyebrow">CLIENTE 360</span><h2>{client.name}</h2><p><MapPin size={15}/>{client.municipality} • {client.area} • {client.cultures}</p><div className="tag-row"><span>{client.primaryProfile}</span><span>{client.secondaryProfile}</span><span>IRT {client.irt}</span><span>NPS {client.nps}</span></div></div>
+   <div><span className="eyebrow">CLIENTE 360</span><h2>{client.name}</h2><p><MapPin size={15}/>{client.municipality} • {client.area} • {client.cultures}</p><div className="tag-row"><span>{metrics.profileMeasured?client.primaryProfile:'Perfil a medir'}</span><span>{client.secondaryProfile}</span><span>IRT {metricValue(client.irt,metrics.irtKnown)}</span><span>NPS {metricValue(client.nps,metrics.npsKnown)}</span><span>Oportunidade: {client.commercial?.opportunity||'Ainda não identificada'}</span></div></div>
    <div className="hero-actions"><button onClick={onPrepare}><BrainCircuit size={17}/>Preparar com a VAL</button></div>
   </section>
   <section className="four-grid">
-   <div className="mini-stat"><HeartHandshake/><small>Relacionamento</small><b>{client.irtBand}</b></div>
-   <div className="mini-stat"><MessageSquare/><small>Atendimento preferido</small><b>{client.servicePreference}</b></div>
-   <div className="mini-stat"><Target/><small>Oportunidade</small><b>{client.commercial?.opportunity||'Ainda não identificada'}</b></div>
-   <div className="mini-stat"><BadgeDollarSign/><small>{client.commercial?.potentialValidated===false?'Índice de triagem':'Potencial validado'}</small><b>{client.commercial?.potentialValidated===false?`${client.commercial?.score||0}/100`:`R$ ${Number(client.commercial?.potential||0).toLocaleString('pt-BR')}`}</b></div>
+   <div className="mini-stat producer-canonical-stat"><HeartHandshake/><small>IRT / NPS</small><b>{metricValue(client.irt,metrics.irtKnown)} <em>/</em> {metricValue(client.nps,metrics.npsKnown)}</b><span>Relacionamento e recomendação</span></div>
+   <div className="mini-stat producer-canonical-stat is-highlight"><BadgeDollarSign/><small>Potencial em aberto</small><b>{compactBRL(metrics.openPotential,{known:metrics.openPotentialKnown})}</b><span>Potencial total menos compras atuais</span></div>
+   <div className="mini-stat producer-canonical-stat"><Target/><small>Pipeline aberto</small><b>{compactBRL(metrics.openPipeline,{known:metrics.pipelineKnown})}</b><span>Oportunidades ainda não fechadas</span></div>
+   <div className="mini-stat producer-canonical-stat"><Percent/><small>Share realizado</small><b>{metricValue(metrics.realizedShare,metrics.shareKnown,'%')}</b><span>Compras atuais sobre o potencial</span></div>
   </section>
   <ProducerBusinessOverview client={client} refreshToken={overviewRevision}/>
+  <ProducerFieldGallery clientId={client.id} clientName={client.name} onSaved={onSaved}/>
   <Section title="Cadastro comercial de referência"><dl className="info-list commerce-detail-list"><div><dt>Compras globais registradas</dt><dd>{money(client.commercial?.purchaseTotal)}</dd></div><div><dt>Negócios reconhecidos</dt><dd>{Number(client.commercial?.purchaseCount||0)}</dd></div><div><dt>Categorias principais</dt><dd>{shown(client.commercial?.mainCategories)}</dd></div><div><dt>Concorrentes</dt><dd>{shown(client.commercial?.competitors)}</dd></div><div><dt>Telefone</dt><dd>{shown(client.commercial?.phone)}</dd></div><div><dt>E-mail</dt><dd>{shown(client.commercial?.email)}</dd></div></dl></Section>
   <Section title="Preferências pessoais para um relacionamento próximo"><div className="relationship-glance">
    <div><Trophy/><small>Time do coração</small><b>{shown(client.relationship?.favoriteTeam)}</b></div><div><Fish/><small>Pescaria</small><b>{client.relationship?.likesFishing?'Gosta':client.relationship?.fishingStyle?'Preferência registrada':'Não informado'}</b><span>{shown(client.relationship?.fishingStyle)}</span></div><div><Gamepad2/><small>Hobbies</small><b>{shown(client.relationship?.hobbies)}</b></div><div><HeartHandshake/><small>Família</small><b>{shown(client.relationship?.family)}</b></div>
@@ -72,15 +76,15 @@ export default function Client360({client,storageScope,onBack,onPrepare,onUpdate
   <Section title="Complemento técnico preenchido pelo consultor">
    <div className="tag-row"><span>{loadingContext?'Carregando memória':contextMeta.status==='verified'?'Memória verificada':contextMeta.status==='proposed'?'Entrada do consultor • verificação pendente':'Ainda não registrada'}</span>{contextDate(contextMeta.updatedAt)&&<span>Atualizada em {contextDate(contextMeta.updatedAt)}</span>}</div>
    <div className="form-grid">
-    <label>Propriedade<input value={tech.property} onChange={e=>edit('property',e.target.value)}/></label>
+    <label>Propriedade<input value={tech.property} onChange={e=>edit('property',e.target.value)} placeholder="Ex.: Fazenda Santa Rita"/></label>
     <label>Área / culturas<input value={tech.area+' • '+tech.crops} onChange={()=>{}} readOnly/></label>
-    <label>Principais plantas daninhas<input value={tech.weeds} onChange={e=>edit('weeds',e.target.value)} placeholder="Ex.: buva, pé-de-galinha"/></label>
-    <label>Doenças recorrentes<input value={tech.diseases} onChange={e=>edit('diseases',e.target.value)}/></label>
-    <label>Insetos / pragas<input value={tech.insects} onChange={e=>edit('insects',e.target.value)}/></label>
-    <label>Resumo de solo<input value={tech.soil} onChange={e=>edit('soil',e.target.value)}/></label>
-    <label>Meta do produtor<input value={tech.goal} onChange={e=>edit('goal',e.target.value)}/></label>
-    <label>Concorrentes / categorias adquiridas fora da empresa<input value={tech.competitors} onChange={e=>edit('competitors',e.target.value)}/></label>
-    <label className="wide">Observações<textarea value={tech.notes} onChange={e=>edit('notes',e.target.value)}/></label>
+    <label>Principais plantas daninhas<input value={tech.weeds} onChange={e=>edit('weeds',e.target.value)} placeholder="Ex.: buva em 20% do talhão; 3 plantas/m²"/></label>
+    <label>Doenças recorrentes<input value={tech.diseases} onChange={e=>edit('diseases',e.target.value)} placeholder="Ex.: ferrugem-asiática observada em R3"/></label>
+    <label>Insetos / pragas<input value={tech.insects} onChange={e=>edit('insects',e.target.value)} placeholder="Ex.: 2 percevejos por metro de pano"/></label>
+    <label>Resumo de solo<input value={tech.soil} onChange={e=>edit('soil',e.target.value)} placeholder="Ex.: pH 5,2 • V% 58 • argila 42%"/></label>
+    <label>Meta do produtor<input value={tech.goal} onChange={e=>edit('goal',e.target.value)} placeholder="Ex.: atingir 75 sc/ha de soja com margem positiva"/></label>
+    <label>Concorrentes / categorias adquiridas fora da empresa<input value={tech.competitors} onChange={e=>edit('competitors',e.target.value)} placeholder="Ex.: sementes — Empresa X; fungicidas — Empresa Y"/></label>
+    <label className="wide">Observações<textarea value={tech.notes} onChange={e=>edit('notes',e.target.value)} placeholder="Ex.: decisão em setembro; validar custo em R$/ha e resposta em sc/ha."/></label>
    </div>
    {error&&<div className="form-error" role="alert">{error}</div>}
    <button className="primary-btn" onClick={save} disabled={saving}><Save size={16}/>{saving?'Salvando…':'Salvar na memória da VAL'}</button>

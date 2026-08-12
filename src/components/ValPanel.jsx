@@ -4,22 +4,25 @@ import {
  FileSearch,FileText,FileUp,Gauge,ImagePlus,Lightbulb,LoaderCircle,MessageSquareText,Paperclip,Plus,Route,Send,
  ShieldCheck,Sparkles,Target,ThumbsDown,ThumbsUp,UserRoundSearch,X,Zap
 } from 'lucide-react'
-import {resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
+import {compactBRL,commercialMetrics} from '../lib/commercial-metrics'
+
+const VAL_METHOD_SEQUENCE=['preparar','alinhar','descobrir','dimensionar','construir_valor','propor','comprometer']
+const methodLabels={preparar:'Preparar',alinhar:'Alinhar',descobrir:'Descobrir',dimensionar:'Dimensionar',construir_valor:'Construir valor',propor:'Propor',comprometer:'Comprometer'}
 
 const MODES={
- daily:{label:'Resposta rápida',short:'Rápido',description:'Resposta curta pro contato de hoje.'},
+ daily:{label:'Resposta rápida',short:'Rápido',description:'Orientação curta para o contato de hoje.'},
  strategic:{label:'Planejar a conta',short:'Planejar',description:'Um pensamento estratégico completo da conta, explicado de forma simples.'}
 }
 
 const QUICK_PROMPTS=[
- {label:'Puxar assunto',icon:MessageSquareText,prompt:'Como eu puxo esse assunto de um jeito natural agora?'},
- {label:'Preparar visita',icon:Route,prompt:'Me ajuda a preparar a próxima visita, sem conversa enrolada.'},
- {label:'Próximo passo',icon:Target,prompt:'O que faz mais sentido eu fazer agora com este produtor?'}
+ {label:'Iniciar conversa',icon:MessageSquareText,prompt:'Como posso iniciar esta conversa de forma natural e específica para este produtor?'},
+ {label:'Preparar visita',icon:Route,prompt:'Ajude-me a preparar a próxima visita com objetivo, sequência e critérios de avanço.'},
+ {label:'Próximo passo',icon:Target,prompt:'Qual é o próximo passo mais coerente para este produtor e quais dados sustentam essa escolha?'}
 ]
 
 const ATTACHMENT_TYPES=new Set(['image/jpeg','image/png','image/webp','image/gif','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','text/plain'])
 const MAX_ATTACHMENT_BYTES=6_000_000
-const attachmentStatusLabels={received:'Pronto pra ler',interpreted:'Leitura pronta',confirmed:'Confirmado como evidência',stored:'Só guardado',rejected:'Removido'}
+const attachmentStatusLabels={received:'Pronto para leitura',interpreted:'Leitura pronta',confirmed:'Confirmado como evidência',stored:'Somente armazenado',rejected:'Removido'}
 const firstNameOf=client=>String(client?.name||'produtor').trim().split(/\s+/)[0]
 const formatFileSize=value=>value>=1_000_000?(value/1_000_000).toLocaleString('pt-BR',{maximumFractionDigits:1})+' MB':Math.max(1,Math.round(value/1000))+' KB'
 const mergeAttachment=(list,item)=>[item,...list.filter(entry=>entry.id!==item.id)].sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||'')))
@@ -32,44 +35,24 @@ async function prepareAttachmentFile(file){
  try{const image=await imageFromUrl(url);const scale=Math.min(1,2200/image.naturalWidth,2200/image.naturalHeight);const canvas=document.createElement('canvas');canvas.width=Math.max(1,Math.round(image.naturalWidth*scale));canvas.height=Math.max(1,Math.round(image.naturalHeight*scale));canvas.getContext('2d').drawImage(image,0,0,canvas.width,canvas.height);const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',.82));if(!blob)throw new Error('Não consegui reduzir esta foto.');if(blob.size>MAX_ATTACHMENT_BYTES)throw new Error('A foto ainda ficou maior que 6 MB.');return new File([blob],(file.name.replace(/\.[^.]+$/,'')||'foto')+'.jpg',{type:'image/jpeg',lastModified:file.lastModified})}finally{URL.revokeObjectURL(url)}
 }
 
-function approach(client){
- const legacy=client?.primaryProfile&&!/^a (confirmar|classificar)/i.test(client.primaryProfile)?client.primaryProfile:''
- return legacy?'Use essa tag só como pista. Confirma na conversa o que importa pra ele hoje.':'Vai simples: entende o que pega hoje e combina só o próximo passo.'
-}
-
-function fallbackAdvice(client,mode,prompt=''){
- const firstName=client?.name?.split(' ')[0]||'Produtor'
- const candidate=resolveOpportunityCandidate(client)
- const opportunity=candidate?.title||''
- const noNeedDeclared=!opportunity&&client?.additionalNeedStatus==='none_declared'
- const strategic=mode==='strategic'
- const nextQuestion=opportunity?{stage:'problema',question:'Hoje, onde “'+String(opportunity).toLowerCase()+'” mais aperta na operação?',ask_when:'Depois de abrir o assunto.',purpose:'Ver se isso é prioridade de verdade.',evidence_needed:'Um exemplo recente e a decisão afetada.'}:noNeedDeclared?{stage:'situação',question:'Surgiu alguma prioridade desde a última conversa ou prefere manter como está?',ask_when:'No começo da conversa.',purpose:'Checar mudança sem forçar oportunidade.',evidence_needed:'Uma mudança dita pelo produtor ou a decisão de seguir como está.'}:{stage:'situação',question:'Qual decisão tá puxando mais sua atenção nesta safra?',ask_when:'Na abertura.',purpose:'Ouvir a prioridade dele.',evidence_needed:'Uma decisão concreta e o resultado buscado.'}
- const valueProblem=opportunity?opportunity:noNeedDeclared?'Nenhuma necessidade adicional declarada; oportunidade não confirmada.':'Oportunidade ainda não identificada.'
-  return {
-  answer:opportunity?'Com '+firstName+', eu iria direto: confirma se “'+String(opportunity).toLowerCase()+'” tá pegando mesmo e pede um exemplo recente. Se vier algo concreto, combina o próximo passo. Se não, não força proposta.':noNeedDeclared?firstName+' não declarou necessidade adicional na última vez. Só pergunta se mudou alguma coisa e, se estiver tudo certo, segue acompanhando sem cavar problema.':'Ainda não apareceu uma prioridade clara pra '+firstName+'. Começa leve: pergunta qual decisão tá puxando mais atenção nesta safra. Ouve primeiro; proposta vem depois.',
-  executive_brief:{priority:opportunity?'esta_semana':noNeedDeclared?'sem_acao':'acompanhar',headline:opportunity?`Confirmar se ${String(opportunity).toLowerCase()} é prioridade real`:noNeedDeclared?'Nenhuma nova necessidade foi declarada':'Descobrir a prioridade antes de propor',reason:opportunity?`A hipótese “${opportunity}” existe, mas ainda precisa ser confirmada.`:'Não há oportunidade sustentada por evidência suficiente.',action:opportunity?'Agendar uma conversa breve e registrar prioridade, valor e próximo compromisso.':'Fazer uma pergunta aberta no próximo contato.',deadline:opportunity?'Nos próximos 3 dias':'No próximo contato',question:nextQuestion.question,decision_basis:[opportunity?`Oportunidade registrada → validar antes de propor.`:'Oportunidade não confirmada → iniciar pela descoberta.'],evidence_ids:[],missing_data:opportunity?['prioridade real','linha de base','critério de prova']:['prioridade declarada']},
-  objective:opportunity?`Validar a necessidade em ${String(opportunity).toLowerCase()} e definir como a hipótese seria comprovada ou descartada.`:noNeedDeclared?'Confirmar se o contexto mudou sem converter a resposta negativa em hipótese comercial.':'Identificar uma prioridade real antes de abrir uma oportunidade.',
-  decision_profile:{decision_context_summary:'Preferências decisórias ainda não confirmadas nesta decisão.',legacy_tag:client?.primaryProfile||'',evidence_ids:[],observed_dimensions:[],adaptation:approach(client)},
-  next_question:nextQuestion,
-  questions:opportunity?[nextQuestion,{stage:'implicação',question:'Como você compara os riscos de agir agora, esperar e manter a prática?',ask_when:'Depois de confirmar o problema.',purpose:'Evitar pressupor que mudar é melhor.',evidence_needed:'Custo, risco, janela e reversibilidade de cada alternativa.'}]:[nextQuestion],
-  opportunity_review:{total_considered:Number(Boolean(opportunity)),open_count:Number(Boolean(opportunity)),selected_title:opportunity,selected_stage:opportunity?'Descoberta':'',selected_value:Number(client?.commercial?.openPotential||0),why_priority:opportunity?'É a única hipótese disponível; ainda precisa ser validada.':'Nenhuma oportunidade foi priorizada.',alternatives_considered:[]},
-  conversation_plan:{opening:opportunity?`“${firstName}, quero confirmar se ${String(opportunity).toLowerCase()} ainda merece prioridade.”`:`“${firstName}, qual decisão mais merece atenção neste ciclo?”`,steps:[{stage:'abertura',goal:'Alinhar o objetivo.',suggested_line:'“Pode ser direto? Quero só entender o que pega mais e combinar o próximo passo.”',advance_signal:'O produtor confirma tema e tempo.',if_resistance:'Combine outro momento.'},{stage:'diagnóstico',goal:'Confirmar contexto e impacto.',suggested_line:nextQuestion.question,advance_signal:'Surge uma decisão concreta afetada.',if_resistance:'Volte a uma pergunta aberta.'},{stage:'valor',goal:'Definir resultado e prova.',suggested_line:'“Que resultado faria isso valer a pena pra você?”',advance_signal:'Há métrica e critério de comparação.',if_resistance:'Proponha apenas levantar a linha de base.'},{stage:'fechamento',goal:'Definir o menor próximo compromisso.',suggested_line:'“Qual próximo passo faz sentido agora e quem entra junto?”',advance_signal:'Responsável e prazo definidos.',if_resistance:'Mantenha acompanhamento sem proposta.'}],closing_options:[{when:'Quando prioridade e prova estiverem confirmadas.',suggested_line:'“Posso organizar uma proposta com essas premissas?”',commitment:'Definir data de revisão.'},{when:'Quando faltarem dados.',suggested_line:'“Levantamos os dados e decidimos depois, sem compromisso?”',commitment:'Definir dado, responsável e prazo.'}],do_not_say:['Não afirmar que a oportunidade já está confirmada.','Não prometer resultado sem linha de base.']},
-  constructive_tension:{status:'not_applicable',consent_status:'unknown',permission_prompt:'Posso testar uma hipótese quando tivermos uma linha de base?',evidence_ids:[],reframe:'',autonomy:'A escolha continua com o produtor.',stop_reason:'Falta evidência comparável e consentimento registrado.',uncertainty:'A oportunidade ainda não foi confirmada.'},
-  value_hypothesis:{problem:valueProblem,baseline:'Não confirmada.',act_now:opportunity?'A medir.':'Não aplicável antes da descoberta.',wait:opportunity?'A medir.':'Manter acompanhamento sem presumir perda.',maintain:opportunity?'A medir.':'Respeitar a situação atual.',impact_to_quantify:opportunity?'R$/ha, sc/ha, tempo, janela e risco.':'Nenhum impacto a quantificar sem oportunidade.',value_metric:opportunity?'Valor realizado contra a mesma linha de base.':'A definir após uma prioridade real.',time_horizon:'A definir.',proof_plan:opportunity?'Comparação controlada antes de escalar.':'Não abrir prova comercial antes da descoberta.',double_counting_guard:'Não somar duas vezes o mesmo benefício.',uncertainty:opportunity?'Sem contrafactual não há estimativa defensável.':'Ausência de oportunidade confirmada.'},
-  next_best_action:opportunity?`Convide ${firstName} para uma conversa de 20 minutos e defina uma única métrica que será levantada antes da visita.`:noNeedDeclared?'Mantenha o acompanhamento combinado e só reabra a descoberta se houver mudança de contexto ou permissão do produtor.':'Faça uma pergunta aberta de situação antes de registrar qualquer oportunidade.',
-  commitment:null,
-  confidence:{level:'not_calibrated',rationale:'Pré-análise local sem validação retrospectiva.',evidence_quality:'Hipótese cadastrada ainda não confirmada.',relevance:'A validar com o produtor.',freshness:'Datas completas não disponíveis.',source_agreement:'Não avaliada.',missing_data:['linha de base','alternativas comparáveis','preferência de prova'],calibration_status:'not_calibrated'},
-  assumptions:[
-   'A oportunidade cadastrada ainda precisa ser validada pelo produtor.',
-   prompt?'A recomendação considera o pedido atual, mas não substitui diagnóstico de campo.':'Ainda não há uma pergunta específica do consultor.'
-  ],
-  evidence_used:[{claim_supported:opportunity?`Hipótese cadastrada: ${opportunity}`:noNeedDeclared?'Nenhuma necessidade adicional foi declarada na última resposta.':'Oportunidade ainda em descoberta',quality:'low',uncertainty:opportunity?'Precisa ser confirmada pelo produtor.':'O contexto pode mudar e deve ser verificado sem pressão.'}],
-  human_review:{required:false,reason:'Pré-análise comercial interna.',required_role:'none',status:'not_required'},blocked_actions:[],
-  guardrails:[
-   'Validar toda premissa financeira com dados reais da propriedade.',
-   'Não transformar hipótese em recomendação agronômica.',
-   'Manter a decisão final com consultor e produtor.'
-  ]
+function neutralAdvice(client){
+ const metrics=commercialMetrics(client||{})
+ return {
+  answer:'Escolha uma pergunta rápida ou descreva a situação para a VAL analisar o dossiê.',
+  objective:'A orientação será construída com o pedido atual, o perfil, o contexto comercial e as evidências disponíveis.',
+  executive_brief:{priority:'acompanhar',headline:'Aguardando sua pergunta',reason:'Nenhuma recomendação foi gerada antes da análise.',action:'Selecione um tema ou escreva a situação atual.',deadline:'Quando você estiver pronto',question:'',decision_basis:[],evidence_ids:[],missing_data:[]},
+  methodology_state:{sequence:VAL_METHOD_SEQUENCE,current_stage:'preparar',completed_stages:[],next_stage:'alinhar',advance_gate:'Enviar uma pergunta para cruzar o dossiê.',reason:'Estado inicial, sem recomendação pronta.'},
+  approach_plan:{tone:'Será definido pelos dados do produtor.',pace:'A confirmar.',channel:'A confirmar.',proof:'A confirmar.',participants:'A confirmar.',risk_posture:'A confirmar.',prioritize:'A confirmar.',avoid:'Não presumir preferências pela tag comportamental.',grounding_ids:[]},
+  commercial_context:{status:metrics.potentialKnown||metrics.currentKnown?'partial':'unknown',current_purchases:metrics.currentPurchases,potential_total:metrics.potentialTotal,open_potential:metrics.openPotential,open_pipeline:metrics.openPipeline,realized_share_percent:Number(metrics.realizedShare)||0,interpretation:metrics.openPotentialKnown?'Potencial em aberto cadastrado: '+compactBRL(metrics.openPotential)+'.':'Potencial em aberto ainda não informado.'},
+  decision_profile:{decision_context_summary:'Aguardando análise do perfil para esta decisão.',legacy_tag:client?.primaryProfile||'',tag_origin:'cadastro do produtor',self_reported:false,evidence_ids:[],observed_dimensions:[],adaptation:'A abordagem será definida depois da análise.'},
+  next_question:null,questions:[],
+  opportunity_review:{total_considered:0,open_count:0,selected_id:'',selected_title:'',selected_stage:'',selected_value:0,why_priority:'Aguardando análise.',alternatives_considered:[]},
+  conversation_plan:{opening:'',steps:[],closing_options:[],do_not_say:[]},
+  constructive_tension:{status:'not_applicable',consent_status:'unknown',consent_evidence_id:'',permission_prompt:'',evidence_ids:[],reframe:'',autonomy:'A decisão permanece com consultor e produtor.',stop_reason:'Nenhuma análise foi solicitada.',uncertainty:'Aguardando contexto atual.'},
+  value_hypothesis:{problem:'Aguardando análise.',baseline:'',act_now:'',wait:'',maintain:'',impact_to_quantify:'',value_metric:'',time_horizon:'',proof_plan:'',double_counting_guard:'',uncertainty:''},
+  next_best_action:'Envie uma pergunta para receber uma próxima ação ancorada no dossiê.',commitment:null,
+  confidence:{level:'not_calibrated',rationale:'Nenhuma recomendação foi gerada.',evidence_quality:'Não avaliada.',relevance:'Não avaliada.',freshness:'Não avaliada.',source_agreement:'Não avaliada.',missing_data:[],calibration_status:'not_calibrated'},
+  assumptions:[],evidence_used:[],human_review:{required:false,reason:'Nenhuma análise foi solicitada.',required_role:'none'},blocked_actions:[],guardrails:['Confira a orientação antes de usar com o produtor.']
  }
 }
 
@@ -157,21 +140,40 @@ function questionData(value,fallback=[]){
  return list.map((item,index)=>item&&typeof item==='object'?{
   id:`${item.stage||'pergunta'}-${index}`,
   stage:textValue(item.stage)||'pergunta',
+  type:textValue(item.type)||'aberta',
   question:textValue(item.question)||textValue(item),
   when:textValue(item.ask_when),
   purpose:textValue(item.purpose),
-  evidence:textValue(item.evidence_needed)
- }:{id:`pergunta-${index}`,stage:'pergunta',question:textValue(item),when:'',purpose:'',evidence:''}).filter(item=>item.question)
+  evidence:textValue(item.evidence_needed),
+  grounding:asList(item.grounding_ids)
+ }:{id:`pergunta-${index}`,stage:'pergunta',type:'aberta',question:textValue(item),when:'',purpose:'',evidence:'',grounding:[]}).filter(item=>item.question)
 }
 
 function conversationData(value){
  const source=value&&typeof value==='object'?value:{}
- return {opening:textValue(source.opening),steps:(Array.isArray(source.steps)?source.steps:[]).map((item,index)=>({id:`${item.stage||'passo'}-${index}`,stage:textValue(item.stage)||'passo',goal:textValue(item.goal),line:textValue(item.suggested_line),signal:textValue(item.advance_signal),resistance:textValue(item.if_resistance)})),closing:(Array.isArray(source.closing_options)?source.closing_options:[]).map((item,index)=>({id:`fechamento-${index}`,when:textValue(item.when),line:textValue(item.suggested_line),commitment:textValue(item.commitment)})),avoid:asList(source.do_not_say)}
+ return {opening:textValue(source.opening),steps:(Array.isArray(source.steps)?source.steps:[]).map((item,index)=>({id:`${item.stage||'passo'}-${index}`,stage:textValue(item.stage)||'passo',type:textValue(item.question_type),goal:textValue(item.goal),line:textValue(item.suggested_line),signal:textValue(item.advance_signal),resistance:textValue(item.if_resistance)})),closing:(Array.isArray(source.closing_options)?source.closing_options:[]).map((item,index)=>({id:`fechamento-${index}`,when:textValue(item.when),line:textValue(item.suggested_line),commitment:textValue(item.commitment)})),avoid:asList(source.do_not_say)}
 }
 
 function opportunityData(value){
  const source=value&&typeof value==='object'?value:{}
  return {total:Number(source.total_considered||0),open:Number(source.open_count||0),title:textValue(source.selected_title),stage:textValue(source.selected_stage),value:Number(source.selected_value||0),reason:textValue(source.why_priority),alternatives:asList(source.alternatives_considered)}
+}
+
+function methodologyData(value){
+ const source=value&&typeof value==='object'?value:{}
+ const sequence=Array.isArray(source.sequence)&&source.sequence.length?source.sequence:VAL_METHOD_SEQUENCE
+ const current=VAL_METHOD_SEQUENCE.includes(source.current_stage)?source.current_stage:'preparar'
+ return {sequence,current,completed:asList(source.completed_stages),next:VAL_METHOD_SEQUENCE.includes(source.next_stage)?source.next_stage:'alinhar',gate:textValue(source.advance_gate),reason:textValue(source.reason)}
+}
+
+function approachData(value){
+ const source=value&&typeof value==='object'?value:{}
+ return {tone:textValue(source.tone)||'A confirmar.',pace:textValue(source.pace)||'A confirmar.',channel:textValue(source.channel)||'A confirmar.',proof:textValue(source.proof)||'A confirmar.',participants:textValue(source.participants)||'A confirmar.',risk:textValue(source.risk_posture)||'A confirmar.',prioritize:textValue(source.prioritize)||'A confirmar.',avoid:textValue(source.avoid)||'Não presumir preferências.',grounding:asList(source.grounding_ids)}
+}
+
+function commercialData(value){
+ const source=value&&typeof value==='object'?value:{}
+ return {status:textValue(source.status)||'unknown',current:Number(source.current_purchases||0),potential:Number(source.potential_total||0),open:Number(source.open_potential||0),pipeline:Number(source.open_pipeline||0),share:Number(source.realized_share_percent||0),interpretation:textValue(source.interpretation)}
 }
 
 function modeLabel(value){
@@ -218,6 +220,8 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const cameraInput=useRef(null)
  const photoInput=useRef(null)
  const documentInput=useRef(null)
+ const requestRef=useRef({sequence:0,controller:null})
+ const selectedRef=useRef(selected)
 
  useEffect(()=>{if(selectedClient?.id)setSelected(selectedClient.id)},[selectedClient])
 
@@ -236,10 +240,17 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  },[])
 
  useEffect(()=>{
-  setResponse(null)
-  setError('')
+  selectedRef.current=selected
+  requestRef.current.controller?.abort()
+  requestRef.current={sequence:requestRef.current.sequence+1,controller:null}
+  setLoading(false);setResponse(null);setError('');setMessage('');setAttachments([]);setSavedAttachments([]);setAttachmentMenu(false)
+  setAttachmentState({loading:false,uploading:false,error:''})
   setFeedback({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})
- },[selected,mode])
+ },[selected])
+
+ useEffect(()=>{setResponse(null);setError('');setFeedback({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})},[mode])
+
+ useEffect(()=>()=>requestRef.current.controller?.abort(),[])
 
  useEffect(()=>{
   if(!selected){setSavedAttachments([]);return}
@@ -253,7 +264,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  },[selected])
 
  const client=useMemo(()=>clients.find(item=>item.id===selected)||clients[0]||null,[clients,selected])
- const localAdvice=useMemo(()=>fallbackAdvice(client,mode),[client,mode])
+ const localAdvice=useMemo(()=>neutralAdvice(client),[client])
  const advice=response?.advice||localAdvice
  const confidence=confidenceData(advice?.confidence)
  const questionPlan=[...(advice?.next_question?[advice.next_question]:[]),...(Array.isArray(advice?.questions)?advice.questions:[])].filter((item,index,list)=>list.findIndex(candidate=>candidate?.question===item?.question)===index)
@@ -264,6 +275,9 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const commitment=commitmentData(advice?.commitment)
  const conversation=conversationData(advice?.conversation_plan)
  const opportunityReview=opportunityData(advice?.opportunity_review)
+ const methodology=methodologyData(advice?.methodology_state)
+ const approachPlan=approachData(advice?.approach_plan)
+ const commercialContext=commercialData(advice?.commercial_context)
  const evidence=evidenceData(advice?.evidence_used,response?[]:localAdvice.evidence_used)
  const brief=briefData(advice)
  const briefEvidence=(brief.evidenceIds.length?brief.evidenceIds.map(id=>evidence.find(item=>item.id===id)).filter(Boolean):evidence).slice(0,3)
@@ -276,17 +290,21 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const recommendationRegistered=Boolean(response?.recommendationId)
  const contextSources=Object.entries(response?.contextCoverage||{}).filter(([key,value])=>key!=='profile'&&Number(value)>0).map(([key,value])=>({key,label:coverageLabels[key]||key,value}))
  const interpretedAttachments=Array.isArray(response?.attachments)?response.attachments.filter(item=>item.status!=='received'||item.analysis?.summary):[]
+ const clientMetrics=useMemo(()=>commercialMetrics(client||{}),[client])
+ const primaryQuestionType=questions.find(item=>item.question===brief.question)?.type||textValue(advice?.next_question?.type)||'aberta'
 
  const uploadFiles=async event=>{
   const files=Array.from(event.target.files||[]);event.target.value='';setAttachmentMenu(false)
   if(!files.length||attachmentState.uploading)return
   const slots=Math.max(0,3-attachments.length);if(!slots){setAttachmentState(current=>({...current,error:'Envie no máximo 3 arquivos por pergunta.'}));return}
+  const uploadClientId=client.id
   setAttachmentState(current=>({...current,uploading:true,error:''}))
   try{
    for(const original of files.slice(0,slots)){
     const file=await prepareAttachmentFile(original);const dataUrl=await fileDataUrl(file)
     const result=await fetch('/api/val/attachments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:client.id,originalName:file.name,mimeType:file.type,sizeBytes:file.size,dataUrl}),signal:AbortSignal.timeout(60000)})
     const payload=await result.json().catch(()=>({}));if(result.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!result.ok)throw new Error(payload.error||'Não consegui enviar este arquivo.')
+    if(String(selectedRef.current)!==String(uploadClientId))continue
     setAttachments(current=>current.some(item=>item.id===payload.attachment.id)?current:[...current,payload.attachment].slice(0,3))
     setSavedAttachments(current=>mergeAttachment(current,payload.attachment))
    }
@@ -302,6 +320,11 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
   const attachmentIds=attachments.map(item=>item.id).filter(Boolean).slice(0,3)
   const prompt=String(rawMessage||message||(attachmentIds.length?'Leia esses arquivos e me diga o que importa.':'')).trim()
   if((!prompt&&!attachmentIds.length)||!client||loading)return
+  const sequence=requestRef.current.sequence+1
+  const controller=new AbortController()
+  requestRef.current.controller?.abort()
+  requestRef.current={sequence,controller}
+  const requestClientId=client.id
   setLoading(true)
   setError('')
   setFeedback({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})
@@ -310,20 +333,22 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({clientId:client.id,client,message:prompt,attachmentIds,mode:requestedMode}),
-    signal:AbortSignal.timeout(120000)
+    signal:typeof AbortSignal.any==='function'?AbortSignal.any([controller.signal,AbortSignal.timeout(120000)]):controller.signal
    })
    const payload=await result.json().catch(()=>({}))
    if(result.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}
    if(!result.ok)throw new Error(payload?.error||payload?.message||'A VAL não respondeu agora.')
    if(!payload?.advice)throw new Error('A resposta chegou incompleta.')
+   if(requestRef.current.sequence!==sequence||String(selectedRef.current)!==String(requestClientId))return
    setResponse(payload)
    setMessage('')
-   setAttachments(payload.engineMode==='openai'?[]:(payload.attachments||attachments))
+   setAttachments([])
    ;(payload.attachments||[]).forEach(item=>setSavedAttachments(current=>mergeAttachment(current,item)))
   }catch(requestError){
-   if(attachmentIds.length)setError(requestError.message+' Os arquivos continuam salvos com este produtor; tente de novo.')
-   else{setResponse({recommendationId:null,engineMode:'fallback',model:null,warning:'Resposta construída com o contexto disponível neste dispositivo.',advice:fallbackAdvice(client,requestedMode,prompt)});setError(requestError.message+' Mantive uma orientação segura em modo resiliente.')}
-  }finally{setLoading(false)}
+   if(requestRef.current.sequence!==sequence||requestError.name==='AbortError')return
+   setResponse(null)
+   setError(requestError.message+(attachmentIds.length?' Os arquivos continuam salvos com este produtor; tente novamente.':' Tente novamente em alguns instantes.'))
+  }finally{if(requestRef.current.sequence===sequence)setLoading(false)}
  }
 
  const chooseMode=value=>setMode(value)
@@ -356,7 +381,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
   <header className="val-hero">
    <div className="val-hero-copy">
     <div className="val-brand-line"><span className="val-orbit"><BrainCircuit aria-hidden="true"/></span><div><span className="val-kicker">VAL • SUA PARCEIRA DE CAMPO</span><h2 id="val-workspace-title">Converse com a VAL.</h2></div></div>
-    <p>Pergunte como você falaria com alguém do time. A VAL lê o contexto e vai direto no que importa.</p>
+    <p>Conte a situação com naturalidade. A VAL cruza o dossiê, identifica a etapa da conversa e orienta o próximo avanço.</p>
     <div className="val-engine-line" aria-live="polite">
      <span className={`val-live-pill ${engineReady?'is-ready':''}`}><i/>{status.loading?'Preparando a VAL':engineReady?'VAL pronta':'VAL disponível'}</span>
      <span>{status.data?.mode?modeLabel(status.data.mode):'Contexto protegido'}</span>
@@ -369,6 +394,8 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
     <dl className="val-context-facts">
      <div><dt>Tag Produtor 360</dt><dd>{client.primaryProfile||'Em leitura'}</dd></div>
      <div><dt>Último contato</dt><dd>{client.commercial?.lastContactDays!==null&&client.commercial?.lastContactDays!==undefined&&Number.isFinite(Number(client.commercial.lastContactDays))?`${client.commercial.lastContactDays} dias`:'Não informado'}</dd></div>
+     <div><dt>Potencial em aberto</dt><dd>{compactBRL(clientMetrics.openPotential,{known:clientMetrics.openPotentialKnown})}</dd></div>
+     <div><dt>Share realizado</dt><dd>{clientMetrics.shareKnown?`${Number(clientMetrics.realizedShare).toLocaleString('pt-BR',{maximumFractionDigits:1})}%`:'A medir'}</dd></div>
     </dl>
     <div className="val-context-opportunity"><span>Oportunidade observada</span><b>{client.commercial?.opportunity||'Descoberta inicial'}</b></div>
    </aside>
@@ -376,7 +403,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
 
   <div className="val-command-zone">
    <div className="val-toolbar">
-    <label className="val-client-select"><span>Produtor</span><select value={selected} onChange={event=>setSelected(event.target.value)} aria-label="Selecionar produtor">{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+    <label className="val-client-select"><span>Produtor</span><select value={selected} onChange={event=>setSelected(event.target.value)} aria-label="Selecionar produtor" disabled={loading}>{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
     <div className="val-mode-picker"><div><span>Tipo de ajuda</span><small>{MODES[mode].description}</small></div><div role="group" aria-label="Escolher modo da VAL">{Object.entries(MODES).map(([value,item])=><button key={value} type="button" disabled={loading} className={mode===value?'active':''} aria-pressed={mode===value} onClick={()=>chooseMode(value)}>{value==='daily'?<Zap/>:<BrainCircuit/>}{item.short}</button>)}</div></div>
    </div>
 
@@ -401,31 +428,37 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
    {attachmentState.uploading&&<div className="val-file-progress" role="status"><LoaderCircle className="val-spinner"/><span>Enviando arquivo…</span></div>}
    {attachmentState.error&&<div className="val-warning val-file-warning" role="alert"><AlertCircle/><span>{attachmentState.error}</span></div>}
    <details className="val-files-panel">
-    <summary><Paperclip/><span>Arquivos de {firstNameOf(client)}</span><b>{savedAttachments.length}</b></summary>
+    <summary><Paperclip/><span>Fotos e documentos de {firstNameOf(client)}</span><b>{savedAttachments.length}</b></summary>
     {attachmentState.loading?<p>Buscando arquivos…</p>:savedAttachments.length?<ul>{savedAttachments.map(item=><li key={item.id}>{item.mimeType?.startsWith('image/')?<ImagePlus/>:<FileText/>}<span><a href={'/api/val/attachments/'+item.id} target="_blank" rel="noreferrer">{item.originalName}</a><small>{formatFileSize(item.sizeBytes)} • {attachmentStatusLabels[item.status]||item.status}</small></span>{!attachments.some(entry=>entry.id===item.id)&&attachments.length<3&&<button type="button" onClick={()=>setAttachments(current=>[...current,item].slice(0,3))}>Usar</button>}</li>)}</ul>:<p>Nenhum arquivo salvo ainda.</p>}
    </details>
-   {loading&&<div className="val-thinking" role="status"><span/><div><b>A VAL tá olhando tudo.</b><small>Já volto com uma resposta curta e o próximo passo.</small></div></div>}
+   {loading&&<div className="val-thinking" role="status"><span/><div><b>A VAL está cruzando o dossiê.</b><small>Perfil, potencial, oportunidades, histórico e imagens estão sendo analisados.</small></div></div>}
    {(error||response?.warning)&&<div className="val-warning" role="status"><AlertCircle aria-hidden="true"/><span>{error||response.warning}</span></div>}
   </div>
 
   <div className="val-response" aria-busy={loading}>
-   <span className="sr-only" role="status">{loading?'Análise em andamento.':recommendationRegistered?'Nova recomendação registrada.':response?'Nova orientação não registrada.':'Pré-análise local.'}</span>
-   <div className="val-response-heading"><div><span className="val-section-icon"><Sparkles/></span><div><span>{recommendationRegistered?'RESPOSTA SALVA':response?'RESPOSTA LOCAL':'PRA COMEÇAR'}</span><h3>Minha leitura</h3></div></div><div className="val-response-meta"><span>Sobre {firstNameOf(client)}</span></div></div>
+   <span className="sr-only" role="status">{loading?'Análise em andamento.':recommendationRegistered?'Nova recomendação registrada.':response?'Nova orientação não registrada.':'Aguardando pergunta.'}</span>
+   <div className="val-response-heading"><div><span className="val-section-icon"><Sparkles/></span><div><span>{recommendationRegistered?'RESPOSTA SALVA':response?'ORIENTAÇÃO GERADA':'AGUARDANDO CONTEXTO ATUAL'}</span><h3>{response?'Minha leitura':'Como começar'}</h3></div></div><div className="val-response-meta"><span>Sobre {firstNameOf(client)}</span></div></div>
    <div className="val-internal-banner"><ShieldCheck/><span><b>Rascunho de trabalho</b><small>Confira antes de usar com o produtor.</small></span></div>
 
    <section className="val-chat-answer" aria-label="Resposta principal da VAL">
     <span className="val-chat-avatar">VAL</span>
-    <div><small>VAL</small><p>{advice.answer}</p>{brief.question&&<div className="val-ready-question"><MessageSquareText/><span><small>Se quiser uma frase pronta</small><b>{brief.question}</b></span></div>}</div>
+    <div><small>VAL</small><p>{advice.answer}</p>{response&&brief.question&&<div className="val-ready-question"><MessageSquareText/><span><small>PERGUNTA PRINCIPAL • {primaryQuestionType.toUpperCase()}</small><b>{brief.question}</b></span></div>}</div>
+   </section>
+
+   <section className="val-methodology" aria-label="Sequência lógica da conversa">
+    <header><div><Route/><span><small>SEQUÊNCIA CONSULTIVA</small><h3>{response?`Etapa atual: ${methodLabels[methodology.current]}`:'A orientação avança por evidência'}</h3></span></div>{response&&<em>Próxima: {methodLabels[methodology.next]}</em>}</header>
+    <ol>{methodology.sequence.map((stage,index)=><li key={stage} className={methodology.current===stage?'is-current':methodology.completed.includes(stage)?'is-complete':''}><span>{methodology.completed.includes(stage)?<Check/>:String(index+1).padStart(2,'0')}</span><b>{methodLabels[stage]||stage}</b></li>)}</ol>
+    {response&&<div className="val-method-gate"><Target/><span><small>PORTA PARA AVANÇAR</small><b>{methodology.gate}</b>{methodology.reason&&<p>{methodology.reason}</p>}</span></div>}
    </section>
 
    {interpretedAttachments.length>0&&<section className="val-attachment-reading" aria-label="Leitura dos arquivos">
     <header><FileSearch/><span><small>ARQUIVOS DESTA PERGUNTA</small><h3>O que eu consegui ler</h3></span></header>
-    <p>Confirme só se a leitura bater com o original. Foto e anotação ajudam a organizar a conversa, mas não viram diagnóstico.</p>
-    <ul>{interpretedAttachments.map(item=><li key={item.id}><div>{item.mimeType?.startsWith('image/')?<ImagePlus/>:<FileText/>}<span><a href={'/api/val/attachments/'+item.id} target="_blank" rel="noreferrer">{item.originalName}</a><small>{attachmentStatusLabels[item.status]||item.status}</small></span></div>{item.analysis?.summary&&<p><b>Li:</b> {item.analysis.summary}</p>}{item.analysis?.uncertainty&&<p><b>Falta confirmar:</b> {item.analysis.uncertainty}</p>}{item.status==='interpreted'&&<div className="val-file-actions"><button type="button" onClick={()=>updateAttachmentStatus(item.id,'confirmed')}><Check/>Confirmar como evidência</button><button type="button" onClick={()=>updateAttachmentStatus(item.id,'stored')}>Só guardar</button></div>}</li>)}</ul>
+    <p>Confira se a leitura corresponde ao original. A imagem ajuda a levantar observações e perguntas; isoladamente, não confirma causa ou diagnóstico.</p>
+    <ul>{interpretedAttachments.map(item=><li key={item.id}><div>{item.mimeType?.startsWith('image/')?<ImagePlus/>:<FileText/>}<span><a href={'/api/val/attachments/'+item.id} target="_blank" rel="noreferrer">{item.originalName}</a><small>{attachmentStatusLabels[item.status]||item.status}</small></span></div>{item.analysis?.summary&&<p><b>Observação visual:</b> {item.analysis.summary}</p>}{item.analysis?.uncertainty&&<p><b>Falta confirmar:</b> {item.analysis.uncertainty}</p>}{item.status==='interpreted'&&<div className="val-file-actions"><button type="button" onClick={()=>updateAttachmentStatus(item.id,'confirmed')}><Check/>Confirmar como evidência</button><button type="button" onClick={()=>updateAttachmentStatus(item.id,'stored')}>Somente guardar</button></div>}</li>)}</ul>
    </section>}
 
    <details className="val-plan-details">
-    <summary><Route/><span><b>Ver roteiro completo e o porquê</b><small>Ação, prazo, perguntas e sinais pra avançar</small></span><ChevronRight/></summary>
+    <summary><Route/><span><b>Ver roteiro completo e o motivo</b><small>Ação, prazo, perguntas e sinais para avançar</small></span><ChevronRight/></summary>
    <section className={`val-executive-brief priority-${brief.priority}`} aria-label="Recomendação objetiva da VAL">
     <header><span>{priorityLabels[brief.priority]||priorityLabels.acompanhar}</span><h3>{brief.headline}</h3><p>{brief.reason}</p></header>
     <div className="val-brief-actions">
@@ -439,9 +472,9 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
    </section>
 
    <section className="val-conversation-plan" aria-label="Roteiro sugerido para a conversa">
-    <header><div><Route/><span><small>ROTEIRO PARA A CONVERSA</small><h3>Da abertura ao próximo compromisso</h3></span></div><em>{conversation.steps.length} passos</em></header>
+    <header><div><Route/><span><small>ROTEIRO PARA A CONVERSA</small><h3>Somente os passos úteis neste momento</h3></span></div><em>{conversation.steps.length} {conversation.steps.length===1?'passo':'passos'}</em></header>
     {conversation.opening&&<blockquote>{conversation.opening}</blockquote>}
-    <ol>{conversation.steps.map((item,index)=><li key={item.id}><span>{String(index+1).padStart(2,'0')}</span><div><small>{item.stage}</small><b>{item.goal}</b><p>{item.line}</p><dl><div><dt>Avance quando</dt><dd>{item.signal}</dd></div><div><dt>Se houver resistência</dt><dd>{item.resistance}</dd></div></dl></div></li>)}</ol>
+    <ol>{conversation.steps.map((item,index)=><li key={item.id}><span>{String(index+1).padStart(2,'0')}</span><div><small>{item.stage}{item.type&&item.type!=='não_aplicável'?` • pergunta ${item.type.replace('_',' ')}`:''}</small><b>{item.goal}</b><p>{item.line}</p><dl><div><dt>Avance quando</dt><dd>{item.signal}</dd></div><div><dt>Se houver resistência</dt><dd>{item.resistance}</dd></div></dl></div></li>)}</ol>
     {conversation.closing.length>0&&<div className="val-closing-options"><small>OPÇÕES DE FECHAMENTO</small><div>{conversation.closing.map(item=><article key={item.id}><span>{item.when}</span><b>{item.line}</b><em>{item.commitment}</em></article>)}</div></div>}
     {conversation.avoid.length>0&&<div className="val-conversation-avoid"><small>EVITE NA CONVERSA</small><ul>{conversation.avoid.map((item,index)=><li key={`${item}-${index}`}>{item}</li>)}</ul></div>}
    </section>
@@ -453,9 +486,14 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
 
    <div className="val-insight-grid">
     <article className="val-insight-card val-answer-card">
-     <div className="val-card-label"><Lightbulb/>LEITURA DA VAL</div>
-     <p>{advice.answer}</p>
+     <div className="val-card-label"><Lightbulb/>OBJETIVO DESTA ORIENTAÇÃO</div>
      <div className="val-objective"><Target/><div><small>Objetivo da conversa</small><b>{advice.objective}</b></div></div>
+    </article>
+
+    <article className="val-insight-card val-commercial-card">
+     <div className="val-card-label"><Target/>CONTEXTO COMERCIAL</div>
+     <div className="val-commercial-metrics"><span><small>Compras atuais</small><b>{compactBRL(commercialContext.current,{known:commercialContext.status!=='unknown'})}</b></span><span><small>Potencial total</small><b>{compactBRL(commercialContext.potential,{known:commercialContext.status!=='unknown'})}</b></span><span><small>Potencial em aberto</small><b>{compactBRL(commercialContext.open,{known:commercialContext.status!=='unknown'})}</b></span><span><small>Pipeline</small><b>{compactBRL(commercialContext.pipeline,{known:commercialContext.status!=='unknown'})}</b></span><span><small>Share realizado</small><b>{commercialContext.status==='unknown'?'A medir':`${commercialContext.share.toLocaleString('pt-BR',{maximumFractionDigits:1})}%`}</b></span></div>
+     {commercialContext.interpretation&&<p>{commercialContext.interpretation}</p>}
     </article>
 
     <article className="val-insight-card val-profile-card">
@@ -464,12 +502,13 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
      {profile.referenceIds.length>0&&<small>IDs das evidências do perfil: {profile.referenceIds.join(', ')}</small>}
      {profile.evidence.length>0&&<ul className="val-profile-evidence">{profile.evidence.map(item=><li key={item.id}><b>{item.summary}</b>{item.meta&&<small>{item.meta}</small>}</li>)}</ul>}
      <div className="val-profile-adaptation"><small>Adaptação da abordagem</small><b>{profile.adaptation}</b></div>
+     <dl className="val-approach-plan"><div><dt>Tom</dt><dd>{approachPlan.tone}</dd></div><div><dt>Ritmo</dt><dd>{approachPlan.pace}</dd></div><div><dt>Canal</dt><dd>{approachPlan.channel}</dd></div><div><dt>Prova</dt><dd>{approachPlan.proof}</dd></div><div><dt>Quem participa</dt><dd>{approachPlan.participants}</dd></div><div><dt>Postura diante do risco</dt><dd>{approachPlan.risk}</dd></div><div><dt>Priorizar</dt><dd>{approachPlan.prioritize}</dd></div><div><dt>Evitar</dt><dd>{approachPlan.avoid}</dd></div></dl>
      <div className="val-value-hypothesis"><small>Hipótese de valor</small><b>{valueHypothesis.problem}</b>{valueHypothesis.alternatives.map(item=><span key={item}>{item}</span>)}{valueHypothesis.impact&&<span><strong>Quantificar:</strong> {valueHypothesis.impact}</span>}{valueHypothesis.metric&&<span><strong>Métrica:</strong> {valueHypothesis.metric}</span>}{valueHypothesis.proof&&<span><strong>Prova:</strong> {valueHypothesis.proof}</span>}{valueHypothesis.details.map(item=><span key={item}>{item}</span>)}</div>
     </article>
 
     <article className="val-insight-card val-questions-card">
      <div className="val-card-head"><div className="val-card-label"><MessageSquareText/>PRÓXIMA PERGUNTA E PLANO INTERNO</div><span>{questions.length} {questions.length===1?'opção':'opções'}</span></div>
-     {questions.length?<ol>{questions.map((item,index)=><li key={item.id}><span>{String(index+1).padStart(2,'0')}</span><div><em>{item.stage}</em><p>{item.question}</p>{item.when&&<small><b>Quando perguntar:</b> {item.when}</small>}{item.purpose&&<small><b>Por quê:</b> {item.purpose}</small>}{item.evidence&&<small><b>Evidência necessária:</b> {item.evidence}</small>}</div></li>)}</ol>:<p className="val-empty-plan">Nenhuma pergunta adicional foi recomendada para este momento.</p>}
+     {questions.length?<ol>{questions.map((item,index)=><li key={item.id}><span>{String(index+1).padStart(2,'0')}</span><div><em>{item.stage} • {item.type}</em><p>{item.question}</p>{item.when&&<small><b>Quando perguntar:</b> {item.when}</small>}{item.purpose&&<small><b>Por quê:</b> {item.purpose}</small>}{item.evidence&&<small><b>Evidência necessária:</b> {item.evidence}</small>}{item.grounding.length>0&&<small><b>Base:</b> {item.grounding.join(', ')}</small>}</div></li>)}</ol>:<p className="val-empty-plan">A VAL definirá perguntas abertas e fechadas depois da análise.</p>}
     </article>
 
     <article className="val-insight-card val-evidence-card">

@@ -305,17 +305,23 @@ test('leitura reidrata o snapshot sem permitir que ele substitua campos canônic
 })
 
 test('contexto entregue à VAL também neutraliza oportunidade negativa persistida',async()=>{
-  const db={configured:true,query:async()=>({rowCount:1,rows:[{
+  let contextSql,contextParams
+  const db={configured:true,query:async(sql,params)=>{contextSql=sql;contextParams=params;return {rowCount:1,rows:[{
     external_key:'client-ext',name:'Cliente',commercial_profile:{opportunity:'Não.'},profile_snapshot:{additionalNeed:'Não.',commercial:{opportunity:'Não.'}},
     answers:{1:'Cliente',2:'Município'},profile_evidence:[{source:'producer_360',self_reported:true}],profile_assessed_at:new Date('2026-08-01T12:00:00Z'),signals:[],learning:{},feedback_learning:{},memories:[],business_history:[{id:'business-1'}],visits:[{id:'visit-1'}],interactions:[{id:'interaction-1'}],opportunities:[{id:'opportunity-1'}],properties:[{id:'property-1'}],field_reports:[{id:'report-1'}],soil_analyses:[{id:'soil-1'}],ndvi_observations:[{id:'ndvi-1'}],manual_records:[{id:'manual-1'}],prior_recommendations:[{id:'recommendation-1'}]
-  }]})}
-  const context=await repositoryWith(db).getClientContext({clientId:'client-ext'})
+  }]}}}
+  const ownerId='00000000-0000-4000-8000-000000000010'
+  const context=await repositoryWith(db).getClientContext({clientId:'client-ext',ownerId})
   assert.equal(context.client.additionalNeedStatus,'none_declared')
   assert.equal(context.client.commercial.opportunity,'')
   assert.equal(context.client.commercial.opportunityProvenance.state,'none_declared')
   assert.deepEqual(context.profile.answers,{1:'Cliente',2:'Município'})
   assert.equal(context.profile.assessedAt,'2026-08-01T12:00:00.000Z')
   for(const key of ['businessHistory','visits','interactions','opportunities','properties','fieldReports','soilAnalyses','ndviObservations','manualRecords','priorRecommendations'])assert.equal(context[key].length,1,key)
+  assert.deepEqual(contextParams.slice(1),['client-ext',ownerId])
+  assert.match(contextSql,/r\.consultant_id=\$3/)
+  assert.match(contextSql,/val_recommendation\.consultant_id=\$3/)
+  assert.match(contextSql,/generated_content->'methodology_state' methodology_state/)
 })
 
 test('oportunidade comercial legada com evidência vence Q27 negativa',async()=>{

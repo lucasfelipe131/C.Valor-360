@@ -115,7 +115,7 @@ export default function App(){
    <Topbar title={title} subtitle={subtitle} onNavigate={navigate}/>
    <div className="content">
     {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient}/>}
-    {page==='clients'&&<Clients clients={clientList} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
+    {page==='clients'&&<Clients clients={clientList} opportunities={opportunities} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
     {page==='datahub'&&<DataHub clients={clientList} onImport={importClients} onUpdate={updateClient} onDelete={deleteClient} onNotify={notify}/>}
     {page==='client360'&&selected&&<Client360 key={selected.id} client={selected} storageScope={currentUser?.storageScope} onBack={()=>navigate('clients')} onPrepare={()=>prepareClient(selected)} onUpdate={updateClient} onSaved={message=>notify(message||'Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}/>}
     {page==='val'&&<ValPanel clients={clientList} selectedClient={selected} onSelect={openClient}/>}

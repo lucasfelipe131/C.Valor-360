@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {compactValContext,enforceValSafety,selectValModel,summarizeContextCoverage,ValEngine} from '../server/val-engine.js'
-import {buildFallbackAdvice,valAdviceSchema} from '../server/sales-playbook.js'
+import {buildAttachmentModelContent,buildUnconfirmedVisualAnalysis,compactValContext,enforceValSafety,selectValModel,summarizeContextCoverage,ValEngine} from '../server/val-engine.js'
+import {buildFallbackAdvice,rankOpportunityPortfolio,valAdviceSchema} from '../server/sales-playbook.js'
 
 const config={modelDaily:'terra',modelStrategic:'sol',modelFast:'luna'}
 
@@ -11,14 +11,15 @@ test('roteia custo e capacidade conforme a tarefa',()=>{
   assert.equal(selectValModel('classifique esta importação','daily',config).model,'luna')
 })
 
-test('modo demonstrativo explicita evidências e limites',()=>{
+test('fallback local explicita evidências, método e limites sem resposta genérica fixa',()=>{
   const advice=buildFallbackAdvice({client:{name:'Produtor Teste',primaryProfile:'Analítico',irt:70,nps:9,commercial:{frequency:5,opportunity:'revisar variabilidade'}},message:'Prepare a visita',signals:[],learning:{wins:2,losses:1}})
   assert.ok(advice.questions.length>=1&&advice.questions.length<=5)
   assert.equal(advice.next_question.stage,'problema')
   assert.match(advice.constructive_tension.permission_prompt,/Posso/i)
   assert.ok(advice.evidence_used.length>=3)
-  assert.ok(advice.guardrails.some(item=>/demonstrativo/i.test(item)))
-  assert.match(advice.executive_brief.action,/Agendar|Registrar/i)
+  assert.deepEqual(advice.methodology_state.sequence,['preparar','alinhar','descobrir','dimensionar','construir_valor','propor','comprometer'])
+  assert.ok(advice.guardrails.some(item=>/confirmar|causalidade|pressionar/i.test(item)))
+  assert.match(advice.executive_brief.action,/Conduzir|Agendar|Registrar/i)
   assert.ok(advice.executive_brief.evidence_ids.length<=3)
 })
 
@@ -34,11 +35,15 @@ test('VAL compara a carteira de oportunidades e entrega roteiro até o próximo 
   assert.equal(advice.opportunity_review.selected_title,'Tratamento de sementes')
   assert.equal(advice.opportunity_review.alternatives_considered.length,2)
   assert.ok(advice.executive_brief.decision_basis.every(item=>item.includes('→')))
-  assert.ok(advice.conversation_plan.steps.length>=3)
+  assert.ok(advice.conversation_plan.steps.length>=1&&advice.conversation_plan.steps.length<=5)
+  assert.deepEqual(advice.questions.map(item=>item.type),['aberta','fechada'])
   assert.ok(advice.conversation_plan.closing_options.length>=1)
   assert.ok(advice.conversation_plan.do_not_say.length>=1)
   assert.ok(valAdviceSchema.required.includes('opportunity_review'))
   assert.ok(valAdviceSchema.required.includes('conversation_plan'))
+  assert.ok(valAdviceSchema.required.includes('methodology_state'))
+  assert.ok(valAdviceSchema.required.includes('approach_plan'))
+  assert.ok(valAdviceSchema.required.includes('commercial_context'))
 })
 
 test('compactação do prompt preserva todas as oportunidades mesmo sob limite de contexto',()=>{
@@ -58,6 +63,38 @@ test('perfil é hipótese adaptativa, não diagnóstico',()=>{
   assert.equal(advice.decision_profile.legacy_tag,'Conservador')
   assert.match(advice.decision_profile.adaptation,/não adapte somente/i)
  assert.equal(advice.confidence.level,'not_calibrated')
+})
+
+test('perfil comportamental explícito vira abordagem rastreável, não texto genérico',()=>{
+ const client={id:'produtor-1',name:'Teste',primaryProfile:'Analítico',decisionParticipants:'Esposa e agrônomo',decisionDriver:'Segurança técnica',technicalPresentation:'Comparativo em tabela',planningStyle:'Planeja a safra com antecedência',innovationBehavior:'Prefere teste em pequena área',servicePreference:'Visita presencial',trustDriver:'Resultados medidos',buyingBehavior:'Compara três alternativas',commercial:{purchaseCurrentSeason:100_000,potentialTotal:250_000,openPotential:150_000}}
+ const advice=buildFallbackAdvice({client,profile:{answers:{},assessedAt:'2026-08-01T12:00:00Z',validUntil:'2027-02-01T12:00:00Z'},message:'Como abordar?',signals:[],learning:{}})
+ assert.ok(advice.decision_profile.observed_dimensions.length>=5)
+ assert.match(advice.approach_plan.participants,/Esposa e agrônomo/)
+ assert.match(advice.approach_plan.proof,/Comparativo em tabela|Resultados medidos/)
+ assert.match(advice.approach_plan.risk_posture,/Compara três alternativas/)
+ assert.ok(advice.approach_plan.grounding_ids.every(id=>advice.evidence_used.some(item=>item.id===id)))
+ assert.equal(advice.commercial_context.open_potential,150_000)
+ assert.equal(advice.commercial_context.realized_share_percent,40)
+})
+
+test('relato de resposta do produtor avança uma etapa sem reiniciar a sequência',()=>{
+ const priorRecommendations=[{methodology_state:{current_stage:'descobrir'}}]
+ const advice=buildFallbackAdvice({client:{id:'produtor-1',name:'Teste'},message:'Ele disse que a prioridade é reduzir a variabilidade no talhão norte.',priorRecommendations,signals:[],learning:{}})
+ assert.equal(advice.methodology_state.current_stage,'dimensionar')
+ assert.ok(advice.methodology_state.completed_stages.includes('descobrir'))
+ assert.equal(advice.questions[0].type,'aberta')
+ assert.equal(advice.questions[1].type,'fechada')
+})
+
+test('ranking de oportunidades considera estágio, janela, ação e evidência além do valor',()=>{
+ const now=new Date('2026-08-12T12:00:00Z').getTime()
+ const ranked=rankOpportunityPortfolio([
+  {id:'alto',title:'Maior valor sem avanço',stage:'Diagnóstico',estimated_value:500_000},
+  {id:'acionavel',title:'Menor valor com decisão próxima',stage:'Proposta',estimated_value:120_000,next_action:'Revisar com decisores',next_action_at:'2026-08-13T12:00:00Z',evidence:[{id:'e1'}]},
+  {id:'fechado',title:'Já encerrada',stage:'Fechado',estimated_value:1_000_000}
+ ],now)
+ assert.equal(ranked[0].id,'acionavel')
+ assert.equal(ranked.at(-1).id,'fechado')
 })
 
 test('negação genérica nunca vira hipótese comercial da VAL',()=>{
@@ -166,4 +203,77 @@ test('relatório de safra estruturado entra como evidência específica da VAL',
   assert.match(item.claim_supported,/Soja · 2026\/2027/)
   assert.match(item.claim_supported,/margem estimada de R\$ 1\.200\/ha/i)
   assert.equal(item.quality,'high')
+})
+
+test('foto persistida do produtor entra no modelo multimodal com metadados e limite explícito',()=>{
+  const attachment={id:'00000000-0000-4000-8000-000000000010',clientId:'produtor-1',originalName:'soja-talhao-4.jpg',mimeType:'image/jpeg',sizeBytes:42,dataBase64:'aW1hZ2Vt',status:'stored',analysis:{fieldPhoto:{label:'Soja — Talhão Norte, V4',category:'Emergência e estande',observedAt:'2026-08-11',notes:'12 plantas/m; conferir após 7 dias.',source:'client360'}},createdAt:'2026-08-12T15:00:00.000Z'}
+  const content=buildAttachmentModelContent([attachment],{client:{id:'produtor-1',name:'Produtor Teste',municipality:'São Luiz Gonzaga',cultures:'Soja, milho',area:320,commercial:{property:'Fazenda Horizonte'}}})
+  assert.equal(content.length,2)
+  assert.equal(content[0].type,'input_text')
+  assert.match(content[0].text,/soja-talhao-4\.jpg/)
+  assert.match(content[0].text,/São Luiz Gonzaga/)
+  assert.match(content[0].text,/Fazenda Horizonte/)
+  assert.match(content[0].text,/Talhão Norte, V4/)
+  assert.match(content[0].text,/12 plantas\/m/)
+  assert.match(content[0].text,/observação não confirmada/i)
+  assert.match(content[0].text,/não conclua doença, praga, deficiência/i)
+  assert.deepEqual(content[1],{type:'input_image',image_url:'data:image/jpeg;base64,aW1hZ2Vt',detail:'high'})
+})
+
+test('interpretação visual permanece não confirmada e nunca cria diagnóstico',()=>{
+  const attachment={id:'00000000-0000-4000-8000-000000000010',clientId:'produtor-1',originalName:'folha.jpg',mimeType:'image/jpeg',sizeBytes:42,status:'received',createdAt:'2026-08-12T15:00:00.000Z'}
+  const advice={evidence_used:[{source_type:'consultant_attachment',source_id:attachment.id,claim_supported:'A imagem mostra áreas amareladas distribuídas entre as nervuras.',uncertainty:'A iluminação e o verso da folha não estão visíveis.'}]}
+  const analysis=buildUnconfirmedVisualAnalysis({advice,attachment,context:{client:{id:'produtor-1',name:'Produtor Teste'}},model:'modelo-visual',interpretedAt:'2026-08-12T15:05:00.000Z'})
+  assert.equal(analysis.verificationStatus,'unconfirmed')
+  assert.equal(analysis.diagnosticStatus,'not_a_diagnosis')
+  assert.equal(analysis.diagnosis,null)
+  assert.equal(analysis.requiresFieldValidation,true)
+  assert.deepEqual(analysis.observations,[{text:'A imagem mostra áreas amareladas distribuídas entre as nervuras.',status:'unconfirmed'}])
+  assert.match(analysis.uncertainty,/não estabelece diagnóstico/i)
+  assert.equal(analysis.source.attachmentId,attachment.id)
+})
+
+test('engine carrega somente a foto persistida no produtor selecionado e registra leitura pendente',async()=>{
+  const fieldPhoto={label:'Soja — Talhão Norte',category:'Visão geral',observedAt:'2026-08-11',notes:'Foto de acompanhamento.',source:'client360'}
+  const attachment={id:'00000000-0000-4000-8000-000000000010',clientId:'produtor-1',originalName:'soja.jpg',mimeType:'image/jpeg',sizeBytes:42,dataBase64:'aW1hZ2Vt',status:'stored',analysis:{fieldPhoto},createdAt:'2026-08-12T15:00:00.000Z'}
+  let request,updated
+  const repository={
+    getClientContext:async()=>({client:{id:'produtor-1',name:'Produtor Teste',municipality:'São Luiz Gonzaga',cultures:'Soja',commercial:{property:'Fazenda Horizonte'}},signals:[],learning:{},opportunities:[]}),
+    getAttachments:async({clientId,ids})=>{assert.equal(clientId,'produtor-1');assert.deepEqual(ids,[attachment.id]);return [attachment]},
+    listAttachments:async()=>[attachment],
+    updateAttachment:async input=>{updated=input;return {...attachment,status:input.status,analysis:input.analysis}},
+    recordRecommendation:async()=> '00000000-0000-4000-8000-000000000099'
+  }
+  const runtimeConfig={openaiApiKey:'sk-test',openaiProject:'',openaiTimeoutMs:1000,openaiMaxRetries:0,modelDaily:'terra',modelStrategic:'sol',modelFast:'luna',knowledgeVectorStoreId:'',maxContextChars:10000,maxOutputTokens:26000,strategicMaxOutputTokens:32000,openaiStoreResponses:false}
+  const engine=new ValEngine({runtimeConfig,repository})
+  const advice=buildFallbackAdvice({client:{id:'produtor-1',name:'Produtor Teste'},message:'Interprete a foto',signals:[],learning:{}})
+  advice.evidence_used=[{id:'foto-1',claim_supported:'A imagem mostra desuniformidade de coloração no dossel.',source_type:'consultant_attachment',source_id:attachment.id,observed_at:'2026-08-12T15:00:00.000Z',direct_observation:true,quality:'moderate',relevance:'moderate',uncertainty:'Ângulo único e sem escala.'}]
+  engine.client={responses:{create:async input=>{request=input;return {id:'resp-image',_request_id:'req-image',status:'completed',usage:{input_tokens:10,output_tokens:20},output_text:JSON.stringify(advice)}}}}
+  const result=await engine.answer({tenantId:'tenant',ownerId:'owner',clientId:'produtor-1',client:{},message:'O que é possível observar nesta foto?',attachmentIds:[attachment.id]})
+  const image=request.input[0].content.find(item=>item.type==='input_image')
+  assert.ok(image)
+  assert.equal(image.detail,'high')
+  assert.equal(updated.status,'interpreted')
+  assert.equal(updated.analysis.verificationStatus,'unconfirmed')
+  assert.equal(updated.analysis.diagnosis,null)
+  assert.deepEqual(updated.analysis.fieldPhoto,fieldPhoto)
+  assert.match(updated.analysis.summary,/desuniformidade de coloração/i)
+  assert.equal(result.attachments[0].analysis.diagnosticStatus,'not_a_diagnosis')
+})
+
+test('leitura de foto nunca usa a exceção de transcrição para liberar diagnóstico agronômico',()=>{
+  const advice=buildFallbackAdvice({client:{name:'Produtor Teste'},message:'Interprete a foto',signals:[],learning:{}})
+  advice.answer='A imagem confirma doença na cultura e indica deficiência.'
+  advice.next_best_action='Aplicar produto no talhão.'
+  const safe=enforceValSafety(advice,{client:{name:'Produtor Teste'},currentAttachments:[{mimeType:'image/jpeg'}],signals:[],learning:{}},'Interprete esta foto')
+  assert.equal(safe.human_review.required,true)
+  assert.doesNotMatch(safe.answer,/confirma doença|indica deficiência|aplicar produto/i)
+  assert.match(safe.next_best_action,/responsável técnico/i)
+})
+
+test('engine rejeita anexo que não pertence ao produtor em vez de analisar contexto errado',async()=>{
+  const repository={getClientContext:async()=>({client:{id:'produtor-1',name:'Produtor Teste'},signals:[],learning:{}}),getAttachments:async()=>[],listAttachments:async()=>[],recordRecommendation:async()=>{throw new Error('não deveria persistir')}}
+  const runtimeConfig={openaiApiKey:'',modelDaily:'terra',modelStrategic:'sol',modelFast:'luna'}
+  const engine=new ValEngine({runtimeConfig,repository})
+  await assert.rejects(()=>engine.answer({tenantId:'tenant',ownerId:'owner',clientId:'produtor-1',client:{},message:'Leia a foto',attachmentIds:['00000000-0000-4000-8000-000000000010']}),error=>error.statusCode===404&&/não pertencem ao produtor/i.test(error.message))
 })
