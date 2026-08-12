@@ -8,6 +8,8 @@ test('núcleo técnico roteia somente páginas, APIs e ativos do Manual incorpor
  assert.equal(isTechnicalWorkspaceRequest('/tecnico/_next/static/app.js'),true)
  assert.equal(isTechnicalWorkspaceRequest('/api/diagnosis'),true)
  assert.equal(isTechnicalWorkspaceRequest('/api/workspace'),true)
+ assert.equal(isTechnicalWorkspaceRequest('/api/geospatial/search'),true)
+ assert.equal(isTechnicalWorkspaceRequest('/api/geospatial/official-boundaries'),true)
  assert.equal(isTechnicalWorkspaceRequest('/api/admin/users'),true)
  assert.equal(isTechnicalWorkspaceRequest('/api/admin/usage'),true)
  assert.equal(isTechnicalWorkspaceRequest('/api/admin/metrics'),false)
