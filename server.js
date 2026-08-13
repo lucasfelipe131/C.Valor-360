@@ -186,7 +186,7 @@ async function handleApi(request,response,url){
   const clientId=clean(payload.clientId||payload.client?.id)
   if(!clientId)return json(response,400,{error:'Selecione um cliente para ativar o contexto da VAL.'})
   const controller=new AbortController();request.once('aborted',()=>controller.abort());response.once('close',()=>{if(!response.writableEnded)controller.abort()})
-  const result=await valEngine.answer({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,client:payload.client||{},message,attachmentIds,mode:clean(payload.mode)||'daily',signal:controller.signal})
+  const result=await valEngine.answer({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,client:payload.client||{},message,attachmentIds,mode:clean(payload.mode)||'daily',requestedStage:clean(payload.requestedStage),signal:controller.signal})
   await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:clean(payload.mode)||'daily',engineMode:result.engineMode,attachments:attachmentIds.length}})
   return json(response,200,result)
  }
@@ -298,7 +298,15 @@ createServer(async(request,response)=>{
  let target=resolve(root,relative)
  if((target!==root&&!target.startsWith(`${root}${sep}`))||!existsSync(target)||statSync(target).isDirectory())target=join(root,'index.html')
  const extension=extname(target).toLowerCase()
- response.writeHead(200,{...securityHeaders,'Content-Type':mime[extension]||'application/octet-stream','Cache-Control':extension==='.html'?'no-cache':'public, max-age=31536000, immutable'})
+ const immutableAsset=/^\/assets\/.+-[a-z0-9_-]{8,}\.[a-z0-9]+$/i.test(url.pathname)
+ const cacheControl=url.pathname==='/sw.js'
+  ?'no-store, no-cache, must-revalidate, max-age=0'
+  :extension==='.html'
+   ?'no-cache'
+   :immutableAsset
+    ?'public, max-age=31536000, immutable'
+    :'no-cache'
+ response.writeHead(200,{...securityHeaders,'Content-Type':mime[extension]||'application/octet-stream','Cache-Control':cacheControl})
  createReadStream(target).pipe(response)
 }).listen(port,'0.0.0.0',()=>console.log(`VALOR 360 disponível na porta ${port}`))
 
