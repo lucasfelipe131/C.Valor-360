@@ -9,7 +9,21 @@ import {buildValMethodApplication} from '../lib/val-method-application'
 
 const VAL_METHOD_SEQUENCE=['preparar','alinhar','descobrir','dimensionar','construir_valor','propor','comprometer']
 const methodLabels={preparar:'Preparar',alinhar:'Alinhar',descobrir:'Descobrir',dimensionar:'Dimensionar',construir_valor:'Construir valor',propor:'Propor',comprometer:'Comprometer'}
+const sequenceDetails={
+ preparar:'Cruzar dossiê, potencial, oportunidades, histórico e evidências antes do contato.',
+ alinhar:'Confirmar objetivo, tempo, participantes da decisão e pauta útil para a conversa.',
+ descobrir:'Identificar a prioridade real, a dificuldade e qual decisão está sendo afetada.',
+ dimensionar:'Confirmar base, unidade, área, horizonte e impacto antes de calcular valor.',
+ construir_valor:'Comparar agir agora, esperar e manter, definindo resultado e forma de comprovação.',
+ propor:'Organizar uma proposta somente após problema, impacto e forma de comprovação estarem validados.',
+ comprometer:'Registrar ação bilateral, responsável, prazo, evidência e a próxima decisão.'
+}
 const spinStatusLabels={waiting:'Aguardando análise',covered:'Etapa percorrida',current:'Foco agora',next:'Depois'}
+const METHOD_TABS=[
+ {key:'spin',label:'SPIN',title:'Diagnóstico consultivo',description:'Situação, Problema, Implicação e Necessidade.'},
+ {key:'opc',label:'OPC',title:'Contrato da conversa',description:'Objetivo, Processo e Compromisso.'},
+ {key:'epa',label:'EPA',title:'Condução de valor',description:'Educar, Personalizar e Assumir a condução.'}
+]
 
 const MODES={
  daily:{label:'Resposta rápida',short:'Rápido',description:'Orientação curta para o contato de hoje.'},
@@ -211,6 +225,8 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const [mode,setMode]=useState('daily')
  const [message,setMessage]=useState('')
  const [response,setResponse]=useState(null)
+ const [activeMethod,setActiveMethod]=useState('spin')
+ const [activeSequenceStage,setActiveSequenceStage]=useState('preparar')
  const [status,setStatus]=useState({loading:true,data:null,error:''})
  const [loading,setLoading]=useState(false)
  const [error,setError]=useState('')
@@ -245,12 +261,12 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
   selectedRef.current=selected
   requestRef.current.controller?.abort()
   requestRef.current={sequence:requestRef.current.sequence+1,controller:null}
-  setLoading(false);setResponse(null);setError('');setMessage('');setAttachments([]);setSavedAttachments([]);setAttachmentMenu(false)
+  setLoading(false);setResponse(null);setActiveMethod('spin');setActiveSequenceStage('preparar');setError('');setMessage('');setAttachments([]);setSavedAttachments([]);setAttachmentMenu(false)
   setAttachmentState({loading:false,uploading:false,error:''})
   setFeedback({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})
  },[selected])
 
- useEffect(()=>{setResponse(null);setError('');setFeedback({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})},[mode])
+ useEffect(()=>{setResponse(null);setActiveMethod('spin');setActiveSequenceStage('preparar');setError('');setFeedback({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})},[mode])
 
  useEffect(()=>()=>requestRef.current.controller?.abort(),[])
 
@@ -278,6 +294,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const conversation=conversationData(advice?.conversation_plan)
  const opportunityReview=opportunityData(advice?.opportunity_review)
  const methodology=methodologyData(advice?.methodology_state)
+ useEffect(()=>{setActiveSequenceStage(methodology.current)},[methodology.current])
  const approachPlan=approachData(advice?.approach_plan)
  const commercialContext=commercialData(advice?.commercial_context)
  const evidence=evidenceData(advice?.evidence_used,response?[]:localAdvice.evidence_used)
@@ -295,6 +312,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const clientMetrics=useMemo(()=>commercialMetrics(client||{}),[client])
  const primaryQuestionType=questions.find(item=>item.question===brief.question)?.type||textValue(advice?.next_question?.type)||'aberta'
  const methodApplication=buildValMethodApplication({analyzed:Boolean(response),questions,methodology,brief,conversation,valueHypothesis,profile,approachPlan,commitment,opportunityReview,commercialContext,objective:advice?.objective,nextBestAction:advice?.next_best_action})
+ const activeSequenceStatus=methodology.current===activeSequenceStage?'current':methodology.completed.includes(activeSequenceStage)?'complete':'pending'
 
  const uploadFiles=async event=>{
   const files=Array.from(event.target.files||[]);event.target.value='';setAttachmentMenu(false)
@@ -355,6 +373,24 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  }
 
  const chooseMode=value=>setMode(value)
+ const moveMethodFocus=(event,current)=>{
+  if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return
+  event.preventDefault()
+  const currentIndex=METHOD_TABS.findIndex(item=>item.key===current)
+  const nextIndex=event.key==='Home'?0:event.key==='End'?METHOD_TABS.length-1:event.key==='ArrowRight'?(currentIndex+1)%METHOD_TABS.length:(currentIndex-1+METHOD_TABS.length)%METHOD_TABS.length
+  const next=METHOD_TABS[nextIndex].key
+  setActiveMethod(next)
+  requestAnimationFrame(()=>document.getElementById(`val-method-tab-${next}`)?.focus())
+ }
+ const moveSequenceFocus=(event,current)=>{
+  if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return
+  event.preventDefault()
+  const currentIndex=VAL_METHOD_SEQUENCE.indexOf(current)
+  const nextIndex=event.key==='Home'?0:event.key==='End'?VAL_METHOD_SEQUENCE.length-1:event.key==='ArrowRight'?(currentIndex+1)%VAL_METHOD_SEQUENCE.length:(currentIndex-1+VAL_METHOD_SEQUENCE.length)%VAL_METHOD_SEQUENCE.length
+  const next=VAL_METHOD_SEQUENCE[nextIndex]
+  setActiveSequenceStage(next)
+  requestAnimationFrame(()=>document.getElementById(`val-sequence-tab-${next}`)?.focus())
+ }
 
  const sendFeedback=async event=>{
   event.preventDefault()
@@ -451,35 +487,34 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
    <section className="val-sales-methods" aria-label="Método da abordagem aplicado ao produtor">
     <header className="val-sales-methods-head">
      <div><span className="val-sales-methods-icon"><BrainCircuit/></span><span><small>MÉTODO DA ABORDAGEM</small><h3>SPIN visível, OPC alinhado e EPA aplicado</h3><p>{response?'Leitura construída para esta conversa e este produtor.':'Envie uma situação para a VAL preencher cada método com os dados do produtor.'}</p></span></div>
-     <div className="val-method-badges" aria-label="Métodos utilizados"><b>SPIN</b><b>OPC</b><b>EPA</b></div>
     </header>
 
-    <div className="val-sales-methods-grid">
-     <article className="val-spin-method">
+    <div className="val-method-tabs" role="tablist" aria-label="Escolher método da abordagem">{METHOD_TABS.map(item=><button key={item.key} id={`val-method-tab-${item.key}`} type="button" role="tab" aria-selected={activeMethod===item.key} aria-controls="val-method-panel" tabIndex={activeMethod===item.key?0:-1} className={activeMethod===item.key?'is-active':''} onClick={()=>setActiveMethod(item.key)} onKeyDown={event=>moveMethodFocus(event,item.key)}><span>{item.label}</span><span><b>{item.title}</b><small>{item.description}</small></span><ChevronRight/></button>)}</div>
+
+    <div className={`val-sales-method-panel is-${activeMethod}`} id="val-method-panel" role="tabpanel" aria-labelledby={`val-method-tab-${activeMethod}`} tabIndex="0">
+     {activeMethod==='spin'&&<article className="val-spin-method">
       <header><span><small>SPIN DA ABORDAGEM</small><h4>Uma pergunta útil por vez, sem transformar a conversa em interrogatório.</h4></span><em>Foco: {methodApplication.spin.find(item=>item.key===methodApplication.current)?.label}</em></header>
       <ol>{methodApplication.spin.map(item=><li key={item.key} className={`is-${item.status}`}>
        <span className="val-spin-letter">{item.letter}</span>
        <div><div className="val-spin-title"><span><b>{item.label}</b><small>{item.description}</small></span><em>{spinStatusLabels[item.status]}</em></div><p>{item.reading}</p>{item.question.text&&<blockquote><small>PERGUNTA {item.question.type.toUpperCase()}</small><b>{item.question.text}</b></blockquote>}</div>
       </li>)}</ol>
-     </article>
+     </article>}
 
-     <aside className="val-method-side">
-      <article className="val-opc-method">
+     {activeMethod==='opc'&&<article className="val-opc-method">
        <header><span className="val-method-monogram">OPC</span><span><small>CONTRATO DA CONVERSA</small><h4>Objetivo, Processo e Compromisso</h4></span></header>
        <dl>{methodApplication.opc.map(item=><div key={item.key}><dt><span>{item.letter}</span>{item.label}</dt><dd><b>{item.value}</b><small>{item.note}</small></dd></div>)}</dl>
-      </article>
-      <article className="val-epa-method">
+     </article>}
+     {activeMethod==='epa'&&<article className="val-epa-method">
        <header><span className="val-method-monogram">EPA</span><span><small>CONDUÇÃO DE VALOR</small><h4>Educar, Personalizar e Assumir a condução</h4></span></header>
        <dl>{methodApplication.epa.map(item=><div key={item.key}><dt><span>{item.letter}</span>{item.label}</dt><dd><b>{item.value}</b><small>{item.note}</small></dd></div>)}</dl>
-      </article>
-     </aside>
+     </article>}
     </div>
    </section>
 
    <section className="val-methodology" aria-label="Sequência lógica da conversa">
-    <header><div><Route/><span><small>SEQUÊNCIA CONSULTIVA</small><h3>{response?`Etapa atual: ${methodLabels[methodology.current]}`:'A orientação avança por evidência'}</h3></span></div>{response&&<em>Próxima: {methodLabels[methodology.next]}</em>}</header>
-    <ol>{methodology.sequence.map((stage,index)=><li key={stage} className={methodology.current===stage?'is-current':methodology.completed.includes(stage)?'is-complete':''}><span>{methodology.completed.includes(stage)?<Check/>:String(index+1).padStart(2,'0')}</span><b>{methodLabels[stage]||stage}</b></li>)}</ol>
-    {response&&<div className="val-method-gate"><Target/><span><small>PORTA PARA AVANÇAR</small><b>{methodology.gate}</b>{methodology.reason&&<p>{methodology.reason}</p>}</span></div>}
+    <header><div><Route/><span><small>SEQUÊNCIA CONSULTIVA</small><h3>{response?`Etapa atual: ${methodLabels[methodology.current]}`:'A orientação avança por evidência'}</h3></span></div><em>{activeSequenceStage===methodology.current?'Visualizando a etapa atual':`Visualizando: ${methodLabels[activeSequenceStage]}`}</em></header>
+    <div className="val-sequence-tabs" role="tablist" aria-label="Consultar etapas da sequência consultiva">{methodology.sequence.map((stage,index)=>{const status=methodology.current===stage?'current':methodology.completed.includes(stage)?'complete':'pending';return <button key={stage} id={`val-sequence-tab-${stage}`} type="button" role="tab" aria-selected={activeSequenceStage===stage} aria-controls="val-sequence-panel" tabIndex={activeSequenceStage===stage?0:-1} className={`is-${status} ${activeSequenceStage===stage?'is-selected':''}`} onClick={()=>setActiveSequenceStage(stage)} onKeyDown={event=>moveSequenceFocus(event,stage)}><span>{status==='complete'?<Check/>:String(index+1).padStart(2,'0')}</span><b>{methodLabels[stage]||stage}</b></button>})}</div>
+    <div className={`val-sequence-detail is-${activeSequenceStatus}`} id="val-sequence-panel" role="tabpanel" aria-labelledby={`val-sequence-tab-${activeSequenceStage}`} tabIndex="0"><span>{String(VAL_METHOD_SEQUENCE.indexOf(activeSequenceStage)+1).padStart(2,'0')}</span><div><small>ETAPA SELECIONADA</small><h4>{methodLabels[activeSequenceStage]}</h4><p>{sequenceDetails[activeSequenceStage]}</p></div><aside><small>{activeSequenceStatus==='current'?'FOCO REAL DA CONVERSA':activeSequenceStatus==='complete'?'ETAPA JÁ PERCORRIDA':'CONSULTA DA PRÓXIMA ETAPA'}</small><b>{activeSequenceStatus==='current'?(methodology.gate||'Registre a evidência necessária antes de avançar.'):activeSequenceStatus==='complete'?'Esta etapa aparece como concluída no histórico metodológico da VAL.':'Consultar esta etapa não altera o progresso; a VAL só avança quando houver evidência.'}</b>{activeSequenceStatus==='current'&&methodology.reason&&<p>{methodology.reason}</p>}</aside></div>
    </section>
 
    {interpretedAttachments.length>0&&<section className="val-attachment-reading" aria-label="Leitura dos arquivos">
