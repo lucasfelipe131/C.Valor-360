@@ -1,13 +1,14 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react'
 import {
- AlertCircle,BrainCircuit,Camera,Check,ChevronRight,ClipboardCheck,DatabaseZap,
+ AlertCircle,BrainCircuit,Camera,Check,ChevronLeft,ChevronRight,ClipboardCheck,DatabaseZap,
  FileSearch,FileText,FileUp,Gauge,ImagePlus,Lightbulb,LoaderCircle,MessageSquareText,Paperclip,Plus,Route,Send,
  ShieldCheck,Sparkles,Target,ThumbsDown,ThumbsUp,UserRoundSearch,X,Zap
 } from 'lucide-react'
 import {compactBRL,commercialMetrics} from '../lib/commercial-metrics'
 import {buildValMethodApplication} from '../lib/val-method-application'
+import {adjacentConsultativeStage,createSequenceControl,transitionSequenceControl,VAL_CONSULTATIVE_SEQUENCE} from '../lib/val-sequence-control'
 
-const VAL_METHOD_SEQUENCE=['preparar','alinhar','descobrir','dimensionar','construir_valor','propor','comprometer']
+const VAL_METHOD_SEQUENCE=VAL_CONSULTATIVE_SEQUENCE
 const methodLabels={preparar:'Preparar',alinhar:'Alinhar',descobrir:'Descobrir',dimensionar:'Dimensionar',construir_valor:'Construir valor',propor:'Propor',comprometer:'Comprometer'}
 const sequenceDetails={
  preparar:'Cruzar dossiê, potencial, oportunidades, histórico e evidências antes do contato.',
@@ -226,7 +227,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const [message,setMessage]=useState('')
  const [response,setResponse]=useState(null)
  const [activeMethod,setActiveMethod]=useState('spin')
- const [activeSequenceStage,setActiveSequenceStage]=useState('preparar')
+ const [sequenceControl,setSequenceControl]=useState(()=>createSequenceControl())
  const [status,setStatus]=useState({loading:true,data:null,error:''})
  const [loading,setLoading]=useState(false)
  const [error,setError]=useState('')
@@ -261,12 +262,12 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
   selectedRef.current=selected
   requestRef.current.controller?.abort()
   requestRef.current={sequence:requestRef.current.sequence+1,controller:null}
-  setLoading(false);setResponse(null);setActiveMethod('spin');setActiveSequenceStage('preparar');setError('');setMessage('');setAttachments([]);setSavedAttachments([]);setAttachmentMenu(false)
+  setLoading(false);setResponse(null);setActiveMethod('spin');setSequenceControl(createSequenceControl());setError('');setMessage('');setAttachments([]);setSavedAttachments([]);setAttachmentMenu(false)
   setAttachmentState({loading:false,uploading:false,error:''})
   setFeedback({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})
  },[selected])
 
- useEffect(()=>{setResponse(null);setActiveMethod('spin');setActiveSequenceStage('preparar');setError('');setFeedback({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})},[mode])
+ useEffect(()=>{setResponse(null);setActiveMethod('spin');setSequenceControl(createSequenceControl());setError('');setFeedback({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})},[mode])
 
  useEffect(()=>()=>requestRef.current.controller?.abort(),[])
 
@@ -294,7 +295,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const conversation=conversationData(advice?.conversation_plan)
  const opportunityReview=opportunityData(advice?.opportunity_review)
  const methodology=methodologyData(advice?.methodology_state)
- useEffect(()=>{setActiveSequenceStage(methodology.current)},[methodology.current])
+ useEffect(()=>{setSequenceControl(current=>transitionSequenceControl(current,{type:'sync-suggestion',suggestedStage:methodology.current}))},[methodology.current])
  const approachPlan=approachData(advice?.approach_plan)
  const commercialContext=commercialData(advice?.commercial_context)
  const evidence=evidenceData(advice?.evidence_used,response?[]:localAdvice.evidence_used)
@@ -312,7 +313,10 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const clientMetrics=useMemo(()=>commercialMetrics(client||{}),[client])
  const primaryQuestionType=questions.find(item=>item.question===brief.question)?.type||textValue(advice?.next_question?.type)||'aberta'
  const methodApplication=buildValMethodApplication({analyzed:Boolean(response),questions,methodology,brief,conversation,valueHypothesis,profile,approachPlan,commitment,opportunityReview,commercialContext,objective:advice?.objective,nextBestAction:advice?.next_best_action})
+ const activeSequenceStage=sequenceControl.openStage
+ const workingSequenceStage=sequenceControl.workingStage
  const activeSequenceStatus=methodology.current===activeSequenceStage?'current':methodology.completed.includes(activeSequenceStage)?'complete':'pending'
+ const activeSequenceIndex=methodology.sequence.indexOf(activeSequenceStage)
 
  const uploadFiles=async event=>{
   const files=Array.from(event.target.files||[]);event.target.value='';setAttachmentMenu(false)
@@ -353,7 +357,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
    const result=await fetch('/api/val/chat',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({clientId:client.id,client,message:prompt,attachmentIds,mode:requestedMode}),
+    body:JSON.stringify({clientId:client.id,client,message:prompt,attachmentIds,mode:requestedMode,...(workingSequenceStage?{requestedStage:workingSequenceStage}:{})}),
     signal:typeof AbortSignal.any==='function'?AbortSignal.any([controller.signal,AbortSignal.timeout(120000)]):controller.signal
    })
    const payload=await result.json().catch(()=>({}))
@@ -388,9 +392,13 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
   const currentIndex=VAL_METHOD_SEQUENCE.indexOf(current)
   const nextIndex=event.key==='Home'?0:event.key==='End'?VAL_METHOD_SEQUENCE.length-1:event.key==='ArrowRight'?(currentIndex+1)%VAL_METHOD_SEQUENCE.length:(currentIndex-1+VAL_METHOD_SEQUENCE.length)%VAL_METHOD_SEQUENCE.length
   const next=VAL_METHOD_SEQUENCE[nextIndex]
-  setActiveSequenceStage(next)
+  setSequenceControl(value=>transitionSequenceControl(value,{type:'open',stage:next,suggestedStage:methodology.current}))
   requestAnimationFrame(()=>document.getElementById(`val-sequence-tab-${next}`)?.focus())
  }
+ const openSequenceStage=stage=>setSequenceControl(current=>transitionSequenceControl(current,{type:'open',stage,suggestedStage:methodology.current}))
+ const workSequenceStage=stage=>setSequenceControl(current=>transitionSequenceControl(current,{type:'work',stage,suggestedStage:methodology.current}))
+ const followValSequence=()=>setSequenceControl(current=>transitionSequenceControl(current,{type:'follow-suggestion',suggestedStage:methodology.current}))
+ const browseSequence=direction=>openSequenceStage(adjacentConsultativeStage(activeSequenceStage,direction,methodology.sequence))
 
  const sendFeedback=async event=>{
   event.preventDefault()
@@ -445,6 +453,8 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
     <label className="val-client-select"><span>Produtor</span><select value={selected} onChange={event=>setSelected(event.target.value)} aria-label="Selecionar produtor" disabled={loading}>{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
     <div className="val-mode-picker"><div><span>Tipo de ajuda</span><small>{MODES[mode].description}</small></div><div role="group" aria-label="Escolher modo da VAL">{Object.entries(MODES).map(([value,item])=><button key={value} type="button" disabled={loading} className={mode===value?'active':''} aria-pressed={mode===value} onClick={()=>chooseMode(value)}>{value==='daily'?<Zap/>:<BrainCircuit/>}{item.short}</button>)}</div></div>
    </div>
+
+   {workingSequenceStage&&<div className="val-working-stage-banner" aria-live="polite"><Route/><span><small>ETAPA DE TRABALHO ATIVA</small><b>{methodLabels[workingSequenceStage]}</b><p>A próxima orientação será focada nesta etapa, sem marcar progresso não confirmado.</p></span><button type="button" onClick={followValSequence}>Usar sugestão da VAL</button></div>}
 
    <div className="val-quick-prompts" aria-label="Perguntas rápidas">{QUICK_PROMPTS.map(item=>{const Icon=item.icon;return <button key={item.label} type="button" onClick={()=>ask(item.prompt)} disabled={loading}><Icon aria-hidden="true"/><span>{item.label}</span><ChevronRight aria-hidden="true"/></button>})}</div>
 
@@ -512,9 +522,9 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
    </section>
 
    <section className="val-methodology" aria-label="Sequência lógica da conversa">
-    <header><div><Route/><span><small>SEQUÊNCIA CONSULTIVA</small><h3>{response?`Etapa atual: ${methodLabels[methodology.current]}`:'A orientação avança por evidência'}</h3></span></div><em>{activeSequenceStage===methodology.current?'Visualizando a etapa atual':`Visualizando: ${methodLabels[activeSequenceStage]}`}</em></header>
-    <div className="val-sequence-tabs" role="tablist" aria-label="Consultar etapas da sequência consultiva">{methodology.sequence.map((stage,index)=>{const status=methodology.current===stage?'current':methodology.completed.includes(stage)?'complete':'pending';return <button key={stage} id={`val-sequence-tab-${stage}`} type="button" role="tab" aria-selected={activeSequenceStage===stage} aria-controls="val-sequence-panel" tabIndex={activeSequenceStage===stage?0:-1} className={`is-${status} ${activeSequenceStage===stage?'is-selected':''}`} onClick={()=>setActiveSequenceStage(stage)} onKeyDown={event=>moveSequenceFocus(event,stage)}><span>{status==='complete'?<Check/>:String(index+1).padStart(2,'0')}</span><b>{methodLabels[stage]||stage}</b></button>})}</div>
-    <div className={`val-sequence-detail is-${activeSequenceStatus}`} id="val-sequence-panel" role="tabpanel" aria-labelledby={`val-sequence-tab-${activeSequenceStage}`} tabIndex="0"><span>{String(VAL_METHOD_SEQUENCE.indexOf(activeSequenceStage)+1).padStart(2,'0')}</span><div><small>ETAPA SELECIONADA</small><h4>{methodLabels[activeSequenceStage]}</h4><p>{sequenceDetails[activeSequenceStage]}</p></div><aside><small>{activeSequenceStatus==='current'?'FOCO REAL DA CONVERSA':activeSequenceStatus==='complete'?'ETAPA JÁ PERCORRIDA':'CONSULTA DA PRÓXIMA ETAPA'}</small><b>{activeSequenceStatus==='current'?(methodology.gate||'Registre a evidência necessária antes de avançar.'):activeSequenceStatus==='complete'?'Esta etapa aparece como concluída no histórico metodológico da VAL.':'Consultar esta etapa não altera o progresso; a VAL só avança quando houver evidência.'}</b>{activeSequenceStatus==='current'&&methodology.reason&&<p>{methodology.reason}</p>}</aside></div>
+    <header><div><Route/><span><small>SEQUÊNCIA CONSULTIVA</small><h3>Etapa aberta: {methodLabels[activeSequenceStage]}</h3><p>Clique em uma etapa para abrir. Depois, escolha se quer trabalhar nela com a VAL.</p></span></div><div className="val-sequence-status" aria-live="polite"><span>Sugestão da VAL: <b>{methodLabels[methodology.current]}</b></span>{workingSequenceStage&&<em>Etapa de trabalho: <b>{methodLabels[workingSequenceStage]}</b></em>}</div></header>
+    <div className="val-sequence-tabs" role="tablist" aria-label="Abrir etapas da sequência consultiva">{methodology.sequence.map((stage,index)=>{const status=methodology.current===stage?'current':methodology.completed.includes(stage)?'complete':'pending';return <button key={stage} id={`val-sequence-tab-${stage}`} type="button" role="tab" aria-label={`Abrir etapa ${methodLabels[stage]||stage}`} aria-selected={activeSequenceStage===stage} aria-controls="val-sequence-panel" tabIndex={activeSequenceStage===stage?0:-1} className={`is-${status} ${activeSequenceStage===stage?'is-selected':''} ${workingSequenceStage===stage?'is-working':''}`} onClick={()=>openSequenceStage(stage)} onKeyDown={event=>moveSequenceFocus(event,stage)}><span>{status==='complete'?<Check/>:String(index+1).padStart(2,'0')}</span><b>{methodLabels[stage]||stage}</b>{workingSequenceStage===stage&&<small>EM TRABALHO</small>}</button>})}</div>
+    <div className={`val-sequence-detail is-${activeSequenceStatus}`} id="val-sequence-panel" role="tabpanel" aria-labelledby={`val-sequence-tab-${activeSequenceStage}`} tabIndex="0"><span>{String(VAL_METHOD_SEQUENCE.indexOf(activeSequenceStage)+1).padStart(2,'0')}</span><div><small>ETAPA ABERTA</small><h4>{methodLabels[activeSequenceStage]}</h4><p>{sequenceDetails[activeSequenceStage]}</p></div><aside><small>{workingSequenceStage===activeSequenceStage?'ETAPA ESCOLHIDA POR VOCÊ':activeSequenceStatus==='current'?'SUGESTÃO ATUAL DA VAL':activeSequenceStatus==='complete'?'ETAPA JÁ PERCORRIDA':'OUTRA ETAPA DA METODOLOGIA'}</small><b>{workingSequenceStage===activeSequenceStage?'A próxima orientação da VAL será construída para esta etapa, sem marcar as anteriores como concluídas.':activeSequenceStatus==='current'?(methodology.gate||'Registre a evidência necessária antes de avançar.'):activeSequenceStatus==='complete'?'Esta etapa aparece como concluída no histórico metodológico da VAL.':'Você pode trabalhar nesta etapa sem fabricar progresso ou evidência.'}</b>{activeSequenceStatus==='current'&&methodology.reason&&<p>{methodology.reason}</p>}</aside><footer className="val-sequence-actions"><button type="button" onClick={()=>browseSequence(-1)} disabled={activeSequenceIndex<=0}><ChevronLeft/>Anterior</button>{workingSequenceStage===activeSequenceStage?<button type="button" className="is-working" disabled><Check/>Etapa de trabalho</button>:<button type="button" className="is-primary" onClick={()=>workSequenceStage(activeSequenceStage)}><Target/>Trabalhar nesta etapa</button>}<button type="button" onClick={()=>browseSequence(1)} disabled={activeSequenceIndex<0||activeSequenceIndex>=methodology.sequence.length-1}>Próxima<ChevronRight/></button>{workingSequenceStage&&<button type="button" className="is-reset" onClick={followValSequence}>Voltar à sugestão da VAL</button>}</footer></div>
    </section>
 
    {interpretedAttachments.length>0&&<section className="val-attachment-reading" aria-label="Leitura dos arquivos">
