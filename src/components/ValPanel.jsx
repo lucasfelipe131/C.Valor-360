@@ -5,9 +5,11 @@ import {
  ShieldCheck,Sparkles,Target,ThumbsDown,ThumbsUp,UserRoundSearch,X,Zap
 } from 'lucide-react'
 import {compactBRL,commercialMetrics} from '../lib/commercial-metrics'
+import {buildValMethodApplication} from '../lib/val-method-application'
 
 const VAL_METHOD_SEQUENCE=['preparar','alinhar','descobrir','dimensionar','construir_valor','propor','comprometer']
 const methodLabels={preparar:'Preparar',alinhar:'Alinhar',descobrir:'Descobrir',dimensionar:'Dimensionar',construir_valor:'Construir valor',propor:'Propor',comprometer:'Comprometer'}
+const spinStatusLabels={waiting:'Aguardando análise',covered:'Etapa percorrida',current:'Foco agora',next:'Depois'}
 
 const MODES={
  daily:{label:'Resposta rápida',short:'Rápido',description:'Orientação curta para o contato de hoje.'},
@@ -292,6 +294,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const interpretedAttachments=Array.isArray(response?.attachments)?response.attachments.filter(item=>item.status!=='received'||item.analysis?.summary):[]
  const clientMetrics=useMemo(()=>commercialMetrics(client||{}),[client])
  const primaryQuestionType=questions.find(item=>item.question===brief.question)?.type||textValue(advice?.next_question?.type)||'aberta'
+ const methodApplication=buildValMethodApplication({analyzed:Boolean(response),questions,methodology,brief,conversation,valueHypothesis,profile,approachPlan,commitment,opportunityReview,commercialContext,objective:advice?.objective,nextBestAction:advice?.next_best_action})
 
  const uploadFiles=async event=>{
   const files=Array.from(event.target.files||[]);event.target.value='';setAttachmentMenu(false)
@@ -443,6 +446,34 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
    <section className="val-chat-answer" aria-label="Resposta principal da VAL">
     <span className="val-chat-avatar">VAL</span>
     <div><small>VAL</small><p>{advice.answer}</p>{response&&brief.question&&<div className="val-ready-question"><MessageSquareText/><span><small>PERGUNTA PRINCIPAL • {primaryQuestionType.toUpperCase()}</small><b>{brief.question}</b></span></div>}</div>
+   </section>
+
+   <section className="val-sales-methods" aria-label="Método da abordagem aplicado ao produtor">
+    <header className="val-sales-methods-head">
+     <div><span className="val-sales-methods-icon"><BrainCircuit/></span><span><small>MÉTODO DA ABORDAGEM</small><h3>SPIN visível, OPC alinhado e EPA aplicado</h3><p>{response?'Leitura construída para esta conversa e este produtor.':'Envie uma situação para a VAL preencher cada método com os dados do produtor.'}</p></span></div>
+     <div className="val-method-badges" aria-label="Métodos utilizados"><b>SPIN</b><b>OPC</b><b>EPA</b></div>
+    </header>
+
+    <div className="val-sales-methods-grid">
+     <article className="val-spin-method">
+      <header><span><small>SPIN DA ABORDAGEM</small><h4>Uma pergunta útil por vez, sem transformar a conversa em interrogatório.</h4></span><em>Foco: {methodApplication.spin.find(item=>item.key===methodApplication.current)?.label}</em></header>
+      <ol>{methodApplication.spin.map(item=><li key={item.key} className={`is-${item.status}`}>
+       <span className="val-spin-letter">{item.letter}</span>
+       <div><div className="val-spin-title"><span><b>{item.label}</b><small>{item.description}</small></span><em>{spinStatusLabels[item.status]}</em></div><p>{item.reading}</p>{item.question.text&&<blockquote><small>PERGUNTA {item.question.type.toUpperCase()}</small><b>{item.question.text}</b></blockquote>}</div>
+      </li>)}</ol>
+     </article>
+
+     <aside className="val-method-side">
+      <article className="val-opc-method">
+       <header><span className="val-method-monogram">OPC</span><span><small>CONTRATO DA CONVERSA</small><h4>Objetivo, Processo e Compromisso</h4></span></header>
+       <dl>{methodApplication.opc.map(item=><div key={item.key}><dt><span>{item.letter}</span>{item.label}</dt><dd><b>{item.value}</b><small>{item.note}</small></dd></div>)}</dl>
+      </article>
+      <article className="val-epa-method">
+       <header><span className="val-method-monogram">EPA</span><span><small>CONDUÇÃO DE VALOR</small><h4>Educar, Personalizar e Assumir a condução</h4></span></header>
+       <dl>{methodApplication.epa.map(item=><div key={item.key}><dt><span>{item.letter}</span>{item.label}</dt><dd><b>{item.value}</b><small>{item.note}</small></dd></div>)}</dl>
+      </article>
+     </aside>
+    </div>
    </section>
 
    <section className="val-methodology" aria-label="Sequência lógica da conversa">
