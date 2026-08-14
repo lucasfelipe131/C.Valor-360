@@ -4,9 +4,9 @@ import test from 'node:test'
 
 const read=relative=>readFileSync(new URL(`../${relative}`,import.meta.url),'utf8')
 
-test('service worker upgrades its cache and keeps navigations network-first',()=>{
+test('service worker upgrades its cache and keeps navigations and technical chunks network-first',()=>{
  const worker=read('public/sw.js')
- assert.match(worker,/const CACHE='cliente360-v07'/)
+ assert.match(worker,/const CACHE='cliente360-v08'/)
  assert.match(worker,/self\.skipWaiting\(\)/)
  assert.match(worker,/keys\.filter\(key=>key!==CACHE\).*caches\.delete\(key\)/)
  assert.match(worker,/self\.clients\.claim\(\)/)
@@ -15,6 +15,9 @@ test('service worker upgrades its cache and keeps navigations network-first',()=
  const navigation=worker.slice(worker.indexOf("if(event.request.mode==='navigate')"),worker.indexOf("event.respondWith(caches.match(event.request)"))
  assert.ok(navigation.indexOf('fetch(event.request)')<navigation.indexOf('caches.match(event.request)'),'a navegação deve consultar a rede antes do cache')
  assert.match(navigation,/match\|\|caches\.match\('\/index\.html'\)/)
+
+ const technical=worker.slice(worker.indexOf("if(url.pathname.startsWith('/tecnico/_next/static/'))"),worker.lastIndexOf('event.respondWith(caches.match(event.request)'))
+ assert.ok(technical.indexOf('fetch(event.request)')<technical.indexOf('caches.match(event.request)'),'os chunks do Manual devem consultar a rede antes do cache')
 })
 
 test('static server never serves the worker as immutable',()=>{
