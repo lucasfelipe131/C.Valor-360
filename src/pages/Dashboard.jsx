@@ -17,7 +17,7 @@ import {
 } from 'lucide-react'
 import KpiCard from '../components/KpiCard'
 import ValPanel from '../components/ValPanel'
-import {compactBRL,commercialMetrics} from '../lib/commercial-metrics'
+import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
 import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline,resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
 const greeting=()=>{
@@ -27,11 +27,17 @@ const greeting=()=>{
  return 'Boa noite'
 }
 
-const compactDate=value=>{
- if(!value)return 'Próximo compromisso'
- const date=new Date(`${value}T12:00:00`)
+const scheduledAtOf=visit=>{
+ if(!visit)return null
+ const date=visit.scheduledAt?new Date(visit.scheduledAt):new Date(`${visit.date||''}T${visit.time||'12:00'}:00`)
+ return Number.isNaN(date.getTime())?null:date
+}
+const compactDate=visit=>{
+ const date=scheduledAtOf(visit)
+ if(!date)return 'Nenhuma visita futura agendada'
  return date.toLocaleDateString('pt-BR',{weekday:'short',day:'2-digit',month:'short'}).replace('.','')
 }
+const compactTime=visit=>scheduledAtOf(visit)?.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})||'A agendar'
 
 const pipelineStages=[
  {name:'Diagnóstico',detail:'Dor e impacto registrados'},
@@ -41,15 +47,18 @@ const pipelineStages=[
 ]
 const compactMoney=value=>Number(value||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL',notation:'compact',maximumFractionDigits:1})
 
-export default function Dashboard({clients,visits,currentUser,setPage,onClient,onPrepare}){
+export default function Dashboard({clients,visits,opportunities=[],currentUser,setPage,onClient,onPrepare}){
  const firstName=String(currentUser?.name||currentUser?.email?.split('@')[0]||'Equipe').trim().split(/\s+/)[0]
  const portfolioMetrics=clients.map(client=>({client,metrics:commercialMetrics(client)}))
  const totalPotential=portfolioMetrics.reduce((sum,item)=>sum+(item.metrics.potentialKnown?item.metrics.potentialTotal:0),0)
  const potentialKnown=portfolioMetrics.some(item=>item.metrics.potentialKnown)
- const irt=(clients.reduce((sum,client)=>sum+Number(client.irt||0),0)/Math.max(clients.length,1)).toFixed(1)
+ const relationships=relationshipSummary(clients)
+ const irt=relationships.irtKnown?relationships.irtAverage.toFixed(1):'A medir'
  const priorities=portfolioMetrics.map(({client,metrics})=>({client,metrics,candidate:resolveOpportunityCandidate(client)})).filter(item=>item.candidate).sort((a,b)=>b.metrics.openPotential-a.metrics.openPotential).slice(0,3)
- const nextVisit=[...(visits||[])].sort((a,b)=>`${a.date||''}${a.time||''}`.localeCompare(`${b.date||''}${b.time||''}`))[0]
- const nextClient=clients.find(client=>client.id===nextVisit?.clientId)||clients[0]
+ const now=Date.now()
+ const upcomingVisits=[...(visits||[])].filter(visit=>scheduledAtOf(visit)?.getTime()>=now&&!/^(realizada|cancelada)$/i.test(String(visit.status||''))).sort((a,b)=>scheduledAtOf(a)-scheduledAtOf(b))
+ const nextVisit=upcomingVisits[0]
+ const nextClient=clients.find(client=>client.id===nextVisit?.clientId)||priorities[0]?.client||clients[0]
  const quickActions=[
   {page:'visits',label:'Planejar visita',detail:'Agenda e roteiro',icon:CalendarDays},
   {page:'questionnaire',label:'Produtor 360',detail:'Convite ou importação',icon:ClipboardList},
@@ -57,7 +66,8 @@ export default function Dashboard({clients,visits,currentUser,setPage,onClient,o
   {page:'val',label:'Perguntar à Val',detail:'Próxima melhor ação',icon:BrainCircuit}
  ]
  const cacheKey=opportunityCacheKey(currentUser?.storageScope)
- const pipelineItems=reconcilePipeline(clients,cacheKey?parseOpportunityCache(localStorage.getItem(cacheKey)):[])
+ const cachedItems=cacheKey?parseOpportunityCache(localStorage.getItem(cacheKey)):[]
+ const pipelineItems=reconcilePipeline(clients,[...cachedItems,...opportunities])
  const pipelineSummary=pipelineStages.map(stage=>{
   const stageItems=pipelineItems.filter(item=>item.stage===stage.name)
   return {...stage,count:stageItems.length,value:stageItems.reduce((sum,item)=>sum+Number(item.value||0),0)}
@@ -66,10 +76,10 @@ export default function Dashboard({clients,visits,currentUser,setPage,onClient,o
  const visitSeries=Array.from({length:5},(_,index)=>{
   const date=new Date();date.setDate(1);date.setMonth(date.getMonth()-(4-index))
   const key=`${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}`
-  return {key,label:date.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),count:(visits||[]).filter(visit=>String(visit.date||'').startsWith(key)).length}
+  return {key,label:date.toLocaleDateString('pt-BR',{month:'short'}).replace('.',''),count:(visits||[]).filter(visit=>{const scheduled=scheduledAtOf(visit);return scheduled&&`${scheduled.getFullYear()}-${String(scheduled.getMonth()+1).padStart(2,'0')}`===key}).length}
  })
  const maxMonthlyVisits=Math.max(...visitSeries.map(month=>month.count),1)
- const recentVisits=[...(visits||[])].sort((a,b)=>`${b.date||''}${b.time||''}`.localeCompare(`${a.date||''}${a.time||''}`)).slice(0,4)
+ const recentVisits=[...(visits||[])].sort((a,b)=>(scheduledAtOf(b)?.getTime()||0)-(scheduledAtOf(a)?.getTime()||0)).slice(0,4)
 
  return <div className="page-stack home-page">
   <section className="home-command">
@@ -83,10 +93,10 @@ export default function Dashboard({clients,visits,currentUser,setPage,onClient,o
     </div>
    </div>
    <article className="next-action-card">
-    <div className="next-action-top"><span>PRÓXIMA AÇÃO</span><b><Clock3/>{nextVisit?.time||'14:00'}</b></div>
-    <div className="next-action-person"><span>{nextClient?.name?.split(' ').map(part=>part[0]).slice(0,2).join('')||'P'}</span><div><small>{compactDate(nextVisit?.date)}</small><h3>{nextClient?.name||'Selecione um produtor'}</h3><p><MapPin/>{nextClient?.commercial?.property||nextClient?.municipality||'São Luiz Gonzaga • RS'}</p></div></div>
-    <div className="next-action-objective"><Route/><div><small>OBJETIVO</small><p>{nextVisit?.objective||nextClient?.commercial?.opportunity||'Revisar prioridades e combinar o próximo avanço.'}</p></div></div>
-    <button onClick={()=>nextClient&&onPrepare(nextClient)} disabled={!nextClient}>Abrir roteiro inteligente <ArrowUpRight/></button>
+    <div className="next-action-top"><span>{nextVisit?'PRÓXIMA AÇÃO':'AGENDA'}</span><b><Clock3/>{compactTime(nextVisit)}</b></div>
+    <div className="next-action-person"><span>{nextClient?.name?.split(' ').map(part=>part[0]).slice(0,2).join('')||'P'}</span><div><small>{compactDate(nextVisit)}</small><h3>{nextClient?.name||'Selecione um produtor'}</h3><p><MapPin/>{nextClient?.commercial?.property||nextClient?.municipality||'Localização a confirmar'}</p></div></div>
+    <div className="next-action-objective"><Route/><div><small>{nextVisit?'OBJETIVO':'PRÓXIMO PASSO'}</small><p>{nextVisit?.objective||'Registre um compromisso futuro antes de preparar o roteiro da visita.'}</p></div></div>
+    <button onClick={()=>nextVisit&&nextClient?onPrepare(nextClient):setPage('visits')} disabled={!nextClient}>{nextVisit?'Abrir roteiro inteligente':'Agendar visita'} <ArrowUpRight/></button>
    </article>
   </section>
 
@@ -97,9 +107,9 @@ export default function Dashboard({clients,visits,currentUser,setPage,onClient,o
 
   <section className="kpi-grid home-kpis">
    <KpiCard icon={Users} label="Clientes ativos" value={clients.length} delta="Carteira consolidada"/>
-   <KpiCard icon={CalendarCheck2} label="Visitas na agenda" value={visits?.length||0} delta="Planejamento atual"/>
+   <KpiCard icon={CalendarCheck2} label="Visitas na agenda" value={upcomingVisits.length} delta="Compromissos futuros"/>
    <KpiCard icon={Target} label="Potencial mapeado" value={compactBRL(totalPotential,{known:potentialKnown})} delta={`${priorities.length} prioridades agora`} tone="cyan"/>
-   <KpiCard icon={Percent} label="IRT médio" value={irt} delta="Relacionamento estratégico" tone="green"/>
+   <KpiCard icon={Percent} label="IRT médio" value={irt} delta={`${relationships.irtKnown} de ${relationships.total} perfis medidos`} tone="green"/>
   </section>
 
   <section className="priority-strip"><div className="priority-copy"><span className="eyebrow">PRIORIDADE DA VAL</span><h3>Quem merece sua atenção agora</h3><p>Somente oportunidades com uma necessidade ou evidência comercial registrada.</p></div>{priorities.map(({client,candidate,metrics},index)=><button key={client.id} onClick={()=>onClient(client)}><span>{String(index+1).padStart(2,'0')}</span><div><b>{client.name}</b><small>{candidate.title}</small></div><strong>{compactBRL(metrics.openPotential,{known:metrics.openPotentialKnown})}</strong><ArrowUpRight/></button>)}{!priorities.length&&<div className="priority-empty"><Target/><div><b>Nenhuma oportunidade confirmada</b><small>Use a descoberta consultiva antes de abrir um negócio no pipeline.</small></div></div>}</section>
@@ -134,7 +144,7 @@ export default function Dashboard({clients,visits,currentUser,setPage,onClient,o
    </article>
    <article className="panel recent-panel">
     <div className="panel-head"><div><span className="eyebrow">ATIVIDADES</span><h3>Atividades recentes</h3></div><button onClick={()=>setPage('visits')}>Ver todas</button></div>
-    {recentVisits.length?recentVisits.map(visit=>{const client=clients.find(item=>item.id===visit.clientId);return <div className="activity" key={visit.id}><CalendarDays className="purple"/><div><b>{visit.status==='Realizada'?'Visita realizada':'Visita agendada'}</b><span>{client?.name||'Produtor'} • {compactDate(visit.date)}</span></div></div>}):<div className="activity"><CalendarDays className="purple"/><div><b>Nenhuma atividade registrada</b><span>As visitas salvas aparecerão aqui.</span></div></div>}
+    {recentVisits.length?recentVisits.map(visit=>{const client=clients.find(item=>item.id===visit.clientId);return <div className="activity" key={visit.id}><CalendarDays className="purple"/><div><b>{visit.status==='Realizada'?'Visita realizada':'Visita agendada'}</b><span>{client?.name||'Produtor'} • {compactDate(visit)}</span></div></div>}):<div className="activity"><CalendarDays className="purple"/><div><b>Nenhuma atividade registrada</b><span>As visitas salvas aparecerão aqui.</span></div></div>}
    </article>
   </section>
 

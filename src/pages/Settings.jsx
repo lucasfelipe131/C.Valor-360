@@ -43,7 +43,7 @@ function databaseState(value,error){
  return {label:'PostgreSQL indisponível',detail:value.error||'Revise a conexão do banco.',ready:false}
 }
 
-export default function Settings({clients,visits,currentUser,onLogout,onNotify}){
+export default function Settings({clients,visits,opportunities=[],currentUser,onLogout,onNotify}){
  const [valStatus,setValStatus]=useState({loading:true,data:null,error:''})
  const scopedOpportunityKey=opportunityCacheKey(currentUser?.storageScope)
 
@@ -63,7 +63,7 @@ export default function Settings({clients,visits,currentUser,onLogout,onNotify})
 
  const backup=()=>{
   const cached=scopedOpportunityKey?parseOpportunityCache(localStorage.getItem(scopedOpportunityKey)):[]
-  const payload={version:'0.4.0',exportedAt:new Date().toISOString(),clients,visits,opportunities:reconcilePipeline(clients,cached)}
+  const payload={version:'0.4.0',exportedAt:new Date().toISOString(),clients,visits,opportunities:reconcilePipeline(clients,[...cached,...opportunities])}
   const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='valor360-backup.json';a.click();URL.revokeObjectURL(url);onNotify?.('Backup do piloto gerado com sucesso.')
  }
  const clear=()=>{if(window.confirm('Limpar rascunhos e dados locais deste dispositivo? Os registros do PostgreSQL não serão apagados.')){for(const key of ['valor360-clients','valor360-visits','valor360-opportunities',scopedOpportunityKey])if(key)localStorage.removeItem(key);Object.keys(localStorage).filter(key=>key.startsWith('valor360-tech-')||key.startsWith('valor360-client-context:')).forEach(key=>localStorage.removeItem(key));Object.keys(sessionStorage).filter(key=>key.startsWith('valor360-tech-')).forEach(key=>sessionStorage.removeItem(key));window.location.reload()}}
@@ -76,7 +76,8 @@ export default function Settings({clients,visits,currentUser,onLogout,onNotify})
  const database=databaseState(valStatus.data?.database,valStatus.error)
  const environmentReady=configured&&database.ready
  const aiPrerequisitesReady=keyConfigured&&securityReady
- const knowledge=!statusKnown?'Estado desconhecido':valStatus.data?.knowledgeBase?'ID da base cadastrado':'Não sincronizada'
+ const knowledge=!statusKnown?'Estado desconhecido':valStatus.data?.knowledgeBase?'Playbook + índice ativos':'Playbook aprovado ativo'
+ const knowledgeDetail=!statusKnown?'Disponibilidade ainda não confirmada':valStatus.data?.knowledgeBase?'Busca no conteúdo versionado disponível em cada consulta':'Método interno ativo; índice vetorial adicional não conectado'
  const accountLabel=currentUser?.email||'Ambiente de demonstração'
  const accountInitials=currentUser?.email?currentUser.email.split('@')[0].split(/[._-]/).slice(0,2).map(part=>part[0]).join('').toUpperCase():'VA'
  const callout=!statusKnown?{title:'O estado da chave não pôde ser confirmado.',text:'Não altere segredos com base neste diagnóstico; restabeleça o servidor e verifique novamente.',ready:false,unknown:true}:!keyConfigured?{title:'Adicione OPENAI_API_KEY no ambiente seguro do servidor.',text:'Não cole a chave em campos da aplicação ou no frontend. Configure primeiro o banco e o acesso do piloto.',ready:false}:!securityReady?{title:'A chave foi cadastrada; falta proteger o acesso.',text:'Configure VAL_ADMIN_EMAIL, VAL_ADMIN_PASSWORD e VAL_SESSION_SECRET antes de liberar chamadas à IA.',ready:false}:{title:'Chave cadastrada no servidor.',text:'O segredo nunca é enviado ao navegador. A validade e a cota são confirmadas na primeira chamada real.',ready:true}
@@ -96,7 +97,7 @@ export default function Settings({clients,visits,currentUser,onLogout,onNotify})
     <article><span className="val-engine-metric-icon"><KeyRound/></span><div><small>OPENAI</small><b>{valStatus.loading?'Verificando…':keyConfigured===null?'Estado desconhecido':keyConfigured?'Chave cadastrada':'Aguardando chave'}</b><span>{keyConfigured===null?'Consulte novamente quando o servidor responder':keyConfigured?'Mantida somente no servidor':'Necessária para respostas generativas'}</span></div></article>
     <article><span className="val-engine-metric-icon"><Zap/></span><div><small>EXECUÇÃO</small><b>{valStatus.loading?'Verificando…':statusKnown?engineModeLabel(valStatus.data?.mode):'Estado desconhecido'}</b><span>{statusKnown?'Roteamento diário, estratégico e de alto volume definido pela engine':'Disponibilidade ainda não confirmada'}</span></div></article>
     <article><span className="val-engine-metric-icon"><Database/></span><div><small>BANCO DE DADOS</small><b>{valStatus.loading?'Verificando…':database.label}</b><span>{valStatus.loading?'Consultando conexão e persistência…':database.detail}</span></div></article>
-    <article><span className="val-engine-metric-icon"><Layers3/></span><div><small>CONHECIMENTO</small><b>{valStatus.loading?'Verificando…':knowledge}</b><span>O acesso é confirmado durante cada consulta</span></div></article>
+    <article><span className="val-engine-metric-icon"><Layers3/></span><div><small>CONHECIMENTO</small><b>{valStatus.loading?'Verificando…':knowledge}</b><span>{valStatus.loading?'Consultando a configuração…':knowledgeDetail}</span></div></article>
    </div>
 
    <div className="val-engine-config">

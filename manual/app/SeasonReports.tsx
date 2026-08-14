@@ -1289,7 +1289,7 @@ export default function SeasonReports({
         producerName: producer?.name,
         payload: saved as unknown as Record<string, unknown>,
       });
-      setMessage("Fechamento salvo no histórico deste dispositivo.");
+      setMessage("Fechamento salvo no histórico em nuvem desta conta.");
     } catch (error) {
       setMessage(
         error instanceof Error
@@ -1699,7 +1699,7 @@ export default function SeasonReports({
           </button>
         )}
         <small className="season-storage-note">
-          Os relatórios ficam somente neste dispositivo, separados pelo usuário autenticado. Exporte um backup antes de trocar de aparelho.
+          Os relatórios são sincronizados na conta e mantêm uma cópia local para trabalho offline. O backup pode ser exportado para portabilidade.
         </small>
       </section>
 

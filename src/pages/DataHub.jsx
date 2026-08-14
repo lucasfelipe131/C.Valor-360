@@ -1,4 +1,4 @@
-import React,{useMemo,useRef,useState} from 'react'
+import React,{useEffect,useMemo,useRef,useState} from 'react'
 import {ArrowRight,BrainCircuit,CheckCircle2,DatabaseZap,FileSpreadsheet,Lightbulb,Pencil,RefreshCw,ShieldCheck,Sparkles,Trash2,UploadCloud,UsersRound} from 'lucide-react'
 import {parseImportFile,tableToObjects} from '../lib/smart-import'
 import {buildCommercialIntelligence,detectColumns,summarizeLearning} from '../lib/commercial-intelligence'
@@ -18,7 +18,12 @@ export default function DataHub({clients=[],onImport,onUpdate,onDelete,onNotify}
  const [saving,setSaving]=useState(false)
  const [editing,setEditing]=useState(null)
  const [deleting,setDeleting]=useState('')
+ const [managedClientId,setManagedClientId]=useState(clients[0]?.id||'')
  const intelligence=useMemo(()=>rows.length&&mapping.client?buildCommercialIntelligence(rows,mapping):[],[rows,mapping])
+ const managedClient=clients.find(client=>String(client.id)===String(managedClientId))||clients[0]
+ useEffect(()=>{
+  if(!clients.some(client=>String(client.id)===String(managedClientId))){setManagedClientId(clients[0]?.id||'');setEditing(null)}
+ },[clients,managedClientId])
  const analyze=async selected=>{
   setError('');setFile(selected);setStage('reading')
   try{
@@ -61,10 +66,13 @@ export default function DataHub({clients=[],onImport,onUpdate,onDelete,onNotify}
   {error&&stage==='drop'&&<div className="form-error" role="alert">{error}</div>}
   <section className="panel producer-base-manager">
    <div className="panel-head"><div><span className="eyebrow">GESTÃO DA BASE</span><h3>Produtores deste login</h3><p>Edite nome, propriedade, compras, potencial e preferências; ou retire um produtor da carteira.</p></div><span className="mapping-score"><UsersRound/>{clients.length} produtores</span></div>
-   {!clients.length?<div className="inbox-empty"><UsersRound/><h3>Esta carteira está zerada.</h3><p>Preencha o Produtor 360 ou importe uma base para começar.</p></div>:<div className="producer-manage-list">{clients.map(client=><article key={client.id} className={editing===client.id?'is-editing':''}>
-    <div className="producer-manage-summary"><div><b>{client.name}</b><small>{client.municipality||'Município não informado'} • {client.commercial?.property||'Propriedade não informada'}</small></div><div className="producer-manage-metrics"><span>Compras <b>R$ {Number(client.commercial?.purchaseTotal||0).toLocaleString('pt-BR')}</b></span><span>Em aberto <b>R$ {Number(client.commercial?.openPotential??client.commercial?.openPipeline??0).toLocaleString('pt-BR')}</b></span></div><div className="producer-manage-actions"><button type="button" onClick={()=>setEditing(current=>current===client.id?null:client.id)}><Pencil/>Editar</button><button type="button" className="danger-text" disabled={deleting===client.id} onClick={()=>remove(client)}><Trash2/>{deleting===client.id?'Excluindo…':'Excluir'}</button></div></div>
-    {editing===client.id&&<ProducerProfileEditor compact client={client} onSave={async(id,input)=>{await onUpdate?.(id,input);setEditing(null);onNotify?.('Cadastro do produtor atualizado na nuvem.')}} onCancel={()=>setEditing(null)}/>}
-   </article>)}</div>}
+   {!clients.length?<div className="inbox-empty"><UsersRound/><h3>Esta carteira está zerada.</h3><p>Preencha o Produtor 360 ou importe uma base para começar.</p></div>:<>
+    <label className="producer-manager-select"><span>Produtor para consultar ou editar</span><select value={managedClient?.id||''} onChange={event=>{setManagedClientId(event.target.value);setEditing(null)}}>{clients.map(client=><option key={client.id} value={client.id}>{client.name} — {client.municipality||'município a informar'}</option>)}</select><small>A carteira permanece recolhida; somente o cadastro selecionado é exibido.</small></label>
+    {managedClient&&<div className="producer-manage-list"><article key={managedClient.id} className={editing===managedClient.id?'is-editing':''}>
+     <div className="producer-manage-summary"><div><b>{managedClient.name}</b><small>{managedClient.municipality||'Município não informado'} • {managedClient.commercial?.property||'Propriedade não informada'}</small></div><div className="producer-manage-metrics"><span>Compras <b>R$ {Number(managedClient.commercial?.purchaseTotal||0).toLocaleString('pt-BR')}</b></span><span>Em aberto <b>R$ {Number(managedClient.commercial?.openPotential??managedClient.commercial?.openPipeline??0).toLocaleString('pt-BR')}</b></span></div><div className="producer-manage-actions"><button type="button" onClick={()=>setEditing(current=>current===managedClient.id?null:managedClient.id)}><Pencil/>Editar</button><button type="button" className="danger-text" disabled={deleting===managedClient.id} onClick={()=>remove(managedClient)}><Trash2/>{deleting===managedClient.id?'Excluindo…':'Excluir'}</button></div></div>
+     {editing===managedClient.id&&<ProducerProfileEditor compact client={managedClient} onSave={async(id,input)=>{await onUpdate?.(id,input);setEditing(null);onNotify?.('Cadastro do produtor atualizado na nuvem.')}} onCancel={()=>setEditing(null)}/>}
+    </article></div>}
+   </>}
   </section>
  </div>
 }

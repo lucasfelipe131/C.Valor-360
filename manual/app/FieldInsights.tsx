@@ -520,7 +520,7 @@ export default function FieldInsights({
           savedAt: new Date().toISOString(),
         },
       });
-      setSaveMessage("Interpretação salva no histórico deste dispositivo.");
+      setSaveMessage("Interpretação salva no histórico em nuvem desta conta.");
     } catch (error) {
       setSaveMessage(error instanceof Error ? error.message : "Falha ao salvar.");
     }

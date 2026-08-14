@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {compactBRL,commercialMetrics,metricValue} from '../src/lib/commercial-metrics.js'
+import {compactBRL,commercialMetrics,metricValue,relationshipSummary} from '../src/lib/commercial-metrics.js'
 
 test('métricas canônicas calculam reais, potencial aberto e share sem usar o legado',()=>{
  const metrics=commercialMetrics({commercial:{purchaseCurrentSeason:120_000,potentialTotal:300_000,openPotential:180_000,openPipeline:75_000,realizedShare:40,potential:999_999}})
@@ -30,4 +30,19 @@ test('zero conhecido difere de dado ausente e potencial total sem compras não f
  assert.equal(partial.openPotentialKnown,false)
  assert.equal(partial.shareKnown,false)
  assert.equal(metricValue(partial.realizedShare,partial.shareKnown,'%'),'A medir')
+})
+
+test('médias de relacionamento consideram apenas perfis realmente medidos',()=>{
+ const summary=relationshipSummary([
+  {irt:96,nps:10,primaryProfile:'Analítico',profileUpdatedAt:'2026-08-01'},
+  {irt:86,nps:9,primaryProfile:'Relacional',profileVersion:1},
+  {irt:0,nps:0,primaryProfile:'A classificar'}
+ ])
+ assert.equal(summary.total,3)
+ assert.equal(summary.profileMeasured,2)
+ assert.equal(summary.irtKnown,2)
+ assert.equal(summary.irtAverage,91)
+ assert.equal(summary.npsKnown,2)
+ assert.equal(summary.promoters,2)
+ assert.equal(summary.promoterRate,100)
 })

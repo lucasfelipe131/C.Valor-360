@@ -170,3 +170,34 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  if (!hasDatabase()) return unavailable();
+  const session = await sessionFromRequest(request);
+  if (!session) {
+    return NextResponse.json({ error: "Sessão expirada." }, { status: 401 });
+  }
+  const id = request.nextUrl.searchParams.get("id") ?? "";
+  if (!/^[0-9a-f-]{36}$/i.test(id)) {
+    return NextResponse.json({ error: "Registro inválido." }, { status: 400 });
+  }
+  const workspace = workspaceId(request, session.user);
+  try {
+    const pool = await ensureRecordsSchema();
+    const result = await pool.query(
+      "DELETE FROM app_records WHERE id = $1 AND workspace_id = $2 RETURNING id",
+      [id, workspace],
+    );
+    return withWorkspaceCookie(
+      NextResponse.json({ deleted: Boolean(result.rowCount), id }),
+      request,
+      workspace,
+    );
+  } catch (error) {
+    console.error("records:delete", error);
+    return NextResponse.json(
+      { error: "Não foi possível excluir o registro da conta." },
+      { status: 500 },
+    );
+  }
+}

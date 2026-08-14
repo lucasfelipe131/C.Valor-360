@@ -122,13 +122,13 @@ async function persistRecordOnServer(record: SavedRecord) {
   }
 }
 
-export async function syncLocalRecordsToServer() {
+export async function syncLocalRecordsToServer({ force = false }: { force?: boolean } = {}) {
   const currentOwner = ownerId();
   const marker = `mp-record-server-sync:${SERVER_SYNC_VERSION}:${currentOwner}`;
-  if (window.localStorage.getItem(marker) === "done") {
+  if (!force && window.localStorage.getItem(marker) === "done") {
     return { synchronized: 0, alreadySynchronized: true };
   }
-  const records = await listRecords();
+  const records = await listLocalRecords();
   const concurrency = 5;
   let synchronized = 0;
   for (let index = 0; index < records.length; index += concurrency) {
@@ -176,7 +176,7 @@ export async function saveRecord(input: {
   return record;
 }
 
-export async function listRecords(type?: RecordType) {
+async function listLocalRecords(type?: RecordType) {
   const database = await openDatabase();
   const currentOwner = ownerId();
   const transaction = database.transaction(STORE_NAME, "readonly");
@@ -192,7 +192,73 @@ export async function listRecords(type?: RecordType) {
   return values.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
+async function cacheRecords(records: SavedRecord[]) {
+  if (!records.length) return;
+  const database = await openDatabase();
+  const transaction = database.transaction(STORE_NAME, "readwrite");
+  const store = transaction.objectStore(STORE_NAME);
+  records.forEach((record) => store.put(record));
+  await transactionDone(transaction);
+  database.close();
+}
+
+async function listServerRecords(type?: RecordType) {
+  const currentOwner = ownerId();
+  const query = type ? `?type=${encodeURIComponent(type)}` : "";
+  const response = await fetch(`/api/records${query}`, {
+    credentials: "same-origin",
+    cache: "no-store",
+    signal: AbortSignal.timeout(12_000),
+  });
+  const result = (await response.json().catch(() => ({}))) as {
+    records?: Array<Partial<SavedRecord>>;
+    error?: string;
+  };
+  if (!response.ok) throw new Error(result.error || "A nuvem não respondeu ao consultar o histórico.");
+  const now = new Date().toISOString();
+  return (Array.isArray(result.records) ? result.records : []).flatMap((source) => {
+    const recordType = source.type as RecordType;
+    if (!source.id || !recordTypeLabels[recordType]) return [];
+    return [{
+      id: String(source.id),
+      ownerId: currentOwner,
+      type: recordType,
+      title: String(source.title ?? "").slice(0, 220),
+      producerName: String(source.producerName ?? "").slice(0, 180),
+      payload: source.payload && typeof source.payload === "object" && !Array.isArray(source.payload)
+        ? source.payload
+        : {},
+      createdAt: String(source.createdAt || now),
+      updatedAt: String(source.updatedAt || source.createdAt || now),
+    } satisfies SavedRecord];
+  });
+}
+
+export async function listRecords(type?: RecordType) {
+  const local = await listLocalRecords(type);
+  try {
+    const remote = await listServerRecords(type);
+    const byId = new Map(local.map((record) => [record.id, record]));
+    remote.forEach((record) => {
+      const current = byId.get(record.id);
+      if (!current || record.updatedAt >= current.updatedAt) byId.set(record.id, record);
+    });
+    const merged = [...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    await cacheRecords(merged);
+    return merged;
+  } catch {
+    return local;
+  }
+}
+
 export async function deleteRecord(id: string) {
+  const response = await fetch(`/api/records?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+    credentials: "same-origin",
+    signal: AbortSignal.timeout(12_000),
+  });
+  const result = (await response.json().catch(() => ({}))) as { error?: string };
+  if (!response.ok) throw new Error(result.error || "A nuvem não confirmou a exclusão do registro.");
   const database = await openDatabase();
   const currentOwner = ownerId();
   const readTransaction = database.transaction(STORE_NAME, "readonly");
@@ -263,5 +329,6 @@ export async function importRecords(raw: string) {
   }
   await transactionDone(transaction);
   database.close();
+  await syncLocalRecordsToServer({ force: true }).catch(() => undefined);
   return imported;
 }

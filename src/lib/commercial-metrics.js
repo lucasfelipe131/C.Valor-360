@@ -26,6 +26,24 @@ export function commercialMetrics(client={}){
  }
 }
 
+export function relationshipSummary(clients=[]){
+ const portfolio=Array.isArray(clients)?clients:[]
+ const measured=portfolio.map(client=>({client,metrics:commercialMetrics(client)}))
+ const irtValues=measured.filter(item=>item.metrics.irtKnown).map(item=>Number(item.client.irt))
+ const npsValues=measured.filter(item=>item.metrics.npsKnown).map(item=>Number(item.client.nps))
+ const average=values=>values.length?values.reduce((sum,value)=>sum+value,0)/values.length:null
+ const promoters=npsValues.filter(value=>value>=9).length
+ return {
+  total:portfolio.length,
+  profileMeasured:measured.filter(item=>item.metrics.profileMeasured).length,
+  irtKnown:irtValues.length,
+  irtAverage:average(irtValues),
+  npsKnown:npsValues.length,
+  promoters,
+  promoterRate:npsValues.length?promoters/npsValues.length*100:null
+ }
+}
+
 export function compactBRL(value,{known=true}={}){
  if(!known)return 'A medir'
  const amount=Math.max(0,Number(value)||0)

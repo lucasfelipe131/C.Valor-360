@@ -628,8 +628,12 @@ CREATE TABLE IF NOT EXISTS app_workspace_data (
   workspace_id UUID PRIMARY KEY,
   producers JSONB NOT NULL DEFAULT '[]'::jsonb,
   soil_analyses JSONB NOT NULL DEFAULT '[]'::jsonb,
+  professional_profile JSONB NOT NULL DEFAULT '{}'::jsonb,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE app_workspace_data
+  ADD COLUMN IF NOT EXISTS professional_profile JSONB NOT NULL DEFAULT '{}'::jsonb;
 
 CREATE TABLE IF NOT EXISTS app_records (
   id UUID PRIMARY KEY,
