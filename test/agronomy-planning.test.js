@@ -76,7 +76,8 @@ test('interface preserva todas as calculadoras e separa pulverização dos demai
  }
  assert.match(page,/\["Pulverização", "Fertilizantes", "Plantabilidade", "Custos"\]/)
  assert.match(page,/role="radiogroup"/)
- assert.match(page,/name="planter-input-mode"/)
+ assert.match(page,/type="button" role="radio" aria-checked=\{planterInputMode === "meter"\}/)
+ assert.match(page,/onClick=\{\(\) => changePlanterMode\("meter"\)\}>Informar plantas por metro<\/button>/)
  assert.match(page,/useState<"all" \| "agrofit" \| "commercial" \| "foliar" \| "problem">\("all"\)/)
  assert.match(page,/catalog === "all" \|\| catalog === "commercial"/)
  assert.match(page,/ZARC define janela e risco de semeadura — não o ciclo da cultivar/)
