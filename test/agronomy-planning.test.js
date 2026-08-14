@@ -71,6 +71,7 @@ test('yield gap alto não é usado para densificar milho e explicita as limitaç
 
 test('interface preserva todas as calculadoras e separa pulverização dos demais grupos',()=>{
  const page=readFileSync(join(process.cwd(),'manual/app/page.tsx'),'utf8')
+ const styles=readFileSync(join(process.cwd(),'manual/app/globals.css'),'utf8')
  for(const key of ['semeadora','populacao','sementes','colheita','zoneamento','pulverizacao','fertilizante','reposicao','cotacao']) {
   assert.match(page,new RegExp(`key: "${key}"`))
  }
@@ -78,6 +79,7 @@ test('interface preserva todas as calculadoras e separa pulverização dos demai
  assert.match(page,/role="radiogroup"/)
  assert.match(page,/type="button" role="radio" aria-checked=\{planterInputMode === "meter"\}/)
  assert.match(page,/onClick=\{\(\) => changePlanterMode\("meter"\)\}>Informar plantas por metro<\/button>/)
+ assert.match(styles,/\.planter-mode-panel \{[^}]*grid-template-columns: minmax\(0, 1fr\) minmax\(0, 1fr\)/)
  assert.match(page,/useState<"all" \| "agrofit" \| "commercial" \| "foliar" \| "problem">\("all"\)/)
  assert.match(page,/catalog === "all" \|\| catalog === "commercial"/)
  assert.match(page,/ZARC define janela e risco de semeadura — não o ciclo da cultivar/)

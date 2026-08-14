@@ -7985,7 +7985,7 @@ a {
 .producer-card-selected { width: 100%; max-width: none; box-shadow: none; border: 1px solid rgba(18, 66, 55, .12); }
 
 /* Regulagem bidirecional da semeadora */
-.planter-mode-panel { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(280px, 1fr); gap: 16px; align-items: end; margin-bottom: 18px; padding: 16px; border-radius: 16px; background: #f4f8f6; border: 1px solid rgba(22, 74, 62, .1); }
+.planter-mode-panel { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: end; margin-bottom: 18px; padding: 16px; border-radius: 16px; background: #f4f8f6; border: 1px solid rgba(22, 74, 62, .1); }
 .planter-mode-choice { display: grid; grid-template-columns: 1fr 1fr; padding: 4px; border-radius: 12px; background: #dfeae5; }
 .planter-mode-choice button { min-height: 42px; padding: 8px 12px; border: 0; border-radius: 9px; background: transparent; color: #31584e; font: inherit; font-weight: 750; cursor: pointer; text-align: center; }
 .planter-mode-choice button.active { background: #123f35; color: white; box-shadow: 0 5px 14px rgba(18, 63, 53, .18); }
