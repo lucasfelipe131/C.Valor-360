@@ -5015,8 +5015,8 @@ function Calculators({
                 <small>O preset preenche valores iniciais; ajuste conforme cultivar, lote e ambiente.</small>
               </label>
               <div className="planter-mode-choice" role="radiogroup" aria-label="Forma de cálculo da população">
-                <label className={planterInputMode === "population" ? "active" : ""}><input type="radio" name="planter-input-mode" value="population" checked={planterInputMode === "population"} onChange={() => changePlanterMode("population")} /><span>Informar população</span></label>
-                <label className={planterInputMode === "meter" ? "active" : ""}><input type="radio" name="planter-input-mode" value="meter" checked={planterInputMode === "meter"} onChange={() => changePlanterMode("meter")} /><span>Informar plantas por metro</span></label>
+                <button type="button" role="radio" aria-checked={planterInputMode === "population"} className={planterInputMode === "population" ? "active" : ""} onClick={() => changePlanterMode("population")}>Informar população</button>
+                <button type="button" role="radio" aria-checked={planterInputMode === "meter"} className={planterInputMode === "meter" ? "active" : ""} onClick={() => changePlanterMode("meter")}>Informar plantas por metro</button>
               </div>
             </div>
             <div className="field-grid-form">
