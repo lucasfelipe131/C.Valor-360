@@ -2207,6 +2207,7 @@ export default function Home() {
         const remote = (await response.json()) as {
           producers?: Producer[];
           soilAnalyses?: SoilAnalysis[];
+          professionalProfile?: Partial<ProfessionalProfile>;
           hasData?: boolean;
         };
         if (remote.hasData) {
@@ -2214,11 +2215,14 @@ export default function Home() {
           const validProducerIds = new Set(nextProducers.map((producer) => producer.id));
           nextSoilAnalyses = (Array.isArray(remote.soilAnalyses) ? remote.soilAnalyses : [])
             .filter((analysis) => !analysis.producerId || validProducerIds.has(analysis.producerId));
-        } else if (nextProducers.length || nextSoilAnalyses.length) {
+          if (remote.professionalProfile && typeof remote.professionalProfile === "object" && Object.keys(remote.professionalProfile).length) {
+            localProfile = { ...localProfile, ...remote.professionalProfile };
+          }
+        } else if (nextProducers.length || nextSoilAnalyses.length || Object.keys(localProfile).length) {
           const migration = await fetch("/api/workspace", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ producers: nextProducers, soilAnalyses: nextSoilAnalyses }),
+            body: JSON.stringify({ producers: nextProducers, soilAnalyses: nextSoilAnalyses, professionalProfile: localProfile }),
           });
           if (!migration.ok) throw new Error("Falha ao criar backup inicial");
         }
@@ -2308,12 +2312,16 @@ export default function Home() {
       accountStorageKey("mp-soil-analyses", accessUser.id),
       JSON.stringify(soilAnalyses),
     );
+    localStorage.setItem(
+      accountStorageKey("mp-professional-profile", accessUser.id),
+      JSON.stringify(profile),
+    );
     setWorkspaceSync("saving");
     const timer = window.setTimeout(() => {
       void fetch("/api/workspace", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ producers, soilAnalyses }),
+        body: JSON.stringify({ producers, soilAnalyses, professionalProfile: profile }),
       })
         .then((response) => {
           if (!response.ok) throw new Error("Falha na sincronização");
@@ -2322,16 +2330,7 @@ export default function Home() {
         .catch(() => setWorkspaceSync("offline"));
     }, 700);
     return () => window.clearTimeout(timer);
-  }, [producers, soilAnalyses, accountReady, accessUser]);
-
-  useEffect(() => {
-    if (accountReady && accessUser) {
-      localStorage.setItem(
-        accountStorageKey("mp-professional-profile", accessUser.id),
-        JSON.stringify(profile),
-      );
-    }
-  }, [profile, accountReady, accessUser]);
+  }, [producers, soilAnalyses, profile, accountReady, accessUser]);
 
 
   useEffect(() => {
@@ -4327,7 +4326,7 @@ function Calculators({
           savedAt: new Date().toISOString(),
         },
       });
-      setRecordMessage("Cotação salva no histórico deste dispositivo.");
+      setRecordMessage("Cotação salva no histórico em nuvem desta conta.");
     } catch (error) {
       setRecordMessage(error instanceof Error ? error.message : "Falha ao salvar.");
     }
@@ -4358,7 +4357,7 @@ function Calculators({
           savedAt: new Date().toISOString(),
         },
       });
-      setRecordMessage("Recomendação salva no histórico deste dispositivo.");
+      setRecordMessage("Recomendação salva no histórico em nuvem desta conta.");
     } catch (error) {
       setRecordMessage(error instanceof Error ? error.message : "Falha ao salvar.");
     }
@@ -4397,7 +4396,7 @@ function Calculators({
           savedAt: new Date().toISOString(),
         },
       });
-      setRecordMessage("Comparativo salvo no histórico deste dispositivo.");
+      setRecordMessage("Comparativo salvo no histórico em nuvem desta conta.");
     } catch (error) {
       setRecordMessage(error instanceof Error ? error.message : "Falha ao salvar.");
     }
@@ -4762,7 +4761,7 @@ function Calculators({
     description: string;
     icon: IconName;
     tag?: string;
-    group: "Fertilizantes" | "Plantabilidade" | "Custos";
+    group: "Pulverização" | "Fertilizantes" | "Plantabilidade" | "Custos";
   }[] = [
     {
       key: "semeadora",
@@ -4808,7 +4807,7 @@ function Calculators({
       title: "Pulverização",
       description: "Volume de calda, número de tanques e produto necessário.",
       icon: "spray",
-      group: "Fertilizantes",
+      group: "Pulverização",
     },
     {
       key: "fertilizante",
@@ -4834,13 +4833,15 @@ function Calculators({
       group: "Custos",
     },
   ];
-  const calculatorGroups = (["Fertilizantes", "Plantabilidade", "Custos"] as const).map((group) => ({
+  const calculatorGroups = (["Pulverização", "Fertilizantes", "Plantabilidade", "Custos"] as const).map((group) => ({
     group,
-    description: group === "Fertilizantes"
-      ? "Nutrição, reposição e aplicações"
-      : group === "Plantabilidade"
-        ? "Sementes, implantação, ZARC e planejamento da colheita"
-        : "Orçamento e decisão financeira",
+    description: group === "Pulverização"
+      ? "Calda, tanques e quantidade de produto"
+      : group === "Fertilizantes"
+        ? "Nutrição e reposição de nutrientes"
+        : group === "Plantabilidade"
+          ? "Sementes, implantação, ZARC e planejamento da colheita"
+          : "Orçamento e decisão financeira",
     cards: calcCards.filter((card) => card.group === group),
   }));
 
@@ -4922,7 +4923,7 @@ function Calculators({
       .filter(Boolean)
       .join("\n\n")
       .slice(0, 20000);
-    setRecordMessage("Salvando cálculo no dispositivo…");
+    setRecordMessage("Salvando cálculo na nuvem…");
     try {
       await saveRecord({
         type: "calculator",
@@ -4937,7 +4938,7 @@ function Calculators({
           savedAt: new Date().toISOString(),
         },
       });
-      setRecordMessage("Cálculo salvo no histórico deste dispositivo.");
+      setRecordMessage("Cálculo salvo no histórico em nuvem desta conta.");
     } catch (error) {
       setRecordMessage(error instanceof Error ? error.message : "Falha ao salvar o cálculo.");
     }
@@ -5013,9 +5014,9 @@ function Calculators({
                 </div>
                 <small>O preset preenche valores iniciais; ajuste conforme cultivar, lote e ambiente.</small>
               </label>
-              <div className="planter-mode-choice" role="group" aria-label="Forma de cálculo da população">
-                <button type="button" className={planterInputMode === "population" ? "active" : ""} onClick={() => changePlanterMode("population")}>Informar população</button>
-                <button type="button" className={planterInputMode === "meter" ? "active" : ""} onClick={() => changePlanterMode("meter")}>Informar plantas por metro</button>
+              <div className="planter-mode-choice" role="radiogroup" aria-label="Forma de cálculo da população">
+                <label className={planterInputMode === "population" ? "active" : ""}><input type="radio" name="planter-input-mode" value="population" checked={planterInputMode === "population"} onChange={() => changePlanterMode("population")} /><span>Informar população</span></label>
+                <label className={planterInputMode === "meter" ? "active" : ""}><input type="radio" name="planter-input-mode" value="meter" checked={planterInputMode === "meter"} onChange={() => changePlanterMode("meter")} /><span>Informar plantas por metro</span></label>
               </div>
             </div>
             <div className="field-grid-form">
@@ -6351,7 +6352,7 @@ function LabelsPage({
   onCamera: () => void;
 }) {
   const [catalog, setCatalog] =
-    useState<"agrofit" | "commercial" | "foliar" | "problem">("agrofit");
+    useState<"all" | "agrofit" | "commercial" | "foliar" | "problem">("all");
   const [officialTargets, setOfficialTargets] = useState<OfficialTarget[]>([]);
   const [officialTargetCount, setOfficialTargetCount] = useState(0);
   const [officialTargetTotal, setOfficialTargetTotal] = useState(2000);
@@ -6364,27 +6365,25 @@ function LabelsPage({
   const [showAllTargetProducts, setShowAllTargetProducts] = useState(false);
   const normalizedQuery = normalizeOcrText(query);
   const visibleProducts =
-    catalog === "agrofit" && query.trim() ? filtered.slice(0, 60) : [];
+    (catalog === "all" || catalog === "agrofit") && query.trim() ? filtered.slice(0, 60) : [];
+  const commercialMatches = query.trim()
+    ? commercialAgrochemicals.filter((item) =>
+        normalizeOcrText(
+          `${item.name} ${item.active} ${item.maker}`,
+        ).includes(normalizedQuery),
+      )
+    : [];
   const visibleCommercial =
-    catalog === "commercial" && query.trim()
-      ? commercialAgrochemicals
-          .filter((item) =>
-            normalizeOcrText(
-              `${item.name} ${item.active} ${item.maker}`,
-            ).includes(normalizedQuery),
-          )
-          .slice(0, 80)
-      : [];
+    catalog === "all" || catalog === "commercial" ? commercialMatches.slice(0, 80) : [];
+  const foliarMatches = query.trim()
+    ? foliarProducts.filter((item) =>
+        normalizeOcrText(
+          `${item.name} ${item.maker} ${item.category} ${item.guarantee} ${item.composition} ${item.description}`,
+        ).includes(normalizedQuery),
+      )
+    : [];
   const visibleFoliar =
-    catalog === "foliar" && query.trim()
-      ? foliarProducts
-          .filter((item) =>
-            normalizeOcrText(
-              `${item.name} ${item.maker} ${item.category} ${item.guarantee} ${item.composition} ${item.description}`,
-            ).includes(normalizedQuery),
-          )
-          .slice(0, 80)
-      : [];
+    catalog === "all" || catalog === "foliar" ? foliarMatches.slice(0, 80) : [];
   const visibleProblems =
     catalog === "problem" && query.trim()
       ? problemGuides.filter((problem) =>
@@ -6471,15 +6470,19 @@ function LabelsPage({
     showAllTargetProducts ? selectableTargetProducts.length : 60,
   );
   const resultCount =
-    catalog === "agrofit"
+    catalog === "all"
+      ? filtered.length + commercialMatches.length + foliarMatches.length
+      : catalog === "agrofit"
       ? filtered.length
       : catalog === "commercial"
-        ? visibleCommercial.length
+        ? commercialMatches.length
         : catalog === "foliar"
-          ? visibleFoliar.length
+          ? foliarMatches.length
           : officialTargetCount + visibleProblems.length;
   const catalogTotal =
-    catalog === "agrofit"
+    catalog === "all"
+      ? products.length + commercialAgrochemicals.length + foliarProducts.length
+      : catalog === "agrofit"
       ? products.length
       : catalog === "commercial"
         ? commercialAgrochemicals.length
@@ -6498,6 +6501,12 @@ function LabelsPage({
         </p>
       </div>
       <div className="catalog-tabs" role="tablist" aria-label="Fonte do catálogo">
+        <button
+          className={catalog === "all" ? "active" : ""}
+          onClick={() => setCatalog("all")}
+        >
+          Todos
+        </button>
         <button
           className={catalog === "agrofit" ? "active" : ""}
           onClick={() => setCatalog("agrofit")}
@@ -6535,6 +6544,8 @@ function LabelsPage({
                 ? "Ex.: pé de galinha, buva, ferrugem, percevejo…"
                 : catalog === "foliar"
                 ? "Ex.: Biotrop, ICL, Utrisha N, boro…"
+                : catalog === "agrofit"
+                ? "Ex.: glifosato, ingrediente, fabricante ou registro…"
                 : "Ex.: Nativo, Engeo Pleno, glifosato…"
             }
           />
@@ -6553,7 +6564,9 @@ function LabelsPage({
         <div>
           <strong>{catalogTotal.toLocaleString("pt-BR")} {catalog === "problem" ? "alvos oficiais" : "produtos"}</strong>
           <span>
-            {catalog === "problem"
+            {catalog === "all"
+              ? "busca combinada nas fontes oficiais, comerciais e de nutrição"
+              : catalog === "problem"
               ? "pragas, doenças, plantas daninhas, nematoides e outros problemas"
               : catalog === "agrofit"
               ? "catálogo importado da base pública oficial"
@@ -6565,7 +6578,9 @@ function LabelsPage({
         <div>
           <strong>Conteúdo utilizado</strong>
           <span>
-            {catalog === "problem"
+            {catalog === "all"
+              ? "marca, registro, ingrediente, fabricante, composição e garantia"
+              : catalog === "problem"
               ? "nome comum, científico, sinônimos, situação, empresa e classificação"
               : catalog === "commercial"
               ? "marca, ingrediente ativo e concentração"
@@ -6585,7 +6600,9 @@ function LabelsPage({
             {targetLoading && catalog === "problem"
               ? "consultando base oficial…"
               : `mostrando os primeiros ${
-                  catalog === "agrofit"
+                  catalog === "all"
+                    ? visibleProducts.length + visibleCommercial.length + visibleFoliar.length
+                    : catalog === "agrofit"
                     ? visibleProducts.length
                     : catalog === "commercial"
                       ? visibleCommercial.length
@@ -6597,7 +6614,7 @@ function LabelsPage({
         </div>
       )}
       <section className="product-grid">
-        {catalog === "agrofit" && visibleProducts.map((product) => (
+        {(catalog === "all" || catalog === "agrofit") && visibleProducts.map((product) => (
           <article key={`${product.registration}-${product.name}`}>
             <div className="product-top">
               <span className={`type-tag type-${slug(product.type)}`}>{product.type}</span>
@@ -6618,7 +6635,7 @@ function LabelsPage({
             </a>
           </article>
         ))}
-        {catalog === "commercial" &&
+        {(catalog === "all" || catalog === "commercial") &&
           visibleCommercial.map((product) => (
             <article key={product.id}>
               <div className="product-top">
@@ -6637,7 +6654,7 @@ function LabelsPage({
               </a>
             </article>
           ))}
-        {catalog === "foliar" &&
+        {(catalog === "all" || catalog === "foliar") &&
           visibleFoliar.map((product) => (
             <article key={product.id}>
               <div className="product-top">
@@ -8400,6 +8417,12 @@ function ProfessionalPage({
   function uploadWatermark(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
+    if (!/^image\/(png|jpeg)$/.test(file.type) || file.size > 2_000_000) {
+      event.target.value = "";
+      setSaveError("Use uma imagem PNG ou JPG de até 2 MB.");
+      return;
+    }
+    setSaveError("");
     const reader = new FileReader();
     reader.onload = () => setProfile({ ...profile, watermark: String(reader.result) });
     reader.readAsDataURL(file);
@@ -8453,7 +8476,7 @@ function ProfessionalPage({
           </div>
         </section>
       </div>
-      <section className="access-note"><Icon name="check" size={20} /><div><b>Personalização automática ativa</b><p>Nome e e-mail vêm do acesso autenticado. Os demais dados profissionais ficam somente neste dispositivo e são aplicados automaticamente em relatórios, cotações e recomendações.</p></div></section>
+      <section className="access-note"><Icon name="check" size={20} /><div><b>Personalização automática ativa</b><p>Nome e e-mail vêm do acesso autenticado. Os demais dados profissionais são sincronizados na nuvem desta conta e aplicados automaticamente em relatórios, cotações e recomendações.</p></div></section>
     </>
   );
 }

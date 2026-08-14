@@ -73,7 +73,7 @@ export default function RecordsArchive() {
       anchor.download = `manual-do-agronomo-backup-${new Date().toISOString().slice(0, 10)}.json`;
       anchor.click();
       URL.revokeObjectURL(url);
-      setMessage("Backup gerado com os registros deste usuário neste dispositivo.");
+      setMessage("Backup gerado com os registros sincronizados e o cache local deste usuário.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Não foi possível gerar o backup.");
     }
@@ -93,9 +93,14 @@ export default function RecordsArchive() {
   }
 
   async function remove(id: string) {
-    if (!window.confirm("Excluir este registro somente deste dispositivo?")) return;
-    await deleteRecord(id);
-    await refresh();
+    if (!window.confirm("Excluir este registro da conta e de todos os dispositivos sincronizados?")) return;
+    try {
+      await deleteRecord(id);
+      await refresh();
+      setMessage("Registro excluído da conta.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Não foi possível excluir o registro.");
+    }
   }
 
   const visible = useMemo(
@@ -107,7 +112,7 @@ export default function RecordsArchive() {
     <section className="content-panel records-archive">
       <div className="panel-title">
         <div>
-          <span className="eyebrow">ARQUIVO DO DISPOSITIVO</span>
+          <span className="eyebrow">ARQUIVO DA CONTA</span>
           <h2>Histórico técnico, cadastral e comercial</h2>
         </div>
         <div className="records-backup-actions">
@@ -117,8 +122,8 @@ export default function RecordsArchive() {
         </div>
       </div>
       <p className="records-intro">
-        Os registros ficam apenas neste aparelho, separados pelo usuário que entrou no app.
-        Eles não ocupam o servidor. Exporte um backup antes de limpar os dados do navegador ou trocar de dispositivo.
+        Os registros são sincronizados no PostgreSQL desta conta e mantêm uma cópia local para consulta quando a conexão estiver indisponível.
+        O backup continua disponível para portabilidade e conferência.
       </p>
       {message && <p className="crm-message">{message}</p>}
       <div className="records-filter">
@@ -157,7 +162,7 @@ export default function RecordsArchive() {
             </summary>
             <div className="record-detail">
               <pre>{JSON.stringify(record.payload, null, 2)}</pre>
-              <button className="button secondary small" onClick={() => void remove(record.id)}>Excluir deste dispositivo</button>
+              <button className="button secondary small" onClick={() => void remove(record.id)}>Excluir da conta</button>
             </div>
           </details>
         ))}

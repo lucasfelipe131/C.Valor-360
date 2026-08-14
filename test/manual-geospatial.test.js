@@ -164,4 +164,6 @@ test('UX de mapeamento mantém NDVI, desenho e persistência por conta enquanto 
  assert.match(officialRoute,/BRAZIL_UFS\.has\(uf\)/)
  assert.match(workspace,/WHERE workspace_id = \$1/)
  assert.match(workspace,/ON CONFLICT \(workspace_id\)/)
+ assert.match(workspace,/professional_profile AS "professionalProfile"/)
+ assert.match(workspace,/ADD COLUMN IF NOT EXISTS professional_profile/)
 })

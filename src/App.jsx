@@ -114,7 +114,7 @@ export default function App(){
   <main className="main" id="main-content" tabIndex="-1">
    <Topbar title={title} subtitle={subtitle} onNavigate={navigate}/>
    <div className="content">
-    {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient}/>}
+    {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient}/>}
     {page==='clients'&&<Clients clients={clientList} opportunities={opportunities} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
     {page==='datahub'&&<DataHub clients={clientList} onImport={importClients} onUpdate={updateClient} onDelete={deleteClient} onNotify={notify}/>}
     {page==='client360'&&selected&&<Client360 key={selected.id} client={selected} storageScope={currentUser?.storageScope} onBack={()=>navigate('clients')} onPrepare={()=>prepareClient(selected)} onUpdate={updateClient} onSaved={message=>notify(message||'Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}/>}
@@ -124,7 +124,7 @@ export default function App(){
     {page==='visits'&&<Visits clients={clientList} visits={visits} onSave={saveVisit} onPrepare={prepareClient}/>}
     {page==='opportunities'&&<Opportunities clients={clientList} storageScope={currentUser?.storageScope} persistedItems={opportunities} onPersist={saveOpportunity} onClient={openClient} onSaved={notify}/>}
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
-    {page==='settings'&&<Settings clients={clientList} visits={visits} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
+    {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
     {page==='admin'&&currentUser?.role==='admin'&&<Admin currentUser={currentUser} onNotify={notify}/>}
    </div>
   </main>

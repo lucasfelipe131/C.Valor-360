@@ -69,12 +69,16 @@ test('yield gap alto não é usado para densificar milho e explicita as limitaç
  assert.match(highGap.warnings.join(' '),/fatores limitantes|não substitui/i)
 })
 
-test('interface preserva todas as calculadoras e organiza Fertilizantes, Plantabilidade e Custos',()=>{
+test('interface preserva todas as calculadoras e separa pulverização dos demais grupos',()=>{
  const page=readFileSync(join(process.cwd(),'manual/app/page.tsx'),'utf8')
  for(const key of ['semeadora','populacao','sementes','colheita','zoneamento','pulverizacao','fertilizante','reposicao','cotacao']) {
   assert.match(page,new RegExp(`key: "${key}"`))
  }
- assert.match(page,/\["Fertilizantes", "Plantabilidade", "Custos"\]/)
+ assert.match(page,/\["Pulverização", "Fertilizantes", "Plantabilidade", "Custos"\]/)
+ assert.match(page,/role="radiogroup"/)
+ assert.match(page,/name="planter-input-mode"/)
+ assert.match(page,/useState<"all" \| "agrofit" \| "commercial" \| "foliar" \| "problem">\("all"\)/)
+ assert.match(page,/catalog === "all" \|\| catalog === "commercial"/)
  assert.match(page,/ZARC define janela e risco de semeadura — não o ciclo da cultivar/)
  assert.match(page,/proxy de latitude do centroide municipal/)
  assert.match(page,/não possui população oficial por cultivar/)

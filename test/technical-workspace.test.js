@@ -13,6 +13,7 @@ test('núcleo técnico roteia somente páginas, APIs e ativos do Manual incorpor
  assert.equal(isTechnicalWorkspaceRequest('/api/admin/users'),true)
  assert.equal(isTechnicalWorkspaceRequest('/api/admin/usage'),true)
  assert.equal(isTechnicalWorkspaceRequest('/api/admin/metrics'),false)
+ assert.equal(isTechnicalWorkspaceRequest('/api/portfolio-admin/users'),false)
  assert.equal(isTechnicalWorkspaceRequest('/tessdata/por.traineddata.gz'),true)
  assert.equal(isTechnicalWorkspaceRequest('/api/technical/bootstrap'),false)
  assert.equal(isTechnicalWorkspaceRequest('/api/val/chat'),false)
