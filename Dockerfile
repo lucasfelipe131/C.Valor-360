@@ -29,6 +29,7 @@ COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/manual/.next/standalone/manual ./manual
 COPY --from=build --chown=node:node /app/manual/.next/static ./manual/.next/static
 COPY --from=build --chown=node:node /app/manual/public ./manual/public
+COPY --from=build --chown=node:node /app/manual/app/agrofit-products.json /app/manual/app/foliar-products.json ./manual/app/
 COPY --chown=node:node server.js ./server.js
 COPY --chown=node:node server ./server
 COPY --chown=node:node database ./database
