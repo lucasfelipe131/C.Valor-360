@@ -45,7 +45,7 @@ export default function MobileNav({page,setPage,currentUser}){
   </section></>}
   <nav className="mobile-nav" aria-label="Navegação principal">
    {primary.slice(0,2).map(([id,label,Icon])=><button type="button" key={id} className={page===id?'active':''} aria-current={page===id?'page':undefined} onClick={()=>navigate(id)}><Icon/><span>{label}</span></button>)}
-   <button type="button" className={`mobile-val-button ${page==='val'?'active':''}`} onClick={()=>navigate('val')} aria-label="Abrir a Val" aria-current={page==='val'?'page':undefined}><span><BrainCircuit/></span><b>Val</b></button>
+   <button type="button" className={`mobile-val-button ${page==='val'?'active':''}`} onClick={()=>navigate('val')} aria-label="Escolher ambiente da VAL" aria-current={page==='val'?'page':undefined}><span><BrainCircuit/></span><b>VAL</b></button>
    {primary.slice(3).map(([id,label,Icon])=><button type="button" key={id} className={page===id?'active':''} aria-current={page===id?'page':undefined} onClick={()=>navigate(id)}><Icon/><span>{label}</span></button>)}
    <button type="button" className={secondaryActive||open?'active':''} onClick={()=>setOpen(value=>!value)} aria-expanded={open} aria-label="Abrir todos os módulos"><MoreHorizontal/><span>Mais</span></button>
   </nav>
