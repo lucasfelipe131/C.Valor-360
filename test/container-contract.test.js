@@ -25,7 +25,8 @@ test('imagem final contém os artefatos exigidos por migrate e start',()=>{
   'src/lib ./src/lib',
   '/app/manual/.next/standalone/manual ./manual',
   '/app/manual/.next/static ./manual/.next/static',
-  '/app/manual/public ./manual/public'
+  '/app/manual/public ./manual/public',
+  '/app/manual/app/agrofit-products.json /app/manual/app/foliar-products.json ./manual/app/'
  ])assert.ok(dockerfile.includes(required),`COPY ausente: ${required}`)
  assert.match(dockerfile,/mkdir -p \/app\/\.data/)
  assert.match(dockerfile,/^EXPOSE 8080$/m)
