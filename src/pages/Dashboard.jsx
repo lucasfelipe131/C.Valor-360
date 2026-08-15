@@ -63,7 +63,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
   {page:'visits',label:'Planejar visita',detail:'Agenda e roteiro',icon:CalendarDays},
   {page:'questionnaire',label:'Produtor 360',detail:'Convite ou importação',icon:ClipboardList},
   {page:'datahub',label:'Importar carteira',detail:'Clientes e negócios',icon:DatabaseZap},
-  {page:'val',label:'Perguntar à Val',detail:'Próxima melhor ação',icon:BrainCircuit}
+  {page:'val',label:'Abrir ambientes VAL',detail:'Insumos ou grãos',icon:BrainCircuit}
  ]
  const cacheKey=opportunityCacheKey(currentUser?.storageScope)
  const cachedItems=cacheKey?parseOpportunityCache(localStorage.getItem(cacheKey)):[]

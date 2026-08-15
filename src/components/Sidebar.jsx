@@ -3,7 +3,7 @@ import { LayoutDashboard, Users, CalendarDays, Target, BrainCircuit, Sprout, Fil
 import Logo from './Logo'
 const items=[
  ['dashboard','Dashboard',LayoutDashboard],['clients','Clientes',Users],['datahub','Base Inteligente',DatabaseZap],['visits','Visitas',CalendarDays],
- ['opportunities','Oportunidades',Target],['val','Inteligência (VAL)',BrainCircuit],
+ ['opportunities','Oportunidades',Target],['val','Ambientes VAL',BrainCircuit],
  ['agro','Inteligência Agronômica',Sprout],['questionnaire','Produtor 360',ClipboardList],
  ['reports','Relatórios',FileBarChart],['settings','Configurações',Settings]
 ]
