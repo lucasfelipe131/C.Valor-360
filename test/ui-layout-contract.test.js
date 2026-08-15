@@ -96,6 +96,25 @@ test('producer dossier, access release and strategic action are exposed in the i
  assert.match(val,/chooseMode/)
  assert.match(val,/pensamento estratégico completo/)
  assert.match(val,/AbortSignal\.timeout\(120000\)/)
+ assert.match(val,/VAL NEXO • INTELIGÊNCIA DE DECISÃO/)
+ assert.match(val,/O DADO QUE MAIS MUDA A DECISÃO/)
+ assert.match(val,/NÃO CASE COM A PRIMEIRA EXPLICAÇÃO/)
+ assert.match(val,/PONTE DE VALOR • NEGOCIAÇÃO/)
+ assert.match(val,/CANDIDATAS À COMPARAÇÃO/)
+})
+
+test('página da inteligência organiza a leitura em camadas claras e responsivas',()=>{
+ const val=read('src/components/ValPanel.jsx')
+ const styles=read('src/styles.css')
+ assert.match(val,/val-nexo-reading/)
+ assert.match(val,/val-nexo-hypotheses/)
+ assert.match(val,/val-nexo-decision/)
+ assert.match(val,/val-value-core/)
+ assert.match(val,/val-product-options/)
+ assert.match(val,/Como esta resposta faz a VAL aprender/)
+ assert.match(styles,/\.val-nexo\{margin:16px 0/)
+ assert.match(styles,/\.val-value-bridge\{margin:16px 0/)
+ assert.match(styles,/@media\(max-width:700px\)[\s\S]*\.val-product-options>div:last-child\{grid-template-columns:1fr\}/)
 })
 
 test('technical memory confirmation remains textual and cannot render a response object as a toast',()=>{

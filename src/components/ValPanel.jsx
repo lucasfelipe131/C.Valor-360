@@ -34,7 +34,8 @@ const MODES={
 const QUICK_PROMPTS=[
  {label:'Iniciar conversa',icon:MessageSquareText,prompt:'Como posso iniciar esta conversa de forma natural e específica para este produtor?'},
  {label:'Preparar visita',icon:Route,prompt:'Ajude-me a preparar a próxima visita com objetivo, sequência e critérios de avanço.'},
- {label:'Próximo passo',icon:Target,prompt:'Qual é o próximo passo mais coerente para este produtor e quais dados sustentam essa escolha?'}
+ {label:'Próximo passo',icon:Target,prompt:'Qual é o próximo passo mais coerente para este produtor e quais dados sustentam essa escolha?'},
+ {label:'Negociar valor',icon:Sparkles,prompt:'Ajude-me a sair da discussão de preço, comparar as opções registradas e conduzir esta negociação por valor, risco e prova.'}
 ]
 
 const ATTACHMENT_TYPES=new Set(['image/jpeg','image/png','image/webp','image/gif','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','text/plain'])
@@ -55,8 +56,10 @@ async function prepareAttachmentFile(file){
 function neutralAdvice(client){
  const metrics=commercialMetrics(client||{})
  return {
-  answer:'Escolha uma pergunta rápida ou descreva a situação para a VAL analisar o dossiê.',
-  objective:'A orientação será construída com o pedido atual, o perfil, o contexto comercial e as evidências disponíveis.',
+	  answer:'Escolha uma pergunta rápida ou descreva a situação para a VAL analisar o dossiê.',
+	  objective:'A orientação será construída com o pedido atual, o perfil, o contexto comercial e as evidências disponíveis.',
+	  strategic_synthesis:{moment:'Aguardando análise do dossiê',non_obvious_connection:'A VAL mostrará o que os dados revelam quando são lidos juntos.',decision_at_stake:'Aguardando uma situação atual.',leverage_point:'Envie uma pergunta ou escolha um atalho.',do_not_do:'Não há recomendação antes da análise.',cross_source_connections:[],competing_hypotheses:[],highest_value_unknown:{question:'',why_it_matters:'',how_to_get:'',evidence_ids:[]},learning_loop:{record:'',success_signal:'',failure_signal:'',next_update:''}},
+	  value_bridge:{status:'not_applicable',price_zone_reading:'',reframe:'',value_dimensions:[],anchor_product:null,alternatives:[],argument_path:[],negotiation_question:'',do_not_claim:'',technical_review:'',grounding_ids:[]},
   executive_brief:{priority:'acompanhar',headline:'Aguardando sua pergunta',reason:'Nenhuma recomendação foi gerada antes da análise.',action:'Selecione um tema ou escreva a situação atual.',deadline:'Quando você estiver pronto',question:'',decision_basis:[],evidence_ids:[],missing_data:[]},
   methodology_state:{sequence:VAL_METHOD_SEQUENCE,current_stage:'preparar',completed_stages:[],next_stage:'alinhar',advance_gate:'Enviar uma pergunta para cruzar o dossiê.',reason:'Estado inicial, sem recomendação pronta.'},
   approach_plan:{tone:'Será definido pelos dados do produtor.',pace:'A confirmar.',channel:'A confirmar.',proof:'A confirmar.',participants:'A confirmar.',risk_posture:'A confirmar.',prioritize:'A confirmar.',avoid:'Não presumir preferências pela tag comportamental.',grounding_ids:[]},
@@ -85,7 +88,7 @@ function asList(value,fallback=[]){
  return list.map(textValue).filter(Boolean)
 }
 
-const sourceLabels={client_record:'cadastro do cliente',producer_questionnaire:'Produtor 360',business_history:'histórico de negócios',visit:'visita',interaction:'interação',opportunity:'oportunidade',field_report:'relatório de campo',soil_analysis:'análise de solo',ndvi:'NDVI',manual_record:'núcleo técnico do VALOR 360',producer_statement:'declaração do produtor',approved_playbook:'playbook aprovado',consultant_attachment:'arquivo do consultor',missing:'dado ausente',unknown:'origem não confirmada'}
+const sourceLabels={client_record:'cadastro do cliente',producer_questionnaire:'Produtor 360',business_history:'histórico de negócios',visit:'visita',interaction:'interação',opportunity:'oportunidade',field_report:'relatório de campo',soil_analysis:'análise de solo',ndvi:'NDVI',manual_record:'núcleo técnico do VALOR 360',producer_statement:'declaração do produtor',approved_playbook:'playbook aprovado',official_product_catalog:'catálogo oficial de produtos',consultant_attachment:'arquivo do consultor',missing:'dado ausente',unknown:'origem não confirmada'}
 const coverageLabels={questionnaire:'respostas 360',businessEvents:'negócios',visits:'visitas',interactions:'interações',opportunities:'oportunidades',properties:'propriedades',fieldReports:'relatórios de campo',soilAnalyses:'análises de solo',ndvi:'leituras NDVI',manualRecords:'registros técnicos',signals:'sinais',memories:'memórias',priorRecommendations:'análises anteriores',attachments:'arquivos confirmados',currentAttachments:'arquivos desta pergunta'}
 const confidenceLabels={not_calibrated:'não calibrada',insufficient:'insuficiente',low:'baixa',moderate:'moderada',high:'alta'}
 const reviewerLabels={technical_reviewer:'responsável técnico habilitado',manager:'gestor',consultant:'consultor',none:'não exigido'}
@@ -221,6 +224,39 @@ function briefData(advice){
  }
 }
 
+function strategicData(value){
+ const source=value&&typeof value==='object'?value:{}
+ return {
+  moment:textValue(source.moment)||'Aguardando cruzamento do dossiê',
+  connection:textValue(source.non_obvious_connection),
+  decision:textValue(source.decision_at_stake),
+  leverage:textValue(source.leverage_point),
+  avoid:textValue(source.do_not_do),
+  connections:(Array.isArray(source.cross_source_connections)?source.cross_source_connections:[]).map((item,index)=>({id:`nexo-${index}`,title:textValue(item.title),insight:textValue(item.insight),why:textValue(item.why_it_matters),evidence:asList(item.evidence_ids)})).filter(item=>item.title||item.insight),
+  hypotheses:(Array.isArray(source.competing_hypotheses)?source.competing_hypotheses:[]).map((item,index)=>({id:`hipotese-${index}`,label:textValue(item.label)||`Hipótese ${index+1}`,explanation:textValue(item.explanation),support:asList(item.supporting_evidence_ids),contradict:asList(item.contradicting_evidence_ids),falsifier:textValue(item.falsifier),move:textValue(item.validation_move)})).filter(item=>item.explanation),
+  unknown:{question:textValue(source.highest_value_unknown?.question),why:textValue(source.highest_value_unknown?.why_it_matters),how:textValue(source.highest_value_unknown?.how_to_get),evidence:asList(source.highest_value_unknown?.evidence_ids)},
+  loop:{record:textValue(source.learning_loop?.record),success:textValue(source.learning_loop?.success_signal),failure:textValue(source.learning_loop?.failure_signal),update:textValue(source.learning_loop?.next_update)}
+ }
+}
+
+function valueBridgeData(value){
+ const source=value&&typeof value==='object'?value:{}
+ const product=item=>item&&typeof item==='object'?{name:textValue(item.name),registration:textValue(item.registration),manufacturer:textValue(item.manufacturer),category:textValue(item.category),composition:textValue(item.composition),level:textValue(item.comparison_level),why:textValue(item.why_candidate),advantage:textValue(item.advantage_to_validate),tradeoffs:textValue(item.tradeoffs),crops:asList(item.crops),evidence:textValue(item.evidence_id),seen:item.seen_in_account_history===true,official:item.official_check_required!==false}:null
+ return {
+  status:textValue(source.status)||'not_applicable',
+  reading:textValue(source.price_zone_reading),
+  reframe:textValue(source.reframe),
+  dimensions:asList(source.value_dimensions),
+  anchor:product(source.anchor_product),
+  alternatives:(Array.isArray(source.alternatives)?source.alternatives:[]).map(product).filter(Boolean),
+  path:(Array.isArray(source.argument_path)?source.argument_path:[]).map((item,index)=>({id:`valor-${index}`,step:textValue(item.step),line:textValue(item.suggested_line),evidence:textValue(item.evidence_needed)})),
+  question:textValue(source.negotiation_question),
+  avoid:textValue(source.do_not_claim),
+  review:textValue(source.technical_review),
+  grounding:asList(source.grounding_ids)
+ }
+}
+
 export default function ValPanel({clients=[],selectedClient,onSelect}){
  const [selected,setSelected]=useState(selectedClient?.id||clients[0]?.id||'')
  const [mode,setMode]=useState('daily')
@@ -300,6 +336,8 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const commercialContext=commercialData(advice?.commercial_context)
  const evidence=evidenceData(advice?.evidence_used,response?[]:localAdvice.evidence_used)
  const brief=briefData(advice)
+ const strategic=strategicData(advice?.strategic_synthesis)
+ const valueBridge=valueBridgeData(advice?.value_bridge)
  const briefEvidence=(brief.evidenceIds.length?brief.evidenceIds.map(id=>evidence.find(item=>item.id===id)).filter(Boolean):evidence).slice(0,3)
  const assumptions=asList(advice?.assumptions,localAdvice.assumptions)
  const guardrails=asList(advice?.guardrails,localAdvice.guardrails)
@@ -428,7 +466,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
   <header className="val-hero">
    <div className="val-hero-copy">
     <div className="val-brand-line"><span className="val-orbit"><BrainCircuit aria-hidden="true"/></span><div><span className="val-kicker">VAL • SUA PARCEIRA DE CAMPO</span><h2 id="val-workspace-title">Converse com a VAL.</h2></div></div>
-    <p>Conte a situação com naturalidade. A VAL cruza o dossiê, identifica a etapa da conversa e orienta o próximo avanço.</p>
+	    <p>Conte a situação com naturalidade. A VAL conecta o dossiê inteiro, mostra as explicações possíveis e orienta o próximo avanço em linguagem simples.</p>
     <div className="val-engine-line" aria-live="polite">
      <span className={`val-live-pill ${engineReady?'is-ready':''}`}><i/>{status.loading?'Preparando a VAL':engineReady?'VAL pronta':'VAL disponível'}</span>
      <span>{status.data?.mode?modeLabel(status.data.mode):'Contexto protegido'}</span>
@@ -480,7 +518,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
     <summary><Paperclip/><span>Fotos e documentos de {firstNameOf(client)}</span><b>{savedAttachments.length}</b></summary>
     {attachmentState.loading?<p>Buscando arquivos…</p>:savedAttachments.length?<ul>{savedAttachments.map(item=><li key={item.id}>{item.mimeType?.startsWith('image/')?<ImagePlus/>:<FileText/>}<span><a href={'/api/val/attachments/'+item.id} target="_blank" rel="noreferrer">{item.originalName}</a><small>{formatFileSize(item.sizeBytes)} • {attachmentStatusLabels[item.status]||item.status}</small></span>{!attachments.some(entry=>entry.id===item.id)&&attachments.length<3&&<button type="button" onClick={()=>setAttachments(current=>[...current,item].slice(0,3))}>Usar</button>}</li>)}</ul>:<p>Nenhum arquivo salvo ainda.</p>}
    </details>
-   {loading&&<div className="val-thinking" role="status"><span/><div><b>A VAL está cruzando o dossiê.</b><small>Perfil, potencial, oportunidades, histórico e imagens estão sendo analisados.</small></div></div>}
+	   {loading&&<div className="val-thinking" role="status"><span/><div><b>A VAL está procurando conexões que ainda não aparecem na tela.</b><small>Perfil, negócios, campo, histórico, oportunidades e opções de valor estão sendo cruzados.</small></div></div>}
    {(error||response?.warning)&&<div className="val-warning" role="status"><AlertCircle aria-hidden="true"/><span>{error||response.warning}</span></div>}
   </div>
 
@@ -489,12 +527,34 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
    <div className="val-response-heading"><div><span className="val-section-icon"><Sparkles/></span><div><span>{recommendationRegistered?'RESPOSTA SALVA':response?'ORIENTAÇÃO GERADA':'AGUARDANDO CONTEXTO ATUAL'}</span><h3>{response?'Minha leitura':'Como começar'}</h3></div></div><div className="val-response-meta"><span>Sobre {firstNameOf(client)}</span></div></div>
    <div className="val-internal-banner"><ShieldCheck/><span><b>Rascunho de trabalho</b><small>Confira antes de usar com o produtor.</small></span></div>
 
-   <section className="val-chat-answer" aria-label="Resposta principal da VAL">
-    <span className="val-chat-avatar">VAL</span>
-    <div><small>VAL</small><p>{advice.answer}</p>{response&&brief.question&&<div className="val-ready-question"><MessageSquareText/><span><small>PERGUNTA PRINCIPAL • {primaryQuestionType.toUpperCase()}</small><b>{brief.question}</b></span></div>}</div>
-   </section>
+	   <section className="val-chat-answer" aria-label="Resposta principal da VAL">
+	    <span className="val-chat-avatar">VAL</span>
+	    <div><small>VAL</small><p>{advice.answer}</p>{response&&brief.question&&<div className="val-ready-question"><MessageSquareText/><span><small>PERGUNTA PRINCIPAL • {primaryQuestionType.toUpperCase()}</small><b>{brief.question}</b></span></div>}</div>
+	   </section>
 
-   <section className="val-sales-methods" aria-label="Método da abordagem aplicado ao produtor">
+	   {response&&<section className="val-nexo" aria-label="VAL NEXO, conexões e hipóteses do dossiê">
+	    <header className="val-nexo-head"><div><span className="val-nexo-mark"><DatabaseZap/></span><span><small>VAL NEXO • INTELIGÊNCIA DE DECISÃO</small><h3>O que os dados revelam juntos</h3><p>{strategic.moment}</p></span></div><em>{strategic.connections.length} {strategic.connections.length===1?'conexão':'conexões'} • {strategic.hypotheses.length} hipóteses</em></header>
+	    <div className="val-nexo-reading">
+	     <article><small>LEITURA PRINCIPAL</small><h4>{strategic.connection||'Ainda não há uma conexão legítima entre fontes suficientes.'}</h4>{strategic.decision&&<p><b>Decisão em jogo:</b> {strategic.decision}</p>}{strategic.leverage&&<div><Target/><span><small>PONTO DE ALAVANCA</small><b>{strategic.leverage}</b></span></div>}</article>
+	     <aside><AlertCircle/><span><small>NÃO FAÇA AGORA</small><b>{strategic.avoid||'Não preencha lacunas com uma resposta pronta.'}</b></span></aside>
+	    </div>
+	    {strategic.connections.length>1&&<div className="val-nexo-connections" aria-label="Conexões entre fontes">{strategic.connections.slice(0,4).map(item=><article key={item.id}><span><DatabaseZap/></span><div><small>{item.title}</small><p>{item.insight}</p>{item.why&&<b>{item.why}</b>}{item.evidence.length>0&&<em>Base: {item.evidence.join(' + ')}</em>}</div></article>)}</div>}
+	    <div className="val-nexo-hypotheses"><header><BrainCircuit/><span><small>NÃO CASE COM A PRIMEIRA EXPLICAÇÃO</small><h4>Duas leituras possíveis. Um teste para separar as duas.</h4></span></header><div>{strategic.hypotheses.slice(0,3).map((item,index)=><article key={item.id}><span>{String.fromCharCode(65+index)}</span><div><small>HIPÓTESE {String.fromCharCode(65+index)}</small><h5>{item.label}</h5><p>{item.explanation}</p><dl><div><dt>O que derruba</dt><dd>{item.falsifier}</dd></div><div><dt>Como testar</dt><dd>{item.move}</dd></div></dl>{item.support.length>0&&<em>Sustentada por: {item.support.join(', ')}</em>}</div></article>)}</div></div>
+	    <div className="val-nexo-decision">
+	     <article><span><MessageSquareText/></span><div><small>O DADO QUE MAIS MUDA A DECISÃO</small><h4>{strategic.unknown.question||brief.question}</h4>{strategic.unknown.why&&<p>{strategic.unknown.why}</p>}{strategic.unknown.how&&<b>{strategic.unknown.how}</b>}</div></article>
+	     <details><summary><ClipboardCheck/><span><b>Como esta resposta faz a VAL aprender</b><small>O que registrar e como atualizar a próxima orientação</small></span><ChevronRight/></summary><dl><div><dt>Registre</dt><dd>{strategic.loop.record}</dd></div><div><dt>Funcionou quando</dt><dd>{strategic.loop.success}</dd></div><div><dt>Não funcionou quando</dt><dd>{strategic.loop.failure}</dd></div><div><dt>Próxima atualização</dt><dd>{strategic.loop.update}</dd></div></dl></details>
+	    </div>
+	   </section>}
+
+	   {response&&valueBridge.status!=='not_applicable'&&<section className={`val-value-bridge is-${valueBridge.status}`} aria-label="Ponte de Valor para negociação além do preço">
+	    <header><div><span><Sparkles/></span><div><small>PONTE DE VALOR • NEGOCIAÇÃO</small><h3>Saia do preço sem fugir da comparação</h3><p>{valueBridge.reading}</p></div></div><em>{valueBridge.status==='ready'?'Opções encontradas':valueBridge.status==='needs_product'?'Falta o produto de referência':valueBridge.status==='blocked'?'Aguardando revisão':'Faltam dados para comparar'}</em></header>
+	    <div className="val-value-core"><article><small>REENQUADRAMENTO</small><h4>{valueBridge.reframe}</h4><div>{valueBridge.dimensions.map(item=><span key={item}><Check/>{item}</span>)}</div>{valueBridge.question&&<blockquote><small>PERGUNTA PARA TIRAR O PREÇO DO CENTRO</small><b>{valueBridge.question}</b></blockquote>}</article>{valueBridge.anchor&&<aside><small>PRODUTO DE REFERÊNCIA</small><h4>{valueBridge.anchor.name}</h4><p>{valueBridge.anchor.composition}</p><span>{[valueBridge.anchor.category,valueBridge.anchor.manufacturer,valueBridge.anchor.registration&&`Registro ${valueBridge.anchor.registration}`].filter(Boolean).join(' • ')}</span></aside>}</div>
+	    {valueBridge.alternatives.length>0&&<div className="val-product-options"><div><small>CANDIDATAS À COMPARAÇÃO</small><h4>Opções reais da base — ainda não são uma prescrição</h4></div><div>{valueBridge.alternatives.map((item,index)=><article key={`${item.name}-${index}`}><header><span>{String(index+1).padStart(2,'0')}</span><div><small>{item.level}</small><h5>{item.name}</h5></div>{item.seen&&<em>Já aparece na conta</em>}</header><p>{item.composition}</p><dl><div><dt>Por que entrou</dt><dd>{item.why}</dd></div><div><dt>Vantagem a validar</dt><dd>{item.advantage}</dd></div><div><dt>Limites da comparação</dt><dd>{item.tradeoffs}</dd></div></dl><footer>{[item.category,item.manufacturer,item.registration&&`Registro ${item.registration}`].filter(Boolean).join(' • ')}</footer></article>)}</div></div>}
+	    {valueBridge.path.length>0&&<details className="val-value-script"><summary><Route/><span><b>Ver caminho de argumentação</b><small>Frases simples para conduzir sem pressionar</small></span><ChevronRight/></summary><ol>{valueBridge.path.map((item,index)=><li key={item.id}><span>{index+1}</span><div><small>{item.step}</small><b>{item.line}</b><p>Registre: {item.evidence}</p></div></li>)}</ol></details>}
+	    <div className="val-value-safety"><ShieldCheck/><span><b>{valueBridge.avoid}</b><small>{valueBridge.review}</small></span></div>
+	   </section>}
+
+	   <section className="val-sales-methods" aria-label="Método da abordagem aplicado ao produtor">
     <header className="val-sales-methods-head">
      <div><span className="val-sales-methods-icon"><BrainCircuit/></span><span><small>MÉTODO DA ABORDAGEM</small><h3>SPIN visível, OPC alinhado e EPA aplicado</h3><p>{response?'Leitura construída para esta conversa e este produtor.':'Envie uma situação para a VAL preencher cada método com os dados do produtor.'}</p></span></div>
     </header>

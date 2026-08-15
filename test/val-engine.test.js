@@ -21,6 +21,10 @@ test('fallback local explicita evidências, método e limites sem resposta gené
   assert.equal(advice.methodology_state.working_stage,advice.methodology_state.current_stage)
   assert.equal(advice.methodology_state.working_stage_source,'actual_progress')
   assert.ok(valAdviceSchema.properties.methodology_state.required.includes('working_stage'))
+  assert.ok(valAdviceSchema.required.includes('strategic_synthesis'))
+  assert.ok(valAdviceSchema.required.includes('value_bridge'))
+  assert.ok(advice.strategic_synthesis.competing_hypotheses.length>=2)
+  assert.equal(advice.value_bridge.status,'not_applicable')
   assert.ok(advice.guardrails.some(item=>/confirmar|causalidade|pressionar/i.test(item)))
   assert.match(advice.executive_brief.action,/Conduzir|Agendar|Registrar/i)
   assert.ok(advice.executive_brief.evidence_ids.length<=3)
@@ -47,6 +51,8 @@ test('VAL compara a carteira de oportunidades e entrega roteiro até o próximo 
   assert.ok(valAdviceSchema.required.includes('methodology_state'))
   assert.ok(valAdviceSchema.required.includes('approach_plan'))
   assert.ok(valAdviceSchema.required.includes('commercial_context'))
+  assert.ok(valAdviceSchema.properties.strategic_synthesis.required.includes('highest_value_unknown'))
+  assert.ok(valAdviceSchema.properties.value_bridge.required.includes('alternatives'))
 })
 
 test('compactação do prompt preserva todas as oportunidades mesmo sob limite de contexto',()=>{
