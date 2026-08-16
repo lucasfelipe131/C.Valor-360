@@ -8,6 +8,7 @@ import {buildConversionFoundation,buildConversionIntelligence,reconcileAdviceWit
 import {normalizeAdviceForValUi,toValUiPriority} from './conversion-ui-contract.js'
 import {buildConversationOrchestration,enrichAdviceWithOrchestration,conversationOrchestratorVersion} from './conversation-orchestrator-runtime.js'
 import {prepareConversationThread} from './conversation-thread-context.js'
+import {enhanceDecisionLanguage,languageEnhancerVersion,preserveEnhancedLanguage} from './language-enhancer.js'
 
 const PATCHED=Symbol.for('valor360.conversion-core.patched')
 
@@ -28,6 +29,29 @@ function finalAdvice(advice,rawContext,message,usedGenerativeAi=false){
   }
 }
 
+function deterministicDecision(context,effectiveMessage,originalMessage,input){
+  context.decisionIntelligence=buildDecisionIntelligence(context)
+  context.productIntelligence=buildValueBridge(context,effectiveMessage)
+  const fallback=buildFallbackAdvice({
+    ...context,
+    message:effectiveMessage,
+    mode:String(input.mode||'daily'),
+    requestedStage:input.requestedStage||null
+  })
+  const safe=enforceValSafety(fallback,context,effectiveMessage,{requestedStage:input.requestedStage||null})
+  return finalAdvice(safe,context,originalMessage,false)
+}
+
+function conversionEnvelope(resolved){
+  return {
+    decisionSignature:resolved.conversion.decisionSignature,
+    contextFingerprint:resolved.conversion.contextFingerprint,
+    score:resolved.conversion.selectedOpportunity.score,
+    priority:toValUiPriority(resolved.conversion.selectedOpportunity.priority),
+    workflow:resolved.conversion.workflow.code
+  }
+}
+
 if(!globalThis[PATCHED]){
   globalThis[PATCHED]=true
 
@@ -40,8 +64,9 @@ if(!globalThis[PATCHED]){
   const originalRecordRecommendation=ValRepository.prototype.recordRecommendation
   ValRepository.prototype.recordRecommendation=async function recordDeterministicRecommendation(input){
     const rawContext=input.context||{}
-    const usedGenerativeAi=input.modelRun?.status==='completed'&&input.modelRun?.generativeUsed!==false||input.modelRun?.generativeUsed===true||/openai/i.test(String(input.model||''))
+    const usedGenerativeAi=(input.modelRun?.status==='completed'&&input.modelRun?.generativeUsed!==false)||input.modelRun?.generativeUsed===true||/openai|gpt-/i.test(String(input.model||''))
     const resolved=finalAdvice(input.advice||{},rawContext,input.question||'',usedGenerativeAi)
+    const persistedAdvice=preserveEnhancedLanguage(resolved.advice,input.advice||{})
     return originalRecordRecommendation.call(this,{
       ...input,
       context:{
@@ -51,15 +76,16 @@ if(!globalThis[PATCHED]){
         conversationOrchestration:resolved.orchestration,
         conversationThread:resolved.thread
       },
-      advice:resolved.advice,
+      advice:persistedAdvice,
       modelRun:{
         ...(input.modelRun||{}),
         decisionCore:conversionCoreVersion,
         conversationOrchestrator:conversationOrchestratorVersion,
+        languageEnhancer:languageEnhancerVersion,
         automaticRoute:resolved.orchestration.route,
         conversationContinued:resolved.thread.continued,
         generativeUsed:usedGenerativeAi,
-        generativeRole:'language_and_synthesis_only',
+        generativeRole:'language_only',
         decisionSignature:resolved.conversion.decisionSignature
       }
     })
@@ -77,20 +103,31 @@ if(!globalThis[PATCHED]){
     const thread=prepareConversationThread(rawContext,originalMessage)
     const context=thread.context
     const effectiveMessage=thread.message
-    const orchestration=buildConversationOrchestration(context,effectiveMessage,{attachmentCount:input.attachmentIds?.length||0})
+    const attachmentCount=Array.isArray(input.attachmentIds)?input.attachmentIds.length:0
+    const orchestration=buildConversationOrchestration(context,effectiveMessage,{attachmentCount})
 
-    if(!orchestration.route.useGenerativeAi&&!(input.attachmentIds?.length)){
-      context.decisionIntelligence=buildDecisionIntelligence(context)
-      context.productIntelligence=buildValueBridge(context,effectiveMessage)
-      const fallback=buildFallbackAdvice({
-        ...context,
-        message:effectiveMessage,
-        mode:String(input.mode||'daily'),
-        requestedStage:input.requestedStage||null
-      })
-      const safe=enforceValSafety(fallback,context,effectiveMessage,{requestedStage:input.requestedStage||null})
-      const resolved=finalAdvice(safe,context,originalMessage,false)
-      const model='rules-v5-orchestrated'
+    // Conversas de texto sempre nascem do motor determinístico. Quando a rota pede IA,
+    // ela recebe apenas um contrato pequeno de linguagem e nunca bloqueia a decisão.
+    if(attachmentCount===0){
+      const resolved=deterministicDecision(context,effectiveMessage,originalMessage,input)
+      const language=orchestration.route.useGenerativeAi
+        ?await enhanceDecisionLanguage({
+          client:this.client,
+          config:this.config,
+          context:resolved.context,
+          message:effectiveMessage,
+          advice:resolved.advice,
+          orchestration:resolved.orchestration,
+          signal:input.signal
+        })
+        :{
+          advice:resolved.advice,
+          used:false,
+          status:'not_requested',
+          model:'rules-v6-orchestrated',
+          latencyMs:0
+        }
+      const model=language.used?`${language.model}+rules-v6`:'rules-v6-orchestrated'
       const recommendationId=await this.repository.recordRecommendation({
         tenantId:input.tenantId,
         ownerId:input.ownerId,
@@ -98,61 +135,72 @@ if(!globalThis[PATCHED]){
         question:originalMessage,
         mode:orchestration.route.intent,
         model,
-        context,
-        advice:resolved.advice,
-        responseMetadata:{automaticRoute:orchestration.route.mode,conversationContinued:thread.continued},
-        promptHash:createHash('sha256').update(conversationOrchestratorVersion).digest('hex'),
+        context:resolved.context,
+        advice:language.advice,
+        responseMetadata:{
+          automaticRoute:orchestration.route.mode,
+          conversationContinued:thread.continued,
+          languageEnhancement:language.status,
+          languageLatencyMs:language.latencyMs,
+          languageFailureCode:language.failureCode||null
+        },
+        promptHash:createHash('sha256').update(`${conversationOrchestratorVersion}:${languageEnhancerVersion}`).digest('hex'),
         modelRun:{
           model,
-          promptVersion:'val-orchestrator-v1',
+          promptVersion:'val-orchestrator-v2-language-only',
           status:'completed',
-          generativeUsed:false,
+          generativeUsed:language.used,
+          languageEnhanced:language.used,
+          languageStatus:language.status,
+          languageLatencyMs:language.latencyMs,
+          languageFailureCode:language.failureCode||null,
           automaticRoute:orchestration.route,
           conversationContinued:thread.continued
         }
       })
       return {
         recommendationId,
-        engineMode:'rules',
-        engineArchitecture:'automatic-hybrid-decision-core',
+        engineMode:language.used?'hybrid':'rules',
+        engineArchitecture:'deterministic-first-language-optional',
         route:orchestration.route.mode,
         model,
         warning:'',
-        contextCoverage:summarizeContextCoverage(context),
+        contextCoverage:summarizeContextCoverage(resolved.context),
         attachments:[],
         decisionCore:conversionCoreVersion,
         conversationOrchestrator:conversationOrchestratorVersion,
-        generativeRole:'not_used_for_this_request',
-        automaticRouting:orchestration.route,
-        conversationContinuity:orchestration.continuity,
-        conversionIntelligence:{
-          decisionSignature:resolved.conversion.decisionSignature,
-          contextFingerprint:resolved.conversion.contextFingerprint,
-          score:resolved.conversion.selectedOpportunity.score,
-          priority:toValUiPriority(resolved.conversion.selectedOpportunity.priority),
-          workflow:resolved.conversion.workflow.code
+        languageEnhancer:languageEnhancerVersion,
+        generativeRole:language.used?'language_only':'not_used_or_fallback',
+        automaticRouting:resolved.orchestration.route,
+        conversationContinuity:resolved.orchestration.continuity,
+        languageEnhancement:{
+          status:language.status,
+          used:language.used,
+          model:language.model,
+          latencyMs:language.latencyMs,
+          failureCode:language.failureCode||null
         },
-        advice:resolved.advice
+        conversionIntelligence:conversionEnvelope(resolved),
+        advice:language.advice
       }
     }
 
+    // Arquivos e imagens continuam no fluxo multimodal completo porque precisam ser lidos pelo provedor.
     const result=await originalAnswer.call(this,input)
     const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,result.engineMode==='openai')
+    const providerFallback=result.engineMode!=='openai'
     return {
       ...result,
-      engineArchitecture:'automatic-hybrid-decision-core',
+      warning:providerFallback?'A leitura foi concluída pelo motor seguro da VAL; a camada externa de linguagem não respondeu a tempo.':'',
+      engineArchitecture:'deterministic-first-multimodal',
       decisionCore:conversionCoreVersion,
       conversationOrchestrator:conversationOrchestratorVersion,
-      generativeRole:result.engineMode==='openai'?'language_and_synthesis_only':'fallback_rules',
+      languageEnhancer:languageEnhancerVersion,
+      generativeRole:result.engineMode==='openai'?'multimodal_language_and_reading':'fallback_rules',
       automaticRouting:resolved.orchestration.route,
       conversationContinuity:resolved.orchestration.continuity,
-      conversionIntelligence:{
-        decisionSignature:resolved.conversion.decisionSignature,
-        contextFingerprint:resolved.conversion.contextFingerprint,
-        score:resolved.conversion.selectedOpportunity.score,
-        priority:toValUiPriority(resolved.conversion.selectedOpportunity.priority),
-        workflow:resolved.conversion.workflow.code
-      },
+      languageEnhancement:{status:result.engineMode==='openai'?'full_provider':'fallback',used:result.engineMode==='openai',model:result.model||null,latencyMs:null,failureCode:providerFallback?'provider_fallback':null},
+      conversionIntelligence:conversionEnvelope(resolved),
       advice:resolved.advice
     }
   }
@@ -164,11 +212,14 @@ if(!globalThis[PATCHED]){
       ...status,
       decisionCore:conversionCoreVersion,
       conversationOrchestrator:conversationOrchestratorVersion,
+      languageEnhancer:languageEnhancerVersion,
       decisionMode:'deterministic_first',
       routingMode:'automatic_hybrid',
       automaticRouting:true,
       conversationContinuity:true,
-      generativeRole:'language_summary_only',
+      textRequestsUseSlimLanguageEnhancer:true,
+      providerFailureBlocksDecision:false,
+      generativeRole:'language_only',
       generativeSelection:'selected_per_request',
       conversionEngine:true
     }

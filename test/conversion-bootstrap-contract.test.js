@@ -12,7 +12,8 @@ test('produção carrega o núcleo determinístico antes do servidor',()=>{
   assert.match(bootstrap,/ValEngine\.prototype\.answer/)
   assert.match(bootstrap,/ValRepository\.prototype\.recordRecommendation/)
   assert.match(bootstrap,/decisionMode:'deterministic_first'/)
-  assert.match(bootstrap,/generativeRole:'language_summary_only'/)
+  assert.match(bootstrap,/generativeRole:'language_only'/)
+  assert.match(bootstrap,/textRequestsUseSlimLanguageEnhancer:true/)
 })
 
 test('núcleo declara regras de não invenção e reconciliação final',()=>{

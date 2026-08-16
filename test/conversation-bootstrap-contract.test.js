@@ -5,13 +5,17 @@ import test from 'node:test'
 const bootstrap=readFileSync(new URL('../server/conversion-bootstrap.js',import.meta.url),'utf8')
 const orchestrator=readFileSync(new URL('../server/conversation-orchestrator.js',import.meta.url),'utf8')
 const thread=readFileSync(new URL('../server/conversation-thread-context.js',import.meta.url),'utf8')
+const enhancer=readFileSync(new URL('../server/language-enhancer.js',import.meta.url),'utf8')
 
-test('runtime escolhe automaticamente entre regras e IA',()=>{
-  assert.match(bootstrap,/if\(!orchestration\.route\.useGenerativeAi/)
+test('runtime calcula primeiro e usa IA apenas como linguagem opcional',()=>{
+  assert.match(bootstrap,/if\(attachmentCount===0\)/)
+  assert.match(bootstrap,/deterministicDecision\(/)
+  assert.match(bootstrap,/enhanceDecisionLanguage\(/)
+  assert.match(bootstrap,/engineMode:language\.used\?'hybrid':'rules'/)
+  assert.match(bootstrap,/warning:''/)
   assert.match(bootstrap,/originalAnswer\.call\(this,input\)/)
-  assert.match(bootstrap,/engineMode:'rules'/)
-  assert.match(bootstrap,/automaticRouting:orchestration\.route/)
-  assert.match(bootstrap,/generativeRole:'not_used_for_this_request'/)
+  assert.match(bootstrap,/providerFailureBlocksDecision:false/)
+  assert.match(enhancer,/A decisão já foi calculada por regras e não pode ser alterada/)
 })
 
 test('resposta e persistência recebem o mesmo contexto de conversa',()=>{
@@ -19,6 +23,7 @@ test('resposta e persistência recebem o mesmo contexto de conversa',()=>{
   assert.match(bootstrap,/conversationOrchestration:resolved\.orchestration/)
   assert.match(bootstrap,/conversationThread:resolved\.thread/)
   assert.match(bootstrap,/question:originalMessage/)
+  assert.match(bootstrap,/preserveEnhancedLanguage/)
 })
 
 test('orquestrador contém base oficial e bloqueio contra resposta genérica',()=>{
