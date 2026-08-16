@@ -8,10 +8,9 @@ const continuation=/^(?:pode\s+)?(?:seguir|continue|continuar|prossiga|avan[cç]
 const reset=/\b(?:novo assunto|outra conta|outro produtor|ignore a conversa anterior|desconsidere o anterior|mudar de assunto)\b/i
 
 function activeAnchor(history=[]){
-  return history.find(item=>{
-    const question=questionOf(item)
-    return question&&(extractProductMentions(question).length>0||technicalCommercial.test(question))
-  })||null
+  const productAnchor=history.find(item=>extractProductMentions(questionOf(item)).length>0)
+  if(productAnchor)return productAnchor
+  return history.find(item=>technicalCommercial.test(questionOf(item)))||null
 }
 
 export function prepareConversationThread(context={},message=''){
@@ -22,9 +21,9 @@ export function prepareConversationThread(context={},message=''){
   const latest=history[0]
   const latestQuestion=questionOf(latest)
   const anchorQuestion=questionOf(anchor)
-  const latestHasThread=extractProductMentions(latestQuestion).length>0||technicalCommercial.test(latestQuestion)
+  const latestHasProducts=extractProductMentions(latestQuestion).length>0
   const needsContinuation=continuation.test(clean(message))||(!extractProductMentions(message).length&&clean(message).length<=180)
-  const combinedLatest=latestHasThread||latest===anchor
+  const combinedLatest=latestHasProducts||latest===anchor
     ?latest
     :{...latest,user_question:`${latestQuestion}\nContexto técnico-comercial ativo das conversas anteriores: ${anchorQuestion}`}
   const priorRecommendations=[combinedLatest,...history.slice(1)]
