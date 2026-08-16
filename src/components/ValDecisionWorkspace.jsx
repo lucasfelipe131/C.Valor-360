@@ -159,7 +159,7 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
   const controller=new AbortController();requestRef.current=controller
   setLoading(true);setError('');setFeedback({sending:false,sent:false,error:''})
   try{
-   const timeout=typeof AbortSignal.timeout==='function'?AbortSignal.timeout(100000):null
+   const timeout=typeof AbortSignal.timeout==='function'?AbortSignal.timeout(120000):null
    const signal=timeout&&typeof AbortSignal.any==='function'?AbortSignal.any([controller.signal,timeout]):controller.signal
    const result=await fetch('/api/val/chat',{
     method:'POST',headers:{'Content-Type':'application/json'},

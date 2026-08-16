@@ -163,6 +163,19 @@ Informa se OpenAI, PostgreSQL, webhook e base de conhecimento estão ativos, sem
 
 `POST /api/val/chat`
 
+#### Orçamento de tempo do cliente
+
+As duas interfaces que chamam este endpoint (`ValPanel.jsx` e `ValDecisionWorkspace.jsx`) usam o mesmo timeout de **120 segundos**. Esse orçamento é deliberadamente maior que o pior caso permitido para o provedor no servidor:
+
+| Etapa | Orçamento máximo |
+|---|---:|
+| chamada ao provedor no backend | 100 s |
+| reconciliação, anexos e persistência | 15 s |
+| transporte e entrega ao navegador | 5 s |
+| **timeout total do cliente** | **120 s** |
+
+O timeout do navegador não deve ser reduzido isoladamente em uma das telas. Se o limite do servidor mudar, atualize as duas interfaces, esta tabela e `test/val-chat-timeout-budget.test.js` na mesma PR. Cancelamentos manuais por troca de produtor, navegação ou nova pergunta continuam usando `AbortController` e não aguardam o orçamento completo.
+
 ```json
 {
   "clientId": "produtor-123",
