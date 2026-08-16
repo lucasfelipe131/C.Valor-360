@@ -33,7 +33,7 @@ test('orquestrador contém base oficial e bloqueio contra resposta genérica',()
 
 test('fio ativo encontra produtos em conversas anteriores intermediadas',()=>{
   assert.match(thread,/activeAnchor/)
+  assert.match(thread,/const continuation=/)
   assert.match(thread,/Contexto técnico-comercial ativo das conversas anteriores/)
   assert.match(thread,/Continue a sequência técnica e comercial já iniciada/)
-  assert.match(thread,/pode\\s\+\?\)\?\(\?:seguir|continuation/)
 })
