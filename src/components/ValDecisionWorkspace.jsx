@@ -159,7 +159,7 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
   const controller=new AbortController();requestRef.current=controller
   setLoading(true);setError('');setFeedback({sending:false,sent:false,error:''})
   try{
-   const timeout=typeof AbortSignal.timeout==='function'?AbortSignal.timeout(100000):null
+   const timeout=typeof AbortSignal.timeout==='function'?AbortSignal.timeout(120000):null
    const signal=timeout&&typeof AbortSignal.any==='function'?AbortSignal.any([controller.signal,timeout]):controller.signal
    const result=await fetch('/api/val/chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
@@ -202,7 +202,7 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
     <div className="vdc-account-top"><span>{initials(client.name)}</span><div><small>CONTA EM ANÁLISE</small><h3>{client.name}</h3><p>{client.commercial?.property||client.municipality||'Propriedade não informada'}</p></div></div>
     <dl>
      <div><dt>Potencial em aberto</dt><dd>{compactBRL(clientMetrics.openPotential,{known:clientMetrics.openPotentialKnown})}</dd></div>
-     <div><dt>Pipeline</dt><dd>{compactBRL(clientMetrics.openPipeline,{known:clientMetrics.pipelineKnown})}</dd></div>
+     <div><dt>Pipeline</dt><dd>{compactBRL(clientMetrics.openPipeline,{known:clientMetrics.openPipelineKnown})}</dd></div>
      <div><dt>Culturas</dt><dd>{text(client.cultures,'A confirmar')}</dd></div>
     </dl>
     <button type="button" onClick={()=>onSelect?.(client)}><UserRoundSearch/>Abrir Cliente 360<ChevronRight/></button>
