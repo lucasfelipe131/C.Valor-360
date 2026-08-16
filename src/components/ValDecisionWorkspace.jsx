@@ -181,7 +181,7 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
    if(result.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}
    if(!result.ok)throw new Error(payload.error||'Não foi possível registrar o retorno.')
    setFeedback({sending:false,sent:true,error:''})
-  }catch(feedbackError){setFeedback({sending:false,sent:false,error:feedbackError.message})
+  }catch(feedbackError){setFeedback({sending:false,sent:false,error:feedbackError.message})}
  }
 
  if(!client)return <section className="val-decision-workspace vdc-no-client"><BrainCircuit/><h2>A VAL precisa de um produtor</h2><p>Cadastre ou importe uma conta para iniciar o centro de decisão.</p></section>
