@@ -9,19 +9,19 @@ import {
  ShieldCheck,
  Sprout,
 } from 'lucide-react'
-import ValPanel from './ValPanel'
+import ValDecisionWorkspace from './ValDecisionWorkspace'
 import SogWorkspace from './SogWorkspace'
 
 const environments=[
  {
   id:'insumos',
-  eyebrow:'RELACIONAMENTO & INSUMOS',
+  eyebrow:'DECISÃO COMERCIAL & INSUMOS',
   title:'VAL Insumos',
-  description:'A inteligência comercial que cruza Cliente 360, histórico, oportunidades e contexto técnico para preparar visitas e negociações de valor.',
-  status:'Disponível agora',
-  action:'Entrar na VAL Insumos',
+  description:'Um centro de decisão que cruza contexto, qualidade dos dados, score, evidências e próxima ação para transformar oportunidade em compromisso comercial.',
+  status:'Conversion Core ativo',
+  action:'Abrir Centro de Decisão',
   icon:Sprout,
-  features:['Venda consultiva','SPIN, OPC e EPA','Próxima melhor ação']
+  features:['Score explicável','Próxima melhor ação','IA sem respostas genéricas']
  },
  {
   id:'graos',
@@ -55,7 +55,7 @@ function ValEnvironmentSelector({onModeChange}){
    </div>
    <div className="val-environment-principle">
     <ShieldCheck/>
-    <div><small>ARQUITETURA POR DOMÍNIO</small><b>Um produtor. Duas jornadas comerciais.</b><p>O Cliente 360 poderá alimentar as duas leituras, enquanto oportunidades e operações permanecem separadas.</p></div>
+    <div><small>DADOS E REGRAS PRIMEIRO</small><b>A IA explica. O núcleo decide. O consultor conduz.</b><p>Prioridade, score, evidências e próxima ação são calculados antes da camada de linguagem.</p></div>
    </div>
   </header>
 
@@ -73,7 +73,7 @@ function ValEnvironmentSelector({onModeChange}){
 }
 
 export default function ValWorkspace({mode,onModeChange,clients,selectedClient,onSelect}){
- if(mode==='insumos')return <div className="val-environment-active is-insumos"><EnvironmentSwitcher mode="insumos" onModeChange={onModeChange}/><ValPanel clients={clients} selectedClient={selectedClient} onSelect={onSelect}/></div>
+ if(mode==='insumos')return <div className="val-environment-active is-insumos"><EnvironmentSwitcher mode="insumos" onModeChange={onModeChange}/><ValDecisionWorkspace clients={clients} selectedClient={selectedClient} onSelect={onSelect}/></div>
  if(mode==='graos')return <div className="val-environment-active is-graos"><EnvironmentSwitcher mode="graos" onModeChange={onModeChange}/><SogWorkspace clients={clients} onSelect={onSelect}/></div>
  return <ValEnvironmentSelector onModeChange={onModeChange}/>
 }
