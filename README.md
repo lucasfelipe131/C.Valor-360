@@ -21,6 +21,7 @@ Ela não se “retreina sozinha”. O modelo raciocina; o PostgreSQL memoriza; e
 - persistência especializada de relatórios de campo, solo, medições e NDVI;
 - importação comercial validada novamente no servidor;
 - autenticação mínima fail-closed para o piloto;
+- VAL Grãos com SOG operacional: perfil de grãos, intenções com evidência, referências de mercado rastreáveis e priorização determinística;
 - revisão humana obrigatória para diagnóstico, prescrição, dose, mistura e conteúdo agronômico sensível;
 - dataset dourado e testes locais independentes da Evals API.
 
@@ -60,10 +61,13 @@ O `railway.json` executa o build, roda a migração antes do deploy e inicia o s
 - `server/sales-playbook.js`: contrato estruturado e método operacional da VAL.
 - `server/ingestion.js`: contrato e validação de eventos.
 - `server/repository.js`: persistência PostgreSQL e modo demo.
+- `server/grain-intelligence.js`: validação e regras explicáveis da SOG.
+- `server/grain-repository.js`: persistência isolada do domínio de grãos.
 - `database/schema.sql`: banco canônico e migração do MVP anterior.
 - `knowledge/approved/`: materiais aprovados para a base semântica.
 - `evals/`: casos dourados independentes de fornecedor.
 - `docs/VAL_ENGINE.md`: arquitetura, contratos e limites.
+- `docs/SOG_DATA_ECOSYSTEM.md`: fontes, fluxo, score, APIs e governança da VAL Grãos.
 
 ## Limites atuais
 
