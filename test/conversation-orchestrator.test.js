@@ -6,7 +6,7 @@ import {
   chooseAutomaticRoute,
   enrichAdviceWithOrchestration,
   extractProductMentions
-} from '../server/conversation-orchestrator.js'
+} from '../server/conversation-orchestrator-runtime.js'
 import {prepareConversationThread} from '../server/conversation-thread-context.js'
 
 const question='FIZEMOS A APLICAÇÃO DE DESSECAÇÃO NA ÁREA PRÉ MILHO, ENTRAMOS COM GLUFOSINATO, CALARIS, DUAL GOLD E TRINCA CAPS. Preciso projetar o manejo de inseticidas visando cigarrinha no milho e me ajudar em uma venda de valor para o produto novo eficon da basf que custa 170 reais/ha'
