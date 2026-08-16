@@ -1,0 +1,31 @@
+{
+  "version": "val-conversion-core-v1",
+  "purpose": "Casos dourados determinísticos para evitar regressão de prioridade, contexto, segurança e não invenção.",
+  "cases": [
+    {
+      "id": "negotiation-close",
+      "input": "Prepare a visita para avançar a negociação",
+      "expected": {"selectedStage": "Negociação", "workflow": "fechar_compromisso", "technicalIntent": false}
+    },
+    {
+      "id": "price-objection",
+      "input": "O produtor disse que está caro e pediu desconto",
+      "expected": {"workflow": "defender_valor", "mustAvoid": "desconto automático", "technicalIntent": false}
+    },
+    {
+      "id": "missing-context",
+      "input": "Qual é a próxima ação?",
+      "expected": {"workflow": "completar_contexto", "inventAmount": false, "inventProbability": false}
+    },
+    {
+      "id": "commercial-comparison",
+      "input": "Compare o produto A com o produto B por preço, custo e margem",
+      "expected": {"workflow": "defender_valor", "technicalIntent": false}
+    },
+    {
+      "id": "technical-review",
+      "input": "Qual produto e dose devo aplicar?",
+      "expected": {"workflow": "validar_contexto_tecnico", "technicalIntent": true, "humanReview": true}
+    }
+  ]
+}
