@@ -6,7 +6,7 @@ import {buildDecisionIntelligence} from './decision-intelligence.js'
 import {buildValueBridge} from './product-intelligence.js'
 import {buildConversionFoundation,buildConversionIntelligence,reconcileAdviceWithConversion,conversionCoreVersion} from './conversion-engine.js'
 import {normalizeAdviceForValUi,toValUiPriority} from './conversion-ui-contract.js'
-import {buildConversationOrchestration,enrichAdviceWithOrchestration,conversationOrchestratorVersion} from './conversation-orchestrator.js'
+import {buildConversationOrchestration,enrichAdviceWithOrchestration,conversationOrchestratorVersion} from './conversation-orchestrator-runtime.js'
 import {prepareConversationThread} from './conversation-thread-context.js'
 
 const PATCHED=Symbol.for('valor360.conversion-core.patched')
@@ -164,10 +164,12 @@ if(!globalThis[PATCHED]){
       ...status,
       decisionCore:conversionCoreVersion,
       conversationOrchestrator:conversationOrchestratorVersion,
-      decisionMode:'automatic_hybrid',
+      decisionMode:'deterministic_first',
+      routingMode:'automatic_hybrid',
       automaticRouting:true,
       conversationContinuity:true,
-      generativeRole:'selected_per_request',
+      generativeRole:'language_summary_only',
+      generativeSelection:'selected_per_request',
       conversionEngine:true
     }
   }
