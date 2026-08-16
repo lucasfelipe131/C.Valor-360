@@ -1,6 +1,7 @@
 import {ValEngine} from './val-engine.js'
 import {ValRepository} from './repository.js'
 import {buildConversionFoundation,buildConversionIntelligence,reconcileAdviceWithConversion,conversionCoreVersion} from './conversion-engine.js'
+import {normalizeAdviceForValUi,toValUiPriority} from './conversion-ui-contract.js'
 
 const PATCHED=Symbol.for('valor360.conversion-core.patched')
 
@@ -16,7 +17,10 @@ if(!globalThis[PATCHED]){
   const originalRecordRecommendation=ValRepository.prototype.recordRecommendation
   ValRepository.prototype.recordRecommendation=async function recordDeterministicRecommendation(input){
     const conversion=buildConversionIntelligence(input.context||{},input.question||'')
-    const advice=reconcileAdviceWithConversion(input.advice||{},conversion,{preserveSafety:true})
+    const advice=normalizeAdviceForValUi(
+      reconcileAdviceWithConversion(input.advice||{},conversion,{preserveSafety:true}),
+      conversion
+    )
     return originalRecordRecommendation.call(this,{
       ...input,
       context:{
@@ -44,6 +48,10 @@ if(!globalThis[PATCHED]){
       client:input.client
     })
     const conversion=buildConversionIntelligence(context,input.message||'')
+    const advice=normalizeAdviceForValUi(
+      reconcileAdviceWithConversion(result.advice||{},conversion,{preserveSafety:true}),
+      conversion
+    )
     return {
       ...result,
       engineArchitecture:'hybrid-decision-core',
@@ -53,10 +61,10 @@ if(!globalThis[PATCHED]){
         decisionSignature:conversion.decisionSignature,
         contextFingerprint:conversion.contextFingerprint,
         score:conversion.selectedOpportunity.score,
-        priority:conversion.selectedOpportunity.priority,
+        priority:toValUiPriority(conversion.selectedOpportunity.priority),
         workflow:conversion.workflow.code
       },
-      advice:reconcileAdviceWithConversion(result.advice||{},conversion,{preserveSafety:true})
+      advice
     }
   }
 
