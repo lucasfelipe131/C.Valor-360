@@ -1,9 +1,26 @@
-import {ValEngine} from './val-engine.js'
+import {createHash} from 'node:crypto'
+import {ValEngine,enforceValSafety,summarizeContextCoverage} from './val-engine.js'
 import {ValRepository} from './repository.js'
+import {buildFallbackAdvice} from './sales-playbook.js'
+import {buildDecisionIntelligence} from './decision-intelligence.js'
+import {buildValueBridge} from './product-intelligence.js'
 import {buildConversionFoundation,buildConversionIntelligence,reconcileAdviceWithConversion,conversionCoreVersion} from './conversion-engine.js'
 import {normalizeAdviceForValUi,toValUiPriority} from './conversion-ui-contract.js'
+import {buildConversationOrchestration,enrichAdviceWithOrchestration,conversationOrchestratorVersion} from './conversation-orchestrator.js'
 
 const PATCHED=Symbol.for('valor360.conversion-core.patched')
+
+function finalAdvice(advice,context,message,usedGenerativeAi=false){
+  const conversion=buildConversionIntelligence(context,message)
+  const orchestration=buildConversationOrchestration(context,message,{attachmentCount:context.currentAttachments?.length||0})
+  const reconciled=reconcileAdviceWithConversion(advice||{},conversion,{preserveSafety:true})
+  const enriched=enrichAdviceWithOrchestration(reconciled,orchestration,{usedGenerativeAi})
+  return {
+    conversion,
+    orchestration,
+    advice:normalizeAdviceForValUi(enriched,conversion)
+  }
+}
 
 if(!globalThis[PATCHED]){
   globalThis[PATCHED]=true
@@ -16,55 +33,115 @@ if(!globalThis[PATCHED]){
 
   const originalRecordRecommendation=ValRepository.prototype.recordRecommendation
   ValRepository.prototype.recordRecommendation=async function recordDeterministicRecommendation(input){
-    const conversion=buildConversionIntelligence(input.context||{},input.question||'')
-    const advice=normalizeAdviceForValUi(
-      reconcileAdviceWithConversion(input.advice||{},conversion,{preserveSafety:true}),
-      conversion
-    )
+    const context=input.context||{}
+    const usedGenerativeAi=input.modelRun?.status==='completed'||input.modelRun?.generativeUsed===true||/openai/i.test(String(input.model||''))
+    const resolved=finalAdvice(input.advice||{},context,input.question||'',usedGenerativeAi)
     return originalRecordRecommendation.call(this,{
       ...input,
       context:{
-        ...(input.context||{}),
-        conversionFoundation:input.context?.conversionFoundation||buildConversionFoundation(input.context||{}),
-        conversionIntelligence:conversion
+        ...context,
+        conversionFoundation:context.conversionFoundation||buildConversionFoundation(context),
+        conversionIntelligence:resolved.conversion,
+        conversationOrchestration:resolved.orchestration
       },
-      advice,
+      advice:resolved.advice,
       modelRun:{
         ...(input.modelRun||{}),
         decisionCore:conversionCoreVersion,
-        generativeRole:'language_summary_only',
-        decisionSignature:conversion.decisionSignature
+        conversationOrchestrator:conversationOrchestratorVersion,
+        automaticRoute:resolved.orchestration.route,
+        generativeUsed:usedGenerativeAi,
+        generativeRole:'language_and_synthesis_only',
+        decisionSignature:resolved.conversion.decisionSignature
       }
     })
   }
 
   const originalAnswer=ValEngine.prototype.answer
-  ValEngine.prototype.answer=async function answerWithDeterministicCore(input){
-    const result=await originalAnswer.call(this,input)
+  ValEngine.prototype.answer=async function answerWithAutomaticOrchestration(input){
+    const message=String(input.message||'Prepare a próxima melhor ação.').trim()
     const context=await this.repository.getClientContext({
       tenantId:input.tenantId,
       ownerId:input.ownerId,
       clientId:input.clientId,
       client:input.client
     })
-    const conversion=buildConversionIntelligence(context,input.message||'')
-    const advice=normalizeAdviceForValUi(
-      reconcileAdviceWithConversion(result.advice||{},conversion,{preserveSafety:true}),
-      conversion
-    )
+    const orchestration=buildConversationOrchestration(context,message,{attachmentCount:input.attachmentIds?.length||0})
+
+    if(!orchestration.route.useGenerativeAi&&!(input.attachmentIds?.length)){
+      context.decisionIntelligence=buildDecisionIntelligence(context)
+      context.productIntelligence=buildValueBridge(context,message)
+      const fallback=buildFallbackAdvice({
+        ...context,
+        message,
+        mode:String(input.mode||'daily'),
+        requestedStage:input.requestedStage||null
+      })
+      const safe=enforceValSafety(fallback,context,message,{requestedStage:input.requestedStage||null})
+      const resolved=finalAdvice(safe,context,message,false)
+      const model='rules-v5-orchestrated'
+      const recommendationId=await this.repository.recordRecommendation({
+        tenantId:input.tenantId,
+        ownerId:input.ownerId,
+        clientId:input.clientId,
+        question:message,
+        mode:orchestration.route.intent,
+        model,
+        context,
+        advice:resolved.advice,
+        responseMetadata:{automaticRoute:orchestration.route.mode},
+        promptHash:createHash('sha256').update(conversationOrchestratorVersion).digest('hex'),
+        modelRun:{
+          model,
+          promptVersion:'val-orchestrator-v1',
+          status:'completed',
+          generativeUsed:false,
+          automaticRoute:orchestration.route
+        }
+      })
+      return {
+        recommendationId,
+        engineMode:'rules',
+        engineArchitecture:'automatic-hybrid-decision-core',
+        route:orchestration.route.mode,
+        model,
+        warning:'',
+        contextCoverage:summarizeContextCoverage(context),
+        attachments:[],
+        decisionCore:conversionCoreVersion,
+        conversationOrchestrator:conversationOrchestratorVersion,
+        generativeRole:'not_used_for_this_request',
+        automaticRouting:orchestration.route,
+        conversationContinuity:orchestration.continuity,
+        conversionIntelligence:{
+          decisionSignature:resolved.conversion.decisionSignature,
+          contextFingerprint:resolved.conversion.contextFingerprint,
+          score:resolved.conversion.selectedOpportunity.score,
+          priority:toValUiPriority(resolved.conversion.selectedOpportunity.priority),
+          workflow:resolved.conversion.workflow.code
+        },
+        advice:resolved.advice
+      }
+    }
+
+    const result=await originalAnswer.call(this,input)
+    const resolved=finalAdvice(result.advice||{},context,message,result.engineMode==='openai')
     return {
       ...result,
-      engineArchitecture:'hybrid-decision-core',
+      engineArchitecture:'automatic-hybrid-decision-core',
       decisionCore:conversionCoreVersion,
-      generativeRole:'language_summary_only',
+      conversationOrchestrator:conversationOrchestratorVersion,
+      generativeRole:result.engineMode==='openai'?'language_and_synthesis_only':'fallback_rules',
+      automaticRouting:orchestration.route,
+      conversationContinuity:orchestration.continuity,
       conversionIntelligence:{
-        decisionSignature:conversion.decisionSignature,
-        contextFingerprint:conversion.contextFingerprint,
-        score:conversion.selectedOpportunity.score,
-        priority:toValUiPriority(conversion.selectedOpportunity.priority),
-        workflow:conversion.workflow.code
+        decisionSignature:resolved.conversion.decisionSignature,
+        contextFingerprint:resolved.conversion.contextFingerprint,
+        score:resolved.conversion.selectedOpportunity.score,
+        priority:toValUiPriority(resolved.conversion.selectedOpportunity.priority),
+        workflow:resolved.conversion.workflow.code
       },
-      advice
+      advice:resolved.advice
     }
   }
 
@@ -74,8 +151,11 @@ if(!globalThis[PATCHED]){
     return {
       ...status,
       decisionCore:conversionCoreVersion,
-      decisionMode:'deterministic_first',
-      generativeRole:'language_summary_only',
+      conversationOrchestrator:conversationOrchestratorVersion,
+      decisionMode:'automatic_hybrid',
+      automaticRouting:true,
+      conversationContinuity:true,
+      generativeRole:'selected_per_request',
       conversionEngine:true
     }
   }
