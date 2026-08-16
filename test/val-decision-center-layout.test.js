@@ -38,7 +38,7 @@ test('o layout usa os contratos reais da Conversion Core',()=>{
   'evidence_used',
   'human_review'
  ])assert.ok(center.includes(field),`Contrato não consumido: ${field}`)
- assert.match(center,/score operacional, não probabilidade de compra/i)
+ assert.match(center,/ordenação operacional, não probabilidade de compra/i)
  assert.match(center,/IA somente para linguagem/)
 })
 
