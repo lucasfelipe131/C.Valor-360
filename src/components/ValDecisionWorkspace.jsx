@@ -181,7 +181,7 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
    if(result.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}
    if(!result.ok)throw new Error(payload.error||'Não foi possível registrar o retorno.')
    setFeedback({sending:false,sent:true,error:''})
-  }catch(feedbackError){setFeedback({sending:false,sent:false,error:feedbackError.message})}
+  }catch(feedbackError){setFeedback({sending:false,sent:false,error:feedbackError.message})
  }
 
  if(!client)return <section className="val-decision-workspace vdc-no-client"><BrainCircuit/><h2>A VAL precisa de um produtor</h2><p>Cadastre ou importe uma conta para iniciar o centro de decisão.</p></section>
@@ -202,7 +202,7 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
     <div className="vdc-account-top"><span>{initials(client.name)}</span><div><small>CONTA EM ANÁLISE</small><h3>{client.name}</h3><p>{client.commercial?.property||client.municipality||'Propriedade não informada'}</p></div></div>
     <dl>
      <div><dt>Potencial em aberto</dt><dd>{compactBRL(clientMetrics.openPotential,{known:clientMetrics.openPotentialKnown})}</dd></div>
-     <div><dt>Pipeline</dt><dd>{compactBRL(clientMetrics.openPipeline,{known:clientMetrics.openPipelineKnown})}</dd></div>
+     <div><dt>Pipeline</dt><dd>{compactBRL(clientMetrics.openPipeline,{known:clientMetrics.pipelineKnown})}</dd></div>
      <div><dt>Culturas</dt><dd>{text(client.cultures,'A confirmar')}</dd></div>
     </dl>
     <button type="button" onClick={()=>onSelect?.(client)}><UserRoundSearch/>Abrir Cliente 360<ChevronRight/></button>
