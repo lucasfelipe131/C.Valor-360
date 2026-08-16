@@ -1,4 +1,4 @@
-import {extractProductMentions} from './conversation-orchestrator.js'
+import {extractProductMentions} from './conversation-orchestrator-runtime.js'
 
 const array=value=>Array.isArray(value)?value:[]
 const clean=(value,max=3000)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,max)
