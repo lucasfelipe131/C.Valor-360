@@ -6,6 +6,7 @@
 - **Cliente 360:** perfil, NPS, IRT, preferências, histórico e contexto do produtor.
 - **Inteligência Agronômica:** sinais, integrações e futuros motores técnicos dentro do VALOR 360, sempre sob validação habilitada.
 - **VAL — Value Agriculture Intelligence:** cérebro que transforma dados em próxima melhor ação.
+- **VAL Grãos / SOG:** domínio separado para perfil comercial de grãos, intenções registradas, mercado com fonte e direção de originação.
 
 ## Portfólio de produtos
 
@@ -17,6 +18,10 @@ Produto independente e de menor ticket, voltado ao uso técnico individual ou po
 
 ### Núcleo técnico compartilhado
 As regras agronômicas, calculadoras, conectores oficiais e validações devem evoluir como componentes reutilizáveis e versionados. Cada produto consome somente o que seu plano autoriza, sem iframe, redirecionamento externo ou duplicação de lógica.
+
+### VAL Grãos e SOG
+
+A seleção da VAL separa Insumos de Grãos sem duplicar o produtor. O Cliente 360 é a base canônica; a SOG mantém tabelas próprias para o perfil de comercialização, intenções e fotografias de mercado. O motor `sog-rules-v1` deriva prioridade, motivos, alertas e próxima ação, mas não presume intenção nem executa contrato ou ordem. O fluxo detalhado está em `docs/SOG_DATA_ECOSYSTEM.md`.
 
 ## Navegação
 1. Dashboard

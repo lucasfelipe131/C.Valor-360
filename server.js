@@ -8,6 +8,8 @@ import {createDatabase} from './server/db.js'
 import {createAuth} from './server/auth.js'
 import {AccessRepository} from './server/access-repository.js'
 import {deriveSignals,normalizeIntegrationEvent,requiresTechnicalSignature,verifyIntegrationToken,verifyWebhookSignature} from './server/ingestion.js'
+import {normalizeGrainIntent,normalizeGrainMarketSnapshot,normalizeGrainProfile,intentStatuses} from './server/grain-intelligence.js'
+import {GrainRepository} from './server/grain-repository.js'
 import {ValRepository} from './server/repository.js'
 import {publicStorageScope} from './server/storage-policy.js'
 import {ValEngine} from './server/val-engine.js'
@@ -58,6 +60,7 @@ const database=createDatabase(config)
 const auth=createAuth(config)
 const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,storageScope:auth.storageScope(session)}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,storageScope:'demo'}
 const repository=new ValRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
+const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const accessRepository=new AccessRepository({db:database,tenantId:config.defaultTenantId,runtimeConfig:config})
 const valEngine=new ValEngine({runtimeConfig:config,repository})
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
@@ -122,7 +125,7 @@ async function handleApi(request,response,url){
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
- const protectedPath=url.pathname.startsWith('/api/val/attachments')||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const identity=protectedPath?await sessionIdentity(request):null
  if(protectedPath&&auth.configured&&!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
@@ -140,6 +143,33 @@ async function handleApi(request,response,url){
  }
  if(url.pathname==='/api/usage/events'&&request.method==='POST'){
   const payload=await body(request);await accessRepository.recordUsage(identity,{eventType:'page_view',page:clean(payload.page),entityType:clean(payload.entityType),entityId:clean(payload.entityId)});return json(response,202,{accepted:true})
+ }
+ if(url.pathname==='/api/grains/bootstrap'&&request.method==='GET'){
+  const workspace=await grainRepository.getWorkspace(identity?.id)
+  return json(response,200,workspace)
+ }
+ if(url.pathname==='/api/grains/profiles'&&request.method==='PUT'){
+  const profile=normalizeGrainProfile(await body(request));const saved=await grainRepository.saveProfile(profile,identity?.id)
+  await accessRepository.recordUsage(identity,{eventType:'sog_profile_saved',page:'val',entityType:'client',entityId:profile.clientId,metadata:{confirmed:profile.confirmed,source:profile.source}})
+  return json(response,200,{saved:true,profile:saved})
+ }
+ if(url.pathname==='/api/grains/intents'&&request.method==='POST'){
+  const intention=normalizeGrainIntent(await body(request));const saved=await grainRepository.saveIntent(intention,identity?.id)
+  await accessRepository.recordUsage(identity,{eventType:'sog_intent_saved',page:'val',entityType:'client',entityId:intention.clientId,metadata:{commodity:intention.commodity,status:intention.status,source:intention.source}})
+  return json(response,201,{saved:true,intention:saved})
+ }
+ const grainIntentMatch=url.pathname.match(/^\/api\/grains\/intents\/([0-9a-f-]{36})$/i)
+ if(grainIntentMatch&&request.method==='PATCH'){
+  const payload=await body(request);const status=clean(payload.status)
+  if(!intentStatuses.has(status))return json(response,400,{error:'O estado da intenção é inválido.'})
+  const intention=await grainRepository.updateIntentStatus(grainIntentMatch[1],status,identity?.id)
+  await accessRepository.recordUsage(identity,{eventType:'sog_intent_status',page:'val',entityType:'grain_intent',entityId:grainIntentMatch[1],metadata:{status}})
+  return json(response,200,{saved:true,intention})
+ }
+ if(url.pathname==='/api/grains/market'&&request.method==='POST'){
+  const snapshot=normalizeGrainMarketSnapshot(await body(request));const saved=await grainRepository.saveMarketSnapshot(snapshot,identity?.id)
+  await accessRepository.recordUsage(identity,{eventType:'sog_market_saved',page:'val',entityType:'grain_market',entityId:saved.id,metadata:{commodity:snapshot.commodity,source:snapshot.sourceName}})
+  return json(response,201,{saved:true,marketSnapshot:saved})
  }
  if(url.pathname==='/api/technical/bootstrap'&&request.method==='GET'){
   const intelligence=await repository.getIntelligence(identity?.id)

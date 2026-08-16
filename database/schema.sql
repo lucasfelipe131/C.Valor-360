@@ -675,8 +675,85 @@ CREATE TABLE IF NOT EXISTS val_attachments (
   confirmed_at TIMESTAMPTZ
 );
 
+-- SOG: domínio de originação e operações de grãos. O Cliente 360 continua
+-- canônico; aqui ficam apenas o perfil comercial de grãos, as intenções
+-- explicitamente registradas e as referências de mercado com proveniência.
+CREATE TABLE IF NOT EXISTS sog_producer_profiles (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  commodities JSONB NOT NULL DEFAULT '[]'::jsonb,
+  storage_capacity_t NUMERIC(16,3) CHECK (storage_capacity_t IS NULL OR storage_capacity_t > 0),
+  storage_structure VARCHAR(500),
+  logistics_mode VARCHAR(120),
+  usual_delivery_locations TEXT,
+  marketing_notes TEXT,
+  source VARCHAR(80) NOT NULL DEFAULT 'consultant_interview',
+  source_details TEXT,
+  observed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  confirmed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (tenant_id,owner_user_id,client_id)
+);
+
+CREATE TABLE IF NOT EXISTS sog_negotiation_intents (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  client_id UUID NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+  commodity VARCHAR(40) NOT NULL,
+  direction VARCHAR(20) NOT NULL CHECK (direction IN ('sell','buy')),
+  season VARCHAR(40),
+  volume NUMERIC(18,3) NOT NULL CHECK (volume > 0),
+  volume_unit VARCHAR(30) NOT NULL CHECK (volume_unit IN ('sc_60kg','t','kg')),
+  target_price NUMERIC(18,4) CHECK (target_price IS NULL OR target_price > 0),
+  price_unit VARCHAR(40) NOT NULL CHECK (price_unit IN ('BRL/sc_60kg','BRL/t')),
+  delivery_start DATE,
+  delivery_end DATE,
+  delivery_location VARCHAR(240),
+  quality_specs TEXT,
+  status VARCHAR(30) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','confirmed','monitoring','negotiating','closed','cancelled')),
+  confidence INTEGER NOT NULL DEFAULT 50 CHECK (confidence BETWEEN 0 AND 100),
+  source VARCHAR(80) NOT NULL,
+  source_details TEXT,
+  notes TEXT,
+  observed_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (delivery_start IS NULL OR delivery_end IS NULL OR delivery_end >= delivery_start)
+);
+
+CREATE TABLE IF NOT EXISTS sog_market_snapshots (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  tenant_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+  owner_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  commodity VARCHAR(40) NOT NULL,
+  market_kind VARCHAR(30) NOT NULL CHECK (market_kind IN ('spot','forward','futures')),
+  region VARCHAR(240) NOT NULL,
+  price NUMERIC(18,4) NOT NULL CHECK (price > 0),
+  price_unit VARCHAR(40) NOT NULL CHECK (price_unit IN ('BRL/sc_60kg','BRL/t')),
+  delivery_start DATE,
+  delivery_end DATE,
+  source_name VARCHAR(240) NOT NULL,
+  source_type VARCHAR(80) NOT NULL,
+  source_url TEXT,
+  confidence INTEGER NOT NULL DEFAULT 50 CHECK (confidence BETWEEN 0 AND 100),
+  notes TEXT,
+  observed_at TIMESTAMPTZ NOT NULL,
+  status VARCHAR(30) NOT NULL DEFAULT 'active' CHECK (status IN ('active','inactive')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  CHECK (delivery_start IS NULL OR delivery_end IS NULL OR delivery_end >= delivery_start)
+);
+
 CREATE INDEX IF NOT EXISTS idx_val_attachments_client_date ON val_attachments(tenant_id,consultant_id,client_id,created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_val_attachments_sha ON val_attachments(tenant_id,consultant_id,client_id,sha256);
+CREATE INDEX IF NOT EXISTS idx_sog_profiles_owner_client ON sog_producer_profiles(tenant_id,owner_user_id,client_id);
+CREATE INDEX IF NOT EXISTS idx_sog_intents_owner_status ON sog_negotiation_intents(tenant_id,owner_user_id,status,updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sog_intents_client_commodity ON sog_negotiation_intents(tenant_id,owner_user_id,client_id,commodity,updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_sog_market_owner_commodity ON sog_market_snapshots(tenant_id,owner_user_id,commodity,observed_at DESC) WHERE status='active';
 
 CREATE INDEX IF NOT EXISTS idx_clients_tenant_name ON clients(tenant_id,name);
 CREATE INDEX IF NOT EXISTS idx_clients_owner_name ON clients(tenant_id,consultant_id,name);
