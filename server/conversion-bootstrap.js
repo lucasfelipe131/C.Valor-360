@@ -7,15 +7,21 @@ import {buildValueBridge} from './product-intelligence.js'
 import {buildConversionFoundation,buildConversionIntelligence,reconcileAdviceWithConversion,conversionCoreVersion} from './conversion-engine.js'
 import {normalizeAdviceForValUi,toValUiPriority} from './conversion-ui-contract.js'
 import {buildConversationOrchestration,enrichAdviceWithOrchestration,conversationOrchestratorVersion} from './conversation-orchestrator.js'
+import {prepareConversationThread} from './conversation-thread-context.js'
 
 const PATCHED=Symbol.for('valor360.conversion-core.patched')
 
-function finalAdvice(advice,context,message,usedGenerativeAi=false){
-  const conversion=buildConversionIntelligence(context,message)
-  const orchestration=buildConversationOrchestration(context,message,{attachmentCount:context.currentAttachments?.length||0})
+function finalAdvice(advice,rawContext,message,usedGenerativeAi=false){
+  const thread=prepareConversationThread(rawContext||{},message||'')
+  const context=thread.context
+  const effectiveMessage=thread.message
+  const conversion=buildConversionIntelligence(context,effectiveMessage)
+  const orchestration=buildConversationOrchestration(context,effectiveMessage,{attachmentCount:context.currentAttachments?.length||0})
   const reconciled=reconcileAdviceWithConversion(advice||{},conversion,{preserveSafety:true})
   const enriched=enrichAdviceWithOrchestration(reconciled,orchestration,{usedGenerativeAi})
   return {
+    context,
+    thread,
     conversion,
     orchestration,
     advice:normalizeAdviceForValUi(enriched,conversion)
@@ -33,16 +39,17 @@ if(!globalThis[PATCHED]){
 
   const originalRecordRecommendation=ValRepository.prototype.recordRecommendation
   ValRepository.prototype.recordRecommendation=async function recordDeterministicRecommendation(input){
-    const context=input.context||{}
-    const usedGenerativeAi=input.modelRun?.status==='completed'||input.modelRun?.generativeUsed===true||/openai/i.test(String(input.model||''))
-    const resolved=finalAdvice(input.advice||{},context,input.question||'',usedGenerativeAi)
+    const rawContext=input.context||{}
+    const usedGenerativeAi=input.modelRun?.status==='completed'&&input.modelRun?.generativeUsed!==false||input.modelRun?.generativeUsed===true||/openai/i.test(String(input.model||''))
+    const resolved=finalAdvice(input.advice||{},rawContext,input.question||'',usedGenerativeAi)
     return originalRecordRecommendation.call(this,{
       ...input,
       context:{
-        ...context,
-        conversionFoundation:context.conversionFoundation||buildConversionFoundation(context),
+        ...resolved.context,
+        conversionFoundation:resolved.context.conversionFoundation||buildConversionFoundation(resolved.context),
         conversionIntelligence:resolved.conversion,
-        conversationOrchestration:resolved.orchestration
+        conversationOrchestration:resolved.orchestration,
+        conversationThread:resolved.thread
       },
       advice:resolved.advice,
       modelRun:{
@@ -50,6 +57,7 @@ if(!globalThis[PATCHED]){
         decisionCore:conversionCoreVersion,
         conversationOrchestrator:conversationOrchestratorVersion,
         automaticRoute:resolved.orchestration.route,
+        conversationContinued:resolved.thread.continued,
         generativeUsed:usedGenerativeAi,
         generativeRole:'language_and_synthesis_only',
         decisionSignature:resolved.conversion.decisionSignature
@@ -59,44 +67,48 @@ if(!globalThis[PATCHED]){
 
   const originalAnswer=ValEngine.prototype.answer
   ValEngine.prototype.answer=async function answerWithAutomaticOrchestration(input){
-    const message=String(input.message||'Prepare a próxima melhor ação.').trim()
-    const context=await this.repository.getClientContext({
+    const originalMessage=String(input.message||'Prepare a próxima melhor ação.').trim()
+    const rawContext=await this.repository.getClientContext({
       tenantId:input.tenantId,
       ownerId:input.ownerId,
       clientId:input.clientId,
       client:input.client
     })
-    const orchestration=buildConversationOrchestration(context,message,{attachmentCount:input.attachmentIds?.length||0})
+    const thread=prepareConversationThread(rawContext,originalMessage)
+    const context=thread.context
+    const effectiveMessage=thread.message
+    const orchestration=buildConversationOrchestration(context,effectiveMessage,{attachmentCount:input.attachmentIds?.length||0})
 
     if(!orchestration.route.useGenerativeAi&&!(input.attachmentIds?.length)){
       context.decisionIntelligence=buildDecisionIntelligence(context)
-      context.productIntelligence=buildValueBridge(context,message)
+      context.productIntelligence=buildValueBridge(context,effectiveMessage)
       const fallback=buildFallbackAdvice({
         ...context,
-        message,
+        message:effectiveMessage,
         mode:String(input.mode||'daily'),
         requestedStage:input.requestedStage||null
       })
-      const safe=enforceValSafety(fallback,context,message,{requestedStage:input.requestedStage||null})
-      const resolved=finalAdvice(safe,context,message,false)
+      const safe=enforceValSafety(fallback,context,effectiveMessage,{requestedStage:input.requestedStage||null})
+      const resolved=finalAdvice(safe,context,originalMessage,false)
       const model='rules-v5-orchestrated'
       const recommendationId=await this.repository.recordRecommendation({
         tenantId:input.tenantId,
         ownerId:input.ownerId,
         clientId:input.clientId,
-        question:message,
+        question:originalMessage,
         mode:orchestration.route.intent,
         model,
         context,
         advice:resolved.advice,
-        responseMetadata:{automaticRoute:orchestration.route.mode},
+        responseMetadata:{automaticRoute:orchestration.route.mode,conversationContinued:thread.continued},
         promptHash:createHash('sha256').update(conversationOrchestratorVersion).digest('hex'),
         modelRun:{
           model,
           promptVersion:'val-orchestrator-v1',
           status:'completed',
           generativeUsed:false,
-          automaticRoute:orchestration.route
+          automaticRoute:orchestration.route,
+          conversationContinued:thread.continued
         }
       })
       return {
@@ -125,15 +137,15 @@ if(!globalThis[PATCHED]){
     }
 
     const result=await originalAnswer.call(this,input)
-    const resolved=finalAdvice(result.advice||{},context,message,result.engineMode==='openai')
+    const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,result.engineMode==='openai')
     return {
       ...result,
       engineArchitecture:'automatic-hybrid-decision-core',
       decisionCore:conversionCoreVersion,
       conversationOrchestrator:conversationOrchestratorVersion,
       generativeRole:result.engineMode==='openai'?'language_and_synthesis_only':'fallback_rules',
-      automaticRouting:orchestration.route,
-      conversationContinuity:orchestration.continuity,
+      automaticRouting:resolved.orchestration.route,
+      conversationContinuity:resolved.orchestration.continuity,
       conversionIntelligence:{
         decisionSignature:resolved.conversion.decisionSignature,
         contextFingerprint:resolved.conversion.contextFingerprint,
