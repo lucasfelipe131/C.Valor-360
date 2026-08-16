@@ -9,10 +9,10 @@ const engineDocs=readFileSync(new URL('../docs/VAL_ENGINE.md',import.meta.url),'
 function valChatTimeout(source,fileName){
   const endpointIndex=source.indexOf("fetch('/api/val/chat'")
   assert.notEqual(endpointIndex,-1,`${fileName} precisa chamar POST /api/val/chat`)
-  const requestBlock=source.slice(endpointIndex,endpointIndex+1_600)
-  const timeout=requestBlock.match(/AbortSignal\.timeout\((\d+)\)/)
-  assert.ok(timeout,`${fileName} precisa aplicar timeout à chamada da VAL`)
-  return Number(timeout[1])
+  const requestBlock=source.slice(Math.max(0,endpointIndex-600),endpointIndex+800)
+  const timeouts=[...requestBlock.matchAll(/AbortSignal\.timeout\((\d+)\)/g)]
+  assert.ok(timeouts.length,`${fileName} precisa aplicar timeout à chamada da VAL`)
+  return Number(timeouts.at(-1)[1])
 }
 
 test('as duas telas usam o mesmo orçamento de 120 segundos para o chat da VAL',()=>{
