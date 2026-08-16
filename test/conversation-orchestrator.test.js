@@ -7,6 +7,7 @@ import {
   enrichAdviceWithOrchestration,
   extractProductMentions
 } from '../server/conversation-orchestrator.js'
+import {prepareConversationThread} from '../server/conversation-thread-context.js'
 
 const question='FIZEMOS A APLICAÇÃO DE DESSECAÇÃO NA ÁREA PRÉ MILHO, ENTRAMOS COM GLUFOSINATO, CALARIS, DUAL GOLD E TRINCA CAPS. Preciso projetar o manejo de inseticidas visando cigarrinha no milho e me ajudar em uma venda de valor para o produto novo eficon da basf que custa 170 reais/ha'
 
@@ -34,7 +35,7 @@ function genericAdvice(){
 
 test('reconhece todos os produtos e corrige a grafia de Efficon',()=>{
   const products=extractProductMentions(question)
-  assert.deepEqual(products.map(item=>item.name),['Glufosinato','Calaris®','Dual Gold®','Efficon®','Trinca Caps®'].sort((a,b)=>0))
+  assert.deepEqual(products.map(item=>item.name),['Glufosinato','Calaris®','Dual Gold®','Efficon®','Trinca Caps®'])
 })
 
 test('classifica pergunta técnico-comercial para rota híbrida com base oficial',()=>{
@@ -126,13 +127,30 @@ test('mudança explícita de assunto não carrega os produtos anteriores',()=>{
 
 test('sequência avança um dado por vez em vez de repetir perguntas prontas',()=>{
   const context={...baseContext,priorRecommendations:[{id:'r1',user_question:question,created_at:'2026-08-16T21:20:00.000Z'}]}
-  const first=buildConversationOrchestration(context,'Continue o planejamento.').technicalCommercialPlan
+  const firstThread=prepareConversationThread(context,'Continue o planejamento.')
+  const first=buildConversationOrchestration(firstThread.context,firstThread.message).technicalCommercialPlan
   assert.match(first.nextQuestion,/data prevista de emergência|milho tiguera|lavoura de milho mais velha/i)
   const secondContext={...context,priorRecommendations:[
     {id:'r2',user_question:'A emergência será dia 10 e não há tiguera, mas existe milho mais velho ao lado.',created_at:'2026-08-16T21:30:00.000Z'},
     ...context.priorRecommendations
   ]}
-  const second=buildConversationOrchestration(secondContext,'Pode seguir.').technicalCommercialPlan
+  const secondThread=prepareConversationThread(secondContext,'Pode seguir.')
+  assert.equal(secondThread.continued,true)
+  assert.match(secondThread.message,/Efficon|eficon/i)
+  const second=buildConversationOrchestration(secondThread.context,secondThread.message).technicalCommercialPlan
   assert.match(second.nextQuestion,/híbrido|tratamento de sementes/i)
   assert.notEqual(second.nextQuestion,first.nextQuestion)
+})
+
+test('o fio ativo sobrevive a uma resposta intermediária sem repetir os produtos',()=>{
+  const context={...baseContext,priorRecommendations:[
+    {id:'r3',user_question:'O híbrido será X e o tratamento de sementes já foi definido.',created_at:'2026-08-16T21:40:00.000Z'},
+    {id:'r2',user_question:'A emergência será dia 10 e existe milho mais velho ao lado.',created_at:'2026-08-16T21:30:00.000Z'},
+    {id:'r1',user_question:question,created_at:'2026-08-16T21:20:00.000Z'}
+  ]}
+  const thread=prepareConversationThread(context,'Prossiga para a próxima decisão.')
+  const orchestration=buildConversationOrchestration(thread.context,thread.message)
+  assert.equal(orchestration.route.intent,'agronomic_commercial_decision')
+  assert.equal(orchestration.technicalCommercialPlan.focusProduct.name,'Efficon®')
+  for(const product of ['Glufosinato','Calaris®','Dual Gold®','Trinca Caps®','Efficon®'])assert.ok(orchestration.continuity.productNames.includes(product))
 })
