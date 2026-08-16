@@ -16,7 +16,7 @@ function normalizeSeparators(value=''){
     .replace(/[;()\[\]]/g,' ')
     .replace(/,(?=\s|$)/g,' ')
     .replace(/\.(?=\s|$)/g,' ')
-    .replace(/\bemerg[eê]ncia\s+(?=(?:ser[aá]|previst[ao]|dia|em)\b)/gi,'data de emergência ')
+    .replace(/\bemerg[eê]ncia\s+(?=(?:ser[aá]|previst[ao]|dia|em)(?:\s|$))/gi,'data de emergência ')
     .replace(/\s+/g,' ')
     .trim()
 }
