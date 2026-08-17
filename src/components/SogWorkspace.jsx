@@ -4,6 +4,7 @@ import {
  ClipboardCheck,Clock3,Database,ExternalLink,Handshake,Info,LineChart,LoaderCircle,
  MapPin,Plus,RefreshCw,Route,ShieldCheck,Target,UserRound,Warehouse,X
 } from 'lucide-react'
+import {requestJsonResource,useAsyncResource} from '../hooks/useAsyncResource'
 
 const emptyWorkspace={producers:[],profiles:[],intentions:[],marketSnapshots:[],opportunities:[],summary:{},catalog:{commodities:[],volumeUnits:[],priceUnits:[],marketKinds:[]},governance:{}}
 const commodityFallback=[{value:'soja',label:'Soja'},{value:'milho',label:'Milho'},{value:'trigo',label:'Trigo'},{value:'sorgo',label:'Sorgo'},{value:'feijao',label:'Feijão'},{value:'arroz',label:'Arroz'},{value:'cevada',label:'Cevada'}]
@@ -22,11 +23,8 @@ const today=()=>new Date().toISOString().slice(0,10)
 const freshness=value=>{const hours=Math.max(0,(Date.now()-new Date(value).getTime())/3_600_000);return hours<=24?{label:'Atual',state:'fresh'}:hours<=72?{label:'Atenção',state:'attention'}:hours<=168?{label:'No limite',state:'limit'}:{label:'Vencida',state:'expired'}}
 
 async function api(path,options={}){
- const response=await fetch(path,{...options,headers:{...(options.body?{'Content-Type':'application/json'}:{}),...options.headers},signal:AbortSignal.timeout(15_000)})
- if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}
- const payload=await response.json().catch(()=>({}))
- if(!response.ok)throw new Error(payload.error||'Não foi possível concluir a operação na SOG.')
- return payload
+ const {timeoutMs=15_000,...requestOptions}=options
+ return requestJsonResource(path,{...requestOptions,headers:{...(requestOptions.body?{'Content-Type':'application/json'}:{}),...requestOptions.headers},timeoutMs,timeoutMessage:'A operação na SOG demorou além do limite.',fallbackMessage:'Não foi possível concluir a operação na SOG.'})
 }
 
 function SogMetric({icon:Icon,label,value,detail,tone=''}){
@@ -143,8 +141,10 @@ function MarketForm({catalog,onSaved,onClose}){
 }
 
 export default function SogWorkspace({clients=[],onSelect}){
- const [workspace,setWorkspace]=useState(emptyWorkspace);const [loading,setLoading]=useState(true);const [error,setError]=useState('');const [notice,setNotice]=useState('');const [tab,setTab]=useState('opportunities');const [modal,setModal]=useState(null);const [profileTarget,setProfileTarget]=useState(null);const [search,setSearch]=useState('')
- const load=useCallback(async()=>{setLoading(true);setError('');try{setWorkspace(await api('/api/grains/bootstrap'))}catch(exception){setError(exception.message)}finally{setLoading(false)}},[])
+ const {data:workspaceData,loading,error,run:loadWorkspace}=useAsyncResource({initialData:emptyWorkspace,initialLoading:true,timeoutMs:15_000,timeoutMessage:'A SOG demorou além do limite para carregar a carteira.',fallbackMessage:'Não foi possível carregar a base da SOG.'})
+ const workspace=workspaceData||emptyWorkspace
+ const [notice,setNotice]=useState('');const [tab,setTab]=useState('opportunities');const [modal,setModal]=useState(null);const [profileTarget,setProfileTarget]=useState(null);const [search,setSearch]=useState('')
+ const load=useCallback(()=>loadWorkspace(({signal})=>api('/api/grains/bootstrap',{signal,timeoutMs:0}),{keepData:true}),[loadWorkspace])
  useEffect(()=>{load()},[load])
  const producers=useMemo(()=>{const byId=new Map((workspace.producers||[]).map(item=>[String(item.id),item]));for(const client of clients)if(!byId.has(String(client.id)))byId.set(String(client.id),{id:String(client.id),name:client.name,municipality:client.municipality||'',cultures:client.cultures||'',area:client.area??null});return [...byId.values()].sort((left,right)=>String(left.name).localeCompare(String(right.name),'pt-BR'))},[workspace.producers,clients])
  const profilesByClient=useMemo(()=>new Map((workspace.profiles||[]).map(item=>[String(item.clientId),item])),[workspace.profiles])

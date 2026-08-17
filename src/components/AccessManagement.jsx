@@ -1,5 +1,6 @@
-import React,{useEffect,useState} from 'react'
+import React,{useCallback,useEffect,useState} from 'react'
 import {Check,Copy,KeyRound,LoaderCircle,Pencil,Plus,RefreshCw,ShieldCheck,UserCheck,UserX,UsersRound} from 'lucide-react'
+import {fetchJsonResource,requestJsonResource,useAsyncResource} from '../hooks/useAsyncResource'
 
 const roleLabels={admin:'Administrador',manager:'Gestor',consultant:'Consultor',technical_reviewer:'Revisor técnico'}
 const emptyForm={name:'',email:'',role:'consultant'}
@@ -8,20 +9,19 @@ const accessUserInitials=user=>accessUserName(user).split(/\s+/).filter(Boolean)
 const accessApi='/api/portfolio-admin/users'
 
 export default function AccessManagement({currentUser,onNotify}){
- const [users,setUsers]=useState([])
+ const {data:usersData,loading,error,run:loadUsers,setData:setUsers,setError}=useAsyncResource({initialData:[],initialLoading:true,timeoutMs:10_000,timeoutMessage:'A consulta de acessos demorou além do limite.',fallbackMessage:'Não foi possível carregar os acessos.'})
+ const users=usersData||[]
  const [form,setForm]=useState(emptyForm)
  const [editing,setEditing]=useState(null)
  const [draft,setDraft]=useState(null)
  const [temporary,setTemporary]=useState(null)
- const [loading,setLoading]=useState(true)
  const [saving,setSaving]=useState(false)
- const [error,setError]=useState('')
- const load=()=>{setLoading(true);setError('');return fetch(accessApi,{signal:AbortSignal.timeout(10000)}).then(async response=>{if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível carregar os acessos.');setUsers(payload.users||[])}).catch(exception=>setError(exception.message)).finally(()=>setLoading(false))}
- useEffect(()=>{if(currentUser?.role==='admin')load()},[currentUser?.role])
+ const load=useCallback(()=>loadUsers(async({signal})=>{const payload=await fetchJsonResource(accessApi,{signal,fallbackMessage:'Não foi possível carregar os acessos.'});return payload.users||[]},{keepData:true}),[loadUsers])
+ useEffect(()=>{if(currentUser?.role==='admin')load()},[currentUser?.role,load])
  if(currentUser?.role!=='admin'||currentUser?.demo)return null
- const create=async event=>{event.preventDefault();setSaving(true);setError('');try{const response=await fetch(accessApi,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form),signal:AbortSignal.timeout(15000)});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível liberar o acesso.');setTemporary({name:payload.user.name,email:payload.user.email,password:payload.temporaryPassword});setForm(emptyForm);await load();onNotify?.('Login criado com carteira zerada.')}catch(exception){setError(exception.message)}finally{setSaving(false)}}
- const update=async input=>{setSaving(true);setError('');try{const response=await fetch(accessApi,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(input),signal:AbortSignal.timeout(15000)});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível atualizar o acesso.');setUsers(current=>current.map(user=>user.id===payload.user.id?{...user,...payload.user}:user));setEditing(null);setDraft(null);onNotify?.('Acesso atualizado.')}catch(exception){setError(exception.message)}finally{setSaving(false)}}
- const reset=async user=>{if(!window.confirm(`Gerar uma nova senha temporária para ${accessUserName(user)}? A sessão atual desse login será encerrada.`))return;setSaving(true);setError('');try{const response=await fetch(`${accessApi}/reset-password`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:user.id}),signal:AbortSignal.timeout(15000)});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível redefinir a senha.');setTemporary({name:accessUserName(payload.user),email:payload.user.email,password:payload.temporaryPassword});setUsers(current=>current.map(item=>item.id===payload.user.id?{...item,...payload.user}:item));onNotify?.('Nova senha temporária gerada.')}catch(exception){setError(exception.message)}finally{setSaving(false)}}
+ const create=async event=>{event.preventDefault();setSaving(true);setError('');try{const payload=await requestJsonResource(accessApi,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(form),timeoutMs:15_000,fallbackMessage:'Não foi possível liberar o acesso.'});setTemporary({name:payload.user.name,email:payload.user.email,password:payload.temporaryPassword});setForm(emptyForm);await load();onNotify?.('Login criado com carteira zerada.')}catch(exception){setError(exception.message)}finally{setSaving(false)}}
+ const update=async input=>{setSaving(true);setError('');try{const payload=await requestJsonResource(accessApi,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(input),timeoutMs:15_000,fallbackMessage:'Não foi possível atualizar o acesso.'});setUsers(current=>current.map(user=>user.id===payload.user.id?{...user,...payload.user}:user));setEditing(null);setDraft(null);onNotify?.('Acesso atualizado.')}catch(exception){setError(exception.message)}finally{setSaving(false)}}
+ const reset=async user=>{if(!window.confirm(`Gerar uma nova senha temporária para ${accessUserName(user)}? A sessão atual desse login será encerrada.`))return;setSaving(true);setError('');try{const payload=await requestJsonResource(`${accessApi}/reset-password`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:user.id}),timeoutMs:15_000,fallbackMessage:'Não foi possível redefinir a senha.'});setTemporary({name:accessUserName(payload.user),email:payload.user.email,password:payload.temporaryPassword});setUsers(current=>current.map(item=>item.id===payload.user.id?{...item,...payload.user}:item));onNotify?.('Nova senha temporária gerada.')}catch(exception){setError(exception.message)}finally{setSaving(false)}}
  const copy=async value=>{try{await navigator.clipboard.writeText(value);onNotify?.('Senha temporária copiada.')}catch{setError('O navegador não permitiu copiar. Selecione a senha manualmente.')}}
  return <section className="access-management" aria-labelledby="access-management-title">
   <div className="access-management-head"><div><span className="access-management-icon"><UsersRound/></span><div><span className="eyebrow">LIBERAÇÃO DE CLIENTES</span><h3 id="access-management-title">Acessos e carteiras individuais</h3><p>Cada login novo começa com zero produtores e enxerga somente o que cadastrar, importar ou sincronizar no próprio espaço.</p></div></div><button type="button" onClick={load} disabled={loading} aria-label="Atualizar acessos">{loading?<LoaderCircle className="val-spinner"/>:<RefreshCw/>}Atualizar</button></div>

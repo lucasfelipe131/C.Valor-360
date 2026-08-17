@@ -9,6 +9,7 @@ import {buildValMethodApplication} from '../lib/val-method-application'
 import {adjacentConsultativeStage,createSequenceControl,transitionSequenceControl,VAL_CONSULTATIVE_SEQUENCE} from '../lib/val-sequence-control'
 import {createValProgressRequestId,initialValProgress,startValProgressPolling} from '../lib/val-progress-client'
 import ValProgressFeedback from './ValProgressFeedback'
+import {fetchJsonResource,useAsyncResource} from '../hooks/useAsyncResource'
 
 const VAL_METHOD_SEQUENCE=VAL_CONSULTATIVE_SEQUENCE
 const methodLabels={preparar:'Preparar',alinhar:'Alinhar',descobrir:'Descobrir',dimensionar:'Dimensionar',construir_valor:'Construir valor',propor:'Propor',comprometer:'Comprometer'}
@@ -266,7 +267,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const [response,setResponse]=useState(null)
  const [activeMethod,setActiveMethod]=useState('spin')
  const [sequenceControl,setSequenceControl]=useState(()=>createSequenceControl())
- const [status,setStatus]=useState({loading:true,data:null,error:''})
+ const {state:status,run:loadStatus}=useAsyncResource({initialData:null,initialLoading:true,timeoutMs:8_000,timeoutMessage:'A VAL está operando com contexto local.',fallbackMessage:'A VAL está operando com contexto local.'})
  const [loading,setLoading]=useState(false)
  const [error,setError]=useState('')
  const [progress,setProgress]=useState(()=>initialValProgress())
@@ -284,18 +285,8 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  useEffect(()=>{if(selectedClient?.id)setSelected(selectedClient.id)},[selectedClient])
 
  useEffect(()=>{
-  const controller=new AbortController()
-  const signal=typeof AbortSignal.any==='function'?AbortSignal.any([controller.signal,AbortSignal.timeout(8000)]):controller.signal
-  fetch('/api/val/status',{signal})
-   .then(async result=>{
-    if(result.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}
-    if(!result.ok)throw new Error('status indisponível')
-    return result.json()
-   })
-   .then(data=>setStatus({loading:false,data,error:''}))
-   .catch(fetchError=>{if(fetchError.name!=='AbortError')setStatus({loading:false,data:null,error:'A VAL está operando com contexto local.'})})
-  return()=>controller.abort()
- },[])
+  loadStatus(({signal})=>fetchJsonResource('/api/val/status',{signal,fallbackMessage:'A VAL está operando com contexto local.'}),{keepData:false})
+ },[loadStatus])
 
  useEffect(()=>{
   selectedRef.current=selected
