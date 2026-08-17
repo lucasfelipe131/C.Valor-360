@@ -54,6 +54,8 @@ O modo demo só é permitido quando `VAL_DEMO_MODE=true` é definido explicitame
 
 O `railway.json` executa o build, roda a migração antes do deploy e inicia o servidor Node. Configure todos os segredos no projeto da Railway antes de liberar o domínio.
 
+Antes de qualquer publicação, siga o checklist em [`docs/DEPLOY_CHECKLIST.md`](docs/DEPLOY_CHECKLIST.md). O build carimba e valida automaticamente o nome do cache do PWA para impedir que uma release nova reutilize arquivos de uma versão anterior.
+
 ## Estrutura principal
 
 - `src/`: aplicação React responsiva.
@@ -68,6 +70,7 @@ O `railway.json` executa o build, roda a migração antes do deploy e inicia o s
 - `evals/`: casos dourados independentes de fornecedor.
 - `docs/VAL_ENGINE.md`: arquitetura, contratos e limites.
 - `docs/SOG_DATA_ECOSYSTEM.md`: fontes, fluxo, score, APIs e governança da VAL Grãos.
+- `docs/DEPLOY_CHECKLIST.md`: validações obrigatórias antes e depois de cada publicação.
 
 ## Limites atuais
 
