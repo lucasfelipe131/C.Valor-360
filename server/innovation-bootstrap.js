@@ -1,7 +1,7 @@
 import {ValRepository} from './repository.js'
 import {GrainRepository} from './grain-repository.js'
 import {buildCommitmentLadders} from './commitment-ladder.js'
-import {buildObjectionLibrary} from './objection-library.js'
+import {buildObjectionLibrary,loadPortfolioBusinessHistory} from './objection-library.js'
 import {buildValueScenarios} from './value-scenarios.js'
 import {buildMultiDecisionMap} from './multi-decision-map.js'
 import {buildPostConversionExpansion,hasRecentClosedBusiness} from './post-conversion-expansion.js'
@@ -53,14 +53,21 @@ async function calibrationHistoryFor(repository,input,context){
  }catch{return context.priorRecommendations||[]}
 }
 
+async function portfolioHistoryFor(repository,input,context){
+ if(input?.ownerId==null)return {events:context.businessHistory||[],error:''}
+ try{return {events:await loadPortfolioBusinessHistory(repository,input.ownerId),error:''}}
+ catch(error){return {events:context.businessHistory||[],error:String(error?.message||'A biblioteca da carteira não pôde ser consultada.').slice(0,300)}}
+}
+
 if(!globalThis[PATCHED]){
  globalThis[PATCHED]=true
  const originalGetClientContext=ValRepository.prototype.getClientContext
  ValRepository.prototype.getClientContext=async function contextWithConversionInnovations(input){
   const context=await originalGetClientContext.call(this,input)
-  const [grainWorkspace,calibrationRecommendations]=await Promise.all([
+  const [grainWorkspace,calibrationRecommendations,portfolioHistory]=await Promise.all([
    hasRecentClosedBusiness(context)?grainWorkspaceFor(this,input?.ownerId):null,
-   calibrationHistoryFor(this,input,context)
+   calibrationHistoryFor(this,input,context),
+   portfolioHistoryFor(this,input,context)
   ])
   const calibrationContext={...context,calibrationRecommendations}
   return {
@@ -68,7 +75,7 @@ if(!globalThis[PATCHED]){
    conversionInnovations:{
     ...(context.conversionInnovations||{}),
     commitmentLadders:buildCommitmentLadders(context),
-    objectionLibrary:buildObjectionLibrary(context),
+    objectionLibrary:{...buildObjectionLibrary(context,{portfolioHistory:portfolioHistory.events}),loadError:portfolioHistory.error},
     valueScenarios:buildValueScenarios(context),
     multiDecisionMap:buildMultiDecisionMap(context),
     postConversionExpansion:buildPostConversionExpansion(context,{grainWorkspace}),
