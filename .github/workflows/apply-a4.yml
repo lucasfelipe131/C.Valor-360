@@ -1,0 +1,30 @@
+name: Apply A4 methodology source
+
+on:
+  push:
+    branches: [a4-methodology-source]
+    paths:
+      - scripts/apply-a4.py
+      - .github/workflows/apply-a4.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: a4-methodology-source
+          fetch-depth: 0
+      - name: Aplicar metodologia canônica
+        run: python3 scripts/apply-a4.py
+      - name: Registrar mudanças
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "A4 — unifica a sequência metodológica da VAL"
+          git push origin HEAD:a4-methodology-source
