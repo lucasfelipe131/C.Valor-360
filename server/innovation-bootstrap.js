@@ -12,7 +12,7 @@ const grainCache=new Map()
 
 async function grainWorkspaceFor(repository,ownerId){
  if(ownerId==null)return null
- const key=String(ownerId)
+ const key=`${repository.tenantId||'tenant'}:${ownerId}`
  const cached=grainCache.get(key)
  if(cached&&cached.expiresAt>Date.now())return cached.value
  try{
