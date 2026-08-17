@@ -1,19 +1,20 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import "./val-embedded-brand.css";
 
 export const metadata: Metadata = {
-  title: "VALOR 360 · Inteligência Agronômica",
+  title: "VAL · Inteligência Agronômica",
   description:
     "Ambiente técnico integrado para capturar, interpretar e transformar dados agronômicos em decisões de campo.",
-  applicationName: "VALOR 360",
+  applicationName: "VAL",
   icons: {
-    icon: "/favicon.svg",
-    apple: "/manual-do-agronomo-simbolo.svg",
+    icon: "/icon.svg",
+    apple: "/icon.svg",
   },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
-    title: "VALOR 360",
+    title: "VAL",
   },
 };
 
