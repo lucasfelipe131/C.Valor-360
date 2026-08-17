@@ -21,10 +21,11 @@ test('rotas SOG exigem sessão e reutilizam o proprietário da carteira',()=>{
 
 test('interface SOG grava somente pelas APIs protegidas e mostra a governança',()=>{
  const sog=read('src/components/SogWorkspace.jsx')
- assert.match(sog,/api\('\/api\/grains\/bootstrap'\)/)
+ assert.match(sog,/api\('\/api\/grains\/bootstrap'/)
  assert.match(sog,/api\('\/api\/grains\/profiles'/)
  assert.match(sog,/api\('\/api\/grains\/intents'/)
  assert.match(sog,/api\('\/api\/grains\/market'/)
+ assert.match(sog,/requestJsonResource/)
  assert.match(sog,/Fonte e atualização obrigatórias/)
  assert.match(sog,/Sem operação automática/)
  assert.match(sog,/Preparados, ainda não conectados/)
