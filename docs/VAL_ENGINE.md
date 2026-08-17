@@ -35,6 +35,14 @@ flowchart TD
 - `knowledge/approved/`: única pasta que pode ser enviada à base semântica.
 - `test/`: testes de roteamento, HMAC, NDVI, solo e limites éticos.
 
+## Regra de revisão textual e reconhecimento
+
+Regex de reconhecimento não é texto de interface. Classes como `defici[eê]ncia` e `aduba[cç][aã]o` existem para aceitar variações de acento e não devem ser “corrigidas” durante uma revisão ortográfica.
+
+Do mesmo modo, `normalize()` e `lower()` removem acentos de propósito em pontos de comparação e roteamento. Alterações nesses trechos são mudanças de comportamento, não de copy, e exigem um teste específico.
+
+A revisão linguística deve tocar apenas strings destinadas à leitura humana. O teste `test/accent-pattern-contract.test.js` bloqueia a remoção acidental dessas variações.
+
 ## Estratégia de modelos
 
 | Camada | Modelo padrão | Uso |
