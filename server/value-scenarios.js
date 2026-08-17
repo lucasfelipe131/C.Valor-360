@@ -2,7 +2,14 @@ import {rankOpportunityPortfolio} from './sales-playbook.js'
 
 const array=value=>Array.isArray(value)?value:[]
 const text=(value,max=600)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,max)
-const number=value=>{if(value===''||value==null)return null;const parsed=Number(String(value).replace(/\./g,'').replace(',','.'));return Number.isFinite(parsed)&&parsed>=0?parsed:null}
+const number=value=>{
+ if(value===''||value==null)return null
+ if(typeof value==='number')return Number.isFinite(value)&&value>=0?value:null
+ const raw=String(value).trim().replace(/\s/g,'')
+ const normalized=raw.includes(',')?raw.replace(/\./g,'').replace(',','.'):raw
+ const parsed=Number(normalized)
+ return Number.isFinite(parsed)&&parsed>=0?parsed:null
+}
 const closed=value=>/^(?:fechado|ganho|conclu[ií]do|perdido|cancelado|closed|won|lost)$/i.test(text(value))
 const unique=items=>[...new Set(items.filter(Boolean))]
 const evidenceId=(prefix,item,index=0)=>`${prefix}:${text(item?.id||item?.external_key||item?.externalKey||index,160)}`
@@ -26,16 +33,21 @@ function parseValue(message,patterns){
 }
 
 function parsedInputs(context){
+ const result={areaHa:null,costPerHa:null,unitPrice:null,scenarios:{conservative:null,base:null,optimistic:null},evidence:{areaHa:null,costPerHa:null,unitPrice:null,scenarios:{conservative:null,base:null,optimistic:null}}}
  for(const entry of messages(context)){
-  const areaHa=parseValue(entry.message,[/(\d{1,7}(?:[.,]\d+)?)\s*(?:ha|hectares?)\b/i])
-  const costPerHa=parseValue(entry.message,[/(?:r\$\s*)?(\d{1,7}(?:[.,]\d+)?)\s*(?:reais?)?\s*(?:\/\s*ha|por\s+ha)\b/i])
-  const unitPrice=parseValue(entry.message,[/(?:saca|sc)\s*(?:a|vale|em|por|=|:)\s*(?:r\$\s*)?(\d{1,7}(?:[.,]\d+)?)/i,/(?:r\$\s*)(\d{1,7}(?:[.,]\d+)?)\s*(?:\/\s*(?:sc|saca)|por\s+saca)\b/i])
-  const conservative=parseValue(entry.message,[/conservador(?:a)?\s*(?:de|=|:)?\s*(\d+(?:[.,]\d+)?)\s*(?:sc|sacas?)\s*\/\s*ha/i])
-  const base=parseValue(entry.message,[/\bbase\s*(?:de|=|:)?\s*(\d+(?:[.,]\d+)?)\s*(?:sc|sacas?)\s*\/\s*ha/i])
-  const optimistic=parseValue(entry.message,[/otimist(?:a|o)\s*(?:de|=|:)?\s*(\d+(?:[.,]\d+)?)\s*(?:sc|sacas?)\s*\/\s*ha/i])
-  if([areaHa,costPerHa,unitPrice,conservative,base,optimistic].some(value=>value!==null))return {areaHa,costPerHa,unitPrice,scenarios:{conservative,base,optimistic},evidenceId:evidenceId('recommendation-question',entry.item,entry.index),sourceText:entry.message}
+  const source=evidenceId('recommendation-question',entry.item,entry.index)
+  const values={
+   areaHa:parseValue(entry.message,[/(\d{1,7}(?:[.,]\d+)?)\s*(?:ha|hectares?)\b/i]),
+   costPerHa:parseValue(entry.message,[/(?:r\$\s*)?(\d{1,7}(?:[.,]\d+)?)\s*(?:reais?)?\s*(?:\/\s*ha|por\s+ha)\b/i]),
+   unitPrice:parseValue(entry.message,[/(?:saca|sc)\s*(?:a|vale|em|por|=|:)\s*(?:r\$\s*)?(\d{1,7}(?:[.,]\d+)?)/i,/(?:r\$\s*)(\d{1,7}(?:[.,]\d+)?)\s*(?:\/\s*(?:sc|saca)|por\s+saca)\b/i]),
+   conservative:parseValue(entry.message,[/conservador(?:a)?\s*(?:de|=|:)?\s*(\d+(?:[.,]\d+)?)\s*(?:sc|sacas?)\s*\/\s*ha/i]),
+   base:parseValue(entry.message,[/\bbase\s*(?:de|=|:)?\s*(\d+(?:[.,]\d+)?)\s*(?:sc|sacas?)\s*\/\s*ha/i]),
+   optimistic:parseValue(entry.message,[/otimist(?:a|o)\s*(?:de|=|:)?\s*(\d+(?:[.,]\d+)?)\s*(?:sc|sacas?)\s*\/\s*ha/i])
+  }
+  for(const key of ['areaHa','costPerHa','unitPrice'])if(result[key]===null&&values[key]!==null){result[key]=values[key];result.evidence[key]=source}
+  for(const key of ['conservative','base','optimistic'])if(result.scenarios[key]===null&&values[key]!==null){result.scenarios[key]=values[key];result.evidence.scenarios[key]=source}
  }
- return {areaHa:null,costPerHa:null,unitPrice:null,scenarios:{conservative:null,base:null,optimistic:null},evidenceId:null,sourceText:''}
+ return result
 }
 
 function structuredScenario(valueCases,key){
@@ -59,26 +71,27 @@ export function buildValueScenarios(context={},options={}){
  const areaHa=structuredArea?.value??parsed.areaHa
  const costPerHa=structuredCost?.value??parsed.costPerHa
  const unitPrice=structuredPrice?.value??parsed.unitPrice
+ const structuredScenarios=Object.fromEntries(['conservative','base','optimistic'].map(key=>[key,structuredScenario(valueCases,key)]))
  const scenarios={
-  conservative:structuredScenario(valueCases,'conservative')??parsed.scenarios.conservative,
-  base:structuredScenario(valueCases,'base')??parsed.scenarios.base,
-  optimistic:structuredScenario(valueCases,'optimistic')??parsed.scenarios.optimistic
+  conservative:structuredScenarios.conservative??parsed.scenarios.conservative,
+  base:structuredScenarios.base??parsed.scenarios.base,
+  optimistic:structuredScenarios.optimistic??parsed.scenarios.optimistic
  }
  const opportunityEvidence=opportunity?evidenceId('opportunity',opportunity):null
  const structuredEvidence=valueCases.length?`${opportunityEvidence||'client'}:value-case`:null
  const inputEvidence={
-  areaHa:structuredArea?structuredEvidence:parsed.areaHa!==null?parsed.evidenceId:null,
-  costPerHa:structuredCost?structuredEvidence:parsed.costPerHa!==null?parsed.evidenceId:null,
-  unitPrice:structuredPrice?structuredEvidence:parsed.unitPrice!==null?parsed.evidenceId:null,
-  scenarios:Object.fromEntries(Object.entries(scenarios).map(([key,value])=>[key,value!==null?(structuredScenario(valueCases,key)!==null?structuredEvidence:parsed.evidenceId):null]))
+  areaHa:structuredArea?structuredEvidence:parsed.evidence.areaHa,
+  costPerHa:structuredCost?structuredEvidence:parsed.evidence.costPerHa,
+  unitPrice:structuredPrice?structuredEvidence:parsed.evidence.unitPrice,
+  scenarios:Object.fromEntries(Object.entries(scenarios).map(([key,value])=>[key,value!==null?(structuredScenarios[key]!==null?structuredEvidence:parsed.evidence.scenarios[key]):null]))
  }
  const missingCore=[]
- if(areaHa===null)missingCore.push('área exata da decisão em hectares')
+ if(areaHa===null||areaHa<=0)missingCore.push('área exata da decisão em hectares')
  if(costPerHa===null)missingCore.push('investimento por hectare')
- if(unitPrice===null)missingCore.push('preço confirmado da unidade de comparação')
+ if(unitPrice===null||unitPrice<=0)missingCore.push('preço confirmado da unidade de comparação')
  const missingScenarios=Object.entries(scenarios).filter(([,value])=>value===null).map(([key])=>key==='conservative'?'resultado conservador em sc/ha':key==='base'?'resultado-base em sc/ha':'resultado otimista em sc/ha')
  const investmentTotal=missingCore.length?null:areaHa*costPerHa
- const breakEvenPerHa=missingCore.length?null:unitPrice>0?costPerHa/unitPrice:null
+ const breakEvenPerHa=missingCore.length?null:costPerHa/unitPrice
  const calculated=!missingCore.length&&!missingScenarios.length
  const rows=calculated?[
   ['conservative','Conservador',scenarios.conservative],['base','Base',scenarios.base],['optimistic','Otimista',scenarios.optimistic]
