@@ -3,6 +3,7 @@ import {
  BadgeDollarSign,BarChart3,CalendarClock,Cloud,DatabaseZap,FileBarChart,
  Layers3,MapPinned,ShoppingCart,Target,TrendingUp,WalletCards
 } from 'lucide-react'
+import {fetchJsonResource,useAsyncResource} from '../hooks/useAsyncResource'
 
 const money=value=>Number(value||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:2})
 const percent=value=>value===null||value===undefined||!Number.isFinite(Number(value))?'Não calculado':`${Number(value).toLocaleString('pt-BR',{maximumFractionDigits:1})}%`
@@ -38,15 +39,10 @@ function Metric({icon:Icon,label,value,detail,tone=''}){
 }
 
 export default function ProducerBusinessOverview({client,refreshToken=0}){
- const [state,setState]=useState({loading:true,data:null,error:''})
+ const {state,run:loadOverview}=useAsyncResource({initialData:null,initialLoading:true,timeoutMs:12_000,timeoutMessage:'A consolidação demorou além do limite.',fallbackMessage:'Não foi possível consolidar as métricas.'})
  useEffect(()=>{
-  const controller=new AbortController();setState(current=>({...current,loading:true,error:''}))
-  fetch(`/api/clients/${encodeURIComponent(client.id)}/overview`,{signal:typeof AbortSignal.any==='function'?AbortSignal.any([controller.signal,AbortSignal.timeout(12000)]):controller.signal})
-   .then(async response=>{if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível consolidar as métricas.');return payload})
-   .then(data=>setState({loading:false,data,error:''}))
-   .catch(error=>{if(error.name!=='AbortError')setState(current=>({...current,loading:false,error:error.name==='TimeoutError'?'A consolidação demorou além do limite.':error.message}))})
-  return()=>controller.abort()
- },[client.id,refreshToken])
+  loadOverview(({signal})=>fetchJsonResource(`/api/clients/${encodeURIComponent(client.id)}/overview`,{signal,fallbackMessage:'Não foi possível consolidar as métricas.'}),{keepData:true})
+ },[client.id,refreshToken,loadOverview])
  const fallback=useMemo(()=>{
   const current=finite(client.commercial?.purchaseCurrentSeason);const potential=finite(client.commercial?.potentialTotal);const open=Math.max(0,potential-current);const grossMargin=client.commercial?.grossMarginPercent
   return {currentPurchases:current,previousPurchases:finite(client.commercial?.purchasePreviousSeason),potentialTotal:potential,openPotential:open,openPipeline:finite(client.commercial?.openPipeline),weightedPipeline:0,forecast:current,averageTicket:finite(client.commercial?.purchaseTotal)/Math.max(finite(client.commercial?.purchaseCount),1),conversionRate:client.commercial?.conversion??null,potentialCoveragePercent:potential?current/potential*100:null,pipelineCoveragePercent:open?finite(client.commercial?.openPipeline)/open*100:null,creditLimit:finite(client.commercial?.creditLimit),creditUsed:finite(client.commercial?.creditUsed),creditAvailable:Math.max(0,finite(client.commercial?.creditLimit)-finite(client.commercial?.creditUsed)),purchaseGrowthPercent:client.commercial?.purchaseGrowthPercent??null,walletShare:client.commercial?.walletShare??null,targetShare:client.commercial?.targetShare??null,grossMarginPercent:grossMargin??null,estimatedMargin:grossMargin===null||grossMargin===undefined||grossMargin===''?null:current*finite(grossMargin)/100,marginTotal:finite(client.commercial?.marginTotal),wins:finite(client.commercial?.wins),losses:finite(client.commercial?.losses),knownOutcomes:finite(client.commercial?.knownOutcomes),paymentTerms:client.commercial?.paymentTerms||'',decisionWindow:client.commercial?.decisionWindow||'',commercialRisk:client.commercial?.commercialRisk||'',lastPurchaseAt:client.commercial?.lastPurchaseAt||null}
