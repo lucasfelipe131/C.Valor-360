@@ -49,7 +49,7 @@ export default function ConversionOpportunityStudio({clients=[],onClient,onPrepa
 
   {!loading&&data&&<>
    <CommitmentLadderPanel data={innovations.commitmentLadders} client={client} onPrepare={prepare}/>
-   <MultiDecisionMapPanel data={innovations.multiDecisionMap}/>
+   <MultiDecisionMapPanel data={innovations.multiDecisionMap} client={client} opportunities={data.opportunities||[]} onSaved={reload}/>
    <ValueScenarioPanel data={innovations.valueScenarios} onPrepare={prepare}/>
    <ObjectionEvidencePanel data={innovations.objectionLibrary}/>
   </>}
