@@ -12,6 +12,10 @@ import {enhanceDecisionLanguage,languageEnhancerVersion,preserveEnhancedLanguage
 
 const PATCHED=Symbol.for('valor360.conversion-core.patched')
 
+function emitProgress(input,stage){
+  try{input?.onProgress?.(stage)}catch{}
+}
+
 function finalAdvice(advice,rawContext,message,usedGenerativeAi=false){
   const thread=prepareConversationThread(rawContext||{},message||'')
   const context=thread.context
@@ -30,7 +34,9 @@ function finalAdvice(advice,rawContext,message,usedGenerativeAi=false){
 }
 
 function deterministicDecision(context,effectiveMessage,originalMessage,input){
+  emitProgress(input,'context')
   context.decisionIntelligence=buildDecisionIntelligence(context)
+  emitProgress(input,'products')
   context.productIntelligence=buildValueBridge(context,effectiveMessage)
   const fallback=buildFallbackAdvice({
     ...context,
@@ -93,7 +99,9 @@ if(!globalThis[PATCHED]){
 
   const originalAnswer=ValEngine.prototype.answer
   ValEngine.prototype.answer=async function answerWithAutomaticOrchestration(input){
+    emitProgress(input,'received')
     const originalMessage=String(input.message||'Prepare a próxima melhor ação.').trim()
+    emitProgress(input,'context')
     const rawContext=await this.repository.getClientContext({
       tenantId:input.tenantId,
       ownerId:input.ownerId,
@@ -110,6 +118,7 @@ if(!globalThis[PATCHED]){
     // ela recebe apenas um contrato pequeno de linguagem e nunca bloqueia a decisão.
     if(attachmentCount===0){
       const resolved=deterministicDecision(context,effectiveMessage,originalMessage,input)
+      emitProgress(input,'language')
       const language=orchestration.route.useGenerativeAi
         ?await enhanceDecisionLanguage({
           client:this.client,
@@ -128,6 +137,7 @@ if(!globalThis[PATCHED]){
           latencyMs:0
         }
       const model=language.used?`${language.model}+rules-v6`:'rules-v6-orchestrated'
+      emitProgress(input,'persist')
       const recommendationId=await this.repository.recordRecommendation({
         tenantId:input.tenantId,
         ownerId:input.ownerId,
@@ -158,6 +168,7 @@ if(!globalThis[PATCHED]){
           conversationContinued:thread.continued
         }
       })
+      emitProgress(input,'complete')
       return {
         recommendationId,
         engineMode:language.used?'hybrid':'rules',
@@ -186,7 +197,10 @@ if(!globalThis[PATCHED]){
     }
 
     // Arquivos e imagens continuam no fluxo multimodal completo porque precisam ser lidos pelo provedor.
+    emitProgress(input,'products')
+    emitProgress(input,'language')
     const result=await originalAnswer.call(this,input)
+    emitProgress(input,'complete')
     const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,result.engineMode==='openai')
     const providerFallback=result.engineMode!=='openai'
     return {

@@ -7,6 +7,8 @@ import {
 import {compactBRL,commercialMetrics} from '../lib/commercial-metrics'
 import {buildValMethodApplication} from '../lib/val-method-application'
 import {adjacentConsultativeStage,createSequenceControl,transitionSequenceControl,VAL_CONSULTATIVE_SEQUENCE} from '../lib/val-sequence-control'
+import {createValProgressRequestId,initialValProgress,startValProgressPolling} from '../lib/val-progress-client'
+import ValProgressFeedback from './ValProgressFeedback'
 
 const VAL_METHOD_SEQUENCE=VAL_CONSULTATIVE_SEQUENCE
 const methodLabels={preparar:'Preparar',alinhar:'Alinhar',descobrir:'Descobrir',dimensionar:'Dimensionar',construir_valor:'Construir valor',propor:'Propor',comprometer:'Comprometer'}
@@ -267,6 +269,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const [status,setStatus]=useState({loading:true,data:null,error:''})
  const [loading,setLoading]=useState(false)
  const [error,setError]=useState('')
+ const [progress,setProgress]=useState(()=>initialValProgress())
  const [feedback,setFeedback]=useState({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})
  const [attachments,setAttachments]=useState([])
  const [savedAttachments,setSavedAttachments]=useState([])
@@ -298,7 +301,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
   selectedRef.current=selected
   requestRef.current.controller?.abort()
   requestRef.current={sequence:requestRef.current.sequence+1,controller:null}
-  setLoading(false);setResponse(null);setActiveMethod('spin');setSequenceControl(createSequenceControl());setError('');setMessage('');setAttachments([]);setSavedAttachments([]);setAttachmentMenu(false)
+  setLoading(false);setResponse(null);setActiveMethod('spin');setSequenceControl(createSequenceControl());setError('');setProgress(initialValProgress());setMessage('');setAttachments([]);setSavedAttachments([]);setAttachmentMenu(false)
   setAttachmentState({loading:false,uploading:false,error:''})
   setFeedback({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})
  },[selected])
@@ -388,14 +391,17 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
   requestRef.current.controller?.abort()
   requestRef.current={sequence,controller}
   const requestClientId=client.id
+  const requestId=createValProgressRequestId()
   setLoading(true)
   setError('')
+  setProgress(initialValProgress())
   setFeedback({rating:null,outcome:'',notes:'',sending:false,sent:false,error:''})
+  const stopProgress=requestedMode==='strategic'?startValProgressPolling({requestId,onProgress:setProgress,signal:controller.signal}):()=>{}
   try{
    const result=await fetch('/api/val/chat',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({clientId:client.id,client,message:prompt,attachmentIds,mode:requestedMode,...(workingSequenceStage?{requestedStage:workingSequenceStage}:{})}),
+    body:JSON.stringify({clientId:client.id,client,message:prompt,attachmentIds,mode:requestedMode,requestId,...(workingSequenceStage?{requestedStage:workingSequenceStage}:{})}),
     signal:typeof AbortSignal.any==='function'?AbortSignal.any([controller.signal,AbortSignal.timeout(120000)]):controller.signal
    })
    const payload=await result.json().catch(()=>({}))
@@ -404,14 +410,16 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
    if(!payload?.advice)throw new Error('A resposta chegou incompleta.')
    if(requestRef.current.sequence!==sequence||String(selectedRef.current)!==String(requestClientId))return
    setResponse(payload)
+   setProgress({stage:'complete',label:'Recomendação pronta',order:5,total:5,done:true,failed:false})
    setMessage('')
    setAttachments([])
    ;(payload.attachments||[]).forEach(item=>setSavedAttachments(current=>mergeAttachment(current,item)))
   }catch(requestError){
    if(requestRef.current.sequence!==sequence||requestError.name==='AbortError')return
    setResponse(null)
+   setProgress({stage:'failed',label:'Não foi possível concluir',order:6,total:5,done:true,failed:true})
    setError(requestError.message+(attachmentIds.length?' Os arquivos continuam salvos com este produtor; tente novamente.':' Tente novamente em alguns instantes.'))
-  }finally{if(requestRef.current.sequence===sequence)setLoading(false)}
+  }finally{stopProgress();if(requestRef.current.sequence===sequence)setLoading(false)}
  }
 
  const chooseMode=value=>setMode(value)
@@ -509,8 +517,9 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
      <input ref={documentInput} className="sr-only" type="file" accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,text/csv,text/plain" multiple onChange={uploadFiles}/>
     </div>
     <label><span className="sr-only">Pergunte à VAL sobre este produtor</span><textarea rows="2" value={message} maxLength="800" onChange={event=>setMessage(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ask(message)}}} placeholder={'Pergunte ou conte algo sobre '+firstNameOf(client)+'…'}/></label>
-    <button type="submit" disabled={(!message.trim()&&!attachments.length)||loading||attachmentState.uploading} aria-label="Enviar para a VAL">{loading?<LoaderCircle className="val-spinner" aria-hidden="true"/>:<Send aria-hidden="true"/>}<span>{loading?'Pensando':'Enviar'}</span></button>
+    <button type="submit" disabled={(!message.trim()&&!attachments.length)||loading||attachmentState.uploading} aria-label="Enviar para a VAL">{loading?<LoaderCircle className="val-spinner" aria-hidden="true"/>:<Send aria-hidden="true"/>}<span>{loading?(mode==='strategic'?progress.label:'Pensando'):'Enviar'}</span></button>
    </form>
+   {loading&&mode==='strategic'&&<ValProgressFeedback progress={progress} compact/>}
    {attachments.length>0&&<div className="val-attachment-tray" aria-label="Arquivos desta pergunta">{attachments.map(item=><article key={item.id}>{item.mimeType?.startsWith('image/')?<ImagePlus/>:<FileText/>}<span><b>{item.originalName}</b><small>{formatFileSize(item.sizeBytes)} • {attachmentStatusLabels[item.status]||item.status}</small></span><button type="button" onClick={()=>setAttachments(current=>current.filter(entry=>entry.id!==item.id))} aria-label={'Tirar '+item.originalName+' desta pergunta'}><X/></button></article>)}</div>}
    {attachmentState.uploading&&<div className="val-file-progress" role="status"><LoaderCircle className="val-spinner"/><span>Enviando arquivo…</span></div>}
    {attachmentState.error&&<div className="val-warning val-file-warning" role="alert"><AlertCircle/><span>{attachmentState.error}</span></div>}
@@ -518,7 +527,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
     <summary><Paperclip/><span>Fotos e documentos de {firstNameOf(client)}</span><b>{savedAttachments.length}</b></summary>
     {attachmentState.loading?<p>Buscando arquivos…</p>:savedAttachments.length?<ul>{savedAttachments.map(item=><li key={item.id}>{item.mimeType?.startsWith('image/')?<ImagePlus/>:<FileText/>}<span><a href={'/api/val/attachments/'+item.id} target="_blank" rel="noreferrer">{item.originalName}</a><small>{formatFileSize(item.sizeBytes)} • {attachmentStatusLabels[item.status]||item.status}</small></span>{!attachments.some(entry=>entry.id===item.id)&&attachments.length<3&&<button type="button" onClick={()=>setAttachments(current=>[...current,item].slice(0,3))}>Usar</button>}</li>)}</ul>:<p>Nenhum arquivo salvo ainda.</p>}
    </details>
-	   {loading&&<div className="val-thinking" role="status"><span/><div><b>A VAL está procurando conexões que ainda não aparecem na tela.</b><small>Perfil, negócios, campo, histórico, oportunidades e opções de valor estão sendo cruzados.</small></div></div>}
+	   {loading&&mode!=='strategic'&&<div className="val-thinking" role="status"><span/><div><b>A VAL está procurando conexões que ainda não aparecem na tela.</b><small>Perfil, negócios, campo, histórico, oportunidades e opções de valor estão sendo cruzados.</small></div></div>}
    {(error||response?.warning)&&<div className="val-warning" role="status"><AlertCircle aria-hidden="true"/><span>{error||response.warning}</span></div>}
   </div>
 
