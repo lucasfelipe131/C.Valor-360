@@ -6,6 +6,8 @@ const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8')
 const engine=read('docs/VAL_ENGINE.md')
 const loop=read('docs/VAL_LEARNING_LOOP.md')
 const server=read('server.js')
+const plain=value=>String(value).replace(/[`*_]/g,'')
+const plainLoop=plain(loop)
 
 test('documentação liga feedback, snapshot e resultados posteriores',()=>{
  assert.match(engine,/VAL_LEARNING_LOOP\.md/)
@@ -15,13 +17,13 @@ test('documentação liga feedback, snapshot e resultados posteriores',()=>{
  assert.match(loop,/business\.updated/)
  assert.match(loop,/business\.closed/)
  assert.match(loop,/business\.lost/)
- assert.match(loop,/mudança confirmada de `methodology_state`/)
+ assert.match(plainLoop,/mudança confirmada de methodology_state/)
 })
 
 test('loop distingue reação, execução, progresso e resultado',()=>{
  for(const value of ['accepted','edited','rejected','scheduled','executed','won','lost'])assert.match(loop,new RegExp('`'+value+'`'))
  assert.match(loop,/Um `accepted` não deve ser convertido em `won`/)
- assert.match(loop,/sem rótulo, não rejeitada/)
+ assert.match(plainLoop,/sem rótulo, não rejeitada/)
  assert.match(server,/const feedbackOutcomes=\{used:'executed',adapted:'edited',scheduled:'scheduled',discarded:'rejected',accepted:'accepted',edited:'edited',rejected:'rejected',executed:'executed',won:'won',lost:'lost'\}/)
 })
 
