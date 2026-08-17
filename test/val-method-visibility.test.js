@@ -49,6 +49,8 @@ test('SPIN, OPC e EPA funcionam como abas exclusivas, acessíveis e responsivas'
  const panel=read('src/components/ValPanel.jsx')
  const styles=read('src/styles.css')
  const playbook=read('server/sales-playbook.js')
+ const methodology=read('server/val-methodology.js')
+ const methodSources=playbook+'\n'+methodology
  const methodsIndex=panel.indexOf('<section className="val-sales-methods"')
  const collapsedIndex=panel.indexOf('<details className="val-plan-details"')
 
@@ -72,8 +74,8 @@ test('SPIN, OPC e EPA funcionam como abas exclusivas, acessíveis e responsivas'
  assert.match(styles,/\.val-sales-method-panel\{[^}]*animation:val-rise/)
  assert.match(styles,/@media\(max-width:760px\)[\s\S]*?\.val-method-tabs\{grid-template-columns:1fr\}/)
  assert.match(styles,/@media\(max-width:460px\)[^}]*[\s\S]*?\.val-spin-method>ol\{grid-template-columns:1fr\}/)
- assert.match(playbook,/painel [“"]Método da abordagem[”"]/)
- assert.match(playbook,/nunca um exemplo genérico/)
+ assert.match(methodSources,/painel [“"]Método da abordagem[”"]/)
+ assert.match(methodSources,/nunca um exemplo genérico/)
 })
 
 test('sequência consultiva separa etapa aberta, sugestão da VAL e etapa de trabalho',()=>{

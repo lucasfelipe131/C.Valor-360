@@ -89,6 +89,19 @@ O log operacional não duplica o texto integral do produtor. A pergunta completa
 
 Essa estrutura permite avaliar falso positivo e falso negativo do roteador, comparar tier solicitado e tier escolhido e, no futuro, calcular uma matriz de acerto sem depender da memória de quem analisou o caso.
 
+## Fonte única da sequência metodológica
+
+`server/val-methodology.js` é a fonte canônica de preparar → alinhar → descobrir → dimensionar → construir_valor → propor → comprometer. Cada etapa define, no mesmo lugar, nome, descrição para o prompt, porta objetiva, tipo de passo da conversa e perguntas aberta e fechada.
+
+Essa fonte alimenta quatro comportamentos que antes podiam divergir:
+
+- o trecho metodológico enviado ao modelo por `buildValMethodologyPrompt()`;
+- a inferência determinística de `deriveValMethodology()`;
+- as perguntas do fallback por `buildValStageQuestions()`;
+- os enums estritos de `methodology_state` no `valAdviceSchema`.
+
+`applyValWorkingStage()` também usa a porta definida na mesma etapa. Assim, selecionar uma etapa de trabalho não altera o avanço real, e prompt, fallback e schema não precisam manter cópias independentes da sequência. Alterar uma etapa exige atualizar a definição canônica e os testes; não é permitido editar somente o texto do prompt.
+
 ## Instruções modulares e cache de prompt
 
 `buildValInstructions(tier)` monta as instruções sempre na mesma ordem: primeiro um **prefixo fixo**, depois um **bloco variável**. O prefixo fixo contém identidade, tom, evidência, proteção de dados, limites de persuasão, Ponte de Valor, perfil decisório e a barreira de revisão humana. Ele é idêntico em `daily`, `strategic` e `fast`, favorecendo o cache automático de prefixo do provedor sem depender de estado armazenado pela aplicação.
