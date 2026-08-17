@@ -89,6 +89,14 @@ O log operacional não duplica o texto integral do produtor. A pergunta completa
 
 Essa estrutura permite avaliar falso positivo e falso negativo do roteador, comparar tier solicitado e tier escolhido e, no futuro, calcular uma matriz de acerto sem depender da memória de quem analisou o caso.
 
+## Política de retries da OpenAI
+
+`OPENAI_MAX_RETRIES` é normalizado para um inteiro não negativo e usado tanto no cliente quanto na chamada `responses.create`. O valor padrão continua sendo 1, ou seja, no máximo duas tentativas no total. `0` desativa novas tentativas; valores maiores respeitam a configuração explícita do ambiente.
+
+O SDK oficial aplica backoff exponencial aos erros recuperáveis de conexão, timeout, HTTP 408, 409, 429 e 5xx. Erros de validação, autenticação e cancelamentos pelo `AbortSignal` não devem ser repetidos. A aplicação não cria um segundo loop de retry, evitando multiplicar tentativas entre duas camadas.
+
+A política efetiva fica registrada em `modelRun.retryPolicy` e em `providerMetadata.retryPolicy`, com `maxRetries`, total máximo de tentativas e o tipo de backoff. Ela não contém mensagem, resposta ou dados do produtor.
+
 ## Reconciliação da revisão humana
 
 A barreira técnica usa dois sinais independentes: as regras determinísticas sobre solicitação, saída, sinais de contexto e comparação de produtos; e o campo `human_review` devolvido pelo modelo estruturado. Um sinal não pode liberar o outro.
