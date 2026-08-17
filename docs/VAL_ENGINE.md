@@ -61,6 +61,19 @@ Em agosto de 2026, a documentação oficial informa que a plataforma de fine-tun
 
 A Evals API também está em descontinuação: somente leitura em 31/10/2026 e encerramento previsto para 30/11/2026. Os casos dourados e resultados da VAL ficam no próprio repositório/banco e no CI.
 
+## Compactação orientada ao assunto atual
+
+`compactValContext()` não usa mais a posição original de uma lista como sinônimo de importância. Antes de aplicar qualquer limite, cada coleção é ordenada por dois sinais auditáveis e determinísticos:
+
+1. **relevância**: sobreposição entre os termos da solicitação atual e o conteúdo do registro, com bônus para combinações consecutivas e para oportunidades ainda abertas;
+2. **recência**: data mais nova localizada nos campos conhecidos de criação, atualização, observação, visita, interação ou próxima ação.
+
+A relevância tem peso suficiente para que um registro antigo sobre o assunto atual possa aparecer antes de um registro recente, porém alheio à pergunta. Em empates, vence o registro mais recente e, depois, a ordem original, garantindo resultado estável.
+
+A compactação continua em níveis: contexto completo, coleções priorizadas, índice compacto de oportunidades e contexto mínimo. Ao reduzir uma lista, os itens menos relevantes são retirados primeiro. Todas as oportunidades permanecem no índice compacto, inclusive quando o restante do dossiê precisa ser reduzido. O texto da solicitação é usado somente para ordenar registros; ele não cria fatos, evidências ou campos novos.
+
+O limite `maxContextChars` continua sendo verificado após cada nível. `decisionIntelligence`, `productIntelligence` e anexos atuais também são enviados em blocos próprios, portanto detalhes duplicados podem sair do último nível sem perda desses contratos.
+
 ## Auditoria do roteamento de modelos
 
 `selectValModel()` devolve, além de modelo, tier e esforço, a regra que decidiu a rota. Os identificadores atuais distinguem modo explícito, padrão estratégico na mensagem, padrão rápido na mensagem e fallback diário. O texto genérico que acionou a regex, como “comitê” ou “classifique”, também fica registrado.

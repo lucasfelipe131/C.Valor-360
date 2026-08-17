@@ -63,8 +63,8 @@ test('compactação do prompt preserva todas as oportunidades mesmo sob limite d
   assert.equal(compact.opportunityPortfolio.total,200)
   assert.equal(compact.opportunityPortfolio.open,150)
   assert.ok(JSON.stringify(compact).length<=30_000)
-  const last=items.at(-1)
-  assert.match(Array.isArray(last)?String(last[0]):String(last.title),/Oportunidade 199/)
+  const titles=items.map(item=>Array.isArray(item)?String(item[0]):String(item.title))
+  assert.ok(titles.some(title=>/Oportunidade 199/.test(title)))
 })
 
 test('perfil é hipótese adaptativa, não diagnóstico',()=>{
