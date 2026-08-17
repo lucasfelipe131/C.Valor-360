@@ -9,6 +9,7 @@ import {compactBRL,commercialMetrics} from '../lib/commercial-metrics'
 import ValPanel from './ValPanel'
 import ValProgressFeedback from './ValProgressFeedback'
 import {createValProgressRequestId,initialValProgress,startValProgressPolling} from '../lib/val-progress-client'
+import {fetchJsonResource,useAsyncResource} from '../hooks/useAsyncResource'
 import '../val-decision-center.css'
 
 const quickActions=[
@@ -93,7 +94,7 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
  const [requestedStage,setRequestedStage]=useState(null)
  const [message,setMessage]=useState('')
  const [response,setResponse]=useState(null)
- const [status,setStatus]=useState({loading:true,data:null,error:''})
+ const {state:status,run:loadStatus}=useAsyncResource({initialData:null,initialLoading:true,timeoutMs:8_000,timeoutMessage:'A VAL está operando com contexto local.',fallbackMessage:'A VAL está operando com contexto local.'})
  const [loading,setLoading]=useState(false)
  const [error,setError]=useState('')
  const [progress,setProgress]=useState(()=>initialValProgress())
@@ -106,13 +107,8 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
  useEffect(()=>()=>requestRef.current?.abort(),[])
 
  useEffect(()=>{
-  const controller=new AbortController()
-  fetch('/api/val/status',{signal:typeof AbortSignal.timeout==='function'?AbortSignal.any([controller.signal,AbortSignal.timeout(8000)]):controller.signal})
-   .then(async result=>{const payload=await result.json().catch(()=>({}));if(!result.ok)throw new Error(payload.error||'Status indisponível.');return payload})
-   .then(data=>setStatus({loading:false,data,error:''}))
-   .catch(fetchError=>{if(fetchError.name!=='AbortError')setStatus({loading:false,data:null,error:fetchError.message})})
-  return()=>controller.abort()
- },[])
+  loadStatus(({signal})=>fetchJsonResource('/api/val/status',{signal,fallbackMessage:'A VAL está operando com contexto local.'}),{keepData:false})
+ },[loadStatus])
 
  useEffect(()=>{
   requestRef.current?.abort()
