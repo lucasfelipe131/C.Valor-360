@@ -58,7 +58,7 @@ test('Estúdio exibe ciclo pós-conversão, preserva cadastro de decisores e con
  assert.match(studio,/MultiDecisionMapPanel data=\{innovations\.multiDecisionMap\} client=\{client\} opportunities=\{data\.opportunities\|\|\[\]\} onSaved=\{reload\}/)
  assert.match(panel,/CICLO PÓS-CONVERSÃO/)
  assert.match(panel,/Nenhuma sugestão cria oportunidade, contato ou ordem automaticamente/)
- assert.match(bootstrap,/hasRecentClosedBusiness\(context\)\?await grainWorkspaceFor/)
+ assert.match(bootstrap,/hasRecentClosedBusiness\(context\)\?grainWorkspaceFor\(this,input\?\.ownerId\):null/)
  assert.match(bootstrap,/postConversionExpansion:buildPostConversionExpansion/)
  assert.match(engine,/buildValueBridge/)
  assert.match(engine,/buildGrainOpportunities/)
