@@ -8,6 +8,7 @@ export default function Logo({compact=false}){
  const leafId=`val-leaf-${uid}`
  const leafShadeId=`val-leaf-shade-${uid}`
  const wordId=`val-word-${uid}`
+ const wordGreenId=`val-word-green-${uid}`
  return <div className={`brand val-brand val-final-brand ${compact?'compact':''}`} role="img" aria-label="VAL — inteligência que gera valor">
   <span className="brand-mark" aria-hidden="true">
    <svg viewBox="0 0 64 64" fill="none" focusable="false">
@@ -35,10 +36,6 @@ export default function Logo({compact=false}){
       <stop stopColor="#004D3E"/>
       <stop offset="1" stopColor="#008B57"/>
      </linearGradient>
-     <linearGradient id={wordId} x1="0" y1="0" x2="210" y2="60" gradientUnits="userSpaceOnUse">
-      <stop stopColor="#082C57"/>
-      <stop offset="1" stopColor="#0A4C9B"/>
-     </linearGradient>
     </defs>
     <path d="M12.5 10.1c2.6-2.1 6.5-1.6 8.4 1.2l21.2 31.6-8.6 13.6L9.4 18.7c-1.8-2.8-1.2-6.4 1.4-8.4l1.7-.2Z" fill={`url(#${signalId})`}/>
     <path d="M12.5 10.1c2.6-2.1 6.5-1.6 8.4 1.2l4 6-8.9 14.1-6.6-12.7c-1.8-2.8-1.2-6.4 1.4-8.4l1.7-.2Z" fill={`url(#${blueFoldId})`} fillOpacity=".78"/>
@@ -53,9 +50,19 @@ export default function Logo({compact=false}){
   </span>
   {!compact&&<span className="brand-word" aria-hidden="true">
    <svg className="val-wordmark" viewBox="0 0 220 72" fill="none" focusable="false">
+    <defs>
+     <linearGradient id={wordId} x1="0" y1="0" x2="220" y2="72" gradientUnits="userSpaceOnUse">
+      <stop stopColor="#082C57"/>
+      <stop offset="1" stopColor="#0A4C9B"/>
+     </linearGradient>
+     <linearGradient id={wordGreenId} x1="124" y1="67" x2="146" y2="48" gradientUnits="userSpaceOnUse">
+      <stop stopColor="#00835F"/>
+      <stop offset="1" stopColor="#58E21A"/>
+     </linearGradient>
+    </defs>
     <path d="M5 9h19l26 43c2.4 4 5.3 4 7.7 0L84 9h19L66 67H42L5 9Z" fill={`url(#${wordId})`}/>
     <path fillRule="evenodd" clipRule="evenodd" d="M91 67 126 9h17l35 58h-20l-23.5-39-23.5 39H91Zm33.2-9.5h20.6l-10.3-17-10.3 17Z" fill={`url(#${wordId})`}/>
-    <path d="m134.5 49.5 10.7 17.5h-21.4l10.7-17.5Z" fill={`url(#${greenId})`}/>
+    <path d="m134.5 49.5 10.7 17.5h-21.4l10.7-17.5Z" fill={`url(#${wordGreenId})`}/>
     <path d="M181 9h18v39.5c0 4 2 5.5 6.5 5.5H219v13h-21c-11.5 0-17-5.6-17-17V9Z" fill={`url(#${wordId})`}/>
    </svg>
   </span>}
