@@ -1,6 +1,4 @@
-from pathlib import Path
-
-report='''# Auditoria de terminologia do VALOR 360
+# Auditoria de terminologia do VALOR 360
 
 Esta auditoria registra como os termos aparecem hoje e evita renomeações silenciosas. Ela não altera campos de banco, rotas, nomes de schema, chaves internas nem textos do produto nesta PR.
 
@@ -98,22 +96,3 @@ Formas em minúsculas (`spin`, `opc`, `epa`) continuam válidas como chaves, var
 3. SPIN, OPC e EPA permanecem em maiúsculas quando visíveis.
 4. Senoide permanece sem acento e com inicial maiúscula quando tratado como nome do método.
 5. O teste `test/terminology-contract.test.js` protege os nomes atuais e a existência deste registro de inconsistências.
-'''
-
-Path('docs/TERMINOLOGY_AUDIT.md').write_text(report)
-
-engine=Path('docs/VAL_ENGINE.md')
-source=engine.read_text()
-marker='## Regra de revisão textual e reconhecimento\n'
-link='''## Terminologia de produto\n\nA separação entre produtor, Cliente 360, conta comercial, conta de acesso e os métodos SPIN, OPC, EPA e Senoide está registrada em [`docs/TERMINOLOGY_AUDIT.md`](TERMINOLOGY_AUDIT.md). Inconsistências são sinalizadas antes de qualquer renomeação.\n\n'''
-if source.count(marker)!=1:
-    raise RuntimeError('marcador da regra textual não encontrado de forma única')
-engine.write_text(source.replace(marker,link+marker,1))
-
-Path('test/terminology-contract.test.js').write_text("""import assert from 'node:assert/strict'\nimport {readFileSync} from 'node:fs'\nimport test from 'node:test'\n\nconst read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8')\nconst panel=read('src/components/ValPanel.jsx')\nconst playbook=read('server/sales-playbook.js')\nconst audit=read('docs/TERMINOLOGY_AUDIT.md')\nconst engineDocs=read('docs/VAL_ENGINE.md')\n\ntest('nomes visíveis dos métodos permanecem explícitos e estáveis',()=>{\n assert.match(panel,/label:'SPIN'/)\n assert.match(panel,/label:'OPC'/)\n assert.match(panel,/label:'EPA'/)\n assert.match(playbook,/SPIN, EPA, OPC ou Senoide/)\n assert.doesNotMatch(playbook,/Senóide/)\n})\n\ntest('auditoria sinaliza divergências sem renomear silenciosamente',()=>{\n assert.match(audit,/Não renomear silenciosamente/)\n assert.match(audit,/“Produtor”, “cliente” e “conta” coexistem/)\n assert.match(audit,/SPIN tem duas expansões próximas, mas não idênticas/)\n assert.match(audit,/EPA mantém o acrônimo, mas varia a descrição/)\n assert.match(audit,/OPC está consistente/)\n assert.match(audit,/Senoide não está integrada ao painel de métodos/)\n assert.match(audit,/Pendente de decisão de produto/)\n})\n\ntest('terminologia define camadas sem migrar contratos técnicos',()=>{\n assert.match(audit,/conta comercial/)\n assert.match(audit,/conta de acesso/)\n assert.match(audit,/contratos `client`, `clientId` e tabela `clients`/)\n assert.match(engineDocs,/TERMINOLOGY_AUDIT\.md/)\n})\n""")
-
-for path in ['scripts/audit-c3.py','.github/workflows/audit-c3.yml','tmp/c3-terms.md','scripts/apply-c3.py','.github/workflows/apply-c3.yml']:
-    Path(path).unlink(missing_ok=True)
-try: Path('tmp').rmdir()
-except OSError: pass
-print('C3 aplicado com sucesso.')
