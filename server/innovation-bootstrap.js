@@ -1,5 +1,6 @@
 import {ValRepository} from './repository.js'
 import {buildCommitmentLadders} from './commitment-ladder.js'
+import {buildObjectionLibrary} from './objection-library.js'
 
 const PATCHED=Symbol.for('valor360.conversion-innovations.patched')
 
@@ -12,7 +13,8 @@ if(!globalThis[PATCHED]){
    ...context,
    conversionInnovations:{
     ...(context.conversionInnovations||{}),
-    commitmentLadders:buildCommitmentLadders(context)
+    commitmentLadders:buildCommitmentLadders(context),
+    objectionLibrary:buildObjectionLibrary(context)
    }
   }
  }
