@@ -1,0 +1,96 @@
+name: QA Production Smoke
+
+on:
+  push:
+    branches:
+      - qa/production-smoke-20260816
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  regression-and-production-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE_URL: https://cvalor360.up.railway.app
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependências
+        run: npm ci
+
+      - name: Rodar regressão completa
+        run: npm test
+
+      - name: Validar build e cache PWA
+        run: npm run build
+
+      - name: Smoke test público e de segurança em produção
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          request() {
+            local method="$1"
+            local path="$2"
+            local output="$3"
+            local headers="$4"
+            shift 4
+            curl --fail-with-body --silent --show-error \
+              --connect-timeout 10 --max-time 30 \
+              -X "$method" -D "$headers" -o "$output" \
+              -w '%{http_code} %{time_total}' \
+              "$@" "${BASE_URL}${path}"
+          }
+
+          read -r live_status live_time < <(request GET /live /tmp/live.json /tmp/live.headers)
+          test "$live_status" = "200"
+          jq -e '.status == "ok" and .service == "valor360"' /tmp/live.json >/dev/null
+          awk -v t="$live_time" 'BEGIN { exit !(t < 5) }'
+
+          read -r health_status health_time < <(request GET /health /tmp/health.json /tmp/health.headers)
+          test "$health_status" = "200"
+          jq -e '.status == "ok" and .service == "valor360"' /tmp/health.json >/dev/null
+          awk -v t="$health_time" 'BEGIN { exit !(t < 10) }'
+
+          read -r root_status root_time < <(request GET / /tmp/root.html /tmp/root.headers)
+          test "$root_status" = "200"
+          grep -Eiq 'VAL|VALOR 360' /tmp/root.html
+          grep -Eiq '^x-content-type-options:[[:space:]]*nosniff' /tmp/root.headers
+          awk -v t="$root_time" 'BEGIN { exit !(t < 10) }'
+
+          read -r session_status session_time < <(request GET /api/auth/session /tmp/session.json /tmp/session.headers)
+          test "$session_status" = "200"
+          jq -e 'has("authenticated") and has("required") and (.authenticated | type == "boolean") and (.required | type == "boolean")' /tmp/session.json >/dev/null
+          awk -v t="$session_time" 'BEGIN { exit !(t < 10) }'
+
+          # Sem cookie, endpoints de negócio devem falhar fechados e nunca expor dados.
+          val_status=$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
+            -o /tmp/val-status.json -D /tmp/val-status.headers -w '%{http_code}' \
+            "${BASE_URL}/api/val/status")
+          test "$val_status" = "401"
+          jq -e '.error | type == "string"' /tmp/val-status.json >/dev/null
+
+          chat_status=$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
+            -o /tmp/chat.json -D /tmp/chat.headers -w '%{http_code}' \
+            -H 'content-type: application/json' \
+            --data '{"clientId":"qa-sem-sessao","message":"Priorize esta conta"}' \
+            "${BASE_URL}/api/val/chat")
+          test "$chat_status" = "401"
+          jq -e '.error | type == "string"' /tmp/chat.json >/dev/null
+          ! grep -Eiq 'OPENAI_API_KEY|VAL_SESSION_SECRET|DATABASE_URL' /tmp/chat.json
+
+          read -r sw_status sw_time < <(request GET /sw.js /tmp/sw.js /tmp/sw.headers)
+          test "$sw_status" = "200"
+          grep -Eiq '^cache-control:.*(no-store|no-cache)' /tmp/sw.headers
+          grep -Eq 'valor360-v[a-zA-Z0-9_-]+' /tmp/sw.js
+          awk -v t="$sw_time" 'BEGIN { exit !(t < 10) }'
+
+          echo 'Produção aprovada nos testes públicos, de segurança, build e PWA.'
