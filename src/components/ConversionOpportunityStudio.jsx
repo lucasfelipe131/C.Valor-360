@@ -5,6 +5,7 @@ import CommitmentLadderPanel from './CommitmentLadderPanel'
 import ObjectionEvidencePanel from './ObjectionEvidencePanel'
 import ValueScenarioPanel from './ValueScenarioPanel'
 import MultiDecisionMapPanel from './MultiDecisionMapPanel'
+import PostConversionExpansionPanel from './PostConversionExpansionPanel'
 import '../conversion-studio.css'
 import '../objection-evidence.css'
 
@@ -36,7 +37,7 @@ export default function ConversionOpportunityStudio({clients=[],onClient,onPrepa
    <div>
     <span className="conversion-studio-kicker"><BrainCircuit/>ESTÚDIO DE CONVERSÃO</span>
     <h3 id="conversion-studio-title">Da conversa ao próximo “sim” verificável</h3>
-    <p>A VAL organiza compromissos, decisores, objeções e valor econômico usando somente o que está registrado no dossiê.</p>
+    <p>A VAL organiza compromissos, decisores, valor, objeções e o próximo ciclo depois do fechamento usando somente o que está registrado.</p>
    </div>
    <div className="conversion-studio-controls">
     <label><small>PRODUTOR</small><span><select value={client?.id||''} onChange={selectClient}>{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select><ChevronDown/></span></label>
@@ -44,16 +45,17 @@ export default function ConversionOpportunityStudio({clients=[],onClient,onPrepa
    </div>
   </header>
 
-  {loading&&!data&&<div className="conversion-studio-loading" role="status"><LoaderCircle/><div><b>Montando o dossiê de conversão…</b><small>Verificando compromissos, participantes, perdas, números e evidências confirmadas.</small></div></div>}
+  {loading&&!data&&<div className="conversion-studio-loading" role="status"><LoaderCircle/><div><b>Montando o dossiê de conversão…</b><small>Verificando compromissos, participantes, fechamentos, grãos, números e evidências confirmadas.</small></div></div>}
   {error&&<div className="conversion-studio-error">{error}</div>}
 
   {!loading&&data&&<>
    <CommitmentLadderPanel data={innovations.commitmentLadders} client={client} onPrepare={prepare}/>
+   <PostConversionExpansionPanel data={innovations.postConversionExpansion} onPrepare={prepare}/>
    <MultiDecisionMapPanel data={innovations.multiDecisionMap} client={client} opportunities={data.opportunities||[]} onSaved={reload}/>
    <ValueScenarioPanel data={innovations.valueScenarios} onPrepare={prepare}/>
    <ObjectionEvidencePanel data={innovations.objectionLibrary}/>
   </>}
 
-  <footer className="conversion-studio-foot"><ShieldCheck/><span><b>Avanço sem pressão ou promessa artificial</b><small>A VAL não inventa decisores, influência ou postura de risco; não cria premissas financeiras e não transforma precedentes em scripts.</small></span><Sparkles/></footer>
+  <footer className="conversion-studio-foot"><ShieldCheck/><span><b>Avanço sem pressão ou promessa artificial</b><small>A VAL não inventa expansão, decisores ou retorno; não cria oportunidade nem contato automaticamente e preserva a revisão técnica.</small></span><Sparkles/></footer>
  </section>
 }
