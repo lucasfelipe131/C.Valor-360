@@ -14,6 +14,7 @@ const tiers=['daily','strategic','fast']
 
 test('todos os tiers compartilham exatamente o mesmo prefixo cacheável',()=>{
  const blocks=tiers.map(tier=>buildValInstructionBlocks(tier))
+ assert.match(VAL_INSTRUCTIONS_VERSION,/^val-playbook-v\d+-tiered$/)
  assert.ok(VAL_FIXED_INSTRUCTIONS.length>4_000)
  assert.equal(new Set(blocks.map(item=>item.fixed)).size,1)
  for(const block of blocks){
