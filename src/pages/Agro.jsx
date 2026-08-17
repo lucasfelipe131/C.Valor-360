@@ -44,7 +44,7 @@ export default function Agro(){
    <header className="agro-minimal-header">
     <div className="agro-minimal-brand"><Logo compact/><div><small>AMBIENTE TÉCNICO</small><strong>Inteligência Agronômica</strong></div></div>
     <div className="agro-workspace-actions">
-     <span className={status.configured?'is-ready':''}><CheckCircle2/>{status.loading?'Conectando':'Sessão integrada'}</span>
+     <span className={status.configured?'is-ready':''}><CheckCircle2/>{status.loading?'Conectando':'Mesmo login ativo'}</span>
      <button type="button" onClick={toggleExpanded} aria-pressed={expanded} title={expanded?'Reduzir ambiente técnico':'Abrir ambiente técnico em tela cheia'}>
       {expanded?<Minimize2/>:<Maximize2/>}<b>{expanded?'Reduzir':'Tela cheia'}</b>
      </button>
