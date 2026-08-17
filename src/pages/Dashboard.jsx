@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import KpiCard from '../components/KpiCard'
 import ValPanel from '../components/ValPanel'
+import ValDailyRadar from '../components/ValDailyRadar'
 import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
 import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline,resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
@@ -104,6 +105,8 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
    <div><span className="eyebrow">ACESSO RÁPIDO</span><h3>O que você quer fazer?</h3></div>
    <div className="home-quick-grid">{quickActions.map(({page,label,detail,icon:Icon})=><button key={page} onClick={()=>setPage(page)}><span><Icon/></span><div><b>{label}</b><small>{detail}</small></div><ChevronRight/></button>)}</div>
   </section>
+
+  <ValDailyRadar clients={clients} visits={visits} opportunities={opportunities} onClient={onClient} onPrepare={onPrepare}/>
 
   <section className="kpi-grid home-kpis">
    <KpiCard icon={Users} label="Clientes ativos" value={clients.length} delta="Carteira consolidada"/>
