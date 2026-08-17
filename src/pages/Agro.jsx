@@ -1,13 +1,8 @@
 import React,{useEffect,useRef,useState} from 'react'
-import {BrainCircuit,Calculator,Camera,CheckCircle2,CloudSun,FileText,FlaskConical,Leaf,LoaderCircle,Map,Maximize2,Minimize2,Satellite,ShieldCheck,TestTube2,Wheat} from 'lucide-react'
+import {CheckCircle2,LoaderCircle,Maximize2,Minimize2} from 'lucide-react'
+import Logo from '../components/Logo'
 
-const capabilities=[
- ['Solo',TestTube2],['Diagnóstico por foto',Camera],['Calculadoras',Calculator],
- ['Bulas',Leaf],['Talhões e GPS',Map],['NDVI',Satellite],
- ['Cultivares e ZARC',Wheat],['Clima',CloudSun],['Relatórios',FileText]
-]
-
-export default function Agro({clients=[]}){
+export default function Agro(){
  const [status,setStatus]=useState({loading:true,configured:false})
  const [loaded,setLoaded]=useState(false)
  const [expanded,setExpanded]=useState(false)
@@ -44,34 +39,18 @@ export default function Agro({clients=[]}){
   setExpanded(true)
  }
 
- return <div className="page-stack agro-native agro-large-page">
-  <section className="agro-native-hero">
-   <div>
-    <span className="eyebrow">NÚCLEO TÉCNICO NATIVO</span>
-    <h2>Inteligência agronômica sem sair do VAL.</h2>
-    <p>Análises, diagnósticos, cálculos, mapas, bulas e relatórios funcionam nesta mesma plataforma e usam a carteira protegida do consultor.</p>
-   </div>
-   <div className="agro-native-status">
-    <span className={status.configured?'is-ready':''}><CheckCircle2/>{status.loading?'Verificando serviços':'Mesmo login ativo'}</span>
-    <span><ShieldCheck/>{clients.length} {clients.length===1?'produtor disponível':'produtores disponíveis'}</span>
-   </div>
-  </section>
-
-  <section className="agro-capability-strip" aria-label="Funções técnicas disponíveis">
-   {capabilities.map(([label,Icon])=><span key={label}><Icon/>{label}</span>)}
-  </section>
-
-  <section ref={workspaceRef} className={`agro-native-workspace${expanded?' is-expanded':''}`} aria-label="Ambiente técnico integrado">
-   <header>
-    <div><span className="workspace-orbit"><BrainCircuit/></span><div><small>VAL</small><strong>Ambiente técnico completo</strong></div></div>
+ return <div className="agro-native agro-full-page">
+  <section ref={workspaceRef} className={`agro-native-workspace agro-full-workspace${expanded?' is-expanded':''}`} aria-label="Ambiente técnico integrado">
+   <header className="agro-minimal-header">
+    <div className="agro-minimal-brand"><Logo compact/><div><small>AMBIENTE TÉCNICO</small><strong>Inteligência Agronômica</strong></div></div>
     <div className="agro-workspace-actions">
-     <span><FlaskConical/> IA prepara • agrônomo valida</span>
+     <span className={status.configured?'is-ready':''}><CheckCircle2/>{status.loading?'Conectando':'Sessão integrada'}</span>
      <button type="button" onClick={toggleExpanded} aria-pressed={expanded} title={expanded?'Reduzir ambiente técnico':'Abrir ambiente técnico em tela cheia'}>
       {expanded?<Minimize2/>:<Maximize2/>}<b>{expanded?'Reduzir':'Tela cheia'}</b>
      </button>
     </div>
    </header>
-   {!loaded&&<div className="agro-frame-loading" role="status"><LoaderCircle/><b>Carregando o núcleo técnico…</b><small>Sincronizando sessão e carteira protegida.</small></div>}
+   {!loaded&&<div className="agro-frame-loading" role="status"><LoaderCircle/><b>Carregando ambiente técnico…</b><small>Sincronizando sua sessão.</small></div>}
    <iframe
     title="Inteligência Agronômica da VAL"
     src="/tecnico?embedded=1"
@@ -79,7 +58,5 @@ export default function Agro({clients=[]}){
     allow="camera 'self'; geolocation 'self'"
    />
   </section>
-
-  <section className="agro-native-footnote"><ShieldCheck/><span><b>Decisão técnica responsável</b><small>Triagens e cálculos ficam registrados; produto, dose, diagnóstico e execução dependem de conferência e assinatura do profissional habilitado.</small></span></section>
  </div>
 }
