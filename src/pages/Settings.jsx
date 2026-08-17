@@ -14,7 +14,7 @@ function displayValue(value,fallback='Não informado'){
   const preferred=[value.label,value.name,value.provider,value.type,value.mode,value.status,value.connected===true?'Conectado':''].filter(Boolean)
   if(preferred.length)return preferred.join(' • ')
   const count=value.documents??value.records??value.items??value.files??value.chunks
-  if(count!==undefined)return `${count} itens indexados`
+  if(count!==undefined)return `${count} ${count===1?'item indexado':'itens indexados'}`
  }
  return fallback
 }

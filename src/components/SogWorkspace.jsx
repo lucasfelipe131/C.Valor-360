@@ -153,7 +153,7 @@ export default function SogWorkspace({clients=[],onSelect}){
  const saved=async message=>{await load();setNotice(message);window.clearTimeout(window.__sogNotice);window.__sogNotice=window.setTimeout(()=>setNotice(''),4200)}
  const openProfile=producer=>{const target=producer||producers.find(item=>!profilesByClient.has(String(item.id)))||producers[0];setProfileTarget(target?profilesByClient.get(String(target.id))||{clientId:target.id}:null);setModal('profile')}
  const openClient=clientId=>{const client=clients.find(item=>String(item.id)===String(clientId));if(client&&onSelect)onSelect(client)}
- const updateStatus=async(id,status)=>{try{await api(`/api/grains/intents/${id}`,{method:'PATCH',body:JSON.stringify({status})});await saved(status==='negotiating'?'Intenção movida para negociação.':'Intenção concluída no histórico SOG.')}catch(exception){setNotice(exception.message)}}
+ const updateStatus=async(id,status)=>{try{await api(`/api/grains/intents/${id}`,{method:'PATCH',body:JSON.stringify({status})});await saved(status==='negotiating'?'Intenção movida para negociação.':'Intenção concluída no histórico da SOG.')}catch(exception){setNotice(exception.message)}}
  const summary=workspace.summary||{}
  const tabs=[['opportunities','Oportunidades',workspace.opportunities?.length||0,Target],['intentions','Intenções',summary.activeIntentions||0,Handshake],['market','Mercado',workspace.marketSnapshots?.length||0,LineChart],['producers','Produtores',producers.length,UserRound],['ecosystem','Alimentação',null,Database]]
  if(loading&&!workspace.producers?.length)return <section className="sog-loading" role="status"><LoaderCircle className="spin"/><b>Conectando a SOG à carteira protegida…</b><span>Carregando produtores, intenções e referências de mercado.</span></section>
@@ -166,8 +166,8 @@ export default function SogWorkspace({clients=[],onSelect}){
   </header>
   <div className="sog-metrics" aria-label="Resumo operacional SOG">
    <SogMetric icon={UserRound} label="CARTEIRA CONECTADA" value={summary.producerCount??producers.length} detail={`${summary.profiledProducers||0} com perfil de grãos`} />
-   <SogMetric icon={Handshake} label="INTENÇÕES ATIVAS" value={summary.activeIntentions||0} detail={`${summary.confirmedIntentions||0} confirmadas ou negociando`} tone="is-blue"/>
-   <SogMetric icon={Clock3} label="MERCADO ATUAL" value={summary.freshMarketReferences||0} detail="referências observadas em até 24h" tone="is-gold"/>
+   <SogMetric icon={Handshake} label="INTENÇÕES ATIVAS" value={summary.activeIntentions||0} detail={`${summary.confirmedIntentions||0} confirmadas ou em negociação`} tone="is-blue"/>
+   <SogMetric icon={Clock3} label="MERCADO ATUAL" value={summary.freshMarketReferences||0} detail="referências observadas nas últimas 24 h" tone="is-gold"/>
    <SogMetric icon={Target} label="AÇÃO PRIORITÁRIA" value={summary.highPriority||0} detail={`${summary.generatedOpportunities||0} leituras geradas`} tone="is-red"/>
   </div>
   <nav className="sog-tabs" aria-label="Módulos da SOG" role="tablist">{tabs.map(([id,label,count,Icon])=><button type="button" role="tab" aria-selected={tab===id} className={tab===id?'is-active':''} key={id} onClick={()=>setTab(id)}><Icon/><span>{label}</span>{count!==null&&<em>{count}</em>}</button>)}</nav>

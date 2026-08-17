@@ -38,6 +38,7 @@ const array=value=>Array.isArray(value)?value:[]
 const text=(value,fallback='')=>String(value??fallback).replace(/\s+/g,' ').trim()
 const number=value=>Number.isFinite(Number(value))?Math.max(0,Math.min(100,Number(value))):null
 const unique=items=>[...new Set(items.map(item=>text(item)).filter(Boolean))]
+const countLabel=(value,singular,plural)=>`${Number(value)||0} ${Number(value)===1?singular:plural}`
 const formatAmount=value=>Number.isFinite(Number(value))?Number(value).toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0}):'Valor ainda não registrado'
 const initials=value=>text(value,'P').split(/\s+/).slice(0,2).map(part=>part[0]).join('').toUpperCase()
 
@@ -143,12 +144,12 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
 
  const layers=[
   {icon:Network,title:'Contexto conectado',value:response?`${Math.max(sourceCount,evidence.length)} sinais cruzados`:'Pronto para cruzar',description:'Produtor, histórico, visitas, campo e oportunidades na mesma leitura.',state:response?'complete':'ready'},
-  {icon:Database,title:'Qualidade dos dados',value:qualityScore!==null?`${Math.round(qualityScore)}/100`:'A medir',description:contradictions.length?`${contradictions.length} inconsistência(s) visível(is).`:`${missing.length} lacuna(s) priorizada(s).`,state:contradictions.length?'warning':qualityScore!==null?'complete':'ready'},
+  {icon:Database,title:'Qualidade dos dados',value:qualityScore!==null?`${Math.round(qualityScore)}/100`:'A medir',description:contradictions.length?`${countLabel(contradictions.length,'inconsistência visível','inconsistências visíveis')}.`:`${countLabel(missing.length,'lacuna priorizada','lacunas priorizadas')}.`,state:contradictions.length?'warning':qualityScore!==null?'complete':'ready'},
   {icon:Gauge,title:'Conversion Score',value:score!==null?`${Math.round(score)}/100`:'A calcular',description:'Ordena trabalho por valor, urgência, prontidão e evidência.',state:score!==null?'complete':'ready'},
   {icon:Route,title:'Próxima melhor ação',value:text(workflow.label,'A definir'),description:'Máquina de estados orienta o avanço sem improvisar.',state:workflow.label?'complete':'ready'},
-  {icon:FileCheck2,title:'Evidência explicável',value:response?`${evidence.length} fonte(s)`:'Aguardando análise',description:'Fato, origem, data, incerteza e dado ausente ficam visíveis.',state:evidence.length?'complete':'ready'},
+  {icon:FileCheck2,title:'Evidência explicável',value:response?countLabel(evidence.length,'fonte','fontes'):'Aguardando análise',description:'Fato, origem, data, incerteza e dado ausente ficam visíveis.',state:evidence.length?'complete':'ready'},
   {icon:Activity,title:'Aprendizado controlado',value:learning.sample_size!==undefined?`${Number(learning.sample_size)||0} retornos`:'Sem amostra ainda',description:text(learning.status,'Feedback real ajusta pesos apenas com amostra mínima.'),state:learning.mature?'complete':'ready'},
-  {icon:ShieldCheck,title:'Governança humana',value:humanReview.required?'Revisão obrigatória':'Humano no controle',description:'A IA melhora a linguagem; regras, dados e revisão governam a decisão.',state:humanReview.required?'warning':'complete'}
+  {icon:ShieldCheck,title:'Governança humana',value:humanReview.required?'Revisão obrigatória':'Humano no controle',description:'A IA melhora a linguagem; as regras, os dados e a revisão governam a decisão.',state:humanReview.required?'warning':'complete'}
  ]
 
  async function ask(prompt=message){
@@ -239,8 +240,8 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
    <section className="vdc-metric-grid" aria-label="Resumo da decisão">
     <Metric icon={Target} label="Prioridade" value={priorityLabel} caption={text(selectedOpportunity.stage,'Etapa ainda não informada')} tone={scoreTone(score)}/>
     <Metric icon={Gauge} label="Conversion Score" value={score!==null?`${Math.round(score)}/100`:'A medir'} caption="Ordenação operacional, não probabilidade de compra." tone={scoreTone(score)} progress={score}/>
-    <Metric icon={Database} label="Qualidade dos dados" value={qualityScore!==null?`${Math.round(qualityScore)}/100`:'A medir'} caption={contradictions.length?`${contradictions.length} inconsistência(s) detectada(s).`:`${missing.length} lacuna(s) relevante(s).`} tone={contradictions.length?'is-warning':'is-good'} progress={qualityScore}/>
-    <Metric icon={ShieldCheck} label="Confiança" value={confidenceLabels[text(confidence.level).toLocaleLowerCase('pt-BR')]||'Em calibração'} caption="Força da evidência; não chance de fechamento." tone={confidenceScore!==null&&confidenceScore>=70?'is-good':'is-neutral'} progress={confidenceScore}/>
+    <Metric icon={Database} label="Qualidade dos dados" value={qualityScore!==null?`${Math.round(qualityScore)}/100`:'A medir'} caption={contradictions.length?`${countLabel(contradictions.length,'inconsistência detectada','inconsistências detectadas')}.`:`${countLabel(missing.length,'lacuna relevante','lacunas relevantes')}.`} tone={contradictions.length?'is-warning':'is-good'} progress={qualityScore}/>
+    <Metric icon={ShieldCheck} label="Confiança" value={confidenceLabels[text(confidence.level).toLocaleLowerCase('pt-BR')]||'Em calibração'} caption="Força das evidências, não probabilidade de fechamento." tone={confidenceScore!==null&&confidenceScore>=70?'is-good':'is-neutral'} progress={confidenceScore}/>
    </section>
 
    <section className="vdc-decision-grid">
@@ -256,7 +257,7 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
      <p className="vdc-action-main">{text(brief.action||advice.next_best_action,'Complete o contexto mínimo antes de avançar.')}</p>
      <div className="vdc-primary-question"><MessageSquareText/><span><small>PERGUNTA PRINCIPAL</small><b>{text(brief.question||advice.next_question?.question,'Qual informação mais muda esta decisão agora?')}</b></span></div>
      <dl>
-      <div><dt><ListChecks/>Avance quando</dt><dd>{text(workflow.success_gate,'Existe próximo passo aceito, responsável, prazo e critério de conclusão.')}</dd></div>
+      <div><dt><ListChecks/>Avance quando</dt><dd>{text(workflow.success_gate,'Existe um próximo passo aceito, com responsável, prazo e critério de conclusão.')}</dd></div>
       <div><dt><AlertTriangle/>Evite</dt><dd>{text(workflow.avoid,'Não preencha lacunas com suposições nem confunda interesse com compromisso.')}</dd></div>
      </dl>
      <blockquote>{text(advice.answer,'A orientação será construída com os fatos da conta.')}</blockquote>
@@ -273,7 +274,7 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
     </article>
 
     <article className="vdc-evidence-card">
-     <header><FileCheck2/><span><small>EVIDÊNCIAS AUDITÁVEIS</small><h3>{evidence.length} fonte(s) usada(s)</h3></span></header>
+     <header><FileCheck2/><span><small>EVIDÊNCIAS AUDITÁVEIS</small><h3>{countLabel(evidence.length,'fonte usada','fontes usadas')}</h3></span></header>
      {evidence.length?<ul>{evidence.slice(0,5).map(item=><li key={item.id}><span><CheckCircle2/></span><div><b>{item.claim}</b>{item.meta&&<small>{item.meta}</small>}{item.uncertainty&&<p>Limite: {item.uncertainty}</p>}</div></li>)}</ul>:<p className="vdc-empty-copy">A decisão permaneceu em descoberta porque ainda não existem evidências suficientes.</p>}
     </article>
    </section>

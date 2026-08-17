@@ -95,7 +95,7 @@ VAL_STRATEGIC_MAX_OUTPUT_TOKENS=32000
 
 O pre-deploy roda `npm run db:migrate`. Sem `DATABASE_URL`, ele falha fora do modo demonstrativo. JSON só é permitido quando `VAL_DEMO_MODE=true` foi ativado explicitamente; a IA real permanece bloqueada.
 
-Antes da primeira migração sobre um banco 0.3, restaure uma cópia em staging e valide a contagem de usuários, clientes, perfis, visitas, oportunidades, recomendações e contexto técnico. A migração usa lock e marcador de versão para não ressuscitar registros antigos, mas não oferece compatibilidade de rollback para um binário anterior; faça snapshot e janela controlada de deploy.
+Antes da primeira migração de um banco 0.3, restaure uma cópia em staging e valide a contagem de usuários, clientes, perfis, visitas, oportunidades, recomendações e contexto técnico. A migração usa lock e marcador de versão para não ressuscitar registros antigos, mas não oferece compatibilidade de rollback para um binário anterior; faça snapshot e janela controlada de deploy.
 
 ## Contrato com o Manual do Agrônomo
 
@@ -135,7 +135,7 @@ Envelope:
 }
 ```
 
-O mesmo `source + externalId` nunca é aplicado duas vezes. Uma anomalia NDVI cria vistoria, não diagnóstico. Solo só gera sinal comercial com `validatedFlags` fornecidas pelo fluxo técnico revisado.
+A mesma combinação `source + externalId` nunca é processada duas vezes. Uma anomalia NDVI cria vistoria, não diagnóstico. Solo só gera sinal comercial com `validatedFlags` fornecidas pelo fluxo técnico revisado.
 
 Relatório de campo e solo precisam trazer também prova de aprovação para gerar sinal:
 
@@ -149,7 +149,7 @@ Relatório de campo e solo precisam trazer também prova de aprovação para ger
 }
 ```
 
-A HMAC prova qual sistema enviou o evento; esse objeto registra a atestação de revisão feita pelo Manual. A VAL valida identidade informada e data, mas não possui uma assinatura individual independente do agrônomo. Sem HMAC e atestação válida, o dado bruto é preservado, mas nenhuma ação é tratada como validada.
+A assinatura HMAC comprova qual sistema enviou o evento; esse objeto registra a atestação de revisão feita pelo Manual. A VAL valida identidade informada e data, mas não possui uma assinatura individual independente do agrônomo. Sem HMAC e uma atestação válida, o dado bruto é preservado, mas nenhuma ação é tratada como validada.
 
 ## Estado assíncrono compartilhado no frontend
 
@@ -193,7 +193,7 @@ O timeout do navegador não deve ser reduzido isoladamente em uma das telas. Se 
 }
 ```
 
-Saída: resposta interna, objetivo, dimensões decisórias observáveis, próxima pergunta, plano opcional, tensão aplicável/não aplicável/bloqueada, comparação agir/esperar/manter, próxima ação, compromisso opcional, confiança categórica, evidências estruturadas, revisão humana e ações bloqueadas.
+A saída inclui resposta interna, objetivo, dimensões decisórias observáveis, próxima pergunta, plano opcional, tensão aplicável, não aplicável ou bloqueada, comparação entre agir, esperar e manter, próxima ação, compromisso opcional, confiança categórica, evidências estruturadas, revisão humana e ações bloqueadas.
 
 Se a solicitação ou saída contiver diagnóstico, produto, dose, mistura, taxa de aplicação ou sinal agronômico pendente, a engine descarta o conteúdo técnico acionável, persiste a recomendação como `pending_review` e devolve somente um pacote seguro de encaminhamento. O piloto ainda não possui endpoint para liberar esse conteúdo: a validação volta pelo evento assinado do Manual; uma esteira corporativa de aprovar/rejeitar continua obrigatória antes de uso amplo.
 
