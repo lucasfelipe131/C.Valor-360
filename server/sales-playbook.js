@@ -2,13 +2,23 @@ import {resolveOpportunityCandidate} from '../src/lib/opportunity-pipeline.js'
 import {compactBRL,commercialMetrics} from '../src/lib/commercial-metrics.js'
 import {buildDecisionIntelligence,buildNexoFallback} from './decision-intelligence.js'
 import {buildValueBridge} from './product-intelligence.js'
+import {
+  applyValWorkingStage,
+  buildValMethodologyPrompt,
+  buildValStageQuestions as stageQuestions,
+  deriveValMethodology as deriveMethodology,
+  normalizeValMethodStage,
+  valMethodConversationStage as conversationStage,
+  VAL_METHOD_SEQUENCE,
+  VAL_METHOD_STAGE_LABELS as stageLabels
+} from './val-methodology.js'
 
 const evidenceItem={type:'object',additionalProperties:false,properties:{id:{type:'string'},claim_supported:{type:'string'},source_type:{type:'string',enum:['client_record','producer_questionnaire','business_history','visit','interaction','opportunity','field_report','soil_analysis','ndvi','manual_record','producer_statement','approved_playbook','official_product_catalog','consultant_attachment','missing','unknown']},source_id:{type:'string'},observed_at:{type:'string'},direct_observation:{type:'boolean'},quality:{type:'string',enum:['insufficient','low','moderate','high']},relevance:{type:'string',enum:['low','moderate','high']},uncertainty:{type:'string'}},required:['id','claim_supported','source_type','source_id','observed_at','direct_observation','quality','relevance','uncertainty']}
 const questionItem={type:'object',additionalProperties:false,properties:{stage:{type:'string',enum:['situação','problema','implicação','necessidade','compromisso']},type:{type:'string',enum:['aberta','fechada']},question:{type:'string'},ask_when:{type:'string'},purpose:{type:'string'},evidence_needed:{type:'string'},grounding_ids:{type:'array',items:{type:'string'},maxItems:5}},required:['stage','type','question','ask_when','purpose','evidence_needed','grounding_ids']}
 const executiveBrief={type:'object',additionalProperties:false,properties:{priority:{type:'string',enum:['imediata','esta_semana','acompanhar','sem_acao']},headline:{type:'string'},reason:{type:'string'},action:{type:'string'},deadline:{type:'string'},question:{type:'string'},decision_basis:{type:'array',items:{type:'string'},maxItems:3},evidence_ids:{type:'array',items:{type:'string'},maxItems:3},missing_data:{type:'array',items:{type:'string'},maxItems:3}},required:['priority','headline','reason','action','deadline','question','decision_basis','evidence_ids','missing_data']}
 const conversationStep={type:'object',additionalProperties:false,properties:{stage:{type:'string',enum:['abertura','diagnóstico','valor','proposta','fechamento']},question_type:{type:'string',enum:['aberta','fechada','não_aplicável']},goal:{type:'string'},suggested_line:{type:'string'},advance_signal:{type:'string'},if_resistance:{type:'string'}},required:['stage','question_type','goal','suggested_line','advance_signal','if_resistance']}
 const closingOption={type:'object',additionalProperties:false,properties:{when:{type:'string'},suggested_line:{type:'string'},commitment:{type:'string'}},required:['when','suggested_line','commitment']}
-const methodologyState={type:'object',additionalProperties:false,properties:{sequence:{type:'array',items:{type:'string',enum:['preparar','alinhar','descobrir','dimensionar','construir_valor','propor','comprometer']},minItems:7,maxItems:7},current_stage:{type:'string',enum:['preparar','alinhar','descobrir','dimensionar','construir_valor','propor','comprometer']},completed_stages:{type:'array',items:{type:'string',enum:['preparar','alinhar','descobrir','dimensionar','construir_valor','propor','comprometer']},maxItems:7},next_stage:{type:'string',enum:['preparar','alinhar','descobrir','dimensionar','construir_valor','propor','comprometer']},advance_gate:{type:'string'},reason:{type:'string'},working_stage:{type:'string',enum:['preparar','alinhar','descobrir','dimensionar','construir_valor','propor','comprometer']},working_stage_source:{type:'string',enum:['actual_progress','user_selection']},working_stage_gate:{type:'string'}},required:['sequence','current_stage','completed_stages','next_stage','advance_gate','reason','working_stage','working_stage_source','working_stage_gate']}
+const methodologyState={type:'object',additionalProperties:false,properties:{sequence:{type:'array',items:{type:'string',enum:VAL_METHOD_SEQUENCE},minItems:VAL_METHOD_SEQUENCE.length,maxItems:VAL_METHOD_SEQUENCE.length},current_stage:{type:'string',enum:VAL_METHOD_SEQUENCE},completed_stages:{type:'array',items:{type:'string',enum:VAL_METHOD_SEQUENCE},maxItems:VAL_METHOD_SEQUENCE.length},next_stage:{type:'string',enum:VAL_METHOD_SEQUENCE},advance_gate:{type:'string'},reason:{type:'string'},working_stage:{type:'string',enum:VAL_METHOD_SEQUENCE},working_stage_source:{type:'string',enum:['actual_progress','user_selection']},working_stage_gate:{type:'string'}},required:['sequence','current_stage','completed_stages','next_stage','advance_gate','reason','working_stage','working_stage_source','working_stage_gate']}
 const approachPlan={type:'object',additionalProperties:false,properties:{tone:{type:'string'},pace:{type:'string'},channel:{type:'string'},proof:{type:'string'},participants:{type:'string'},risk_posture:{type:'string'},prioritize:{type:'string'},avoid:{type:'string'},grounding_ids:{type:'array',items:{type:'string'},maxItems:10}},required:['tone','pace','channel','proof','participants','risk_posture','prioritize','avoid','grounding_ids']}
 const commercialContext={type:'object',additionalProperties:false,properties:{status:{type:'string',enum:['known','partial','unknown']},current_purchases:{type:'number'},potential_total:{type:'number'},open_potential:{type:'number'},open_pipeline:{type:'number'},realized_share_percent:{type:'number'},interpretation:{type:'string'}},required:['status','current_purchases','potential_total','open_potential','open_pipeline','realized_share_percent','interpretation']}
 const crossSourceConnection={type:'object',additionalProperties:false,properties:{title:{type:'string'},insight:{type:'string'},evidence_ids:{type:'array',items:{type:'string'},maxItems:5},why_it_matters:{type:'string'}},required:['title','insight','evidence_ids','why_it_matters']}
@@ -49,7 +59,7 @@ export const valAdviceSchema={
 
 export const valStructuredFormat={type:'json_schema',name:'val_commercial_guidance',strict:true,schema:valAdviceSchema}
 
-export const VAL_INSTRUCTIONS_VERSION='val-playbook-v8-tiered'
+export const VAL_INSTRUCTIONS_VERSION='val-playbook-v9-tiered'
 export const VAL_INSTRUCTION_TIERS=Object.freeze(['daily','strategic','fast'])
 
 // Prefixo estável: deve vir primeiro para favorecer cache de prompt e nunca pode perder as regras universais de segurança.
@@ -120,19 +130,7 @@ const VAL_OPERATIONAL_INSTRUCTIONS=`RESPOSTA EXECUTIVA OBRIGATÓRIA
 - evidence_ids: no máximo três IDs existentes em evidence_used. missing_data: somente os três dados que realmente mudariam a decisão.
 - Use priority=imediata somente com janela, compromisso prestes a vencer ou risco atual documentado; esta_semana para um próximo passo relevante; acompanhar quando não houver urgência; sem_acao quando não houver hipótese sustentada.
 
-MÉTODO OPERACIONAL VAL, INVISÍVEL NA FALA
-- Siga uma sequência com portas de avanço: preparar → alinhar → descobrir → dimensionar → construir valor → propor → comprometer. Identifique a etapa atual; não reinicie uma conversa que já avançou e não pule uma porta sem evidência.
-- Preparar cruza o dossiê, o potencial e o histórico. Alinhar confirma objetivo, tempo e participantes. Descobrir identifica prioridade e decisão afetada. Dimensionar confirma base, unidade, área, horizonte e impacto. Construir valor define resultado, alternativas e prova. Propor só acontece com problema, impacto e critério de prova confirmados. Comprometer registra ação, responsável, prazo e evidência.
-- Preencha methodology_state com etapa atual, etapas concluídas, próxima etapa e a condição objetiva para avançar. Use priorRecommendations e a mensagem atual para continuar do ponto correto.
-- Quando a solicitação trouxer uma ETAPA DE TRABALHO SOLICITADA válida, concentre perguntas, roteiro e próximo passo nessa etapa. Preencha working_stage com ela, working_stage_source=user_selection e working_stage_gate com sua própria condição objetiva. Sem essa solicitação, working_stage=current_stage e working_stage_source=actual_progress. Essa escolha é apenas uma lente de trabalho: não a use para alterar current_stage, marcar etapas anteriores como concluídas nem inventar evidência de avanço.
-- Antes de responder, procure no perfil, questionário, registros e memórias respostas marcadas como SPIN, EPA, OPC ou Senoide. Respostas explícitas do produtor/consultor têm prioridade sobre regras genéricas. Nunca complete uma resposta ausente.
-- SPIN: use Situação, Problema, Implicação e Necessidade de solução para escolher só a próxima pergunta útil. Não transforme a conversa num interrogatório.
-- EPA: eduque com um insight verificável, personalize a abordagem para o contexto real e assuma o controle do processo com um próximo passo claro — sem controlar a pessoa.
-- OPC: mantenha Objetivo, Processo e Compromisso alinhados. Se não houve compromisso observado, não invente um.
-- Para o painel visível: next_question/questions alimentam a etapa SPIN atual; objective, methodology_state, conversation_plan e commitment alimentam OPC; decision_basis, decision_profile/approach_plan e next_best_action alimentam EPA. Cada item deve usar os dados desta conta e desta conversa, nunca um exemplo genérico.
-- Senoide: use somente a fase, leitura ou cadência que estiver registrada nas respostas. Ela calibra ritmo, profundidade e hora de avançar ou recuar. Se estiver ausente, não invente nem cite etapa.
-- Venda de valor compara como está hoje, agir agora, esperar e manter, sempre com as mesmas premissas, risco, horizonte e forma de conferir.
-- Perguntas abertas e escuta reflexiva preservam autonomia. Nunca use informação familiar, financeira ou emocional como alavanca.
+${buildValMethodologyPrompt()}
 
 VAL É COPILOTA DE DECISÃO, NÃO UMA IA SOBRE CRM
 - Não gaste a resposta repetindo cadastro, hectares, compras ou visitas. Use esses fatos para decidir qual conversa precisa acontecer agora.
@@ -192,27 +190,8 @@ const firstName=name=>String(name||'produtor').trim().split(/\s+/)[0]
 const evidence=(id,claim,sourceType,sourceId,quality='low',relevance='moderate',uncertainty='',observedAt='unknown',directObservation=false)=>({id,claim_supported:claim,source_type:sourceType,source_id:sourceId,observed_at:observedAt||'unknown',direct_observation:directObservation,quality,relevance,uncertainty})
 
 
-export const VAL_METHOD_SEQUENCE=['preparar','alinhar','descobrir','dimensionar','construir_valor','propor','comprometer']
-const stageLabels={preparar:'preparar o contexto',alinhar:'alinhar a conversa',descobrir:'descobrir a prioridade',dimensionar:'dimensionar o impacto',construir_valor:'construir valor e prova',propor:'organizar a proposta',comprometer:'registrar o compromisso'}
-const stageGates={
- preparar:'Dossiê, potencial, histórico e dados pendentes revisados.',
- alinhar:'Objetivo, tempo disponível e participantes confirmados.',
- descobrir:'Prioridade e decisão afetada descritas pelo produtor.',
- dimensionar:'Linha de base, unidade, área, horizonte e impacto confirmados.',
- construir_valor:'Resultado, alternativas e critério de prova definidos.',
- propor:'Escopo, premissas, risco e revisão da proposta combinados.',
- comprometer:'Ação, responsável, prazo e evidência registrados.'
-}
-export const normalizeValMethodStage=value=>{
- const candidate=typeof value==='string'?value.trim():''
- return VAL_METHOD_SEQUENCE.includes(candidate)?candidate:null
-}
-export function applyWorkingStage(methodology={},requestedStage){
- const requested=normalizeValMethodStage(requestedStage)
- const actual=normalizeValMethodStage(methodology.current_stage)||'preparar'
- const working=requested||actual
- return {...methodology,working_stage:working,working_stage_source:requested?'user_selection':'actual_progress',working_stage_gate:stageGates[working]}
-}
+export {VAL_METHOD_SEQUENCE,normalizeValMethodStage}
+export const applyWorkingStage=applyValWorkingStage
 const hasText=value=>String(value??'').trim().length>0
 const clean=value=>String(value??'').replace(/\s+/g,' ').trim()
 const lower=value=>clean(value).toLocaleLowerCase('pt-BR')
@@ -285,55 +264,6 @@ function decisionContext(client,profile,evidenceUsed){
  }
 }
 
-function deriveMethodology({opportunity,priorRecommendations=[],message='',mode='daily'}){
- const prior=priorRecommendations?.[0]?.methodology_state||priorRecommendations?.[0]?.methodologyState||null
- const priorIndex=Math.max(-1,VAL_METHOD_SEQUENCE.indexOf(prior?.current_stage))
- const stage=lower(opportunity?.stage)
- let inferred=!opportunity?(mode==='strategic'?'preparar':'alinhar'):stage==='negociação'||stage==='negociacao'?'propor':stage==='proposta'?'construir_valor':opportunity?.value_case?.baseline?'construir_valor':hasText(opportunity?.hypothesis)?'dimensionar':'descobrir'
- let index=VAL_METHOD_SEQUENCE.indexOf(inferred)
- const followUp=/(?:ele|ela|produtor|cliente).{0,35}(?:disse|falou|respondeu|confirmou|informou)|(?:confirmou|respondeu|informou)\b/i.test(message)
- if(priorIndex>=0)index=Math.max(index,followUp?Math.min(priorIndex+1,VAL_METHOD_SEQUENCE.length-1):priorIndex)
- const current=VAL_METHOD_SEQUENCE[Math.max(0,index)]
- const next=VAL_METHOD_SEQUENCE[Math.min(index+1,VAL_METHOD_SEQUENCE.length-1)]
- return {sequence:VAL_METHOD_SEQUENCE,current_stage:current,completed_stages:VAL_METHOD_SEQUENCE.slice(0,index),next_stage:next,advance_gate:stageGates[current],reason:priorIndex>=0?'A etapa considera a orientação anterior e a nova informação do consultor.':'A etapa foi definida pelos dados atuais da oportunidade e do dossiê.'}
-}
-
-function stageQuestions(stage,subject,groundingIds=[]){
- const topic=subject||'a prioridade desta safra'
- const map={
-  preparar:[
-   {stage:'situação',type:'aberta',question:'O que mudou recentemente em relação a '+topic+' e ainda não aparece no dossiê?',ask_when:'Antes de escolher uma abordagem.',purpose:'Atualizar o contexto sem pressupor um problema.',evidence_needed:'Mudança, data, área ou decisão citada.',grounding_ids:groundingIds},
-   {stage:'situação',type:'fechada',question:'Os dados de área, cultura e potencial continuam atuais?',ask_when:'Ao validar o dossiê.',purpose:'Separar dado vigente de cadastro desatualizado.',evidence_needed:'Confirmação ou correção objetiva.',grounding_ids:groundingIds}
-  ],
-  alinhar:[
-   {stage:'situação',type:'aberta',question:'Qual resultado tornaria esta conversa útil para você hoje?',ask_when:'Na abertura.',purpose:'Alinhar objetivo na linguagem do produtor.',evidence_needed:'Resultado ou decisão esperada.',grounding_ids:groundingIds},
-   {stage:'situação',type:'fechada',question:'Podemos conversar agora sobre '+topic+' e concluir com um próximo passo?',ask_when:'Depois da saudação.',purpose:'Confirmar assunto, tempo e permissão.',evidence_needed:'Aceite, ajuste de tema ou novo momento.',grounding_ids:groundingIds}
-  ],
-  descobrir:[
-   {stage:'problema',type:'aberta',question:'Em que situação '+topic+' mais interfere na sua decisão hoje?',ask_when:'Depois de alinhar o objetivo.',purpose:'Localizar o problema e a decisão afetada.',evidence_needed:'Exemplo recente e decisão concreta.',grounding_ids:groundingIds},
-   {stage:'problema',type:'fechada',question:'Então '+topic+' é uma prioridade deste ciclo, correto?',ask_when:'Somente depois de ouvir um exemplo.',purpose:'Confirmar a prioridade sem transformá-la em proposta.',evidence_needed:'Confirmação ou correção do produtor.',grounding_ids:groundingIds}
-  ],
-  dimensionar:[
-   {stage:'implicação',type:'aberta',question:'Quando '+topic+' acontece, qual impacto aparece e como isso é medido?',ask_when:'Depois de confirmar o problema.',purpose:'Definir impacto, unidade e linha de base.',evidence_needed:'R$/ha, sc/ha, área, tempo e horizonte, quando aplicáveis.',grounding_ids:groundingIds},
-   {stage:'implicação',type:'fechada',question:'Esse impacto está expresso por hectare e se refere a esta safra?',ask_when:'Depois de ouvir um número.',purpose:'Evitar multiplicar unidade ou período errados.',evidence_needed:'Unidade, área e horizonte confirmados.',grounding_ids:groundingIds}
-  ],
-  construir_valor:[
-   {stage:'necessidade',type:'aberta',question:'Que resultado e que forma de comprovação fariam valer a pena analisar uma alternativa?',ask_when:'Depois de dimensionar o impacto.',purpose:'Definir valor e prova com o produtor.',evidence_needed:'Métrica, linha de base, horizonte e critério de interrupção.',grounding_ids:groundingIds},
-   {stage:'necessidade',type:'fechada',question:'Um teste limitado, com revisão técnica, seria uma forma aceitável de fazer essa comparação?',ask_when:'Depois de conhecer o critério de prova.',purpose:'Confirmar reversibilidade e formato de validação.',evidence_needed:'Aceite, recusa ou condição para o teste.',grounding_ids:groundingIds}
-  ],
-  propor:[
-   {stage:'necessidade',type:'aberta',question:'O que ainda precisa estar claro antes de você avaliar a proposta sobre '+topic+'?',ask_when:'Ao apresentar premissas, não só preço.',purpose:'Identificar lacuna real de decisão.',evidence_needed:'Objeção, participante, prova ou condição.',grounding_ids:groundingIds},
-   {stage:'compromisso',type:'fechada',question:'Podemos revisar a proposta com todos os decisores na data combinada?',ask_when:'Depois de confirmar escopo e premissas.',purpose:'Obter um avanço proporcional.',evidence_needed:'Data, participantes e responsável.',grounding_ids:groundingIds}
-  ],
-  comprometer:[
-   {stage:'compromisso',type:'aberta',question:'O que pode impedir o próximo passo combinado sobre '+topic+'?',ask_when:'Antes de encerrar.',purpose:'Tornar o compromisso executável.',evidence_needed:'Risco, dependência ou responsável.',grounding_ids:groundingIds},
-   {stage:'compromisso',type:'fechada',question:'Confirmamos o responsável, o prazo e a evidência que será registrada?',ask_when:'No fechamento.',purpose:'Registrar compromisso verificável.',evidence_needed:'Ação, nome, data e evidência.',grounding_ids:groundingIds}
-  ]
- }
- return map[stage]||map.alinhar
-}
-
-const conversationStage=stage=>stage==='preparar'||stage==='alinhar'?'abertura':stage==='descobrir'||stage==='dimensionar'?'diagnóstico':stage==='construir_valor'?'valor':stage==='propor'?'proposta':'fechamento'
 
 export function buildFallbackAdvice({client={},profile={},message='',mode='daily',requestedStage=null,signals=[],learning={},businessHistory=[],visits=[],interactions=[],opportunities=[],properties=[],fieldReports=[],soilAnalyses=[],ndviObservations=[],manualRecords=[],memories=[],priorRecommendations=[],decisionIntelligence=null,productIntelligence=null}){
  const context={client,profile,signals,learning,businessHistory,visits,interactions,opportunities,properties,fieldReports,soilAnalyses,ndviObservations,manualRecords,memories,priorRecommendations}
