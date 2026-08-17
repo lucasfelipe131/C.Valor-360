@@ -1,0 +1,30 @@
+name: Apply A2 routing audit
+
+on:
+  push:
+    branches: [a2-model-routing-audit]
+    paths:
+      - scripts/apply-a2.py
+      - .github/workflows/apply-a2.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: a2-model-routing-audit
+          fetch-depth: 0
+      - name: Aplicar auditoria de roteamento
+        run: python3 scripts/apply-a2.py
+      - name: Registrar mudanças
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "A2 — adiciona auditoria estruturada do roteamento"
+          git push origin HEAD:a2-model-routing-audit
