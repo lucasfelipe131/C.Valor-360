@@ -108,7 +108,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
   <section className="kpi-grid home-kpis">
    <KpiCard icon={Users} label="Clientes ativos" value={clients.length} delta="Carteira consolidada"/>
    <KpiCard icon={CalendarCheck2} label="Visitas na agenda" value={upcomingVisits.length} delta="Compromissos futuros"/>
-   <KpiCard icon={Target} label="Potencial mapeado" value={compactBRL(totalPotential,{known:potentialKnown})} delta={`${priorities.length} prioridades agora`} tone="cyan"/>
+   <KpiCard icon={Target} label="Potencial mapeado" value={compactBRL(totalPotential,{known:potentialKnown})} delta={`${priorities.length} ${priorities.length===1?'prioridade para agora':'prioridades para agora'}`} tone="cyan"/>
    <KpiCard icon={Percent} label="IRT médio" value={irt} delta={`${relationships.irtKnown} de ${relationships.total} perfis medidos`} tone="green"/>
   </section>
 

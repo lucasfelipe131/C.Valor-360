@@ -10,7 +10,7 @@ Ela não se “retreina sozinha”. O modelo raciocina; o PostgreSQL memoriza; e
 
 ## O que está implementado na versão 0.4
 
-- interface Ultra responsiva para web e celular;
+- interface responsiva para web e celular;
 - Responses API com Structured Outputs e `store:false` por padrão;
 - roteamento entre `gpt-5.6-terra`, `gpt-5.6-sol` e `gpt-5.6-luna`;
 - fallback demonstrativo sem chave;
@@ -25,7 +25,7 @@ Ela não se “retreina sozinha”. O modelo raciocina; o PostgreSQL memoriza; e
 - revisão humana obrigatória para diagnóstico, prescrição, dose, mistura e conteúdo agronômico sensível;
 - dataset dourado e testes locais independentes da Evals API.
 
-O modo atual continua sendo **piloto de uma organização**. Antes de múltiplas empresas são obrigatórios identidade corporativa, papéis, tenant na sessão, Row-Level Security testada e isolamento de arquivos/geometrias.
+O modo atual continua sendo um **piloto para uma organização**. Antes de atender múltiplas empresas, são obrigatórios identidade corporativa, papéis, tenant na sessão, Row-Level Security testada e isolamento de arquivos e geometrias.
 
 ## Ativação segura
 
@@ -74,6 +74,6 @@ Antes de qualquer publicação, siga o checklist em [`docs/DEPLOY_CHECKLIST.md`]
 
 ## Limites atuais
 
-Object storage, antivírus/OCR, ingestão direta de PDF/Excel técnico, PostGIS, processamento de raster/COG, RLS multiempresa, identidade corporativa e avaliação online com casos reais ainda são camadas de produção, não funcionalidades concluídas. A integração atual do Manual recebe JSON estruturado. NDVI gera triagem; não determina causa. Conteúdo técnico acionável é retido e a receita ou recomendação agronômica final continua sendo responsabilidade de profissional habilitado.
+Armazenamento de objetos, antivírus/OCR, ingestão direta de PDF ou Excel técnico, PostGIS, processamento de raster/COG, RLS multiempresa, identidade corporativa e avaliação on-line com casos reais ainda são camadas de produção, não funcionalidades concluídas. A integração atual do Manual recebe JSON estruturado. NDVI gera triagem; não determina causa. Conteúdo técnico acionável é retido e a receita ou recomendação agronômica final continua sendo responsabilidade de profissional habilitado.
 
 O índice gerado pela importação comercial é somente uma ordenação heurística da base. Campo ausente permanece desconhecido: sem data não há recência; sem resultado classificado não há conversão; sem valor não há ticket. O índice não é probabilidade de compra nem potencial financeiro.

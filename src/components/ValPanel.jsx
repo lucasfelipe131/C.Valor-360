@@ -71,7 +71,7 @@ function neutralAdvice(client){
   next_question:null,questions:[],
   opportunity_review:{total_considered:0,open_count:0,selected_id:'',selected_title:'',selected_stage:'',selected_value:0,why_priority:'Aguardando análise.',alternatives_considered:[]},
   conversation_plan:{opening:'',steps:[],closing_options:[],do_not_say:[]},
-  constructive_tension:{status:'not_applicable',consent_status:'unknown',consent_evidence_id:'',permission_prompt:'',evidence_ids:[],reframe:'',autonomy:'A decisão permanece com consultor e produtor.',stop_reason:'Nenhuma análise foi solicitada.',uncertainty:'Aguardando contexto atual.'},
+  constructive_tension:{status:'not_applicable',consent_status:'unknown',consent_evidence_id:'',permission_prompt:'',evidence_ids:[],reframe:'',autonomy:'A decisão permanece com o consultor e o produtor.',stop_reason:'Nenhuma análise foi solicitada.',uncertainty:'Aguardando contexto atual.'},
   value_hypothesis:{problem:'Aguardando análise.',baseline:'',act_now:'',wait:'',maintain:'',impact_to_quantify:'',value_metric:'',time_horizon:'',proof_plan:'',double_counting_guard:'',uncertainty:''},
   next_best_action:'Envie uma pergunta para receber uma próxima ação ancorada no dossiê.',commitment:null,
   confidence:{level:'not_calibrated',rationale:'Nenhuma recomendação foi gerada.',evidence_quality:'Não avaliada.',relevance:'Não avaliada.',freshness:'Não avaliada.',source_agreement:'Não avaliada.',missing_data:[],calibration_status:'not_calibrated'},
@@ -90,6 +90,8 @@ function asList(value,fallback=[]){
  const list=Array.isArray(value)?value:(value?[value]:fallback)
  return list.map(textValue).filter(Boolean)
 }
+
+const countLabel=(value,singular,plural)=>`${Number(value)||0} ${Number(value)===1?singular:plural}`
 
 const sourceLabels={client_record:'cadastro do cliente',producer_questionnaire:'Produtor 360',business_history:'histórico de negócios',visit:'visita',interaction:'interação',opportunity:'oportunidade',field_report:'relatório de campo',soil_analysis:'análise de solo',ndvi:'NDVI',manual_record:'núcleo técnico do VALOR 360',producer_statement:'declaração do produtor',approved_playbook:'playbook aprovado',official_product_catalog:'catálogo oficial de produtos',consultant_attachment:'arquivo do consultor',missing:'dado ausente',unknown:'origem não confirmada'}
 const coverageLabels={questionnaire:'respostas 360',businessEvents:'negócios',visits:'visitas',interactions:'interações',opportunities:'oportunidades',properties:'propriedades',fieldReports:'relatórios de campo',soilAnalyses:'análises de solo',ndvi:'leituras NDVI',manualRecords:'registros técnicos',signals:'sinais',memories:'memórias',priorRecommendations:'análises anteriores',attachments:'arquivos confirmados',currentAttachments:'arquivos desta pergunta'}
@@ -603,7 +605,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
      <article className={!brief.question?'is-empty':''}><MessageSquareText/><span><small>PERGUNTE</small><b>{brief.question||'Nenhuma pergunta necessária agora.'}</b></span></article>
     </div>
     <div className="val-brief-proof"><div><FileSearch/><span><small>BASE DA DECISÃO</small>{brief.decisionBasis.length?<ul>{brief.decisionBasis.map((item,index)=><li key={`${item}-${index}`}>{item}</li>)}</ul>:briefEvidence.length?<ul>{briefEvidence.map(item=><li key={item.id}>{item.summary}</li>)}</ul>:<b>Não há evidência suficiente para recomendar avanço.</b>}</span></div>{brief.missing.length>0&&<div><AlertCircle/><span><small>DADOS QUE FALTAM</small><ul>{brief.missing.map((item,index)=><li key={`${item}-${index}`}>{item}</li>)}</ul></span></div>}</div>
-    <div className="val-opportunity-review"><Target/><span><small>OPORTUNIDADES COMPARADAS</small><b>{opportunityReview.total} analisada(s) • {opportunityReview.open} aberta(s)</b><em>{opportunityReview.title?`${opportunityReview.title}${opportunityReview.stage?` • ${opportunityReview.stage}`:''}${opportunityReview.value?` • ${opportunityReview.value.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}`:''}`:'Nenhuma oportunidade priorizada'}</em>{opportunityReview.reason&&<p>{opportunityReview.reason}</p>}{opportunityReview.alternatives.length>0&&<ul>{opportunityReview.alternatives.map((item,index)=><li key={`${item}-${index}`}>{item}</li>)}</ul>}</span></div>
+    <div className="val-opportunity-review"><Target/><span><small>OPORTUNIDADES COMPARADAS</small><b>{countLabel(opportunityReview.total,'oportunidade analisada','oportunidades analisadas')} • {countLabel(opportunityReview.open,'aberta','abertas')}</b><em>{opportunityReview.title?`${opportunityReview.title}${opportunityReview.stage?` • ${opportunityReview.stage}`:''}${opportunityReview.value?` • ${opportunityReview.value.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}`:''}`:'Nenhuma oportunidade priorizada'}</em>{opportunityReview.reason&&<p>{opportunityReview.reason}</p>}{opportunityReview.alternatives.length>0&&<ul>{opportunityReview.alternatives.map((item,index)=><li key={`${item}-${index}`}>{item}</li>)}</ul>}</span></div>
     {humanReview?.required&&<div className="val-brief-review"><ShieldCheck/><span><b>Revisão técnica antes de executar</b><small>{humanReview.reason}</small></span></div>}
    </section>
 

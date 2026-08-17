@@ -45,7 +45,7 @@ export default function DataHub({clients=[],onImport,onUpdate,onDelete,onNotify}
    const saved=await response.json().catch(()=>({}))
    if(!response.ok)throw new Error(saved.error||'Não foi possível incorporar a importação ao sistema.')
    const validatedClients=saved.clients||clients;const validatedSummary=saved.summary||summary
-   onImport?.(validatedClients);setResult({...validatedSummary,clients:validatedClients});setStage('done');onNotify?.(`${validatedClients.length} produtores organizados na base.`)
+   onImport?.(validatedClients);setResult({...validatedSummary,clients:validatedClients});setStage('done');onNotify?.(`${validatedClients.length} ${validatedClients.length===1?'produtor organizado':'produtores organizados'} na base.`)
   }catch(exception){setError(exception.name==='TimeoutError'?'A importação demorou além do limite. Verifique a conexão e tente novamente.':exception.message);setSaving(false)}
  }
  const reset=()=>{setFile(null);setRows([]);setHeaders([]);setMapping({});setResult(null);setStage('drop');setError('');setSaving(false)}
