@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import test from 'node:test'
-import {buildObjectionLibrary} from '../server/objection-library.js'
+import {buildObjectionLibrary,clearObjectionLibraryCache,loadPortfolioBusinessHistory} from '../server/objection-library.js'
 
 const context={
  businessHistory:[
@@ -47,6 +47,47 @@ test('sem resultado posterior a VAL pede descoberta em vez de produzir script ge
  assert.equal(library.policy.causalClaims,false)
 })
 
+test('carteira inteira é filtrada pela oportunidade atual em vez de misturar negócios sem relação',()=>{
+ const focused={
+  client:{id:'p1',name:'João'},
+  conversionFoundation:{selectedOpportunity:{id:'o1',title:'Programa de milho',category:'Milho',stage:'Proposta'}},
+  opportunities:[{id:'o1',title:'Programa de milho',category:'Milho',stage:'Proposta'}],
+  priorRecommendations:[]
+ }
+ const portfolioHistory=[
+  {id:'loss-milho',outcome:'lost',loss_reason:'Preço alto',category:'Milho',clientExternalKey:'p2',occurredAt:'2026-05-01T12:00:00Z'},
+  {id:'loss-soja',outcome:'lost',loss_reason:'Preço alto',category:'Soja',clientExternalKey:'p3',occurredAt:'2026-05-02T12:00:00Z'}
+ ]
+ const library=buildObjectionLibrary(focused,{now,portfolioHistory})
+ assert.equal(library.lossEventsConsidered,1)
+ assert.deepEqual(library.objections[0].categories,['Milho'])
+ assert.ok(library.objections[0].similarityReasons.includes('mesma categoria'))
+ assert.equal(library.policy.portfolioScoped,true)
+ assert.equal(library.policy.personalDataUsed,false)
+})
+
+test('o que funcionou só aparece quando um fechamento traz registro explícito ou sequência auditável',()=>{
+ const focused={client:{id:'p1'},conversionFoundation:{selectedOpportunity:{title:'Programa de milho',category:'Milho'}},priorRecommendations:[]}
+ const portfolioHistory=[
+  {id:'l1',outcome:'lost',lossReason:'Faltou prova de resultado',category:'Milho',occurredAt:'2026-03-01T12:00:00Z'},
+  {id:'w1',outcome:'won',category:'Milho',occurredAt:'2026-04-01T12:00:00Z',payload:{whatWorked:'Validar o resultado em área delimitada com critério combinado antes da proposta.'}}
+ ]
+ const objection=buildObjectionLibrary(focused,{now,portfolioHistory}).objections[0]
+ assert.match(objection.observedMove.action,/área delimitada/)
+ assert.deepEqual(objection.observedMove.evidenceIds,['business-loss:l1','business-win:w1'])
+ assert.equal(objection.observedMove.causalClaim,false)
+})
+
+test('consulta da carteira fica restrita ao tenant e ao consultor autenticado',async()=>{
+ clearObjectionLibraryCache()
+ let call
+ const repository={tenantId:'tenant-a',db:{configured:true,query:async(sql,params)=>{call={sql,params};return {rows:[{id:'l1',outcome:'lost',occurred_at:'2026-06-01T12:00:00Z',loss_reason:'Preço',client_external_key:'p2',client_name:'Outro produtor',payload:{}}]}}}}
+ const events=await loadPortfolioBusinessHistory(repository,'owner-a',{now,ttlMs:1000})
+ assert.equal(events.length,1)
+ assert.match(call.sql,/client\.consultant_id=\$2/)
+ assert.deepEqual(call.params.slice(0,2),['tenant-a','owner-a'])
+})
+
 test('estúdio exibe objeções reais, evidências e limite causal',()=>{
  const studio=readFileSync(new URL('../src/components/ConversionOpportunityStudio.jsx',import.meta.url),'utf8')
  const panel=readFileSync(new URL('../src/components/ObjectionEvidencePanel.jsx',import.meta.url),'utf8')
@@ -54,5 +95,7 @@ test('estúdio exibe objeções reais, evidências e limite causal',()=>{
  assert.match(studio,/ObjectionEvidencePanel/)
  assert.match(panel,/BIBLIOTECA DE OBJEÇÕES REAIS/)
  assert.match(panel,/Evidências rastreáveis/)
- assert.match(bootstrap,/objectionLibrary:buildObjectionLibrary/)
+ assert.match(panel,/Por que é parecido/)
+ assert.match(bootstrap,/loadPortfolioBusinessHistory/)
+ assert.match(bootstrap,/buildObjectionLibrary\(context,\{portfolioHistory\}\)/)
 })
