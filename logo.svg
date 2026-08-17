@@ -1,10 +1,24 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="640" height="180" viewBox="0 0 640 180">
-  <rect width="640" height="180" rx="28" fill="#073b78"/>
-  <g transform="translate(35,20)">
-    <circle cx="70" cy="70" r="54" fill="none" stroke="#ffffff" stroke-width="14" stroke-dasharray="270 80" stroke-linecap="round"/>
-    <circle cx="70" cy="70" r="13" fill="#2d8cff"/>
-    <text x="145" y="72" font-family="Arial, Helvetica, sans-serif" font-size="54" font-weight="700" fill="#ffffff">VALOR</text>
-    <text x="360" y="72" font-family="Arial, Helvetica, sans-serif" font-size="37" font-weight="700" fill="#6fb3ff">360</text>
-    <text x="147" y="112" font-family="Arial, Helvetica, sans-serif" font-size="19" letter-spacing="2.2" fill="#cfe5ff">CONHECER • PERSONALIZAR • GERAR VALOR</text>
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="220" viewBox="0 0 760 220" fill="none">
+  <defs>
+    <linearGradient id="surface" x1="30" y1="20" x2="190" y2="202" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#0E3530"/>
+      <stop offset="1" stop-color="#061A18"/>
+    </linearGradient>
+    <linearGradient id="signal" x1="58" y1="54" x2="160" y2="162" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#C8F25E"/>
+      <stop offset=".34" stop-color="#00C896"/>
+      <stop offset="1" stop-color="#2D8CFF"/>
+    </linearGradient>
+  </defs>
+  <g transform="translate(22 20)">
+    <rect width="180" height="180" rx="50" fill="url(#surface)"/>
+    <rect x="3" y="3" width="174" height="174" rx="47" stroke="#fff" stroke-opacity=".13" stroke-width="3"/>
+    <path d="M43 54 88 133" stroke="url(#signal)" stroke-width="20" stroke-linecap="round"/>
+    <path d="M142 46c-15 28-29 61-54 87" stroke="url(#signal)" stroke-width="20" stroke-linecap="round"/>
+    <circle cx="43" cy="54" r="9" fill="#C8F25E"/>
+    <circle cx="142" cy="46" r="9" fill="#72B8FF"/>
+    <circle cx="88" cy="133" r="12" fill="#fff"/>
   </g>
+  <text x="238" y="126" font-family="Manrope, Inter, Arial, sans-serif" font-size="102" font-weight="800" letter-spacing="16" fill="#10231F">VAL</text>
+  <text x="244" y="164" font-family="Manrope, Inter, Arial, sans-serif" font-size="17" font-weight="700" letter-spacing="5.2" fill="#60736D">INTELIGÊNCIA QUE GERA VALOR</text>
 </svg>
