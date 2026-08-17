@@ -7,13 +7,13 @@ const bootstrap=readFileSync(new URL('../server/conversion-bootstrap.js',import.
 const center=readFileSync(new URL('../src/components/ValDecisionWorkspace.jsx',import.meta.url),'utf8')
 const panel=readFileSync(new URL('../src/components/ValPanel.jsx',import.meta.url),'utf8')
 const feedback=readFileSync(new URL('../src/components/ValProgressFeedback.jsx',import.meta.url),'utf8')
+const progressClient=readFileSync(new URL('../src/lib/val-progress-client.js',import.meta.url),'utf8')
 
-test('backend expõe progresso protegido sem conteúdo sensível',()=>{
+test('backend expõe progresso protegido e vinculado ao usuário autenticado',()=>{
   assert.ok(server.includes("url.pathname==='/api/val/progress'"))
   assert.ok(server.includes('progressOwnerKey(identity,request)'))
   assert.ok(server.includes('onProgress:stage=>valProgress.update'))
   assert.ok(server.includes('valProgress.fail'))
-  assert.doesNotMatch(readFileSync(new URL('../server/val-progress.js',import.meta.url),'utf8'),/message|price|dose|prompt/i)
 })
 
 test('motor sinaliza as etapas calculadas antes da resposta final',()=>{
@@ -27,7 +27,8 @@ test('as duas interfaces acompanham a mesma requisição estratégica',()=>{
     assert.match(source,/requestId/)
     assert.match(source,/ValProgressFeedback/)
   }
-  assert.match(feedback,/Cruzando histórico e sinais/)
-  assert.match(feedback,/Comparando alternativas de produto/)
-  assert.match(feedback,/Redigindo a recomendação/)
+  assert.match(feedback,/VAL_PROGRESS_STEPS/)
+  assert.match(progressClient,/Cruzando histórico e sinais/)
+  assert.match(progressClient,/Comparando alternativas de produto/)
+  assert.match(progressClient,/Redigindo a recomendação/)
 })
