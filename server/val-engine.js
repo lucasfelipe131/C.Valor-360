@@ -4,6 +4,7 @@ import {applyWorkingStage,buildFallbackAdvice,buildValInstructionBlocks,buildVal
 import {commercialMetrics} from '../src/lib/commercial-metrics.js'
 import {buildDecisionIntelligence,buildNexoFallback,buildStrategicSynthesis,isGenericValText} from './decision-intelligence.js'
 import {buildValueBridge,isCommercialProductComparison} from './product-intelligence.js'
+import {buildTechnicalSafetyAudit,emitTechnicalSafetyAudit,technicalSafetyReason} from './technical-safety-audit.js'
 
 const strategicPattern=/estrat[eé]g|plano de conta|risco alto|proposta complexa|diretoria|comit[eê]|milh[oõ]es|grande conta/i
 const fastPattern=/classifi|extra[ií]|resum|import|normaliz|tag|categoria/i
@@ -441,6 +442,20 @@ function reconcileAdviceWithContext(result,context,evidenceIds,{requestedStage=n
   return result
 }
 
+function applyHumanReviewDecision(result,audit,{signalRequiresReview=false,productRequiresReview=false,providerHumanReview=null}={}){
+  const providerReason=String(providerHumanReview?.reason||'').trim()
+  const reason=technicalSafetyReason(audit,{signalRequiresReview,productRequiresReview,providerReason})
+  if(audit.manualReviewRequired){
+    result.human_review={required:true,reason,required_role:audit.reviewRole,status:'pending'}
+    if(audit.technicalReviewRequired){
+      result.blocked_actions=[...new Set([...(result.blocked_actions||[]),'Converter sinal técnico em diagnóstico','Prescrever produto, dose, mistura ou aplicação sem validação técnica',...(productRequiresReview?['Tratar similaridade cadastral como equivalência de uso','Prometer superioridade, resultado ou economia sem comparação válida']:[]),...(audit.divergence?['Executar ou apresentar conteúdo técnico antes de revisar a divergência entre as barreiras']:[])])]
+      result.guardrails=[...new Set([...(result.guardrails||[]),'Usar sinais técnicos somente para priorizar perguntas, visitas e validações; nunca como prescrição.',...(productRequiresReview?['Conferir registro, cultura, alvo, modalidade, formulação, concentração, restrições e fonte vigente antes de apresentar a opção como adequada.']:[]),...(audit.divergence?['Tratar a divergência de revisão como bloqueio manual; o modelo e a regex não podem liberar um ao outro.']:[])])]
+    }
+    if(audit.divergence)result.assumptions=[...new Set([...(result.assumptions||[]),'A necessidade de revisão humana apresentou divergência entre a barreira determinística e o campo devolvido pelo modelo.'])]
+  }else result.human_review={required:false,reason:'Nenhuma revisão humana adicional foi sinalizada para esta resposta.',required_role:'none',status:'not_required'}
+  return result
+}
+
 export function enforceValSafety(advice,context,message='',options={}){
   const intelligence=context.decisionIntelligence?.version?context.decisionIntelligence:buildDecisionIntelligence(context)
   const productLayer=context.productIntelligence?.value_bridge?context.productIntelligence:buildValueBridge({...context,decisionIntelligence:intelligence},message)
@@ -464,10 +479,13 @@ export function enforceValSafety(advice,context,message='',options={}){
   const comparisonRequest=isCommercialProductComparison(message)
   const requestRequiresReview=!mayTranscribeAttachment&&((explicitAgronomyRequest.test(String(message))&&!comparisonRequest)||applicationRate.test(String(message)))
   const outputRequiresReview=!mayTranscribeAttachment&&(applicationRate.test(generatedContent)||actionableAgronomy.test(generatedAction+'\n'+generatedContent))
-  if(requestRequiresReview||outputRequiresReview){
+  const providerHumanReview=options.providerHumanReview&&typeof options.providerHumanReview==='object'?structuredClone(options.providerHumanReview):null
+  const technicalSafetyAudit=buildTechnicalSafetyAudit({requestRequiresReview,outputRequiresReview,signalRequiresReview,productRequiresReview,providerHumanReview,at:options.at||new Date()})
+  try{options.onSafetyAudit?.(technicalSafetyAudit)}catch{}
+  if(technicalSafetyAudit.hardBlockRequired){
     const shell=technicalReviewShell(effectiveContext,message,signalRequiresReview||productRequiresReview)
     shell.methodology_state=applyWorkingStage(shell.methodology_state,normalizeValMethodStage(options.requestedStage))
-    return shell
+    return applyHumanReviewDecision(shell,technicalSafetyAudit,{signalRequiresReview,productRequiresReview,providerHumanReview})
   }
   result.executive_brief=result.executive_brief||{priority:'acompanhar',headline:String(result.answer||'Próxima ação em definição').split(/[.!?]/)[0].slice(0,180),reason:String(result.objective||'A base ainda precisa de confirmação.'),action:String(result.next_best_action||'Registrar a próxima informação útil.'),deadline:'No próximo contato',question:String(result.next_question?.question||''),decision_basis:[],evidence_ids:[],missing_data:(result.confidence?.missing_data||[]).slice(0,3)}
   result.executive_brief.decision_basis=(result.executive_brief.decision_basis||[]).slice(0,3)
@@ -492,11 +510,7 @@ export function enforceValSafety(advice,context,message='',options={}){
   }
   result.confidence=result.confidence||{};result.confidence.level='not_calibrated';result.confidence.calibration_status='not_calibrated'
   if(!result.evidence_used.length)result.confidence.rationale='Nenhuma evidência auditável sustenta uma recomendação além da próxima pergunta.'
-  if(signalRequiresReview||productRequiresReview){
-    result.human_review={required:true,reason:productRequiresReview?'A VAL encontrou candidatas para comparação comercial. Similaridade cadastral não prova equivalência, adequação ou superioridade; valide fonte vigente e decisão técnica antes de recomendar ou executar.':'Há sinais técnicos no contexto que podem orientar a prioridade comercial, mas qualquer interpretação agronômica ou recomendação de execução continua sujeita ao responsável técnico.',required_role:'technical_reviewer',status:'pending'}
-    result.blocked_actions=[...new Set([...(result.blocked_actions||[]),'Converter sinal técnico em diagnóstico','Prescrever produto, dose, mistura ou aplicação sem validação técnica',...(productRequiresReview?['Tratar similaridade cadastral como equivalência de uso','Prometer superioridade, resultado ou economia sem comparação válida']:[])])]
-    result.guardrails=[...new Set([...(result.guardrails||[]),'Usar sinais técnicos somente para priorizar perguntas, visitas e validações; nunca como prescrição.',...(productRequiresReview?['Conferir registro, cultura, alvo, modalidade, formulação, concentração, restrições e fonte vigente antes de apresentar a opção como adequada.']:[])])]
-  }else result.human_review={...(result.human_review||{}),required:false,required_role:'none',status:'not_required'}
+  applyHumanReviewDecision(result,technicalSafetyAudit,{signalRequiresReview,productRequiresReview,providerHumanReview})
   return result
 }
 
@@ -528,7 +542,7 @@ export class ValEngine{
     const instructionBlocks=buildValInstructionBlocks(route.tier)
     const instructions=buildValInstructions(instructionBlocks.tier)
     const promptPrefixHash=createHash('sha256').update(instructionBlocks.fixed).digest('hex')
-    let advice,engineMode='demonstration',warning='',responseMetadata={}
+    let advice,engineMode='demonstration',warning='',responseMetadata={},providerHumanReview=null
     if(!this.client)advice=fallbackAdvice
     else{
       const startedAt=Date.now()
@@ -556,10 +570,12 @@ export class ValEngine{
         responseMetadata=providerMetadata
         if(response.status!=='completed')throw Object.assign(new Error('Resposta incompleta da OpenAI.'),{code:'incomplete_response',details:response.incomplete_details,responseMetadata:providerMetadata})
         if(!response.output_text)throw Object.assign(new Error('A OpenAI não devolveu conteúdo estruturado.'),{code:'empty_response',responseMetadata:providerMetadata})
-        advice=JSON.parse(response.output_text);engineMode='openai';responseMetadata=providerMetadata
+        advice=JSON.parse(response.output_text);providerHumanReview=structuredClone(advice.human_review||null);engineMode='openai';responseMetadata=providerMetadata
       }catch(error){if(signal?.aborted)throw Object.assign(new Error('A solicitação foi cancelada pelo cliente.'),{statusCode:499});advice=fallbackAdvice;engineMode='fallback';warning=safeError(error);responseMetadata={...responseMetadata,...(error.responseMetadata||{}),latencyMs:error.responseMetadata?.latencyMs||responseMetadata.latencyMs||Date.now()-startedAt,errorCode:String(error.code||error.status||'provider_error').slice(0,80),errorDetails:error.details||null}}
     }
-    advice=enforceValSafety(advice,context,message,{requestedStage:selectedWorkingStage,...(selectedWorkingStage?{methodologyBaseline:fallbackAdvice.methodology_state}:{})})
+    let technicalSafetyAudit=null
+    advice=enforceValSafety(advice,context,message,{requestedStage:selectedWorkingStage,providerHumanReview,at:this.clock(),onSafetyAudit:audit=>{technicalSafetyAudit=audit},...(selectedWorkingStage?{methodologyBaseline:fallbackAdvice.methodology_state}:{})})
+    if(technicalSafetyAudit?.divergence)emitTechnicalSafetyAudit(this.logger,technicalSafetyAudit,{subjectHash:createHash('sha256').update(`${tenantId}:${clientId}`).digest('hex')})
     let interpretedAttachments=selectedAttachments.map(compactAttachment)
     if(engineMode==='openai'&&selectedAttachments.length){
       interpretedAttachments=[]
@@ -576,8 +592,8 @@ export class ValEngine{
         interpretedAttachments.push(compactAttachment(updated))
       }
     }
-    const modelRun={model:this.client?route.model:'rules-v4',promptVersion:`${VAL_INSTRUCTIONS_VERSION}:${instructionBlocks.tier}`,promptPrefixHash,instructionTier:instructionBlocks.tier,status:engineMode==='openai'?'completed':this.client?'fallback':'demonstration',...responseMetadata,routing:routeAudit}
+    const modelRun={model:this.client?route.model:'rules-v4',promptVersion:`${VAL_INSTRUCTIONS_VERSION}:${instructionBlocks.tier}`,promptPrefixHash,instructionTier:instructionBlocks.tier,status:engineMode==='openai'?'completed':this.client?'fallback':'demonstration',...responseMetadata,routing:routeAudit,technicalSafety:technicalSafetyAudit}
     const recommendationId=await this.repository.recordRecommendation({tenantId,ownerId,clientId,question:message,mode:route.tier,model:engineMode==='openai'?route.model:'rules-v4',context,advice,responseMetadata,promptHash:createHash('sha256').update(instructions).digest('hex'),modelRun})
-    return {recommendationId,engineMode,route:route.tier,model:engineMode==='openai'?route.model:'rules-v4',warning,contextCoverage,attachments:interpretedAttachments,advice}
+    return {recommendationId,engineMode,route:route.tier,model:engineMode==='openai'?route.model:'rules-v4',warning,contextCoverage,attachments:interpretedAttachments,technicalSafety:technicalSafetyAudit,advice}
   }
 }

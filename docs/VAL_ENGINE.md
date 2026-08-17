@@ -89,6 +89,22 @@ O log operacional não duplica o texto integral do produtor. A pergunta completa
 
 Essa estrutura permite avaliar falso positivo e falso negativo do roteador, comparar tier solicitado e tier escolhido e, no futuro, calcular uma matriz de acerto sem depender da memória de quem analisou o caso.
 
+## Reconciliação da revisão humana
+
+A barreira técnica usa dois sinais independentes: as regras determinísticas sobre solicitação, saída, sinais de contexto e comparação de produtos; e o campo `human_review` devolvido pelo modelo estruturado. Um sinal não pode liberar o outro.
+
+`buildTechnicalSafetyAudit()` classifica cada resposta como alinhada, sem provedor, sobrescrita pela barreira determinística, revisão pedida somente pelo modelo ou contrato inconsistente. O caminho final é sempre o mais restritivo:
+
+- pedido ou saída acionável detectados pelas regras: a orientação técnica é descartada e entra o pacote seguro de revisão;
+- regras exigem revisão, mas o modelo não: a revisão continua obrigatória e a divergência é registrada;
+- modelo pede revisão técnica que as regras não detectam: a orientação é retida para revisão manual;
+- modelo pede revisão gerencial ou do consultor, sem sinal técnico: essa revisão é preservada, em vez de ser sobrescrita como `required:false`;
+- campos contraditórios, como `required:true` com papel `none`: revisão manual obrigatória.
+
+A auditoria não contém a pergunta nem a resposta. Ela registra apenas versão, horário, fontes booleanas, papel, status e divergência. O evento `val.technical_review_divergence` usa um identificador hash da conta; a mesma auditoria é persistida em `modelRun.technicalSafety` e devolvida no topo da API para observabilidade. A justificativa visível permanece em `human_review.reason`.
+
+O schema enviado ao modelo não mudou. A reconciliação acontece depois do Structured Output e antes da persistência, portanto `additionalProperties:false` e todos os campos obrigatórios continuam intactos.
+
 ## Fonte única da sequência metodológica
 
 `server/val-methodology.js` é a fonte canônica de preparar → alinhar → descobrir → dimensionar → construir_valor → propor → comprometer. Cada etapa define, no mesmo lugar, nome, descrição para o prompt, porta objetiva, tipo de passo da conversa e perguntas aberta e fechada.
