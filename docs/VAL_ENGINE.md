@@ -35,6 +35,10 @@ flowchart TD
 - `knowledge/approved/`: única pasta que pode ser enviada à base semântica.
 - `test/`: testes de roteamento, HMAC, NDVI, solo e limites éticos.
 
+## Terminologia de produto
+
+A separação entre produtor, Cliente 360, conta comercial, conta de acesso e os métodos SPIN, OPC, EPA e Senoide está registrada em [`docs/TERMINOLOGY_AUDIT.md`](TERMINOLOGY_AUDIT.md). Inconsistências são sinalizadas antes de qualquer renomeação.
+
 ## Regra de revisão textual e reconhecimento
 
 Regex de reconhecimento não é texto de interface. Classes como `defici[eê]ncia` e `aduba[cç][aã]o` existem para aceitar variações de acento e não devem ser “corrigidas” durante uma revisão ortográfica.
