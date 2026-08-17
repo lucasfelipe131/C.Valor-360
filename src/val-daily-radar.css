@@ -1,0 +1,66 @@
+.val-daily-radar{
+ display:grid;
+ gap:20px;
+ padding:24px;
+ border:1px solid rgba(16,98,156,.16);
+ border-radius:24px;
+ background:
+  radial-gradient(circle at 100% 0,rgba(45,140,255,.11),transparent 26rem),
+  radial-gradient(circle at 0 100%,rgba(0,200,150,.08),transparent 24rem),
+  linear-gradient(145deg,#f9fcff,#f4faf8);
+ box-shadow:0 22px 55px rgba(16,61,95,.09);
+}
+.val-daily-radar-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px}
+.val-daily-radar-head>div:first-child{max-width:760px}
+.val-daily-radar-kicker{display:inline-flex;align-items:center;gap:7px;color:#075e9f;font-size:10px;font-weight:900;letter-spacing:.14em}
+.val-daily-radar-kicker svg{width:16px;height:16px;color:#00a77e}
+.val-daily-radar-head h3{margin:8px 0 6px;color:#0b2945;font-size:clamp(22px,2.2vw,32px);letter-spacing:-.04em}
+.val-daily-radar-head p{margin:0;color:#5d7488;font-size:12px;line-height:1.6}
+.val-daily-radar-status{display:grid;justify-items:end;gap:8px;min-width:max-content}
+.val-daily-radar-status span,.val-daily-radar-status small{display:inline-flex;align-items:center;gap:7px}
+.val-daily-radar-status span{padding:8px 11px;border:1px solid rgba(0,167,126,.18);border-radius:999px;background:#eefbf7;color:#087a60;font-size:9px;font-weight:900;letter-spacing:.06em}
+.val-daily-radar-status span svg{width:15px;height:15px}
+.val-daily-radar-status small{color:#7890a2;font-size:9px;font-weight:750}
+.val-daily-radar-status small svg{width:13px;height:13px}
+.val-daily-radar-grid{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:12px}
+.val-radar-card{display:flex;min-width:0;flex-direction:column;gap:14px;padding:16px;border:1px solid #dbe7ef;border-radius:18px;background:rgba(255,255,255,.9);box-shadow:0 12px 28px rgba(29,69,97,.07)}
+.val-radar-card.is-imediata{border-color:rgba(239,119,78,.34);box-shadow:0 15px 32px rgba(175,73,38,.1)}
+.val-radar-card.is-esta_semana{border-color:rgba(45,140,255,.25)}
+.val-radar-card-top{display:flex;align-items:center;gap:8px}
+.val-radar-rank{display:grid;width:28px;height:28px;place-items:center;border-radius:9px;background:#0b3151;color:#fff;font-size:10px;font-weight:900}
+.val-radar-priority{display:inline-flex;min-width:0;align-items:center;gap:5px;color:#486579;font-size:8px;font-weight:900;text-transform:uppercase;letter-spacing:.05em}
+.val-radar-priority svg{width:13px;height:13px;color:#177cc3}
+.is-imediata .val-radar-priority svg{color:#d6633f}
+.val-radar-card-top>strong{margin-left:auto;color:#0b3151;font-size:18px;letter-spacing:-.04em}
+.val-radar-card-top>strong small{font-size:8px;color:#7890a2}
+.val-radar-person{display:flex;align-items:center;gap:10px}
+.val-radar-person>span{display:grid;flex:0 0 auto;width:38px;height:38px;place-items:center;border-radius:12px;background:linear-gradient(145deg,#e8f5ff,#e8fbf4);color:#075e9f;font-size:11px;font-weight:900}
+.val-radar-person h4{margin:0;color:#12304a;font-size:13px;line-height:1.2}
+.val-radar-person small{display:block;margin-top:3px;color:#8498a8;font-size:8px}
+.val-radar-reason{min-height:62px;margin:0;color:#566f82;font-size:10px;line-height:1.55}
+.val-radar-opportunity,.val-radar-action{display:flex;align-items:flex-start;gap:8px;padding:10px;border-radius:12px}
+.val-radar-opportunity{background:#f1f7fb;color:#1e5d88}
+.val-radar-action{background:#effaf6;color:#15745b}
+.val-radar-opportunity>svg,.val-radar-action>svg{flex:0 0 auto;width:15px;height:15px;margin-top:2px}
+.val-radar-opportunity div,.val-radar-action div{display:grid;gap:3px;min-width:0}
+.val-radar-opportunity small,.val-radar-action small{font-size:7px;font-weight:900;letter-spacing:.08em;text-transform:uppercase}
+.val-radar-opportunity b{overflow:hidden;color:#173d59;font-size:10px;text-overflow:ellipsis;white-space:nowrap}
+.val-radar-opportunity span{color:#668399;font-size:8px}
+.val-radar-action p{margin:0;color:#315e50;font-size:9px;line-height:1.48}
+.val-radar-proof{display:flex;flex-wrap:wrap;align-items:center;gap:4px;color:#6c8394;font-size:8px}
+.val-radar-proof b{color:#0b3151;font-size:12px}
+.val-radar-proof small{width:100%;color:#a06a38;line-height:1.4}
+.val-radar-buttons{display:grid;grid-template-columns:1fr;gap:7px;margin-top:auto}
+.val-radar-buttons button{min-height:36px;border:0;border-radius:11px;background:#0b5f9d;color:#fff;display:flex;align-items:center;justify-content:center;gap:7px;padding:8px 10px;font-size:9px;font-weight:900;cursor:pointer}
+.val-radar-buttons button svg{width:14px;height:14px}
+.val-radar-buttons button.secondary{border:1px solid #d6e3ec;background:#fff;color:#315d7a}
+.val-radar-empty{display:flex;align-items:center;gap:14px;padding:22px;border:1px dashed #c9dce8;border-radius:18px;background:rgba(255,255,255,.68)}
+.val-radar-empty>svg{width:28px;height:28px;color:#2d8cff}
+.val-radar-empty b{color:#173b58;font-size:12px}
+.val-radar-empty p{margin:4px 0 0;color:#71899b;font-size:10px;line-height:1.55}
+.val-daily-radar-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:3px;color:#71889a;font-size:8px;font-weight:750}
+.val-daily-radar-foot span{display:inline-flex;align-items:center;gap:6px}
+.val-daily-radar-foot svg{width:13px;height:13px;color:#00a77e}
+@media(max-width:1280px){.val-daily-radar-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:900px){.val-daily-radar-head{display:grid}.val-daily-radar-status{justify-items:start}.val-daily-radar-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.val-daily-radar-foot{align-items:flex-start;flex-direction:column}}
+@media(max-width:620px){.val-daily-radar{margin-inline:-4px;padding:16px;border-radius:18px}.val-daily-radar-grid{grid-template-columns:1fr}.val-radar-reason{min-height:0}.val-radar-buttons{grid-template-columns:1fr 1fr}.val-daily-radar-head h3{font-size:24px}}
