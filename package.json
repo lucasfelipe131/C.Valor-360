@@ -8,12 +8,13 @@
   },
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build": "vite build && node scripts/pwa-release.mjs stamp && node scripts/pwa-release.mjs verify",
     "preview": "vite preview --host 0.0.0.0",
     "start": "node --import ./server/conversion-bootstrap.js server.js",
     "test": "node --test",
     "db:migrate": "node server/migrate.js",
-    "knowledge:sync": "node server/sync-knowledge.js"
+    "knowledge:sync": "node server/sync-knowledge.js",
+    "pwa:verify": "node scripts/pwa-release.mjs verify"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",
