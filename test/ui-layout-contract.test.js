@@ -7,10 +7,12 @@ import {fileURLToPath} from 'node:url'
 const root=join(dirname(fileURLToPath(import.meta.url)),'..')
 const read=relative=>readFileSync(join(root,relative),'utf8')
 
-test('brand mark keeps its accent centered and reuses the real logo on mobile',()=>{
+test('brand mark exposes the VAL identity and reuses the real logo on mobile',()=>{
  const logo=read('src/components/Logo.jsx')
  const topbar=read('src/components/Topbar.jsx')
- assert.match(logo,/rotate\(18 51 32\)/)
+ assert.match(logo,/aria-label="VAL — inteligência que gera valor"/)
+ assert.match(logo,/val-signal-/)
+ assert.match(logo,/circle cx="31\.4" cy="45\.2"/)
  assert.match(logo,/useId/)
  assert.match(topbar,/<Logo compact\/>/)
  assert.doesNotMatch(topbar,/topbar-mobile-mark|>C</)
@@ -41,7 +43,7 @@ test('assisted review keeps all relationship fields optional through the final s
  assert.match(surveyForm,/question\.id>=27\?' \(opcional\)'/)
 })
 
-test('batch import has a responsive visual hierarchy and keeps the VALOR 360 PWA brand',()=>{
+test('batch import has a responsive visual hierarchy and keeps the VAL PWA brand',()=>{
  const styles=read('src/styles.css')
  const app=read('src/App.jsx')
  const html=read('index.html')
@@ -50,8 +52,8 @@ test('batch import has a responsive visual hierarchy and keeps the VALOR 360 PWA
  assert.match(styles,/\.import-batch-progress\{padding:/)
  assert.match(styles,/@media\(max-width:700px\)[\s\S]*\.import-record-list\{grid-template-columns:1fr/)
  assert.match(app,/value!==''&&value!==null&&value!==undefined/)
- assert.match(html,/apple-mobile-web-app-title" content="VALOR 360"/)
- assert.equal(manifest.short_name,'VALOR 360')
+ assert.match(html,/apple-mobile-web-app-title" content="VAL"/)
+ assert.equal(manifest.short_name,'VAL')
 })
 
 test('negative optional answers use discovery labels instead of false opportunities',()=>{
@@ -232,7 +234,7 @@ test('inteligência agronômica executa o Manual dentro da sessão do VALOR 360'
  const manualConfig=read('manual/next.config.ts')
  const manualPage=read('manual/app/page.tsx')
  const manualStyles=read('manual/app/globals.css')
-assert.match(agro,/src="\/tecnico\?embedded=1"/)
+ assert.match(agro,/src="\/tecnico\?embedded=1"/)
  assert.match(agro,/Mesmo login ativo/)
  assert.match(app,/<Agro clients=\{clientList\}\/>/)
  assert.match(manualConfig,/basePath: "\/tecnico"/)
