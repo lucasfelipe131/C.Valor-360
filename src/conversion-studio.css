@@ -1,0 +1,40 @@
+.conversion-studio{display:grid;gap:16px;padding:22px;border:1px solid #d8e0ec;border-radius:24px;background:linear-gradient(150deg,#fbfcff,#f2f5fb);box-shadow:0 18px 48px rgba(32,51,84,.07)}
+.conversion-studio-head{display:flex;justify-content:space-between;align-items:flex-start;gap:20px}
+.conversion-studio-head>div:first-child{max-width:720px}
+.conversion-studio-kicker{display:inline-flex;align-items:center;gap:7px;color:#5b52a6;font-size:10px;font-weight:900;letter-spacing:.13em}
+.conversion-studio-kicker svg{width:16px;height:16px}
+.conversion-studio-head h3{margin:7px 0 5px;color:#202b4a;font-size:clamp(22px,3vw,32px);letter-spacing:-.035em}
+.conversion-studio-head p{margin:0;color:#68738c;font-size:12px;line-height:1.55}
+.conversion-studio-controls{display:flex;align-items:flex-end;gap:8px;min-width:320px}
+.conversion-studio-controls label{display:grid;gap:4px;flex:1}
+.conversion-studio-controls label>small{color:#79839a;font-size:8px;font-weight:900;letter-spacing:.1em}
+.conversion-studio-controls label>span{position:relative;display:block}
+.conversion-studio-controls select{width:100%;height:42px;padding:0 34px 0 11px;border:1px solid #ccd4e4;border-radius:11px;background:#fff;color:#263553;font-size:11px;font-weight:800;appearance:none}
+.conversion-studio-controls label svg{position:absolute;right:10px;top:50%;width:15px;transform:translateY(-50%);pointer-events:none;color:#6d7790}
+.conversion-studio-controls>button{height:42px;padding:0 12px;border:1px solid #ccd4e4;border-radius:11px;background:#fff;color:#4b5680;display:inline-flex;align-items:center;gap:7px;font-size:10px;font-weight:850}
+.conversion-studio-controls>button svg{width:15px}
+.conversion-studio-loading{display:flex;align-items:center;gap:12px;padding:17px;border-radius:15px;background:#fff;color:#5d58a3}
+.conversion-studio-loading>svg{width:22px;animation:radar-spin .9s linear infinite}
+.conversion-studio-loading b{display:block;color:#303b60;font-size:13px}.conversion-studio-loading small{display:block;margin-top:3px;color:#7b8499;font-size:10px}
+.conversion-studio-error{padding:13px 15px;border:1px solid #ecc6be;border-radius:13px;background:#fff7f5;color:#a74b37;font-size:11px}
+.conversion-studio-foot{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:10px;padding:13px 15px;border-radius:14px;background:#eef1f8;color:#535e7b}
+.conversion-studio-foot>svg{width:18px;color:#5c55a6}.conversion-studio-foot span b{display:block;font-size:11px}.conversion-studio-foot span small{display:block;margin-top:2px;font-size:9px;line-height:1.45;color:#798299}
+
+.commitment-ladder{display:grid;gap:14px}
+.commitment-ladder-toolbar{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;padding:15px 17px;border-radius:16px;background:#fff;border:1px solid #dce2ed}
+.commitment-ladder-toolbar small{display:block;color:#7b859a;font-size:8px;font-weight:900;letter-spacing:.1em}.commitment-ladder-toolbar h4{margin:4px 0;color:#273454;font-size:17px}.commitment-ladder-toolbar span{color:#7c8598;font-size:10px}
+.commitment-ladder-toolbar label{display:grid;gap:4px;min-width:220px}.commitment-ladder-toolbar label>span{font-size:8px;font-weight:850;text-transform:uppercase}.commitment-ladder-toolbar label>div{position:relative}.commitment-ladder-toolbar select{width:100%;height:38px;padding:0 31px 0 10px;border:1px solid #d1d8e5;border-radius:10px;background:#f9faff;color:#33405e;font-size:10px;font-weight:750;appearance:none}.commitment-ladder-toolbar label svg{position:absolute;right:9px;top:50%;width:14px;transform:translateY(-50%);pointer-events:none}
+.commitment-ladder-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(290px,.8fr);gap:14px;align-items:start}
+.commitment-ladder-steps{list-style:none;margin:0;padding:8px 16px;background:#fff;border:1px solid #dce2ed;border-radius:17px}
+.commitment-ladder-steps li{position:relative;display:grid;grid-template-columns:36px 1fr;gap:11px;padding:13px 0}.commitment-ladder-steps li:not(:last-child):after{content:"";position:absolute;left:17px;top:47px;bottom:-5px;width:2px;background:#e2e6ef}
+.commitment-step-marker{z-index:1;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;background:#eef1f6;color:#7a8395;font-size:10px;font-weight:900}.commitment-step-marker svg{width:16px}
+.commitment-ladder-steps li.is-confirmed .commitment-step-marker{background:#dff4eb;color:#168063}.commitment-ladder-steps li.is-next .commitment-step-marker{background:#655bb8;color:#fff;box-shadow:0 0 0 5px rgba(101,91,184,.12)}.commitment-ladder-steps li.is-next{background:linear-gradient(90deg,rgba(101,91,184,.055),transparent);margin-inline:-10px;padding-inline:10px;border-radius:12px}
+.commitment-step-title{display:flex;align-items:center;justify-content:space-between;gap:10px}.commitment-step-title b{color:#293755;font-size:12px}.commitment-step-title small{color:#798399;font-size:8px;font-weight:800;text-transform:uppercase}.commitment-ladder-steps li.is-next .commitment-step-title small{color:#5d54a9}
+.commitment-ladder-steps p{margin:4px 0 0;color:#68738a;font-size:10px;line-height:1.48}.commitment-ladder-steps em,.commitment-ladder-steps div>span{display:flex;align-items:flex-start;gap:5px;margin-top:6px;color:#8a6c2a;font-size:8px;line-height:1.4;font-style:normal}.commitment-ladder-steps div>span{color:#50756e}.commitment-ladder-steps em svg,.commitment-ladder-steps div>span svg{width:12px;height:12px;flex:none}
+.commitment-next-card{display:grid;gap:10px;padding:18px;border-radius:18px;background:linear-gradient(150deg,#28264f,#47417d);color:#fff;box-shadow:0 18px 40px rgba(51,45,102,.18)}
+.commitment-next-kicker{display:inline-flex;align-items:center;gap:6px;color:#c9c5f3;font-size:8px;font-weight:900;letter-spacing:.12em}.commitment-next-kicker svg{width:14px}
+.commitment-next-card h4{margin:0;font-size:20px;letter-spacing:-.025em}.commitment-next-card>p{margin:0;color:#dedcf0;font-size:11px;line-height:1.55}.commitment-next-card blockquote{margin:0;padding:12px;border-left:3px solid #9d94ed;border-radius:0 10px 10px 0;background:rgba(255,255,255,.08);font-size:12px;font-weight:750;line-height:1.5}.commitment-next-card dl{display:grid;gap:8px;margin:0}.commitment-next-card dl div{padding:9px 10px;border-radius:10px;background:rgba(255,255,255,.06)}.commitment-next-card dt{color:#bbb6e5;font-size:8px;font-weight:900;text-transform:uppercase}.commitment-next-card dd{margin:3px 0 0;color:#fff;font-size:9px;line-height:1.45}.commitment-next-card button{min-height:42px;border:0;border-radius:12px;background:#fff;color:#373263;display:flex;align-items:center;justify-content:center;gap:8px;font-size:10px;font-weight:900}.commitment-next-card button svg{width:15px}
+.commitment-ladder-empty{display:flex;align-items:center;gap:12px;padding:18px;border:1px dashed #cfd6e3;border-radius:16px;background:#fff}.commitment-ladder-empty>svg{width:22px;color:#7a84a0}.commitment-ladder-empty b{display:block;color:#34405d}.commitment-ladder-empty p{margin:3px 0 0;color:#7b8599;font-size:10px}
+
+@media(max-width:900px){.conversion-studio-head{display:grid}.conversion-studio-controls{min-width:0;width:100%}.commitment-ladder-grid{grid-template-columns:1fr}}
+@media(max-width:640px){.conversion-studio{padding:15px;border-radius:18px}.conversion-studio-controls{display:grid;grid-template-columns:1fr auto}.conversion-studio-controls>button b{display:none}.commitment-ladder-toolbar{display:grid}.commitment-ladder-toolbar label{min-width:0}.commitment-step-title{display:grid;gap:3px}.conversion-studio-foot{grid-template-columns:auto 1fr}.conversion-studio-foot>svg:last-child{display:none}}
