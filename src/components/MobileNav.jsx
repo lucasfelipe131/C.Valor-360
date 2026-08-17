@@ -18,7 +18,7 @@ import {
 const primary=[
  ['dashboard','Hoje',LayoutDashboard],
  ['clients','Clientes',Users],
- ['val','Val',BrainCircuit],
+ ['val','VAL',BrainCircuit],
  ['visits','Agenda',CalendarDays]
 ]
 
@@ -40,7 +40,7 @@ export default function MobileNav({page,setPage,currentUser}){
  return <>
   {open&&<><button type="button" className="mobile-more-backdrop" aria-label="Fechar menu" onClick={()=>setOpen(false)}/>
   <section className="mobile-more-sheet open" aria-label="Todos os módulos">
-   <header><div><small>VALOR 360</small><h2>Todos os módulos</h2></div><button type="button" aria-label="Fechar menu" onClick={()=>setOpen(false)}><X/></button></header>
+   <header><div><small>VAL</small><h2>Todos os módulos</h2></div><button type="button" aria-label="Fechar menu" onClick={()=>setOpen(false)}><X/></button></header>
    <div>{visibleSecondary.map(([id,label,Icon])=><button type="button" key={id} className={page===id?'active':''} aria-current={page===id?'page':undefined} onClick={()=>navigate(id)}><span><Icon/></span><b>{label}</b></button>)}</div>
   </section></>}
   <nav className="mobile-nav" aria-label="Navegação principal">
