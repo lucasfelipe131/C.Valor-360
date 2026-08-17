@@ -1,12 +1,13 @@
 {
-  "name": "VALOR 360",
-  "short_name": "VALOR 360",
-  "description": "Inteligência comercial e agronômica para gerar valor em cada relação.",
+  "name": "VAL — Inteligência Comercial e Agronômica",
+  "short_name": "VAL",
+  "description": "Inteligência aplicada que transforma contexto em decisão e decisão em valor.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#061c38",
-  "theme_color": "#061c38",
+  "background_color": "#071B19",
+  "theme_color": "#071B19",
   "lang": "pt-BR",
+  "categories": ["business", "productivity"],
   "icons": [
     {
       "src": "/icon.svg",
