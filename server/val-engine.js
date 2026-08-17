@@ -8,10 +8,48 @@ import {buildValueBridge,isCommercialProductComparison} from './product-intellig
 const strategicPattern=/estrat[eé]g|plano de conta|risco alto|proposta complexa|diretoria|comit[eê]|milh[oõ]es|grande conta/i
 const fastPattern=/classifi|extra[ií]|resum|import|normaliz|tag|categoria/i
 
-export function selectValModel(message,mode,runtimeConfig){
-  if(mode==='strategic'||strategicPattern.test(String(message)))return {model:runtimeConfig.modelStrategic,tier:'strategic',effort:'medium'}
-  if(mode==='fast'||fastPattern.test(String(message)))return {model:runtimeConfig.modelFast,tier:'fast',effort:'low'}
-  return {model:runtimeConfig.modelDaily,tier:'daily',effort:'medium'}
+const routeResult=(runtimeConfig,{tier,effort,triggerId,triggerSource,triggerPattern,matchedText=''})=>({
+  model:tier==='strategic'?runtimeConfig.modelStrategic:tier==='fast'?runtimeConfig.modelFast:runtimeConfig.modelDaily,
+  tier,
+  effort,
+  triggerId,
+  triggerSource,
+  triggerPattern,
+  matchedText:String(matchedText||'').slice(0,80)
+})
+
+export function selectValModel(message,mode='daily',runtimeConfig={}){
+  const value=String(message||'')
+  if(mode==='strategic')return routeResult(runtimeConfig,{tier:'strategic',effort:'medium',triggerId:'explicit_strategic_mode',triggerSource:'mode',triggerPattern:'mode=strategic'})
+  if(mode==='fast')return routeResult(runtimeConfig,{tier:'fast',effort:'low',triggerId:'explicit_fast_mode',triggerSource:'mode',triggerPattern:'mode=fast'})
+  const strategicMatch=value.match(strategicPattern)
+  if(strategicMatch)return routeResult(runtimeConfig,{tier:'strategic',effort:'medium',triggerId:'strategic_message_pattern',triggerSource:'message',triggerPattern:strategicPattern.source,matchedText:strategicMatch[0]})
+  const fastMatch=value.match(fastPattern)
+  if(fastMatch)return routeResult(runtimeConfig,{tier:'fast',effort:'low',triggerId:'fast_message_pattern',triggerSource:'message',triggerPattern:fastPattern.source,matchedText:fastMatch[0]})
+  return routeResult(runtimeConfig,{tier:'daily',effort:'medium',triggerId:'default_daily',triggerSource:'default',triggerPattern:'default'})
+}
+
+const isoTime=value=>{const date=value instanceof Date?value:new Date(value||Date.now());return Number.isNaN(date.getTime())?new Date().toISOString():date.toISOString()}
+const messageAudit=value=>{const text=String(value||'');return {sha256:createHash('sha256').update(text).digest('hex'),characters:text.length,words:text.trim()?text.trim().split(/\s+/).length:0}}
+
+export function buildValRouteAudit({message='',mode='daily',route,at=new Date()}={}){
+  if(!route?.tier||!route?.model)throw new Error('Rota da VAL incompleta para auditoria.')
+  return {
+    event:'val.model_route',
+    at:isoTime(at),
+    requestedMode:String(mode||'daily'),
+    selected:{tier:route.tier,model:route.model,effort:route.effort},
+    trigger:{id:route.triggerId,source:route.triggerSource,pattern:route.triggerPattern,matchedText:route.matchedText||''},
+    message:messageAudit(message)
+  }
+}
+
+export function emitValRouteAudit(logger,audit){
+  try{
+    if(typeof logger==='function')logger(audit)
+    else if(typeof logger?.info==='function')logger.info(audit)
+  }catch{}
+  return audit
 }
 
 const compactText=(value,max=500)=>typeof value==='string'?value.slice(0,max):value
@@ -344,8 +382,8 @@ export function enforceValSafety(advice,context,message='',options={}){
 }
 
 export class ValEngine{
-  constructor({runtimeConfig,repository}){
-    this.config=runtimeConfig;this.repository=repository
+  constructor({runtimeConfig,repository,logger=console,clock=()=>new Date()}){
+    this.config=runtimeConfig;this.repository=repository;this.logger=logger;this.clock=clock
     this.client=runtimeConfig.openaiApiKey?new OpenAI({apiKey:runtimeConfig.openaiApiKey,project:runtimeConfig.openaiProject||undefined,timeout:runtimeConfig.openaiTimeoutMs,maxRetries:runtimeConfig.openaiMaxRetries}):null
   }
 
@@ -366,6 +404,7 @@ export class ValEngine{
     context.productIntelligence=buildValueBridge(context,message)
     const contextCoverage=summarizeContextCoverage(context)
     const route=selectValModel(message,mode,this.config)
+    const routeAudit=emitValRouteAudit(this.logger,buildValRouteAudit({message,mode,route,at:this.clock()}))
     const fallbackAdvice=buildFallbackAdvice({...context,message,mode:route.tier,requestedStage:selectedWorkingStage})
     const instructionBlocks=buildValInstructionBlocks(route.tier)
     const instructions=buildValInstructions(instructionBlocks.tier)
@@ -418,7 +457,7 @@ export class ValEngine{
         interpretedAttachments.push(compactAttachment(updated))
       }
     }
-    const modelRun={model:this.client?route.model:'rules-v4',promptVersion:`${VAL_INSTRUCTIONS_VERSION}:${instructionBlocks.tier}`,promptPrefixHash,instructionTier:instructionBlocks.tier,status:engineMode==='openai'?'completed':this.client?'fallback':'demonstration',...responseMetadata}
+    const modelRun={model:this.client?route.model:'rules-v4',promptVersion:`${VAL_INSTRUCTIONS_VERSION}:${instructionBlocks.tier}`,promptPrefixHash,instructionTier:instructionBlocks.tier,status:engineMode==='openai'?'completed':this.client?'fallback':'demonstration',...responseMetadata,routing:routeAudit}
     const recommendationId=await this.repository.recordRecommendation({tenantId,ownerId,clientId,question:message,mode:route.tier,model:engineMode==='openai'?route.model:'rules-v4',context,advice,responseMetadata,promptHash:createHash('sha256').update(instructions).digest('hex'),modelRun})
     return {recommendationId,engineMode,route:route.tier,model:engineMode==='openai'?route.model:'rules-v4',warning,contextCoverage,attachments:interpretedAttachments,advice}
   }
