@@ -16,17 +16,16 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Localizar testes regressivos
+      - name: Capturar falha da suíte completa
         shell: bash
         run: |
           set +e
-          failures=0
-          for file in test/*.test.js; do
-            if ! node --test "$file" >/tmp/test-output.log 2>&1; then
-              echo "===== FALHOU: $file ====="
-              cat /tmp/test-output.log
-              failures=$((failures+1))
-            fi
-          done
-          echo "Arquivos de teste com falha: $failures"
-          exit "$failures"
+          node --test >/tmp/full-test.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            echo '===== RESUMO DAS FALHAS ====='
+            grep -n -E 'not ok|AssertionError|ERR_ASSERTION|failureType|expected:|actual:|operator:' -A18 -B6 /tmp/full-test.log || tail -n 180 /tmp/full-test.log
+          else
+            tail -n 20 /tmp/full-test.log
+          fi
+          exit "$status"
