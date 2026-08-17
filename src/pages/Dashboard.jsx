@@ -18,6 +18,7 @@ import {
 import KpiCard from '../components/KpiCard'
 import ValPanel from '../components/ValPanel'
 import ConversionRadar from '../components/ConversionRadar'
+import ConversionOpportunityStudio from '../components/ConversionOpportunityStudio'
 import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
 import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline,resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
@@ -114,6 +115,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
   </section>
 
   <ConversionRadar clients={clients} onClient={onClient} onPrepare={onPrepare}/>
+  <ConversionOpportunityStudio clients={clients} onClient={onClient} onPrepare={onPrepare}/>
 
   <section className="dashboard-grid home-analysis">
    <article className="panel chart-panel">

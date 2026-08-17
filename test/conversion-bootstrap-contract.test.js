@@ -4,16 +4,20 @@ import test from 'node:test'
 
 const packageJson=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8'))
 const bootstrap=readFileSync(new URL('../server/conversion-bootstrap.js',import.meta.url),'utf8')
+const innovationBootstrap=readFileSync(new URL('../server/innovation-bootstrap.js',import.meta.url),'utf8')
 const engine=readFileSync(new URL('../server/conversion-engine.js',import.meta.url),'utf8')
 const golden=JSON.parse(readFileSync(new URL('../evals/conversion-golden.json',import.meta.url),'utf8'))
 
-test('produção carrega o núcleo determinístico antes do servidor',()=>{
-  assert.match(packageJson.scripts.start,/--import\s+\.\/server\/conversion-bootstrap\.js\s+server\.js/)
+test('produção carrega o núcleo determinístico, as inovações e depois o servidor',()=>{
+  assert.match(packageJson.scripts.start,/--import\s+\.\/server\/conversion-bootstrap\.js\s+--import\s+\.\/server\/innovation-bootstrap\.js\s+server\.js/)
+  assert.ok(packageJson.scripts.start.indexOf('conversion-bootstrap.js')<packageJson.scripts.start.indexOf('innovation-bootstrap.js'))
+  assert.ok(packageJson.scripts.start.indexOf('innovation-bootstrap.js')<packageJson.scripts.start.indexOf('server.js'))
   assert.match(bootstrap,/ValEngine\.prototype\.answer/)
   assert.match(bootstrap,/ValRepository\.prototype\.recordRecommendation/)
   assert.match(bootstrap,/decisionMode:'deterministic_first'/)
   assert.match(bootstrap,/generativeRole:'language_only'/)
   assert.match(bootstrap,/textRequestsUseSlimLanguageEnhancer:true/)
+  assert.match(innovationBootstrap,/ValRepository\.prototype\.getClientContext/)
 })
 
 test('núcleo declara regras de não invenção e reconciliação final',()=>{
