@@ -44,9 +44,11 @@ test('índice compacto mantém todas as oportunidades em ordem relevante',()=>{
  const context={client:{id:'p1',name:'Produtor Teste'},opportunities,businessHistory:Array.from({length:40},()=>({detail:'histórico '.repeat(300)})),visits:[],interactions:[],properties:[],fieldReports:[],soilAnalyses:[],ndviObservations:[],manualRecords:[],signals:[],memories:[],priorRecommendations:[],attachments:[],currentAttachments:[]}
  const compact=compactValContext(context,30_000,'Efficon cigarrinha',{now})
  const items=compact.opportunities||compact.opportunityIndex?.items||[]
+ const titles=items.map(item=>Array.isArray(item)?String(item[0]):String(item.title))
  assert.equal(items.length,200)
- const firstTitle=Array.isArray(items[0])?items[0][0]:items[0].title
- assert.match(firstTitle,/Efficon/i)
+ assert.match(titles[0],/Efficon/i)
+ assert.ok(titles.some(title=>/Oportunidade 0/.test(title)))
+ assert.ok(titles.some(title=>/Oportunidade 198/.test(title)))
  assert.ok(JSON.stringify(compact).length<=30_000)
 })
 
