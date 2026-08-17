@@ -72,3 +72,14 @@ export function technicalSafetyReason(audit,{signalRequiresReview=false,productR
   if(audit?.manualReviewRequired)return text(providerReason)||'A recomendação precisa de revisão humana antes de ser utilizada.'
   return 'Nenhuma revisão humana adicional foi sinalizada.'
 }
+
+export function emitTechnicalSafetyAudit(logger,audit,{subjectHash=''}={}){
+  if(!audit?.divergence)return null
+  const event={event:'val.technical_review_divergence',subjectHash:text(subjectHash,80),...audit}
+  try{
+    if(typeof logger?.warn==='function')logger.warn(event)
+    else if(typeof logger?.info==='function')logger.info(event)
+    else if(typeof logger==='function')logger(event)
+  }catch{}
+  return event
+}
