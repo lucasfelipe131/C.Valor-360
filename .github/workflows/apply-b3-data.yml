@@ -1,0 +1,31 @@
+name: Apply B3 data state patch
+
+on:
+  push:
+    branches: [b3-shared-async-resource]
+    paths:
+      - scripts/apply-b3-data.py
+      - .github/workflows/apply-b3-data.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: b3-shared-async-resource
+          fetch-depth: 0
+      - name: Aplicar mudanças
+        run: python3 scripts/apply-b3-data.py
+      - name: Registrar mudanças
+        run: |
+          rm -f scripts/apply-b3-data.py .github/workflows/apply-b3-data.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "B3 — migra SOG e visão global para o hook compartilhado"
+          git push origin HEAD:b3-shared-async-resource
