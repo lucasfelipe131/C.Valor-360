@@ -1,6 +1,6 @@
 import OpenAI from 'openai'
 import {createHash} from 'node:crypto'
-import {applyWorkingStage,buildFallbackAdvice,buildValInstructions,normalizeValMethodStage,rankOpportunityPortfolio,VAL_METHOD_SEQUENCE,valStructuredFormat} from './sales-playbook.js'
+import {applyWorkingStage,buildFallbackAdvice,buildValInstructionBlocks,buildValInstructions,normalizeValMethodStage,rankOpportunityPortfolio,VAL_INSTRUCTIONS_VERSION,VAL_METHOD_SEQUENCE,valStructuredFormat} from './sales-playbook.js'
 import {commercialMetrics} from '../src/lib/commercial-metrics.js'
 import {buildDecisionIntelligence,buildNexoFallback,buildStrategicSynthesis,isGenericValText} from './decision-intelligence.js'
 import {buildValueBridge,isCommercialProductComparison} from './product-intelligence.js'
@@ -367,6 +367,9 @@ export class ValEngine{
     const contextCoverage=summarizeContextCoverage(context)
     const route=selectValModel(message,mode,this.config)
     const fallbackAdvice=buildFallbackAdvice({...context,message,mode:route.tier,requestedStage:selectedWorkingStage})
+    const instructionBlocks=buildValInstructionBlocks(route.tier)
+    const instructions=buildValInstructions(instructionBlocks.tier)
+    const promptPrefixHash=createHash('sha256').update(instructionBlocks.fixed).digest('hex')
     let advice,engineMode='demonstration',warning='',responseMetadata={}
     if(!this.client)advice=fallbackAdvice
     else{
@@ -378,7 +381,7 @@ export class ValEngine{
         const inputContent=[{type:'input_text',text:requestText},...buildAttachmentModelContent(selectedAttachments,context)]
         const response=await this.client.responses.create({
           model:route.model,
-          instructions:buildValInstructions(),
+          instructions,
           input:[{role:'user',content:inputContent}],
           reasoning:{effort:route.effort},
           text:{format:valStructuredFormat},
@@ -415,8 +418,8 @@ export class ValEngine{
         interpretedAttachments.push(compactAttachment(updated))
       }
     }
-    const modelRun={model:this.client?route.model:'rules-v4',promptVersion:'val-playbook-v7-nexo',status:engineMode==='openai'?'completed':this.client?'fallback':'demonstration',...responseMetadata}
-    const recommendationId=await this.repository.recordRecommendation({tenantId,ownerId,clientId,question:message,mode:route.tier,model:engineMode==='openai'?route.model:'rules-v4',context,advice,responseMetadata,promptHash:createHash('sha256').update(buildValInstructions()).digest('hex'),modelRun})
+    const modelRun={model:this.client?route.model:'rules-v4',promptVersion:`${VAL_INSTRUCTIONS_VERSION}:${instructionBlocks.tier}`,promptPrefixHash,instructionTier:instructionBlocks.tier,status:engineMode==='openai'?'completed':this.client?'fallback':'demonstration',...responseMetadata}
+    const recommendationId=await this.repository.recordRecommendation({tenantId,ownerId,clientId,question:message,mode:route.tier,model:engineMode==='openai'?route.model:'rules-v4',context,advice,responseMetadata,promptHash:createHash('sha256').update(instructions).digest('hex'),modelRun})
     return {recommendationId,engineMode,route:route.tier,model:engineMode==='openai'?route.model:'rules-v4',warning,contextCoverage,attachments:interpretedAttachments,advice}
   }
 }

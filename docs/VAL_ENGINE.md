@@ -61,6 +61,20 @@ Em agosto de 2026, a documentação oficial informa que a plataforma de fine-tun
 
 A Evals API também está em descontinuação: somente leitura em 31/10/2026 e encerramento previsto para 30/11/2026. Os casos dourados e resultados da VAL ficam no próprio repositório/banco e no CI.
 
+## Instruções modulares e cache de prompt
+
+`buildValInstructions(tier)` monta as instruções sempre na mesma ordem: primeiro um **prefixo fixo**, depois um **bloco variável**. O prefixo fixo contém identidade, tom, evidência, proteção de dados, limites de persuasão, Ponte de Valor, perfil decisório e a barreira de revisão humana. Ele é idêntico em `daily`, `strategic` e `fast`, favorecendo o cache automático de prefixo do provedor sem depender de estado armazenado pela aplicação.
+
+Os tiers acrescentam somente o necessário:
+
+- `daily`: orientação comercial completa, com uma decisão, uma pergunta e uma ação;
+- `strategic`: o mesmo núcleo operacional, com aprofundamento de conexões, hipóteses, decisores, prova e compromisso;
+- `fast`: contrato estruturado mínimo para classificação, extração, normalização e resumo, sem carregar o bloco operacional longo.
+
+O tier `fast` reduz o tamanho das instruções, mas não remove segurança. Evidência auditável, proibição de inventar dados, proteção contra manipulação, conteúdo de anexos como dado não confiável e revisão humana para diagnóstico, produto, dose, mistura ou aplicação permanecem no prefixo fixo.
+
+A versão do prefixo é registrada por `VAL_INSTRUCTIONS_VERSION`; `promptPrefixHash`, tier e hash completo ficam no `modelRun`. Alterar o prefixo exige incrementar essa versão e invalida o reaproveitamento de cache. Um prefixo estável favorece o cache do provedor, mas não garante acerto nem substitui métricas de uso.
+
 ## OpenAI e privacidade
 
 A chave existe apenas no backend. Nunca criar `VITE_OPENAI_API_KEY`, nunca salvar em GitHub, navegador, arquivo de frontend ou chat. Uma chave cadastrada não ativa a IA enquanto PostgreSQL e autenticação do piloto não estiverem saudáveis.
