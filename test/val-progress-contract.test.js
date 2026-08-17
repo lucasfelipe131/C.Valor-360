@@ -9,10 +9,10 @@ const panel=readFileSync(new URL('../src/components/ValPanel.jsx',import.meta.ur
 const feedback=readFileSync(new URL('../src/components/ValProgressFeedback.jsx',import.meta.url),'utf8')
 
 test('backend expõe progresso protegido sem conteúdo sensível',()=>{
-  assert.match(server,/url.pathname==='/api/val/progress'/)
-  assert.match(server,/progressOwnerKey(identity,request)/)
-  assert.match(server,/onProgress:stage=>valProgress.update/)
-  assert.match(server,/valProgress.fail/)
+  assert.ok(server.includes("url.pathname==='/api/val/progress'"))
+  assert.ok(server.includes('progressOwnerKey(identity,request)'))
+  assert.ok(server.includes('onProgress:stage=>valProgress.update'))
+  assert.ok(server.includes('valProgress.fail'))
   assert.doesNotMatch(readFileSync(new URL('../server/val-progress.js',import.meta.url),'utf8'),/message|price|dose|prompt/i)
 })
 
