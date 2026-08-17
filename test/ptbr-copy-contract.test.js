@@ -4,6 +4,8 @@ import test from 'node:test'
 
 const read=path=>readFileSync(new URL('../'+path,import.meta.url),'utf8')
 const playbook=read('server/sales-playbook.js')
+const methodology=read('server/val-methodology.js')
+const instructions=playbook+'\n'+methodology
 const decision=read('src/components/ValDecisionWorkspace.jsx')
 const overview=read('src/components/ProducerBusinessOverview.jsx')
 const panel=read('src/components/ValPanel.jsx')
@@ -12,13 +14,13 @@ const readme=read('README.md')
 const docs=read('docs/VAL_ENGINE.md')
 
 test('instruções e perguntas da VAL usam português natural sem mudar o contrato',()=>{
- assert.match(playbook,/Use de duas a seis frases curtas, com uma ideia por frase/)
- assert.match(playbook,/portanto, preencha esses campos/)
- assert.match(playbook,/personalize a abordagem para o contexto real/)
- assert.match(playbook,/O que mudou recentemente em relação a /)
- assert.match(playbook,/Confirmamos o responsável, o prazo e a evidência/)
- assert.doesNotMatch(playbook,/Termo novo só quando/)
- assert.doesNotMatch(playbook,/na operação de '\+topic/)
+ assert.match(instructions,/Use de duas a seis frases curtas, com uma ideia por frase/)
+ assert.match(instructions,/portanto, preencha esses campos/)
+ assert.match(instructions,/personalize a abordagem para o contexto real/)
+ assert.match(instructions,/O que mudou recentemente em relação a /)
+ assert.match(instructions,/Confirmamos o responsável, o prazo e a evidência/)
+ assert.doesNotMatch(instructions,/Termo novo só quando/)
+ assert.doesNotMatch(instructions,/na operação de '\+topic/)
 })
 
 test('telas não exibem plurais entre parênteses nem frases telegráficas revisadas',()=>{
