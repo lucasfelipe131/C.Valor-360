@@ -1,7 +1,8 @@
 import {buildValueBridge} from './product-intelligence.js'
-import {buildGrainOpportunities,commodityLabels} from './grain-intelligence.js'
+import {buildGrainOpportunities} from './grain-intelligence.js'
 
 const DAY=86_400_000
+const commodityLabels={soja:'Soja',milho:'Milho',trigo:'Trigo',sorgo:'Sorgo',feijao:'Feijão',arroz:'Arroz',cevada:'Cevada'}
 const array=value=>Array.isArray(value)?value:[]
 const text=(value,max=420)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,max)
 const lower=value=>text(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR')
@@ -30,8 +31,7 @@ function productCandidates(context,closed){
  const category=text(closed?.category||closed?.payload?.category||closed?.metadata?.category,140)
  if(!product)return []
  const bridge=buildValueBridge(context,`Compare o produto ${product} por preço e alternativas para uma próxima descoberta comercial.`)
- const alternatives=array(bridge?.value_bridge?.alternatives).slice(0,2)
- return alternatives.map((item,index)=>({
+ return array(bridge?.value_bridge?.alternatives).slice(0,2).map((item,index)=>({
   id:`product-expansion:${index+1}:${lower(item.name).replace(/[^a-z0-9]+/g,'-')}`,
   type:'product_discovery',domain:'inputs',label:item.name,
   subtitle:`Candidata oficial para comparação após ${product}`,
@@ -39,8 +39,7 @@ function productCandidates(context,closed){
   nextAction:`Confirmar se existe uma nova necessidade na conta e, somente depois, validar ${item.name} na mesma cultura, alvo, escopo e fonte vigente.`,
   question:`Depois do fechamento de ${product}, existe outra necessidade em que faça sentido comparar resultado, custo total, risco e prova?`,
   evidenceIds:unique([idOf('business-closed',closed),'product-anchor',item.evidence_id]),
-  source:'official_product_catalog',
-  technicalReviewRequired:true,
+  source:'official_product_catalog',technicalReviewRequired:true,
   caveat:item.tradeoffs||bridge?.value_bridge?.technical_review||'Similaridade cadastral não prova equivalência, adequação ou superioridade.'
  }))
 }
@@ -87,9 +86,7 @@ export function buildPostConversionExpansion(context={},options={}){
   emptyReason:'Nenhum evento business.closed ou resultado ganho foi registrado nos últimos 12 meses.',
   guardrail:'O ciclo só começa depois de um fechamento comprovado e nunca cria pressão, oportunidade ou contato automaticamente.'
  }
- const products=productCandidates(context,closed)
- const grains=grainCandidates(context,options.grainWorkspace,closed,now)
- const candidates=[...products,...grains].slice(0,4)
+ const candidates=[...productCandidates(context,closed),...grainCandidates(context,options.grainWorkspace,closed,now)].slice(0,4)
  const trigger={
   id:idOf('business-closed',closed),closedAt:iso(eventDate(closed)),
   product:text(closed.product||closed.payload?.product||closed.metadata?.product,180),
