@@ -14,6 +14,16 @@ A VAL não modifica silenciosamente o próprio prompt nem usa uma resposta gerad
 
 Regra: **o modelo raciocina; o banco memoriza; eventos alimentam avaliação controlada; humanos aprovam**.
 
+## Loop de aprendizado offline
+
+O contrato completo do fechamento do loop está em [`docs/VAL_LEARNING_LOOP.md`](VAL_LEARNING_LOOP.md). O endpoint `POST /api/val/feedback` deve originar o evento lógico `val.feedback.recorded`, ligado por `recommendationId` ao snapshot da recomendação e, depois, aos eventos `business.updated`, `business.closed`, `business.lost`, execução da visita e avanço confirmado de `methodology_state`.
+
+O ranker futuro aprende somente offline e começa em shadow mode. `accepted`, `edited` e `rejected` medem utilidade percebida; `scheduled` e `executed` medem ação; `won`, `lost` e a mudança de etapa medem resultado. Um aceite nunca é tratado como venda e uma recomendação sem feedback permanece sem rótulo.
+
+O painel interno precisa mostrar cobertura, tamanho da amostra, aceite, edição, rejeição, execução, avanço metodológico e acerto de prioridade, sempre com numerador, denominador, período e versão do motor. O Conversion Score continua sendo uma ordenação operacional, não uma probabilidade. Janela de atribuição, K, retenção, amostra mínima e threshold de promoção permanecem decisões de produto pendentes.
+
+Nenhum ranker pode liberar revisão técnica, criar oportunidade, alterar preço ou escrever no CRM. Promoção exige avaliação temporal, shadow mode, revisão humana, versão e rollback.
+
 ## Componentes já preparados
 
 ```mermaid
