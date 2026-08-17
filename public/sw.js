@@ -1,4 +1,4 @@
-const CACHE='cliente360-v08'
+const CACHE='valor360-v__VAL_RELEASE__'
 self.addEventListener('install',event=>{self.skipWaiting();event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(['/','/index.html','/manifest.webmanifest','/icon.svg'])))})
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())))
 self.addEventListener('fetch',event=>{
