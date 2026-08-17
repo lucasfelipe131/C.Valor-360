@@ -42,5 +42,5 @@ test('revisão de copy não altera automaticamente regex nem funções normalize
  assert.match(docs,/Regex de reconhecimento não é texto de interface/)
  assert.match(docs,/defici\[eê\]ncia/)
  assert.match(docs,/aduba\[cç\]\[aã\]o/)
- assert.match(docs,/normalize\(\) e lower\(\)/)
+ assert.match(docs,/`normalize\(\)` e `lower\(\)`/)
 })
