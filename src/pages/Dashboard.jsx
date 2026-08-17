@@ -17,6 +17,7 @@ import {
 } from 'lucide-react'
 import KpiCard from '../components/KpiCard'
 import ValPanel from '../components/ValPanel'
+import ConversionRadar from '../components/ConversionRadar'
 import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
 import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline,resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
@@ -112,7 +113,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
    <KpiCard icon={Percent} label="IRT médio" value={irt} delta={`${relationships.irtKnown} de ${relationships.total} perfis medidos`} tone="green"/>
   </section>
 
-  <section className="priority-strip"><div className="priority-copy"><span className="eyebrow">PRIORIDADE DA VAL</span><h3>Quem merece sua atenção agora</h3><p>Somente oportunidades com uma necessidade ou evidência comercial registrada.</p></div>{priorities.map(({client,candidate,metrics},index)=><button key={client.id} onClick={()=>onClient(client)}><span>{String(index+1).padStart(2,'0')}</span><div><b>{client.name}</b><small>{candidate.title}</small></div><strong>{compactBRL(metrics.openPotential,{known:metrics.openPotentialKnown})}</strong><ArrowUpRight/></button>)}{!priorities.length&&<div className="priority-empty"><Target/><div><b>Nenhuma oportunidade confirmada</b><small>Use a descoberta consultiva antes de abrir um negócio no pipeline.</small></div></div>}</section>
+  <ConversionRadar clients={clients} onClient={onClient} onPrepare={onPrepare}/>
 
   <section className="dashboard-grid home-analysis">
    <article className="panel chart-panel">
