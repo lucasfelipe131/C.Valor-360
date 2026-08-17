@@ -1,0 +1,30 @@
+name: Apply A5 human review divergence
+
+on:
+  push:
+    branches: [a5-human-review-divergence]
+    paths:
+      - scripts/apply-a5.py
+      - .github/workflows/apply-a5.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: a5-human-review-divergence
+          fetch-depth: 0
+      - name: Aplicar reconciliação de segurança
+        run: python3 scripts/apply-a5.py
+      - name: Registrar mudanças
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "A5 — cruza barreira técnica e revisão do modelo"
+          git push origin HEAD:a5-human-review-divergence
