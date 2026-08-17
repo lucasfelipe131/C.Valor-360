@@ -8,7 +8,7 @@ permissions:
 jobs:
   d7:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,5 +16,17 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - name: Testes isolados D7
-        run: node --test test/message-calibration.test.js test/conversion-bootstrap-contract.test.js test/learning-loop-docs.test.js
+      - name: Localizar testes regressivos
+        shell: bash
+        run: |
+          set +e
+          failures=0
+          for file in test/*.test.js; do
+            if ! node --test "$file" >/tmp/test-output.log 2>&1; then
+              echo "===== FALHOU: $file ====="
+              cat /tmp/test-output.log
+              failures=$((failures+1))
+            fi
+          done
+          echo "Arquivos de teste com falha: $failures"
+          exit "$failures"
