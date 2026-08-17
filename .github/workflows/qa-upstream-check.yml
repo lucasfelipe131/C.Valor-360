@@ -1,0 +1,25 @@
+name: QA Upstream Check
+
+on:
+  push:
+    branches: [qa/upstream-check-20260817]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Testar produção externamente
+        shell: bash
+        run: |
+          set +e
+          BASE='https://cvalor360.up.railway.app'
+          date -u
+          for path in / /live /health /api/auth/session /sw.js; do
+            echo "===== $path ====="
+            curl -sS -i --connect-timeout 10 --max-time 20 "${BASE}${path}" | sed -n '1,80p'
+            echo
+          done
