@@ -61,6 +61,21 @@ Em agosto de 2026, a documentação oficial informa que a plataforma de fine-tun
 
 A Evals API também está em descontinuação: somente leitura em 31/10/2026 e encerramento previsto para 30/11/2026. Os casos dourados e resultados da VAL ficam no próprio repositório/banco e no CI.
 
+## Auditoria do roteamento de modelos
+
+`selectValModel()` devolve, além de modelo, tier e esforço, a regra que decidiu a rota. Os identificadores atuais distinguem modo explícito, padrão estratégico na mensagem, padrão rápido na mensagem e fallback diário. O texto genérico que acionou a regex, como “comitê” ou “classifique”, também fica registrado.
+
+Cada decisão gera um evento estruturado `val.model_route` com:
+
+- tier, modelo e esforço escolhidos;
+- identificador, origem e expressão da regra;
+- termo genérico que casou com a regra;
+- hash SHA-256, tamanho e quantidade de palavras da mensagem.
+
+O log operacional não duplica o texto integral do produtor. A pergunta completa já pertence ao registro da recomendação; `modelRun.routing` guarda a mesma decisão de rota e o hash permite correlacionar os dois sem espalhar conteúdo comercial nos logs da infraestrutura. Não existe uma política nova de retenção nesta etapa: o evento segue a retenção já aplicada aos logs do ambiente e o registro persistido segue a recomendação.
+
+Essa estrutura permite avaliar falso positivo e falso negativo do roteador, comparar tier solicitado e tier escolhido e, no futuro, calcular uma matriz de acerto sem depender da memória de quem analisou o caso.
+
 ## Instruções modulares e cache de prompt
 
 `buildValInstructions(tier)` monta as instruções sempre na mesma ordem: primeiro um **prefixo fixo**, depois um **bloco variável**. O prefixo fixo contém identidade, tom, evidência, proteção de dados, limites de persuasão, Ponte de Valor, perfil decisório e a barreira de revisão humana. Ele é idêntico em `daily`, `strategic` e `fast`, favorecendo o cache automático de prefixo do provedor sem depender de estado armazenado pela aplicação.
