@@ -18,15 +18,17 @@ function roleCategory(role){
 function participantLists(context){
  const sources=[]
  const client=context.client||{}
- for(const [key,list] of Object.entries({decisionMakers:client.decisionMakers,decision_makers:client.decision_makers,participants:client.decisionParticipants,stakeholders:client.stakeholders,commercial:client.commercial?.decisionMakers}))if(Array.isArray(list))sources.push({type:`client-${key}`,source:client,list})
+ for(const [key,list] of Object.entries({decisionMakers:client.decisionMakers,decision_makers:client.decision_makers,participants:client.decisionParticipants,stakeholders:client.stakeholders,commercial:client.commercial?.decisionMakers}))if(Array.isArray(list))sources.push({type:`client-${key}`,source:client,list,explicitConfirmation:false})
  array(context.opportunities).forEach((opportunity,index)=>{
-  for(const [key,list] of Object.entries({decisionMakers:opportunity.decisionMakers,decision_makers:opportunity.decision_makers,stakeholders:opportunity.stakeholders,participants:opportunity.participants,decision_roles:opportunity.decision_roles}))if(Array.isArray(list))sources.push({type:`opportunity-${key}`,source:opportunity,index,list})
+  for(const [key,list] of Object.entries({decisionMakers:opportunity.decisionMakers,decision_makers:opportunity.decision_makers,stakeholders:opportunity.stakeholders,participants:opportunity.participants,decision_roles:opportunity.decision_roles}))if(Array.isArray(list))sources.push({type:`opportunity-${key}`,source:opportunity,index,list,explicitConfirmation:false})
+  const evidenceParticipants=array(opportunity.evidence).filter(item=>lower(item?.type)==='decision participant'||lower(item?.type)==='decision_participant')
+  if(evidenceParticipants.length)sources.push({type:'opportunity-decision-participant',source:opportunity,index,list:evidenceParticipants,explicitConfirmation:true,evidenceItems:true})
  })
  array(context.interactions).forEach((interaction,index)=>{
-  for(const [key,list] of Object.entries({participants:interaction.participants,decisionMakers:interaction.decisionMakers,stakeholders:interaction.stakeholders}))if(Array.isArray(list))sources.push({type:`interaction-${key}`,source:interaction,index,list})
+  for(const [key,list] of Object.entries({participants:interaction.participants,decisionMakers:interaction.decisionMakers,stakeholders:interaction.stakeholders}))if(Array.isArray(list))sources.push({type:`interaction-${key}`,source:interaction,index,list,explicitConfirmation:false})
  })
  const answers=object(context.profile?.answers)
- for(const key of ['decisionMakers','decision_makers','decisionParticipants','stakeholders','participants'])if(Array.isArray(answers[key]))sources.push({type:`profile-${key}`,source:context.profile||{},list:answers[key]})
+ for(const key of ['decisionMakers','decision_makers','decisionParticipants','stakeholders','participants'])if(Array.isArray(answers[key]))sources.push({type:`profile-${key}`,source:context.profile||{},list:answers[key],explicitConfirmation:false})
  return sources
 }
 
@@ -40,11 +42,13 @@ function normalizeParticipant(value,source,index){
  const riskPosture=text(item.risk_posture||item.riskPosture||item.risk_profile||item.riskProfile||item.risk,180)
  const influence=text(item.influence||item.decision_weight||item.decisionWeight||item.authority,120)
  if(!name&&!explicitRole)return null
- const evidence=sourceId(source.type,source.source,source.index??index)
+ const evidence=source.evidenceItems?sourceId('decision-participant',item,index):sourceId(source.type,source.source,source.index??index)
+ const confirmed=source.explicitConfirmation?item.confirmed===true:item.confirmed!==false
  return {
   id:`actor:${lower(name||explicitRole).replace(/[^a-z0-9]+/g,'-')}:${roleCategory(explicitRole)}`,
   name,role:explicitRole,roleCategory:roleCategory(explicitRole),perspective,riskPosture,influence,
-  evidenceIds:[evidence],confirmed:item.confirmed!==false,
+  evidenceIds:[evidence],confirmed,
+  observedAt:text(item.observedAt||item.observed_at,80),
   missing:[!name?'nome do participante':'',!explicitRole?'papel na decisão':'',!perspective?'critério ou perspectiva':'',!riskPosture?'postura de risco':''].filter(Boolean),
   sourceType:source.type
  }
@@ -80,11 +84,11 @@ export function buildMultiDecisionMap(context={},options={}){
    ?{action:`Completar o mapa de ${firstGapActor.name||firstGapActor.role}.`,question:firstGapActor.perspective?`Qual risco ${firstGapActor.name||firstGapActor.role} precisa reduzir para avançar?`:`O que ${firstGapActor.name||firstGapActor.role} precisa comprovar para considerar esta decisão segura?`,evidenceNeeded:firstGapActor.missing.join(', ')}
    :{action:'Alinhar os critérios confirmados entre os participantes antes da proposta final.',question:'Há algum critério em conflito entre os participantes que precisa ser resolvido antes da decisão?',evidenceNeeded:'Resposta explícita, responsável e próximo compromisso.'}
  return {
-  version:'val-multi-decision-map-v1',generatedAt:new Date(options.now??Date.now()).toISOString(),
+  version:'val-multi-decision-map-v2',generatedAt:new Date(options.now??Date.now()).toISOString(),
   strategic,strategicSignal:text(strategicSignal,240),actors,
   roleSummary:Object.fromEntries(['technical','financial','commercial','operational','executive','other','unclassified'].map(role=>[role,actors.filter(actor=>actor.roleCategory===role).length])),
   dataGaps:gaps,nextAlignment,
-  policy:{confirmedDataOnly:true,inferredPeople:false,personalLeverage:false,automaticContact:false},
+  policy:{confirmedDataOnly:true,inferredPeople:false,personalLeverage:false,automaticContact:false,explicitEvidenceForManualRegistration:true},
   emptyReason:actors.length?'':'Nenhum participante da decisão foi registrado de forma estruturada nesta conta.',
   guardrail:'O mapa serve para alinhar critérios e responsabilidades. Não use informação pessoal, familiar ou financeira como alavanca, não invente influência e não associe postura de risco sem confirmação.'
  }
