@@ -2,6 +2,7 @@ import {ValRepository} from './repository.js'
 import {buildCommitmentLadders} from './commitment-ladder.js'
 import {buildObjectionLibrary} from './objection-library.js'
 import {buildValueScenarios} from './value-scenarios.js'
+import {buildMultiDecisionMap} from './multi-decision-map.js'
 
 const PATCHED=Symbol.for('valor360.conversion-innovations.patched')
 
@@ -16,7 +17,8 @@ if(!globalThis[PATCHED]){
     ...(context.conversionInnovations||{}),
     commitmentLadders:buildCommitmentLadders(context),
     objectionLibrary:buildObjectionLibrary(context),
-    valueScenarios:buildValueScenarios(context)
+    valueScenarios:buildValueScenarios(context),
+    multiDecisionMap:buildMultiDecisionMap(context)
    }
   }
  }
