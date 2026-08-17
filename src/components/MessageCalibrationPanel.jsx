@@ -1,4 +1,4 @@
-import React,{useState} from 'react'
+import React,{useEffect,useState} from 'react'
 import {Activity,BarChart3,CheckCircle2,ChevronDown,Database,Edit3,Eye,FlaskConical,ShieldCheck,ThumbsDown,ThumbsUp} from 'lucide-react'
 import '../message-calibration.css'
 
@@ -7,20 +7,21 @@ const percent=value=>Number.isFinite(Number(value))?`${Math.round(Number(value)*
 const stageLabel={preparar:'Preparar',alinhar:'Alinhar',descobrir:'Descobrir',dimensionar:'Dimensionar',construir_valor:'Construir valor',propor:'Propor',comprometer:'Comprometer',unknown:'Etapa não registrada'}
 
 export default function MessageCalibrationPanel({data}){
+ const messages=Array.isArray(data?.messages)?data.messages:[]
+ const segments=Array.isArray(data?.segments)?data.segments:[]
+ const summary=data?.summary||{}
+ const [expanded,setExpanded]=useState('')
+ useEffect(()=>{setExpanded(messages[0]?.id||'')},[data?.generatedAt])
  if(!data)return null
- const messages=Array.isArray(data.messages)?data.messages:[]
- const segments=Array.isArray(data.segments)?data.segments:[]
- const summary=data.summary||{}
- const [expanded,setExpanded]=useState(messages[0]?.id||'')
  return <section className="message-calibration" aria-labelledby="message-calibration-title">
   <header>
-   <div><span><FlaskConical/>PLACAR DE MENSAGENS • SHADOW MODE</span><h4 id="message-calibration-title">O que coincidiu com avanço na conversa seguinte</h4><p>O placar observa frases, abordagens, feedback e mudança real de etapa. Ele não modifica o motor nem afirma que uma frase causou o resultado.</p></div>
+   <div><span><FlaskConical/>PLACAR DE MENSAGENS • SHADOW MODE</span><h4 id="message-calibration-title">O que coincidiu com avanço na conversa seguinte</h4><p>O placar observa linhas sugeridas, abordagem, feedback e a etapa registrada na recomendação seguinte. Ele não modifica o motor nem afirma que uma frase causou o resultado.</p></div>
    <b className={data.sampleStatus==='partially_ready'?'is-ready':''}>{data.readySegments||0} de 7 segmentos com amostra mínima</b>
   </header>
 
   <div className="message-calibration-summary">
-   <article><Eye/><span><small>OBSERVAÇÕES</small><b>{summary.observations||0}</b></span></article>
-   <article><Activity/><span><small>INTERAÇÕES SEGUINTES</small><b>{summary.nextInteractionsObserved||0}</b></span></article>
+   <article><Eye/><span><small>RECOMENDAÇÕES</small><b>{summary.observations||0}</b></span></article>
+   <article><Activity/><span><small>LINHAS AVALIADAS</small><b>{summary.linesEvaluated||0}</b></span></article>
    <article><CheckCircle2/><span><small>AVANÇOS DE ETAPA</small><b>{summary.advanced||0}</b></span></article>
    <article><ThumbsUp/><span><small>ACEITAS OU EDITADAS</small><b>{(summary.accepted||0)+(summary.edited||0)}</b></span></article>
    <article><ThumbsDown/><span><small>REJEITADAS</small><b>{summary.rejected||0}</b></span></article>
