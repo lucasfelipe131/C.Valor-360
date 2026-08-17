@@ -4,6 +4,7 @@ import {fetchJsonResource,useAsyncResource} from '../hooks/useAsyncResource'
 import CommitmentLadderPanel from './CommitmentLadderPanel'
 import ObjectionEvidencePanel from './ObjectionEvidencePanel'
 import '../conversion-studio.css'
+import '../objection-evidence.css'
 
 export default function ConversionOpportunityStudio({clients=[],onClient,onPrepare}){
  const [selectedId,setSelectedId]=useState(clients[0]?.id||'')
