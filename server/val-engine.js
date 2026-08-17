@@ -5,6 +5,7 @@ import {commercialMetrics} from '../src/lib/commercial-metrics.js'
 import {buildDecisionIntelligence,buildNexoFallback,buildStrategicSynthesis,isGenericValText} from './decision-intelligence.js'
 import {buildValueBridge,isCommercialProductComparison} from './product-intelligence.js'
 import {buildTechnicalSafetyAudit,emitTechnicalSafetyAudit,technicalSafetyReason} from './technical-safety-audit.js'
+import {buildOpenAIRetryPolicy} from './openai-retry.js'
 
 const strategicPattern=/estrat[eé]g|plano de conta|risco alto|proposta complexa|diretoria|comit[eê]|milh[oõ]es|grande conta/i
 const fastPattern=/classifi|extra[ií]|resum|import|normaliz|tag|categoria/i
@@ -517,7 +518,8 @@ export function enforceValSafety(advice,context,message='',options={}){
 export class ValEngine{
   constructor({runtimeConfig,repository,logger=console,clock=()=>new Date()}){
     this.config=runtimeConfig;this.repository=repository;this.logger=logger;this.clock=clock
-    this.client=runtimeConfig.openaiApiKey?new OpenAI({apiKey:runtimeConfig.openaiApiKey,project:runtimeConfig.openaiProject||undefined,timeout:runtimeConfig.openaiTimeoutMs,maxRetries:runtimeConfig.openaiMaxRetries}):null
+    this.openaiRetryPolicy=buildOpenAIRetryPolicy(runtimeConfig.openaiMaxRetries)
+    this.client=runtimeConfig.openaiApiKey?new OpenAI({apiKey:runtimeConfig.openaiApiKey,project:runtimeConfig.openaiProject||undefined,timeout:runtimeConfig.openaiTimeoutMs,maxRetries:this.openaiRetryPolicy.maxRetries}):null
   }
 
   async status(dbHealth){return {configured:Boolean(this.client),mode:this.client?'openai':'demonstration',database:dbHealth,models:{daily:this.config.modelDaily,strategic:this.config.modelStrategic,fast:this.config.modelFast},knowledgeBase:Boolean(this.config.knowledgeVectorStoreId),storeResponses:this.config.openaiStoreResponses}}
@@ -562,11 +564,11 @@ export class ValEngine{
           safety_identifier:createHash('sha256').update(`${tenantId}:${clientId}`).digest('hex'),
           ...(tools?{tools}: {})
         },{
-          maxRetries:0,
+          maxRetries:this.openaiRetryPolicy.maxRetries,
           timeout:Math.min(Math.max(Number(this.config.openaiTimeoutMs)||100_000,1_000),100_000),
           ...(signal?{signal}:{})
         })
-        const providerMetadata={responseId:response.id,requestId:response._request_id||null,latencyMs:Date.now()-startedAt,inputTokens:response.usage?.input_tokens||null,outputTokens:response.usage?.output_tokens||null,status:response.status}
+        const providerMetadata={responseId:response.id,requestId:response._request_id||null,latencyMs:Date.now()-startedAt,inputTokens:response.usage?.input_tokens||null,outputTokens:response.usage?.output_tokens||null,status:response.status,retryPolicy:this.openaiRetryPolicy}
         responseMetadata=providerMetadata
         if(response.status!=='completed')throw Object.assign(new Error('Resposta incompleta da OpenAI.'),{code:'incomplete_response',details:response.incomplete_details,responseMetadata:providerMetadata})
         if(!response.output_text)throw Object.assign(new Error('A OpenAI não devolveu conteúdo estruturado.'),{code:'empty_response',responseMetadata:providerMetadata})
@@ -592,7 +594,7 @@ export class ValEngine{
         interpretedAttachments.push(compactAttachment(updated))
       }
     }
-    const modelRun={model:this.client?route.model:'rules-v4',promptVersion:`${VAL_INSTRUCTIONS_VERSION}:${instructionBlocks.tier}`,promptPrefixHash,instructionTier:instructionBlocks.tier,status:engineMode==='openai'?'completed':this.client?'fallback':'demonstration',...responseMetadata,routing:routeAudit,technicalSafety:technicalSafetyAudit}
+    const modelRun={model:this.client?route.model:'rules-v4',promptVersion:`${VAL_INSTRUCTIONS_VERSION}:${instructionBlocks.tier}`,promptPrefixHash,instructionTier:instructionBlocks.tier,status:engineMode==='openai'?'completed':this.client?'fallback':'demonstration',retryPolicy:this.openaiRetryPolicy,...responseMetadata,routing:routeAudit,technicalSafety:technicalSafetyAudit}
     const recommendationId=await this.repository.recordRecommendation({tenantId,ownerId,clientId,question:message,mode:route.tier,model:engineMode==='openai'?route.model:'rules-v4',context,advice,responseMetadata,promptHash:createHash('sha256').update(instructions).digest('hex'),modelRun})
     return {recommendationId,engineMode,route:route.tier,model:engineMode==='openai'?route.model:'rules-v4',warning,contextCoverage,attachments:interpretedAttachments,technicalSafety:technicalSafetyAudit,advice}
   }
