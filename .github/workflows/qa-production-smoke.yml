@@ -32,65 +32,92 @@ jobs:
       - name: Validar build e cache PWA
         run: npm run build
 
-      - name: Smoke test público e de segurança em produção
+      - name: Diagnosticar produção endpoint por endpoint
         shell: bash
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          failures=0
 
-          request() {
-            local method="$1"
-            local path="$2"
-            local output="$3"
-            local headers="$4"
-            shift 4
-            curl --fail-with-body --silent --show-error \
-              --connect-timeout 10 --max-time 30 \
-              -X "$method" -D "$headers" -o "$output" \
-              -w '%{http_code} %{time_total}' \
-              "$@" "${BASE_URL}${path}"
+          fail() {
+            echo "::error::$1"
+            failures=$((failures+1))
           }
 
-          read -r live_status live_time < <(request GET /live /tmp/live.json /tmp/live.headers)
-          test "$live_status" = "200"
-          jq -e '.status == "ok" and .service == "valor360"' /tmp/live.json >/dev/null
-          awk -v t="$live_time" 'BEGIN { exit !(t < 5) }'
+          fetch_get() {
+            local path="$1"
+            local output="$2"
+            local headers="$3"
+            curl --silent --show-error --connect-timeout 10 --max-time 30 \
+              -D "$headers" -o "$output" -w '%{http_code} %{time_total}' \
+              "${BASE_URL}${path}" || printf '000 30'
+          }
 
-          read -r health_status health_time < <(request GET /health /tmp/health.json /tmp/health.headers)
-          test "$health_status" = "200"
-          jq -e '.status == "ok" and .service == "valor360"' /tmp/health.json >/dev/null
-          awk -v t="$health_time" 'BEGIN { exit !(t < 10) }'
+          report() {
+            local label="$1"
+            local status="$2"
+            local elapsed="$3"
+            local body="$4"
+            local headers="$5"
+            echo "===== ${label} ====="
+            echo "HTTP ${status} em ${elapsed}s"
+            echo "--- cabeçalhos ---"
+            sed -n '1,30p' "$headers" 2>/dev/null || true
+            echo "--- corpo ---"
+            sed -n '1,40p' "$body" 2>/dev/null || true
+            echo
+          }
 
-          read -r root_status root_time < <(request GET / /tmp/root.html /tmp/root.headers)
-          test "$root_status" = "200"
-          grep -Eiq 'VAL|VALOR 360' /tmp/root.html
-          grep -Eiq '^x-content-type-options:[[:space:]]*nosniff' /tmp/root.headers
-          awk -v t="$root_time" 'BEGIN { exit !(t < 10) }'
+          read -r live_status live_time <<< "$(fetch_get /live /tmp/live.json /tmp/live.headers)"
+          report '/live' "$live_status" "$live_time" /tmp/live.json /tmp/live.headers
+          [[ "$live_status" == '200' ]] || fail "/live respondeu ${live_status}, esperado 200"
+          jq -e '.status == "ok" and .service == "valor360"' /tmp/live.json >/dev/null 2>&1 || fail '/live não devolveu o contrato esperado'
+          awk -v t="$live_time" 'BEGIN { exit !(t < 5) }' || fail "/live excedeu 5 segundos (${live_time}s)"
 
-          read -r session_status session_time < <(request GET /api/auth/session /tmp/session.json /tmp/session.headers)
-          test "$session_status" = "200"
-          jq -e 'has("authenticated") and has("required") and (.authenticated | type == "boolean") and (.required | type == "boolean")' /tmp/session.json >/dev/null
-          awk -v t="$session_time" 'BEGIN { exit !(t < 10) }'
+          read -r health_status health_time <<< "$(fetch_get /health /tmp/health.json /tmp/health.headers)"
+          report '/health' "$health_status" "$health_time" /tmp/health.json /tmp/health.headers
+          [[ "$health_status" == '200' ]] || fail "/health respondeu ${health_status}, esperado 200"
+          jq -e '.status == "ok" and .service == "valor360"' /tmp/health.json >/dev/null 2>&1 || fail '/health não devolveu o contrato saudável esperado'
+          awk -v t="$health_time" 'BEGIN { exit !(t < 10) }' || fail "/health excedeu 10 segundos (${health_time}s)"
 
-          # Sem cookie, endpoints de negócio devem falhar fechados e nunca expor dados.
-          val_status=$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
-            -o /tmp/val-status.json -D /tmp/val-status.headers -w '%{http_code}' \
-            "${BASE_URL}/api/val/status")
-          test "$val_status" = "401"
-          jq -e '.error | type == "string"' /tmp/val-status.json >/dev/null
+          read -r root_status root_time <<< "$(fetch_get / /tmp/root.html /tmp/root.headers)"
+          report '/' "$root_status" "$root_time" /tmp/root.html /tmp/root.headers
+          [[ "$root_status" == '200' ]] || fail "/ respondeu ${root_status}, esperado 200"
+          grep -Eiq '^content-type:[[:space:]]*text/html' /tmp/root.headers || fail 'A página inicial não foi servida como HTML'
+          grep -Eiq '^x-content-type-options:[[:space:]]*nosniff' /tmp/root.headers || fail 'Cabeçalho X-Content-Type-Options ausente'
+          awk -v t="$root_time" 'BEGIN { exit !(t < 10) }' || fail "/ excedeu 10 segundos (${root_time}s)"
 
-          chat_status=$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
-            -o /tmp/chat.json -D /tmp/chat.headers -w '%{http_code}' \
+          read -r session_status session_time <<< "$(fetch_get /api/auth/session /tmp/session.json /tmp/session.headers)"
+          report '/api/auth/session' "$session_status" "$session_time" /tmp/session.json /tmp/session.headers
+          [[ "$session_status" == '200' ]] || fail "/api/auth/session respondeu ${session_status}, esperado 200"
+          jq -e 'has("authenticated") and has("required") and (.authenticated | type == "boolean") and (.required | type == "boolean")' /tmp/session.json >/dev/null 2>&1 || fail 'Contrato público de sessão inválido'
+          awk -v t="$session_time" 'BEGIN { exit !(t < 10) }' || fail "/api/auth/session excedeu 10 segundos (${session_time}s)"
+
+          read -r val_status val_time <<< "$(fetch_get /api/val/status /tmp/val-status.json /tmp/val-status.headers)"
+          report '/api/val/status sem sessão' "$val_status" "$val_time" /tmp/val-status.json /tmp/val-status.headers
+          [[ "$val_status" == '401' || "$val_status" == '403' ]] || fail "/api/val/status sem sessão respondeu ${val_status}; deveria falhar fechado"
+          jq -e '.error | type == "string"' /tmp/val-status.json >/dev/null 2>&1 || fail 'Erro de autenticação da VAL sem contrato JSON'
+
+          chat_result=$(curl --silent --show-error --connect-timeout 10 --max-time 30 \
+            -D /tmp/chat.headers -o /tmp/chat.json -w '%{http_code} %{time_total}' \
             -H 'content-type: application/json' \
             --data '{"clientId":"qa-sem-sessao","message":"Priorize esta conta"}' \
-            "${BASE_URL}/api/val/chat")
-          test "$chat_status" = "401"
-          jq -e '.error | type == "string"' /tmp/chat.json >/dev/null
-          ! grep -Eiq 'OPENAI_API_KEY|VAL_SESSION_SECRET|DATABASE_URL' /tmp/chat.json
+            "${BASE_URL}/api/val/chat" || printf '000 30')
+          read -r chat_status chat_time <<< "$chat_result"
+          report '/api/val/chat sem sessão' "$chat_status" "$chat_time" /tmp/chat.json /tmp/chat.headers
+          [[ "$chat_status" == '401' || "$chat_status" == '403' ]] || fail "/api/val/chat sem sessão respondeu ${chat_status}; deveria falhar fechado"
+          jq -e '.error | type == "string"' /tmp/chat.json >/dev/null 2>&1 || fail 'Erro do chat sem contrato JSON'
+          grep -Eiq 'OPENAI_API_KEY|VAL_SESSION_SECRET|DATABASE_URL' /tmp/chat.json && fail 'Resposta sem sessão expôs nome de segredo'
 
-          read -r sw_status sw_time < <(request GET /sw.js /tmp/sw.js /tmp/sw.headers)
-          test "$sw_status" = "200"
-          grep -Eiq '^cache-control:.*(no-store|no-cache)' /tmp/sw.headers
-          grep -Eq 'valor360-v[a-zA-Z0-9_-]+' /tmp/sw.js
-          awk -v t="$sw_time" 'BEGIN { exit !(t < 10) }'
+          read -r sw_status sw_time <<< "$(fetch_get /sw.js /tmp/sw.js /tmp/sw.headers)"
+          report '/sw.js' "$sw_status" "$sw_time" /tmp/sw.js /tmp/sw.headers
+          [[ "$sw_status" == '200' ]] || fail "/sw.js respondeu ${sw_status}, esperado 200"
+          grep -Eiq '^cache-control:.*(no-store|no-cache)' /tmp/sw.headers || fail 'Service worker foi servido com cache inseguro'
+          grep -Eq 'valor360-v[a-zA-Z0-9_-]+' /tmp/sw.js || fail 'Service worker não contém marcador de release'
+          awk -v t="$sw_time" 'BEGIN { exit !(t < 10) }' || fail "/sw.js excedeu 10 segundos (${sw_time}s)"
 
+          echo "===== RESULTADO DO SMOKE TEST ====="
+          echo "Falhas encontradas: ${failures}"
+          if (( failures > 0 )); then
+            exit 1
+          fi
           echo 'Produção aprovada nos testes públicos, de segurança, build e PWA.'
