@@ -1,0 +1,85 @@
+.conversion-radar{
+ display:grid;
+ gap:16px;
+ padding:22px;
+ border:1px solid rgba(50,119,107,.18);
+ border-radius:24px;
+ background:linear-gradient(145deg,#f9fcfb 0%,#eef7f4 100%);
+ box-shadow:0 18px 50px rgba(13,71,63,.08);
+ overflow:hidden;
+}
+
+.conversion-radar-head{display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
+.conversion-radar-head>div{max-width:760px}
+.conversion-radar-kicker{display:inline-flex;align-items:center;gap:7px;color:#0c796a;font-size:10px;font-weight:900;letter-spacing:.14em}
+.conversion-radar-kicker svg{width:15px;height:15px}
+.conversion-radar-head h3{margin:7px 0 5px;color:#0a2f2b;font-size:clamp(22px,3vw,34px);letter-spacing:-.035em}
+.conversion-radar-head p{margin:0;color:#5f7773;line-height:1.55;font-size:13px}
+.conversion-radar-head>button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:42px;padding:9px 13px;border:1px solid #c4ded9;border-radius:12px;background:#fff;color:#17685d;font-size:11px;font-weight:850;white-space:nowrap}
+.conversion-radar-head>button svg{width:16px;height:16px}
+.conversion-radar-head>button:disabled{opacity:.65}
+.is-spinning{animation:radar-spin .9s linear infinite}
+@keyframes radar-spin{to{transform:rotate(360deg)}}
+
+.conversion-radar-error,.conversion-radar-loading,.conversion-radar-empty{display:flex;align-items:center;gap:12px;padding:15px 17px;border-radius:15px;background:#fff}
+.conversion-radar-error{border:1px solid #f2c9bd;color:#a8472f}
+.conversion-radar-error svg,.conversion-radar-empty>svg{width:21px;height:21px;flex:none}
+.conversion-radar-loading>span{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#e5f4f0;color:#0a7e6d}
+.conversion-radar-loading>span svg{width:19px;animation:radar-spin .9s linear infinite}
+.conversion-radar-loading b,.conversion-radar-empty b{display:block;color:#123d37;font-size:13px}
+.conversion-radar-loading small,.conversion-radar-empty p{display:block;margin:3px 0 0;color:#728985;font-size:11px;line-height:1.45}
+.conversion-radar-empty{border:1px dashed #bedbd5;color:#0d7969}
+
+.conversion-radar-list{display:grid;gap:11px}
+.conversion-radar-card{position:relative;display:grid;grid-template-columns:56px minmax(0,1fr) auto;gap:15px;align-items:stretch;padding:16px;border:1px solid #d8e7e3;border-radius:18px;background:rgba(255,255,255,.94);box-shadow:0 9px 26px rgba(19,71,64,.055)}
+.conversion-radar-card:before{content:"";position:absolute;left:0;top:17px;bottom:17px;width:4px;border-radius:0 8px 8px 0;background:#8baaa5}
+.conversion-radar-card.is-now:before{background:#d75c3e}
+.conversion-radar-card.is-week:before{background:#d79a2d}
+.conversion-radar-card.is-watch:before{background:#2d9785}
+.conversion-radar-rank{display:flex;flex-direction:column;align-items:center;gap:9px;padding-top:2px}
+.conversion-radar-rank>span{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:#edf7f4;color:#0d6e61;font-weight:900;font-size:13px}
+.conversion-radar-rank>i{position:relative;width:4px;flex:1;min-height:64px;border-radius:9px;background:#e5edeb;overflow:hidden}
+.conversion-radar-rank>i:after{content:"";position:absolute;left:0;right:0;bottom:0;height:var(--radar-score);border-radius:9px;background:#27917f}
+.conversion-radar-main{display:grid;gap:10px;min-width:0}
+.conversion-radar-title-row{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}
+.conversion-radar-title-row small{display:block;color:#a36b12;font-size:9px;font-weight:900;text-transform:uppercase;letter-spacing:.08em}
+.conversion-radar-title-row h4{margin:3px 0 2px;color:#103c36;font-size:18px}
+.conversion-radar-title-row span{color:#77908b;font-size:10px}
+.conversion-radar-title-row>b{color:#124b42;font-size:13px;white-space:nowrap}
+.conversion-radar-signal,.conversion-radar-action{display:flex;align-items:flex-start;gap:9px;padding:10px 12px;border-radius:12px;background:#f5f9f8}
+.conversion-radar-signal>svg,.conversion-radar-action>svg{width:16px;height:16px;flex:none;margin-top:1px;color:#0e806f}
+.conversion-radar-signal small,.conversion-radar-action small{display:block;color:#56726d;font-size:8px;font-weight:900;letter-spacing:.1em;text-transform:uppercase}
+.conversion-radar-signal p,.conversion-radar-action p{margin:3px 0 0;color:#294c47;font-size:11px;line-height:1.48}
+.conversion-radar-action{background:#eef7f3}
+.conversion-radar-meta{display:flex;flex-wrap:wrap;gap:8px 15px;color:#708984;font-size:9px;font-weight:700}
+.conversion-radar-meta span{display:inline-flex;align-items:center;gap:5px}
+.conversion-radar-meta svg{width:13px;height:13px}
+.conversion-radar-buttons{display:flex;flex-direction:column;justify-content:center;gap:8px;min-width:142px}
+.conversion-radar-buttons button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-height:38px;padding:8px 11px;border:1px solid #c9ded9;border-radius:11px;background:#fff;color:#27665d;font-size:10px;font-weight:850}
+.conversion-radar-buttons button svg{width:14px;height:14px}
+.conversion-radar-buttons button.is-primary{border-color:#0c796a;background:#0c796a;color:#fff;box-shadow:0 9px 20px rgba(12,121,106,.18)}
+.conversion-radar-buttons button:hover{transform:translateY(-1px)}
+
+.conversion-radar-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:2px;color:#6b837e}
+.conversion-radar-foot span{display:inline-flex;align-items:center;gap:6px;font-size:9px;font-weight:800}
+.conversion-radar-foot span svg{width:14px;height:14px;color:#0c796a}
+.conversion-radar-foot small{font-size:9px;text-align:right}
+
+@media(max-width:850px){
+ .conversion-radar-card{grid-template-columns:46px minmax(0,1fr)}
+ .conversion-radar-buttons{grid-column:2;flex-direction:row;min-width:0}
+ .conversion-radar-buttons button{flex:1}
+}
+
+@media(max-width:640px){
+ .conversion-radar{padding:16px;border-radius:18px}
+ .conversion-radar-head{display:grid;gap:13px}
+ .conversion-radar-head>button{width:100%}
+ .conversion-radar-card{grid-template-columns:36px minmax(0,1fr);padding:13px;gap:10px;border-radius:15px}
+ .conversion-radar-rank>span{width:32px;height:32px;border-radius:10px}
+ .conversion-radar-title-row{display:grid;gap:7px}
+ .conversion-radar-title-row>b{white-space:normal}
+ .conversion-radar-buttons{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr}
+ .conversion-radar-foot{display:grid}
+ .conversion-radar-foot small{text-align:left}
+}
