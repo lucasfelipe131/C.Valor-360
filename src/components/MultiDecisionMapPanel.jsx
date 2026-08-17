@@ -12,8 +12,7 @@ const opportunityId=item=>String(item?.id||item?.external_key||item?.externalKey
 const emptyForm={opportunityId:'',name:'',role:'',perspective:'',riskPosture:'',influence:'',confirmed:false}
 
 export default function MultiDecisionMapPanel({data,client,opportunities=[],onSaved}){
- if(!data)return null
- const actors=Array.isArray(data.actors)?data.actors:[]
+ const actors=Array.isArray(data?.actors)?data.actors:[]
  const available=useMemo(()=>opportunities.filter(item=>item&&!closed(item.stage)),[opportunities])
  const [editing,setEditing]=useState(false)
  const [form,setForm]=useState(emptyForm)
@@ -77,8 +76,9 @@ export default function MultiDecisionMapPanel({data,client,opportunities=[],onSa
   await onSaved?.()
  }
 
+ if(!data)return null
  return <section className="decision-map-panel" aria-labelledby="decision-map-title">
-  <header><div><span><UsersRound/>MAPA DE DECISORES</span><h4 id="decision-map-title">Quem precisa estar alinhado para a decisão avançar</h4><p>A VAL exibe somente pessoas e papéis registrados. Interesse, influência e postura de risco não são inferidos.</p></div><div className="decision-map-head-actions"><b className={data.strategic?'is-strategic':''}>{data.strategic?'Conta com decisão compartilhada':actors.length===1?'Um participante confirmado':'Mapa em formação'}</b><button type="button" onClick={()=>setEditing(value=>!value} disabled={!available.length}><Plus/>Registrar participante</button></div></header>
+  <header><div><span><UsersRound/>MAPA DE DECISORES</span><h4 id="decision-map-title">Quem precisa estar alinhado para a decisão avançar</h4><p>A VAL exibe somente pessoas e papéis registrados. Interesse, influência e postura de risco não são inferidos.</p></div><div className="decision-map-head-actions"><b className={data.strategic?'is-strategic':''}>{data.strategic?'Conta com decisão compartilhada':actors.length===1?'Um participante confirmado':'Mapa em formação'}</b><button type="button" onClick={()=>setEditing(value=>!value)} disabled={!available.length}><Plus/>Registrar participante</button></div></header>
 
   {editing&&<form className="decision-register-form" onSubmit={submit}>
    <div className="decision-register-title"><div><small>DADO CONFIRMADO</small><h5>Vincular participante a uma oportunidade</h5><p>Registre somente o que foi informado diretamente. Nome é opcional; papel e confirmação da fonte são obrigatórios.</p></div><button type="button" onClick={closeForm} aria-label="Fechar registro"><X/></button></div>
