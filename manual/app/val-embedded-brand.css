@@ -1,0 +1,42 @@
+.embedded-product-brand{
+ position:relative;
+ display:block;
+ width:148px;
+ min-height:48px;
+ margin:2px 0 18px;
+ background:url('/val-logo.svg') left center/140px auto no-repeat;
+}
+
+.embedded-product-brand>span,
+.embedded-product-brand>strong{
+ position:absolute!important;
+ width:1px!important;
+ height:1px!important;
+ padding:0!important;
+ margin:-1px!important;
+ overflow:hidden!important;
+ clip:rect(0,0,0,0)!important;
+ white-space:nowrap!important;
+ border:0!important;
+}
+
+.valor360-embedded .side-status small{
+ font-size:0!important;
+ line-height:1.35;
+}
+
+.valor360-embedded .side-status small::after{
+ content:"Operando dentro da VAL";
+ font-size:10px;
+}
+
+.embedded-mobile-brand{
+ width:38px!important;
+ height:38px!important;
+ border:0!important;
+ border-radius:11px!important;
+ background:#fff url('/icon.svg') center/36px 36px no-repeat!important;
+ box-shadow:0 7px 18px rgba(0,35,82,.16)!important;
+ color:transparent!important;
+ font-size:0!important;
+}

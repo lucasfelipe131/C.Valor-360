@@ -6,12 +6,16 @@ const agro=readFileSync(new URL('../src/pages/Agro.jsx',import.meta.url),'utf8')
 const css=readFileSync(new URL('../src/agro-workspace.css',import.meta.url),'utf8')
 const main=readFileSync(new URL('../src/main.jsx',import.meta.url),'utf8')
 
-test('Inteligência Agronômica abre com área útil maior no desktop e no celular',()=>{
- assert.match(agro,/agro-large-page/)
+test('Inteligência Agronômica usa toda a área útil e mantém somente um cabeçalho básico',()=>{
+ assert.match(agro,/agro-full-page/)
+ assert.match(agro,/agro-minimal-header/)
+ assert.doesNotMatch(agro,/agro-native-hero|agro-capability-strip|agro-native-footnote/)
  assert.match(css,/width:calc\(100% \+ 56px\)/)
- assert.match(css,/height:max\(820px,calc\(100vh - 96px\)\)/)
+ assert.match(css,/min-height:calc\(100dvh - 92px\)/)
+ assert.match(css,/grid-template-rows:58px minmax\(0,1fr\)/)
+ assert.match(css,/height:calc\(100dvh - 150px\)/)
  assert.match(css,/@media\(max-width:760px\)/)
- assert.match(css,/width:calc\(100% \+ 28px\)/)
+ assert.match(css,/\.agro-full-page\{[\s\S]*width:100%/)
 })
 
 test('ambiente técnico oferece expansão real e saída acessível',()=>{
@@ -25,6 +29,7 @@ test('ambiente técnico oferece expansão real e saída acessível',()=>{
  assert.match(css,/\.agro-native-workspace:fullscreen/)
 })
 
-test('novo estilo entra no bundle principal',()=>{
+test('estilos do ambiente e da marca final entram no bundle principal',()=>{
  assert.match(main,/import '\.\/agro-workspace\.css'/)
+ assert.match(main,/import '\.\/val-logo-final\.css'/)
 })

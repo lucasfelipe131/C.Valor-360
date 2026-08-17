@@ -1,0 +1,104 @@
+.val-final-brand{
+ display:inline-flex;
+ align-items:center;
+ gap:9px;
+ min-width:0;
+ color:inherit;
+}
+
+.val-final-brand .brand-mark{
+ display:block;
+ flex:0 0 auto;
+ width:48px;
+ height:48px;
+ filter:drop-shadow(0 8px 14px rgba(7,73,125,.16));
+}
+
+.val-final-brand .brand-mark svg{
+ display:block;
+ width:100%;
+ height:100%;
+ overflow:visible;
+}
+
+.val-final-brand .brand-word{
+ display:block;
+ flex:0 0 auto;
+ width:98px;
+ height:34px;
+ margin:0;
+}
+
+.val-final-brand .val-wordmark{
+ display:block;
+ width:100%;
+ height:100%;
+ overflow:visible;
+}
+
+.val-final-brand.compact{
+ gap:0;
+}
+
+.val-final-brand.compact .brand-mark{
+ width:46px;
+ height:46px;
+}
+
+.sidebar .val-final-brand{
+ gap:8px;
+}
+
+.sidebar .val-final-brand .brand-mark{
+ width:44px;
+ height:44px;
+}
+
+.sidebar .val-final-brand .brand-word{
+ width:92px;
+ height:30px;
+}
+
+.val-login-shell .login-story>.val-final-brand .brand-mark{
+ width:58px;
+ height:58px;
+}
+
+.val-login-shell .login-story>.val-final-brand .brand-word{
+ width:126px;
+ height:42px;
+}
+
+.password-change-card>.val-final-brand .brand-word,
+.public-welcome>.val-final-brand .brand-word,
+.public-survey-header>.val-final-brand .brand-word{
+ width:104px;
+ height:35px;
+}
+
+.signal-core .val-final-brand .brand-mark{
+ width:72px!important;
+ height:72px!important;
+}
+
+@media(max-width:760px){
+ .topbar-mobile-logo .val-final-brand.compact .brand-mark{
+  width:38px!important;
+  height:38px!important;
+ }
+ .mobile-more-sheet .val-final-brand .brand-word{
+  width:88px;
+  height:29px;
+ }
+}
+
+@media(max-width:420px){
+ .val-login-shell .login-story>.val-final-brand .brand-mark{
+  width:50px;
+  height:50px;
+ }
+ .val-login-shell .login-story>.val-final-brand .brand-word{
+  width:108px;
+  height:36px;
+ }
+}

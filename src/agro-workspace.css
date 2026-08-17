@@ -1,58 +1,133 @@
-.agro-large-page .agro-native-workspace{
+.agro-full-page{
  width:calc(100% + 56px);
- margin-inline:-28px;
- min-height:900px;
- border-radius:22px;
+ min-height:calc(100dvh - 92px);
+ margin:-24px -28px -45px;
+ background:#eef4f1;
 }
 
-.agro-large-page .agro-native-workspace iframe{
- height:max(820px,calc(100vh - 96px));
- min-height:820px;
+.agro-full-workspace{
+ position:relative;
+ display:grid;
+ grid-template-rows:58px minmax(0,1fr);
+ width:100%;
+ min-width:0;
+ min-height:calc(100dvh - 92px);
+ overflow:hidden;
+ border:0;
+ border-radius:0;
+ background:#fff;
+ box-shadow:none;
+}
+
+.agro-minimal-header{
+ position:relative;
+ z-index:3;
+ display:flex;
+ align-items:center;
+ justify-content:space-between;
+ gap:16px;
+ min-width:0;
+ height:58px;
+ padding:0 18px;
+ border-bottom:1px solid #dce8e4;
+ background:rgba(255,255,255,.98);
+ box-shadow:0 6px 18px rgba(7,42,36,.045);
+}
+
+.agro-minimal-brand{
+ display:flex;
+ align-items:center;
+ gap:10px;
+ min-width:0;
+}
+
+.agro-minimal-brand>.val-brand{
+ flex:0 0 auto;
+}
+
+.agro-minimal-brand>.val-brand .brand-mark{
+ width:36px;
+ height:36px;
+}
+
+.agro-minimal-brand>div:last-child{
+ min-width:0;
+ display:grid;
+ gap:2px;
+}
+
+.agro-minimal-brand small{
+ color:#698078;
+ font-size:8px;
+ font-weight:850;
+ letter-spacing:.13em;
+}
+
+.agro-minimal-brand strong{
+ overflow:hidden;
+ color:#15372e;
+ font-size:15px;
+ font-weight:820;
+ line-height:1.1;
+ text-overflow:ellipsis;
+ white-space:nowrap;
 }
 
 .agro-workspace-actions{
  display:flex;
  align-items:center;
  justify-content:flex-end;
- gap:9px;
+ gap:8px;
+ flex:0 0 auto;
 }
 
 .agro-workspace-actions>span{
- display:flex;
+ display:inline-flex;
  align-items:center;
- gap:8px;
- padding:8px 10px;
+ gap:7px;
+ min-height:34px;
+ padding:7px 10px;
+ border:1px solid #dce8e4;
  border-radius:10px;
- background:#f0f7fc;
- color:#53738c;
+ color:#5f766d;
+ background:#f6faf8;
  font-size:9px;
- font-weight:750;
+ font-weight:790;
  white-space:nowrap;
 }
 
-.agro-workspace-actions>span svg{width:15px}
+.agro-workspace-actions>span.is-ready{
+ color:#176848;
+ border-color:#cce8da;
+ background:#effaf4;
+}
+
+.agro-workspace-actions>span svg{
+ width:14px;
+ height:14px;
+}
 
 .agro-workspace-actions button{
- min-height:38px;
+ min-height:36px;
  border:1px solid #cbdbe7;
- border-radius:11px;
+ border-radius:10px;
  background:#fff;
  color:#174f78;
  display:inline-flex;
  align-items:center;
  justify-content:center;
  gap:7px;
- padding:8px 12px;
- font-size:10px;
+ padding:7px 11px;
+ font-size:9px;
  font-weight:850;
- box-shadow:0 7px 18px rgba(7,55,92,.08);
+ box-shadow:0 5px 14px rgba(7,55,92,.06);
  transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease;
 }
 
 .agro-workspace-actions button:hover{
  transform:translateY(-1px);
  border-color:#6eb6ee;
- box-shadow:0 10px 24px rgba(7,75,129,.14);
+ box-shadow:0 8px 20px rgba(7,75,129,.12);
 }
 
 .agro-workspace-actions button:focus-visible{
@@ -60,22 +135,38 @@
  outline-offset:2px;
 }
 
-.agro-workspace-actions button svg{width:17px;height:17px}
+.agro-workspace-actions button svg{width:16px;height:16px}
 .agro-workspace-actions button b{font:inherit}
+
+.agro-full-workspace iframe{
+ display:block;
+ width:100%;
+ min-width:0;
+ height:calc(100dvh - 150px);
+ min-height:760px;
+ border:0;
+ background:#061f1b;
+}
+
+.agro-full-workspace .agro-frame-loading{
+ top:58px;
+ min-height:calc(100% - 58px);
+}
 
 .agro-native-workspace.is-expanded{
  position:fixed;
- inset:10px;
+ inset:8px;
  z-index:1200;
  width:auto;
+ height:auto;
  margin:0;
  min-height:0;
- border-radius:18px;
+ border-radius:16px;
  box-shadow:0 30px 100px rgba(0,25,48,.38);
 }
 
 .agro-native-workspace.is-expanded iframe{
- height:calc(100dvh - 80px);
+ height:calc(100dvh - 74px);
  min-height:0;
 }
 
@@ -89,25 +180,41 @@
 }
 
 .agro-native-workspace:fullscreen iframe{
- height:calc(100dvh - 70px);
+ height:calc(100dvh - 58px);
  min-height:0;
 }
 
 @media(max-width:900px){
  .agro-workspace-actions>span{display:none}
- .agro-large-page .agro-native-workspace iframe{height:max(760px,calc(100dvh - 84px));min-height:760px}
+ .agro-full-workspace iframe{min-height:720px}
 }
 
 @media(max-width:760px){
- .agro-large-page .agro-native-workspace{
-  width:calc(100% + 28px);
-  margin-inline:-14px;
-  min-height:780px;
-  border-radius:16px;
+ .agro-full-page{
+  width:100%;
+  min-height:0;
+  margin:0;
+  background:transparent;
  }
- .agro-large-page .agro-native-workspace iframe{height:max(720px,calc(100dvh - 72px));min-height:720px}
- .agro-workspace-actions button{min-width:40px;padding:8px}
+ .agro-full-workspace{
+  grid-template-rows:52px minmax(0,1fr);
+  min-height:760px;
+  border:1px solid #dce8e4;
+  border-radius:15px;
+ }
+ .agro-minimal-header{height:52px;padding:0 10px;gap:8px}
+ .agro-minimal-brand{gap:7px}
+ .agro-minimal-brand>.val-brand .brand-mark{width:32px;height:32px}
+ .agro-minimal-brand small{display:none}
+ .agro-minimal-brand strong{font-size:13px}
+ .agro-workspace-actions button{min-width:38px;min-height:38px;padding:7px}
  .agro-workspace-actions button b{display:none}
+ .agro-full-workspace iframe{height:max(700px,calc(100dvh - 190px));min-height:700px}
  .agro-native-workspace.is-expanded{inset:0;border-radius:0}
- .agro-native-workspace.is-expanded iframe{height:calc(100dvh - 60px)}
+ .agro-native-workspace.is-expanded iframe{height:calc(100dvh - 52px);min-height:0}
+ .agro-full-workspace .agro-frame-loading{top:52px;min-height:calc(100% - 52px)}
+}
+
+@media(prefers-reduced-motion:reduce){
+ .agro-workspace-actions button{transition:none}
 }
