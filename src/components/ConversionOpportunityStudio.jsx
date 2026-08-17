@@ -2,6 +2,7 @@ import React,{useEffect,useMemo,useState} from 'react'
 import {BrainCircuit,ChevronDown,LoaderCircle,RefreshCw,ShieldCheck,Sparkles} from 'lucide-react'
 import {fetchJsonResource,useAsyncResource} from '../hooks/useAsyncResource'
 import CommitmentLadderPanel from './CommitmentLadderPanel'
+import ObjectionEvidencePanel from './ObjectionEvidencePanel'
 import '../conversion-studio.css'
 
 export default function ConversionOpportunityStudio({clients=[],onClient,onPrepare}){
@@ -39,11 +40,14 @@ export default function ConversionOpportunityStudio({clients=[],onClient,onPrepa
    </div>
   </header>
 
-  {loading&&!data&&<div className="conversion-studio-loading" role="status"><LoaderCircle/><div><b>Montando a escada de compromissos…</b><small>Verificando oportunidades, etapa e evidências confirmadas.</small></div></div>}
+  {loading&&!data&&<div className="conversion-studio-loading" role="status"><LoaderCircle/><div><b>Montando o dossiê de conversão…</b><small>Verificando compromissos, perdas e evidências confirmadas.</small></div></div>}
   {error&&<div className="conversion-studio-error">{error}</div>}
 
-  {!loading&&data&&<CommitmentLadderPanel data={innovations.commitmentLadders} client={client} onPrepare={()=>onPrepare?.(client)}/>} 
+  {!loading&&data&&<>
+   <CommitmentLadderPanel data={innovations.commitmentLadders} client={client} onPrepare={()=>onPrepare?.(client)}/>
+   <ObjectionEvidencePanel data={innovations.objectionLibrary}/>
+  </>}
 
-  <footer className="conversion-studio-foot"><ShieldCheck/><span><b>Avanço sem pressão artificial</b><small>Nenhuma etapa transforma simpatia, silêncio ou pedido de proposta em compromisso. Testes exigem consentimento explícito e revisão técnica quando aplicável.</small></span><Sparkles/></footer>
+  <footer className="conversion-studio-foot"><ShieldCheck/><span><b>Avanço sem pressão artificial</b><small>Nenhuma etapa transforma simpatia, silêncio ou pedido de proposta em compromisso. Objeções históricas são precedentes, não scripts nem prova de causalidade.</small></span><Sparkles/></footer>
  </section>
 }
