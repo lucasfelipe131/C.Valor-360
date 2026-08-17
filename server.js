@@ -13,6 +13,7 @@ import {GrainRepository} from './server/grain-repository.js'
 import {ValRepository} from './server/repository.js'
 import {publicStorageScope} from './server/storage-policy.js'
 import {ValEngine} from './server/val-engine.js'
+import {createValProgressTracker,normalizeValProgressRequestId} from './server/val-progress.js'
 import {createTechnicalWorkspace,isTechnicalWorkspaceRequest} from './server/technical-workspace.js'
 import {buildSurveyOptions,validateSurveyAnswers} from './server/survey-validation.js'
 import {calculateProfile} from './src/lib/profile.js'
@@ -63,10 +64,12 @@ const repository=new ValRepository({db:database,readStore,saveStore,tenantId:con
 const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const accessRepository=new AccessRepository({db:database,tenantId:config.defaultTenantId,runtimeConfig:config})
 const valEngine=new ValEngine({runtimeConfig:config,repository})
+const valProgress=createValProgressTracker()
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
 function consumeRateLimit(scope,key,limit){const now=Date.now();const bucketKey=`${scope}:${key}`;const current=rateBuckets.get(bucketKey);if(!current||current.resetAt<=now){rateBuckets.set(bucketKey,{count:1,resetAt:now+600_000});return true}if(current.count>=limit)return false;current.count+=1;return true}
 const requestIdentity=request=>String(request.socket.remoteAddress||'unknown')
+const progressOwnerKey=(identity,request)=>String(identity?.id||identity?.email||requestIdentity(request))
 const demoIdentity=()=>({id:null,email:'demo@valor360.local',name:'Demonstração',role:'admin',tenantId:config.defaultTenantId,mustChangePassword:false,demo:true})
 async function sessionIdentity(request){
  if(!auth.configured)return config.demoMode?demoIdentity():null
@@ -125,7 +128,7 @@ async function handleApi(request,response,url){
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
- const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname==='/api/val/progress'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const identity=protectedPath?await sessionIdentity(request):null
  if(protectedPath&&auth.configured&&!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
@@ -182,6 +185,13 @@ async function handleApi(request,response,url){
   })
   return json(response,200,{producers,source:'valor360',syncedAt:new Date().toISOString()})
  }
+ if(url.pathname==='/api/val/progress'&&request.method==='GET'){
+  const requestId=normalizeValProgressRequestId(url.searchParams.get('requestId'))
+  if(!requestId)return json(response,400,{error:'Identificador de acompanhamento inválido.'})
+  const progress=valProgress.get({requestId,ownerId:progressOwnerKey(identity,request)})
+  if(!progress)return json(response,404,{error:'Acompanhamento não encontrado ou já encerrado.'})
+  return json(response,200,progress)
+ }
  if(url.pathname==='/api/val/attachments'&&request.method==='GET'){
   const clientId=clean(url.searchParams.get('clientId'));if(!clientId)return json(response,400,{error:'Selecione um produtor para ver os arquivos.'})
   const attachments=await repository.listAttachments({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,limit:30})
@@ -215,10 +225,17 @@ async function handleApi(request,response,url){
   const payload=await body(request);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const message=String(payload.message||payload.question||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).trim().slice(0,3000)
   const clientId=clean(payload.clientId||payload.client?.id)
   if(!clientId)return json(response,400,{error:'Selecione um cliente para ativar o contexto da VAL.'})
+  const requestId=normalizeValProgressRequestId(payload.requestId)||randomUUID()
+  const ownerKey=progressOwnerKey(identity,request)
+  const requestMode=clean(payload.mode)||'daily'
+  valProgress.start({requestId,ownerId:ownerKey,clientId,mode:requestMode})
   const controller=new AbortController();request.once('aborted',()=>controller.abort());response.once('close',()=>{if(!response.writableEnded)controller.abort()})
-  const result=await valEngine.answer({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,client:payload.client||{},message,attachmentIds,mode:clean(payload.mode)||'daily',requestedStage:clean(payload.requestedStage),signal:controller.signal})
-  await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:clean(payload.mode)||'daily',engineMode:result.engineMode,attachments:attachmentIds.length}})
-  return json(response,200,result)
+  try{
+   const result=await valEngine.answer({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,client:payload.client||{},message,attachmentIds,mode:requestMode,requestedStage:clean(payload.requestedStage),signal:controller.signal,onProgress:stage=>valProgress.update({requestId,ownerId:ownerKey,stage})})
+   valProgress.complete({requestId,ownerId:ownerKey})
+   await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:requestMode,engineMode:result.engineMode,attachments:attachmentIds.length}})
+   return json(response,200,{...result,requestId})
+  }catch(error){valProgress.fail({requestId,ownerId:ownerKey});throw error}
  }
  if(url.pathname==='/api/val/feedback'&&request.method==='POST'){
   const payload=await body(request);const recommendationId=clean(payload.recommendationId);const rating=Number(payload.rating)

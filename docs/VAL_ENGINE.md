@@ -189,6 +189,14 @@ Saída: resposta interna, objetivo, dimensões decisórias observáveis, próxim
 
 Se a solicitação ou saída contiver diagnóstico, produto, dose, mistura, taxa de aplicação ou sinal agronômico pendente, a engine descarta o conteúdo técnico acionável, persiste a recomendação como `pending_review` e devolve somente um pacote seguro de encaminhamento. O piloto ainda não possui endpoint para liberar esse conteúdo: a validação volta pelo evento assinado do Manual; uma esteira corporativa de aprovar/rejeitar continua obrigatória antes de uso amplo.
 
+### Progresso de uma análise
+
+`GET /api/val/progress?requestId=<uuid>`
+
+As telas geram um UUID por chamada e consultam esta rota somente enquanto a análise está ativa. O registro é temporário, fica em memória, expira em cinco minutos e é isolado pelo usuário autenticado. A rota nunca expõe mensagem, produto, preço, dado do produtor ou conteúdo do modelo; devolve apenas a etapa operacional.
+
+No modo estratégico, a interface apresenta a sequência real: **Cruzando histórico e sinais** → **Comparando alternativas de produto** → **Redigindo a recomendação** → **Salvando a recomendação**. Saltos são permitidos quando a IA não é necessária; regressões de etapa são bloqueadas.
+
 ### Feedback
 
 `POST /api/val/feedback`

@@ -7,6 +7,8 @@ import {
 } from 'lucide-react'
 import {compactBRL,commercialMetrics} from '../lib/commercial-metrics'
 import ValPanel from './ValPanel'
+import ValProgressFeedback from './ValProgressFeedback'
+import {createValProgressRequestId,initialValProgress,startValProgressPolling} from '../lib/val-progress-client'
 import '../val-decision-center.css'
 
 const quickActions=[
@@ -94,6 +96,7 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
  const [status,setStatus]=useState({loading:true,data:null,error:''})
  const [loading,setLoading]=useState(false)
  const [error,setError]=useState('')
+ const [progress,setProgress]=useState(()=>initialValProgress())
  const [expertOpen,setExpertOpen]=useState(false)
  const [feedback,setFeedback]=useState({sending:false,sent:false,error:''})
  const requestRef=useRef(null)
@@ -113,7 +116,7 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
 
  useEffect(()=>{
   requestRef.current?.abort()
-  setResponse(null);setError('');setMessage('');setRequestedStage(null);setFeedback({sending:false,sent:false,error:''})
+  setResponse(null);setError('');setMessage('');setRequestedStage(null);setProgress(initialValProgress());setFeedback({sending:false,sent:false,error:''})
  },[selected])
 
  const client=useMemo(()=>clients.find(item=>item.id===selected)||clients[0]||null,[clients,selected])
@@ -157,19 +160,21 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
   if(!client?.id||!question||loading)return
   requestRef.current?.abort()
   const controller=new AbortController();requestRef.current=controller
-  setLoading(true);setError('');setFeedback({sending:false,sent:false,error:''})
+  const requestId=createValProgressRequestId()
+  setLoading(true);setError('');setProgress(initialValProgress());setFeedback({sending:false,sent:false,error:''})
+  const stopProgress=mode==='strategic'?startValProgressPolling({requestId,onProgress:setProgress,signal:controller.signal}):()=>{}
   try{
    const timeout=typeof AbortSignal.timeout==='function'?AbortSignal.timeout(120000):null
    const signal=timeout&&typeof AbortSignal.any==='function'?AbortSignal.any([controller.signal,timeout]):controller.signal
    const result=await fetch('/api/val/chat',{
     method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({clientId:client.id,client,message:question,mode,requestedStage}),signal
+    body:JSON.stringify({clientId:client.id,client,message:question,mode,requestedStage,requestId}),signal
    })
    const payload=await result.json().catch(()=>({}))
    if(result.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}
    if(!result.ok)throw new Error(payload.error||'Não foi possível analisar esta conta.')
-   setResponse(payload);setMessage('')
-  }catch(requestError){if(requestError.name!=='AbortError')setError(requestError.name==='TimeoutError'?'A análise ultrapassou o limite. Tente novamente.':requestError.message)}finally{if(requestRef.current===controller){requestRef.current=null;setLoading(false)}}
+   setResponse(payload);setMessage('');setProgress({stage:'complete',label:'Recomendação pronta',order:5,total:5,done:true,failed:false})
+  }catch(requestError){if(requestError.name!=='AbortError'){setProgress({stage:'failed',label:'Não foi possível concluir',order:6,total:5,done:true,failed:true});setError(requestError.name==='TimeoutError'?'A análise ultrapassou o limite. Tente novamente.':requestError.message)}}finally{stopProgress();if(requestRef.current===controller){requestRef.current=null;setLoading(false)}}
  }
 
  async function sendFeedback(rating,outcome){
@@ -223,8 +228,9 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
    <form className="vdc-composer" onSubmit={event=>{event.preventDefault();ask(message)}}>
     <MessageSquareText/>
     <textarea rows="2" value={message} onChange={event=>setMessage(event.target.value)} maxLength="1200" placeholder={`Conte o que está acontecendo com ${text(client.name).split(' ')[0]}…`} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ask(message)}}}/>
-    <button type="submit" disabled={!message.trim()||loading}>{loading?<LoaderCircle className="is-spinning"/>:<ArrowRight/>}<span>{loading?'Cruzando dados':'Analisar'}</span></button>
+    <button type="submit" disabled={!message.trim()||loading}>{loading?<LoaderCircle className="is-spinning"/>:<ArrowRight/>}<span>{loading?(mode==='strategic'?progress.label:'Cruzando dados'):'Analisar'}</span></button>
    </form>
+   {loading&&mode==='strategic'&&<ValProgressFeedback progress={progress}/>}
    {(error||response?.warning)&&<div className="vdc-alert"><AlertTriangle/><span>{error||response.warning}</span></div>}
   </section>
 
