@@ -17,7 +17,7 @@ test('documentação liga feedback, snapshot e resultados posteriores',()=>{
  assert.match(loop,/business\.updated/)
  assert.match(loop,/business\.closed/)
  assert.match(loop,/business\.lost/)
- assert.match(plainLoop,/mudança confirmada de methodology_state/)
+ assert.match(plainLoop,/mudança confirmada de methodologystate/)
 })
 
 test('loop distingue reação, execução, progresso e resultado',()=>{
