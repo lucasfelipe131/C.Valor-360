@@ -23,3 +23,18 @@ export function databaseSsl(connectionString){
   if(target.sslMode==='disable'||['localhost','127.0.0.1','::1'].includes(target.hostname)||target.hostname.endsWith('.railway.internal'))return undefined
   return {rejectUnauthorized:false}
 }
+
+export function postgresCliEnv(connectionString,baseEnv=process.env){
+  const target=databaseTarget(connectionString)
+  const url=new URL(connectionString)
+  const local=['localhost','127.0.0.1','::1'].includes(target.hostname)||target.hostname.endsWith('.railway.internal')
+  return {
+    ...baseEnv,
+    PGHOST:target.hostname,
+    PGPORT:url.port||'5432',
+    PGUSER:decodeURIComponent(url.username),
+    PGPASSWORD:decodeURIComponent(url.password),
+    PGDATABASE:target.name,
+    PGSSLMODE:target.sslMode|| (local?'disable':'require')
+  }
+}

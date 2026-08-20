@@ -2,7 +2,7 @@ import {access,readFile,writeFile} from 'node:fs/promises'
 import {spawn} from 'node:child_process'
 import {resolve} from 'node:path'
 import pg from 'pg'
-import {assertControlledDatabase,databaseSsl} from './lib/controlled-database.mjs'
+import {assertControlledDatabase,databaseSsl,postgresCliEnv} from './lib/controlled-database.mjs'
 
 const target=String(process.env.RESTORE_DATABASE_URL||'').trim()
 const backup=resolve(String(process.env.BACKUP_FILE||''))
@@ -20,7 +20,7 @@ try{
 
 const started=Date.now()
 await new Promise((resolveRun,reject)=>{
-  const child=spawn('pg_restore',['--clean','--if-exists','--no-owner','--no-acl','--exit-on-error',backup],{stdio:['ignore','inherit','inherit'],env:{...process.env,PGDATABASE:target}})
+  const child=spawn('pg_restore',['--clean','--if-exists','--no-owner','--no-acl','--exit-on-error',backup],{stdio:['ignore','inherit','inherit'],env:postgresCliEnv(target)})
   child.once('error',reject);child.once('exit',code=>code===0?resolveRun():reject(new Error(`pg_restore terminou com código ${code}.`)))
 })
 const verificationPool=new pg.Pool({connectionString:target,max:1,ssl:databaseSsl(target)})

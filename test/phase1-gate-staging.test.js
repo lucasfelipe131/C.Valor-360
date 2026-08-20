@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import test from 'node:test'
-import {assertControlledDatabase,databaseSsl,databaseTarget} from '../scripts/lib/controlled-database.mjs'
+import {assertControlledDatabase,databaseSsl,databaseTarget,postgresCliEnv} from '../scripts/lib/controlled-database.mjs'
 
 const read=relative=>readFileSync(new URL(`../${relative}`,import.meta.url),'utf8')
 
@@ -12,6 +12,9 @@ test('URLs de staging e restore são aceitas sem habilitar SSL local',()=>{
   assert.equal(databaseTarget(restore).name,'val_restore')
   assert.equal(databaseSsl(staging),undefined)
   assert.equal(databaseSsl(restore),undefined)
+  assert.deepEqual(postgresCliEnv(staging,{}),{
+    PGHOST:'127.0.0.1',PGPORT:'5432',PGUSER:'gate',PGPASSWORD:'gate-only',PGDATABASE:'val_staging',PGSSLMODE:'disable'
+  })
 })
 
 test('scripts de recuperação falham fechados para um database sem marca controlada',()=>{
