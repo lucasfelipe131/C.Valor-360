@@ -3,6 +3,7 @@ import {dirname,join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {config} from './config.js'
 import {createDatabase} from './db.js'
+import {applyVersionedMigrations} from './migration-runner.js'
 
 const database=createDatabase(config)
 if(!database.configured){
@@ -17,5 +18,6 @@ const here=dirname(fileURLToPath(import.meta.url))
 const sql=await readFile(join(here,'..','database','schema.sql'),'utf8')
 try{
   await database.query(sql)
-  console.log('Banco VALOR 360 migrado com sucesso.')
+  const applied=await applyVersionedMigrations(database)
+  console.log(`Banco VALOR 360 migrado com sucesso; ${applied.length} migration(s) versionada(s) verificada(s).`)
 }finally{await database.close()}

@@ -11,6 +11,7 @@ import {deriveSignals,normalizeIntegrationEvent,requiresTechnicalSignature,verif
 import {normalizeGrainIntent,normalizeGrainMarketSnapshot,normalizeGrainProfile,intentStatuses} from './server/grain-intelligence.js'
 import {GrainRepository} from './server/grain-repository.js'
 import {ValRepository} from './server/repository.js'
+import {observe,requestIdFrom,runWithRequestContext,updateRequestContext} from './server/observability.js'
 import {publicStorageScope} from './server/storage-policy.js'
 import {ValEngine} from './server/val-engine.js'
 import {createValProgressTracker,normalizeValProgressRequestId} from './server/val-progress.js'
@@ -72,10 +73,12 @@ const requestIdentity=request=>String(request.socket.remoteAddress||'unknown')
 const progressOwnerKey=(identity,request)=>String(identity?.id||identity?.email||requestIdentity(request))
 const demoIdentity=()=>({id:null,email:'demo@valor360.local',name:'Demonstração',role:'admin',tenantId:config.defaultTenantId,mustChangePassword:false,demo:true})
 async function sessionIdentity(request){
- if(!auth.configured)return config.demoMode?demoIdentity():null
+ if(!auth.configured){const identity=config.demoMode?demoIdentity():null;if(identity)updateRequestContext({tenantId:identity.tenantId,actorId:identity.id||identity.email});return identity}
  const tokenIdentity=auth.session(request)
  if(!tokenIdentity)return null
- return accessRepository.resolveSession(tokenIdentity)
+ const identity=await accessRepository.resolveSession(tokenIdentity)
+ if(identity)updateRequestContext({tenantId:identity.tenantId,actorId:identity.id||identity.email})
+ return identity
 }
 
 function parseCsv(text){
@@ -231,7 +234,9 @@ async function handleApi(request,response,url){
   valProgress.start({requestId,ownerId:ownerKey,clientId,mode:requestMode})
   const controller=new AbortController();request.once('aborted',()=>controller.abort());response.once('close',()=>{if(!response.writableEnded)controller.abort()})
   try{
+   observe('val.answer.started',{mode:requestMode,attachmentCount:attachmentIds.length})
    const result=await valEngine.answer({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,client:payload.client||{},message,attachmentIds,mode:requestMode,requestedStage:clean(payload.requestedStage),signal:controller.signal,onProgress:stage=>valProgress.update({requestId,ownerId:ownerKey,stage})})
+   observe('val.answer.completed',{mode:requestMode,engineMode:result.engineMode,outcome:'ok'})
    valProgress.complete({requestId,ownerId:ownerKey})
    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:requestMode,engineMode:result.engineMode,attachments:attachmentIds.length}})
    return json(response,200,{...result,requestId})
@@ -255,6 +260,7 @@ async function handleApi(request,response,url){
   if(storageScope==='manual-event'&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para receber integrações fora do modo demonstrativo.'})}
   let payload;try{payload=raw?JSON.parse(raw):{}}catch{return json(response,400,{error:'Evento JSON inválido.'})}
   const event=normalizeIntegrationEvent({...payload,source:'manual-do-agronomo'})
+  observe('integration.received',{source:'manual-do-agronomo',eventType:event.type})
   if(requiresTechnicalSignature(event.type)&&!signed)return json(response,401,{error:'Eventos técnicos validados exigem assinatura HMAC do corpo.'})
   const ownerId=database.configured?await accessRepository.resolveIntegrationOwner(event.ownerUserId):null
   const signals=deriveSignals(event);const result=await repository.ingestEvent({tenantId:config.defaultTenantId,ownerId,event,signals})
@@ -331,9 +337,17 @@ async function handleApi(request,response,url){
 
 technicalWorkspace.start()
 
-createServer(async(request,response)=>{
- let url
- try{url=new URL(request.url||'/',`http://${request.headers.host||'localhost'}`)}catch{return json(response,400,{error:'URL inválida.'})}
+createServer((request,response)=>{
+ const requestId=requestIdFrom(request)
+ request.headers['x-request-id']=requestId
+ response.setHeader('X-Request-Id',requestId)
+ let url=null
+ try{url=new URL(request.url||'/',`http://${request.headers.host||'localhost'}`)}catch{}
+ return runWithRequestContext({requestId,method:request.method,path:url?.pathname||'',tenantId:config.defaultTenantId},async()=>{
+ observe('api.received',{method:request.method,path:url?.pathname||''})
+ const started=Date.now()
+ response.once('finish',()=>observe('api.completed',{status:response.statusCode,durationMs:Date.now()-started,outcome:response.statusCode>=500?'error':'ok'}))
+ if(!url)return json(response,400,{error:'URL inválida.'})
  if(isTechnicalWorkspaceRequest(url.pathname)){
   try{if(technicalWorkspace.handle(request,response,url,await sessionIdentity(request)))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
  }
@@ -355,6 +369,12 @@ createServer(async(request,response)=>{
     :'no-cache'
  response.writeHead(200,{...securityHeaders,'Content-Type':mime[extension]||'application/octet-stream','Cache-Control':cacheControl})
  createReadStream(target).pipe(response)
+ }).catch(exception=>{
+  observe('api.unhandled',{outcome:'error',errorCode:String(exception?.code||'unhandled_error')})
+  if(response.headersSent){response.destroy(exception);return}
+  const status=Number(exception?.statusCode)||500
+  json(response,status,{error:status>=500?'Não foi possível processar a solicitação.':exception?.message||'Não foi possível processar a solicitação.'})
+ })
 }).listen(port,'0.0.0.0',()=>console.log(`VALOR 360 disponível na porta ${port}`))
 
 for(const signal of ['SIGTERM','SIGINT'])process.on(signal,async()=>{technicalWorkspace.close();await database.close();process.exit(0)})

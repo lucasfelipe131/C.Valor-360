@@ -25,11 +25,12 @@ export async function GET(request: NextRequest) {
               u.id AS "userId", u.display_name AS "displayName", u.email
        FROM app_feedback f
        JOIN app_users u ON u.id = f.user_id
-       WHERE ($1::boolean OR f.user_id = $2)
+       WHERE f.tenant_id = $1
+         AND ($2::boolean OR f.user_id = $3)
        ORDER BY CASE f.status WHEN 'open' THEN 0 WHEN 'in_progress' THEN 1 ELSE 2 END,
                 f.created_at DESC
        LIMIT 250`,
-      [isAdmin, session.user.id],
+      [session.tenantId, isAdmin, session.user.id],
     );
     return NextResponse.json({ feedback: result.rows });
   } catch (error) {
@@ -60,17 +61,17 @@ export async function POST(request: NextRequest) {
     }
     const pool = await ensureFeedbackSchema();
     const result = await pool.query(
-      `INSERT INTO app_feedback (id, user_id, category, module_key, title, message)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO app_feedback (id, tenant_id, user_id, category, module_key, title, message)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING id, category, module_key AS module, title, message, status,
                  admin_note AS "adminNote", created_at AS "createdAt",
                  updated_at AS "updatedAt"`,
-      [randomUUID(), session.user.id, category, moduleKey, title, message],
+      [randomUUID(), session.tenantId, session.user.id, category, moduleKey, title, message],
     );
     await recordUsage(session.user.id, session.sessionId, "feedback_submitted", "feedback", {
       category,
       module: moduleKey,
-    });
+    }, session.tenantId);
     return NextResponse.json({ feedback: result.rows[0] });
   } catch (error) {
     console.error("feedback:post", error);
@@ -95,17 +96,17 @@ export async function PATCH(request: NextRequest) {
            admin_note = $2,
            updated_at = NOW(),
            resolved_at = CASE WHEN $1 = 'resolved' THEN NOW() ELSE NULL END
-       WHERE id = $3
+       WHERE id = $3 AND tenant_id = $4
        RETURNING id, category, module_key AS module, title, message, status,
                  admin_note AS "adminNote", created_at AS "createdAt",
                  updated_at AS "updatedAt"`,
-      [String(body.status), String(body.adminNote ?? "").trim().slice(0, 2000), body.id],
+      [String(body.status), String(body.adminNote ?? "").trim().slice(0, 2000), body.id, session.tenantId],
     );
     if (!result.rows[0]) return NextResponse.json({ error: "Feedback não encontrado." }, { status: 404 });
     await recordUsage(session.user.id, session.sessionId, "feedback_updated", "administracao", {
       feedbackId: body.id,
       status: body.status,
-    });
+    }, session.tenantId);
     return NextResponse.json({ feedback: result.rows[0] });
   } catch (error) {
     console.error("feedback:patch", error);
