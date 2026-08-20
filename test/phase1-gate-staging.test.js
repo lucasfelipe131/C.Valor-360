@@ -42,3 +42,8 @@ test('manifesto automático só aprova o banco após todas as evidências',()=>{
   for(const proof of ['driftDetected','scopeOverrideDenied','crossTenantClientDenied','manualCrossTenantRows','foreignSignedSessionRejected','backupSha256','rollbackProven'])assert.match(manifest,new RegExp(proof))
   assert.match(manifest,/databaseGatePassed:true/)
 })
+
+test('restore direciona explicitamente o pg_restore ao database descartável',()=>{
+  const restore=read('scripts/db-restore-verify.mjs')
+  assert.match(restore,/\['--dbname',restoreTarget\.name/)
+})
