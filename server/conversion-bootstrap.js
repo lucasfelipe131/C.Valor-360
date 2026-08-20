@@ -14,6 +14,7 @@ import {buildPortfolioRadar} from './portfolio-radar.js'
 import {enforceValSpecificity,mergeStructuredReasoning,resolveStructuredReasoningRoute,specificityVersion} from './val-specificity.js'
 
 const PATCHED=Symbol.for('valor360.conversion-core.patched')
+export const conversionCompositionVersion='conversion-bootstrap-v1'
 const RADAR_CACHE_TTL_MS=10*60_000
 const radarCache=new Map()
 const originalQuestionContext=new AsyncLocalStorage()
@@ -102,7 +103,8 @@ function conversionEnvelope(resolved){
   }
 }
 
-if(!globalThis[PATCHED]){
+export function installConversionComposition(){
+  if(globalThis[PATCHED])return Object.freeze({id:'conversion',version:conversionCompositionVersion,installed:false,methods:['ValRepository.getClientContext','ValRepository.getIntelligence','ValRepository.recordRecommendation','ValEngine.answer','ValEngine.status']})
   globalThis[PATCHED]=true
 
   const originalGetClientContext=ValRepository.prototype.getClientContext
@@ -324,4 +326,6 @@ if(!globalThis[PATCHED]){
       portfolioRadar:true
     }
   }
+
+  return Object.freeze({id:'conversion',version:conversionCompositionVersion,installed:true,methods:['ValRepository.getClientContext','ValRepository.getIntelligence','ValRepository.recordRecommendation','ValEngine.answer','ValEngine.status']})
 }

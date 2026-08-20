@@ -1,0 +1,129 @@
+openapi: 3.1.0
+info:
+  title: VAL Core API
+  version: 1.0.0
+  description: API aditiva da camada de contratos do VAL Core. As rotas legadas permanecem compatíveis.
+paths:
+  /api/val/status:
+    get:
+      summary: Informa a saúde da engine e a versão dos contratos do Core
+      responses:
+        '200':
+          description: Estado público da engine
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/val/chat:
+    post:
+      summary: Executa a recomendação preservando a resposta legada
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        $ref: '#/components/requestBodies/RecommendationInput'
+      responses:
+        '200':
+          description: Payload legado, acrescido do requestId de acompanhamento já existente
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /api/val/recommendations:
+    post:
+      summary: Alias legado compatível de recomendação
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        $ref: '#/components/requestBodies/RecommendationInput'
+      responses:
+        '200':
+          description: Payload legado
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /api/v1/val/recommendations:
+    post:
+      summary: Executa a mesma ValEngine e devolve ResponseEnvelope v1
+      description: O servidor deriva organization_id, actor e policy_context da sessão; esses campos não são aceitos do cliente.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        $ref: '#/components/requestBodies/RecommendationInput'
+      responses:
+        '200':
+          description: Resposta canônica, auditável e versionada
+          content:
+            application/json:
+              schema:
+                $ref: '../contracts/v1/response-envelope.schema.json'
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: valor360_session
+  parameters:
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: UUID aceito como correlation_id; valores inválidos são substituídos pelo servidor.
+  requestBodies:
+    RecommendationInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [clientId]
+            properties:
+              clientId: {type: string, minLength: 1, maxLength: 180}
+              client: {type: object, additionalProperties: true}
+              message: {type: string, maxLength: 3000}
+              question: {type: string, maxLength: 3000}
+              attachmentIds:
+                type: array
+                maxItems: 3
+                items: {type: string, format: uuid}
+              mode: {type: string, maxLength: 240}
+              requestedStage: {type: string, maxLength: 240}
+              requestId: {type: string, format: uuid}
+  responses:
+    Error:
+      description: Falha validada sem exposição de contexto interno
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [error]
+            properties:
+              error: {type: string}
+  schemas:
+    RequestEnvelope:
+      $ref: '../contracts/v1/request-envelope.schema.json'
+    ResponseEnvelope:
+      $ref: '../contracts/v1/response-envelope.schema.json'

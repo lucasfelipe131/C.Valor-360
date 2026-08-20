@@ -3,8 +3,8 @@ import {createHash,randomUUID} from 'node:crypto'
 
 const requestContext=new AsyncLocalStorage()
 const uuidPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const allowedDetailKeys=new Set(['durationMs','rowCount','status','method','path','source','eventType','mode','operation','outcome','errorCode','engineMode','attachmentCount'])
-const staticPathSegments=new Set(['api','v1','live','health','val','status','auth','session','login','logout','password','admin','metrics','portfolio-admin','users','reset-password','usage','events','grains','bootstrap','profiles','intents','market','technical','attachments','progress','chat','recommendations','feedback','intelligence','imports','import','google-sheet','visits','opportunities','surveys','invitations','clients','context','overview','from-survey','integrations','manual','tecnico'])
+const allowedDetailKeys=new Set(['durationMs','rowCount','status','method','path','source','eventType','mode','operation','outcome','errorCode','engineMode','attachmentCount','routeId','moduleId','contractVersion','required'])
+const staticPathSegments=new Set(['api','v1','live','health','val','core','status','auth','session','login','logout','password','admin','metrics','portfolio-admin','users','reset-password','usage','events','grains','bootstrap','profiles','intents','market','technical','attachments','progress','chat','recommendations','feedback','intelligence','imports','import','google-sheet','visits','opportunities','surveys','invitations','clients','context','overview','from-survey','integrations','manual','tecnico'])
 
 const reference=value=>value?createHash('sha256').update(String(value)).digest('hex').slice(0,16):undefined
 const limited=value=>typeof value==='string'?value.slice(0,180):typeof value==='number'&&Number.isFinite(value)?value:typeof value==='boolean'?value:undefined

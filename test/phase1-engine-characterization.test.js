@@ -3,10 +3,11 @@ import {readFileSync} from 'node:fs'
 import test from 'node:test'
 import {ValEngine} from '../server/val-engine.js'
 import {ValRepository} from '../server/repository.js'
+import {installValRuntimeComposition} from '../server/core/composition.js'
 
 const source=path=>readFileSync(new URL(path,import.meta.url),'utf8')
 
-test('os bootstraps instalam exatamente seis métodos na ordem atual',async()=>{
+test('os bootstraps declaram exatamente seis métodos e só os instalam pela composição explícita',async()=>{
   const conversion=source('../server/conversion-bootstrap.js')
   const innovation=source('../server/innovation-bootstrap.js')
   const repositoryAssignments=[...conversion.matchAll(/ValRepository\.prototype\.([A-Za-z0-9_]+)\s*=/g)].map(match=>match[1])
@@ -19,16 +20,17 @@ test('os bootstraps instalam exatamente seis métodos na ordem atual',async()=>{
   const beforeContext=ValRepository.prototype.getClientContext
   const beforeAnswer=ValEngine.prototype.answer
   await import('../server/conversion-bootstrap.js')
-  const conversionContext=ValRepository.prototype.getClientContext
-  assert.notEqual(conversionContext,beforeContext)
-  assert.notEqual(ValEngine.prototype.answer,beforeAnswer)
   await import('../server/innovation-bootstrap.js')
-  assert.notEqual(ValRepository.prototype.getClientContext,conversionContext)
+  assert.equal(ValRepository.prototype.getClientContext,beforeContext)
+  assert.equal(ValEngine.prototype.answer,beforeAnswer)
+  const state=installValRuntimeComposition()
+  assert.deepEqual(state.order,['conversion','innovation'])
+  assert.notEqual(ValRepository.prototype.getClientContext,beforeContext)
+  assert.notEqual(ValEngine.prototype.answer,beforeAnswer)
 })
 
-test('a composição implícita preserva fundação, inovações e fallback determinístico',async()=>{
-  await import('../server/conversion-bootstrap.js')
-  await import('../server/innovation-bootstrap.js')
+test('a composição explícita preserva fundação, inovações e fallback determinístico',async()=>{
+  installValRuntimeComposition()
   let store={surveys:[],imports:[],opportunities:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[],modelRuns:[],technicalContexts:{},attachments:[]}}
   const repository=new ValRepository({db:{configured:false},readStore:()=>store,saveStore:value=>{store=value},tenantId:'tenant-a'})
   const client={id:'cliente-a',name:'Fazenda Horizonte',profileAnswers:{q1:'valor'}}
