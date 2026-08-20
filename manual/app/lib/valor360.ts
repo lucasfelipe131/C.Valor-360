@@ -124,7 +124,7 @@ export function valor360Configured() {
   return Boolean(endpoint() && secret());
 }
 
-async function publish(event: JsonRecord): Promise<ValorPublishResult> {
+async function publish(event: JsonRecord, requestId = ""): Promise<ValorPublishResult> {
   const eventType = text(event.type, 80);
   const externalId = text(event.externalId, 180);
   const url = endpoint();
@@ -137,11 +137,13 @@ async function publish(event: JsonRecord): Promise<ValorPublishResult> {
     .update(raw)
     .digest("hex");
   try {
+    const safeRequestId = /^[0-9a-f-]{36}$/i.test(requestId) ? requestId : "";
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-valor-signature": `sha256=${signature}`,
+        ...(safeRequestId ? { "x-request-id": safeRequestId } : {}),
       },
       body: raw,
       cache: "no-store",
@@ -322,7 +324,7 @@ function specializedRecordEvent(record: ManualRecordForValor, ownerUserId = "") 
   return null;
 }
 
-export async function publishManualRecordToValor(record: ManualRecordForValor, ownerUserId = "") {
+export async function publishManualRecordToValor(record: ManualRecordForValor, ownerUserId = "", requestId = "") {
   const clientExternalKey = recordProducerKey(record);
   const safePayload = cleanForStrategy(record.payload) as JsonRecord;
   const genericPayload = {
@@ -342,8 +344,8 @@ export async function publishManualRecordToValor(record: ManualRecordForValor, o
     payload: genericPayload,
   });
   const specialized = specializedRecordEvent(record, ownerUserId);
-  const results = [await publish(generic)];
-  if (specialized) results.push(await publish(specialized));
+  const results = [await publish(generic, requestId)];
+  if (specialized) results.push(await publish(specialized, requestId));
   return results;
 }
 
@@ -351,6 +353,7 @@ export async function publishProducerToValor(
   input: unknown,
   soilAnalyses: unknown[] = [],
   ownerUserId = "",
+  requestId = "",
 ) {
   const producer = object(input);
   const clientExternalKey = clientKeyFor(producer);
@@ -389,13 +392,14 @@ export async function publishProducerToValor(
     ownerUserId,
     payload,
   });
-  return [await publish(producerEvent)];
+  return [await publish(producerEvent, requestId)];
 }
 
 export async function publishWorkspaceToValor(
   producers: unknown[],
   soilAnalyses: unknown[],
   ownerUserId = "",
+  requestId = "",
 ) {
   const queue = producers.slice(0, 1000);
   const results: ValorPublishResult[] = [];
@@ -403,7 +407,7 @@ export async function publishWorkspaceToValor(
   for (let index = 0; index < queue.length; index += concurrency) {
     const batch = queue.slice(index, index + concurrency);
     const published = await Promise.all(
-      batch.map((producer) => publishProducerToValor(producer, soilAnalyses, ownerUserId)),
+      batch.map((producer) => publishProducerToValor(producer, soilAnalyses, ownerUserId, requestId)),
     );
     results.push(...published.flat());
   }

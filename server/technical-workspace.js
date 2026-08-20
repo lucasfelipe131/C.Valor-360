@@ -3,6 +3,7 @@ import {createHash,createHmac} from 'node:crypto'
 import {existsSync} from 'node:fs'
 import {join} from 'node:path'
 import httpProxy from 'http-proxy'
+import {observe} from './observability.js'
 
 export const TECHNICAL_BASE_PATH='/tecnico'
 
@@ -38,6 +39,7 @@ export function signedTechnicalIdentity({session,tenantId,secret}){
   email:String(session.email).toLowerCase(),
   displayName:String(session.name||session.displayName||displayName(session.email)).slice(0,160),
   role:session.role==='admin'?'admin':'tester',
+  tenantId:String(tenantId),
   exp:Math.floor(Date.now()/1000)+120
  }
  const payload=Buffer.from(JSON.stringify(identity)).toString('base64url')
@@ -70,6 +72,7 @@ export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}
     PORT:String(internalPort),
     HOSTNAME:'127.0.0.1',
     VALOR360_EMBED_SECRET:embedSecret,
+    VALOR360_DEFAULT_TENANT_ID:runtimeConfig.defaultTenantId,
     VALOR360_WEBHOOK_URL:`http://127.0.0.1:${publicPort}/api/v1/integrations/manual/events`,
     VALOR360_WEBHOOK_SECRET:runtimeConfig.manualWebhookSecret
    },
@@ -87,6 +90,7 @@ export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}
   if(!signed){json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'});return true}
   request.headers['x-valor360-identity']=signed.payload
   request.headers['x-valor360-signature']=signed.signature
+  observe('integration.sent',{source:'manual-do-agronomo',operation:'proxy'})
   if(!url.pathname.startsWith(TECHNICAL_BASE_PATH))request.url=`${TECHNICAL_BASE_PATH}${request.url}`
   proxy.web(request,response,{target:`http://127.0.0.1:${internalPort}`})
   return true

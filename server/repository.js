@@ -1,5 +1,6 @@
 import {createHash,randomUUID} from 'node:crypto'
 import {hasTechnicalApproval} from './ingestion.js'
+import {assertTenantScope} from './tenant-scope.js'
 import {additionalNeedState,hasIndependentOpportunity,isQ27Opportunity,normalizeText,opportunityFromAdditionalNeed,q27OpportunityProvenance} from '../src/lib/profile.js'
 
 export function jsonbParameter(value){
@@ -254,8 +255,8 @@ export class ValRepository{
           (SELECT COUNT(*) FROM ndvi_observations WHERE tenant_id=$1 AND client_id=$2)::int ndvi,
           (SELECT COUNT(*) FROM integration_events WHERE tenant_id=$1 AND owner_user_id=$3 AND source='manual-do-agronomo' AND client_external_key=$4)::int manual_events,
           (SELECT MAX(occurred_at) FROM integration_events WHERE tenant_id=$1 AND owner_user_id=$3 AND source='manual-do-agronomo' AND client_external_key=$4) last_manual_sync`,[this.tenantId,client.id,ownerId,client.external_key]),
-        this.db.query(`SELECT producers,soil_analyses,updated_at FROM app_workspace_data WHERE workspace_id=$1 LIMIT 1`,[ownerId]),
-        this.db.query(`SELECT id,record_type,title,producer_name,updated_at FROM app_records WHERE workspace_id=$1 ORDER BY updated_at DESC LIMIT 300`,[ownerId])
+        this.db.query(`SELECT producers,soil_analyses,updated_at FROM app_workspace_data WHERE tenant_id=$1 AND workspace_id=$2 LIMIT 1`,[this.tenantId,ownerId]),
+        this.db.query(`SELECT id,record_type,title,producer_name,updated_at FROM app_records WHERE tenant_id=$1 AND workspace_id=$2 ORDER BY updated_at DESC LIMIT 300`,[this.tenantId,ownerId])
       ])
       const business=businessResult.rows[0]||{}
       const commercial=derivedCommercial(client.commercial_profile)
@@ -359,6 +360,7 @@ export class ValRepository{
   }
 
   async getClientContext({tenantId=this.tenantId,clientId,client={},ownerId}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
     if(!this.db.configured)return {client,profile:{answers:client.profileAnswers||{},evidence:client.profileEvidence||[],assessedAt:client.profileUpdatedAt||null,validUntil:client.profileValidUntil||null},signals:this.fallback().val.signals.filter(item=>!clientId||item.clientExternalKey===clientId).slice(-20),learning:this.fallbackLearning(clientId),memories:[],businessHistory:[],visits:[],interactions:[],opportunities:[],properties:[],fieldReports:[],soilAnalyses:[],ndviObservations:[],manualRecords:[],priorRecommendations:[]}
     try{
       const result=await this.db.query(`SELECT c.*,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.answers,p.evidence profile_evidence,p.source_survey_id,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,
@@ -408,46 +410,52 @@ export class ValRepository{
   }
 
   async createAttachment({tenantId=this.tenantId,ownerId,clientId,originalName,mimeType,sizeBytes,dataBase64}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
     const id=randomUUID();const sha256=createHash('sha256').update(dataBase64).digest('hex')
     if(!this.db.configured){const store=this.fallback();const duplicate=store.val.attachments.find(item=>item.ownerId===ownerId&&item.clientId===clientId&&item.sha256===sha256);if(duplicate)return attachmentRecord(duplicate);const item={id,ownerId,clientId,client_external_key:clientId,original_name:originalName,mime_type:mimeType,size_bytes:sizeBytes,content_base64:dataBase64,sha256,status:'received',analysis:{},created_at:new Date().toISOString(),updated_at:new Date().toISOString()};store.val.attachments.push(item);store.val.attachments=store.val.attachments.slice(-200);this.saveStore(store);return attachmentRecord(item)}
     try{const result=await this.db.query("INSERT INTO val_attachments (id,tenant_id,consultant_id,client_id,original_name,mime_type,size_bytes,content_base64,sha256,status) SELECT $1,$2,$3,c.id,$5,$6,$7,$8,$9,'received' FROM clients c WHERE c.tenant_id=$2 AND c.consultant_id=$3 AND (c.id::text=$4 OR c.external_key=$4) AND NOT EXISTS (SELECT 1 FROM val_attachments a WHERE a.tenant_id=$2 AND a.consultant_id=$3 AND a.client_id=c.id AND a.sha256=$9 AND a.status<>'rejected') RETURNING *, (SELECT external_key FROM clients WHERE id=client_id) client_external_key",[id,tenantId,ownerId,clientId,originalName,mimeType,sizeBytes,dataBase64,sha256]);if(result.rows[0])return attachmentRecord(result.rows[0]);const duplicate=await this.db.query("SELECT a.*,c.external_key client_external_key FROM val_attachments a JOIN clients c ON c.id=a.client_id AND c.tenant_id=a.tenant_id WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND (c.id::text=$3 OR c.external_key=$3) AND a.sha256=$4 AND a.status<>'rejected' ORDER BY a.created_at DESC LIMIT 1",[tenantId,ownerId,clientId,sha256]);if(duplicate.rows[0])return attachmentRecord(duplicate.rows[0]);throw domainError('Produtor não encontrado na sua carteira.',404)}catch(error){if(error.statusCode)throw error;throw serviceError('O arquivo não pôde ser salvo na nuvem.')}
   }
 
   async listAttachments({tenantId=this.tenantId,ownerId,clientId,limit=20}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
     if(!this.db.configured)return this.fallback().val.attachments.filter(item=>item.ownerId===ownerId&&item.clientId===clientId&&item.status!=='rejected').slice(-limit).reverse().map(attachmentRecord)
     try{const result=await this.db.query("SELECT a.*,NULL::text content_base64,c.external_key client_external_key FROM val_attachments a JOIN clients c ON c.id=a.client_id AND c.tenant_id=a.tenant_id WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND (c.id::text=$3 OR c.external_key=$3) AND a.status<>'rejected' ORDER BY a.created_at DESC LIMIT $4",[tenantId,ownerId,clientId,Math.max(1,Math.min(100,Number(limit)||20))]);return result.rows.map(attachmentRecord)}catch{throw serviceError('Os arquivos deste produtor não puderam ser lidos.')}
   }
 
   async getAttachments({tenantId=this.tenantId,ownerId,clientId,ids=[]}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
     const unique=[...new Set((ids||[]).map(String))].slice(0,3);if(!unique.length)return []
     if(!this.db.configured)return this.fallback().val.attachments.filter(item=>item.ownerId===ownerId&&item.clientId===clientId&&unique.includes(String(item.id))).map(attachmentRecord)
     try{const result=await this.db.query("SELECT a.*,c.external_key client_external_key FROM val_attachments a JOIN clients c ON c.id=a.client_id AND c.tenant_id=a.tenant_id WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND (c.id::text=$3 OR c.external_key=$3) AND a.id=ANY($4::uuid[]) AND a.status<>'rejected' ORDER BY a.created_at",[tenantId,ownerId,clientId,unique]);return result.rows.map(attachmentRecord)}catch{throw serviceError('Os anexos selecionados não puderam ser lidos.')}
   }
 
   async getAttachment({tenantId=this.tenantId,ownerId,id}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
     if(!this.db.configured){const item=this.fallback().val.attachments.find(entry=>entry.ownerId===ownerId&&String(entry.id)===String(id)&&entry.status!=='rejected');return item?attachmentRecord(item):null}
     try{const result=await this.db.query("SELECT a.*,c.external_key client_external_key FROM val_attachments a JOIN clients c ON c.id=a.client_id AND c.tenant_id=a.tenant_id WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND a.id=$3 AND a.status<>'rejected' LIMIT 1",[tenantId,ownerId,id]);return result.rows[0]?attachmentRecord(result.rows[0]):null}catch{throw serviceError('O arquivo não pôde ser aberto.')}
   }
 
   async updateAttachment({tenantId=this.tenantId,ownerId,id,status,analysis}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
     const allowed=new Set(['interpreted','confirmed','stored','rejected']);if(!allowed.has(status))throw domainError('Estado de arquivo inválido.',400)
     if(!this.db.configured){const store=this.fallback();const item=store.val.attachments.find(entry=>entry.ownerId===ownerId&&String(entry.id)===String(id));if(!item)throw domainError('Arquivo não encontrado.',404);item.status=status;item.analysis=analysis||item.analysis||{};item.updated_at=new Date().toISOString();if(status==='confirmed')item.confirmed_at=item.updated_at;this.saveStore(store);return attachmentRecord(item)}
     try{const result=await this.db.query("UPDATE val_attachments a SET status=$4,analysis=COALESCE($5,analysis),updated_at=NOW(),confirmed_at=CASE WHEN $4='confirmed' THEN NOW() ELSE confirmed_at END FROM clients c WHERE c.id=a.client_id AND c.tenant_id=a.tenant_id AND a.tenant_id=$1 AND a.consultant_id=$2 AND a.id=$3 RETURNING a.*,c.external_key client_external_key",[tenantId,ownerId,id,status,analysis===undefined?null:jsonbParameter(analysis)]);if(!result.rows[0])throw domainError('Arquivo não encontrado.',404);return attachmentRecord(result.rows[0])}catch(error){if(error.statusCode)throw error;throw serviceError('O arquivo não pôde ser atualizado.')}
   }
 
   async recordRecommendation(record){
+    const tenantId=assertTenantScope(this.tenantId,record.tenantId||this.tenantId)
     const id=record.id||randomUUID()
     if(this.db.configured){
       try{
         await this.db.transaction(async connection=>{
           let clientId=null;let clientExternalKey=record.clientId||null
-          if(record.clientId){const resolved=await connection.query('SELECT id,external_key FROM clients WHERE tenant_id=$1 AND consultant_id=$3 AND (id::text=$2 OR external_key=$2) LIMIT 1',[record.tenantId||this.tenantId,record.clientId,record.ownerId]);clientId=resolved.rows[0]?.id||null;clientExternalKey=resolved.rows[0]?.external_key||clientExternalKey}
+          if(record.clientId){const resolved=await connection.query('SELECT id,external_key FROM clients WHERE tenant_id=$1 AND consultant_id=$3 AND (id::text=$2 OR external_key=$2) LIMIT 1',[tenantId,record.clientId,record.ownerId]);clientId=resolved.rows[0]?.id||null;clientExternalKey=resolved.rows[0]?.external_key||clientExternalKey}
           if(record.clientId&&!clientId)throw domainError('Produtor não encontrado na sua carteira.',404)
           const sourceIds=(record.advice?.evidence_used||[]).map(item=>item.source_id).filter(Boolean)
           const recommendationStatus=record.advice?.human_review?.required?'pending_review':'generated'
           await connection.query(`INSERT INTO val_recommendations (id,tenant_id,consultant_id,client_id,client_external_key,user_question,mode,model_version,prompt_version,input_context,source_ids,generated_content,confidence,status,created_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())`,[id,record.tenantId||this.tenantId,record.ownerId,clientId,clientExternalKey,record.question,record.mode,record.model,record.promptHash||null,jsonbParameter(record.context),jsonbParameter(sourceIds),jsonbParameter(record.advice),record.advice?.confidence?.score??null,recommendationStatus])
-          if(record.modelRun){const run=record.modelRun;await connection.query(`INSERT INTO model_runs (id,tenant_id,recommendation_id,model,prompt_version,latency_ms,input_tokens,output_tokens,status,error_code,error_details,provider_response_id,provider_request_id,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,[randomUUID(),record.tenantId||this.tenantId,id,run.model,run.promptVersion||null,run.latencyMs||null,run.inputTokens||null,run.outputTokens||null,run.status,run.errorCode||null,jsonbParameter(run.errorDetails),run.responseId||null,run.requestId||null])}
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())`,[id,tenantId,record.ownerId,clientId,clientExternalKey,record.question,record.mode,record.model,record.promptHash||null,jsonbParameter(record.context),jsonbParameter(sourceIds),jsonbParameter(record.advice),record.advice?.confidence?.score??null,recommendationStatus])
+          if(record.modelRun){const run=record.modelRun;await connection.query(`INSERT INTO model_runs (id,tenant_id,recommendation_id,model,prompt_version,latency_ms,input_tokens,output_tokens,status,error_code,error_details,provider_response_id,provider_request_id,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,[randomUUID(),tenantId,id,run.model,run.promptVersion||null,run.latencyMs||null,run.inputTokens||null,run.outputTokens||null,run.status,run.errorCode||null,jsonbParameter(run.errorDetails),run.responseId||null,run.requestId||null])}
         })
         return id
       }catch{throw serviceError('Não foi possível persistir a recomendação no banco configurado.')}
@@ -456,20 +464,22 @@ export class ValRepository{
   }
 
   async recordModelRun(record){
+    const tenantId=assertTenantScope(this.tenantId,record.tenantId||this.tenantId)
     const id=randomUUID()
     if(this.db.configured){
-      try{await this.db.query(`INSERT INTO model_runs (id,tenant_id,recommendation_id,model,prompt_version,latency_ms,input_tokens,output_tokens,status,error_code,error_details,provider_response_id,provider_request_id,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,[id,record.tenantId||this.tenantId,record.recommendationId,record.model,record.promptVersion||null,record.latencyMs||null,record.inputTokens||null,record.outputTokens||null,record.status,record.errorCode||null,jsonbParameter(record.errorDetails),record.responseId||null,record.requestId||null]);return id}catch{throw serviceError('Não foi possível registrar a execução do modelo no banco configurado.')}
+      try{await this.db.query(`INSERT INTO model_runs (id,tenant_id,recommendation_id,model,prompt_version,latency_ms,input_tokens,output_tokens,status,error_code,error_details,provider_response_id,provider_request_id,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,[id,tenantId,record.recommendationId,record.model,record.promptVersion||null,record.latencyMs||null,record.inputTokens||null,record.outputTokens||null,record.status,record.errorCode||null,jsonbParameter(record.errorDetails),record.responseId||null,record.requestId||null]);return id}catch{throw serviceError('Não foi possível registrar a execução do modelo no banco configurado.')}
     }
     const store=this.fallback();store.val.modelRuns.push({...record,id,createdAt:new Date().toISOString()});store.val.modelRuns=store.val.modelRuns.slice(-1000);this.saveStore(store);return id
   }
 
   async recordFeedback(feedback){
+    const tenantId=assertTenantScope(this.tenantId,feedback.tenantId||this.tenantId)
     const id=randomUUID()
     if(this.db.configured){
       try{
         const inserted=await this.db.query(`INSERT INTO val_feedback (id,tenant_id,recommendation_id,rating,outcome,value,reason,notes,created_at)
           SELECT $1,$2,$3,$4,$5,$6,$7,$8,NOW() FROM val_recommendations WHERE id=$3 AND tenant_id=$2 AND consultant_id=$9
-          ON CONFLICT (tenant_id,recommendation_id) DO UPDATE SET rating=EXCLUDED.rating,outcome=EXCLUDED.outcome,value=EXCLUDED.value,reason=EXCLUDED.reason,notes=EXCLUDED.notes,created_at=NOW() RETURNING id`,[id,feedback.tenantId||this.tenantId,feedback.recommendationId,feedback.rating,feedback.outcome||null,feedback.value??null,feedback.reason||null,feedback.notes||null,feedback.ownerId])
+          ON CONFLICT (tenant_id,recommendation_id) DO UPDATE SET rating=EXCLUDED.rating,outcome=EXCLUDED.outcome,value=EXCLUDED.value,reason=EXCLUDED.reason,notes=EXCLUDED.notes,created_at=NOW() RETURNING id`,[id,tenantId,feedback.recommendationId,feedback.rating,feedback.outcome||null,feedback.value??null,feedback.reason||null,feedback.notes||null,feedback.ownerId])
         if(!inserted.rowCount)throw new Error('recommendation-not-found')
         return inserted.rows[0].id
       }catch{throw serviceError('Não foi possível persistir o feedback no banco configurado.')}
@@ -478,6 +488,7 @@ export class ValRepository{
   }
 
   async ingestEvent({tenantId=this.tenantId,ownerId,event,signals=[]}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
     if(this.db.configured){
       try{
         return await this.db.transaction(async client=>{
@@ -525,6 +536,7 @@ export class ValRepository{
   }
 
   async ingestCommercialImport({tenantId=this.tenantId,ownerId,summary,clients,rows=[],mapping={}}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
     if(!this.db.configured)return {persisted:false}
     try{
       await this.db.transaction(async connection=>{
