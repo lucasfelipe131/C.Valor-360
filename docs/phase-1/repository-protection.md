@@ -9,7 +9,7 @@ Aplicar no GitHub sem exceção para administradores durante o piloto:
 3. dispensar aprovações antigas quando houver novos commits;
 4. exigir resolução de todas as conversas;
 5. exigir branch atualizada antes do merge;
-6. exigir os checks `npm test`, `npm run build` e `manual npm run build`;
+6. exigir os checks `npm test`, `npm run build`, `manual npm run build` e `phase1 gate staging`;
 7. bloquear force-push e exclusão da branch;
 8. impedir merge quando qualquer check estiver pendente ou vermelho.
 

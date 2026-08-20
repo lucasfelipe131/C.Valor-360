@@ -30,14 +30,16 @@ O primeiro `npm ci` falhou antes de alcançar o projeto porque o cache padrão a
 - ordenação, idempotência e imutabilidade por checksum de migrations;
 - natureza aditiva da migration expand.
 
-## Depois das alterações locais
+## Depois das alterações da fundação
 
 | Comando | Resultado |
 |---|---|
-| `npm test` | 324 passaram, 0 falharam, 0 ignorados |
+| `npm test` | 331 passaram, 0 falharam, 0 ignorados no CI final |
 | `npm run build` | passou; mesmo aviso preexistente de chunk |
 | `cd manual && npm run build` | passou, inclusive TypeScript e geração das rotas |
 | `npm run db:inventory` | passou; baseline intacto + uma migration versionada |
+
+Os 17 testes novos da Fase 1 cobrem engine, migrations, observabilidade, isolamento e o ensaio controlado de backup/restore.
 
 O smoke test local de `GET /live` preservou o UUID enviado em `X-Request-Id`, devolveu HTTP 200 e registrou `api.received`/`api.completed` com o mesmo ID e `tenant_ref` pseudonimizado.
 

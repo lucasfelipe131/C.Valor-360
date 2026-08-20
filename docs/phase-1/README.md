@@ -1,6 +1,6 @@
 # Passo 01 — Fundação de migração segura
 
-Status deste diretório: implementação local sobre o commit auditado `f405617405fb66811207fdf006c2fbdaebfb8c9d`. Nenhuma mudança foi aplicada à produção, ao GitHub remoto ou a um banco externo.
+Status deste diretório: implementação publicada na branch `phase1/foundation`, com PR em rascunho e sem merge. A comprovação final está em [`GATE_FASE_1_RESULTADO.md`](../../GATE_FASE_1_RESULTADO.md). Produção permaneceu intocada.
 
 ## Objetivo e limite
 
@@ -26,7 +26,7 @@ O Passo 02 não faz parte deste trabalho.
 - `server/val-engine.js`, prompts, metodologia, motores determinísticos e regras de segurança agronômica.
 - autenticação principal, contratos públicos de API, componentes React, identidade visual e navegação.
 - dados, IDs, tabelas legadas, lógica de arquivamento e separação do SOG.
-- configurações remotas de GitHub, Railway, staging e produção.
+- dados e serviços do Railway e qualquer configuração ou dado de produção.
 
 ## Migration prevista e implementada
 
@@ -51,8 +51,7 @@ A fase CONTRACT não está autorizada nem implementada. Ela só poderá validar 
 
 | Risco | Estado |
 |---|---|
-| `main` sem proteção remota, confirmado pela API do GitHub | Bloqueia o gate até configuração e verificação no GitHub |
-| Railway possui somente `production` para o projeto VAL; não há staging | Bloqueia restore seguro; produção permaneceu intocada |
+| Railway não permitiu criar staging persistente por indisponibilidade upstream | Gate comprovado em PostgreSQL 16 efêmero; repetir com volume representativo antes de deploy |
 | RLS ainda não habilitado | Segunda organização continua bloqueada; a proteção atual é sessão + guard + SQL tenant-aware |
 | Admin/telemetria do Manual nasceu como identidade global | Não habilitar segunda organização até o contrato de identidade organizacional ser fechado |
 | Composição por prototype | Congelada por caracterização; remoção pertence ao Passo 02 |
@@ -62,11 +61,11 @@ A fase CONTRACT não está autorizada nem implementada. Ela só poderá validar 
 
 | Critério | Evidência exigida | Estado local |
 |---|---|---|
-| Baseline preservado | testes pré e pós, builds principal e Manual | Implementado; revalidar no CI remoto |
-| Negativas cross-tenant | sessão, guard, repositório e Manual | Implementado em testes |
-| Schema sem drift impeditivo | `npm run db:drift` após migration em staging | Pendente de banco controlado |
-| Backup íntegro | dump custom + SHA-256 | Pendente de staging |
-| Restore comprovado | restore descartável, health query e contagens | Pendente de alvo controlado |
-| `main` protegida | PR, CODEOWNER, checks, sem force-push/delete | Pendente de configuração remota |
+| Baseline preservado | testes pré e pós, builds principal e Manual | Comprovado no CI |
+| Negativas cross-tenant | sessão, guard, repositório e Manual | Comprovado na origem e no restore |
+| Schema sem drift impeditivo | `npm run db:drift` após migration em staging | Comprovado; drift zero |
+| Backup íntegro | dump custom + SHA-256 | Comprovado |
+| Restore comprovado | restore descartável, health query e contagens | Comprovado em banco separado |
+| `main` protegida | PR, CODEOWNER, checks, sem force-push/delete | Comprovado no GitHub |
 
-O gate só pode ser declarado aprovado quando **todos** os itens estiverem verdes. Até lá, o status correto é: **Passo 01 implementado localmente; gate não concluído**.
+Todos os itens estão verdes. Resultado formal: **GATE APROVADO**, sem autorização automática para o Passo 02.
