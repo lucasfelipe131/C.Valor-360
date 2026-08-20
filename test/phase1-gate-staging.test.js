@@ -34,6 +34,7 @@ test('CI cria PostgreSQL efêmero e prova migração, isolamento, backup e resto
   assert.match(workflow,/npm run db:restore:verify/)
   assert.match(workflow,/node scripts\/phase1-restore-compare\.mjs/)
   assert.match(workflow,/retention-days: 7/)
+  assert.match(workflow,/include-hidden-files: true/)
   assert.doesNotMatch(workflow,/railway\.internal|production\.up\.railway\.app/)
 })
 
