@@ -11,8 +11,12 @@ import {deriveSignals,normalizeIntegrationEvent,requiresTechnicalSignature,verif
 import {normalizeGrainIntent,normalizeGrainMarketSnapshot,normalizeGrainProfile,intentStatuses} from './server/grain-intelligence.js'
 import {GrainRepository} from './server/grain-repository.js'
 import {ValRepository} from './server/repository.js'
+import {currentRequestContext,observe,requestIdFrom,runWithRequestContext,updateRequestContext} from './server/observability.js'
 import {publicStorageScope} from './server/storage-policy.js'
 import {ValEngine} from './server/val-engine.js'
+import {assertValRuntimeComposition} from './server/core/composition.js'
+import {legacyRecommendationResponse,ValCore} from './server/core/val-core.js'
+import {resolveCoreObjective} from './server/core/router.js'
 import {createValProgressTracker,normalizeValProgressRequestId} from './server/val-progress.js'
 import {createTechnicalWorkspace,isTechnicalWorkspaceRequest} from './server/technical-workspace.js'
 import {buildSurveyOptions,validateSurveyAnswers} from './server/survey-validation.js'
@@ -57,6 +61,7 @@ const feedbackOutcomes={used:'executed',adapted:'edited',scheduled:'scheduled',d
 const pipelineStages=new Set(['Diagnóstico','Proposta','Negociação','Fechado'])
 const validatedSurveyAnswers=input=>validateSurveyAnswers(input,surveyOptions)
 
+const runtimeComposition=assertValRuntimeComposition()
 const database=createDatabase(config)
 const auth=createAuth(config)
 const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,storageScope:auth.storageScope(session)}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,storageScope:'demo'}
@@ -64,6 +69,7 @@ const repository=new ValRepository({db:database,readStore,saveStore,tenantId:con
 const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const accessRepository=new AccessRepository({db:database,tenantId:config.defaultTenantId,runtimeConfig:config})
 const valEngine=new ValEngine({runtimeConfig:config,repository})
+const valCore=new ValCore({engine:valEngine,tenantId:config.defaultTenantId})
 const valProgress=createValProgressTracker()
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
@@ -72,10 +78,12 @@ const requestIdentity=request=>String(request.socket.remoteAddress||'unknown')
 const progressOwnerKey=(identity,request)=>String(identity?.id||identity?.email||requestIdentity(request))
 const demoIdentity=()=>({id:null,email:'demo@valor360.local',name:'Demonstração',role:'admin',tenantId:config.defaultTenantId,mustChangePassword:false,demo:true})
 async function sessionIdentity(request){
- if(!auth.configured)return config.demoMode?demoIdentity():null
+ if(!auth.configured){const identity=config.demoMode?demoIdentity():null;if(identity)updateRequestContext({tenantId:identity.tenantId,actorId:identity.id||identity.email});return identity}
  const tokenIdentity=auth.session(request)
  if(!tokenIdentity)return null
- return accessRepository.resolveSession(tokenIdentity)
+ const identity=await accessRepository.resolveSession(tokenIdentity)
+ if(identity)updateRequestContext({tenantId:identity.tenantId,actorId:identity.id||identity.email})
+ return identity
 }
 
 function parseCsv(text){
@@ -106,7 +114,7 @@ async function handleApi(request,response,url){
   if(auth.configured&&!await sessionIdentity(request))return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
   const databaseHealth=await database.health();const status=await valEngine.status(databaseHealth)
   const engineConfigured=Boolean(config.openaiApiKey&&auth.configured&&databaseHealth.ready)
-  return json(response,200,{...getPublicEngineConfig(),...status,mode:engineConfigured?'openai':config.openaiApiKey?'locked':'demonstration',configured:engineConfigured,keyConfigured:Boolean(config.openaiApiKey),securityReady:auth.configured})
+  return json(response,200,{...getPublicEngineConfig(),...status,mode:engineConfigured?'openai':config.openaiApiKey?'locked':'demonstration',configured:engineConfigured,keyConfigured:Boolean(config.openaiApiKey),securityReady:auth.configured,core:valCore.status(),composition:{version:runtimeComposition.version,order:[...runtimeComposition.order]}})
  }
  if(url.pathname==='/api/auth/session'&&request.method==='GET'){
   const session=await sessionIdentity(request)
@@ -128,15 +136,16 @@ async function handleApi(request,response,url){
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
- const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname==='/api/val/progress'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname==='/api/val/progress'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const identity=protectedPath?await sessionIdentity(request):null
  if(protectedPath&&auth.configured&&!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
  if(protectedPath&&identity?.mustChangePassword)return json(response,403,{error:'Troque a senha temporária antes de acessar a carteira.'})
  if(protectedPath&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para operar dados fora do modo demonstrativo.'})}
  if(storageScope==='public-survey'&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para acessar questionários fora do modo demonstrativo.'})}
- if((url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations')&&config.openaiApiKey&&!auth.configured)return json(response,503,{error:'Configure VAL_ADMIN_EMAIL, VAL_ADMIN_PASSWORD e VAL_SESSION_SECRET antes de ativar a IA em produção.'})
- if((url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations')&&config.openaiApiKey&&!database.configured)return json(response,503,{error:'Configure DATABASE_URL antes de ativar a IA com dados reais.'})
+ const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
+ if(valRecommendationPath&&config.openaiApiKey&&!auth.configured)return json(response,503,{error:'Configure VAL_ADMIN_EMAIL, VAL_ADMIN_PASSWORD e VAL_SESSION_SECRET antes de ativar a IA em produção.'})
+ if(valRecommendationPath&&config.openaiApiKey&&!database.configured)return json(response,503,{error:'Configure DATABASE_URL antes de ativar a IA com dados reais.'})
  if(url.pathname==='/api/admin/metrics'&&request.method==='GET')return json(response,200,await accessRepository.getAdminMetrics(identity,Number(url.searchParams.get('days')||30)))
  if(url.pathname==='/api/portfolio-admin/users'&&request.method==='GET')return json(response,200,{users:await accessRepository.listUsers(identity)})
  if(url.pathname==='/api/portfolio-admin/users'&&request.method==='POST')return json(response,201,await accessRepository.createUser(identity,await body(request)))
@@ -219,7 +228,7 @@ async function handleApi(request,response,url){
   response.writeHead(200,{...securityHeaders,'Content-Type':attachment.mimeType,'Content-Length':binary.length,'Content-Disposition':"inline; filename*=UTF-8''"+encodeURIComponent(attachment.originalName),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'})
   response.end(binary);return true
  }
- if((url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations')&&request.method==='POST'){
+ if(valRecommendationPath&&request.method==='POST'){
   const rateIdentity=identity?.id||identity?.email||requestIdentity(request)
   if(!consumeRateLimit('val',rateIdentity,config.aiRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de análises atingido. Aguarde alguns minutos.'})
   const payload=await body(request);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const message=String(payload.message||payload.question||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).trim().slice(0,3000)
@@ -231,10 +240,25 @@ async function handleApi(request,response,url){
   valProgress.start({requestId,ownerId:ownerKey,clientId,mode:requestMode})
   const controller=new AbortController();request.once('aborted',()=>controller.abort());response.once('close',()=>{if(!response.writableEnded)controller.abort()})
   try{
-   const result=await valEngine.answer({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,client:payload.client||{},message,attachmentIds,mode:requestMode,requestedStage:clean(payload.requestedStage),signal:controller.signal,onProgress:stage=>valProgress.update({requestId,ownerId:ownerKey,stage})})
+   observe('val.answer.started',{mode:requestMode,attachmentCount:attachmentIds.length})
+   const actorId=String(identity?.id||identity?.email||'demo@valor360.local')
+   const organizationId=String(identity?.tenantId||config.defaultTenantId)
+   const requestedStage=clean(payload.requestedStage)
+   const requestEnvelope=valCore.createRequest({
+    request_id:currentRequestContext()?.requestId,
+    organization_id:organizationId,
+    actor:{id:actorId,role:identity?.role||'consultant'},
+    subject:{type:'client',id:clientId},
+    objective:resolveCoreObjective({message,requestedStage}),
+    context_refs:[{type:'client',id:clientId},...attachmentIds.map(id=>({type:'attachment',id}))],
+    policy_context:{resource:'val_recommendation',operation:'execute',scope:'own_portfolio',scope_ref:actorId}
+   })
+   const coreResponse=await valCore.execute(requestEnvelope,{engineInput:{tenantId:organizationId,ownerId:identity?.id,clientId,client:payload.client||{},message,attachmentIds,mode:requestMode,requestedStage:clean(payload.requestedStage),signal:controller.signal,onProgress:stage=>valProgress.update({requestId,ownerId:ownerKey,stage})}})
+   const result=coreResponse.recommendation
+   observe('val.answer.completed',{mode:requestMode,engineMode:result.engineMode,outcome:'ok'})
    valProgress.complete({requestId,ownerId:ownerKey})
    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:requestMode,engineMode:result.engineMode,attachments:attachmentIds.length}})
-   return json(response,200,{...result,requestId})
+   return json(response,200,url.pathname==='/api/v1/val/recommendations'?coreResponse:legacyRecommendationResponse(coreResponse,requestId))
   }catch(error){valProgress.fail({requestId,ownerId:ownerKey});throw error}
  }
  if(url.pathname==='/api/val/feedback'&&request.method==='POST'){
@@ -255,6 +279,7 @@ async function handleApi(request,response,url){
   if(storageScope==='manual-event'&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para receber integrações fora do modo demonstrativo.'})}
   let payload;try{payload=raw?JSON.parse(raw):{}}catch{return json(response,400,{error:'Evento JSON inválido.'})}
   const event=normalizeIntegrationEvent({...payload,source:'manual-do-agronomo'})
+  observe('integration.received',{source:'manual-do-agronomo',eventType:event.type})
   if(requiresTechnicalSignature(event.type)&&!signed)return json(response,401,{error:'Eventos técnicos validados exigem assinatura HMAC do corpo.'})
   const ownerId=database.configured?await accessRepository.resolveIntegrationOwner(event.ownerUserId):null
   const signals=deriveSignals(event);const result=await repository.ingestEvent({tenantId:config.defaultTenantId,ownerId,event,signals})
@@ -331,9 +356,17 @@ async function handleApi(request,response,url){
 
 technicalWorkspace.start()
 
-createServer(async(request,response)=>{
- let url
- try{url=new URL(request.url||'/',`http://${request.headers.host||'localhost'}`)}catch{return json(response,400,{error:'URL inválida.'})}
+createServer((request,response)=>{
+ const requestId=requestIdFrom(request)
+ request.headers['x-request-id']=requestId
+ response.setHeader('X-Request-Id',requestId)
+ let url=null
+ try{url=new URL(request.url||'/',`http://${request.headers.host||'localhost'}`)}catch{}
+ return runWithRequestContext({requestId,method:request.method,path:url?.pathname||'',tenantId:config.defaultTenantId},async()=>{
+ observe('api.received',{method:request.method,path:url?.pathname||''})
+ const started=Date.now()
+ response.once('finish',()=>observe('api.completed',{status:response.statusCode,durationMs:Date.now()-started,outcome:response.statusCode>=500?'error':'ok'}))
+ if(!url)return json(response,400,{error:'URL inválida.'})
  if(isTechnicalWorkspaceRequest(url.pathname)){
   try{if(technicalWorkspace.handle(request,response,url,await sessionIdentity(request)))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
  }
@@ -355,6 +388,12 @@ createServer(async(request,response)=>{
     :'no-cache'
  response.writeHead(200,{...securityHeaders,'Content-Type':mime[extension]||'application/octet-stream','Cache-Control':cacheControl})
  createReadStream(target).pipe(response)
+ }).catch(exception=>{
+  observe('api.unhandled',{outcome:'error',errorCode:String(exception?.code||'unhandled_error')})
+  if(response.headersSent){response.destroy(exception);return}
+  const status=Number(exception?.statusCode)||500
+  json(response,status,{error:status>=500?'Não foi possível processar a solicitação.':exception?.message||'Não foi possível processar a solicitação.'})
+ })
 }).listen(port,'0.0.0.0',()=>console.log(`VALOR 360 disponível na porta ${port}`))
 
 for(const signal of ['SIGTERM','SIGINT'])process.on(signal,async()=>{technicalWorkspace.close();await database.close();process.exit(0)})

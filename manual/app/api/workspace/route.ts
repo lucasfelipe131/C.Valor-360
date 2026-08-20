@@ -13,11 +13,13 @@ async function ensureWorkspaceSchema() {
     workspaceSchemaReady = pool.query(
       "CREATE TABLE IF NOT EXISTS app_workspace_data (" +
         "workspace_id UUID PRIMARY KEY," +
+        "tenant_id UUID NOT NULL DEFAULT '00000000-0000-4000-8000-000000000001'::uuid," +
         "producers JSONB NOT NULL DEFAULT '[]'::jsonb," +
         "soil_analyses JSONB NOT NULL DEFAULT '[]'::jsonb," +
         "professional_profile JSONB NOT NULL DEFAULT '{}'::jsonb," +
         "updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()" +
       ");" +
+      "ALTER TABLE app_workspace_data ADD COLUMN IF NOT EXISTS tenant_id UUID DEFAULT '00000000-0000-4000-8000-000000000001'::uuid;" +
       "ALTER TABLE app_workspace_data ADD COLUMN IF NOT EXISTS professional_profile JSONB NOT NULL DEFAULT '{}'::jsonb;",
     ).then(() => undefined).catch((error) => {
       workspaceSchemaReady = undefined;
@@ -40,8 +42,8 @@ export async function GET(request: NextRequest) {
     const pool = await ensureWorkspaceSchema();
     const result = await pool.query(
       'SELECT producers, soil_analyses AS "soilAnalyses", professional_profile AS "professionalProfile", updated_at AS "updatedAt" ' +
-      "FROM app_workspace_data WHERE workspace_id = $1 LIMIT 1",
-      [session.user.id],
+      "FROM app_workspace_data WHERE tenant_id = $1 AND workspace_id = $2 LIMIT 1",
+      [session.tenantId, session.user.id],
     );
     const row = result.rows[0];
     return noStore(NextResponse.json({
@@ -75,17 +77,20 @@ export async function PUT(request: NextRequest) {
     }
     const pool = await ensureWorkspaceSchema();
     const result = await pool.query(
-      "INSERT INTO app_workspace_data (workspace_id, producers, soil_analyses, professional_profile) " +
-      "VALUES ($1, $2::jsonb, $3::jsonb, $4::jsonb) " +
+      "INSERT INTO app_workspace_data (tenant_id, workspace_id, producers, soil_analyses, professional_profile) " +
+      "VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::jsonb) " +
       "ON CONFLICT (workspace_id) DO UPDATE SET " +
       "producers = EXCLUDED.producers, soil_analyses = EXCLUDED.soil_analyses, professional_profile = EXCLUDED.professional_profile, updated_at = NOW() " +
+      "WHERE app_workspace_data.tenant_id = EXCLUDED.tenant_id " +
       'RETURNING updated_at AS "updatedAt"',
-      [session.user.id, JSON.stringify(body.producers), JSON.stringify(body.soilAnalyses), JSON.stringify(body.professionalProfile)],
+      [session.tenantId, session.user.id, JSON.stringify(body.producers), JSON.stringify(body.soilAnalyses), JSON.stringify(body.professionalProfile)],
     );
+    if (!result.rows[0]) return NextResponse.json({ error: "Este workspace pertence a outra organização." }, { status: 409 });
     const integration = await publishWorkspaceToValor(
       body.producers,
       body.soilAnalyses,
       session.valor360OwnerId ?? session.user.id,
+      request.headers.get("x-request-id") ?? "",
     );
     return noStore(NextResponse.json({
       saved: true,

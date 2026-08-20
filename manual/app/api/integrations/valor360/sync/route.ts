@@ -38,10 +38,10 @@ export async function POST(request: NextRequest) {
               producer_name AS "producerName", payload,
               created_at AS "createdAt", updated_at AS "updatedAt"
        FROM app_records
-       WHERE workspace_id = $1
+       WHERE tenant_id = $1 AND workspace_id = $2
        ORDER BY updated_at DESC
        LIMIT 1000`,
-      [workspace],
+      [session.tenantId, workspace],
     );
     let producers: unknown[] = [];
     let soilAnalyses: unknown[] = [];
@@ -49,9 +49,9 @@ export async function POST(request: NextRequest) {
       const snapshot = await pool.query(
         `SELECT producers, soil_analyses AS "soilAnalyses"
          FROM app_workspace_data
-         WHERE workspace_id = $1
+         WHERE tenant_id = $1 AND workspace_id = $2
          LIMIT 1`,
-        [workspace],
+        [session.tenantId, workspace],
       );
       producers = Array.isArray(snapshot.rows[0]?.producers)
         ? snapshot.rows[0].producers
@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
       producers,
       soilAnalyses,
       session.valor360OwnerId ?? session.user.id,
+      request.headers.get("x-request-id") ?? "",
     );
     const recordResults = [];
     const concurrency = 6;
@@ -77,6 +78,7 @@ export async function POST(request: NextRequest) {
         batch.map((record) => publishManualRecordToValor(
           record,
           session.valor360OwnerId ?? session.user.id,
+          request.headers.get("x-request-id") ?? "",
         )),
       );
       recordResults.push(...results.flat());
