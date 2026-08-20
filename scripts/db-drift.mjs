@@ -1,9 +1,11 @@
 import pg from 'pg'
 import {expectedIndexContract,expectedSchemaContract} from './lib/schema-contract.mjs'
+import {assertControlledDatabase,databaseSsl} from './lib/controlled-database.mjs'
 
 const connectionString=String(process.env.DRIFT_DATABASE_URL||'').trim()
 if(!connectionString)throw new Error('Defina DRIFT_DATABASE_URL para um banco controlado; produção não é assumida.')
-const pool=new pg.Pool({connectionString,max:1,ssl:/railway\.internal/.test(connectionString)?undefined:{rejectUnauthorized:false}})
+assertControlledDatabase(connectionString,{confirmation:process.env.CONFIRM_CONTROLLED_STAGING,requiredConfirmation:'STAGING_ONLY'})
+const pool=new pg.Pool({connectionString,max:1,ssl:databaseSsl(connectionString)})
 try{
   const expected=await expectedSchemaContract()
   const expectedIndexes=await expectedIndexContract()
@@ -24,6 +26,7 @@ try{
   const missingIndexes=[...expectedIndexes].filter(([name,table])=>actualIndexes.get(name)!==table).map(([name])=>name)
   const unexpectedIndexes=[...actualIndexes.keys()].filter(name=>!expectedIndexes.has(name)&&!constraintIndexes.has(name))
   const result={checkedAt:new Date().toISOString(),database:(await pool.query('SELECT current_database() name')).rows[0].name,missingTables,missingColumns,missingIndexes,unexpectedTables,unexpectedColumns,unexpectedIndexes,driftDetected:Boolean(missingTables.length||missingColumns.length||missingIndexes.length||unexpectedTables.length||unexpectedColumns.length||unexpectedIndexes.length)}
+  if(process.env.DRIFT_EVIDENCE_FILE)await import('node:fs/promises').then(({writeFile})=>writeFile(process.env.DRIFT_EVIDENCE_FILE,JSON.stringify(result,null,2)))
   console.log(JSON.stringify(result,null,2))
   if(missingTables.length||missingColumns.length||missingIndexes.length||process.argv.includes('--strict')&&(unexpectedTables.length||unexpectedColumns.length||unexpectedIndexes.length))process.exitCode=1
 }finally{await pool.end()}

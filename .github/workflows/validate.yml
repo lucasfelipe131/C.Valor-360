@@ -56,3 +56,90 @@ jobs:
           cache-dependency-path: manual/package-lock.json
       - run: npm ci
       - run: npm run build
+
+  phase1-gate-staging:
+    name: phase1 gate staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gate
+          POSTGRES_PASSWORD: gate-only
+          POSTGRES_DB: val_staging
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gate -d val_staging"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_staging
+      STAGING_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_staging
+      DRIFT_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_staging
+      RESTORE_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_restore
+      SOURCE_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_staging
+      PG_SSL: "false"
+      VAL_DEMO_MODE: "false"
+      VAL_DEFAULT_TENANT_ID: 00000000-0000-4000-8000-000000000001
+      CONFIRM_CONTROLLED_STAGING: STAGING_ONLY
+      CONFIRM_CONTROLLED_RESTORE: RESTORE_ONLY
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare evidence directory
+        run: mkdir -p .gate .backups/staging
+      - name: Apply baseline and versioned migrations
+        run: npm run db:migrate | tee .gate/migrations.log
+      - name: Prove negative tenant isolation with synthetic data
+        env:
+          GATE_EVIDENCE_FILE: .gate/tenant-isolation-source.json
+        run: node scripts/phase1-staging-verify.mjs
+      - name: Verify schema drift
+        env:
+          DRIFT_EVIDENCE_FILE: .gate/drift.json
+        run: npm run db:drift -- --strict
+      - name: Create logical staging backup
+        env:
+          BACKUP_DIR: .backups/staging
+        run: npm run db:backup
+      - name: Select backup and create disposable restore database
+        run: |
+          BACKUP_FILE="$(find .backups/staging -maxdepth 1 -type f -name '*.dump' | sort | tail -n 1)"
+          test -n "$BACKUP_FILE"
+          echo "BACKUP_FILE=$BACKUP_FILE" >> "$GITHUB_ENV"
+          cp "$BACKUP_FILE.json" .gate/backup.json
+          psql "postgresql://gate:gate-only@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE val_restore"
+      - name: Restore backup into a different disposable database
+        env:
+          RESTORE_EVIDENCE_FILE: .gate/restore.json
+        run: npm run db:restore:verify
+      - name: Repeat tenant isolation checks after restore
+        env:
+          GATE_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_restore
+          GATE_VERIFY_ONLY: "true"
+          GATE_EVIDENCE_FILE: .gate/tenant-isolation-restored.json
+        run: node scripts/phase1-staging-verify.mjs
+      - name: Compare source and restored database
+        env:
+          COMPARE_EVIDENCE_FILE: .gate/restore-compare.json
+        run: node scripts/phase1-restore-compare.mjs
+      - name: Consolidate database gate evidence
+        run: node scripts/phase1-gate-manifest.mjs
+      - name: Upload controlled gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-gate-evidence-${{ github.run_id }}
+          path: |
+            .gate
+            .backups/staging/*.dump
+            .backups/staging/*.json
+          if-no-files-found: error
+          retention-days: 7
