@@ -113,6 +113,7 @@ export class ValCore{
     if(recommendation?.contextSnapshotId)this.observe('core.context.bound',{contextSnapshotId:recommendation.contextSnapshotId,contractVersion:recommendation.contextSnapshotVersion,outcome:'ok'})
     const evidence=evidenceRefs(recommendation)
     const missing=assumptions(recommendation)
+    const commercialModules=recommendation?.advice?.commercial_modules||{}
     const completedAt=this.clock().toISOString()
     const response=createResponseEnvelope({
       request_id:requestEnvelope.request_id,
@@ -132,6 +133,11 @@ export class ValCore{
         objective:requestEnvelope.objective,
         planned_modules:[...route.modules],
         module_runs:execution.module_runs,
+        commercial_modules:Array.isArray(commercialModules.modules_called)?commercialModules.modules_called:[],
+        behavioral_profile_version:recommendation?.advice?.behavioral_profile?.version||null,
+        decision_thesis_version:recommendation?.advice?.decision_thesis?.version||null,
+        value_plan_version:recommendation?.advice?.value_plan?.version||null,
+        context_snapshot_id:recommendation?.contextSnapshotId||commercialModules.context_snapshot_id||null,
         policy_decision:{allowed:policyDecision.allowed,policy_version:policyDecision.policy_version,scope:policyDecision.scope},
         started_at:startedAt,
         completed_at:completedAt

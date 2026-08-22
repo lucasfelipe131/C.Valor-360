@@ -132,7 +132,7 @@ function validateNextActions(nextActions,violations){
 function validateAudit(audit,violations){
   push(violations,plainObject(audit),'audit')
   if(!plainObject(audit))return
-  exactKeys(audit,new Set(['contract_version','request_id','organization_id','actor_ref','route_id','objective','planned_modules','module_runs','policy_decision','started_at','completed_at']),violations,'audit')
+  exactKeys(audit,new Set(['contract_version','request_id','organization_id','actor_ref','route_id','objective','planned_modules','module_runs','commercial_modules','behavioral_profile_version','decision_thesis_version','value_plan_version','context_snapshot_id','policy_decision','started_at','completed_at']),violations,'audit')
   push(violations,audit.contract_version==='val.core.audit.v1','audit.contract_version')
   push(violations,requestIdPattern.test(String(audit.request_id||'')),'audit.request_id')
   push(violations,text(audit.organization_id,180),'audit.organization_id')
@@ -141,6 +141,8 @@ function validateAudit(audit,violations){
   push(violations,text(audit.objective,120),'audit.objective')
   push(violations,Array.isArray(audit.planned_modules)&&audit.planned_modules.every(item=>text(item,80)),'audit.planned_modules')
   push(violations,Array.isArray(audit.module_runs),'audit.module_runs')
+  if(audit.commercial_modules!==undefined)push(violations,Array.isArray(audit.commercial_modules)&&audit.commercial_modules.every(item=>['MIC','MDI','MVV'].includes(item)),'audit.commercial_modules')
+  for(const key of ['behavioral_profile_version','decision_thesis_version','value_plan_version','context_snapshot_id'])if(audit[key]!==undefined&&audit[key]!==null)push(violations,text(audit[key],180),`audit.${key}`)
   if(Array.isArray(audit.module_runs))audit.module_runs.forEach((run,index)=>{
     push(violations,plainObject(run),`audit.module_runs[${index}]`)
     if(!plainObject(run))return
