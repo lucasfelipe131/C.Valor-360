@@ -86,6 +86,15 @@
             }
           }
         },
+        "commercial_modules": {
+          "type": "array",
+          "items": {"enum": ["MIC", "MDI", "MVV"]},
+          "uniqueItems": true
+        },
+        "behavioral_profile_version": {"type": ["string", "null"], "maxLength": 180},
+        "decision_thesis_version": {"type": ["string", "null"], "maxLength": 180},
+        "value_plan_version": {"type": ["string", "null"], "maxLength": 180},
+        "context_snapshot_id": {"type": ["string", "null"], "maxLength": 180},
         "policy_decision": {
           "type": "object",
           "additionalProperties": false,

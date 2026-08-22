@@ -3,7 +3,7 @@ import {createHash,randomUUID} from 'node:crypto'
 
 const requestContext=new AsyncLocalStorage()
 const uuidPattern=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-const allowedDetailKeys=new Set(['durationMs','rowCount','status','method','path','source','eventType','mode','operation','outcome','errorCode','engineMode','attachmentCount','routeId','moduleId','contractVersion','required','contextSnapshotId','memoryRefsConsidered','memoryRefsSelected','memoryRefsExcluded','exclusionReasonCounts','confidence','selectionPolicy'])
+const allowedDetailKeys=new Set(['durationMs','rowCount','status','method','path','source','eventType','mode','operation','outcome','errorCode','engineMode','attachmentCount','routeId','moduleId','contractVersion','required','contextSnapshotId','memoryRefsConsidered','memoryRefsSelected','memoryRefsExcluded','exclusionReasonCounts','confidence','selectionPolicy','behaviorProfileVersion','decisionThesisVersion','valuePlanVersion','modulesCalled','scenarioFixture'])
 const staticPathSegments=new Set(['api','v1','live','health','val','core','status','auth','session','login','logout','password','admin','metrics','portfolio-admin','users','reset-password','usage','events','grains','bootstrap','profiles','intents','market','technical','attachments','progress','chat','recommendations','feedback','intelligence','imports','import','google-sheet','visits','opportunities','surveys','invitations','clients','context','overview','from-survey','integrations','manual','tecnico'])
 
 const reference=value=>value?createHash('sha256').update(String(value)).digest('hex').slice(0,16):undefined

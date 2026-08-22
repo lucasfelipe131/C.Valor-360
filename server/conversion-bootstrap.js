@@ -12,6 +12,7 @@ import {prepareConversationThread} from './conversation-thread-context.js'
 import {languageEnhancerVersion,preserveEnhancedLanguage} from './language-enhancer.js'
 import {buildPortfolioRadar} from './portfolio-radar.js'
 import {enforceValSpecificity,mergeStructuredReasoning,resolveStructuredReasoningRoute,specificityVersion} from './val-specificity.js'
+import {attachCommercialComposition} from './commercial/composition.js'
 
 const PATCHED=Symbol.for('valor360.conversion-core.patched')
 export const conversionCompositionVersion='conversion-bootstrap-v1'
@@ -75,7 +76,8 @@ function finalAdvice(advice,rawContext,message,usedGenerativeAi=false){
   const merged=mergeStructuredReasoning(enriched,advice||{},context,effectiveMessage,{usedGenerativeAi})
   const normalized=normalizeAdviceForValUi(merged,conversion)
   const specific=enforceValSpecificity(normalized,context,effectiveMessage,{usedGenerativeAi,route:orchestration.route})
-  return {context,thread,conversion,orchestration,advice:specific}
+  const commercial=attachCommercialComposition(specific,{context,message:effectiveMessage,conversion,orchestration})
+  return {context,thread,conversion,orchestration,advice:commercial}
 }
 
 function deterministicDecision(context,effectiveMessage,originalMessage,input){

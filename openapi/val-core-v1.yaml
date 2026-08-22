@@ -58,7 +58,7 @@ paths:
   /api/v1/val/recommendations:
     post:
       summary: Executa a mesma ValEngine e devolve ResponseEnvelope v1
-      description: O servidor deriva organization_id, actor e policy_context da sessão; esses campos não são aceitos do cliente. A recomendação inclui, de forma aditiva, contextSnapshotId e contextSnapshotVersion para apontar ao ContextSnapshot v1 persistido como entidade tenant-safe; a cópia em input_context permanece apenas por compatibilidade.
+      description: O servidor deriva organization_id, actor e policy_context da sessão; esses campos não são aceitos do cliente. A recomendação inclui, de forma aditiva, contextSnapshotId/contextSnapshotVersion e os artefatos opcionais behavioral_profile, decision_thesis e value_plan. As APIs legadas e seus campos permanecem compatíveis.
       security:
         - sessionCookie: []
       parameters:
@@ -131,3 +131,11 @@ components:
       $ref: '../contracts/v1/memory-record.schema.json'
     ContextSnapshot:
       $ref: '../contracts/v1/context-snapshot.schema.json'
+    BehavioralProfile:
+      $ref: '../contracts/v1/behavioral-profile.schema.json'
+    QuestionnaireDefinition:
+      $ref: '../contracts/v1/questionnaire-definition.schema.json'
+    DecisionThesis:
+      $ref: '../contracts/v1/decision-thesis.schema.json'
+    ValuePlan:
+      $ref: '../contracts/v1/value-plan.schema.json'
