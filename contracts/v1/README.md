@@ -10,6 +10,10 @@ Os contratos desta pasta são aditivos e versionados. Eles não substituem os pa
 - `questionnaire-definition.schema.json`: contrato do Produtor 360 (27 perguntas no núcleo, 26 obrigatórias e 18 complementares opcionais).
 - `decision-thesis.schema.json`: tese posicionada ou bloqueio explícito para descoberta do MDI.
 - `value-plan.schema.json`: estratégia do MVV com no máximo três perguntas materiais.
+- `action-plan.schema.json`: até três prioridades determinísticas do MEX, rastreáveis ao snapshot, tese e plano de valor.
+- `commitment.schema.json`: compromisso formal com owner, prazo, critério, lifecycle e evidência.
+- `insight-card.schema.json`: unidade acionável e expirável do VIS, filtrada por tenant, ator e papel.
+- `prepare-visit.schema.json`: apresentação de preparação vinculada à visita e aos contratos das Fases 3–5.
 - contratos antigos permanecem disponíveis em `/api/val/chat` e `/api/val/recommendations` por meio do adaptador legado.
 
 Uma futura versão deve receber novo identificador e novos arquivos. Os schemas v1 não podem ser alterados de forma incompatível.

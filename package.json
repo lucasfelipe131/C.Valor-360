@@ -13,6 +13,7 @@
     "start": "node server/start.js",
     "test": "node --test",
     "test:phase2:smoke": "node scripts/phase2-smoke.mjs",
+    "test:phase5:smoke": "node scripts/phase5-smoke.mjs",
     "db:migrate": "node server/migrate.js",
     "db:inventory": "node scripts/db-inventory.mjs",
     "db:drift": "node scripts/db-drift.mjs",
