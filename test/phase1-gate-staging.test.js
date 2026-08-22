@@ -30,12 +30,25 @@ test('CI cria PostgreSQL efêmero e prova migração, isolamento, backup e resto
   assert.match(workflow,/image: postgres:16/)
   assert.match(workflow,/POSTGRES_DB: val_staging/)
   assert.match(workflow,/node scripts\/phase1-staging-verify\.mjs/)
+  assert.match(workflow,/GATE_ALLOW_PHASE3_EMPTY_FIXTURE: "true"/)
   assert.match(workflow,/npm run db:backup/)
   assert.match(workflow,/npm run db:restore:verify/)
   assert.match(workflow,/node scripts\/phase1-restore-compare\.mjs/)
   assert.match(workflow,/retention-days: 7/)
   assert.match(workflow,/include-hidden-files: true/)
   assert.doesNotMatch(workflow,/railway\.internal|production\.up\.railway\.app/)
+})
+
+test('exceção do fixture vazio é explícita e não enfraquece a lista de clientes autorizados',()=>{
+  const verifier=read('scripts/phase1-staging-verify.mjs')
+  const fixtures=read('scripts/lib/phase1-gate-fixtures.mjs')
+  assert.match(verifier,/GATE_ALLOW_PHASE3_EMPTY_FIXTURE/)
+  assert.match(verifier,/material_rows/)
+  assert.match(fixtures,/verifyOnly/)
+  assert.match(fixtures,/allowPhase3EmptyFixture/)
+  assert.match(fixtures,/source,'phase3_gate'/)
+  assert.match(fixtures,/material_rows\),0/)
+  assert.match(fixtures,/assert\.deepEqual\(actual,expected\.sort\(\)/)
 })
 
 test('manifesto automático só aprova o banco após todas as evidências',()=>{

@@ -217,7 +217,7 @@ test('feedback atualizado retorna o id persistido pelo UPSERT',async()=>{
   assert.equal(id,'feedback-existente')
 })
 
-test('contexto técnico expira a versão ativa e insere uma nova memória append-only',async()=>{
+test('contexto técnico supera a versão ativa e insere uma nova memória append-only',async()=>{
   const calls=[]
   const query=async(sql,params=[])=>{
     calls.push({sql,params})
@@ -235,8 +235,31 @@ test('contexto técnico expira a versão ativa e insere uma nova memória append
   assert.match(expiration.sql,/status='expired'/)
   assert.match(expiration.sql,/valid_until=NOW\(\)/)
   assert.doesNotMatch(expiration.sql,/SET value=/)
-  assert.deepEqual(JSON.parse(insertion.params[2]),{property:'Fazenda Sul',crops:'',area:'',weeds:'',diseases:'',insects:'',soil:'Argiloso',goal:'Produtividade',competitors:'',notes:''})
-  assert.deepEqual(JSON.parse(insertion.params[3])[0].supersedes,['memory-1','memory-2'])
+  assert.match(insertion.sql,/'HYPOTHESIS','AGRONOMIC'/)
+  assert.match(insertion.sql,/observed_at,source_updated_at,freshness_policy_version,freshness_metadata/)
+  assert.deepEqual(JSON.parse(insertion.params[3]),{property:'Fazenda Sul',crops:'',area:'',weeds:'',diseases:'',insects:'',soil:'Argiloso',goal:'Produtividade',competitors:'',notes:''})
+  assert.deepEqual(JSON.parse(insertion.params[4])[0].supersedes,['memory-1','memory-2'])
+})
+
+test('saveTechnicalContext mantém o parâmetro do produtor como UUID ao derivar subject_id textual',async()=>{
+  const calls=[]
+  const clientDatabaseId='00000000-0000-4000-8000-000000000501'
+  const query=async(sql,params=[])=>{
+    calls.push({sql,params})
+    if(sql.startsWith('SELECT id FROM clients'))return {rowCount:1,rows:[{id:clientDatabaseId}]}
+    if(sql.startsWith('SELECT id FROM val_memories'))return {rowCount:0,rows:[]}
+    if(sql.startsWith('UPDATE val_memories'))return {rowCount:0,rows:[]}
+    return {rowCount:1,rows:[]}
+  }
+  const repository=repositoryWith({configured:true,transaction:work=>work({query})})
+  await repository.saveTechnicalContext('client-ext',{area:'620 ha'},'00000000-0000-4000-8000-000000000101')
+
+  const insertion=calls.find(call=>call.sql.includes('INSERT INTO val_memories'))
+  assert.ok(insertion)
+  assert.match(insertion.sql,/client_id,subject_type,subject_id[\s\S]*\$3,'client',\(\$3::uuid\)::text/)
+  assert.doesNotMatch(insertion.sql,/\$3,'client',\$3::text/)
+  assert.equal(insertion.params[2],clientDatabaseId)
+  assert.equal(insertion.params.length,11)
 })
 
 test('fallback demonstrativo também mantém histórico do contexto técnico',async()=>{
@@ -248,6 +271,7 @@ test('fallback demonstrativo também mantém histórico do contexto técnico',as
   assert.equal(store.val.technicalContextHistory.length,1)
   assert.equal(store.val.technicalContextHistory[0].property,'Versão 1')
   assert.equal(store.val.technicalContextHistory[0].status,'expired')
+  assert.equal(store.val.technicalContexts['client-ext'].supersedesId,store.val.technicalContextHistory[0].id)
 })
 
 test('importação não fabrica data ou desfecho e serializa o registro aceito',async()=>{

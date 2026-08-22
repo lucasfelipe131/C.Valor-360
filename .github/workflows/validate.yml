@@ -1,8 +1,7 @@
 name: Validate
 
 on:
-  pull_request:
-    branches: [main]
+  pull_request: {}
   push:
     branches: [main]
 
@@ -102,6 +101,10 @@ jobs:
         env:
           GATE_EVIDENCE_FILE: .gate/tenant-isolation-source.json
         run: node scripts/phase1-staging-verify.mjs
+      - name: Prove MMI and MCTX with synthetic data
+        env:
+          GATE_EVIDENCE_FILE: .gate/phase3-memory-context-source.json
+        run: node scripts/phase3-staging-verify.mjs
       - name: Verify schema drift
         env:
           DRIFT_EVIDENCE_FILE: .gate/drift.json
@@ -125,8 +128,15 @@ jobs:
         env:
           GATE_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_restore
           GATE_VERIFY_ONLY: "true"
+          GATE_ALLOW_PHASE3_EMPTY_FIXTURE: "true"
           GATE_EVIDENCE_FILE: .gate/tenant-isolation-restored.json
         run: node scripts/phase1-staging-verify.mjs
+      - name: Repeat MMI and MCTX checks after restore
+        env:
+          GATE_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_restore
+          GATE_VERIFY_ONLY: "true"
+          GATE_EVIDENCE_FILE: .gate/phase3-memory-context-restored.json
+        run: node scripts/phase3-staging-verify.mjs
       - name: Compare source and restored database
         env:
           COMPARE_EVIDENCE_FILE: .gate/restore-compare.json

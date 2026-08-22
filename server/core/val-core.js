@@ -13,7 +13,10 @@ const usefulText=value=>typeof value==='string'&&value.trim()?value.trim().slice
 
 function evidenceRefs(recommendation){
   const seen=new Set()
-  return list(recommendation?.advice?.evidence_used).flatMap(item=>{
+  const snapshotReference=recommendation?.contextSnapshotId?[
+    {source_id:recommendation.contextSnapshotId,source_type:recommendation.contextSnapshotVersion||'val.context_snapshot.v1'}
+  ]:[]
+  return [...snapshotReference,...list(recommendation?.advice?.evidence_used)].flatMap(item=>{
     const id=String(item?.id||item?.evidence_id||item?.source_id||'').trim().slice(0,180)
     if(!id||seen.has(id))return []
     seen.add(id)
@@ -93,13 +96,21 @@ export class ValCore{
     }
     const route=routeCoreRequest(requestEnvelope)
     this.observe('core.route.selected',{routeId:route.route_id,contractVersion:coreRouterVersion})
+    const contextualEngineInput={...engineInput,contextRequest:{
+      requestId:requestEnvelope.request_id,
+      objective:requestEnvelope.objective,
+      actorRole:requestEnvelope.actor.role,
+      scope:requestEnvelope.policy_context.scope,
+      contextRefs:requestEnvelope.context_refs
+    }}
     const execution=await executeModulePlan({
       plan:route.execution_plan,
-      registry:{LEGACY_VAL_ENGINE:()=>this.engine.answer(engineInput)},
-      input:{requestEnvelope,engineInput,route},
+      registry:{LEGACY_VAL_ENGINE:()=>this.engine.answer(contextualEngineInput)},
+      input:{requestEnvelope,engineInput:contextualEngineInput,route},
       observeFn:this.observe
     })
     const recommendation=execution.results.LEGACY_VAL_ENGINE
+    if(recommendation?.contextSnapshotId)this.observe('core.context.bound',{contextSnapshotId:recommendation.contextSnapshotId,contractVersion:recommendation.contextSnapshotVersion,outcome:'ok'})
     const evidence=evidenceRefs(recommendation)
     const missing=assumptions(recommendation)
     const completedAt=this.clock().toISOString()

@@ -1,6 +1,8 @@
 import {createHash,randomUUID} from 'node:crypto'
 import {hasTechnicalApproval} from './ingestion.js'
 import {assertTenantScope} from './tenant-scope.js'
+import {observe} from './observability.js'
+import {buildContextSnapshot,contextSnapshotVersion} from './memory/context-snapshot.js'
 import {additionalNeedState,hasIndependentOpportunity,isQ27Opportunity,normalizeText,opportunityFromAdditionalNeed,q27OpportunityProvenance} from '../src/lib/profile.js'
 
 export function jsonbParameter(value){
@@ -134,11 +136,42 @@ const visitRecord=row=>({id:row.id,clientId:row.client_external_key||row.client_
 const attachmentRecord=row=>({id:String(row.id),clientId:row.client_external_key||String(row.client_id||''),originalName:row.original_name,mimeType:row.mime_type,sizeBytes:Number(row.size_bytes||0),sha256:row.sha256,status:row.status,analysis:jsonObject(row.analysis),createdAt:iso(row.created_at),updatedAt:iso(row.updated_at),confirmedAt:iso(row.confirmed_at),...(row.content_base64?{dataBase64:row.content_base64}:{})})
 const opportunityRecord=row=>({id:`o-${row.client_external_key||row.client_id}`,databaseId:row.id,clientId:row.client_external_key||row.client_id,title:row.title,value:row.estimated_value==null?0:Number(row.estimated_value),probability:row.probability==null?null:Number(row.probability),stage:row.stage||'Diagnóstico',candidateKey:row.evidence?.find?.(item=>item?.candidateKey)?.candidateKey||row.external_key||'',stageEvidence:row.evidence?.find?.(item=>item?.type==='manual_advance'||item?.type==='manual_set'||item?.type==='won'),nextAction:row.next_action||'',nextActionAt:iso(row.next_action_at),updatedAt:iso(row.updated_at)})
 
+function attachContextSnapshot(context,{tenantId,clientId,subjectId,ownerId,contextRequest={}}){
+  const snapshot=buildContextSnapshot(context,{
+    organizationId:tenantId,
+    subjectType:'client',
+    subjectId:String(subjectId||context?.client?.id||clientId||''),
+    actorId:ownerId,
+    role:contextRequest.actorRole||'consultant',
+    scope:contextRequest.scope||'own_portfolio',
+    objective:contextRequest.objective||'general_assistance',
+    requestId:contextRequest.requestId,
+    message:contextRequest.message
+  })
+  const exclusionReasonCounts=snapshot.selection.exclusion_reason_codes.reduce((counts,item)=>{
+    for(const code of item.reason_codes)counts[code]=(counts[code]||0)+1
+    return counts
+  },{})
+  observe('context.snapshot.built',{
+    contextSnapshotId:snapshot.context_snapshot_id,
+    contractVersion:contextSnapshotVersion,
+    memoryRefsConsidered:snapshot.selection.considered_refs.length,
+    memoryRefsSelected:snapshot.selection.selected_refs.length,
+    memoryRefsExcluded:snapshot.selection.excluded_refs.length,
+    exclusionReasonCounts:Object.entries(exclusionReasonCounts).sort().map(([code,count])=>`${code}:${count}`).join(',')||'none',
+    confidence:snapshot.confidence.level,
+    selectionPolicy:snapshot.selection.policy_version,
+    durationMs:snapshot.selection.latency_ms,
+    outcome:'ok'
+  })
+  return {...context,memoryHistory:Array.isArray(context.memoryHistory)?context.memoryHistory:context.memories||[],contextSnapshot:snapshot}
+}
+
 export class ValRepository{
   constructor({db,readStore,saveStore,tenantId}){this.db=db;this.readStore=readStore;this.saveStore=saveStore;this.tenantId=tenantId}
 
   fallback(){
-    const store=this.readStore();store.val||={recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[],modelRuns:[],technicalContexts:{}};store.val.modelRuns||=[];store.val.technicalContexts||={};store.val.attachments||=[];return store
+    const store=this.readStore();store.val||={recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[],modelRuns:[],technicalContexts:{}};store.val.modelRuns||=[];store.val.technicalContexts||={};store.val.attachments||=[];store.val.contextSnapshots||=[];return store
   }
 
   async listSurveys(ownerId){
@@ -359,9 +392,15 @@ export class ValRepository{
     try{const result=await this.db.query(`INSERT INTO opportunities (tenant_id,client_id,external_key,title,category,hypothesis,estimated_value,stage,next_action,next_action_at,evidence,created_at,updated_at) SELECT $1,client.id,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),NOW() FROM clients client WHERE client.tenant_id=$1 AND client.consultant_id=$12 AND (client.id::text=$2 OR client.external_key=$2) ON CONFLICT (tenant_id,client_id,external_key) WHERE external_key IS NOT NULL DO UPDATE SET title=EXCLUDED.title,category=EXCLUDED.category,hypothesis=EXCLUDED.hypothesis,estimated_value=EXCLUDED.estimated_value,stage=EXCLUDED.stage,next_action=EXCLUDED.next_action,next_action_at=EXCLUDED.next_action_at,evidence=EXCLUDED.evidence,updated_at=NOW() RETURNING opportunities.*,(SELECT external_key FROM clients WHERE id=opportunities.client_id) client_external_key`,[this.tenantId,String(input.clientId||''),externalKey,String(input.title||'Oportunidade').slice(0,220),String(input.category||'').slice(0,120)||null,String(input.hypothesis||'').slice(0,4000)||null,Number.isFinite(Number(input.value))?Math.max(0,Number(input.value)):null,String(input.stage||'Diagnóstico').slice(0,40),String(input.nextAction||'').slice(0,2000)||null,parsedDate(input.nextActionAt),jsonbParameter(evidence),ownerId]);if(!result.rowCount)throw domainError('Produtor não encontrado na sua carteira.',404);return opportunityRecord(result.rows[0])}catch(error){if(error.statusCode)throw error;throw serviceError('A oportunidade não pôde ser salva no PostgreSQL configurado.')}
   }
 
-  async getClientContext({tenantId=this.tenantId,clientId,client={},ownerId}){
+  async getClientContext({tenantId=this.tenantId,clientId,client={},ownerId,contextRequest={}}){
     tenantId=assertTenantScope(this.tenantId,tenantId)
-    if(!this.db.configured)return {client,profile:{answers:client.profileAnswers||{},evidence:client.profileEvidence||[],assessedAt:client.profileUpdatedAt||null,validUntil:client.profileValidUntil||null},signals:this.fallback().val.signals.filter(item=>!clientId||item.clientExternalKey===clientId).slice(-20),learning:this.fallbackLearning(clientId),memories:[],businessHistory:[],visits:[],interactions:[],opportunities:[],properties:[],fieldReports:[],soilAnalyses:[],ndviObservations:[],manualRecords:[],priorRecommendations:[]}
+    if(!this.db.configured){
+      const store=this.fallback()
+      const currentTechnical=store.val.technicalContexts[clientId]
+      const memoryHistory=[...(store.val.technicalContextHistory||[]),...(currentTechnical?[{...currentTechnical,clientId}]:[])].map(item=>({...item,tenant_id:tenantId,client_id:clientId,memory_type:'fact',memory_state:item.memoryState||'HYPOTHESIS',memory_domain:item.memoryDomain||'AGRONOMIC',key:'consultant_technical_context',value:Object.fromEntries(Object.entries(item).filter(([key])=>!['id','clientId','status','validFrom','validUntil','updatedAt','sourceRef','sourceType','supersedesId','memoryState','memoryDomain','observedAt','sourceUpdatedAt','freshnessPolicyVersion','freshnessMetadata'].includes(key))),source:'consultant_input',source_ref:item.sourceRef||`fallback_memory:${item.id||clientId}`,source_type:item.sourceType||'consultant_input',observed_at:item.observedAt||null,source_updated_at:item.sourceUpdatedAt||null,freshness_policy_version:item.freshnessPolicyVersion||null,freshness_metadata:item.freshnessMetadata||{},valid_from:item.validFrom||item.updatedAt,valid_until:item.validUntil,updated_at:item.updatedAt,id:item.id||`fallback-${clientId}`,supersedes_id:item.supersedesId||null,acl:{scope:'own_portfolio'}}))
+      const context={client,profile:{answers:client.profileAnswers||{},evidence:client.profileEvidence||[],assessedAt:client.profileUpdatedAt||null,validUntil:client.profileValidUntil||null},signals:store.val.signals.filter(item=>!clientId||item.clientExternalKey===clientId).slice(-20),learning:this.fallbackLearning(clientId),memories:memoryHistory.filter(item=>['proposed','verified'].includes(item.status)&&(!item.valid_until||new Date(item.valid_until)>new Date())),memoryHistory,businessHistory:[],visits:[],interactions:[],opportunities:[],properties:[],fieldReports:[],soilAnalyses:[],ndviObservations:[],manualRecords:[],priorRecommendations:[]}
+      return attachContextSnapshot(context,{tenantId,clientId,ownerId,contextRequest})
+    }
     try{
       const result=await this.db.query(`SELECT c.*,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.answers,p.evidence profile_evidence,p.source_survey_id,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,
         COALESCE(NULLIF(p.profile_snapshot,'{}'::jsonb),survey.result,'{}'::jsonb) profile_snapshot,
@@ -372,7 +411,8 @@ export class ValRepository{
         COALESCE((SELECT jsonb_agg(s ORDER BY s.created_at DESC) FROM (SELECT id,source_event_id,signal_type,severity,title,evidence,commercial_hypothesis,requires_agronomist,status,created_at FROM agronomic_signals WHERE tenant_id=$1 AND client_id=c.id ORDER BY created_at DESC LIMIT 20) s),'[]'::jsonb) signals,
         COALESCE((SELECT jsonb_build_object('wins',count(*) FILTER (WHERE outcome='won'),'losses',count(*) FILTER (WHERE outcome='lost'),'revenue',COALESCE(sum(value) FILTER (WHERE outcome='won'),0)) FROM business_events WHERE tenant_id=$1 AND client_id=c.id),'{}'::jsonb) learning,
         COALESCE((SELECT jsonb_build_object('rated',count(*),'average_rating',round(avg(f.rating)::numeric,2),'accepted',count(*) FILTER (WHERE f.outcome='accepted'),'edited',count(*) FILTER (WHERE f.outcome='edited'),'executed',count(*) FILTER (WHERE f.outcome='executed'),'won',count(*) FILTER (WHERE f.outcome='won'),'lost',count(*) FILTER (WHERE f.outcome='lost')) FROM val_feedback f JOIN val_recommendations r ON r.id=f.recommendation_id AND r.tenant_id=f.tenant_id AND r.consultant_id=$3 WHERE f.tenant_id=$1 AND (r.client_id=c.id OR r.client_external_key=c.external_key)),'{}'::jsonb) feedback_learning,
-        COALESCE((SELECT jsonb_agg(m ORDER BY m.valid_from DESC) FROM (SELECT id,memory_type,key,value,evidence,confidence,status,source,valid_from,valid_until FROM val_memories WHERE tenant_id=$1 AND client_id=c.id AND status IN ('verified','proposed') AND (valid_until IS NULL OR valid_until>NOW()) ORDER BY valid_from DESC LIMIT 50) m),'[]'::jsonb) memories,
+        COALESCE((SELECT jsonb_agg(m ORDER BY m.valid_from DESC) FROM (SELECT id,tenant_id,client_id,subject_type,subject_id,memory_type,memory_state,memory_domain,key,value,evidence,confidence,status,source,source_ref,source_type,observed_at,source_updated_at,freshness_policy_version,freshness_metadata,valid_from,valid_until,supersedes_id,created_at,updated_at,created_by,acl FROM val_memories WHERE tenant_id=$1 AND client_id=c.id AND status IN ('verified','proposed') AND (valid_until IS NULL OR valid_until>NOW()) ORDER BY valid_from DESC LIMIT 50) m),'[]'::jsonb) memories,
+        COALESCE((SELECT jsonb_agg(mh ORDER BY mh.valid_from DESC) FROM (SELECT id,tenant_id,client_id,subject_type,subject_id,memory_type,memory_state,memory_domain,key,value,evidence,confidence,status,source,source_ref,source_type,observed_at,source_updated_at,freshness_policy_version,freshness_metadata,valid_from,valid_until,supersedes_id,created_at,updated_at,created_by,acl FROM val_memories WHERE tenant_id=$1 AND (client_id=c.id OR (subject_type='organization' AND subject_id=$1::text)) ORDER BY valid_from DESC,updated_at DESC LIMIT 250) mh),'[]'::jsonb) memory_history,
         COALESCE((SELECT jsonb_agg(b ORDER BY b.occurred_at DESC) FROM (SELECT id,source,external_id,occurred_at,outcome,category,product,quantity,value,margin,currency,loss_reason,payload FROM business_events WHERE tenant_id=$1 AND client_id=c.id ORDER BY occurred_at DESC LIMIT 50) b),'[]'::jsonb) business_history,
         COALESCE((SELECT jsonb_agg(v ORDER BY COALESCE(v.updated_at,v.created_at) DESC) FROM (SELECT id,scheduled_at,objective,process_agreement,summary,next_commitment,next_action_at,status,created_at,updated_at FROM visits WHERE tenant_id=$1 AND client_id=c.id ORDER BY COALESCE(updated_at,created_at) DESC LIMIT 30) v),'[]'::jsonb) visits,
         COALESCE((SELECT jsonb_agg(i ORDER BY i.occurred_at DESC) FROM (SELECT id,visit_id,channel,direction,occurred_at,summary,commitments,source,source_external_id,created_at FROM interactions WHERE tenant_id=$1 AND client_id=c.id ORDER BY occurred_at DESC LIMIT 50) i),'[]'::jsonb) interactions,
@@ -382,14 +422,15 @@ export class ValRepository{
         COALESCE((SELECT jsonb_agg(analysis ORDER BY COALESCE(analysis.sampled_at,analysis.created_at::date) DESC) FROM (SELECT soil.id,soil.source,soil.external_id,soil.property_external_key,soil.field_external_key,soil.laboratory,soil.method,soil.depth_from_cm,soil.depth_to_cm,soil.sampled_at,soil.validated_flags,soil.validation_evidence,soil.validated_at,soil.created_at,COALESCE((SELECT jsonb_agg(measurement ORDER BY measurement.created_at DESC) FROM (SELECT id,sample_key,analyte,raw_value,raw_unit,normalized_value,normalized_unit,method,interpretation,confidence,created_at FROM soil_measurements WHERE tenant_id=$1 AND analysis_id=soil.id ORDER BY created_at DESC LIMIT 100) measurement),'[]'::jsonb) measurements FROM soil_analyses soil WHERE soil.tenant_id=$1 AND soil.client_id=c.id ORDER BY COALESCE(soil.sampled_at,soil.created_at::date) DESC LIMIT 20) analysis),'[]'::jsonb) soil_analyses,
         COALESCE((SELECT jsonb_agg(ndvi ORDER BY ndvi.observed_at DESC) FROM (SELECT id,source,external_id,property_external_key,field_external_key,index_name,observed_at,sensor,resolution_m,cloud_percent,processing_version,geometry_version,statistics,anomaly,validated_at,created_at FROM ndvi_observations WHERE tenant_id=$1 AND client_id=c.id ORDER BY observed_at DESC LIMIT 30) ndvi),'[]'::jsonb) ndvi_observations,
         COALESCE((SELECT jsonb_agg(manual_record ORDER BY manual_record.occurred_at DESC) FROM (SELECT id,external_id,event_type,occurred_at,property_external_key,field_external_key,payload,status,ingested_at FROM integration_events WHERE tenant_id=$1 AND owner_user_id=$3 AND source='manual-do-agronomo' AND client_external_key=c.external_key AND event_type IN ('manual.record.saved','manual.producer.updated','manual.workspace.updated') ORDER BY occurred_at DESC LIMIT 40) manual_record),'[]'::jsonb) manual_records,
-        COALESCE((SELECT jsonb_agg(recommendation ORDER BY recommendation.created_at DESC) FROM (SELECT val_recommendation.id,val_recommendation.user_question,val_recommendation.mode,val_recommendation.model_version,val_recommendation.status,val_recommendation.generated_content->>'next_best_action' next_best_action,val_recommendation.generated_content->'methodology_state' methodology_state,val_recommendation.generated_content->'next_question' next_question,val_recommendation.generated_content->'decision_profile' decision_profile,val_recommendation.generated_content->'commercial_context' commercial_context,val_recommendation.created_at,(SELECT jsonb_build_object('rating',feedback.rating,'outcome',feedback.outcome,'notes',feedback.notes,'created_at',feedback.created_at) FROM val_feedback feedback WHERE feedback.tenant_id=$1 AND feedback.recommendation_id=val_recommendation.id LIMIT 1) feedback FROM val_recommendations val_recommendation WHERE val_recommendation.tenant_id=$1 AND val_recommendation.consultant_id=$3 AND (val_recommendation.client_id=c.id OR val_recommendation.client_external_key=c.external_key) ORDER BY val_recommendation.created_at DESC LIMIT 10) recommendation),'[]'::jsonb) prior_recommendations
+        COALESCE((SELECT jsonb_agg(recommendation ORDER BY recommendation.created_at DESC) FROM (SELECT val_recommendation.id,val_recommendation.user_question,val_recommendation.mode,val_recommendation.model_version,val_recommendation.status,val_recommendation.context_snapshot_id,val_recommendation.context_snapshot_version,val_recommendation.generated_content->>'next_best_action' next_best_action,val_recommendation.generated_content->'methodology_state' methodology_state,val_recommendation.generated_content->'next_question' next_question,val_recommendation.generated_content->'decision_profile' decision_profile,val_recommendation.generated_content->'commercial_context' commercial_context,val_recommendation.created_at,(SELECT jsonb_build_object('rating',feedback.rating,'outcome',feedback.outcome,'notes',feedback.notes,'created_at',feedback.created_at) FROM val_feedback feedback WHERE feedback.tenant_id=$1 AND feedback.recommendation_id=val_recommendation.id LIMIT 1) feedback FROM val_recommendations val_recommendation WHERE val_recommendation.tenant_id=$1 AND val_recommendation.consultant_id=$3 AND (val_recommendation.client_id=c.id OR val_recommendation.client_external_key=c.external_key) ORDER BY val_recommendation.created_at DESC LIMIT 10) recommendation),'[]'::jsonb) prior_recommendations
         FROM clients c LEFT JOIN LATERAL (SELECT * FROM client_profiles WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY assessed_at DESC LIMIT 1) p ON true
         LEFT JOIN survey_invitations survey ON survey.tenant_id=c.tenant_id AND survey.id=p.source_survey_id
         WHERE c.tenant_id=$1 AND c.consultant_id=$3 AND (c.id::text=$2 OR c.external_key=$2) LIMIT 1`,[tenantId,clientId,ownerId])
       if(!result.rows[0])throw Object.assign(new Error('Cliente não encontrado na base autorizada.'),{statusCode:404})
       const row=result.rows[0]
       const profileEvidence=Array.isArray(row.profile_evidence)?row.profile_evidence:[]
-      return {client:{...clientFromRow(row),profileSelfReported:profileEvidence.some(item=>item?.self_reported===true),profileEvidence},profile:{answers:jsonObject(row.answers),evidence:profileEvidence,assessedAt:iso(row.profile_assessed_at)||null,validUntil:iso(row.profile_valid_until)||null,sourceId:row.source_survey_id||null},signals:row.signals||[],learning:{...(row.learning||{}),recommendations:row.feedback_learning||{}},memories:row.memories||[],businessHistory:row.business_history||[],visits:row.visits||[],interactions:row.interactions||[],opportunities:row.opportunities||[],properties:row.properties||[],fieldReports:row.field_reports||[],soilAnalyses:row.soil_analyses||[],ndviObservations:row.ndvi_observations||[],manualRecords:row.manual_records||[],priorRecommendations:row.prior_recommendations||[]}
+      const context={client:{...clientFromRow(row),profileSelfReported:profileEvidence.some(item=>item?.self_reported===true),profileEvidence},profile:{answers:jsonObject(row.answers),evidence:profileEvidence,assessedAt:iso(row.profile_assessed_at)||null,validUntil:iso(row.profile_valid_until)||null,sourceId:row.source_survey_id||null},signals:row.signals||[],learning:{...(row.learning||{}),recommendations:row.feedback_learning||{}},memories:row.memories||[],memoryHistory:row.memory_history||row.memories||[],businessHistory:row.business_history||[],visits:row.visits||[],interactions:row.interactions||[],opportunities:row.opportunities||[],properties:row.properties||[],fieldReports:row.field_reports||[],soilAnalyses:row.soil_analyses||[],ndviObservations:row.ndvi_observations||[],manualRecords:row.manual_records||[],priorRecommendations:row.prior_recommendations||[]}
+      return attachContextSnapshot(context,{tenantId,clientId,subjectId:row.id,ownerId,contextRequest})
     }catch(error){if(error.statusCode===404)throw error;throw serviceError('O contexto do cliente não pôde ser lido no banco configurado.')}
   }
 
@@ -400,8 +441,19 @@ export class ValRepository{
 
   async saveTechnicalContext(clientId,input,ownerId){
     const allowed=['property','crops','area','weeds','diseases','insects','soil','goal','competitors','notes'];const value=Object.fromEntries(allowed.map(key=>[key,String(input?.[key]||'').trim().slice(0,key==='notes'?10_000:2_000)]));const observedAt=new Date().toISOString()
-    if(!this.db.configured){const store=this.fallback();store.val.technicalContextHistory||=[];const previous=store.val.technicalContexts[clientId];if(previous)store.val.technicalContextHistory.push({...previous,clientId,status:'expired',validUntil:observedAt});store.val.technicalContextHistory=store.val.technicalContextHistory.slice(-1000);store.val.technicalContexts[clientId]={...value,status:'proposed',updatedAt:observedAt};this.saveStore(store);return store.val.technicalContexts[clientId]}
-    try{return await this.db.transaction(async connection=>{const client=await connection.query('SELECT id FROM clients WHERE tenant_id=$1 AND consultant_id=$3 AND (id::text=$2 OR external_key=$2) LIMIT 1 FOR UPDATE',[this.tenantId,clientId,ownerId]);if(!client.rowCount)throw domainError('Cliente não encontrado na sua carteira.',404);const expired=await connection.query(`UPDATE val_memories SET status='expired',valid_until=NOW(),updated_at=NOW() WHERE tenant_id=$1 AND client_id=$2 AND key='consultant_technical_context' AND status IN ('proposed','verified') RETURNING id`,[this.tenantId,client.rows[0].id]);const evidence=jsonbParameter([{source:'consultant_input',observed_at:observedAt,verification:'pending',supersedes:(expired.rows||[]).map(item=>item.id)}]);await connection.query(`INSERT INTO val_memories (tenant_id,client_id,memory_type,key,value,evidence,status,source,valid_from,created_at,updated_at) VALUES ($1,$2,'fact','consultant_technical_context',$3,$4,'proposed','consultant_input',NOW(),NOW(),NOW())`,[this.tenantId,client.rows[0].id,jsonbParameter(value),evidence]);return {...value,status:'proposed',updatedAt:observedAt}})}catch(error){if(error.statusCode)throw error;throw serviceError('O complemento técnico não pôde ser salvo no PostgreSQL configurado.')}
+    if(!this.db.configured){const store=this.fallback();store.val.technicalContextHistory||=[];const previous=store.val.technicalContexts[clientId];const id=randomUUID();if(previous)store.val.technicalContextHistory.push({...previous,clientId,status:'expired',validUntil:observedAt});store.val.technicalContextHistory=store.val.technicalContextHistory.slice(-1000);store.val.technicalContexts[clientId]={...value,id,status:'proposed',memoryState:'HYPOTHESIS',memoryDomain:'AGRONOMIC',sourceRef:`consultant_input:${id}`,sourceType:'consultant_input',observedAt,sourceUpdatedAt:observedAt,freshnessPolicyVersion:'val.context.freshness.v1',freshnessMetadata:{domain:'AGRONOMIC',source_type:'consultant_input',observation_origin:'consultant_supplied'},supersedesId:previous?.id||null,validFrom:observedAt,updatedAt:observedAt};this.saveStore(store);return {...value,status:'proposed',updatedAt:observedAt}}
+    try{return await this.db.transaction(async connection=>{
+      const client=await connection.query('SELECT id FROM clients WHERE tenant_id=$1 AND consultant_id=$3 AND (id::text=$2 OR external_key=$2) LIMIT 1 FOR UPDATE',[this.tenantId,clientId,ownerId])
+      if(!client.rowCount)throw domainError('Cliente não encontrado na sua carteira.',404)
+      const previous=await connection.query(`SELECT id FROM val_memories WHERE tenant_id=$1 AND client_id=$2 AND key='consultant_technical_context' AND status IN ('proposed','verified') ORDER BY valid_from DESC,updated_at DESC LIMIT 1 FOR UPDATE`,[this.tenantId,client.rows[0].id])
+      const superseded=await connection.query(`UPDATE val_memories SET status='expired',valid_until=NOW(),updated_at=NOW() WHERE tenant_id=$1 AND client_id=$2 AND key='consultant_technical_context' AND status IN ('proposed','verified') RETURNING id`,[this.tenantId,client.rows[0].id])
+      const id=randomUUID()
+      const evidence=jsonbParameter([{source:'consultant_input',source_ref:`consultant_input:${id}`,observed_at:observedAt,verification:'pending',supersedes:(superseded.rows||[]).map(item=>item.id)}])
+      const acl=jsonbParameter({scope:'own_portfolio',roles:['admin','manager','consultant','technical_reviewer']})
+      const freshnessMetadata=jsonbParameter({domain:'AGRONOMIC',source_type:'consultant_input',observation_origin:'consultant_supplied'})
+      await connection.query(`INSERT INTO val_memories (id,tenant_id,client_id,subject_type,subject_id,memory_type,memory_state,memory_domain,key,value,evidence,status,source,source_ref,source_type,observed_at,source_updated_at,freshness_policy_version,freshness_metadata,valid_from,supersedes_id,created_by,acl,created_at,updated_at) VALUES ($1,$2,$3,'client',($3::uuid)::text,'fact','HYPOTHESIS','AGRONOMIC','consultant_technical_context',$4,$5,'proposed','consultant_input',$6,'consultant_input',$7,$7,'val.context.freshness.v1',$8,NOW(),$9,$10,$11,NOW(),NOW())`,[id,this.tenantId,client.rows[0].id,jsonbParameter(value),evidence,`consultant_input:${id}`,observedAt,freshnessMetadata,previous.rows[0]?.id||null,ownerId,acl])
+      return {...value,status:'proposed',updatedAt:observedAt}
+    })}catch(error){if(error.statusCode)throw error;throw serviceError('O complemento técnico não pôde ser salvo no PostgreSQL configurado.')}
   }
 
   fallbackLearning(clientId){
@@ -445,22 +497,46 @@ export class ValRepository{
   async recordRecommendation(record){
     const tenantId=assertTenantScope(this.tenantId,record.tenantId||this.tenantId)
     const id=record.id||randomUUID()
+    const snapshot=record.context?.contextSnapshot
+    if(snapshot&&String(snapshot.organization_id)!==String(tenantId))throw domainError('O ContextSnapshot pertence a outra organização.',403,'cross_tenant_context_snapshot_denied')
     if(this.db.configured){
       try{
         await this.db.transaction(async connection=>{
           let clientId=null;let clientExternalKey=record.clientId||null
           if(record.clientId){const resolved=await connection.query('SELECT id,external_key FROM clients WHERE tenant_id=$1 AND consultant_id=$3 AND (id::text=$2 OR external_key=$2) LIMIT 1',[tenantId,record.clientId,record.ownerId]);clientId=resolved.rows[0]?.id||null;clientExternalKey=resolved.rows[0]?.external_key||clientExternalKey}
           if(record.clientId&&!clientId)throw domainError('Produtor não encontrado na sua carteira.',404)
-          const sourceIds=(record.advice?.evidence_used||[]).map(item=>item.source_id).filter(Boolean)
+          const sourceIds=[...new Set([...(record.advice?.evidence_used||[]).map(item=>item.source_id),...(snapshot?.evidence_refs||[]).map(item=>item.id)].filter(Boolean))].slice(0,200)
           const recommendationStatus=record.advice?.human_review?.required?'pending_review':'generated'
-          await connection.query(`INSERT INTO val_recommendations (id,tenant_id,consultant_id,client_id,client_external_key,user_question,mode,model_version,prompt_version,input_context,source_ids,generated_content,confidence,status,created_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NOW())`,[id,tenantId,record.ownerId,clientId,clientExternalKey,record.question,record.mode,record.model,record.promptHash||null,jsonbParameter(record.context),jsonbParameter(sourceIds),jsonbParameter(record.advice),record.advice?.confidence?.score??null,recommendationStatus])
+          if(snapshot){
+            const selectedRefs=[...new Set(snapshot.selection?.selected_refs||[])]
+            const excludedRefs=[...new Set(snapshot.selection?.excluded_refs||[])]
+            const exclusionReasonCodes=[...new Set((snapshot.selection?.exclusion_reason_codes||[]).flatMap(item=>item?.reason_codes||[]))]
+            await connection.query(`INSERT INTO val_context_snapshots (id,tenant_id,request_id,actor_id,subject_type,subject_id,objective,contract_version,selection_policy_version,freshness_policy_version,selected_refs,excluded_refs,exclusion_reason_codes,confidence_level,snapshot_payload,generated_at,created_at)
+              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())
+              ON CONFLICT (id) DO NOTHING`,[snapshot.context_snapshot_id,tenantId,snapshot.request_id||null,record.ownerId,snapshot.subject?.type,snapshot.subject?.id,snapshot.objective,snapshot.contract_version,snapshot.selection?.policy_version,snapshot.freshness?.policy_version,selectedRefs,excludedRefs,exclusionReasonCodes,snapshot.confidence?.level||null,jsonbParameter(snapshot),snapshot.freshness?.generated_at])
+          }
+          await connection.query(`INSERT INTO val_recommendations (id,tenant_id,consultant_id,client_id,client_external_key,user_question,mode,model_version,prompt_version,input_context,source_ids,generated_content,confidence,status,context_snapshot_id,context_snapshot_version,created_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())`,[id,tenantId,record.ownerId,clientId,clientExternalKey,record.question,record.mode,record.model,record.promptHash||null,jsonbParameter(record.context),jsonbParameter(sourceIds),jsonbParameter(record.advice),record.advice?.confidence?.score??null,recommendationStatus,snapshot?.context_snapshot_id||null,snapshot?.contract_version||null])
           if(record.modelRun){const run=record.modelRun;await connection.query(`INSERT INTO model_runs (id,tenant_id,recommendation_id,model,prompt_version,latency_ms,input_tokens,output_tokens,status,error_code,error_details,provider_response_id,provider_request_id,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,[randomUUID(),tenantId,id,run.model,run.promptVersion||null,run.latencyMs||null,run.inputTokens||null,run.outputTokens||null,run.status,run.errorCode||null,jsonbParameter(run.errorDetails),run.responseId||null,run.requestId||null])}
         })
         return id
       }catch{throw serviceError('Não foi possível persistir a recomendação no banco configurado.')}
     }
-    const store=this.fallback();const {modelRun,...recommendation}=record;store.val.recommendations.push({...recommendation,id,createdAt:new Date().toISOString()});store.val.recommendations=store.val.recommendations.slice(-500);if(modelRun){store.val.modelRuns.push({...modelRun,recommendationId:id,id:randomUUID(),createdAt:new Date().toISOString()});store.val.modelRuns=store.val.modelRuns.slice(-1000)}this.saveStore(store);return id
+    const store=this.fallback();const {modelRun,...recommendation}=record
+    if(snapshot&&!store.val.contextSnapshots.some(item=>item.id===snapshot.context_snapshot_id))store.val.contextSnapshots.push({id:snapshot.context_snapshot_id,tenantId,ownerId:record.ownerId,requestId:snapshot.request_id||null,subject:snapshot.subject,objective:snapshot.objective,contractVersion:snapshot.contract_version,selectionPolicyVersion:snapshot.selection?.policy_version,freshnessPolicyVersion:snapshot.freshness?.policy_version,selectedRefs:[...(snapshot.selection?.selected_refs||[])],excludedRefs:[...(snapshot.selection?.excluded_refs||[])],exclusionReasonCodes:[...new Set((snapshot.selection?.exclusion_reason_codes||[]).flatMap(item=>item?.reason_codes||[]))],snapshot:structuredClone(snapshot),createdAt:new Date().toISOString()})
+    store.val.contextSnapshots=store.val.contextSnapshots.slice(-1000);store.val.recommendations.push({...recommendation,id,contextSnapshotId:snapshot?.context_snapshot_id||null,contextSnapshotVersion:snapshot?.contract_version||null,createdAt:new Date().toISOString()});store.val.recommendations=store.val.recommendations.slice(-500);if(modelRun){store.val.modelRuns.push({...modelRun,recommendationId:id,id:randomUUID(),createdAt:new Date().toISOString()});store.val.modelRuns=store.val.modelRuns.slice(-1000)}this.saveStore(store);return id
+  }
+
+  async getContextSnapshot({tenantId=this.tenantId,ownerId,id}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
+    if(!this.db.configured){
+      const stored=this.fallback().val.contextSnapshots.find(item=>String(item.id)===String(id)&&String(item.tenantId)===String(tenantId)&&String(item.ownerId)===String(ownerId))
+      return stored?structuredClone(stored.snapshot):null
+    }
+    try{
+      const result=await this.db.query(`SELECT snapshot_payload FROM val_context_snapshots WHERE tenant_id=$1 AND actor_id=$2 AND id=$3 LIMIT 1`,[tenantId,ownerId,id])
+      return result.rows[0]?.snapshot_payload||null
+    }catch{throw serviceError('O ContextSnapshot não pôde ser recuperado no banco configurado.')}
   }
 
   async recordModelRun(record){

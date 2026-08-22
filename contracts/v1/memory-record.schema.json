@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://val.local/contracts/v1/memory-record.schema.json",
+  "title": "VAL MemoryRecord v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "memory_id",
+    "organization_id",
+    "subject_type",
+    "subject_id",
+    "memory_type",
+    "memory_state",
+    "key",
+    "content",
+    "source_ref",
+    "source_type",
+    "observed_at",
+    "source_updated_at",
+    "freshness_policy_version",
+    "freshness_metadata",
+    "confidence",
+    "status",
+    "valid_from",
+    "valid_until",
+    "supersedes_id",
+    "created_at",
+    "updated_at",
+    "created_by",
+    "evidence_refs",
+    "acl"
+  ],
+  "properties": {
+    "contract_version": {"const": "val.memory.v1"},
+    "memory_id": {"type": "string", "minLength": 1, "maxLength": 180},
+    "organization_id": {"type": "string", "minLength": 1, "maxLength": 180},
+    "subject_type": {"enum": ["client", "property", "field", "organization", "user", "visit", "opportunity"]},
+    "subject_id": {"type": "string", "minLength": 1, "maxLength": 180},
+    "memory_type": {"enum": ["PRODUCER", "COMMERCIAL", "AGRONOMIC", "BEHAVIORAL", "RELATIONSHIP", "ORGANIZATIONAL", "STRATEGIC"]},
+    "memory_state": {"enum": ["FACT", "INFERENCE", "HYPOTHESIS", "VALIDATED_KNOWLEDGE"]},
+    "key": {"type": "string", "minLength": 1, "maxLength": 180},
+    "content": {},
+    "source_ref": {"type": "string", "minLength": 1, "maxLength": 240},
+    "source_type": {"type": "string", "minLength": 1, "maxLength": 100},
+    "observed_at": {"type": ["string", "null"], "format": "date-time"},
+    "source_updated_at": {"type": ["string", "null"], "format": "date-time"},
+    "freshness_policy_version": {"type": ["string", "null"], "maxLength": 80},
+    "freshness_metadata": {"type": "object", "additionalProperties": true},
+    "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 100},
+    "status": {"enum": ["PROPOSED", "ACTIVE", "REJECTED", "EXPIRED", "SUPERSEDED"]},
+    "valid_from": {"type": ["string", "null"], "format": "date-time"},
+    "valid_until": {"type": ["string", "null"], "format": "date-time"},
+    "supersedes_id": {"type": ["string", "null"], "maxLength": 180},
+    "created_at": {"type": ["string", "null"], "format": "date-time"},
+    "updated_at": {"type": ["string", "null"], "format": "date-time"},
+    "created_by": {"type": ["string", "null"], "maxLength": 180},
+    "evidence_refs": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 240},
+          "source_type": {"type": "string", "minLength": 1, "maxLength": 100}
+        }
+      }
+    },
+    "acl": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scope"],
+      "properties": {
+        "scope": {"enum": ["own_portfolio", "organization", "restricted"]},
+        "roles": {"type": "array", "uniqueItems": true, "items": {"enum": ["admin", "manager", "consultant", "technical_reviewer"]}},
+        "actor_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 180}}
+      }
+    }
+  }
+}
