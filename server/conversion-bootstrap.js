@@ -187,7 +187,8 @@ export function installConversionComposition(){
       tenantId:input.tenantId,
       ownerId:input.ownerId,
       clientId:input.clientId,
-      client:input.client
+      client:input.client,
+      contextRequest:{...(input.contextRequest||{}),message:originalMessage}
     })
     const thread=prepareConversationThread(rawContext,originalMessage)
     const context=thread.context
@@ -257,6 +258,8 @@ export function installConversionComposition(){
       emitProgress(input,'complete')
       return {
         recommendationId,
+        contextSnapshotId:resolved.context.contextSnapshot?.context_snapshot_id||null,
+        contextSnapshotVersion:resolved.context.contextSnapshot?.contract_version||null,
         engineMode:'rules',
         engineArchitecture:'deterministic-specific-fallback',
         route:orchestration.route.mode,

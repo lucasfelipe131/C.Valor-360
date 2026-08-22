@@ -5,11 +5,13 @@ import {createAuth} from '../server/auth.js'
 import {createDatabase} from '../server/db.js'
 import {ValRepository} from '../server/repository.js'
 import {assertControlledDatabase,databaseSsl} from './lib/controlled-database.mjs'
+import {assertPhase1TenantAClients,phase3EmptyFixtureKey} from './lib/phase1-gate-fixtures.mjs'
 
 const connectionString=String(process.env.GATE_DATABASE_URL||process.env.STAGING_DATABASE_URL||'').trim()
 if(!connectionString)throw new Error('GATE_DATABASE_URL ou STAGING_DATABASE_URL é obrigatória.')
 const target=assertControlledDatabase(connectionString,{confirmation:process.env.CONFIRM_CONTROLLED_STAGING,requiredConfirmation:'STAGING_ONLY'})
 const verifyOnly=String(process.env.GATE_VERIFY_ONLY||'').toLowerCase()==='true'
+const allowPhase3EmptyFixture=String(process.env.GATE_ALLOW_PHASE3_EMPTY_FIXTURE||'').toLowerCase()==='true'
 const tenantA='00000000-0000-4000-8000-000000000001'
 const tenantB='00000000-0000-4000-8000-000000000002'
 const userA='00000000-0000-4000-8000-000000000101'
@@ -59,7 +61,23 @@ try{
   const repositoryB=repository(tenantB)
   const intelligenceA=await repositoryA.getIntelligence(userA)
   const intelligenceB=await repositoryB.getIntelligence(userB)
-  assert.deepEqual(intelligenceA.clients.map(item=>item.id),['gate-client-a'])
+  const phase3EmptyFixture=await database.query(`SELECT
+    c.external_key,c.tenant_id::text,c.consultant_id::text,c.name,c.status,c.source,
+    (
+      (SELECT COUNT(*) FROM client_profiles record WHERE record.tenant_id=c.tenant_id AND record.client_id=c.id)+
+      (SELECT COUNT(*) FROM properties record WHERE record.tenant_id=c.tenant_id AND record.client_id=c.id)+
+      (SELECT COUNT(*) FROM visits record WHERE record.tenant_id=c.tenant_id AND record.client_id=c.id)+
+      (SELECT COUNT(*) FROM interactions record WHERE record.tenant_id=c.tenant_id AND record.client_id=c.id)+
+      (SELECT COUNT(*) FROM opportunities record WHERE record.tenant_id=c.tenant_id AND record.client_id=c.id)+
+      (SELECT COUNT(*) FROM field_reports record WHERE record.tenant_id=c.tenant_id AND record.client_id=c.id)+
+      (SELECT COUNT(*) FROM soil_analyses record WHERE record.tenant_id=c.tenant_id AND record.client_id=c.id)+
+      (SELECT COUNT(*) FROM ndvi_observations record WHERE record.tenant_id=c.tenant_id AND record.client_id=c.id)+
+      (SELECT COUNT(*) FROM val_memories record WHERE record.tenant_id=c.tenant_id AND record.client_id=c.id)+
+      (SELECT COUNT(*) FROM val_recommendations record WHERE record.tenant_id=c.tenant_id AND record.client_id=c.id)
+    )::int material_rows
+    FROM clients c WHERE c.tenant_id=$1 AND c.external_key=$2`,[tenantA,phase3EmptyFixtureKey])
+  const tenantAVisibleClients=intelligenceA.clients.map(item=>item.id)
+  assertPhase1TenantAClients(tenantAVisibleClients,{verifyOnly,allowPhase3EmptyFixture,fixtureRows:phase3EmptyFixture.rows})
   assert.deepEqual(intelligenceB.clients.map(item=>item.id),['gate-client-b'])
   assert.equal((await repositoryA.getIntelligence(userB)).clients.length,0)
 
@@ -96,7 +114,8 @@ try{
     syntheticDataOnly:true,
     migrations:migrationRows.rows.map(row=>({version:row.version,checksum:String(row.checksum||'').trim()||null})),
     tenantIsolation:{
-      tenantAVisibleClients:intelligenceA.clients.map(item=>item.id),
+      tenantAVisibleClients,
+      phase3EmptyFixtureAuthorized:tenantAVisibleClients.includes(phase3EmptyFixtureKey)&&verifyOnly&&allowPhase3EmptyFixture,
       tenantBVisibleClients:intelligenceB.clients.map(item=>item.id),
       wrongOwnerWithinTenantVisibleClients:0,
       scopeOverrideDenied,

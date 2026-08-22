@@ -6,6 +6,8 @@ import {buildDecisionIntelligence,buildNexoFallback,buildStrategicSynthesis,isGe
 import {buildValueBridge,isCommercialProductComparison} from './product-intelligence.js'
 import {buildTechnicalSafetyAudit,emitTechnicalSafetyAudit,technicalSafetyReason} from './technical-safety-audit.js'
 import {buildOpenAIRetryPolicy} from './openai-retry.js'
+import {observe} from './observability.js'
+import {contextSnapshotForModel,contextSnapshotVersion} from './memory/context-snapshot.js'
 
 const strategicPattern=/estrat[eé]g|plano de conta|risco alto|proposta complexa|diretoria|comit[eê]|milh[oõ]es|grande conta/i
 const fastPattern=/classifi|extra[ií]|resum|import|normaliz|tag|categoria/i
@@ -253,6 +255,12 @@ function trimLeastRelevantArrays(target,max){
 
 export function compactValContext(context,max=30000,message='',options={}){
   const maxChars=Math.max(4_000,Number(max)||30_000)
+  if(context?.contextSnapshot){
+    return {
+      client:{id:context.client?.id||null,name:compactText(context.client?.name,180),municipality:compactText(context.client?.municipality,140)},
+      contextSnapshot:contextSnapshotForModel(context.contextSnapshot,Math.max(4_000,maxChars-800))
+    }
+  }
   const now=options.now instanceof Date?options.now:new Date(options.now||Date.now())
   const ranked=rankContextCollections(context,message,now)
   const opportunities=rankValContextItems(context.opportunities,message,{kind:'opportunities',now}).map(compactOpportunity)
@@ -524,8 +532,9 @@ export class ValEngine{
 
   async status(dbHealth){return {configured:Boolean(this.client),mode:this.client?'openai':'demonstration',database:dbHealth,models:{daily:this.config.modelDaily,strategic:this.config.modelStrategic,fast:this.config.modelFast},knowledgeBase:Boolean(this.config.knowledgeVectorStoreId),storeResponses:this.config.openaiStoreResponses}}
 
-  async answer({tenantId,ownerId,clientId,client,message,attachmentIds=[],mode='daily',requestedStage=null,signal}){
-    const context=await this.repository.getClientContext({tenantId,ownerId,clientId,client})
+  async answer({tenantId,ownerId,clientId,client,message,attachmentIds=[],mode='daily',requestedStage=null,signal,contextRequest={}}){
+    const context=await this.repository.getClientContext({tenantId,ownerId,clientId,client,contextRequest:{...contextRequest,message}})
+    observe('engine.context.ready',{contextSnapshotId:context.contextSnapshot?.context_snapshot_id,contractVersion:context.contextSnapshot?.contract_version||contextSnapshotVersion,confidence:context.contextSnapshot?.confidence?.level,outcome:'ok'})
     const selectedWorkingStage=normalizeValMethodStage(requestedStage)
     const selectedAttachments=attachmentIds.length&&typeof this.repository.getAttachments==='function'?await this.repository.getAttachments({tenantId,ownerId,clientId,ids:attachmentIds}):[]
     const requestedAttachmentIds=[...new Set((attachmentIds||[]).map(String))]
@@ -596,6 +605,6 @@ export class ValEngine{
     }
     const modelRun={model:this.client?route.model:'rules-v4',promptVersion:`${VAL_INSTRUCTIONS_VERSION}:${instructionBlocks.tier}`,promptPrefixHash,instructionTier:instructionBlocks.tier,status:engineMode==='openai'?'completed':this.client?'fallback':'demonstration',retryPolicy:this.openaiRetryPolicy,...responseMetadata,routing:routeAudit,technicalSafety:technicalSafetyAudit}
     const recommendationId=await this.repository.recordRecommendation({tenantId,ownerId,clientId,question:message,mode:route.tier,model:engineMode==='openai'?route.model:'rules-v4',context,advice,responseMetadata,promptHash:createHash('sha256').update(instructions).digest('hex'),modelRun})
-    return {recommendationId,engineMode,route:route.tier,model:engineMode==='openai'?route.model:'rules-v4',warning,contextCoverage,attachments:interpretedAttachments,technicalSafety:technicalSafetyAudit,advice}
+    return {recommendationId,contextSnapshotId:context.contextSnapshot?.context_snapshot_id||null,contextSnapshotVersion:context.contextSnapshot?.contract_version||null,engineMode,route:route.tier,model:engineMode==='openai'?route.model:'rules-v4',warning,contextCoverage,attachments:interpretedAttachments,technicalSafety:technicalSafetyAudit,advice}
   }
 }
