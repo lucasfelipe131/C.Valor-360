@@ -3,6 +3,8 @@ import {hasTechnicalApproval} from './ingestion.js'
 import {assertTenantScope} from './tenant-scope.js'
 import {observe} from './observability.js'
 import {buildContextSnapshot,contextSnapshotVersion} from './memory/context-snapshot.js'
+import {assertExecutionContract,validateActionPlan} from './execution/contracts.js'
+import {buildCommitmentCandidate,transitionCommitment} from './execution/commitment.js'
 import {additionalNeedState,hasIndependentOpportunity,isQ27Opportunity,normalizeText,opportunityFromAdditionalNeed,q27OpportunityProvenance} from '../src/lib/profile.js'
 
 export function jsonbParameter(value){
@@ -135,6 +137,22 @@ const fallbackSurveyRecord=survey=>({...survey,result:sanitizeProfileResult(surv
 const visitRecord=row=>({id:row.id,clientId:row.client_external_key||row.client_id,scheduledAt:iso(row.scheduled_at),objective:row.objective||'',processAgreement:row.process_agreement||'',summary:row.summary||'',nextCommitment:row.next_commitment||'',nextActionAt:iso(row.next_action_at),status:row.status||'Agendada',createdAt:iso(row.created_at),updatedAt:iso(row.updated_at)})
 const attachmentRecord=row=>({id:String(row.id),clientId:row.client_external_key||String(row.client_id||''),originalName:row.original_name,mimeType:row.mime_type,sizeBytes:Number(row.size_bytes||0),sha256:row.sha256,status:row.status,analysis:jsonObject(row.analysis),createdAt:iso(row.created_at),updatedAt:iso(row.updated_at),confirmedAt:iso(row.confirmed_at),...(row.content_base64?{dataBase64:row.content_base64}:{})})
 const opportunityRecord=row=>({id:`o-${row.client_external_key||row.client_id}`,databaseId:row.id,clientId:row.client_external_key||row.client_id,title:row.title,value:row.estimated_value==null?0:Number(row.estimated_value),probability:row.probability==null?null:Number(row.probability),stage:row.stage||'Diagnóstico',candidateKey:row.evidence?.find?.(item=>item?.candidateKey)?.candidateKey||row.external_key||'',stageEvidence:row.evidence?.find?.(item=>item?.type==='manual_advance'||item?.type==='manual_set'||item?.type==='won'),nextAction:row.next_action||'',nextActionAt:iso(row.next_action_at),updatedAt:iso(row.updated_at)})
+const actionPlanRecord=row=>({
+  contract_version:row.contract_version,version:row.contract_version,action_plan_id:String(row.id),organization_id:String(row.tenant_id),
+  subject_id:String(row.client_external_key||row.client_id),decision_thesis_id:row.decision_thesis_id,value_plan_id:row.value_plan_id,
+  context_snapshot_id:String(row.context_snapshot_id),priorities:Array.isArray(row.priorities)?row.priorities:[],created_at:iso(row.created_at),updated_at:iso(row.updated_at),
+  status:row.status,visit_id:row.visit_id?String(row.visit_id):null,owner_user_id:row.owner_user_id?String(row.owner_user_id):null,
+  decision_thesis_version:row.decision_thesis_version,value_plan_version:row.value_plan_version,
+  preparation:row.preparation_payload&&typeof row.preparation_payload==='object'?row.preparation_payload:null
+})
+const commitmentRecord=row=>({
+  contract_version:'val.commitment.v1',version:'val.commitment.v1',commitment_id:String(row.id),organization_id:String(row.tenant_id),
+  client_id:String(row.client_external_key||row.client_id),visit_id:row.visit_id?String(row.visit_id):null,opportunity_id:row.opportunity_id?String(row.opportunity_id):null,
+  action_plan_id:row.action_plan_id?String(row.action_plan_id):null,action_id:row.action_id||null,description:row.description,owner_type:row.owner_type,owner_id:row.owner_id,
+  due_at:iso(row.due_at),status:row.status,success_criteria:row.success_criteria,agreed_with_client:Boolean(row.agreed_with_client),
+  evidence_refs:Array.isArray(row.evidence_refs)?row.evidence_refs:[],source_ref:row.source_ref,audit:jsonObject(row.audit),
+  created_at:iso(row.created_at),updated_at:iso(row.updated_at),completed_at:iso(row.completed_at),cancelled_at:iso(row.cancelled_at)
+})
 
 function attachContextSnapshot(context,{tenantId,clientId,subjectId,ownerId,contextRequest={}}){
   const snapshot=buildContextSnapshot(context,{
@@ -171,7 +189,7 @@ export class ValRepository{
   constructor({db,readStore,saveStore,tenantId}){this.db=db;this.readStore=readStore;this.saveStore=saveStore;this.tenantId=tenantId}
 
   fallback(){
-    const store=this.readStore();store.val||={recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[],modelRuns:[],technicalContexts:{}};store.val.modelRuns||=[];store.val.technicalContexts||={};store.val.attachments||=[];store.val.contextSnapshots||=[];return store
+    const store=this.readStore();store.val||={recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[],modelRuns:[],technicalContexts:{}};store.val.modelRuns||=[];store.val.technicalContexts||={};store.val.attachments||=[];store.val.contextSnapshots||=[];store.val.actionPlans||=[];store.val.commitments||=[];return store
   }
 
   async listSurveys(ownerId){
@@ -380,8 +398,107 @@ export class ValRepository{
 
   async saveVisit(input,ownerId){
     const scheduledAt=parsedDate(input.scheduledAt);if(!scheduledAt)throw domainError('Informe data e horário válidos para a visita.',400)
-    if(!this.db.configured){const store=this.readStore();store.visits||=[];const record={id:randomUUID(),clientId:input.clientId,scheduledAt,objective:String(input.objective||'').slice(0,2000),status:'Agendada',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};store.visits.push(record);this.saveStore(store);return record}
+    if(!this.db.configured){const store=this.readStore();store.visits||=[];const record={id:randomUUID(),tenantId:this.tenantId,ownerId,clientId:input.clientId,scheduledAt,objective:String(input.objective||'').slice(0,2000),status:'Agendada',createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()};store.visits.push(record);this.saveStore(store);return record}
     try{const result=await this.db.query(`INSERT INTO visits (tenant_id,client_id,consultant_id,scheduled_at,objective,status,created_at,updated_at) SELECT $1,client.id,$3,$4,$5,$6,NOW(),NOW() FROM clients client WHERE client.tenant_id=$1 AND client.consultant_id=$3 AND (client.id::text=$2 OR client.external_key=$2) RETURNING visits.*,(SELECT external_key FROM clients WHERE id=visits.client_id) client_external_key`,[this.tenantId,String(input.clientId||''),ownerId,scheduledAt,String(input.objective||'').trim().slice(0,2000),String(input.status||'Agendada').slice(0,30)]);if(!result.rowCount)throw domainError('Produtor não encontrado na sua carteira.',404);return visitRecord(result.rows[0])}catch(error){if(error.statusCode)throw error;throw serviceError('A visita não pôde ser salva no PostgreSQL configurado.')}
+  }
+
+  async getVisit({tenantId=this.tenantId,ownerId,id}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
+    if(!this.db.configured){
+      const visit=(this.readStore().visits||[]).find(item=>String(item.id)===String(id)&&String(item.tenantId||tenantId)===String(tenantId)&&String(item.ownerId??ownerId)===String(ownerId))
+      return visit?structuredClone(visit):null
+    }
+    try{
+      const result=await this.db.query(`SELECT visit.*,client.external_key client_external_key FROM visits visit JOIN clients client ON client.tenant_id=visit.tenant_id AND client.id=visit.client_id WHERE visit.tenant_id=$1 AND visit.id=$2 AND visit.consultant_id=$3 AND client.consultant_id=$3 LIMIT 1`,[tenantId,id,ownerId])
+      return result.rows[0]?visitRecord(result.rows[0]):null
+    }catch{throw serviceError('A visita não pôde ser recuperada no PostgreSQL configurado.')}
+  }
+
+  async saveActionPlan({tenantId=this.tenantId,ownerId,clientId,visitId=null,plan,preparation=null,contextSnapshot=null,decisionThesisVersion,valuePlanVersion}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
+    if(String(plan?.organization_id||'')!==String(tenantId))throw domainError('O ActionPlan pertence a outra organização.',403)
+    assertExecutionContract(plan,validateActionPlan,'ActionPlan v1')
+    if(contextSnapshot&&String(contextSnapshot.organization_id||'')!==String(tenantId))throw domainError('O ContextSnapshot pertence a outra organização.',403)
+    const thesisVersion=String(decisionThesisVersion||preparation?.decision_thesis_version||'').trim()
+    const planValueVersion=String(valuePlanVersion||preparation?.value_plan_version||'').trim()
+    if(!thesisVersion||!planValueVersion)throw domainError('As versões da tese e do plano de valor são obrigatórias.',422)
+    if(!this.db.configured){
+      const store=this.fallback();const visit=visitId?(store.visits||[]).find(item=>String(item.id)===String(visitId)&&String(item.ownerId??ownerId)===String(ownerId)&&String(item.tenantId||tenantId)===String(tenantId)):null
+      if(visitId&&!visit)throw domainError('Visita não encontrada na carteira autorizada.',404)
+      const stored={...structuredClone(plan),tenantId,ownerId,clientId,visit_id:visitId,decision_thesis_version:thesisVersion,value_plan_version:planValueVersion,status:'PROPOSED',preparation:preparation?structuredClone(preparation):null}
+      store.val.actionPlans=store.val.actionPlans.filter(item=>String(item.action_plan_id)!==String(plan.action_plan_id));store.val.actionPlans.push(stored);store.val.actionPlans=store.val.actionPlans.slice(-1000)
+      if(contextSnapshot&&!store.val.contextSnapshots.some(item=>String(item.id)===String(contextSnapshot.context_snapshot_id)))store.val.contextSnapshots.push({id:contextSnapshot.context_snapshot_id,tenantId,ownerId,requestId:contextSnapshot.request_id||null,subject:contextSnapshot.subject,objective:contextSnapshot.objective,contractVersion:contextSnapshot.contract_version,selectionPolicyVersion:contextSnapshot.selection?.policy_version,freshnessPolicyVersion:contextSnapshot.freshness?.policy_version,selectedRefs:[...(contextSnapshot.selection?.selected_refs||[])],excludedRefs:[...(contextSnapshot.selection?.excluded_refs||[])],exclusionReasonCodes:[...new Set((contextSnapshot.selection?.exclusion_reason_codes||[]).flatMap(item=>item?.reason_codes||[]))],snapshot:structuredClone(contextSnapshot),createdAt:new Date().toISOString()})
+      this.saveStore(store);return stored
+    }
+    try{return await this.db.transaction(async connection=>{
+      const client=await connection.query(`SELECT id,external_key FROM clients WHERE tenant_id=$1 AND consultant_id=$3 AND (id::text=$2 OR external_key=$2) AND status='active' LIMIT 1`,[tenantId,clientId,ownerId])
+      if(!client.rowCount)throw domainError('Produtor não encontrado na carteira autorizada.',404)
+      if(visitId){const visit=await connection.query(`SELECT id FROM visits WHERE tenant_id=$1 AND id=$2 AND client_id=$3 AND consultant_id=$4 LIMIT 1`,[tenantId,visitId,client.rows[0].id,ownerId]);if(!visit.rowCount)throw domainError('Visita não encontrada na carteira autorizada.',404)}
+      if(!contextSnapshot||String(contextSnapshot.context_snapshot_id)!==String(plan.context_snapshot_id))throw domainError('O ActionPlan exige o ContextSnapshot rastreável correspondente.',422)
+      const selectedRefs=[...new Set(contextSnapshot.selection?.selected_refs||[])];const excludedRefs=[...new Set(contextSnapshot.selection?.excluded_refs||[])];const exclusionReasonCodes=[...new Set((contextSnapshot.selection?.exclusion_reason_codes||[]).flatMap(item=>item?.reason_codes||[]))]
+      await connection.query(`INSERT INTO val_context_snapshots (id,tenant_id,request_id,actor_id,subject_type,subject_id,objective,contract_version,selection_policy_version,freshness_policy_version,selected_refs,excluded_refs,exclusion_reason_codes,confidence_level,snapshot_payload,generated_at,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW()) ON CONFLICT (id) DO NOTHING`,[contextSnapshot.context_snapshot_id,tenantId,contextSnapshot.request_id||null,ownerId,contextSnapshot.subject?.type,contextSnapshot.subject?.id,contextSnapshot.objective,contextSnapshot.contract_version,contextSnapshot.selection?.policy_version,contextSnapshot.freshness?.policy_version,selectedRefs,excludedRefs,exclusionReasonCodes,contextSnapshot.confidence?.level||null,jsonbParameter(contextSnapshot),contextSnapshot.freshness?.generated_at])
+      const inserted=await connection.query(`INSERT INTO val_action_plans (id,tenant_id,client_id,visit_id,owner_user_id,context_snapshot_id,contract_version,decision_thesis_id,decision_thesis_version,value_plan_id,value_plan_version,status,priorities,preparation_payload,created_at,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'PROPOSED',$12,$13,$14,$15) ON CONFLICT (id) DO UPDATE SET preparation_payload=COALESCE(EXCLUDED.preparation_payload,val_action_plans.preparation_payload),updated_at=EXCLUDED.updated_at WHERE val_action_plans.tenant_id=EXCLUDED.tenant_id AND val_action_plans.owner_user_id=EXCLUDED.owner_user_id RETURNING *`,[plan.action_plan_id,tenantId,client.rows[0].id,visitId,ownerId,plan.context_snapshot_id,plan.contract_version,plan.decision_thesis_id,thesisVersion,plan.value_plan_id,planValueVersion,jsonbParameter(plan.priorities),preparation?jsonbParameter(preparation):null,plan.created_at,plan.updated_at])
+      if(!inserted.rowCount)throw domainError('ActionPlan já existe fora do escopo autorizado.',409)
+      return actionPlanRecord({...inserted.rows[0],client_external_key:client.rows[0].external_key})
+    })}catch(error){if(error.statusCode)throw error;throw serviceError('O ActionPlan não pôde ser salvo no PostgreSQL configurado.')}
+  }
+
+  async getVisitPreparation({tenantId=this.tenantId,ownerId,visitId}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
+    if(!this.db.configured){const plan=this.fallback().val.actionPlans.filter(item=>String(item.tenantId)===String(tenantId)&&String(item.ownerId)===String(ownerId)&&String(item.visit_id)===String(visitId)).at(-1);return plan?.preparation?{action_plan:structuredClone(plan),preparation:structuredClone(plan.preparation)}:null}
+    try{
+      const result=await this.db.query(`SELECT plan.*,client.external_key client_external_key FROM val_action_plans plan JOIN clients client ON client.tenant_id=plan.tenant_id AND client.id=plan.client_id JOIN visits visit ON visit.tenant_id=plan.tenant_id AND visit.id=plan.visit_id AND visit.client_id=plan.client_id WHERE plan.tenant_id=$1 AND plan.visit_id=$2 AND plan.owner_user_id=$3 AND visit.consultant_id=$3 AND client.consultant_id=$3 ORDER BY plan.created_at DESC LIMIT 1`,[tenantId,visitId,ownerId])
+      if(!result.rows[0])return null
+      const actionPlan=actionPlanRecord(result.rows[0]);return actionPlan.preparation?{action_plan:actionPlan,preparation:actionPlan.preparation}:null
+    }catch{throw serviceError('A preparação da visita não pôde ser recuperada no PostgreSQL configurado.')}
+  }
+
+  async saveCommitment({tenantId=this.tenantId,ownerId,actorId=ownerId,input={}}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
+    if(String(input.organization_id??input.organizationId??tenantId)!==String(tenantId))throw domainError('O compromisso pertence a outra organização.',403)
+    if(String(input.owner_type??input.ownerType??'USER').toUpperCase()==='USER'&&String(input.owner_id??input.ownerId??actorId)!==String(actorId))throw domainError('Não é permitido atribuir compromisso a outro usuário nesta fase.',403)
+    const candidate=buildCommitmentCandidate({...input,organization_id:tenantId,owner_type:input.owner_type??input.ownerType??'USER',owner_id:input.owner_id??input.ownerId??actorId,created_by:input.created_by??input.createdBy??actorId})
+    if(!candidate.is_commitment)throw Object.assign(new Error(`A ação continua como sugestão: faltam ${candidate.missing_fields.join(', ')}.`),{statusCode:422,code:'commitment_incomplete',missingFields:candidate.missing_fields})
+    const commitment=candidate.commitment
+    if(!this.db.configured){
+      const store=this.fallback();const visit=commitment.visit_id?(store.visits||[]).find(item=>String(item.id)===String(commitment.visit_id)&&String(item.ownerId??ownerId)===String(ownerId)&&String(item.tenantId||tenantId)===String(tenantId)):null
+      if(commitment.visit_id&&!visit)throw domainError('Visita não encontrada na carteira autorizada.',404)
+      const plan=commitment.action_plan_id?store.val.actionPlans.find(item=>String(item.action_plan_id)===String(commitment.action_plan_id)&&String(item.tenantId)===String(tenantId)&&String(item.ownerId)===String(ownerId)):null
+      if(commitment.action_plan_id&&!plan)throw domainError('ActionPlan não encontrado na carteira autorizada.',404)
+      const stored={...commitment,tenantId,ownerId,action_plan_id:commitment.action_plan_id||input.action_plan_id||input.actionPlanId||null,updated_at:commitment.created_at};store.val.commitments.push(stored);store.val.commitments=store.val.commitments.slice(-2000);this.saveStore(store);return stored
+    }
+    try{return await this.db.transaction(async connection=>{
+      const client=await connection.query(`SELECT id,external_key FROM clients WHERE tenant_id=$1 AND consultant_id=$3 AND (id::text=$2 OR external_key=$2) AND status='active' LIMIT 1`,[tenantId,commitment.client_id,ownerId]);if(!client.rowCount)throw domainError('Produtor não encontrado na carteira autorizada.',404)
+      if(commitment.visit_id){const linked=await connection.query(`SELECT id FROM visits WHERE tenant_id=$1 AND id=$2 AND client_id=$3 AND consultant_id=$4 LIMIT 1`,[tenantId,commitment.visit_id,client.rows[0].id,ownerId]);if(!linked.rowCount)throw domainError('Visita não encontrada na carteira autorizada.',404)}
+      const actionPlanId=input.action_plan_id??input.actionPlanId??null
+      if(actionPlanId){const linked=await connection.query(`SELECT id FROM val_action_plans WHERE tenant_id=$1 AND id=$2 AND client_id=$3 AND owner_user_id=$4 LIMIT 1`,[tenantId,actionPlanId,client.rows[0].id,ownerId]);if(!linked.rowCount)throw domainError('ActionPlan não encontrado na carteira autorizada.',404)}
+      if(commitment.opportunity_id){const linked=await connection.query(`SELECT id FROM opportunities WHERE tenant_id=$1 AND id=$2 AND client_id=$3 LIMIT 1`,[tenantId,commitment.opportunity_id,client.rows[0].id]);if(!linked.rowCount)throw domainError('Oportunidade não encontrada para este produtor.',404)}
+      const result=await connection.query(`INSERT INTO val_commitments (id,tenant_id,client_id,visit_id,opportunity_id,action_plan_id,action_id,description,owner_type,owner_id,due_at,status,success_criteria,agreed_with_client,evidence_refs,source_ref,audit,created_at,updated_at,completed_at,cancelled_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18,$19,$20) RETURNING *`,[commitment.commitment_id,tenantId,client.rows[0].id,commitment.visit_id,commitment.opportunity_id,actionPlanId,commitment.action_id,commitment.description,commitment.owner_type,commitment.owner_id,commitment.due_at,commitment.status,commitment.success_criteria,commitment.agreed_with_client,jsonbParameter(commitment.evidence_refs),commitment.source_ref,jsonbParameter(commitment.audit),commitment.created_at,commitment.completed_at,commitment.cancelled_at])
+      return commitmentRecord({...result.rows[0],client_external_key:client.rows[0].external_key})
+    })}catch(error){if(error.statusCode)throw error;throw serviceError('O compromisso não pôde ser salvo no PostgreSQL configurado.')}
+  }
+
+  async listCommitments({tenantId=this.tenantId,ownerId,clientId=null,status=null}={}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
+    if(!this.db.configured)return this.fallback().val.commitments.filter(item=>String(item.tenantId)===String(tenantId)&&String(item.ownerId)===String(ownerId)&&(!clientId||String(item.client_id)===String(clientId))&&(!status||String(item.status)===String(status))).map(item=>structuredClone(item))
+    try{
+      const result=await this.db.query(`SELECT commitment.*,client.external_key client_external_key FROM val_commitments commitment JOIN clients client ON client.tenant_id=commitment.tenant_id AND client.id=commitment.client_id WHERE commitment.tenant_id=$1 AND client.consultant_id=$2 AND ($3::text IS NULL OR client.id::text=$3 OR client.external_key=$3) AND ($4::text IS NULL OR commitment.status=$4) ORDER BY commitment.due_at,commitment.created_at DESC LIMIT 1000`,[tenantId,ownerId,clientId?String(clientId):null,status?String(status).toUpperCase():null])
+      return result.rows.map(commitmentRecord)
+    }catch{throw serviceError('Os compromissos não puderam ser recuperados no PostgreSQL configurado.')}
+  }
+
+  async updateCommitment({tenantId=this.tenantId,ownerId,id,input={}}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
+    if(!this.db.configured){
+      const store=this.fallback();const index=store.val.commitments.findIndex(item=>String(item.commitment_id)===String(id)&&String(item.tenantId)===String(tenantId)&&String(item.ownerId)===String(ownerId));if(index<0)throw domainError('Compromisso não encontrado na carteira autorizada.',404)
+      const updated={...transitionCommitment(store.val.commitments[index],{...input,updated_by:ownerId,request_id:input.request_id??input.requestId}),tenantId,ownerId,action_plan_id:store.val.commitments[index].action_plan_id,updated_at:new Date().toISOString()};store.val.commitments[index]=updated;this.saveStore(store);return updated
+    }
+    try{return await this.db.transaction(async connection=>{
+      const selected=await connection.query(`SELECT commitment.*,client.external_key client_external_key FROM val_commitments commitment JOIN clients client ON client.tenant_id=commitment.tenant_id AND client.id=commitment.client_id WHERE commitment.tenant_id=$1 AND commitment.id=$2 AND client.consultant_id=$3 LIMIT 1 FOR UPDATE OF commitment`,[tenantId,id,ownerId]);if(!selected.rowCount)throw domainError('Compromisso não encontrado na carteira autorizada.',404)
+      const current=commitmentRecord(selected.rows[0]);const updated=transitionCommitment(current,{...input,updated_by:ownerId,request_id:input.request_id??input.requestId??current.audit.request_id})
+      const result=await connection.query(`UPDATE val_commitments SET status=$4,due_at=$5,success_criteria=$6,evidence_refs=$7,audit=$8,completed_at=$9,cancelled_at=$10,updated_at=NOW() WHERE tenant_id=$1 AND id=$2 AND client_id=$3 RETURNING *`,[tenantId,id,selected.rows[0].client_id,updated.status,updated.due_at,updated.success_criteria,jsonbParameter(updated.evidence_refs),jsonbParameter(updated.audit),updated.completed_at,updated.cancelled_at])
+      return commitmentRecord({...result.rows[0],client_external_key:selected.rows[0].client_external_key})
+    })}catch(error){if(error.statusCode)throw error;throw serviceError('O compromisso não pôde ser atualizado no PostgreSQL configurado.')}
   }
 
   async saveOpportunity(input,ownerId){
@@ -398,7 +515,8 @@ export class ValRepository{
       const store=this.fallback()
       const currentTechnical=store.val.technicalContexts[clientId]
       const memoryHistory=[...(store.val.technicalContextHistory||[]),...(currentTechnical?[{...currentTechnical,clientId}]:[])].map(item=>({...item,tenant_id:tenantId,client_id:clientId,memory_type:'fact',memory_state:item.memoryState||'HYPOTHESIS',memory_domain:item.memoryDomain||'AGRONOMIC',key:'consultant_technical_context',value:Object.fromEntries(Object.entries(item).filter(([key])=>!['id','clientId','status','validFrom','validUntil','updatedAt','sourceRef','sourceType','supersedesId','memoryState','memoryDomain','observedAt','sourceUpdatedAt','freshnessPolicyVersion','freshnessMetadata'].includes(key))),source:'consultant_input',source_ref:item.sourceRef||`fallback_memory:${item.id||clientId}`,source_type:item.sourceType||'consultant_input',observed_at:item.observedAt||null,source_updated_at:item.sourceUpdatedAt||null,freshness_policy_version:item.freshnessPolicyVersion||null,freshness_metadata:item.freshnessMetadata||{},valid_from:item.validFrom||item.updatedAt,valid_until:item.validUntil,updated_at:item.updatedAt,id:item.id||`fallback-${clientId}`,supersedes_id:item.supersedesId||null,acl:{scope:'own_portfolio'}}))
-      const context={client,profile:{answers:client.profileAnswers||{},evidence:client.profileEvidence||[],assessedAt:client.profileUpdatedAt||null,validUntil:client.profileValidUntil||null},signals:store.val.signals.filter(item=>!clientId||item.clientExternalKey===clientId).slice(-20),learning:this.fallbackLearning(clientId),memories:memoryHistory.filter(item=>['proposed','verified'].includes(item.status)&&(!item.valid_until||new Date(item.valid_until)>new Date())),memoryHistory,businessHistory:[],visits:[],interactions:[],opportunities:[],properties:[],fieldReports:[],soilAnalyses:[],ndviObservations:[],manualRecords:[],priorRecommendations:[]}
+      const commitments=store.val.commitments.filter(item=>String(item.tenantId||tenantId)===String(tenantId)&&String(item.ownerId??ownerId)===String(ownerId)&&String(item.client_id)===String(clientId))
+      const context={client,profile:{answers:client.profileAnswers||{},evidence:client.profileEvidence||[],assessedAt:client.profileUpdatedAt||null,validUntil:client.profileValidUntil||null},signals:store.val.signals.filter(item=>!clientId||item.clientExternalKey===clientId).slice(-20),learning:this.fallbackLearning(clientId),memories:memoryHistory.filter(item=>['proposed','verified'].includes(item.status)&&(!item.valid_until||new Date(item.valid_until)>new Date())),memoryHistory,businessHistory:[],visits:(store.visits||[]).filter(item=>String(item.tenantId||tenantId)===String(tenantId)&&String(item.ownerId??ownerId)===String(ownerId)&&String(item.clientId)===String(clientId)),interactions:[],commitments,opportunities:(store.opportunities||[]).filter(item=>String(item.clientId)===String(clientId)),properties:[],fieldReports:[],soilAnalyses:[],ndviObservations:[],manualRecords:[],priorRecommendations:[]}
       return attachContextSnapshot(context,{tenantId,clientId,ownerId,contextRequest})
     }
     try{
@@ -416,6 +534,7 @@ export class ValRepository{
         COALESCE((SELECT jsonb_agg(b ORDER BY b.occurred_at DESC) FROM (SELECT id,source,external_id,occurred_at,outcome,category,product,quantity,value,margin,currency,loss_reason,payload FROM business_events WHERE tenant_id=$1 AND client_id=c.id ORDER BY occurred_at DESC LIMIT 50) b),'[]'::jsonb) business_history,
         COALESCE((SELECT jsonb_agg(v ORDER BY COALESCE(v.updated_at,v.created_at) DESC) FROM (SELECT id,scheduled_at,objective,process_agreement,summary,next_commitment,next_action_at,status,created_at,updated_at FROM visits WHERE tenant_id=$1 AND client_id=c.id ORDER BY COALESCE(updated_at,created_at) DESC LIMIT 30) v),'[]'::jsonb) visits,
         COALESCE((SELECT jsonb_agg(i ORDER BY i.occurred_at DESC) FROM (SELECT id,visit_id,channel,direction,occurred_at,summary,commitments,source,source_external_id,created_at FROM interactions WHERE tenant_id=$1 AND client_id=c.id ORDER BY occurred_at DESC LIMIT 50) i),'[]'::jsonb) interactions,
+        COALESCE((SELECT jsonb_agg(commitment ORDER BY commitment.due_at,commitment.created_at DESC) FROM (SELECT id commitment_id,client_id,visit_id,opportunity_id,action_plan_id,action_id,description,owner_type,owner_id,due_at,status,success_criteria,agreed_with_client,evidence_refs,source_ref,audit,created_at,updated_at,completed_at,cancelled_at FROM val_commitments WHERE tenant_id=$1 AND client_id=c.id ORDER BY due_at,created_at DESC LIMIT 100) commitment),'[]'::jsonb) commitments,
         COALESCE((SELECT jsonb_agg(o ORDER BY o.updated_at DESC) FROM (SELECT opportunity.id,opportunity.external_key,opportunity.title,opportunity.category,opportunity.hypothesis,opportunity.estimated_value,opportunity.estimated_margin,opportunity.probability,opportunity.stage,opportunity.next_action,opportunity.next_action_at,opportunity.evidence,opportunity.created_at,opportunity.updated_at,(SELECT jsonb_build_object('baseline',value_case.baseline,'alternative',value_case.alternative,'assumptions',value_case.assumptions,'expected_value',value_case.expected_value,'low_value',value_case.low_value,'high_value',value_case.high_value,'total_incremental_cost',value_case.total_incremental_cost,'roi_percent',value_case.roi_percent,'proof_plan',value_case.proof_plan,'validated_at',value_case.validated_at) FROM value_cases value_case WHERE value_case.tenant_id=$1 AND value_case.opportunity_id=opportunity.id ORDER BY value_case.created_at DESC LIMIT 1) value_case FROM opportunities opportunity WHERE opportunity.tenant_id=$1 AND opportunity.client_id=c.id ORDER BY opportunity.updated_at DESC LIMIT 200) o),'[]'::jsonb) opportunities,
         COALESCE((SELECT jsonb_agg(prop ORDER BY prop.updated_at DESC) FROM (SELECT property.id,property.external_key,property.name,property.municipality,property.area_ha,property.metadata,property.created_at,property.updated_at,COALESCE((SELECT jsonb_agg(field_record ORDER BY field_record.created_at DESC) FROM (SELECT field.id,field.external_key,field.name,field.area_ha,field.geometry_ref,field.geometry_version,field.created_at,COALESCE((SELECT jsonb_agg(season_record ORDER BY season_record.created_at DESC) FROM (SELECT season,crop,cultivar,area_ha,productivity_target,productivity_actual,unit,planted_at,harvested_at,created_at FROM crop_seasons WHERE tenant_id=$1 AND field_id=field.id ORDER BY created_at DESC LIMIT 12) season_record),'[]'::jsonb) seasons FROM fields field WHERE field.tenant_id=$1 AND field.property_id=property.id ORDER BY field.created_at DESC LIMIT 50) field_record),'[]'::jsonb) fields FROM properties property WHERE property.tenant_id=$1 AND property.client_id=c.id ORDER BY property.updated_at DESC LIMIT 30) prop),'[]'::jsonb) properties,
         COALESCE((SELECT jsonb_agg(report ORDER BY COALESCE(report.observed_at,report.created_at) DESC) FROM (SELECT field_report.id,field_report.source,field_report.external_id,field_report.property_external_key,field_report.field_external_key,field_report.observed_at,field_report.crop_stage,field_report.summary,field_report.validated_actions,field_report.validation_evidence,field_report.validated_at,field_report.created_at,COALESCE((SELECT jsonb_agg(observation ORDER BY observation.created_at DESC) FROM (SELECT id,observation_type,value,unit,confidence,evidence_ref,requires_review,created_at FROM field_observations WHERE tenant_id=$1 AND report_id=field_report.id ORDER BY created_at DESC LIMIT 50) observation),'[]'::jsonb) observations FROM field_reports field_report WHERE field_report.tenant_id=$1 AND field_report.client_id=c.id ORDER BY COALESCE(field_report.observed_at,field_report.created_at) DESC LIMIT 20) report),'[]'::jsonb) field_reports,
@@ -429,7 +548,7 @@ export class ValRepository{
       if(!result.rows[0])throw Object.assign(new Error('Cliente não encontrado na base autorizada.'),{statusCode:404})
       const row=result.rows[0]
       const profileEvidence=Array.isArray(row.profile_evidence)?row.profile_evidence:[]
-      const context={client:{...clientFromRow(row),profileSelfReported:profileEvidence.some(item=>item?.self_reported===true),profileEvidence},profile:{answers:jsonObject(row.answers),evidence:profileEvidence,assessedAt:iso(row.profile_assessed_at)||null,validUntil:iso(row.profile_valid_until)||null,sourceId:row.source_survey_id||null},signals:row.signals||[],learning:{...(row.learning||{}),recommendations:row.feedback_learning||{}},memories:row.memories||[],memoryHistory:row.memory_history||row.memories||[],businessHistory:row.business_history||[],visits:row.visits||[],interactions:row.interactions||[],opportunities:row.opportunities||[],properties:row.properties||[],fieldReports:row.field_reports||[],soilAnalyses:row.soil_analyses||[],ndviObservations:row.ndvi_observations||[],manualRecords:row.manual_records||[],priorRecommendations:row.prior_recommendations||[]}
+      const context={client:{...clientFromRow(row),profileSelfReported:profileEvidence.some(item=>item?.self_reported===true),profileEvidence},profile:{answers:jsonObject(row.answers),evidence:profileEvidence,assessedAt:iso(row.profile_assessed_at)||null,validUntil:iso(row.profile_valid_until)||null,sourceId:row.source_survey_id||null},signals:row.signals||[],learning:{...(row.learning||{}),recommendations:row.feedback_learning||{}},memories:row.memories||[],memoryHistory:row.memory_history||row.memories||[],businessHistory:row.business_history||[],visits:row.visits||[],interactions:row.interactions||[],commitments:row.commitments||[],opportunities:row.opportunities||[],properties:row.properties||[],fieldReports:row.field_reports||[],soilAnalyses:row.soil_analyses||[],ndviObservations:row.ndvi_observations||[],manualRecords:row.manual_records||[],priorRecommendations:row.prior_recommendations||[]}
       return attachContextSnapshot(context,{tenantId,clientId,subjectId:row.id,ownerId,contextRequest})
     }catch(error){if(error.statusCode===404)throw error;throw serviceError('O contexto do cliente não pôde ser lido no banco configurado.')}
   }

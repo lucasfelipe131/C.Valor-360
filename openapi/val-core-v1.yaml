@@ -75,6 +75,129 @@ paths:
         '400': {$ref: '#/components/responses/Error'}
         '401': {$ref: '#/components/responses/Error'}
         '403': {$ref: '#/components/responses/Error'}
+  /api/v1/visits/{visitId}/preparation:
+    parameters:
+      - name: visitId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - $ref: '#/components/parameters/RequestId'
+    get:
+      summary: Recupera a preparação mais recente da visita no escopo autorizado
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: PrepareVisit v1 e ActionPlan v1 persistidos
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contract_version, preparation, action_plan]
+                properties:
+                  contract_version: {const: val.prepare_visit.response.v1}
+                  preparation: {$ref: '../contracts/v1/prepare-visit.schema.json'}
+                  action_plan: {$ref: '../contracts/v1/action-plan.schema.json'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+    post:
+      summary: Gera e persiste preparação tenant-safe a partir dos artefatos aprovados
+      security: [{sessionCookie: []}]
+      responses:
+        '201':
+          description: Preparação criada sem registrar a visita pós-campo
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contract_version, preparation, action_plan]
+                properties:
+                  contract_version: {const: val.prepare_visit.response.v1}
+                  preparation: {$ref: '../contracts/v1/prepare-visit.schema.json'}
+                  action_plan: {$ref: '../contracts/v1/action-plan.schema.json'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/v1/action-plans:
+    post:
+      summary: Persiste ActionPlan v1 já validado e seu vínculo rastreável
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      responses:
+        '201':
+          description: ActionPlan persistido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_version: {const: val.action_plan.response.v1}
+                  action_plan: {$ref: '../contracts/v1/action-plan.schema.json'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /api/v1/commitments:
+    get:
+      summary: Lista compromissos da carteira autorizada
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: clientId, in: query, required: false, schema: {type: string}}
+        - {name: status, in: query, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: Coleção de Commitment v1
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_version: {const: val.commitment.collection.v1}
+                  commitments: {type: array, items: {$ref: '../contracts/v1/commitment.schema.json'}}
+    post:
+      summary: Cria compromisso somente com owner, prazo e critério
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      responses:
+        '201':
+          description: Commitment v1 criado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_version: {const: val.commitment.response.v1}
+                  commitment: {$ref: '../contracts/v1/commitment.schema.json'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/v1/commitments/{commitmentId}:
+    patch:
+      summary: Transiciona compromisso; DONE exige evidência
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: commitmentId, in: path, required: true, schema: {type: string, format: uuid}}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Commitment v1 atualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_version: {const: val.commitment.response.v1}
+                  commitment: {$ref: '../contracts/v1/commitment.schema.json'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/v1/insights:
+    get:
+      summary: Responde o que merece atenção agora no escopo autorizado
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: Feed com no máximo cinco InsightCard v1 não expirados
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_version: {const: val.insight_feed.v1}
+                  items: {type: array, maxItems: 5, items: {$ref: '../contracts/v1/insight-card.schema.json'}}
 components:
   securitySchemes:
     sessionCookie:
@@ -139,3 +262,11 @@ components:
       $ref: '../contracts/v1/decision-thesis.schema.json'
     ValuePlan:
       $ref: '../contracts/v1/value-plan.schema.json'
+    ActionPlan:
+      $ref: '../contracts/v1/action-plan.schema.json'
+    Commitment:
+      $ref: '../contracts/v1/commitment.schema.json'
+    InsightCard:
+      $ref: '../contracts/v1/insight-card.schema.json'
+    PrepareVisit:
+      $ref: '../contracts/v1/prepare-visit.schema.json'

@@ -141,6 +141,10 @@ function authorizedSubjects(context,{organizationId,subjectType,subjectId}){
   }
   for(const visit of list(context?.visits))add('visit',visit?.id)
   for(const opportunity of list(context?.opportunities))add('opportunity',opportunity?.id)
+  for(const commitment of list(context?.commitments)){
+    add('visit',commitment?.visit_id??commitment?.visitId)
+    add('opportunity',commitment?.opportunity_id??commitment?.opportunityId)
+  }
   return subjects
 }
 
@@ -287,6 +291,11 @@ export function buildContextSnapshot(context={},input={}){
   const relationshipContext={
     interactions:collectionItems(context.interactions,'interaction',{domain:'RELATIONSHIP',dateKeys:['occurred_at','occurredAt','created_at','createdAt'],limit:10,now}),
     visits:collectionItems(context.visits,'visit',{domain:'RELATIONSHIP',dateKeys:['updated_at','updatedAt','scheduled_at','scheduledAt','created_at','createdAt'],limit:10,now}),
+    commitments:collectionItems(context.commitments,'commitment',{domain:'RELATIONSHIP',dateKeys:['updated_at','updatedAt','created_at','createdAt'],validUntilKeys:['due_at','dueAt'],limit:12,now}),
+    overdue_commitments:list(context.commitments).filter(item=>{
+      const due=iso(item?.due_at??item?.dueAt)
+      return Boolean(due&&new Date(due).getTime()<now.getTime()&&!['DONE','CANCELLED'].includes(text(item?.status).toUpperCase()))
+    }).map(item=>({commitment_ref:`commitment:${text(item?.commitment_id??item?.id)}`,due_at:iso(item?.due_at??item?.dueAt),status:text(item?.status).toUpperCase(),description:text(item?.description).slice(0,500)})).slice(0,12),
     reported_profile:context?.client?.relationship||{}
   }
   const missing=missingInformation(context,{objective,hasSelectedMemories:Boolean(selected.length),currentSoil})
@@ -303,7 +312,7 @@ export function buildContextSnapshot(context={},input={}){
     addEvidence(reference(memory.source_type,memory.source_ref))
     for(const item of memory.evidence_refs)addEvidence(reference(item.source_type||'evidence',item.id))
   }
-  for(const section of [commercialContext.business_history,commercialContext.opportunities,agronomicContext.properties,agronomicContext.field_reports,agronomicContext.soil_analyses,agronomicContext.ndvi_observations,relationshipContext.interactions,relationshipContext.visits])for(const item of section)addEvidence(item.evidence_ref)
+  for(const section of [commercialContext.business_history,commercialContext.opportunities,agronomicContext.properties,agronomicContext.field_reports,agronomicContext.soil_analyses,agronomicContext.ndvi_observations,relationshipContext.interactions,relationshipContext.visits,relationshipContext.commitments])for(const item of section)addEvidence(item.evidence_ref)
   for(const signal of behavioralSignals){
     if(signal.source_ref)addEvidence(reference('behavioral_profile',signal.source_ref))
     for(const item of signal.evidence_refs)addEvidence(item)
@@ -316,7 +325,7 @@ export function buildContextSnapshot(context={},input={}){
     ...facts,...inferences,...hypotheses,...validatedKnowledge,
     ...commercialContext.business_history,...commercialContext.opportunities,
     ...agronomicContext.properties,...agronomicContext.field_reports,...agronomicContext.soil_analyses,...agronomicContext.ndvi_observations,
-    ...relationshipContext.interactions,...relationshipContext.visits,
+    ...relationshipContext.interactions,...relationshipContext.visits,...relationshipContext.commitments,
     ...stale
   ]
   const freshnessRuleIds=[...new Set(freshnessEvaluations.map(item=>item?.freshness_metadata?.rule_id).filter(Boolean))]
@@ -419,7 +428,7 @@ export function contextSnapshotForModel(snapshot,maxChars=18_000){
     freshness:{...snapshot.freshness}
   }
   const trimPaths=[
-    ['commercial_context','business_history'],['commercial_context','opportunities'],['relationship_context','interactions'],['relationship_context','visits'],
+    ['commercial_context','business_history'],['commercial_context','opportunities'],['relationship_context','interactions'],['relationship_context','visits'],['relationship_context','commitments'],['relationship_context','overdue_commitments'],
     ['agronomic_context','ndvi_observations'],['agronomic_context','field_reports'],['agronomic_context','soil_analyses'],['agronomic_context','properties'],
     ['behavioral_signals'],['hypotheses'],['inferences'],['facts'],['validated_knowledge'],['evidence_refs']
   ]
