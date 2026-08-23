@@ -20,6 +20,7 @@ import {resolveCoreObjective} from './server/core/router.js'
 import {createValProgressTracker,normalizeValProgressRequestId} from './server/val-progress.js'
 import {createTechnicalWorkspace,isTechnicalWorkspaceRequest} from './server/technical-workspace.js'
 import {buildSurveyOptions,validateSurveyAnswers} from './server/survey-validation.js'
+import {compileSurveyImportBatch} from './server/survey-import.js'
 import {calculateProfile} from './src/lib/profile.js'
 import {buildCommercialIntelligence,summarizeLearning} from './src/lib/commercial-intelligence.js'
 import {prepareVisitExecution} from './server/execution/service.js'
@@ -139,7 +140,7 @@ async function handleApi(request,response,url){
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
- const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const identity=protectedPath?await sessionIdentity(request):null
  if(protectedPath&&auth.configured&&!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
@@ -389,6 +390,13 @@ async function handleApi(request,response,url){
  }
  if(url.pathname==='/api/clients/from-survey'&&request.method==='POST'){
   const payload=await body(request);const answers=validatedSurveyAnswers(payload.answers);const result=calculateProfile(answers,profileMatrix,'Aplicação assistida validada no servidor');return json(response,201,{saved:true,client:await repository.saveSurveyProfile({answers,result},identity?.id)})
+ }
+ if(url.pathname==='/api/clients/from-survey/batch'&&request.method==='POST'){
+  const payload=await body(request);const batch=compileSurveyImportBatch(payload,{profileMatrix,surveyOptions})
+  const clients=[]
+  for(const profile of batch.profiles)clients.push(await repository.saveSurveyProfile(profile,identity?.id))
+  await accessRepository.recordUsage(identity,{eventType:'survey_integrated',page:'questionnaire',metadata:{clientCount:clients.length,source:'questionnaire_import',duplicateCount:batch.duplicateCount}})
+  return json(response,201,{saved:true,clientCount:clients.length,receivedCount:batch.receivedCount,duplicateCount:batch.duplicateCount,clients})
  }
  const clientMatch=url.pathname.match(/^\/api\/clients\/([^/]+)$/)
  if(clientMatch&&request.method==='PUT'){

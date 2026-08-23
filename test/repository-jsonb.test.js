@@ -50,6 +50,22 @@ test('perfil assistido envia answers, evidence e snapshot como strings JSONB',as
   assert.ok(calls.find(call=>call.sql.includes('pg_advisory_xact_lock')))
 })
 
+test('perfil importado atualiza o produtor existente pelo nome sem criar uma segunda chave externa',async()=>{
+  const calls=[]
+  const query=async(sql,params=[])=>{
+    calls.push({sql,params})
+    if(sql.startsWith('SELECT external_key FROM clients'))return {rowCount:1,rows:[{external_key:'crm-produtor-42'}]}
+    if(sql.includes('INSERT INTO clients'))return {rowCount:1,rows:[{id:'client-db-id'}]}
+    return {rowCount:1,rows:[]}
+  }
+  const repository=repositoryWith({configured:true,transaction:work=>work({query})})
+  const saved=await repository.saveSurveyProfile({answers:{11:'Visitas presenciais frequentes.'},result:{id:'produtor-teste',name:' Produtor Teste ',servicePreference:'Visitas presenciais frequentes.',commercial:{}}},'owner-id')
+  const clientCall=calls.find(call=>call.sql.includes('INSERT INTO clients'))
+  assert.equal(saved.id,'crm-produtor-42')
+  assert.equal(clientCall.params[2],'crm-produtor-42')
+  assert.match(calls.find(call=>call.sql.startsWith('SELECT external_key FROM clients')).sql,/consultant_id=\$2/)
+})
+
 test('perfil 360 mantém Q27 no snapshot e não sobrescreve oportunidade comercial canônica',async()=>{
   const run=async currentCommercial=>{
     const calls=[]

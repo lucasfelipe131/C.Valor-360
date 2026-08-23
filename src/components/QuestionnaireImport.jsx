@@ -2,11 +2,12 @@ import React,{useRef,useState} from 'react'
 import {ArrowRight,CheckCircle2,FileSearch,FileText,Link2,LoaderCircle,ScanSearch,Sheet,UploadCloud} from 'lucide-react'
 import {parseImportFile,recognizeQuestionnaire} from '../lib/smart-import'
 
-export default function QuestionnaireImport({onReview}){
+export default function QuestionnaireImport({onReview,onApply}){
  const inputRef=useRef(null)
  const [googleUrl,setGoogleUrl]=useState('')
  const [report,setReport]=useState(null)
  const [loading,setLoading]=useState(false)
+ const [applying,setApplying]=useState(false)
  const [error,setError]=useState('')
  const inspect=async file=>{
   setLoading(true);setError('');setReport(null)
@@ -24,12 +25,17 @@ export default function QuestionnaireImport({onReview}){
    setReport({...recognizeQuestionnaire({rows:data.rows,format:'Google Sheets'}),fileName:'Planilha Google'})
   }catch(exception){setError(exception.name==='TimeoutError'?'A planilha demorou além do limite. Verifique o compartilhamento e tente novamente.':exception.message)}finally{setLoading(false)}
  }
+ const apply=async()=>{
+  if(!report?.records?.length||report.records.some(record=>record.requiredMissing.length)){setError('Revise os campos obrigatórios ausentes antes de atualizar as preferências.');return}
+  setApplying(true);setError('')
+  try{await onApply?.(report.records,report.fileName);setReport(null)}catch(exception){setError(exception.name==='TimeoutError'?'A atualização demorou além do limite. Tente novamente.':exception.message)}finally{setApplying(false)}
+ }
  return <section className="question-import-studio">
   <div className="import-studio-head"><div><span className="eyebrow">IMPORTAÇÃO ASSISTIDA</span><h2>Importe respostas feitas fora do sistema.</h2><p>O parser sugere correspondências entre perguntas, alternativas e escalas; o consultor revisa tudo antes de compilar.</p></div><div className="scan-emblem"><ScanSearch/><span>RECONHECIMENTO<br/>MULTIFORMATO</span></div></div>
   <div className="import-source-grid"><button className="import-source" onClick={()=>inputRef.current?.click()}><span><UploadCloud/></span><div><b>Enviar arquivo</b><small>Excel, CSV, TSV, JSON, TXT ou PDF</small></div><ArrowRight/></button><input hidden ref={inputRef} type="file" accept=".xlsx,.csv,.tsv,.json,.txt,.pdf" onChange={event=>event.target.files[0]&&inspect(event.target.files[0])}/><div className="google-import"><span><Sheet/></span><div><b>Planilhas Google</b><small>O link precisa estar liberado para visualização.</small><div><input value={googleUrl} onChange={event=>setGoogleUrl(event.target.value)} placeholder="Cole o link compartilhado..."/><button onClick={inspectGoogle}><Link2 size={15}/>Analisar</button></div></div></div></div>
   <div className="format-cloud"><span><FileText/>PDF pesquisável</span><span><Sheet/>Excel .xlsx</span><span><FileSearch/>CSV / TSV</span><span>JSON</span><span>TXT</span></div>
   {loading&&<div className="recognition-loading"><LoaderCircle/><span><b>A Val está lendo o documento</b>Comparando campos, perguntas e alternativas...</span></div>}
   {error&&<div className="form-error" role="alert">{error}</div>}
-  {report&&<div className="recognition-report"><div className="recognition-score"><div style={{'--recognition':`${report.confidence*3.6}deg`}}><span><b>{report.confidence}%</b><small>1º perfil</small></span></div></div><div className="recognition-copy"><span className="eyebrow">LEITURA CONCLUÍDA • {report.format}</span><h3>{report.recordCount>1?`${report.recordCount} produtores encontrados`:`${report.recognized.length} de 27 respostas sugeridas`}</h3><p>{report.recordCount>1?'Cada linha será revisada individualmente antes de entrar na carteira.':report.requiredMissing?.length?`${report.requiredMissing.length} campos obrigatórios ainda precisam de revisão.`:'As respostas obrigatórias estão prontas para revisão.'}</p>{report.recordCount>1&&<div className="import-record-list">{report.records.map((record,index)=><span key={`${record.producerName}-${index}`}><b>{record.producerName}</b><small>{record.recognized.length}/27 campos reconhecidos</small></span>)}</div>}<div className="recognized-chips">{report.recognized.slice(0,5).map(item=><span key={item.id}><CheckCircle2/>{String(item.value).slice(0,32)}</span>)}</div><button className="primary-btn" onClick={()=>onReview(report.records.map(record=>({answers:record.answers,producerName:record.producerName})))}>Revisar {report.recordCount>1?`${report.recordCount} perfis`:'e compilar'} <ArrowRight size={16}/></button></div></div>}
+  {report&&<div className="recognition-report"><div className="recognition-score"><div style={{'--recognition':`${report.confidence*3.6}deg`}}><span><b>{report.confidence}%</b><small>1º perfil</small></span></div></div><div className="recognition-copy"><span className="eyebrow">LEITURA CONCLUÍDA • {report.format}</span><h3>{report.recordCount>1?`${report.recordCount} produtores encontrados`:`${report.recognized.length} de 27 respostas sugeridas`}</h3><p>{report.records.some(record=>record.requiredMissing.length)?'Há respostas obrigatórias que precisam de revisão antes da atualização.':'O arquivo pode atualizar diretamente perfil, IRT, NPS e preferências, preservando o histórico comercial.'}</p>{report.recordCount>1&&<div className="import-record-list">{report.records.map((record,index)=><span key={`${record.producerName}-${index}`}><b>{record.producerName}</b><small>{record.recognized.length}/27 campos reconhecidos{record.requiredMissing.length?` • ${record.requiredMissing.length} obrigatórios ausentes`:''}</small></span>)}</div>}<div className="recognized-chips">{report.recognized.slice(0,5).map(item=><span key={item.id}><CheckCircle2/>{String(item.value).slice(0,32)}</span>)}</div><div className="data-actions"><button className="ghost-btn" disabled={applying} onClick={()=>onReview(report.records.map(record=>({answers:record.answers,producerName:record.producerName})))}>Revisar antes</button><button className="primary-btn" disabled={applying||report.records.some(record=>record.requiredMissing.length)} onClick={apply}>{applying?'Atualizando preferências...':`Atualizar ${report.recordCount>1?`${report.recordCount} perfis`:'preferências'}`} <ArrowRight size={16}/></button></div></div></div>}
  </section>
 }

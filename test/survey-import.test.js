@@ -2,7 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import questions from '../src/data/questions.json' with {type:'json'}
 import matrix from '../src/data/profile-matrix.json' with {type:'json'}
-import {normalizeImportRows,recognizeQuestionnaire} from '../src/lib/smart-import.js'
+import {looksLikeQuestionnaire,normalizeImportRows,recognizeQuestionnaire} from '../src/lib/smart-import.js'
 import {calculateProfile,opportunityFromAdditionalNeed,reconcileOpportunityProjection} from '../src/lib/profile.js'
 import {buildSurveyOptions,validateSurveyAnswers} from '../server/survey-validation.js'
 
@@ -47,6 +47,35 @@ test('planilha com várias respostas reconhece todos os produtores e mantém que
  assert.deepEqual(report.records.map(record=>record.producerName),['Produtor Um','Produtor Dois'])
  assert.ok(report.records.every(record=>record.requiredMissing.length===0))
  assert.ok(report.records.every(record=>record.missing.some(question=>question.id===27)))
+})
+
+test('planilha real do Projeto Produtor 360 com cabeçalhos C.Vale é reconhecida como perfil, não histórico comercial',()=>{
+ const headers=questions.map(question=>({
+  5:'5. Há quanto tempo você mantém relacionamento com a C.Vale?',
+  12:'12. Com que frequência você gostaria de receber contato da equipe da C.Vale?',
+  17:'17. Que tipo de conteúdo você gostaria de receber da C.Vale?',
+  19:'19. Em uma escala de 0 a 10, quanto você confia nas recomendações técnicas da C.Vale?',
+  20:'20. Em uma escala de 0 a 10, como você avalia a frequência de contato da equipe da C.Vale?',
+  21:'21. Em uma escala de 0 a 10, quanto o atendimento da C.Vale gera valor para sua propriedade?',
+  23:'23. Em uma escala de 0 a 10, qual é sua intenção de continuar fazendo negócios com a C.Vale?',
+  24:'24. Em uma escala de 0 a 10, qual é a probabilidade de você recomendar a C.Vale para outro produtor?',
+  25:'25. Qual aspecto do atendimento da C.Vale você mais valoriza?',
+  26:'26. O que a C.Vale precisaria fazer para receber nota 10 no atendimento?',
+  27:'27. Existe alguma necessidade da sua propriedade em que a C.Vale poderia ajudar mais?'
+ }[question.id]||question.text))
+ const values=row('Produtor Teste Analítico');values[18]='10.0';values[26]='Não.'
+ const report=recognizeQuestionnaire({rows:[['Timestamp',...headers],[46241.49,...values]],format:'Excel'})
+ assert.equal(report.recordCount,1)
+ assert.equal(report.records[0].producerName,'Produtor Teste Analítico')
+ assert.equal(report.records[0].recognized.length,27)
+ assert.deepEqual(report.records[0].requiredMissing,[])
+ assert.equal(report.records[0].answers[19],10)
+ assert.equal(looksLikeQuestionnaire(report),true)
+})
+
+test('histórico comercial curto não é confundido com questionário do Produtor 360',()=>{
+ const report=recognizeQuestionnaire({rows:[['Produtor','Município','Área','Cultura'],['Produtor Teste','São Luiz Gonzaga','100 ha','Soja']],format:'Excel'})
+ assert.equal(looksLikeQuestionnaire(report),false)
 })
 
 test('servidor aceita participante da decisão e questão 27 vazia',()=>{
