@@ -77,6 +77,9 @@ export default function App(){
   const next=clientList.some(item=>normalizeText(item.name)===normalizeText(client.name))?clientList.map(item=>normalizeText(item.name)===normalizeText(client.name)?(saved={...item,...client,id:item.id,commercial:{...item.commercial,...incomingCommercial,...reconcileOpportunityProjection(item,client),potential:Math.max(Number(item.commercial?.potential||0),Number(incomingCommercial.potential||0))}},saved):item):[...clientList,(saved=client)]
   setClientList(next);setSelected(saved);notify('Perfil compilado e incorporado à carteira.')
  }
+ const addClients=clients=>{
+  setClientList(current=>{const map=new Map(current.map(client=>[normalizeText(client.name),client]));clients.forEach(client=>{const existing=map.get(normalizeText(client.name));const incomingCommercial=Object.fromEntries(Object.entries(client.commercial||{}).filter(([,value])=>value!==''&&value!==null&&value!==undefined));map.set(normalizeText(client.name),existing?{...existing,...client,id:existing.id,commercial:{...existing.commercial,...incomingCommercial,...reconcileOpportunityProjection(existing,client),potential:Math.max(Number(existing.commercial?.potential||0),Number(incomingCommercial.potential||0))}}:client)});return [...map.values()]})
+ }
  const importClients=imported=>{
   const map=new Map(clientList.map(client=>[normalizeText(client.name),client]))
   imported.forEach(client=>{const current=map.get(normalizeText(client.name));map.set(normalizeText(client.name),current?{...client,...current,commercial:{...client.commercial,...current.commercial,...reconcileOpportunityProjection(current,client),potential:Math.max(Number(client.commercial?.potential||0),Number(current.commercial?.potential||0)),score:client.commercial?.score??current.commercial?.score}}:client)})
@@ -119,11 +122,11 @@ export default function App(){
    <div className="content">
     {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient}/>}
     {page==='clients'&&<Clients clients={clientList} opportunities={opportunities} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
-    {page==='datahub'&&<DataHub clients={clientList} onImport={importClients} onUpdate={updateClient} onDelete={deleteClient} onNotify={notify}/>}
+    {page==='datahub'&&<DataHub clients={clientList} onImport={importClients} onProfileImport={addClients} onUpdate={updateClient} onDelete={deleteClient} onNotify={notify}/>}
     {page==='client360'&&selected&&<Client360 key={selected.id} client={selected} storageScope={currentUser?.storageScope} onBack={()=>navigate('clients')} onPrepare={()=>prepareClient(selected)} onUpdate={updateClient} onSaved={message=>notify(message||'Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}/>}
     {page==='val'&&<ValWorkspace mode={valMode} onModeChange={setValMode} clients={clientList} selectedClient={selected} onSelect={openClient}/>}
     {page==='agro'&&<Agro clients={clientList}/>}
-    {page==='questionnaire'&&<Questionnaire onCreate={addClient} onOpen={openClient} onNotify={notify}/>}
+    {page==='questionnaire'&&<Questionnaire onCreate={addClient} onCreateMany={addClients} onOpen={openClient} onNotify={notify}/>}
     {page==='visits'&&<Visits clients={clientList} visits={visits} onSave={saveVisit} onPrepare={prepareClient} onRegistered={registerVisitResult}/>}
     {page==='opportunities'&&<Opportunities clients={clientList} storageScope={currentUser?.storageScope} persistedItems={opportunities} onPersist={saveOpportunity} onClient={openClient} onSaved={notify}/>}
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}

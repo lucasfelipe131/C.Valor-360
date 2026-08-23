@@ -1,17 +1,19 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react'
 import {ArrowRight,BrainCircuit,CheckCircle2,DatabaseZap,FileSpreadsheet,Lightbulb,Pencil,RefreshCw,ShieldCheck,Sparkles,Trash2,UploadCloud,UsersRound} from 'lucide-react'
-import {parseImportFile,tableToObjects} from '../lib/smart-import'
+import {looksLikeQuestionnaire,parseImportFile,recognizeQuestionnaire,tableToObjects} from '../lib/smart-import'
 import {buildCommercialIntelligence,detectColumns,summarizeLearning} from '../lib/commercial-intelligence'
+import {saveImportedProfiles} from '../lib/profile-import'
 import ProducerProfileEditor from '../components/ProducerProfileEditor'
 
 const fieldLabels={client:'Cliente / produtor',value:'Valor do negócio',date:'Data',product:'Produto / categoria',status:'Status / resultado',municipality:'Município',culture:'Cultura',area:'Área'}
 
-export default function DataHub({clients=[],onImport,onUpdate,onDelete,onNotify}){
+export default function DataHub({clients=[],onImport,onProfileImport,onUpdate,onDelete,onNotify}){
  const inputRef=useRef(null)
  const [file,setFile]=useState(null)
  const [rows,setRows]=useState([])
  const [headers,setHeaders]=useState([])
  const [mapping,setMapping]=useState({})
+ const [profileReport,setProfileReport]=useState(null)
  const [stage,setStage]=useState('drop')
  const [error,setError]=useState('')
  const [result,setResult]=useState(null)
@@ -20,6 +22,7 @@ export default function DataHub({clients=[],onImport,onUpdate,onDelete,onNotify}
  const [deleting,setDeleting]=useState('')
  const [managedClientId,setManagedClientId]=useState(clients[0]?.id||'')
  const intelligence=useMemo(()=>rows.length&&mapping.client?buildCommercialIntelligence(rows,mapping):[],[rows,mapping])
+ const profileReady=Boolean(profileReport?.records?.length)&&profileReport.records.every(record=>!record.requiredMissing.length)
  const managedClient=clients.find(client=>String(client.id)===String(managedClientId))||clients[0]
  useEffect(()=>{
   if(!clients.some(client=>String(client.id)===String(managedClientId))){setManagedClientId(clients[0]?.id||'');setEditing(null)}
@@ -29,10 +32,20 @@ export default function DataHub({clients=[],onImport,onUpdate,onDelete,onNotify}
   try{
    const parsed=await parseImportFile(selected)
    if(!parsed.rows)throw new Error('Para negócios, use Excel, CSV, TSV ou JSON em formato de tabela.')
+   const recognized=recognizeQuestionnaire(parsed)
+   if(looksLikeQuestionnaire(recognized)){setProfileReport({...recognized,fileName:selected.name});setStage('profile');return}
    const objects=tableToObjects(parsed.rows);if(!objects.length)throw new Error('A planilha não possui linhas de dados reconhecíveis.')
    const foundHeaders=Object.keys(objects[0]);const detected=detectColumns(foundHeaders)
    setRows(objects);setHeaders(foundHeaders);setMapping(detected.mapping);setStage('map')
   }catch(exception){setError(exception.message||'Não consegui ler esta planilha.');setStage('drop')}
+ }
+ const finishProfiles=async()=>{
+  if(!profileReady){setError('Revise os campos obrigatórios ausentes antes de atualizar as preferências.');return}
+  setSaving(true);setError('')
+  try{
+   const saved=await saveImportedProfiles(profileReport.records,profileReport.fileName)
+   onProfileImport?.(saved.clients||[]);setResult(saved);setStage('profileDone');onNotify?.(`${saved.clientCount} ${saved.clientCount===1?'perfil atualizado':'perfis atualizados'} no Produtor 360.`)
+  }catch(exception){setError(exception.name==='TimeoutError'?'A atualização demorou além do limite. Tente novamente.':exception.message)}finally{setSaving(false)}
  }
  const finish=async()=>{
   if(!mapping.client){setError('Selecione a coluna que identifica o cliente ou produtor.');return}
@@ -48,7 +61,7 @@ export default function DataHub({clients=[],onImport,onUpdate,onDelete,onNotify}
    onImport?.(validatedClients);setResult({...validatedSummary,clients:validatedClients});setStage('done');onNotify?.(`${validatedClients.length} ${validatedClients.length===1?'produtor organizado':'produtores organizados'} na base.`)
   }catch(exception){setError(exception.name==='TimeoutError'?'A importação demorou além do limite. Verifique a conexão e tente novamente.':exception.message);setSaving(false)}
  }
- const reset=()=>{setFile(null);setRows([]);setHeaders([]);setMapping({});setResult(null);setStage('drop');setError('');setSaving(false)}
+ const reset=()=>{setFile(null);setRows([]);setHeaders([]);setMapping({});setProfileReport(null);setResult(null);setStage('drop');setError('');setSaving(false)}
  const remove=async client=>{
   if(!window.confirm(`Excluir ${client.name} da sua carteira? O registro sairá das telas, mas continuará auditável no banco.`))return
   setDeleting(client.id);setError('')
@@ -59,10 +72,12 @@ export default function DataHub({clients=[],onImport,onUpdate,onDelete,onNotify}
   <section className="learning-ribbon"><div><Sparkles/><span><small>ÍNDICE DE TRIAGEM</small><b>A VAL cruza recência, frequência, valor, resultado e diversidade.</b></span></div><p>O índice é heurístico e relativo à base importada; não é probabilidade de compra nem potencial financeiro validado.</p></section>
   {stage==='drop'&&<section className="smart-drop panel" onDragOver={event=>event.preventDefault()} onDrop={event=>{event.preventDefault();analyze(event.dataTransfer.files[0])}}><div className="drop-icon"><UploadCloud/></div><span className="eyebrow">IMPORTAÇÃO ASSISTIDA</span><h2>Solte sua planilha e confirme o mapeamento.</h2><p>O parser reconhece colunas de clientes e negócios em Excel, CSV, TSV e JSON; você valida antes de incorporar.</p><button className="primary-btn" onClick={()=>inputRef.current?.click()}><FileSpreadsheet size={18}/>Escolher planilha</button><input ref={inputRef} hidden type="file" accept=".xlsx,.csv,.tsv,.json" onChange={event=>event.target.files[0]&&analyze(event.target.files[0])}/><div className="drop-formats"><span>Excel .xlsx</span><span>Google Sheets .csv</span><span>CSV / TSV</span><span>JSON</span></div></section>}
   {stage==='reading'&&<section className="panel intelligence-loading"><RefreshCw/><h2>A Val está reconhecendo sua base...</h2><p>Identificando clientes, valores, datas, produtos e resultados.</p></section>}
+  {stage==='profile'&&<><section className="panel mapping-panel"><div className="panel-head"><div><span className="eyebrow">PRODUTOR 360 RECONHECIDO</span><h3>{profileReport?.fileName}</h3><p>{profileReport?.recordCount} produtores encontrados • perfil, IRT, NPS e preferências serão atualizados por nome normalizado</p></div><span className="mapping-score"><CheckCircle2/>{profileReady?'Pronto para atualizar':'Revisão necessária'}</span></div><div className="import-record-list">{profileReport?.records?.map((record,index)=><span key={`${record.producerName}-${index}`}><b>{record.producerName}</b><small>{record.recognized.length}/27 respostas • {record.requiredMissing.length?`${record.requiredMissing.length} obrigatórias ausentes`:'obrigatórias completas'}</small></span>)}</div></section>{error&&<div className="form-error" role="alert">{error}</div>}<div className="data-actions"><button className="ghost-btn" onClick={reset}>Cancelar</button><button className="primary-btn" disabled={saving||!profileReady} onClick={finishProfiles}>{saving?'Atualizando preferências...':`Atualizar preferências de ${profileReport?.recordCount||0} produtores`}<ArrowRight size={17}/></button></div></>}
   {stage==='map'&&<><section className="panel mapping-panel"><div className="panel-head"><div><span className="eyebrow">MAPEAMENTO AUTOMÁTICO</span><h3>{file?.name}</h3><p>{rows.length} linhas reconhecidas • confirme as colunas antes de incorporar</p></div><span className="mapping-score"><CheckCircle2/>Mapeamento inteligente</span></div><div className="mapping-grid">{Object.entries(fieldLabels).map(([field,label])=><label key={field}><span>{label}{field==='client'&&<b> obrigatório</b>}</span><select value={mapping[field]||''} onChange={event=>setMapping(previous=>({...previous,[field]:event.target.value}))}><option value="">Não informado</option>{headers.map(header=><option key={header}>{header}</option>)}</select></label>)}</div></section>
    <section className="data-preview-grid"><article className="panel preview-table"><div className="panel-head"><div><span className="eyebrow">PRÉVIA</span><h3>Leitura dos dados</h3></div></div><div className="table-scroll"><table><thead><tr>{headers.slice(0,5).map(header=><th key={header}>{header}</th>)}</tr></thead><tbody>{rows.slice(0,5).map((row,index)=><tr key={index}>{headers.slice(0,5).map(header=><td key={header}>{String(row[header]??'').slice(0,38)}</td>)}</tr>)}</tbody></table></div></article><article className="panel opportunity-preview"><span className="eyebrow">PRIMEIROS SINAIS</span><h3>{intelligence.length} produtores identificados</h3><div className="signal-list">{intelligence.sort((a,b)=>b.commercial.score-a.commercial.score).slice(0,3).map(client=><div key={client.id}><span>{client.name}</span><b>Índice {client.commercial.score}</b><small>{client.commercial.opportunity}</small></div>)}</div></article></section>
    {error&&<div className="form-error" role="alert">{error}</div>}<div className="data-actions"><button className="ghost-btn" onClick={reset}>Cancelar</button><button className="primary-btn" disabled={saving} onClick={finish}>{saving?'Incorporando...':'Incorporar à inteligência'}<ArrowRight size={17}/></button></div></>}
   {stage==='done'&&<section className="learning-result"><div className="result-glow"><DatabaseZap/></div><span className="eyebrow">BASE INCORPORADA</span><h2>O contexto comercial foi atualizado.</h2><p>Os fatos históricos foram incorporados ao Cliente 360; sinais e hipóteses continuam sujeitos à validação do consultor.</p><div className="learning-metrics"><div><small>PRODUTORES</small><b>{result.clientCount}</b></div><div><small>REGISTROS LIDOS</small><b>{result.rowCount}</b></div><div><small>ÍNDICE ALTO</small><b>{result.highIndex??0}</b></div><div><small>VOLUME INFORMADO</small><b>R$ {(result.totalRevenue/1000).toFixed(0)} mil</b></div></div><div className="learning-insight"><Lightbulb/><span><b>O que a VAL registrou</b>Somente datas, valores, resultados e categorias presentes na base — campos ausentes permanecem desconhecidos.</span></div><button className="primary-btn" onClick={reset}>Importar outra base</button></section>}
+  {stage==='profileDone'&&<section className="learning-result"><div className="result-glow"><DatabaseZap/></div><span className="eyebrow">PRODUTOR 360 ATUALIZADO</span><h2>As preferências foram incorporadas.</h2><p>Perfil comportamental, IRT, NPS, canal, frequência, conteúdo, pós-venda e demais respostas declaradas agora estão disponíveis no Cliente 360 e para a preparação de visitas.</p><div className="learning-metrics"><div><small>PRODUTORES</small><b>{result.clientCount}</b></div><div><small>RESPOSTAS RECEBIDAS</small><b>{result.receivedCount}</b></div><div><small>DUPLICADAS NO ARQUIVO</small><b>{result.duplicateCount||0}</b></div><div><small>ESCOPO</small><b>Este login</b></div></div><div className="learning-insight"><Lightbulb/><span><b>Atualização segura</b>Cadastros existentes foram enriquecidos por nome normalizado; histórico comercial e oportunidades validadas foram preservados.</span></div><button className="primary-btn" onClick={reset}>Importar outra base</button></section>}
   {error&&stage==='drop'&&<div className="form-error" role="alert">{error}</div>}
   <section className="panel producer-base-manager">
    <div className="panel-head"><div><span className="eyebrow">GESTÃO DA BASE</span><h3>Produtores deste login</h3><p>Edite nome, propriedade, compras, potencial e preferências; ou retire um produtor da carteira.</p></div><span className="mapping-score"><UsersRound/>{clients.length} produtores</span></div>
