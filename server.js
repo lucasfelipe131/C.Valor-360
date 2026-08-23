@@ -22,6 +22,7 @@ import {createTechnicalWorkspace,isTechnicalWorkspaceRequest} from './server/tec
 import {buildSurveyOptions,validateSurveyAnswers} from './server/survey-validation.js'
 import {calculateProfile} from './src/lib/profile.js'
 import {buildCommercialIntelligence,summarizeLearning} from './src/lib/commercial-intelligence.js'
+import {prepareVisitExecution} from './server/execution/service.js'
 
 const port=Number(process.env.PORT||3000)
 const appRoot=dirname(fileURLToPath(import.meta.url))
@@ -136,7 +137,7 @@ async function handleApi(request,response,url){
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
- const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname==='/api/val/progress'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const identity=protectedPath?await sessionIdentity(request):null
  if(protectedPath&&auth.configured&&!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
@@ -309,12 +310,53 @@ async function handleApi(request,response,url){
   const survey=await repository.integrateSurvey(integrateMatch[1],identity?.id);await accessRepository.recordUsage(identity,{eventType:'survey_integrated',page:'questionnaire'});return json(response,200,{saved:true,status:survey.status})
  }
  if(url.pathname==='/api/intelligence'&&request.method==='GET'){
-  return json(response,200,await repository.getIntelligence(identity?.id))
+  return json(response,200,await repository.getIntelligence(identity?.id,{role:identity?.role||'consultant'}))
  }
  if(url.pathname==='/api/visits'&&request.method==='POST'){
   const payload=await body(request);const clientId=clean(payload.clientId);const objective=String(payload.objective||'').trim().slice(0,2000)
   if(!clientId||!objective)return json(response,400,{error:'Selecione o produtor e informe o objetivo da visita.'})
   const visit=await repository.saveVisit({clientId,scheduledAt:payload.scheduledAt,objective,status:'Agendada'},identity?.id);await accessRepository.recordUsage(identity,{eventType:'visit_saved',page:'visits',entityType:'client',entityId:clientId});return json(response,201,{saved:true,visit})
+ }
+ const visitPreparationMatch=url.pathname.match(/^\/api\/v1\/visits\/([0-9a-f-]{36})\/preparation$/i)
+ if(visitPreparationMatch&&request.method==='GET'){
+  const result=await repository.getVisitPreparation({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,visitId:visitPreparationMatch[1]})
+  if(!result)return json(response,404,{error:'A visita ainda não possui preparação registrada.'})
+  return json(response,200,{contract_version:'val.prepare_visit.response.v1',...result})
+ }
+ if(visitPreparationMatch&&request.method==='POST'){
+  const actorId=String(identity?.id||identity?.email||'demo@valor360.local')
+  const result=await prepareVisitExecution({repository,tenantId:identity?.tenantId||config.defaultTenantId,actor:{id:actorId,ownerId:identity?.id,role:identity?.role||'consultant'},visitId:visitPreparationMatch[1],requestId:currentRequestContext()?.requestId})
+  await accessRepository.recordUsage(identity,{eventType:'visit_prepared',page:'visits',entityType:'visit',entityId:visitPreparationMatch[1],metadata:{actionPlanId:result.action_plan.action_plan_id}})
+  return json(response,201,{contract_version:'val.prepare_visit.response.v1',...result})
+ }
+ if(url.pathname==='/api/v1/action-plans'&&request.method==='POST'){
+  const payload=await body(request);const plan=payload.action_plan||payload.plan;const clientId=clean(payload.client_id||payload.clientId)
+  if(!plan||!clientId)return json(response,400,{error:'Informe ActionPlan e produtor.'})
+  const snapshot=await repository.getContextSnapshot({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id:plan.context_snapshot_id})
+  if(!snapshot)return json(response,404,{error:'ContextSnapshot não encontrado no escopo autorizado.'})
+  const saved=await repository.saveActionPlan({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,visitId:payload.visit_id||payload.visitId||null,plan,preparation:payload.preparation||null,contextSnapshot:snapshot,decisionThesisVersion:payload.decision_thesis_version, valuePlanVersion:payload.value_plan_version})
+  return json(response,201,{contract_version:'val.action_plan.response.v1',action_plan:saved})
+ }
+ if(url.pathname==='/api/v1/commitments'&&request.method==='GET'){
+  const commitments=await repository.listCommitments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId:clean(url.searchParams.get('clientId'))||null,status:clean(url.searchParams.get('status'))||null})
+  return json(response,200,{contract_version:'val.commitment.collection.v1',commitments})
+ }
+ if(url.pathname==='/api/v1/commitments'&&request.method==='POST'){
+  const payload=await body(request);const actorId=String(identity?.id||identity?.email||'demo@valor360.local')
+  const actionPlanId=payload.action_plan_id??payload.actionPlanId??null
+  const commitment=await repository.saveCommitment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,actorId,input:{...payload,organization_id:identity?.tenantId||config.defaultTenantId,owner_type:'USER',owner_id:actorId,created_by:actorId,request_id:currentRequestContext()?.requestId,source_ref:payload.source_ref||payload.sourceRef||(actionPlanId?`action-plan:${actionPlanId}`:'manual:commitment')}})
+  await accessRepository.recordUsage(identity,{eventType:'commitment_created',page:'visits',entityType:'client',entityId:commitment.client_id,metadata:{commitmentId:commitment.commitment_id}})
+  return json(response,201,{contract_version:'val.commitment.response.v1',commitment})
+ }
+ const commitmentMatch=url.pathname.match(/^\/api\/v1\/commitments\/([0-9a-f-]{36})$/i)
+ if(commitmentMatch&&request.method==='PATCH'){
+  const commitment=await repository.updateCommitment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id:commitmentMatch[1],input:{...await body(request),request_id:currentRequestContext()?.requestId}})
+  await accessRepository.recordUsage(identity,{eventType:'commitment_updated',page:'visits',entityType:'client',entityId:commitment.client_id,metadata:{commitmentId:commitment.commitment_id,status:commitment.status}})
+  return json(response,200,{contract_version:'val.commitment.response.v1',commitment})
+ }
+ if(url.pathname==='/api/v1/insights'&&request.method==='GET'){
+  const intelligence=await repository.getIntelligence(identity?.id,{role:identity?.role||'consultant'})
+  return json(response,200,intelligence.insights)
  }
  if(url.pathname==='/api/opportunities'&&request.method==='POST'){
   const payload=await body(request);const clientId=clean(payload.clientId);const title=String(payload.title||'').trim().slice(0,220);const stage=String(payload.stage||'Diagnóstico')

@@ -16,7 +16,7 @@ test('classificação determinística cobre visita, agronomia crítica e próxim
 test('mesmo envelope sempre produz a mesma rota e ordem de módulos',()=>{
   const request=envelope('prepare_visit')
   assert.deepEqual(routeCoreRequest(request),routeCoreRequest(request))
-  assert.deepEqual(routeCoreRequest(request).modules,['MCTX','MMI','MIC','MDI','MVV'])
+  assert.deepEqual(routeCoreRequest(request).modules,['MCTX','MMI','MIC','MDI','MVV','MEX','VIS'])
   assert.deepEqual(routeCoreRequest(request).execution_plan,[{module_id:'LEGACY_VAL_ENGINE',required:true,timeout_ms:null}])
 })
 

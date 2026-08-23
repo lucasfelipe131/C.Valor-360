@@ -26,6 +26,7 @@ jobs:
       - run: npm ci
       - run: npm test
       - run: npm run test:phase2:smoke
+      - run: npm run test:phase5:smoke
 
   build:
     name: npm run build

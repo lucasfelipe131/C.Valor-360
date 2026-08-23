@@ -11,8 +11,11 @@ import {buildConversationOrchestration,enrichAdviceWithOrchestration,conversatio
 import {prepareConversationThread} from './conversation-thread-context.js'
 import {languageEnhancerVersion,preserveEnhancedLanguage} from './language-enhancer.js'
 import {buildPortfolioRadar} from './portfolio-radar.js'
+import {buildInsightFeed} from './execution/insight-card.js'
 import {enforceValSpecificity,mergeStructuredReasoning,resolveStructuredReasoningRoute,specificityVersion} from './val-specificity.js'
 import {attachCommercialComposition} from './commercial/composition.js'
+import {attachExecutionComposition} from './execution/composition.js'
+import {observe} from './observability.js'
 
 const PATCHED=Symbol.for('valor360.conversion-core.patched')
 export const conversionCompositionVersion='conversion-bootstrap-v1'
@@ -61,7 +64,7 @@ function radarFingerprint(intelligence,ownerId,now){
   })).digest('hex').slice(0,20)
 }
 
-function finalAdvice(advice,rawContext,message,usedGenerativeAi=false){
+function finalAdvice(advice,rawContext,message,usedGenerativeAi=false,executionInput={}){
   const thread=prepareConversationThread(rawContext||{},message||'')
   const context=thread.context
   const effectiveMessage=thread.message
@@ -77,7 +80,9 @@ function finalAdvice(advice,rawContext,message,usedGenerativeAi=false){
   const normalized=normalizeAdviceForValUi(merged,conversion)
   const specific=enforceValSpecificity(normalized,context,effectiveMessage,{usedGenerativeAi,route:orchestration.route})
   const commercial=attachCommercialComposition(specific,{context,message:effectiveMessage,conversion,orchestration})
-  return {context,thread,conversion,orchestration,advice:commercial}
+  const selectedDueAt=conversion?.selectedOpportunity?.nextActionAt||conversion?.selectedOpportunity?.next_action_at||null
+  const execution=attachExecutionComposition(commercial,{context,contextSnapshot:context.contextSnapshot,organizationId:context.contextSnapshot?.organization_id,actor:executionInput.actorId?{type:'USER',id:executionInput.actorId}:null,defaultDueAt:selectedDueAt})
+  return {context,thread,conversion,orchestration,advice:execution}
 }
 
 function deterministicDecision(context,effectiveMessage,originalMessage,input){
@@ -92,7 +97,7 @@ function deterministicDecision(context,effectiveMessage,originalMessage,input){
     requestedStage:input.requestedStage||null
   })
   const safe=enforceValSafety(fallback,context,effectiveMessage,{requestedStage:input.requestedStage||null})
-  return finalAdvice(safe,context,originalMessage,false)
+  return finalAdvice(safe,context,originalMessage,false,{actorId:input.ownerId})
 }
 
 function conversionEnvelope(resolved){
@@ -116,35 +121,34 @@ export function installConversionComposition(){
   }
 
   const originalGetIntelligence=ValRepository.prototype.getIntelligence
-  ValRepository.prototype.getIntelligence=async function intelligenceWithPortfolioRadar(ownerId){
+  ValRepository.prototype.getIntelligence=async function intelligenceWithPortfolioRadar(ownerId,options={}){
     const intelligence=await originalGetIntelligence.call(this,ownerId)
     const now=Date.now()
     const fingerprint=radarFingerprint(intelligence,ownerId,now)
-    const cacheKey=`${String(ownerId||'demo')}:${fingerprint}`
+    const cacheKey=`${String(this.tenantId||'tenant')}:${String(ownerId||'demo')}:${fingerprint}`
     const cached=radarCache.get(cacheKey)
-    if(cached&&cached.expiresAt>now)return {...intelligence,radar:cached.radar}
 
     const allClients=list(intelligence.clients)
     const partialContexts=allClients.map(client=>radarPartialContext(client,intelligence))
     const preliminary=buildPortfolioRadar(partialContexts,{now,maxItems:5})
     const ordered=allClients.map(client=>({client,score:radarCandidateScore(client,intelligence,now)})).sort((a,b)=>b.score-a.score||String(a.client.name||'').localeCompare(String(b.client.name||''),'pt-BR'))
-    const selectedIds=new Set([...list(preliminary.items).map(item=>item.clientId),...ordered.slice(0,24).map(item=>String(item.client.id))])
+    const selectedIds=new Set([...list(cached?.radar?.items||preliminary.items).map(item=>item.clientId),...ordered.slice(0,24).map(item=>String(item.client.id))])
     const selectedClients=allClients.filter(client=>selectedIds.has(String(client.id)))
     const contexts=await Promise.all(selectedClients.map(async client=>{
-      try{return await originalGetClientContext.call(this,{clientId:client.id,client,ownerId})}
+      try{return await originalGetClientContext.call(this,{clientId:client.id,client,ownerId,contextRequest:{objective:'portfolio_attention',actorRole:options.role||'consultant',scope:'own_portfolio'}})}
       catch{return radarPartialContext(client,intelligence)}
     }))
-    const radar=buildPortfolioRadar(contexts,{now,maxItems:5})
-    radar.considered=allClients.length
-    radar.enriched=contexts.length
-    radar.policy={...radar.policy,visibility:'consultant_and_manager',portfolioWidePreselection:true}
+    const radar=cached&&cached.expiresAt>now?cached.radar:buildPortfolioRadar(contexts,{now,maxItems:5})
+    radar.considered=allClients.length;radar.enriched=contexts.length;radar.policy={...radar.policy,visibility:'consultant_and_manager',portfolioWidePreselection:true}
     const finalRadar=radar.items.length?radar:preliminary
     finalRadar.considered=allClients.length
     finalRadar.enriched=contexts.length
     finalRadar.policy={...finalRadar.policy,visibility:'consultant_and_manager',portfolioWidePreselection:true}
     for(const [key,value] of radarCache)if(value.expiresAt<=now)radarCache.delete(key)
     radarCache.set(cacheKey,{expiresAt:now+RADAR_CACHE_TTL_MS,radar:finalRadar})
-    return {...intelligence,radar:finalRadar}
+    const insights=buildInsightFeed({organizationId:this.tenantId,actor:{id:ownerId||'demo',role:options.role||'consultant'},contexts,radar:finalRadar,now,maxItems:5})
+    observe('insights.feed.completed',{insightIds:insights.items.map(item=>item.insight_id).join(','),modulesCalled:'VIS',durationMs:0,outcome:'ok'})
+    return {...intelligence,radar:finalRadar,insights}
   }
 
   const originalRecordRecommendation=ValRepository.prototype.recordRecommendation
@@ -152,7 +156,7 @@ export function installConversionComposition(){
     const rawContext=input.context||{}
     const canonicalQuestion=String(originalQuestionContext.getStore()||input.question||'')
     const usedGenerativeAi=(input.modelRun?.status==='completed'&&input.modelRun?.generativeUsed!==false)||input.modelRun?.generativeUsed===true||/openai|gpt-/i.test(String(input.model||''))
-    const resolved=finalAdvice(input.advice||{},rawContext,canonicalQuestion,usedGenerativeAi)
+    const resolved=finalAdvice(input.advice||{},rawContext,canonicalQuestion,usedGenerativeAi,{actorId:input.ownerId})
     const persistedAdvice=preserveEnhancedLanguage(resolved.advice,input.advice||{})
     return originalRecordRecommendation.call(this,{
       ...input,
@@ -211,7 +215,7 @@ export function installConversionComposition(){
       }))
       emitProgress(input,'complete')
       const providerUsed=result.engineMode==='openai'
-      const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed)
+      const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed,{actorId:input.ownerId})
       return {
         ...result,
         engineMode:providerUsed?'structured_hybrid':'rules_fallback',
@@ -289,7 +293,7 @@ export function installConversionComposition(){
     const result=await originalQuestionContext.run(originalMessage,()=>originalAnswer.call(this,{...input,message:effectiveMessage,mode:reasoning.tier}))
     emitProgress(input,'complete')
     const providerUsed=result.engineMode==='openai'
-    const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed)
+    const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed,{actorId:input.ownerId})
     const providerFallback=!providerUsed
     return {
       ...result,

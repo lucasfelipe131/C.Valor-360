@@ -114,6 +114,8 @@ export class ValCore{
     const evidence=evidenceRefs(recommendation)
     const missing=assumptions(recommendation)
     const commercialModules=recommendation?.advice?.commercial_modules||{}
+    const executionModules=recommendation?.advice?.execution_modules||{}
+    const actionPlan=recommendation?.advice?.action_plan||{}
     const completedAt=this.clock().toISOString()
     const response=createResponseEnvelope({
       request_id:requestEnvelope.request_id,
@@ -134,9 +136,12 @@ export class ValCore{
         planned_modules:[...route.modules],
         module_runs:execution.module_runs,
         commercial_modules:Array.isArray(commercialModules.modules_called)?commercialModules.modules_called:[],
+        execution_modules:Array.isArray(executionModules.modules_called)?executionModules.modules_called:[],
         behavioral_profile_version:recommendation?.advice?.behavioral_profile?.version||null,
         decision_thesis_version:recommendation?.advice?.decision_thesis?.version||null,
         value_plan_version:recommendation?.advice?.value_plan?.version||null,
+        action_plan_id:actionPlan.action_plan_id||executionModules.audit?.action_plan_id||null,
+        action_plan_version:actionPlan.version||executionModules.audit?.action_plan_version||null,
         context_snapshot_id:recommendation?.contextSnapshotId||commercialModules.context_snapshot_id||null,
         policy_decision:{allowed:policyDecision.allowed,policy_version:policyDecision.policy_version,scope:policyDecision.scope},
         started_at:startedAt,
