@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://val.local/contracts/v1/outcome.schema.json",
+  "title": "Outcome v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "version", "outcome_id", "organization_id", "visit_id", "client_id", "visit_report_id", "recommendation_id", "action_plan_id", "commitment_id", "outcome_type", "result", "evidence_refs", "measured_at", "recorded_by", "confidence", "notes", "created_at"],
+  "properties": {
+    "contract_version": {"const": "val.outcome.v1"},
+    "version": {"const": "val.outcome.v1"},
+    "outcome_id": {"type": "string", "format": "uuid"},
+    "organization_id": {"type": "string", "minLength": 1},
+    "visit_id": {"type": "string", "minLength": 1},
+    "client_id": {"type": "string", "minLength": 1},
+    "visit_report_id": {"type": ["string", "null"]},
+    "recommendation_id": {"type": ["string", "null"]},
+    "action_plan_id": {"type": ["string", "null"]},
+    "commitment_id": {"type": ["string", "null"]},
+    "outcome_type": {"enum": ["WON", "LOST", "PARTIAL", "NO_DECISION", "FOLLOW_UP", "TECHNICAL_RESULT", "RELATIONSHIP_PROGRESS", "NO_CHANGE"]},
+    "result": {"type": "object"},
+    "evidence_refs": {"type": "array", "items": {"type": "object"}},
+    "measured_at": {"type": "string", "format": "date-time"},
+    "recorded_by": {"type": "string", "minLength": 1},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "notes": {"type": "string", "maxLength": 4000},
+    "created_at": {"type": "string", "format": "date-time"}
+  }
+}

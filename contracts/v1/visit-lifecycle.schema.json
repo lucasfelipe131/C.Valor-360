@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://val.local/contracts/v1/visit-lifecycle.schema.json",
+  "title": "VisitLifecycle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "version", "visit_id", "organization_id", "status", "revision", "occurred_at", "completed_at", "cancelled_at", "updated_at", "updated_by", "transition"],
+  "properties": {
+    "contract_version": {"const": "val.visit_lifecycle.v1"},
+    "version": {"const": "val.visit_lifecycle.v1"},
+    "visit_id": {"type": "string", "minLength": 1, "maxLength": 180},
+    "organization_id": {"type": "string", "minLength": 1, "maxLength": 180},
+    "status": {"enum": ["PLANNED", "PREPARED", "IN_PROGRESS", "COMPLETED_PENDING_REVIEW", "COMPLETED", "CANCELLED"]},
+    "revision": {"type": "integer", "minimum": 0},
+    "occurred_at": {"type": ["string", "null"], "format": "date-time"},
+    "completed_at": {"type": ["string", "null"], "format": "date-time"},
+    "cancelled_at": {"type": ["string", "null"], "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "updated_by": {"type": "string", "minLength": 1, "maxLength": 180},
+    "transition": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from_status", "to_status", "reason_code", "request_id"],
+      "properties": {
+        "from_status": {"type": ["string", "null"]},
+        "to_status": {"type": "string"},
+        "reason_code": {"type": "string", "minLength": 1, "maxLength": 100},
+        "request_id": {"type": ["string", "null"], "maxLength": 180}
+      }
+    }
+  }
+}

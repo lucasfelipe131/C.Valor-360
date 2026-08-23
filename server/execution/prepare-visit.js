@@ -64,28 +64,41 @@ function opportunities(snapshot,valuePlan){
  }
 }
 
+function confirmedVisitItems(snapshot,key){
+ return [...list(snapshot?.facts),...list(snapshot?.inferences),...list(snapshot?.hypotheses)].filter(item=>item?.key===key&&/confirmed_visit_report/i.test(text(item?.source_type)))
+}
+
 function whyNow(visit,context){
  const scheduled=iso(visit?.scheduled_at??visit?.scheduledAt)
- const overdue=list(context?.commitments).find(item=>{
+ const commitments=list(context?.commitments)
+ const overdue=commitments.find(item=>{
   const due=iso(item?.due_at??item?.dueAt);return due&&new Date(due)<new Date()&&!['DONE','CANCELLED'].includes(text(item.status).toUpperCase())
  })
  if(overdue)return `Há um compromisso vencido que precisa ser confirmado antes de criar um novo próximo passo.`
+ const active=commitments.find(item=>!['DONE','CANCELLED'].includes(text(item?.status).toUpperCase()))
+ const outcome=list(context?.learning?.visitOutcomes).at(-1)
+ if(outcome&&text(outcome.outcome_type).toUpperCase()==='NO_DECISION')return active
+  ?'A visita anterior terminou sem decisão e há um compromisso de retorno ativo; esta conversa deve recuperar o combinado e a evidência solicitada.'
+  :'A visita anterior terminou sem decisão; esta conversa deve retomar o que travou e explicitar um próximo passo.'
+ if(active)return 'Há um compromisso confirmado da visita anterior que precisa orientar objetivo, prova e próximo passo desta conversa.'
  if(scheduled)return `A visita está agendada para ${new Date(scheduled).toLocaleDateString('pt-BR',{timeZone:'UTC'})}; preparar agora reduz improviso e perguntas sem foco.`
  return 'A visita foi registrada e precisa de objetivo, evidência e próximo passo claros antes da conversa.'
 }
 
-function proofList(valuePlan,profile,type){
+function proofList(valuePlan,profile,type,snapshot){
  const values=[...list(valuePlan?.proof_strategy)]
+ if(confirmedVisitItems(snapshot,'visit_report.expectation').length)values.unshift('Levar o comparativo solicitado e explicitar premissas, diferenças, risco e impacto econômico.')
  if(profile?.approach_guidance?.proof_preference)values.unshift(profile.approach_guidance.proof_preference)
  if(type==='TECHNICAL')values.push('Material técnico validado e revisão habilitada quando aplicável.')
  return [...new Set(values.map(item=>text(item,500)).filter(Boolean))].slice(0,5)
 }
 
-function objection(valuePlan){
+function objection(valuePlan,snapshot){
+ const prior=confirmedVisitItems(snapshot,'visit_report.objection').find(item=>item?.value?.category==='PRICE'||/preço|investimento/i.test(text(item?.value?.statement)))
  const expected=text(list(valuePlan?.expected_objections)[0],300)
  const guidance=list(valuePlan?.objection_guidance)[0]
  return {
-  probable:expected||'Nenhuma objeção material está confirmada no contexto atual.',
+  probable:prior?'Objeção de preço/investimento confirmada na visita anterior.':expected||'Nenhuma objeção material está confirmada no contexto atual.',
   guidance:text(guidance?.guidance||'Valide a preocupação, retorne ao problema confirmado e use evidência antes de discutir condição comercial.',700),
   automatic_discount:false
  }
@@ -130,9 +143,9 @@ export function buildPrepareVisit(input={}){
   profile_approach:profileApproach(profile),
   golden_questions:questions,
   val_thesis:text(thesis.recommended_action||'Confirmar os dados críticos antes de recomendar.',1000),
-  proofs_to_take:proofList(valuePlan,profile,type),
-  probable_objection:commercialApplicable?objection(valuePlan).probable:'Não aplicável como objeção comercial para este objetivo.',
-  objection_guidance:commercialApplicable?objection(valuePlan).guidance:'Conduza o objetivo técnico ou relacional sem forçar proposta ou fechamento.',
+  proofs_to_take:proofList(valuePlan,profile,type,snapshot),
+  probable_objection:commercialApplicable?objection(valuePlan,snapshot).probable:'Não aplicável como objeção comercial para este objetivo.',
+  objection_guidance:commercialApplicable?objection(valuePlan,snapshot).guidance:'Conduza o objetivo técnico ou relacional sem forçar proposta ou fechamento.',
   automatic_discount:false,
   commitment_target:commitmentTarget,
   priority_actions:actionPlan.priorities.slice(0,3),
