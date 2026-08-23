@@ -23,6 +23,7 @@ import {buildSurveyOptions,validateSurveyAnswers} from './server/survey-validati
 import {calculateProfile} from './src/lib/profile.js'
 import {buildCommercialIntelligence,summarizeLearning} from './src/lib/commercial-intelligence.js'
 import {prepareVisitExecution} from './server/execution/service.js'
+import {createVisitLoopService} from './server/visit-loop/service.js'
 
 const port=Number(process.env.PORT||3000)
 const appRoot=dirname(fileURLToPath(import.meta.url))
@@ -32,7 +33,7 @@ const storePath=join(dataRoot,'valor360-store.json')
 const profileMatrix=JSON.parse(readFileSync(join(appRoot,'src','data','profile-matrix.json'),'utf8'))
 const surveyOptions=buildSurveyOptions(profileMatrix)
 const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp','.woff2':'font/woff2'}
-const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(self), microphone=(), geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"}
+const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(self), microphone=(self), geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; worker-src 'self' blob:; media-src 'self' blob: data:; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"}
 
 mkdirSync(dataRoot,{recursive:true})
 if(!existsSync(storePath))writeFileSync(storePath,JSON.stringify({surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[]}},null,2))
@@ -45,13 +46,13 @@ async function body(request){const raw=await rawBody(request);try{return raw?JSO
 async function limitedResponseText(upstream,limit){const reader=upstream.body?.getReader();if(!reader)return upstream.text();const chunks=[];let size=0;while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>limit){await reader.cancel();throw Object.assign(new Error('A planilha excede o limite seguro de importação.'),{statusCode:413})}chunks.push(value)}return new TextDecoder().decode(Buffer.concat(chunks.map(chunk=>Buffer.from(chunk))))}
 const clean=value=>String(value||'').trim().slice(0,240)
 const attachmentMaxBytes=6_000_000
-const attachmentMimeTypes=new Set(['image/jpeg','image/png','image/webp','image/gif','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','text/plain'])
+const attachmentMimeTypes=new Set(['image/jpeg','image/png','image/webp','image/gif','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','text/plain','audio/mpeg','audio/mp3','audio/mp4','audio/x-m4a','audio/wav','audio/x-wav','audio/webm','audio/ogg'])
 const attachmentId=value=>/^[0-9a-f-]{36}$/i.test(String(value||''))?String(value):''
 function normalizedAttachment(payload={}){
  const match=String(payload.dataUrl||'').match(/^data:([^;,]+);base64,([A-Za-z0-9+/=\s]+)$/)
  if(!match)throw Object.assign(new Error('O arquivo enviado não está em um formato válido.'),{statusCode:400})
  const mimeType=String(match[1]||payload.mimeType||'').toLowerCase().trim()
- if(!attachmentMimeTypes.has(mimeType))throw Object.assign(new Error('Use foto, PDF, Word, Excel, CSV ou TXT.'),{statusCode:415})
+ if(!attachmentMimeTypes.has(mimeType))throw Object.assign(new Error('Use foto, áudio, PDF, Word, Excel, CSV ou TXT.'),{statusCode:415})
  let buffer;try{buffer=Buffer.from(match[2].replace(/\s/g,''),'base64')}catch{throw Object.assign(new Error('Não foi possível ler este arquivo.'),{statusCode:400})}
  if(!buffer.length)throw Object.assign(new Error('O arquivo está vazio.'),{statusCode:400})
  if(buffer.length>attachmentMaxBytes)throw Object.assign(new Error('Cada arquivo pode ter até 6 MB.'),{statusCode:413})
@@ -71,6 +72,7 @@ const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenan
 const accessRepository=new AccessRepository({db:database,tenantId:config.defaultTenantId,runtimeConfig:config})
 const valEngine=new ValEngine({runtimeConfig:config,repository})
 const valCore=new ValCore({engine:valEngine,tenantId:config.defaultTenantId})
+const visitLoop=createVisitLoopService({repository})
 const valProgress=createValProgressTracker()
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
@@ -137,7 +139,7 @@ async function handleApi(request,response,url){
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
- const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const identity=protectedPath?await sessionIdentity(request):null
  if(protectedPath&&auth.configured&&!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
@@ -328,6 +330,28 @@ async function handleApi(request,response,url){
   const result=await prepareVisitExecution({repository,tenantId:identity?.tenantId||config.defaultTenantId,actor:{id:actorId,ownerId:identity?.id,role:identity?.role||'consultant'},visitId:visitPreparationMatch[1],requestId:currentRequestContext()?.requestId})
   await accessRepository.recordUsage(identity,{eventType:'visit_prepared',page:'visits',entityType:'visit',entityId:visitPreparationMatch[1],metadata:{actionPlanId:result.action_plan.action_plan_id}})
   return json(response,201,{contract_version:'val.prepare_visit.response.v1',...result})
+ }
+ const visitReportMatch=url.pathname.match(/^\/api\/v1\/visits\/([0-9a-f-]{36})\/report$/i)
+ if(visitReportMatch&&request.method==='GET')return json(response,200,await visitLoop.getReport({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,visitId:visitReportMatch[1]}))
+ if(visitReportMatch&&request.method==='POST'){
+  const actorId=String(identity?.id||identity?.email||'demo@valor360.local');const payload=await body(request)
+  const result=await visitLoop.createReport({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,actorId,visitId:visitReportMatch[1],input:payload,requestId:currentRequestContext()?.requestId,now:payload.occurred_at})
+  await accessRepository.recordUsage(identity,{eventType:'visit_report_created',page:'visits',entityType:'visit',entityId:visitReportMatch[1],metadata:{sourceType:result.visit_report.source_type,confirmationStatus:result.visit_report.confirmation_status}})
+  return json(response,201,result)
+ }
+ const visitConfirmMatch=url.pathname.match(/^\/api\/v1\/visits\/([0-9a-f-]{36})\/confirm$/i)
+ if(visitConfirmMatch&&request.method==='POST'){
+  const actorId=String(identity?.id||identity?.email||'demo@valor360.local');const payload=await body(request)
+  const result=await visitLoop.confirmReport({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,actorId,visitId:visitConfirmMatch[1],input:payload,requestId:currentRequestContext()?.requestId})
+  await accessRepository.recordUsage(identity,{eventType:'visit_report_confirmed',page:'visits',entityType:'visit',entityId:visitConfirmMatch[1],metadata:{outcomeType:result.outcome?.outcome_type,commitments:result.commitments?.length||0}})
+  return json(response,200,result)
+ }
+ const visitLearningMatch=url.pathname.match(/^\/api\/v1\/visits\/([0-9a-f-]{36})\/learning-context$/i)
+ if(visitLearningMatch&&request.method==='GET')return json(response,200,await visitLoop.learningContext({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,visitId:visitLearningMatch[1]}))
+ if(url.pathname==='/api/v1/outcomes'&&request.method==='POST'){
+  const actorId=String(identity?.id||identity?.email||'demo@valor360.local');const result=await visitLoop.recordOutcome({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,actorId,input:await body(request),requestId:currentRequestContext()?.requestId})
+  await accessRepository.recordUsage(identity,{eventType:'visit_outcome_recorded',page:'visits',entityType:'visit',entityId:result.outcome.visit_id,metadata:{outcomeType:result.outcome.outcome_type}})
+  return json(response,201,result)
  }
  if(url.pathname==='/api/v1/action-plans'&&request.method==='POST'){
   const payload=await body(request);const plan=payload.action_plan||payload.plan;const clientId=clean(payload.client_id||payload.clientId)

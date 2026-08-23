@@ -24,9 +24,24 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
-      - run: npm run test:phase2:smoke
-      - run: npm run test:phase5:smoke
+      - name: Run full test suite
+        run: npm test
+      - name: Run VAL Core and API contract regression
+        run: node --test test/phase2-*.test.js
+      - name: Run MMI and MCTX regression
+        run: node --test test/phase3-*.test.js
+      - name: Run MIC, MDI and MVV regression
+        run: node --test test/phase4-*.test.js
+      - name: Run MEX and VIS regression
+        run: node --test test/phase5-*.test.js
+      - name: Run Phase 6 contracts and visit-learning-loop cases
+        run: node --test test/phase6-migration-contract.test.js test/phase6-visit-loop.test.js
+      - name: Run legacy and VAL Core v1 smoke
+        run: npm run test:phase2:smoke
+      - name: Run Phase 5 API smoke
+        run: npm run test:phase5:smoke
+      - name: Run Phase 6 API smoke explicitly
+        run: npm run test:phase6:smoke
 
   build:
     name: npm run build
@@ -153,6 +168,72 @@ jobs:
             .gate
             .backups/staging/*.dump
             .backups/staging/*.json
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: true
+
+  phase6-gate-postgres:
+    name: phase6 gate postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gate
+          POSTGRES_PASSWORD: gate-only
+          POSTGRES_DB: val_phase6
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gate -d val_phase6"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_phase6
+      PG_SSL: "false"
+      VAL_DEMO_MODE: "false"
+      VAL_DEFAULT_TENANT_ID: 00000000-0000-4000-8000-000000000001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare Phase 6 evidence directory
+        run: mkdir -p .gate/phase6
+      - name: Apply schema and migrations in PostgreSQL 16
+        run: npm run db:migrate | tee .gate/phase6/migrations.log
+      - name: Prove Phase 6 migration idempotence
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/20260823_004_visit_learning_loop_expand.sql | tee .gate/phase6/migration-004-repeat.log
+      - name: Seed isolated Phase 6 fixtures
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/phase6-ci-seed.sql | tee .gate/phase6/seed.log
+      - name: Validate visit loop, tenant isolation and second-visit learning
+        env:
+          PHASE6_VERIFY_MODE: source
+          PHASE6_EVIDENCE_FILE: .gate/phase6/source-catalog.json
+        run: node scripts/phase6-postgres-verify.mjs | tee .gate/phase6/source-runtime.log
+      - name: Back up migrated Phase 6 database
+        run: pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges --file=.gate/phase6/phase6-migrated.dump
+      - name: Create a different clean PostgreSQL 16 restore database
+        run: psql "postgresql://gate:gate-only@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE val_phase6_restore"
+      - name: Restore Phase 6 backup
+        run: pg_restore --exit-on-error --no-owner --no-privileges --dbname="postgresql://gate:gate-only@127.0.0.1:5432/val_phase6_restore" .gate/phase6/phase6-migrated.dump | tee .gate/phase6/restore.log
+      - name: Revalidate restored schema, data, references and isolation
+        env:
+          DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_phase6_restore
+          PHASE6_VERIFY_MODE: restore
+          PHASE6_EVIDENCE_FILE: .gate/phase6/source-catalog.json
+          PHASE6_RESTORE_EVIDENCE_FILE: .gate/phase6/restore-catalog.json
+        run: node scripts/phase6-postgres-verify.mjs | tee .gate/phase6/restore-runtime.log
+      - name: Upload Phase 6 PostgreSQL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase6-gate-evidence-${{ github.run_id }}
+          path: .gate/phase6
           if-no-files-found: error
           retention-days: 7
           include-hidden-files: true

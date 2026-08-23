@@ -31,7 +31,7 @@ export async function prepareVisitExecution({repository,tenantId,actor,visitId,r
  const ownerId=Object.prototype.hasOwnProperty.call(actor||{},'ownerId')?actor.ownerId:actor.id
  const visit=await repository.getVisit({tenantId,ownerId,id:visitId})
  if(!visit)throw Object.assign(new Error('Visita não encontrada na carteira autorizada.'),{statusCode:404,code:'visit_not_found'})
- const context=await repository.getClientContext({tenantId,clientId:visit.clientId,ownerId,contextRequest:{objective:'prepare_visit',requestId,actorRole:actor.role,scope:'own_portfolio',message:visit.objective}})
+ const context=await repository.getClientContext({tenantId,clientId:visit.clientId,ownerId,contextRequest:{objective:'prepare_visit',requestId,actorRole:actor.role,scope:'own_portfolio',message:visit.objective,now}})
  const snapshot=context.contextSnapshot
  const conversion=buildConversionIntelligence(context,`Preparar visita: ${visit.objective}`,{now})
  const commercial=buildCommercialComposition({context,contextSnapshot:snapshot,organizationId:tenantId,message:`Preparar visita: ${visit.objective}`,conversion,now})

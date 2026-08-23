@@ -125,6 +125,19 @@ function profileSignals(context){
   }))
 }
 
+function memoryBehavioralSignals(records){
+ return list(records).filter(record=>record.memory_type==='BEHAVIORAL'&&record.key==='visit_report.behavioral_signal').map(record=>({
+  key:record.content?.signal_code||record.key,
+  value:record.content?.statement||'',
+  epistemic_state:record.memory_state,
+  source_ref:record.source_ref,
+  confidence:record.confidence,
+  evidence_refs:record.evidence_refs.map(item=>reference(item.source_type||'evidence',item.id)),
+  observed_at:record.observed_at,
+  valid_until:record.valid_until
+ }))
+}
+
 function authorizedSubjects(context,{organizationId,subjectType,subjectId}){
   const subjects=[]
   const seen=new Set()
@@ -148,13 +161,18 @@ function authorizedSubjects(context,{organizationId,subjectType,subjectId}){
   return subjects
 }
 
-function missingInformation(context,{objective,hasSelectedMemories,currentSoil}){
+function missingInformation(context,{objective,hasSelectedMemories,currentSoil,selectedMemories=[]}){
   const missing=[]
   if(!context?.client?.id&&!context?.client?.name)missing.push({code:'subject_record',description:'Falta o cadastro autorizado do produtor.',critical:true})
   if(!hasSelectedMemories&&!list(context?.businessHistory).length&&!list(context?.interactions).length&&!list(context?.visits).length)missing.push({code:'historical_context',description:'Não há histórico material autorizado para esta decisão.',critical:false})
   if(['prepare_visit','next_best_action'].includes(objective)&&!list(context?.interactions).length&&!list(context?.visits).length)missing.push({code:'recent_interaction',description:'Falta uma interação recente confirmada com o produtor.',critical:false})
   if(/^agronomic_/.test(objective)&&!currentSoil)missing.push({code:'current_soil_analysis',description:'Falta análise de solo atualizada para sustentar uma recomendação agronômica.',critical:true})
   if(!list(context?.profile?.evidence).length&&!list(context?.client?.profileEvidence).length)missing.push({code:'behavioral_evidence',description:'O perfil comportamental não possui evidência observável recuperável.',critical:false})
+  for(const record of list(selectedMemories).filter(item=>item.key==='visit_report.missing_information')){
+    const code=text(record.content?.code)||'visit_missing_information'
+    const description=text(record.content?.statement)
+    if(description&&!missing.some(item=>item.code===code&&item.description===description))missing.push({code,description,critical:Boolean(record.content?.critical),source_ref:record.source_ref})
+  }
   return missing
 }
 
@@ -276,7 +294,7 @@ export function buildContextSnapshot(context={},input={}){
   if(profileFreshness.status==='STALE')stale.push({source_ref:text(context?.profile?.sourceId)||'profile:unattributed',source_type:'behavioral_profile',valid_until:profileValidUntil,freshness:'STALE',freshness_metadata:profileFreshness.metadata,reason:'domain_source_policy'})
   stale.push(...staleSoil)
 
-  const behavioralSignals=profileSignals(context)
+  const behavioralSignals=[...profileSignals(context),...memoryBehavioralSignals(selected)]
   const commercialContext={
     business_history:collectionItems(context.businessHistory,'business_event',{domain:'COMMERCIAL',dateKeys:['occurred_at','occurredAt','created_at','createdAt'],limit:12,now}),
     opportunities:collectionItems(context.opportunities,'opportunity',{domain:'COMMERCIAL',limit:12,now}),
@@ -298,7 +316,7 @@ export function buildContextSnapshot(context={},input={}){
     }).map(item=>({commitment_ref:`commitment:${text(item?.commitment_id??item?.id)}`,due_at:iso(item?.due_at??item?.dueAt),status:text(item?.status).toUpperCase(),description:text(item?.description).slice(0,500)})).slice(0,12),
     reported_profile:context?.client?.relationship||{}
   }
-  const missing=missingInformation(context,{objective,hasSelectedMemories:Boolean(selected.length),currentSoil})
+  const missing=missingInformation(context,{objective,hasSelectedMemories:Boolean(selected.length),currentSoil,selectedMemories:selected})
   const evidenceRefs=[]
   const seenEvidence=new Set()
   const addEvidence=item=>{
