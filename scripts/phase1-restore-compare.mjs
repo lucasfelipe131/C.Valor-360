@@ -16,6 +16,11 @@ const poolFor=connectionString=>new pg.Pool({connectionString,max:1,ssl:database
 const source=poolFor(sourceUrl)
 const restored=poolFor(restoreUrl)
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex')
+const normalizeIndexDefinition=value=>String(value||'')
+  .replace(/\('([^']*)'::character varying\)::text/g,"'$1'::character varying")
+  .replace(/\(ARRAY\[([^\]]*)\]\)::text\[\]/g,'ARRAY[$1]')
+  .replace(/\s+/g,' ')
+  .trim()
 
 async function snapshot(pool){
   const database=String((await pool.query('SELECT current_database() name')).rows[0].name)
@@ -26,7 +31,7 @@ async function snapshot(pool){
     counts[table]=Number((await pool.query(`SELECT COUNT(*)::bigint count FROM ${table}`)).rows[0].count)
   }
   const columns=(await pool.query(`SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name,ordinal_position`)).rows
-  const indexes=(await pool.query(`SELECT tablename,indexname,indexdef FROM pg_indexes WHERE schemaname='public' ORDER BY tablename,indexname`)).rows
+  const indexes=(await pool.query(`SELECT tablename,indexname,indexdef FROM pg_indexes WHERE schemaname='public' ORDER BY tablename,indexname`)).rows.map(row=>({...row,indexdef:normalizeIndexDefinition(row.indexdef)}))
   const migrations=(await pool.query(`SELECT version,TRIM(COALESCE(checksum,'')) checksum FROM schema_migrations ORDER BY version`)).rows
   const synthetic=(await pool.query(`
     SELECT 'clients' entity,tenant_id::text tenant,external_key key,name value FROM clients WHERE source='phase1_gate'
