@@ -58,6 +58,28 @@ test('Preparar Visita 22 — objeção de preço trabalha valor antes de descont
  assert.match(result.objection_guidance,/problema|impacto|evidência|valor/i)
 })
 
+test('Voice Capture — participante confirmado no pós-visita melhora as Perguntas de Ouro',()=>{
+ const context=neutralContext()
+ context.contextSnapshot.facts.push({
+  key:'visit_report.producer_signal',
+  source_type:'confirmed_visit_report',
+  value:{statement:'O sócio participa da decisão.',signal_code:'MULTI_DECISION_PARTICIPANT'}
+ })
+ const {result}=prepared('Preparar a próxima visita.',{context})
+ assert.ok(result.golden_questions.some(item=>/quem além de você participa desta decisão/i.test(item)))
+})
+
+test('Voice Capture — comparativo confirmado como próximo passo melhora as provas',()=>{
+ const context=neutralContext()
+ context.contextSnapshot.facts.push({
+  key:'visit_report.next_step',
+  source_type:'confirmed_visit_report',
+  value:{statement:'Levar comparativo de custo por hectare.'}
+ })
+ const {result}=prepared('Preparar a próxima visita.',{context})
+ assert.ok(result.proofs_to_take.some(item=>/comparativo solicitado/i.test(item)))
+})
+
 test('Preparar Visita 23 — saída contém no máximo 3 perguntas',()=>{
  const context=phase4Context();context.contextSnapshot.missing_information.push(...Array.from({length:8},(_,index)=>({code:`gap-${index}`,description:`Pergunta material ${index}?`,critical:false})))
  assert.ok(prepared('Prepare.',{context}).result.golden_questions.length<=3)

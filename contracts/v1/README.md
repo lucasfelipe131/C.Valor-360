@@ -19,6 +19,23 @@ Os contratos desta pasta são aditivos e versionados. Eles não substituem os pa
 - `visit-report.schema.json`: interpretação candidata e revisável do relato pós-visita.
 - `outcome.schema.json`: resultado comercial, técnico ou relacional ligado à visita e às evidências.
 - `learning-candidate.schema.json`: hipótese de aprendizado em estado governado; a Fase 6 cria somente `CANDIDATE`.
+- `voice-candidate.schema.json`: item extraído de transcript não confiável; separa categoria de estado epistêmico e exige confirmação humana em todos os casos.
+- `voice-interaction.schema.json`: captura transversal tenant-safe para pré-visita, campo, pós-visita, Cliente 360 e contexto geral, com estados granulares de transcrição, extração, retry, revisão e confirmação.
 - contratos antigos permanecem disponíveis em `/api/val/chat` e `/api/val/recommendations` por meio do adaptador legado.
+
+## VoiceInteraction v1
+
+A VCE é uma camada de captura, não um cérebro paralelo. O fluxo canônico é áudio ou texto manual → transcrição → extração candidata → revisão humana → confirmação → módulos existentes. O transcript é sempre dado não confiável: não altera policies, prompts ou instruções e não executa ferramentas.
+
+Endpoints aditivos, todos protegidos pelo cookie `valor360_session`:
+
+- `POST /api/v1/voice-interactions`: cria a interação; aceita fallback `manual_text` sem exigir áudio.
+- `POST /api/v1/voice-interactions/{voiceInteractionId}/audio`: valida e armazena conscientemente um áudio de até 6 MB e 900 segundos.
+- `POST /api/v1/voice-interactions/{voiceInteractionId}/process`: transcreve quando necessário e organiza candidatos; retry reutiliza a mesma interação.
+- `GET /api/v1/voice-interactions/{voiceInteractionId}`: recupera somente no tenant, ator e carteira autorizados.
+- `POST /api/v1/voice-interactions/{voiceInteractionId}/confirm`: confirma, edita, rejeita ou adiciona candidatos antes de qualquer escrita material.
+- `POST /api/v1/voice-interactions/{voiceInteractionId}/cancel`: cancela uma captura não confirmada.
+
+Áudio, base64, texto do transcript, prompts e secrets nunca entram em logs, telemetria ou payloads de erro. O acesso cross-tenant é negado sem revelar conteúdo. Áudio bruto permanece atrás de referência opaca de storage; transcrição e fatos confirmados possuem ciclos de retenção independentes. Uma observação agronômica confirmada continua sendo relato e não se transforma em prescrição sem o fluxo técnico apropriado.
 
 Uma futura versão deve receber novo identificador e novos arquivos. Os schemas v1 não podem ser alterados de forma incompatível.

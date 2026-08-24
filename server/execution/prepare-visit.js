@@ -40,6 +40,12 @@ function profileApproach(profile){
 function goldenQuestions(snapshot,profile,valuePlan,type){
  const questions=[]
  const push=value=>{const question=text(value?.question??value?.description??value,500);if(question&&!questions.includes(question))questions.push(question)}
+ if(confirmedVisitItems(snapshot,'visit_report.objection').some(item=>/pre[cç]o|investimento|caro/i.test(text(item?.value?.statement))))push('Qual comparação de custo por hectare e retorno tornaria este investimento seguro para avançar?')
+ const decisionParticipants=[
+  ...confirmedVisitItems(snapshot,'voice.fact'),
+  ...confirmedVisitItems(snapshot,'visit_report.producer_signal')
+ ]
+ if(decisionParticipants.some(item=>item?.value?.signal_code==='MULTI_DECISION_PARTICIPANT'||/s[oó]ci[oa]|decisor|participante.*decis/i.test(text(item?.value?.statement))))push('Quem além de você participa desta decisão e o que essa pessoa precisa validar?')
  if(type==='TECHNICAL'){
   const soil=list(snapshot?.agronomic_context?.soil_analyses)
   const current=soil.some(item=>item?.freshness==='CURRENT')
@@ -65,7 +71,19 @@ function opportunities(snapshot,valuePlan){
 }
 
 function confirmedVisitItems(snapshot,key){
- return [...list(snapshot?.facts),...list(snapshot?.inferences),...list(snapshot?.hypotheses)].filter(item=>item?.key===key&&/confirmed_visit_report/i.test(text(item?.source_type)))
+ return [...list(snapshot?.facts),...list(snapshot?.inferences),...list(snapshot?.hypotheses)].filter(item=>item?.key===key&&/confirmed_(?:visit_report|voice_interaction)/i.test(text(item?.source_type)))
+}
+
+function voiceContext(snapshot){
+ const groups=[
+  {items:list(snapshot?.facts),label:'Fato confirmado pelo consultor'},
+  {items:list(snapshot?.inferences),label:'Sinal observável a validar'},
+  {items:list(snapshot?.hypotheses),label:'Hipótese a validar'}
+ ]
+ return groups.flatMap(group=>group.items
+  .filter(item=>/confirmed_voice_interaction/i.test(text(item?.source_type)))
+  .map(item=>({label:group.label,statement:text(item?.value?.statement,500)})))
+  .filter(item=>item.statement).slice(0,4)
 }
 
 function whyNow(visit,context){
@@ -87,7 +105,10 @@ function whyNow(visit,context){
 
 function proofList(valuePlan,profile,type,snapshot){
  const values=[...list(valuePlan?.proof_strategy)]
- if(confirmedVisitItems(snapshot,'visit_report.expectation').length)values.unshift('Levar o comparativo solicitado e explicitar premissas, diferenças, risco e impacto econômico.')
+ const proofRequests=['visit_report.expectation','visit_report.next_step','visit_report.behavioral_signal']
+  .flatMap(key=>confirmedVisitItems(snapshot,key))
+  .some(item=>/comparativ|custo\s*(?:por|\/)\s*(?:hectare|ha)|roi|retorno sobre investimento/i.test(text(item?.value?.statement)))
+ if(proofRequests)values.unshift('Levar o comparativo solicitado e explicitar premissas, diferenças, risco e impacto econômico.')
  if(profile?.approach_guidance?.proof_preference)values.unshift(profile.approach_guidance.proof_preference)
  if(type==='TECHNICAL')values.push('Material técnico validado e revisão habilitada quando aplicável.')
  return [...new Set(values.map(item=>text(item,500)).filter(Boolean))].slice(0,5)
@@ -122,6 +143,12 @@ export function buildPrepareVisit(input={}){
  const decisionThesisId=text(input.decisionThesisId,180)||artifactReference('decision-thesis',thesis)
  const valuePlanId=text(input.valuePlanId,180)||artifactReference('value-plan',valuePlan)
  const createdAt=now.toISOString()
+ const confirmedVoiceContext=voiceContext(snapshot)
+ const renderedVoiceContext=confirmedVoiceContext.map(item=>`${item.label}: ${item.statement}`)
+ const baseObjective=text(visit.objective||thesis.objective,700)
+ const preparedObjective=confirmedVoiceContext.length?text(`${baseObjective} Contexto de voz revisado: ${renderedVoiceContext.join(' ')}`,700):baseObjective
+ const baseThesis=text(thesis.recommended_action||'Confirmar os dados críticos antes de recomendar.',1000)
+ const preparedThesis=confirmedVoiceContext.length?text(`${baseThesis} Incorporar o contexto de voz sem elevar inferências: ${renderedVoiceContext.join(' ')}`,1000):baseThesis
  return assertExecutionContract({
   contract_version:prepareVisitVersion,
   version:prepareVisitVersion,
@@ -137,12 +164,12 @@ export function buildPrepareVisit(input={}){
   value_plan_version:text(valuePlan.version,180),
   action_plan_id:actionPlan.action_plan_id,
   visit_type:type,
-  objective:text(visit.objective||thesis.objective,700),
+  objective:preparedObjective,
   main_opportunity:commercialApplicable?opportunity.main:{id:null,title:'O objetivo desta visita não exige oportunidade comercial.',stage:null},
   why_now:whyNow(visit,input.context),
   profile_approach:profileApproach(profile),
   golden_questions:questions,
-  val_thesis:text(thesis.recommended_action||'Confirmar os dados críticos antes de recomendar.',1000),
+  val_thesis:preparedThesis,
   proofs_to_take:proofList(valuePlan,profile,type,snapshot),
   probable_objection:commercialApplicable?objection(valuePlan,snapshot).probable:'Não aplicável como objeção comercial para este objetivo.',
   objection_guidance:commercialApplicable?objection(valuePlan,snapshot).guidance:'Conduza o objetivo técnico ou relacional sem forçar proposta ou fechamento.',

@@ -21,6 +21,10 @@ FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
+# Voice Capture validates the real container duration server-side. This blocks
+# clients from bypassing the 15-minute policy with forged metadata.
+RUN apk add --no-cache ffmpeg
+
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts \
     && npm cache clean --force

@@ -63,14 +63,16 @@ export default function App(){
  const [page,setPage]=useState('dashboard')
  const [valMode,setValMode]=useState(null)
  const [selected,setSelected]=useState(null)
+ const [prepareVisitClientId,setPrepareVisitClientId]=useState('')
  const [clientList,setClientList]=useState([])
  const [visits,setVisits]=useState([])
  const [opportunities,setOpportunities]=useState([])
  const [toast,setToast]=useState('')
  const openClient=c=>{setSelected(c);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
  const notify=message=>{const text=typeof message==='string'?message:String(message?.message||'Ação concluída.');setToast(text);window.clearTimeout(window.__valorToast);window.__valorToast=window.setTimeout(()=>setToast(''),2800)}
- const prepareClient=c=>{setSelected(c);setValMode('insumos');setPage('val');if(page==='val')window.requestAnimationFrame(resetPageViewport)}
- const navigate=next=>{if(next!=='client360')setSelected(null);if(next==='val')setValMode(null);setPage(next);if(next===page)window.requestAnimationFrame(resetPageViewport)}
+ const prepareClient=c=>{if(!c?.id)return;setSelected(c);setPrepareVisitClientId(c.id);setPage('visits');if(page==='visits')window.requestAnimationFrame(resetPageViewport)}
+ const openValClient=c=>{setSelected(c);setValMode('insumos');setPage('val');if(page==='val')window.requestAnimationFrame(resetPageViewport)}
+ const navigate=next=>{if(next!=='client360')setSelected(null);if(next!=='visits')setPrepareVisitClientId('');if(next==='val')setValMode(null);setPage(next);if(next===page)window.requestAnimationFrame(resetPageViewport)}
  const addClient=client=>{
   let saved
   const incomingCommercial=Object.fromEntries(Object.entries(client.commercial||{}).filter(([,value])=>value!==''&&value!==null&&value!==undefined))
@@ -88,6 +90,7 @@ export default function App(){
  const updateClient=async(id,input)=>{const response=await fetch(`/api/clients/${encodeURIComponent(id)}`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(input),signal:AbortSignal.timeout(15000)});if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível atualizar o produtor.');if(!payload.client)throw new Error('O servidor não retornou o produtor atualizado.');setClientList(current=>current.map(item=>item.id===id?payload.client:item));setSelected(current=>current?.id===id?payload.client:current);return payload.client}
  const deleteClient=async id=>{const response=await fetch(`/api/clients/${encodeURIComponent(id)}`,{method:'DELETE',signal:AbortSignal.timeout(15000)});if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível excluir o produtor.');setClientList(current=>current.filter(item=>item.id!==id));setSelected(current=>current?.id===id?null:current);notify('Produtor retirado da carteira deste login.');return payload}
  const saveVisit=async input=>{const response=await fetch('/api/visits',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input),signal:AbortSignal.timeout(10000)});if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível salvar a visita.');setVisits(current=>[payload.visit,...current.filter(item=>item.id!==payload.visit.id)]);notify('Visita registrada no PostgreSQL e disponível para a VAL.');return payload.visit}
+ const startVisitResult=visit=>{if(!visit)return;setVisits(current=>[visit,...current.filter(item=>item.id!==visit.id)]);notify('Visita iniciada. A captura de campo está disponível.')}
  const registerVisitResult=visit=>{if(!visit)return;setVisits(current=>[visit,...current.filter(item=>item.id!==visit.id)]);notify('Visita registrada. Sua próxima preparação já foi atualizada.')}
  const saveOpportunity=async input=>{const response=await fetch('/api/opportunities',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input),signal:AbortSignal.timeout(10000)});if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível atualizar a oportunidade.');setOpportunities(current=>[payload.opportunity,...current.filter(item=>!(item.clientId===payload.opportunity.clientId&&item.candidateKey===payload.opportunity.candidateKey))]);return payload.opportunity}
  const login=async credentials=>{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials),signal:AbortSignal.timeout(10000)});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível autenticar.');rememberStorageScope(payload.user);setAuthNotice('');setCurrentUser(payload.user||null);setPortfolioReady(Boolean(payload.user?.demo));setAuthenticated(true);notify('Bem-vindo à VAL.')}
@@ -124,10 +127,10 @@ export default function App(){
     {page==='clients'&&<Clients clients={clientList} opportunities={opportunities} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
     {page==='datahub'&&<DataHub clients={clientList} onImport={importClients} onProfileImport={addClients} onUpdate={updateClient} onDelete={deleteClient} onNotify={notify}/>}
     {page==='client360'&&selected&&<Client360 key={selected.id} client={selected} storageScope={currentUser?.storageScope} onBack={()=>navigate('clients')} onPrepare={()=>prepareClient(selected)} onUpdate={updateClient} onSaved={message=>notify(message||'Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}/>}
-    {page==='val'&&<ValWorkspace mode={valMode} onModeChange={setValMode} clients={clientList} selectedClient={selected} onSelect={openClient}/>}
+    {page==='val'&&<ValWorkspace mode={valMode} onModeChange={setValMode} clients={clientList} selectedClient={selected} onSelect={openClient} onPrepareVisit={prepareClient}/>}
     {page==='agro'&&<Agro clients={clientList}/>}
     {page==='questionnaire'&&<Questionnaire onCreate={addClient} onCreateMany={addClients} onOpen={openClient} onNotify={notify}/>}
-    {page==='visits'&&<Visits clients={clientList} visits={visits} onSave={saveVisit} onPrepare={prepareClient} onRegistered={registerVisitResult}/>}
+    {page==='visits'&&<Visits clients={clientList} visits={visits} storageScope={currentUser?.storageScope} initialClientId={prepareVisitClientId} onInitialHandled={()=>setPrepareVisitClientId('')} onSave={saveVisit} onPrepare={openValClient} onStarted={startVisitResult} onRegistered={registerVisitResult}/>}
     {page==='opportunities'&&<Opportunities clients={clientList} storageScope={currentUser?.storageScope} persistedItems={opportunities} onPersist={saveOpportunity} onClient={openClient} onSaved={notify}/>}
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
     {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}

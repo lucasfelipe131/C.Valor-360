@@ -16,6 +16,11 @@ const poolFor=connectionString=>new pg.Pool({connectionString,max:1,ssl:database
 const source=poolFor(sourceUrl)
 const restored=poolFor(restoreUrl)
 const digest=value=>createHash('sha256').update(JSON.stringify(value)).digest('hex')
+const normalizeIndexDefinition=value=>String(value||'')
+  .replace(/\('([^']*)'::character varying\)::text/g,"'$1'::character varying")
+  .replace(/\(ARRAY\[([^\]]*)\]\)::text\[\]/g,'ARRAY[$1]')
+  .replace(/\s+/g,' ')
+  .trim()
 
 async function snapshot(pool){
   const database=String((await pool.query('SELECT current_database() name')).rows[0].name)
@@ -26,14 +31,34 @@ async function snapshot(pool){
     counts[table]=Number((await pool.query(`SELECT COUNT(*)::bigint count FROM ${table}`)).rows[0].count)
   }
   const columns=(await pool.query(`SELECT table_name,column_name,data_type,is_nullable,column_default FROM information_schema.columns WHERE table_schema='public' ORDER BY table_name,ordinal_position`)).rows
-  const indexes=(await pool.query(`SELECT tablename,indexname,indexdef FROM pg_indexes WHERE schemaname='public' ORDER BY tablename,indexname`)).rows
+  const indexes=(await pool.query(`SELECT tablename,indexname,indexdef FROM pg_indexes WHERE schemaname='public' ORDER BY tablename,indexname`)).rows.map(row=>({...row,indexdef:normalizeIndexDefinition(row.indexdef)}))
   const migrations=(await pool.query(`SELECT version,TRIM(COALESCE(checksum,'')) checksum FROM schema_migrations ORDER BY version`)).rows
   const synthetic=(await pool.query(`
     SELECT 'clients' entity,tenant_id::text tenant,external_key key,name value FROM clients WHERE source='phase1_gate'
     UNION ALL
     SELECT 'app_records',tenant_id::text,id::text,producer_name FROM app_records WHERE id IN ('00000000-0000-4000-8000-000000000301','00000000-0000-4000-8000-000000000302')
     ORDER BY entity,tenant,key`)).rows
-  return {database,tables,counts,migrations,synthetic,schemaSha256:digest({columns,indexes}),dataSha256:digest({counts,migrations,synthetic})}
+  return {database,tables,counts,migrations,synthetic,columns,indexes,schemaSha256:digest({columns,indexes}),dataSha256:digest({counts,migrations,synthetic})}
+}
+
+function schemaDifferences(sourceSnapshot,restoredSnapshot){
+  const compareRows=(sourceRows,restoredRows,keyFor)=>{
+    const sourceByKey=new Map(sourceRows.map(row=>[keyFor(row),row]))
+    const restoredByKey=new Map(restoredRows.map(row=>[keyFor(row),row]))
+    const keys=[...new Set([...sourceByKey.keys(),...restoredByKey.keys()])].sort()
+    const differences=keys.flatMap(key=>{
+      const source=sourceByKey.get(key)||null
+      const restored=restoredByKey.get(key)||null
+      return JSON.stringify(source)===JSON.stringify(restored)?[]:[{key,source,restored}]
+    })
+    return {count:differences.length,first:differences.slice(0,50)}
+  }
+  return {
+    sourceSha256:sourceSnapshot.schemaSha256,
+    restoredSha256:restoredSnapshot.schemaSha256,
+    columns:compareRows(sourceSnapshot.columns,restoredSnapshot.columns,row=>`${row.table_name}.${row.column_name}`),
+    indexes:compareRows(sourceSnapshot.indexes,restoredSnapshot.indexes,row=>`${row.tablename}.${row.indexname}`)
+  }
 }
 
 try{
@@ -43,6 +68,14 @@ try{
   assert.deepEqual(restoredSnapshot.counts,sourceSnapshot.counts)
   assert.deepEqual(restoredSnapshot.migrations,sourceSnapshot.migrations)
   assert.deepEqual(restoredSnapshot.synthetic,sourceSnapshot.synthetic)
+  if(restoredSnapshot.schemaSha256!==sourceSnapshot.schemaSha256){
+    const diagnostic=schemaDifferences(sourceSnapshot,restoredSnapshot)
+    console.error(JSON.stringify({schemaRestoreMismatch:diagnostic},null,2))
+    if(process.env.COMPARE_EVIDENCE_FILE){
+      await mkdir(dirname(process.env.COMPARE_EVIDENCE_FILE),{recursive:true})
+      await writeFile(`${process.env.COMPARE_EVIDENCE_FILE}.schema-diff.json`,JSON.stringify(diagnostic,null,2))
+    }
+  }
   assert.equal(restoredSnapshot.schemaSha256,sourceSnapshot.schemaSha256)
   assert.equal(restoredSnapshot.dataSha256,sourceSnapshot.dataSha256)
   const evidence={
