@@ -1,6 +1,6 @@
 # ADR — Voice Capture como camada transversal da VAL
 
-Status: implementado localmente na branch `feature/voice-capture`; validação final, staging e gate ainda pendentes.
+Status: implementado na branch `feature/voice-capture`, validado em CI e implantado somente no staging. O gate final foi reprovado pelas provas humanas/mobile ainda pendentes; ver `GATE_VOICE_CAPTURE_RESULTADO.md`.
 
 Base auditada: `integration/val-v1-staging` em `b5967758428dc501d97407bb50d2cdb200c4ade7`, árvore `3ecc2252fec5ac3a4d410039812037fcc6e3b764`. A branch não parte de `main` e essa base contém a cadeia aprovada das Fases 02–06.
 
@@ -136,19 +136,19 @@ Tenant e ator são derivados da sessão. O OpenAPI está em `openapi/val-core-v1
 
 | Camada | Estado desta revisão |
 |---|---|
-| código, contratos, migration, OpenAPI e UI | implementados localmente |
-| suíte local | `npm test` 600/600; Voice Capture 92/92; fases explícitas 164/164 |
+| código, contratos, migration, OpenAPI e UI | implementados na branch de feature e no staging |
+| suíte local | `npm test` 601/601; Voice Capture 93/93; fases explícitas 164/164 |
 | builds | Vite/PWA e Manual aprovados localmente |
-| smokes HTTP locais | não executados por restrição de rede do sandbox; permanecem pendentes em CI/staging |
+| smokes HTTP | limite e JSON `413` aprovados; jornada HTTP integral de voz no staging permanece pendente |
 | `ffprobe` real | 10/10 no storage, incluindo WAV sintético; codecs reais do navegador em staging permanecem pendentes |
-| PostgreSQL 16, migrations, drift, backup/restore | job CI e verificador configurados; execução remota final ainda não registrada |
-| OpenAI real | adapter testado com cliente simulado; chamada real em staging pendente |
-| navegador em staging | pendente |
+| PostgreSQL 16, migrations, drift, backup/restore | aprovados no Validate #178 |
+| OpenAI real | transcrição de áudio fictício/público aprovada no staging com `gpt-transcribe` |
+| navegador em staging | aplicação e health validados; jornada autenticada integral ainda pendente |
 | microfone em iOS/Android/PWA real | pendente |
-| gate final | pendente de PG16/staging/mobile e de registro em `GATE_VOICE_CAPTURE_RESULTADO.md` |
+| gate final | **REPROVADO** por jornada autenticada integral e microfone físico pendentes |
 
 ## Consequências e reversibilidade
 
 As rotas e a UI são aditivas. Um rollback da aplicação pode deixar as novas tabelas inertes, pois a migration não remove nem reescreve estruturas anteriores. A dívida explícita é manter bytes em PostgreSQL até existir object storage autorizado e validado.
 
-O recurso não deve ser classificado como aprovado apenas pela existência do código: integração OpenAI em staging, PostgreSQL 16 executado, navegador e celular físico continuam sendo evidências obrigatórias do gate.
+O recurso não foi classificado como aprovado apenas pela existência do código: OpenAI e PostgreSQL 16 foram comprovados, mas a jornada autenticada integral e o celular físico continuam sendo evidências obrigatórias do gate.

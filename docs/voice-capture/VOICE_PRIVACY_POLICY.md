@@ -1,6 +1,6 @@
 # Política de privacidade do Voice Capture
 
-Status: controles técnicos implementados localmente. Este documento não substitui revisão jurídica, aviso de privacidade ou política corporativa.
+Status: controles técnicos implementados e validados em CI/staging técnico. Este documento não substitui revisão jurídica, aviso de privacidade, política corporativa ou a jornada integral de privacidade.
 
 ## Finalidade
 
@@ -126,7 +126,7 @@ São proibidos:
 - `OPENAI_API_KEY`, headers ou token;
 - URL/credencial de storage.
 
-Testes locais verificam a allowlist; logs reais de staging ainda precisam ser inspecionados no gate.
+Testes verificam a allowlist; o smoke real do provider registrou apenas metadata operacional, sem transcript ou chave. A jornada integral ainda deve repetir essa inspeção.
 
 ## Ambientes e pendências
 
@@ -134,8 +134,8 @@ Produção não faz parte desta entrega. Nenhum dado real deve ser copiado para 
 
 Evidência ainda necessária:
 
-- teste cross-tenant no PostgreSQL 16 executado em CI/staging;
-- transcrição OpenAI real com áudio fictício;
+- repetição cross-tenant pela superfície HTTP implantada (o gate PostgreSQL 16 já foi aprovado no CI);
+- transcrição OpenAI real dentro da jornada autenticada (o adapter real isolado já foi aprovado);
 - inspeção de logs do ambiente;
 - navegação móvel e permissão do microfone em dispositivos reais;
 - validação jurídica/organizacional antes de uso com pessoas reais.

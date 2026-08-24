@@ -93,11 +93,11 @@ Novos contratos foram limitados a `VoiceInteraction v1` e `VoiceCandidate v1`.
 | 6 | confirmação e adaptadores de domínio | implementado localmente |
 | 7 | APIs/OpenAPI/rate limit/observabilidade | implementado localmente |
 | 8 | UI móvel contextual e fallback textual | implementado localmente |
-| 9 | testes, regressões e builds | 600/600 na suíte; Voice 92/92; fases 164/164; Vite/PWA e Manual verdes |
-| 10 | gate PostgreSQL 16, drift, backup/restore | configurado em CI; execução pendente |
-| 11 | smokes HTTP, deploy e OpenAI real em staging | pendente; smokes locais bloqueados pela rede do sandbox |
+| 9 | testes, regressões e builds | 601/601 na suíte; Voice 93/93; fases 164/164; Vite/PWA e Manual verdes |
+| 10 | gate PostgreSQL 16, drift, backup/restore | aprovado no Validate #178 |
+| 11 | smokes HTTP, deploy e OpenAI real em staging | deploy/health e transcrição real aprovados; jornada autenticada integral pendente |
 | 12 | navegador e dispositivos móveis físicos | pendente |
-| 13 | `GATE_VOICE_CAPTURE_RESULTADO.md` | pendente; não criado nesta etapa documental |
+| 13 | `GATE_VOICE_CAPTURE_RESULTADO.md` | criado; gate reprovado pelas provas humana/mobile pendentes |
 
 ## Limites preservados
 

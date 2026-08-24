@@ -1,6 +1,6 @@
 # TranscriptionProvider
 
-Status: porta e adapters implementados em `server/voice-capture/transcription-provider.js`; integração real em staging ainda não comprovada.
+Status: porta e adapters implementados em `server/voice-capture/transcription-provider.js`; transcrição OpenAI real comprovada no staging com áudio fictício/público.
 
 ## Objetivo
 
@@ -154,11 +154,11 @@ O transcript retornado pela porta é dado do usuário. A etapa seguinte:
 
 Testes automatizados cobrem multipart do SDK com cliente simulado, metadata, erro HTTP sanitizado, provider ausente e arquivo inválido. Testes de service cobrem sucesso com mock, falha, retry, cancelamento, lease expirado e worker tardio.
 
+Evidência externa: o staging transcreveu um áudio fictício/público com `provider=openai`, `model=gpt-transcribe` e idioma `pt`; transcript e chave não foram impressos.
+
 Ainda pendente para o gate:
 
-- chamada real com chave exclusiva de staging e áudio fictício;
-- verificação dos codecs realmente produzidos pelos navegadores-alvo;
-- execução dos codecs realmente gerados pelos navegadores no container de staging; o `ffprobe` real já passou localmente com WAV sintético;
+- execução, no container de staging, dos codecs realmente gerados pelos navegadores-alvo; o `ffprobe` real já passou localmente com WAV sintético;
 - latência e UX de retry no ambiente implantado;
 - confirmação de que nenhum conteúdo aparece nos logs externos do staging.
 

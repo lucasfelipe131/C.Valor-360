@@ -129,7 +129,7 @@ O job `voice-capture-gate-postgres` foi configurado para:
 - restore em banco diferente;
 - comparação de catálogo, dados e referências.
 
-O job existe no workflow, mas a execução remota final ainda não foi registrada nesta documentação.
+O job foi executado com sucesso no Validate #178, incluindo reaplicação sem drift, backup e restore em outro PostgreSQL 16.
 
 ## Falhas e concorrência
 
@@ -153,5 +153,5 @@ Nenhum recurso de object storage foi criado porque isso pode gerar custo adicion
 - base64 como decisão definitiva;
 - exclusão automática;
 - recurso pago sem autorização;
-- cópia de áudio real para staging;
+- cópia de áudio ou conversa real de produtor/cliente para staging;
 - secret junto da mídia.

@@ -4,14 +4,14 @@ Base: `b5967758428dc501d97407bb50d2cdb200c4ade7` em `integration/val-v1-staging`
 
 Branch: `feature/voice-capture`.
 
-Status: automação local e gate CI implementados; este documento não aprova o gate.
+Status: automação local, gate CI/PostgreSQL 16 e transcrição OpenAI real executados. O gate final permanece reprovado pelas provas humana/mobile pendentes.
 
 ## Como ler a evidência
 
 | Marca | Significado |
 |---|---|
 | `LOCAL` | existe teste automatizado local com mock/fallback ou análise de contrato |
-| `PG-CI` | cenário existe no verificador PostgreSQL 16 do workflow, mas a execução remota final ainda não foi registrada |
+| `PG-CI` | cenário executado no PostgreSQL 16 do Validate #178 |
 | `STAGING` | precisa ser executado no ambiente implantado |
 | `MOBILE` | exige dispositivo físico; CSS/SSR não substituem essa prova |
 
@@ -25,12 +25,12 @@ Os testes locais com cliente OpenAI simulado comprovam o adapter, não uma chama
 | 2 | áudio pós-visita | `LOCAL` service/frontend; `PG-CI` POST/Visit Loop | `STAGING` fluxo completo |
 | 3 | áudio Cliente 360 | `LOCAL` service/frontend; `PG-CI` CLIENT_NOTE | `STAGING` UI e refresh real |
 | 4 | observação de campo | `LOCAL` service/extraction/frontend; `PG-CI` FIELD_NOTE | `STAGING` lifecycle/UX |
-| 5 | transcrição bem-sucedida | `LOCAL` adapter com cliente simulado e mock de service | OpenAI real em `STAGING` |
+| 5 | transcrição bem-sucedida | `LOCAL` adapter/mocks; OpenAI real no `STAGING` com áudio fictício/público | jornada autenticada pela UI |
 | 6 | transcrição falha | `LOCAL` falha segura, áudio preservado | falha real/controlada em `STAGING` |
 | 7 | retry | `LOCAL` mesma interação, tentativa nova, lease e worker obsoleto | retry com provider real |
 | 8 | usuário cancela | `LOCAL` service, hook e UI | `STAGING` durante upload/processamento |
-| 9 | transcript não vira fato automaticamente | `LOCAL` comparação pré-confirmação; `PG-CI` contagens de domínio | confirmar no banco de staging |
-| 10 | fato confirmado entra na MMI | `LOCAL` service; `PG-CI` memória após confirmação | inspeção funcional em staging |
+| 9 | transcript não vira fato automaticamente | `LOCAL` comparação pré-confirmação; `PG-CI` contagens de domínio | repetir pela UI implantada |
+| 10 | fato confirmado entra na MMI | `LOCAL` service; `PG-CI` memória após confirmação | inspeção funcional pela UI |
 | 11 | fato rejeitado não entra | `LOCAL` revisão/rejeição e ausência de memória | fluxo de edição na UI implantada |
 | 12 | usuário edita extração | `LOCAL` service/frontend, inicial separado da revisão | navegador real |
 | 13 | compromisso candidato confirmado | `LOCAL` prazo/owner/critério; `PG-CI` Commitment | UI e calendário em staging |
@@ -38,15 +38,15 @@ Os testes locais com cliente OpenAI simulado comprovam o adapter, não uma chama
 | 15 | perfil recebe sinal observável | `LOCAL` extractor/service; `PG-CI` preparação usa evidência | inspeção MIC/contexto em staging |
 | 16 | áudio não altera fatos técnicos | `LOCAL` safety/epistemologia e zero domínio pré-confirmação | comparação de snapshots em staging |
 | 17 | relato agronômico não vira prescrição | `LOCAL` extractor, revisão e memória; `PG-CI` | teste funcional de safety |
-| 18 | cross-tenant de áudio bloqueado | `LOCAL` storage/repository; `PG-CI` FK e leitura negativa | teste HTTP negativo em staging |
-| 19 | cross-tenant de transcript bloqueado | `LOCAL` repository; `PG-CI` ator/tenant/FKs | teste HTTP negativo em staging |
-| 20 | logs sem conteúdo sensível | `LOCAL` observability allowlist | inspeção de logs Railway/OpenAI |
+| 18 | cross-tenant de áudio bloqueado | `LOCAL` storage/repository; `PG-CI` FK e leitura negativa | repetição HTTP negativa em staging |
+| 19 | cross-tenant de transcript bloqueado | `LOCAL` repository; `PG-CI` ator/tenant/FKs | repetição HTTP negativa em staging |
+| 20 | logs sem conteúdo sensível | `LOCAL` allowlist; smoke OpenAI real registrou só metadata | reinspecionar na jornada integral |
 | 21 | segunda visita melhora | `LOCAL` service/preparation; `PG-CI` comparação e seis sinais | jornada real em staging |
 | 22 | pré-visita atualiza PrepareVisit | `LOCAL` versionamento/idempotência; `PG-CI` | UI implantada e versão anterior |
 | 23 | áudio sem visita atualiza Cliente 360 | `LOCAL` CLIENT_NOTE; `PG-CI` | Cliente 360 em staging |
 | 24 | transcrição maliciosa não altera instruções | `LOCAL` extractor/service adversarial | smoke adversarial em staging |
 | 25 | arquivo inválido rejeitado | `LOCAL` MIME, assinatura, base64 e container | codecs reais dos browsers |
-| 26 | limite de tamanho | `LOCAL` fronteira 6.000.000 e +1 byte; OpenAPI 413 | request real no proxy/staging |
+| 26 | limite de tamanho | `LOCAL` fronteira e smoke HTTP com JSON `413`; OpenAPI | repetir no proxy de staging |
 | 27 | limite de duração | `LOCAL` inclui `ffprobe` real com WAV sintético e probes injetados de fronteira | validar codecs reais e proxy em staging |
 | 28 | experiência mobile | `LOCAL` SSR/hook/CSS/ARIA/lifecycle | `STAGING` viewport + `MOBILE` iOS/Android/PWA |
 | 29 | fallback para texto | `LOCAL` service/frontend, sem storage/provider | `STAGING` permissão negada/provider indisponível |
@@ -79,8 +79,8 @@ Não existe `test/voice-capture-repository.test.js` nem `scripts/voice-capture-s
 
 Resultado consolidado local:
 
-- `npm test`: 600/600;
-- conjunto Voice Capture: 92/92;
+- `npm test`: 601/601;
+- conjunto Voice Capture: 93/93;
 - regressões explícitas das Fases 02–06: 164/164;
 - build Vite/PWA: aprovado;
 - build Manual: aprovado.
@@ -94,9 +94,9 @@ node --test test/voice-capture-service.test.js test/voice-capture-postgres-gate-
 
 Resultado registrado para essa execução: 30/30.
 
-Também houve execução focada de contratos/service/preparação/acesso com 50/50. Os smokes HTTP locais não executaram por restrição de rede do sandbox; precisam ser executados em CI/staging e não são considerados aprovados por esta matriz.
+Também houve execução focada de contratos/service/preparação/acesso com 50/50. O smoke HTTP do limite de body foi aprovado localmente; a jornada HTTP integral de voz continua pendente no staging e não é considerada aprovada por esta matriz.
 
-## Gate PostgreSQL 16 configurado
+## Gate PostgreSQL 16 executado
 
 O job `voice-capture-gate-postgres` em `.github/workflows/validate.yml` contém:
 
@@ -116,7 +116,7 @@ O job `voice-capture-gate-postgres` em `.github/workflows/validate.yml` contém:
 
 O verificador também inicia a visita de forma idempotente antes de FIELD/POST, comprovando que esses contextos são alcançáveis no lifecycle sintético.
 
-Esse job está **configurado, não executado/registrado** nesta branch local. O teste estático do YAML não equivale ao PostgreSQL real. O verificador PG injeta duração determinística; a execução de `ffprobe` real é coberta localmente por WAV sintético, enquanto codecs produzidos pelo navegador continuam pertencendo ao staging.
+O job foi executado com sucesso no [Validate #178](https://github.com/lucasfelipe131/C.Valor-360/actions/runs/32679897601), incluindo migrations, reaplicação sem drift, isolamento, atomicidade, segunda preparação, backup e restore. O verificador PG injeta duração determinística; a execução de `ffprobe` real é coberta localmente por WAV sintético, enquanto codecs produzidos pelo navegador continuam pertencendo ao staging/mobile.
 
 ## Núcleo da regressão executada localmente
 
@@ -130,7 +130,7 @@ node --test test/phase6-migration-contract.test.js test/phase6-visit-loop.test.j
 npm run build
 ```
 
-O build de `manual` e o build Vite/PWA também passaram. Estes smokes HTTP permanecem pendentes fora do sandbox:
+O build de `manual` e o build Vite/PWA também passaram. Os smokes legados abaixo foram revalidados pelo CI; a jornada HTTP autenticada de voz é a pendência específica:
 
 ```bash
 npm run test:phase2:smoke
@@ -138,7 +138,7 @@ npm run test:phase5:smoke
 npm run test:phase6:smoke
 ```
 
-O gate final deve registrar cada evidência em `GATE_VOICE_CAPTURE_RESULTADO.md`.
+O gate final registra as evidências e pendências em `GATE_VOICE_CAPTURE_RESULTADO.md`.
 
 ## Roteiro de staging
 
@@ -157,11 +157,11 @@ Com produtor e áudio fictícios:
 
 ## Critério de aprovação
 
-O gate só pode ser aprovado depois de:
+O gate somente poderá ser reavaliado como aprovado depois de:
 
 - suíte consolidada e builds verdes;
-- job PostgreSQL 16 executado e evidência preservada;
-- transcrição OpenAI real em staging com áudio fictício;
+- preservar o job PostgreSQL 16 já aprovado;
+- preservar a transcrição OpenAI real já aprovada;
 - fluxo integral pela interface;
 - segunda preparação materialmente melhor;
 - microfone físico em iOS e Android/PWA suportados;
