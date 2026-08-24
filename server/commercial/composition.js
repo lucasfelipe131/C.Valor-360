@@ -10,7 +10,7 @@ export function buildCommercialComposition(input={}){
  const snapshot=input.contextSnapshot||context.contextSnapshot
  const organizationId=String(input.organizationId||snapshot?.organization_id||'')
  const behavioralProfile=buildBehavioralProfile(context,{organizationId,contextSnapshot:snapshot,currentMessage:input.message,now:input.now})
- const decisionThesis=buildDecisionThesis({organizationId,contextSnapshot:snapshot,behavioralProfile,context,advice:input.advice,conversion:input.conversion,decisionIntelligence:context.decisionIntelligence,objective:snapshot?.objective,subjectId:snapshot?.subject?.id})
+ const decisionThesis=buildDecisionThesis({organizationId,contextSnapshot:snapshot,behavioralProfile,context,advice:input.advice,conversion:input.conversion,decisionIntelligence:context.decisionIntelligence,objective:snapshot?.objective,subjectId:snapshot?.subject?.id,message:input.message})
  const valuePlan=buildValuePlan({organizationId,contextSnapshot:snapshot,behavioralProfile,decisionThesis,context,advice:input.advice,currentMessage:input.message,subjectId:snapshot?.subject?.id,analogy:input.analogy,analogyImprovesUnderstanding:input.analogyImprovesUnderstanding})
  const durationMs=Math.max(0,Date.now()-started)
  observe('commercial.modules.completed',{

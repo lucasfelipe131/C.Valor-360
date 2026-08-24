@@ -42,9 +42,12 @@ export default function PrepareVisitSimple({visit,client,prepared,storageScope,o
 
   <main className="prepare-essential" aria-label="Essencial para a visita">
    <article className="prepare-objective"><span><Target size={18}/>OBJETIVO</span><p>{model.essential.objective}</p></article>
-   {model.essential.attention.length>0&&<article className="prepare-attention"><span>ATENÇÃO</span>{model.essential.attention.map(item=><p key={item}>{item}</p>)}</article>}
+   {model.essential.whyNow&&<article className="prepare-why-now"><span>POR QUE AGORA</span><p>{model.essential.whyNow}</p></article>}
+   {model.essential.attention.length>0&&<article className="prepare-attention"><span>LEMBRE</span>{model.essential.attention.map(item=><p key={item}>{item}</p>)}</article>}
    <article className="prepare-questions"><span>PERGUNTE</span>{model.essential.questions.length?<ol>{model.essential.questions.map((question,index)=><li key={`${index}-${question}`}><b>{index+1}</b><p>{question}</p></li>)}</ol>:<p>Tenho pouco histórico deste produtor. Descubra qual é a principal prioridade dele para esta safra.</p>}</article>
    <article className="prepare-strategy"><span><Lightbulb size={17}/>ESTRATÉGIA</span><p>{model.essential.strategy}</p></article>
+   <article className="prepare-avoid"><span>EVITE</span><p>{model.essential.avoid}</p></article>
+   {model.essential.proofs.length>0&&<article className="prepare-proofs"><span>PROVA QUE VALE LEVAR</span><ul>{model.essential.proofs.map(item=><li key={item}>{item}</li>)}</ul></article>}
    <article className="prepare-target"><span>SAIA COM</span><p>{model.essential.commitment}</p></article>
   </main>
 
@@ -82,4 +85,3 @@ export default function PrepareVisitSimple({visit,client,prepared,storageScope,o
   </details>
  </div>
 }
-

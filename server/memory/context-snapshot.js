@@ -50,6 +50,15 @@ function sourceAuthority(record){
   return 15
 }
 
+function conflictComparable(record){
+  const key=text(record?.key).toLowerCase()
+  // Voice/visit-report memories are append-only observations. Different
+  // statements in those streams complement each other; they are not competing
+  // values for one master attribute. Provenance remains available for audit.
+  if(/^(?:voice\.|visit_report\.)/.test(key))return false
+  return Boolean(key)
+}
+
 function relevance(record,objective,now){
   const tokens=objectiveTokens(objective)
   const searchable=`${record.memory_type} ${record.key} ${record.source_type}`.toLowerCase()
@@ -268,7 +277,7 @@ export function buildContextSnapshot(context={},input={}){
   }
 
   const grouped=new Map()
-  for(const record of selected.filter(item=>item.status==='ACTIVE'&&(item.confidence??50)>=50&&sourceAuthority(item)>=15)){
+  for(const record of selected.filter(item=>item.status==='ACTIVE'&&(item.confidence??50)>=50&&sourceAuthority(item)>=15&&conflictComparable(item))){
     const key=`${record.subject_type}:${record.subject_id}:${record.memory_type}:${record.key}`
     const valueSignature=signature(record.content)
     const group=grouped.get(key)||new Map()

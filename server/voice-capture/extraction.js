@@ -14,6 +14,10 @@ const epistemicSet=new Set(voiceEpistemicStatuses)
 const promptInjectionPattern=/\b(?:ignore|ignorar|desconsidere|disregard|system\s+prompt|prompt\s+do\s+sistema|developer\s+message|mensagem\s+do\s+desenvolvedor|revele\s+(?:o\s+)?prompt|execute\s+(?:um\s+)?comando|tool\s*call|chame\s+(?:a\s+)?ferramenta|mude\s+(?:as\s+)?pol[ií]ticas|altere\s+(?:as\s+)?instru[cç][oõ]es|finja\s+que\s+voc[eê])\b/i
 const protectedAttributePattern=/\b(?:tom\s+de\s+voz|entona[cç][aã]o|pros[oó]dia|sotaque|voz\s+(?:nervosa|triste|feliz|agressiva)|g[eê]nero|sexo\s+aparente|idade\s+aparente|parece\s+(?:ser\s+)?(?:homem|mulher|jovem|idos[oa])|emo[cç][aã]o\s+(?:pela|na)\s+voz)\b/i
 const agronomicPrescriptionPattern=/\b(?:recomendo|recomenda[cç][aã]o|indico|deve(?:ria)?\s+(?:aplicar|usar)|aplique|aplicar|pulverize|pulverizar|dose|dosagem|misture|misturar)\b|\b\d+(?:[.,]\d+)?\s*(?:ml|l|g|kg)\s*\/\s*(?:ha|hectare)\b/i
+const ambiguousCommercialSignal=/\b(?:precifica[cç][aã]o|diferen[cç]a\s+(?:de\s+)?pre[cç]o|pre[cç]o\s+(?:est[aá]\s+)?diferente|condi[cç][aã]o comercial\s+(?:est[aá]\s+)?diferente)\b/i
+const agronomicStageSignal=/\b(?:plantio\s+(?:j[aá]\s+)?(?:realizado|feito)|j[aá]\s+(?:foi\s+)?plantad[oa]|(?:milho|soja|trigo|canola|arroz|feij[aã]o|sorgo|aveia).{0,30}(?:plantad[oa]|semead[oa]|emergiu|emergid[oa]))\b/i
+const agronomicTimingSignal=/\b(?:(?:primeira|1[ªa])\s+aplica[cç][aã]o.{0,45}(?:pr[oó]xim|agora|chegando)|janela.{0,30}(?:aplica[cç][aã]o|operacional))\b/i
+const preVisitIntent=/\b(?:vou\s+visitar|estou\s+indo\s+visitar|quero\s+(?:falar|entender|negociar|avan[cç]ar)|objetivo\s+(?:da\s+visita|[eé]))\b/i
 
 export const voiceCandidateExtractionFormat=Object.freeze({
   type:'json_schema',
@@ -80,10 +84,19 @@ const deterministicRules=Object.freeze([
 ])
 
 function epistemicFor(category,statement){
+  if(ambiguousCommercialSignal.test(statement))return 'HYPOTHESIS'
   if(category==='HYPOTHESIS')return 'HYPOTHESIS'
   if(category==='BEHAVIORAL_SIGNAL')return 'INFERENCE'
   if(category==='OPPORTUNITY_CANDIDATE'&&!/\b(?:interesse|quer|pretende|necessidade)\b/i.test(statement))return 'INFERENCE'
   return 'FACT_CANDIDATE'
+}
+
+function semanticTypeFor(category,statement,interactionType){
+  if(ambiguousCommercialSignal.test(statement))return 'COMMERCIAL_SIGNAL'
+  if(agronomicTimingSignal.test(statement))return 'AGRONOMIC_TIMING'
+  if(agronomicStageSignal.test(statement))return 'AGRONOMIC_STAGE'
+  if(String(interactionType||'').toUpperCase()==='PRE_VISIT'&&preVisitIntent.test(statement))return 'VISIT_INTENT'
+  return category
 }
 
 function confidenceFor(epistemicStatus){
@@ -96,20 +109,21 @@ function securitySummary(counts){
   return Object.entries(counts).filter(([,count])=>count>0).map(([code,count])=>({code,count}))
 }
 
-export function deterministicVoiceCandidateExtraction({transcript,voiceInteractionId,transcriptRef,now}={}){
+export function deterministicVoiceCandidateExtraction({transcript,voiceInteractionId,transcriptRef,interactionType,now}={}){
   const candidates=[]
   const seen=new Set()
   const blocked={PROMPT_INJECTION_IGNORED:0,PROTECTED_ATTRIBUTE_IGNORED:0,AGRONOMIC_PRESCRIPTION_IGNORED:0}
   for(const clause of clauses(transcript)){
     const reason=voiceCandidateTextSecurityReason(clause)
     if(reason){blocked[reason]++;continue}
-    const matches=deterministicRules.filter(rule=>rule.pattern.test(clause)).slice(0,4)
+    const matches=ambiguousCommercialSignal.test(clause)?[{category:'HYPOTHESIS'}]:deterministicRules.filter(rule=>rule.pattern.test(clause)).slice(0,4)
     const selected=matches.length?matches:[{category:'FACT_CANDIDATE'}]
     for(const {category} of selected){
       const key=`${category}:${normalized(clause)}`
       if(seen.has(key))continue
       seen.add(key)
       const epistemicStatus=epistemicFor(category,clause)
+      const semanticType=semanticTypeFor(category,clause,interactionType)
       candidates.push(buildVoiceCandidate({
         voiceInteractionId,
         category,
@@ -118,7 +132,7 @@ export function deterministicVoiceCandidateExtraction({transcript,voiceInteracti
         evidenceExcerpt:clause,
         sourceRef:transcriptRef,
         confidence:confidenceFor(epistemicStatus),
-        metadata:{extraction:'deterministic',untrusted_source:true},
+        metadata:{extraction:'deterministic',untrusted_source:true,semantic_type:semanticType},
         now
       }))
       if(candidates.length>=MAX_CANDIDATES)break
@@ -143,7 +157,7 @@ function verifiedEvidenceExcerpt(value,transcript){
   return normalized(transcript).includes(normalized(excerpt))?excerpt:null
 }
 
-export function filterUnsafeVoiceCandidates(items,{transcript,voiceInteractionId,transcriptRef,now,extraction='openai'}={}){
+export function filterUnsafeVoiceCandidates(items,{transcript,voiceInteractionId,transcriptRef,interactionType,now,extraction='openai'}={}){
   const candidates=[]
   const seen=new Set()
   const blocked={PROMPT_INJECTION_IGNORED:0,PROTECTED_ATTRIBUTE_IGNORED:0,AGRONOMIC_PRESCRIPTION_IGNORED:0,INVALID_PROVIDER_CANDIDATE_IGNORED:0}
@@ -156,7 +170,9 @@ export function filterUnsafeVoiceCandidates(items,{transcript,voiceInteractionId
     const key=`${category}:${normalized(statement)}`
     if(seen.has(key))continue
     seen.add(key)
-    const epistemicStatus=category==='HYPOTHESIS'
+    const epistemicStatus=ambiguousCommercialSignal.test(statement)
+      ?'HYPOTHESIS'
+      :category==='HYPOTHESIS'
       ?'HYPOTHESIS'
       :category==='BEHAVIORAL_SIGNAL'
       ?'INFERENCE'
@@ -171,7 +187,7 @@ export function filterUnsafeVoiceCandidates(items,{transcript,voiceInteractionId
       evidenceExcerpt:verifiedEvidenceExcerpt(item.evidence_excerpt,transcript),
       sourceRef:transcriptRef,
       confidence:item.confidence,
-      metadata:{extraction,untrusted_source:true},
+      metadata:{extraction,untrusted_source:true,semantic_type:semanticTypeFor(category,statement,interactionType)},
       now
     }))
     if(candidates.length>=MAX_CANDIDATES)break
@@ -194,7 +210,7 @@ export class VoiceCandidateExtractor{
     if(!transcript)throw Object.assign(new Error('A transcrição está vazia.'),{code:'empty_transcript',statusCode:422})
     if(!voiceInteractionId)throw Object.assign(new Error('A interação de voz é obrigatória.'),{code:'voice_interaction_required',statusCode:422})
     if(!this.client?.responses?.create){
-      const fallback=deterministicVoiceCandidateExtraction({transcript,voiceInteractionId,transcriptRef,now:input.now})
+      const fallback=deterministicVoiceCandidateExtraction({transcript,voiceInteractionId,transcriptRef,interactionType:input.interactionType??input.interaction_type,now:input.now})
       const metadata={provider:'deterministic',model:'rules-v1',version:this.version,status:'deterministic',security_flags:fallback.security_flags}
       return {...fallback,metadata,extraction_metadata:metadata}
     }
@@ -216,12 +232,12 @@ export class VoiceCandidateExtractor{
       })
       if(response.status!=='completed'||!response.output_text)throw Object.assign(new Error('incomplete_extraction'),{code:'incomplete_extraction',status:503})
       const parsed=JSON.parse(response.output_text)
-      const filtered=filterUnsafeVoiceCandidates(parsed.candidates,{transcript,voiceInteractionId,transcriptRef,now:input.now,extraction:'openai_structured_output'})
+      const filtered=filterUnsafeVoiceCandidates(parsed.candidates,{transcript,voiceInteractionId,transcriptRef,interactionType:input.interactionType??input.interaction_type,now:input.now,extraction:'openai_structured_output'})
       const metadata={provider:'openai',model:this.model,version:this.version,status:'completed',latency_ms:Date.now()-startedAt,response_id:text(response.id,180)||null,security_flags:filtered.security_flags}
       return {...filtered,metadata,extraction_metadata:metadata}
     }catch(error){
       if(input.signal?.aborted)throw Object.assign(new Error('A extração foi cancelada.'),{code:'extraction_cancelled',statusCode:499})
-      const fallback=deterministicVoiceCandidateExtraction({transcript,voiceInteractionId,transcriptRef,now:input.now})
+      const fallback=deterministicVoiceCandidateExtraction({transcript,voiceInteractionId,transcriptRef,interactionType:input.interactionType??input.interaction_type,now:input.now})
       const metadata={provider:'deterministic',model:'rules-v1',version:this.version,status:'fallback',latency_ms:Date.now()-startedAt,error_code:safeProviderCode(error),security_flags:fallback.security_flags}
       return {...fallback,metadata,extraction_metadata:metadata}
     }

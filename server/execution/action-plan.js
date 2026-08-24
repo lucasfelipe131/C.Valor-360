@@ -80,7 +80,7 @@ function derivedCandidates(input){
  const refs=[{id:text(snapshot.context_snapshot_id,240),type:'context_snapshot'},...list(thesis.evidence_refs)]
  const candidates=[]
  const push=candidate=>{if(candidate.description&&!candidates.some(item=>text(item.description).toLowerCase()===text(candidate.description).toLowerCase()))candidates.push(candidate)}
- const criticalMissing=list(snapshot.missing_information).find(item=>item?.critical)||list(thesis.missing_information)[0]
+ const criticalMissing=list(snapshot.missing_information).find(item=>item?.critical)||(thesis.decision==='DISCOVER_BEFORE_RECOMMENDING'?list(thesis.missing_information)[0]:null)
  if(criticalMissing)push({
   title:'Confirmar informação crítica',
   description:text(criticalMissing.question||criticalMissing.description||criticalMissing),
