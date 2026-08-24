@@ -56,13 +56,16 @@ test('métricas de uso aceitam somente eventos conhecidos e mantêm o login como
  const actor={id:'00000000-0000-4000-8000-000000000010',role:'consultant'}
  assert.equal(await repository.recordUsage(actor,{eventType:'page_view',page:'client 360<script>',entityType:'client',entityId:'produtor-1',metadata:{source:'navigation'}}),true)
  assert.equal(await repository.recordUsage(actor,{eventType:'val_attachment_uploaded',page:'client360',entityType:'client',entityId:'produtor-1',metadata:{mimeType:'image/jpeg'}}),true)
+ assert.equal(await repository.recordUsage(actor,{eventType:'voice_interaction_confirmed',page:'val',entityType:'voice_interaction',entityId:'11111111-1111-4111-8111-111111111111',metadata:{interactionType:'CLIENT_NOTE',confirmedCandidates:2}}),true)
  assert.equal(await repository.recordUsage(actor,{eventType:'evento_inventado',page:'admin'}),false)
- assert.equal(calls.length,2)
+ assert.equal(calls.length,3)
  assert.deepEqual(calls[0].params.slice(0,3),['00000000-0000-4000-8000-000000000001',actor.id,'page_view'])
  assert.equal(calls[0].params[3],'client360script')
  assert.deepEqual(JSON.parse(calls[0].params[6]),{source:'navigation'})
  assert.equal(calls[1].params[2],'val_attachment_uploaded')
  assert.deepEqual(JSON.parse(calls[1].params[6]),{mimeType:'image/jpeg'})
+ assert.equal(calls[2].params[2],'voice_interaction_confirmed')
+ assert.deepEqual(JSON.parse(calls[2].params[6]),{interactionType:'CLIENT_NOTE',confirmedCandidates:2})
 })
 
 test('painel de métricas é exclusivo do administrador e consolida por tenant',async()=>{

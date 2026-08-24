@@ -1,5 +1,6 @@
 import {randomUUID} from 'node:crypto'
 import {assertVisitLoopContract,validateVisitTranscript,visitTranscriptVersion} from './contracts.js'
+import {probeVoiceAudioDuration} from '../voice-capture/storage.js'
 
 export const supportedVisitAudioMimeTypes=Object.freeze(new Set([
  'audio/mpeg','audio/mp3','audio/mp4','audio/x-m4a','audio/wav','audio/x-wav','audio/webm','audio/ogg'
@@ -67,10 +68,12 @@ export function buildVisitTranscript(input={}){
 export async function transcribeVisitAudio({provider,attachment,organizationId,visitId,clientId,createdBy,now}={}){
  validateAudioAttachment(attachment)
  const effectiveProvider=provider||createUnavailableTranscriptionProvider()
- const base={organizationId,visitId,clientId,createdBy,attachmentId:attachment.id,provider:effectiveProvider.name||'unknown',now,metadata:{mime_type:attachment.mimeType,size_bytes:attachment.sizeBytes}}
+ let durationSeconds=null
+ const base={organizationId,visitId,clientId,createdBy,attachmentId:attachment.id,provider:effectiveProvider.name||'unknown',now,metadata:{mime_type:attachment.mimeType,size_bytes:attachment.sizeBytes,duration_seconds:null}}
  try{
-  const result=await effectiveProvider.transcribe({attachment,organizationId,visitId,clientId})
-  return buildVisitTranscript({...base,status:'COMPLETED',transcriptText:result.text,providerReference:result.providerReference,language:result.language||'pt-BR'})
+  if(effectiveProvider.requiresVerifiedDuration){const bytes=Buffer.from(String(attachment.dataBase64||''),'base64');durationSeconds=await probeVoiceAudioDuration({bytes,mimeType:attachment.mimeType});base.metadata.duration_seconds=durationSeconds}
+  const result=await effectiveProvider.transcribe({attachment,organizationId,visitId,clientId,durationSeconds})
+  return buildVisitTranscript({...base,status:'COMPLETED',transcriptText:result.text,providerReference:result.providerReference??result.provider_reference,language:result.language||'pt-BR'})
  }catch(error){
   const transcript=buildVisitTranscript({...base,status:'FAILED',errorCode:String(error?.code||'transcription_failed').slice(0,100)})
   error.transcript=transcript

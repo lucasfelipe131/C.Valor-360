@@ -259,6 +259,16 @@ test('Fase 6 30 — falha de transcrição degrada com segurança',async()=>{
  assert.equal(context.read().val.memories.length,0)
 })
 
+test('Fase 6 30b — áudio de outro produtor é recusado antes de chamar a transcrição',async()=>{
+ const context=phase6Repository();const foreignAudio='00000000-0000-4000-8000-000000000629';let providerCalls=0
+ context.read().val.attachments.push({id:foreignAudio,ownerId:phase6ActorA,clientId:'producer-b',client_external_key:'producer-b',original_name:'outro.webm',mime_type:'audio/webm',size_bytes:24,content_base64:'YXVkaW8tZml4dHVyZQ==',sha256:'foreign-audio-fixture',status:'received',analysis:{},created_at:now.toISOString(),updated_at:now.toISOString()})
+ const service=createVisitLoopService({repository:context.repository,transcriptionProvider:{name:'must-not-run',async transcribe(){providerCalls++;return {text:phase6ReportText}}}})
+ await assert.rejects(()=>service.createReport({tenantId:phase6TenantA,ownerId:phase6ActorA,visitId:phase6VisitA,input:{source_type:'AUDIO',attachment_id:foreignAudio},now}),error=>error.code==='visit_audio_not_found'&&error.statusCode===404)
+ assert.equal(providerCalls,0)
+ assert.equal(context.read().val.visitTranscripts.length,0)
+ assert.equal(context.read().val.visitReports.length,0)
+})
+
 test('Fase 6 31 — conteúdo de áudio e transcrição não entra na telemetria',async()=>{
  const secret='CONTEUDO-SENSIVEL-DO-AUDIO-NAO-LOGAR'
  const logs=[];const context=phase6Repository();const service=createVisitLoopService({repository:context.repository,transcriptionProvider:createMockTranscriptionProvider({text:`${secret}. Pediu retorno em 2026-08-29.`})})

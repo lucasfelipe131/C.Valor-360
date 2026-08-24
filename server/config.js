@@ -1,4 +1,5 @@
 const readBoolean=(value,fallback=false)=>value===undefined?fallback:/^(1|true|yes|on)$/i.test(String(value))
+const boundedNumber=(value,fallback,min,max)=>{const parsed=Number(value);return Math.max(min,Math.min(max,Number.isFinite(parsed)?parsed:fallback))}
 
 export const DEFAULT_TENANT_ID='00000000-0000-4000-8000-000000000001'
 
@@ -22,6 +23,11 @@ export const config=Object.freeze({
   modelDaily:String(process.env.VAL_MODEL_DAILY||process.env.OPENAI_MODEL||'gpt-5.6-terra'),
   modelStrategic:String(process.env.VAL_MODEL_STRATEGIC||'gpt-5.6-sol'),
   modelFast:String(process.env.VAL_MODEL_FAST||'gpt-5.6-luna'),
+  voiceTranscriptionModel:String(process.env.VAL_VOICE_TRANSCRIPTION_MODEL||'gpt-transcribe'),
+  voiceExtractionModel:String(process.env.VAL_VOICE_EXTRACTION_MODEL||process.env.VAL_MODEL_FAST||'gpt-5.6-luna'),
+  voiceRequestsPerTenMinutes:boundedNumber(process.env.VAL_VOICE_REQUESTS_PER_10_MINUTES,20,1,200),
+  voiceMaxDurationSeconds:boundedNumber(process.env.VAL_VOICE_MAX_DURATION_SECONDS,900,1,900),
+  voiceMaxAudioBytes:boundedNumber(process.env.VAL_VOICE_MAX_AUDIO_BYTES,6_000_000,1_024,6_000_000),
   knowledgeVectorStoreId:String(process.env.VAL_KNOWLEDGE_VECTOR_STORE_ID||''),
   manualWebhookSecret:String(process.env.VAL_MANUAL_WEBHOOK_SECRET||''),
   integrationToken:String(process.env.VAL_INTEGRATION_TOKEN||''),
@@ -46,6 +52,7 @@ export function getPublicEngineConfig(){
     demoMode:config.demoMode,
     knowledgeBaseConfigured:Boolean(config.knowledgeVectorStoreId),
     responseStorage:config.openaiStoreResponses?'openai-enabled':'application-only',
-    models:{daily:config.modelDaily,strategic:config.modelStrategic,fast:config.modelFast}
+    voiceCapture:{enabled:true,transcriptionConfigured:Boolean(config.openaiApiKey),maxDurationSeconds:config.voiceMaxDurationSeconds,maxAudioBytes:config.voiceMaxAudioBytes},
+    models:{daily:config.modelDaily,strategic:config.modelStrategic,fast:config.modelFast,voiceTranscription:config.voiceTranscriptionModel,voiceExtraction:config.voiceExtractionModel}
   }
 }

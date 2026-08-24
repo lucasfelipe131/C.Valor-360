@@ -125,7 +125,7 @@ export function buildVisitReport(input={}){
   contract_version:visitReportVersion,version:visitReportVersion,
   visit_report_id:text(input.visitReportId,180)||uuidFrom({organizationId:input.organizationId,visitId:input.visitId,idempotencyKey}),
   visit_id:text(input.visitId,180),organization_id:text(input.organizationId,180),client_id:text(input.clientId,180),created_by:text(input.createdBy,180),confirmed_by:null,
-  source_type:sourceType,source_ref:sourceRef,transcript_ref:input.transcriptId?`visit-transcript:${text(input.transcriptId,180)}`:null,transcript_id:input.transcriptId?text(input.transcriptId,180):null,
+  source_type:sourceType,source_ref:sourceRef,transcript_ref:text(input.transcriptRef,240)||(input.transcriptId?`visit-transcript:${text(input.transcriptId,180)}`:null),transcript_id:input.transcriptId?text(input.transcriptId,180):null,
   visit_objective:text(input.visitObjective,1600)||'Objetivo não informado.',summary:extracted.summary,
   discussed_topics:extracted.discussedTopics,expectations_created:extracted.expectations,objections:extracted.objections,producer_signals:extracted.producerSignals,
   opportunities_detected:extracted.opportunities,commitments_proposed:extracted.commitments,commitments_confirmed:[],closed_business:extracted.closed,pending_business:extracted.pending,
@@ -208,11 +208,11 @@ export function confirmedMemoryWrites(report,{actorId,now}={}){
  const timestamp=nowIso(now)
  const sourceRef=`visit-report:${report.visit_report_id}`
  const writes=[]
- const add=(item,{key,domain,state='FACT',type='fact',status='verified',value={}})=>writes.push({
-  id:randomUUID(),organization_id:report.organization_id,client_id:report.client_id,subject_type:'visit',subject_id:report.visit_id,memory_type:type,memory_state:state,memory_domain:domain,key,
-  value:{statement:item.statement,...value},evidence:[{id:item.item_id,source_ref:sourceRef,confirmation_status:'CONFIRMED'}],confidence:Math.round(clamp(item.confidence??report.confidence)*100),status,source:'confirmed_visit_report',source_ref:sourceRef,source_type:'confirmed_visit_report',
-  observed_at:report.confirmed_at,source_updated_at:report.confirmed_at,freshness_policy_version:'val.context.freshness.v1',freshness_metadata:{domain,source_type:'confirmed_visit_report'},valid_from:timestamp,valid_until:null,created_by:actorId,acl:{scope:'own_portfolio'}
- })
+ const add=(item,{key,domain,state='FACT',type='fact',status='verified',value={}})=>{const epistemic=String(item?.epistemic_status||'FACT_CANDIDATE').toUpperCase();const effective=epistemic==='HYPOTHESIS'?{state:'HYPOTHESIS',type:'inference',status:'proposed'}:epistemic==='INFERENCE'?{state:'INFERENCE',type:'inference',status:'proposed'}:{state,type,status};writes.push({
+  id:randomUUID(),organization_id:report.organization_id,client_id:report.client_id,subject_type:'visit',subject_id:report.visit_id,memory_type:effective.type,memory_state:effective.state,memory_domain:domain,key,
+  value:{statement:item.statement,...value},evidence:[{id:item.item_id,source_ref:sourceRef,confirmation_status:'CONFIRMED'}],confidence:Math.round(clamp(item.confidence??report.confidence)*100),status:effective.status,source:'confirmed_visit_report',source_ref:sourceRef,source_type:'confirmed_visit_report',
+  observed_at:report.confirmed_at,source_updated_at:report.confirmed_at,freshness_policy_version:'val.context.freshness.v1',freshness_metadata:{domain,source_type:'confirmed_visit_report',epistemic_status:epistemic},valid_from:timestamp,valid_until:null,created_by:actorId,acl:{scope:'own_portfolio'}
+ })}
  for(const item of list(report.objections))add(item,{key:'visit_report.objection',domain:'COMMERCIAL',value:{category:item.category||null}})
  for(const item of list(report.producer_signals))add(item,{key:'visit_report.producer_signal',domain:'RELATIONSHIP',value:{signal_code:item.signal_code||null}})
  for(const item of list(report.expectations_created))add(item,{key:'visit_report.expectation',domain:'COMMERCIAL',value:{category:item.category||null}})

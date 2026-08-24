@@ -3,6 +3,7 @@ import { ArrowLeft, BrainCircuit, MapPin, BadgeDollarSign, HeartHandshake, Perce
 import ProducerProfileEditor from '../components/ProducerProfileEditor'
 import ProducerBusinessOverview from '../components/ProducerBusinessOverview'
 import ProducerFieldGallery from '../components/ProducerFieldGallery'
+import VoiceCapture from '../components/voice/VoiceCapture'
 import {compactBRL,commercialMetrics,metricValue} from '../lib/commercial-metrics'
 const Section=({title,children})=><article className="panel detail-section"><h3>{title}</h3>{children}</article>
 const contextFields=['property','crops','area','weeds','diseases','insects','soil','goal','competitors','notes']
@@ -38,7 +39,7 @@ export default function Client360({client,storageScope,onBack,onPrepare,onUpdate
   <button className="back-btn" onClick={onBack}><ArrowLeft size={17}/>Voltar</button>
   <section className="client-hero">
    <div><span className="eyebrow">CLIENTE 360</span><h2>{client.name}</h2><p><MapPin size={15}/>{client.municipality} • {client.area} • {client.cultures}</p><div className="tag-row"><span>{metrics.profileMeasured?client.primaryProfile:'Perfil a medir'}</span><span>{client.secondaryProfile}</span><span>IRT {metricValue(client.irt,metrics.irtKnown)}</span><span>NPS {metricValue(client.nps,metrics.npsKnown)}</span><span>Oportunidade: {client.commercial?.opportunity||'Ainda não identificada'}</span></div></div>
-   <div className="hero-actions"><button onClick={onPrepare}><BrainCircuit size={17}/>Preparar com a VAL</button></div>
+   <div className="hero-actions"><button onClick={onPrepare}><BrainCircuit size={17}/>Preparar com a VAL</button><VoiceCapture clientId={client.id} interactionType="CLIENT_NOTE" label="Registrar áudio" description="Informação, oportunidade ou lembrete" sourceContext={{page:'CLIENT_360'}} onConfirmed={()=>{setOverviewRevision(value=>value+1);onSaved?.('Áudio confirmado e incorporado ao contexto futuro deste produtor.')}}/></div>
   </section>
   <section className="four-grid">
    <div className="mini-stat producer-canonical-stat"><HeartHandshake/><small>IRT / NPS</small><b>{metricValue(client.irt,metrics.irtKnown)} <em>/</em> {metricValue(client.nps,metrics.npsKnown)}</b><span>Relacionamento e recomendação</span></div>

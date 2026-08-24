@@ -3,6 +3,7 @@ import {randomBytes,randomUUID} from 'node:crypto'
 import {createServer} from 'node:http'
 import {dirname,extname,join,normalize,resolve,sep} from 'node:path'
 import {fileURLToPath} from 'node:url'
+import OpenAI from 'openai'
 import {config,getPublicEngineConfig} from './server/config.js'
 import {createDatabase} from './server/db.js'
 import {createAuth} from './server/auth.js'
@@ -25,6 +26,10 @@ import {calculateProfile} from './src/lib/profile.js'
 import {buildCommercialIntelligence,summarizeLearning} from './src/lib/commercial-intelligence.js'
 import {prepareVisitExecution} from './server/execution/service.js'
 import {createVisitLoopService} from './server/visit-loop/service.js'
+import {createOpenAITranscriptionProvider,createUnavailableTranscriptionProvider} from './server/voice-capture/transcription-provider.js'
+import {createRepositoryAttachmentVoiceStorage} from './server/voice-capture/storage.js'
+import {createVoiceCandidateExtractor} from './server/voice-capture/extraction.js'
+import {createVoiceCaptureService} from './server/voice-capture/service.js'
 
 const port=Number(process.env.PORT||3000)
 const appRoot=dirname(fileURLToPath(import.meta.url))
@@ -42,7 +47,7 @@ if(!existsSync(storePath))writeFileSync(storePath,JSON.stringify({surveys:[],imp
 function readStore(){try{return JSON.parse(readFileSync(storePath,'utf8'))}catch{return {surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[]}}}}
 function saveStore(store){const temporary=`${storePath}.tmp`;writeFileSync(temporary,JSON.stringify(store,null,2));renameSync(temporary,storePath)}
 function json(response,status,payload){response.writeHead(status,{...securityHeaders,'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify(payload))}
-function rawBody(request){return new Promise((resolve,reject)=>{let raw='';request.on('data',chunk=>{raw+=chunk;if(Buffer.byteLength(raw)>config.maxBodyBytes){reject(new Error('Arquivo ou requisição muito grande.'));request.destroy()}});request.on('end',()=>resolve(raw));request.on('error',reject)})}
+function rawBody(request){return new Promise((resolve,reject)=>{let raw='';let size=0;let settled=false;const tooLarge=()=>Object.assign(new Error('Arquivo ou requisição muito grande.'),{statusCode:413,code:'request_too_large'});const fail=error=>{if(settled)return;settled=true;raw='';reject(error)};const drain=()=>{request.off('data',onData);request.resume()};const onData=chunk=>{size+=chunk.length;if(size>config.maxBodyBytes){drain();fail(tooLarge());return}raw+=chunk};const declared=Number(request.headers['content-length']);request.on('end',()=>{if(settled)return;settled=true;resolve(raw)});request.on('error',fail);if(Number.isFinite(declared)&&declared>config.maxBodyBytes){drain();fail(tooLarge());return}request.on('data',onData)})}
 async function body(request){const raw=await rawBody(request);try{return raw?JSON.parse(raw):{}}catch{throw new Error('Conteúdo inválido.')}}
 async function limitedResponseText(upstream,limit){const reader=upstream.body?.getReader();if(!reader)return upstream.text();const chunks=[];let size=0;while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>limit){await reader.cancel();throw Object.assign(new Error('A planilha excede o limite seguro de importação.'),{statusCode:413})}chunks.push(value)}return new TextDecoder().decode(Buffer.concat(chunks.map(chunk=>Buffer.from(chunk))))}
 const clean=value=>String(value||'').trim().slice(0,240)
@@ -73,7 +78,12 @@ const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenan
 const accessRepository=new AccessRepository({db:database,tenantId:config.defaultTenantId,runtimeConfig:config})
 const valEngine=new ValEngine({runtimeConfig:config,repository})
 const valCore=new ValCore({engine:valEngine,tenantId:config.defaultTenantId})
-const visitLoop=createVisitLoopService({repository})
+const voiceOpenAI=config.openaiApiKey?new OpenAI({apiKey:config.openaiApiKey,project:config.openaiProject||undefined,timeout:config.openaiTimeoutMs,maxRetries:0}):null
+const voiceTranscriptionProvider=voiceOpenAI?createOpenAITranscriptionProvider({client:voiceOpenAI,model:config.voiceTranscriptionModel,timeoutMs:Math.min(config.openaiTimeoutMs,120_000)}):createUnavailableTranscriptionProvider()
+const visitLoop=createVisitLoopService({repository,transcriptionProvider:voiceTranscriptionProvider})
+const voiceStorage=createRepositoryAttachmentVoiceStorage({repository,maxAudioBytes:config.voiceMaxAudioBytes,maxDurationSeconds:config.voiceMaxDurationSeconds})
+const voiceExtractor=createVoiceCandidateExtractor({client:voiceOpenAI,model:config.voiceExtractionModel,timeoutMs:Math.min(config.openaiTimeoutMs,60_000)})
+const voiceCapture=createVoiceCaptureService({repository,storageProvider:voiceStorage,transcriptionProvider:voiceTranscriptionProvider,extractor:voiceExtractor,visitLoop,prepareVisit:prepareVisitExecution,maxDurationSeconds:config.voiceMaxDurationSeconds})
 const valProgress=createValProgressTracker()
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
@@ -140,7 +150,7 @@ async function handleApi(request,response,url){
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
- const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const identity=protectedPath?await sessionIdentity(request):null
  if(protectedPath&&auth.configured&&!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
@@ -159,6 +169,40 @@ async function handleApi(request,response,url){
  }
  if(url.pathname==='/api/usage/events'&&request.method==='POST'){
   const payload=await body(request);await accessRepository.recordUsage(identity,{eventType:'page_view',page:clean(payload.page),entityType:clean(payload.entityType),entityId:clean(payload.entityId)});return json(response,202,{accepted:true})
+ }
+ if(url.pathname==='/api/v1/voice-interactions'&&request.method==='POST'){
+  const actorId=String(identity?.id||identity?.email||'demo@valor360.local');if(!consumeRateLimit('voice-create',actorId,config.voiceRequestsPerTenMinutes*2))return json(response,429,{error:'Limite temporário de capturas atingido. Aguarde alguns minutos.',code:'voice_rate_limit'});const payload=await body(request)
+  const result=await voiceCapture.create({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,actorId,input:payload,requestId:currentRequestContext()?.requestId})
+  await accessRepository.recordUsage(identity,{eventType:'voice_interaction_created',page:'val',entityType:'voice_interaction',entityId:result.voice_interaction.voice_interaction_id,metadata:{interactionType:result.voice_interaction.interaction_type,captureMode:result.voice_interaction.source_context?.capture_mode}}).catch(()=>null)
+  return json(response,201,result)
+ }
+ const voiceInteractionMatch=url.pathname.match(/^\/api\/v1\/voice-interactions\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(?:\/(audio|process|confirm|cancel))?$/i)
+ if(voiceInteractionMatch){
+  const actorId=String(identity?.id||identity?.email||'demo@valor360.local');const tenantId=identity?.tenantId||config.defaultTenantId;const id=voiceInteractionMatch[1];const action=voiceInteractionMatch[2]||''
+  if(!action&&request.method==='GET')return json(response,200,await voiceCapture.get({tenantId,ownerId:identity?.id,actorId,id}))
+  if(action==='audio'&&request.method==='POST'){
+   if(!consumeRateLimit('voice-upload',actorId,config.voiceRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de uploads de áudio atingido. Aguarde alguns minutos.',code:'voice_rate_limit'})
+   const result=await voiceCapture.uploadAudio({tenantId,ownerId:identity?.id,actorId,id,input:await body(request)})
+   await accessRepository.recordUsage(identity,{eventType:'voice_audio_uploaded',page:'val',entityType:'voice_interaction',entityId:id,metadata:{interactionType:result.voice_interaction.interaction_type,durationSeconds:result.voice_interaction.duration_seconds}}).catch(()=>null)
+   return json(response,200,result)
+  }
+  if(action==='process'&&request.method==='POST'){
+   if(!consumeRateLimit('voice',actorId,config.voiceRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de processamentos de áudio atingido. Aguarde alguns minutos.',code:'voice_rate_limit'})
+   await body(request);const result=await voiceCapture.process({tenantId,ownerId:identity?.id,actorId,id,requestId:currentRequestContext()?.requestId})
+   await accessRepository.recordUsage(identity,{eventType:'voice_interaction_processed',page:'val',entityType:'voice_interaction',entityId:id,metadata:{interactionType:result.voice_interaction.interaction_type,status:result.voice_interaction.state,candidateCount:result.voice_interaction.candidates?.length||0}}).catch(()=>null)
+   return json(response,200,result)
+  }
+  if(action==='confirm'&&request.method==='POST'){
+   if(!consumeRateLimit('voice-confirm',actorId,config.voiceRequestsPerTenMinutes*2))return json(response,429,{error:'Limite temporário de confirmações atingido. Aguarde alguns minutos.',code:'voice_rate_limit'})
+   const result=await voiceCapture.confirm({tenantId,ownerId:identity?.id,actorId,id,input:await body(request),requestId:currentRequestContext()?.requestId})
+   await accessRepository.recordUsage(identity,{eventType:'voice_interaction_confirmed',page:'val',entityType:'voice_interaction',entityId:id,metadata:{interactionType:result.voice_interaction.interaction_type,status:result.voice_interaction.state,confirmedCandidates:result.voice_interaction.reviewed_candidates?.filter(item=>item.review_status==='CONFIRMED').length||0}}).catch(()=>null)
+   return json(response,200,result)
+  }
+  if(action==='cancel'&&request.method==='POST'){
+   await body(request);const result=await voiceCapture.cancel({tenantId,ownerId:identity?.id,actorId,id})
+   await accessRepository.recordUsage(identity,{eventType:'voice_interaction_cancelled',page:'val',entityType:'voice_interaction',entityId:id,metadata:{interactionType:result.voice_interaction.interaction_type,status:result.voice_interaction.state}}).catch(()=>null)
+   return json(response,200,result)
+  }
  }
  if(url.pathname==='/api/grains/bootstrap'&&request.method==='GET'){
   const workspace=await grainRepository.getWorkspace(identity?.id)
@@ -320,6 +364,12 @@ async function handleApi(request,response,url){
   if(!clientId||!objective)return json(response,400,{error:'Selecione o produtor e informe o objetivo da visita.'})
   const visit=await repository.saveVisit({clientId,scheduledAt:payload.scheduledAt,objective,status:'Agendada'},identity?.id);await accessRepository.recordUsage(identity,{eventType:'visit_saved',page:'visits',entityType:'client',entityId:clientId});return json(response,201,{saved:true,visit})
  }
+ const visitStartMatch=url.pathname.match(/^\/api\/v1\/visits\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/start$/i)
+ if(visitStartMatch&&request.method==='POST'){
+  const actorId=String(identity?.id||identity?.email||'demo@valor360.local');const result=await repository.startVisit({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,actorId,visitId:visitStartMatch[1],requestId:currentRequestContext()?.requestId})
+  await accessRepository.recordUsage(identity,{eventType:'visit_started',page:'visits',entityType:'visit',entityId:visitStartMatch[1],metadata:{lifecycleStatus:result.visit.lifecycleStatus}}).catch(()=>null)
+  return json(response,200,{contract_version:'val.visit_lifecycle.response.v1',...result})
+ }
  const visitPreparationMatch=url.pathname.match(/^\/api\/v1\/visits\/([0-9a-f-]{36})\/preparation$/i)
  if(visitPreparationMatch&&request.method==='GET'){
   const result=await repository.getVisitPreparation({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,visitId:visitPreparationMatch[1]})
@@ -445,7 +495,7 @@ createServer((request,response)=>{
   try{if(technicalWorkspace.handle(request,response,url,await sessionIdentity(request)))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
  }
  if(url.pathname==='/live'||url.pathname==='/health'||url.pathname.startsWith('/api/')){
-  try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){return json(response,Number(exception.statusCode)||400,{error:exception.message||'Não foi possível processar a solicitação.'})}
+  try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){const status=Number(exception.statusCode)||400;const safeMessage=status<500||exception.safeToRetry===true?exception.message:'Não foi possível processar a solicitação.';return json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception.code?{code:String(exception.code).slice(0,100)}:{}),...(exception.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{})})}
   return json(response,404,{error:'Rota não encontrada.'})
  }
  const relative=normalize(url.pathname==='/'?'index.html':url.pathname.replace(/^\/+/,''))
@@ -466,7 +516,8 @@ createServer((request,response)=>{
   observe('api.unhandled',{outcome:'error',errorCode:String(exception?.code||'unhandled_error')})
   if(response.headersSent){response.destroy(exception);return}
   const status=Number(exception?.statusCode)||500
-  json(response,status,{error:status>=500?'Não foi possível processar a solicitação.':exception?.message||'Não foi possível processar a solicitação.'})
+  const safeMessage=status<500||exception?.safeToRetry===true?exception?.message:'Não foi possível processar a solicitação.'
+  json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception?.code?{code:String(exception.code).slice(0,100)}:{}),...(exception?.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{})})
  })
 }).listen(port,'0.0.0.0',()=>console.log(`VALOR 360 disponível na porta ${port}`))
 
