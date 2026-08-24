@@ -33,11 +33,13 @@ export function createVisitLoopService({repository,transcriptionProvider=createU
    return {contract_version:'val.visit_report.response.v1',visit_report:stored,...(transcript?{transcript_ref:{id:transcript.transcript_id,version:transcript.version,status:transcript.status}}:{})}
   },
 
-  async createReportFromTranscript({tenantId,ownerId,actorId=ownerId,visitId,transcriptText,transcriptRef,voiceInteractionId,requestId,now}={}){
+  async createReportFromTranscript({tenantId,ownerId,actorId=ownerId,visitId,transcriptText,transcriptRef,voiceInteractionId,sourceType='AUDIO',requestId,now}={}){
    const started=Date.now()
    const visit=await repository.getVisit({tenantId,ownerId,id:visitId})
    if(!visit)throw Object.assign(new Error('Visita não encontrada na carteira autorizada.'),{code:'visit_not_found',statusCode:404})
-   const report=buildVisitReport({organizationId:tenantId,visitId:visit.id,clientId:visit.clientId,createdBy:actorId,sourceType:'AUDIO',sourceText:transcriptText,sourceRef:`voice-interaction:${text(voiceInteractionId,180)}`,transcriptRef:text(transcriptRef,240),transcriptId:null,visitObjective:visit.objective,idempotencyKey:`voice:${text(voiceInteractionId,160)}`,occurredAt:now,now})
+   const normalizedSourceType=text(sourceType,30).toUpperCase()
+   if(!['AUDIO','TEXT'].includes(normalizedSourceType))throw Object.assign(new Error('Origem do relato inválida.'),{code:'visit_report_source_invalid',statusCode:422})
+   const report=buildVisitReport({organizationId:tenantId,visitId:visit.id,clientId:visit.clientId,createdBy:actorId,sourceType:normalizedSourceType,sourceText:transcriptText,sourceRef:`voice-interaction:${text(voiceInteractionId,180)}`,transcriptRef:text(transcriptRef,240),transcriptId:null,visitObjective:visit.objective,idempotencyKey:`voice:${text(voiceInteractionId,160)}`,occurredAt:now,now})
    const stored=await repository.saveVisitReport({tenantId,ownerId,report,requestId,now})
    observe('visit.report.candidate.created',{visitId:visit.id,visitReportId:stored.visit_report_id,voiceInteractionId,confirmationStatus:stored.confirmation_status,modulesCalled:'MEX,MMI,MCTX,VIS',durationMs:Math.max(0,Date.now()-started),outcome:'ok'})
    return {contract_version:'val.visit_report.response.v1',visit_report:stored,transcript_ref:{id:transcriptRef,version:'val.voice_transcript.v1',status:'COMPLETED'}}

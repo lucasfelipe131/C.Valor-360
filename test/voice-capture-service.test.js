@@ -297,7 +297,7 @@ class MemoryVisitLoop{
       owner_id:input.ownerId,
       visit_id:input.visitId,
       confirmation_status:'PENDING_REVIEW',
-      source_type:'AUDIO',
+      source_type:input.sourceType||'AUDIO',
       transcript_ref:input.transcriptRef,
       voice_interaction_id:input.voiceInteractionId
     }
@@ -825,6 +825,7 @@ test('VoiceCaptureService — POST_VISIT reutiliza VisitReport, Outcome e Learni
     input:confirmAll(flow.processed,{outcome_type:'NO_DECISION',no_action:true})
  })
   assert.equal(context.visitLoop.createCalls.length,1)
+  assert.equal(context.visitLoop.createCalls[0].sourceType,'AUDIO')
   assert.equal(context.visitLoop.confirmCalls.length,1)
   const voiceMemories=context.visitLoop.confirmCalls[0].voiceConfirmation.memory_writes
   assert.equal(voiceMemories.length,1)
@@ -872,5 +873,25 @@ test('VoiceCaptureService — fallback manual percorre extração/confirmação 
   assert.equal(context.repository.memories.length,1)
   assert.equal(context.repository.memories[0].value.statement,'O produtor pretende ampliar a área no próximo ano.')
   assert.equal(context.storageProvider.loadCalls.length,0)
+  assert.equal(context.transcriptionProvider.calls.length,0)
+})
+
+test('VoiceCaptureService — fallback manual pós-visita preserva source_type TEXT no VisitReport',async()=>{
+  const context=harness({extractorFactory:()=>[
+    {category:'FACT_CANDIDATE',statement:'O produtor pediu um comparativo de custo por hectare.'},
+    {category:'NEXT_STEP',statement:'Retornar com o comparativo solicitado.'}
+  ]})
+  const created=await context.service.create({
+    tenantId,ownerId:actorId,actorId,requestId,now,
+    input:{client_id:clientId,visit_id:visitId,interaction_type:'POST_VISIT',manual_text:'O produtor pediu um comparativo de custo por hectare.',language:'pt-BR',source_context:{surface:'POST_VISIT'}}
+  })
+  const id=created.voice_interaction.voice_interaction_id
+  const processed=await context.service.process({tenantId,ownerId:actorId,actorId,id,requestId,now})
+  const result=await context.service.confirm({tenantId,ownerId:actorId,actorId,id,requestId,now:later,input:confirmAll(processed.voice_interaction,{outcome_type:'NO_DECISION'})})
+
+  assert.equal(context.visitLoop.createCalls.length,1)
+  assert.equal(context.visitLoop.createCalls[0].sourceType,'TEXT')
+  assert.equal(result.result.visit_report.source_type,'TEXT')
+  assert.equal(context.storageProvider.storeCalls.length,0)
   assert.equal(context.transcriptionProvider.calls.length,0)
 })

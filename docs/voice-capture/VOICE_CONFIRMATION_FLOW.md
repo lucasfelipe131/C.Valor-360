@@ -1,6 +1,6 @@
 # Fluxo de confirmação de voz
 
-Status: fluxo implementado localmente; validação de navegador/staging e dispositivo físico pendente.
+Status: fluxo implementado, CI/PG16 e staging técnico aprovados; jornada autenticada integral e dispositivo físico pendentes.
 
 ## Princípio
 
@@ -110,7 +110,7 @@ O service primeiro valida toda a revisão e o próximo passo. Depois:
 
 `VoiceInteraction → VisitReport v1 pendente → confirmação transacional do Visit Loop → Interaction/MMI + Commitment + oportunidade + Outcome + LearningCandidate`.
 
-O Visit Report recebe `source_type: AUDIO` e `transcript_ref: voice-transcript:<uuid>`. Se outro fluxo já confirmou esse report, a VoiceInteraction fica pendente e retorna conflito; candidatos não são aplicados silenciosamente.
+O Visit Report recebe `source_type: AUDIO` quando a captura contém gravação e `source_type: TEXT` quando o consultor usa o fallback digitado; em ambos os casos mantém `transcript_ref: voice-transcript:<uuid>`. Se outro fluxo já confirmou esse report, a VoiceInteraction fica pendente e retorna conflito; candidatos não são aplicados silenciosamente.
 
 ### `CLIENT_NOTE`, `FIELD_NOTE` e `GENERAL_CONTEXT`
 
@@ -149,6 +149,6 @@ Testes automatizados cobrem revisão completa/incompleta, edição, adição, re
 Ainda faltam evidências de:
 
 - fluxo real completo pela interface em staging;
-- resposta e retry com OpenAI real;
+- retry real pela interface implantada (a transcrição OpenAI real isolada já foi aprovada);
 - retomada após reload em navegador implantado;
 - usabilidade com microfone físico em iOS/Android/PWA.

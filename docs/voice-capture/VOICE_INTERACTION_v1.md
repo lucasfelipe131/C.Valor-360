@@ -2,7 +2,7 @@
 
 Versão: `val.voice_interaction.v1`.
 
-Status: schema, runtime e persistência implementados localmente. Gate final ainda pendente.
+Status: schema, runtime e persistência implementados e aprovados em CI/PostgreSQL 16; gate final reprovado pelas provas humana/mobile pendentes.
 
 ## Finalidade
 
@@ -211,4 +211,4 @@ O HTTP final é derivado de `statusCode` e as respostas não incluem conteúdo d
 
 ## Compatibilidade
 
-O contrato é aditivo. `POST_VISIT` cria um `VisitReport v1` pelo adaptador existente, com `source_type: AUDIO` e `transcript_ref`. ContextSnapshot, PrepareVisit, Commitment, Outcome e LearningCandidate continuam usando os contratos das Fases 03–06.
+O contrato é aditivo. `POST_VISIT` cria um `VisitReport v1` pelo adaptador existente, com `source_type: AUDIO` para gravação ou `TEXT` para fallback digitado, sempre com `transcript_ref`. ContextSnapshot, PrepareVisit, Commitment, Outcome e LearningCandidate continuam usando os contratos das Fases 03–06.
