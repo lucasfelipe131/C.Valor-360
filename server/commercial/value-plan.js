@@ -17,6 +17,8 @@ function priorityQuestions({snapshot,profile,thesis,advice}){
   if(!value||candidates.some(item=>item.question===value))return
   candidates.push({question:value,materiality:reason,evidence_refs:list(evidenceRefs).map(item=>({id:text(item?.id??item)})).filter(item=>item.id)})
  }
+ for(const item of list(thesis.decision_questions))push(item,'A resposta pode mudar materialmente a tese, a estratégia ou o próximo passo.',thesis.evidence_refs)
+ if(candidates.length)return candidates.slice(0,3)
  for(const item of list(snapshot.missing_information))push(item.question||item.description,item.critical?'Pode bloquear a recomendação segura.':'Pode mudar materialmente a próxima ação.',[])
  for(const item of list(profile.missing_information))push(item.question,'Reduz incerteza sobre como o decisor avalia prova e risco.',profile.evidence_refs)
  push(advice?.next_question?.question,advice?.next_question?.purpose||'Pode mudar materialmente a decisão.',advice?.next_question?.grounding_ids)
@@ -27,14 +29,15 @@ function priorityQuestions({snapshot,profile,thesis,advice}){
 
 function profileStrategy(profile){
  const weights=profile.profile_weights||{}
- const primary=Object.keys(weights).sort((a,b)=>Number(weights[b])-Number(weights[a]))[0]||'analytical'
+ const known=Number(profile?.confidence)>=.3&&list(profile?.signals).length>0
+ const primary=known?Object.keys(weights).sort((a,b)=>Number(weights[b])-Number(weights[a]))[0]:null
  const map={
   analytical:{proof:'Comparativos, ROI, custo/ha, break-even e risco com premissas explícitas.',pace:'Permitir conferência dos números.'},
   relational:{proof:'Histórico, acordos cumpridos, presença e consistência.',pace:'Construir alinhamento e confiança antes de acelerar.'},
   innovative:{proof:'Diferenciação, teste controlado e critério de sucesso.',pace:'Explorar futuro sem vender novidade pela novidade.'},
   conservative:{proof:'Segurança, continuidade, referências e reversibilidade.',pace:'Reduzir ruptura e avançar por etapas.'}
  }
- return {primary,...map[primary]}
+ return known?{known:true,primary,...map[primary]}:{known:false,primary:null,proof:'Pergunte qual evidência seria útil; não presuma preferência.',pace:'Não acelere sem um critério observável e um próximo passo aceito.'}
 }
 
 function priceObjection(message,advice){
@@ -42,13 +45,21 @@ function priceObjection(message,advice){
  return /esta caro|preco|desconto|condicao comercial/.test(corpus)
 }
 
-function objectionGuidance(hasPriceObjection){
- if(!hasPriceObjection)return []
+function priceStatus(message,advice,thesis){
+ const thesisStatus=thesis?.decision_context?.commercial_signal?.price_status
+ if(thesisStatus&&thesisStatus!=='ABSENT')return thesisStatus
+ const corpus=normalized(`${message} ${list(advice?.expected_objections).join(' ')}`)
+ if(/(?:disse|declarou|afirmou|comentou).{0,35}(?:caro|preco alto)|(?:achou|considerou).{0,25}(?:caro|investimento alto)|(?:recusou|rejeitou).{0,35}(?:preco|proposta)/.test(corpus))return 'CONFIRMED_OBJECTION'
+ return priceObjection(message,advice)?'HYPOTHESIS':'ABSENT'
+}
+
+function objectionGuidance(status,thesis){
+ if(status==='ABSENT')return []
  return [{
   objection:'PRICE',
   automatic_discount:false,
   sequence:['VALIDATE_OBJECTION','RETURN_TO_CONFIRMED_PROBLEM','QUANTIFY_IMPACT','COMPARE_ACTION_VS_INACTION','EXPLAIN_RISK_RETURN','DISCUSS_COMMERCIAL_CONDITION_IF_APPROPRIATE'],
-  guidance:'Confirme o significado de “caro”, reconstrua problema e impacto, compare agir versus não agir e só então discuta condição comercial dentro das regras de margem.'
+  guidance:text(thesis?.avoid_guidance||'Confirme o significado de “caro”, reconstrua problema e impacto, compare agir versus não agir e só então discuta condição comercial dentro das regras de margem.')
  }]
 }
 
@@ -68,12 +79,13 @@ export function buildValuePlan(input={}){
  const methodology=advice.methodology_state||{}
  const commercialStage=stageMap[text(methodology.working_stage||methodology.current_stage)]||input.commercialStage||'EXPLORE'
  const strategy=profileStrategy(profile)
- const hasPriceObjection=priceObjection(input.currentMessage,advice)
+ const status=priceStatus(input.currentMessage,advice,thesis)
+ const qualityPrepare=list(thesis.decision_questions).length>0
  const questions=priorityQuestions({snapshot,profile,thesis,advice})
- const problem=text(advice?.value_hypothesis?.problem||advice?.commercial_context?.problem||thesis.missing_information[0]||'Problema comercial ainda precisa ser confirmado com o produtor.')
- const next=text(thesis.next_action||advice.next_best_action||'Registrar um próximo passo proporcional à evidência disponível.')
- const proof=unique([strategy.proof,...list(advice?.value_bridge?.proof_strategy),...list(advice?.evidence_used).map(item=>item?.claim_supported)]).slice(0,5)
- const expected=unique([...(hasPriceObjection?['Está caro.']:[]),...list(input?.context?.conversionInnovations?.objectionLibrary?.items).map(item=>item?.label||item?.objection)]).slice(0,5)
+ const problem=text(thesis?.decision_context?.problem_statement||advice?.value_hypothesis?.problem||advice?.commercial_context?.problem||thesis.missing_information[0]||'Problema comercial ainda precisa ser confirmado com o produtor.')
+ const next=text(thesis.commitment_target||thesis.next_action||advice.next_best_action||'Registrar um próximo passo proporcional à evidência disponível.')
+ const proof=unique([...(qualityPrepare?list(thesis.proof_candidates):[strategy.proof]),...list(advice?.value_bridge?.proof_strategy),...list(advice?.evidence_used).map(item=>item?.claim_supported)]).slice(0,5)
+ const expected=unique([...(status==='CONFIRMED_OBJECTION'?['Objeção de preço confirmada pelo produtor.']:status==='HYPOTHESIS'?['Preço ou condição comercial pode ser um ponto de fricção a validar.']:[]),...list(input?.context?.conversionInnovations?.objectionLibrary?.items).map(item=>item?.label||item?.objection)]).slice(0,5)
  const crossSell=list(input?.context?.conversionInnovations?.postConversionExpansion?.candidates).map(item=>({id:text(item?.id),description:text(item?.title||item?.label),evidence_refs:list(item?.evidenceIds).map(id=>({id:text(id)}))})).filter(item=>item.description).slice(0,5)
  return assertContract({
   contract_version:valuePlanVersion,
@@ -93,12 +105,15 @@ export function buildValuePlan(input={}){
   economic_case:advice?.value_bridge?.economic_case||advice?.commercial_context?.economic_case||{status:'NOT_QUANTIFIED',guardrail:'Não inventar número; calcular somente com valores e unidades confirmados.'},
   proof_strategy:proof,
   expected_objections:expected,
-  objection_guidance:objectionGuidance(hasPriceObjection),
+  objection_guidance:objectionGuidance(status,thesis),
   analogy_optional:optionalAnalogy(input),
-  commitment_target:thesis.decision==='DISCOVER_BEFORE_RECOMMENDING'?'Obter o dado crítico ou agendar sua coleta.':next,
+  commitment_target:qualityPrepare?next:thesis.decision==='DISCOVER_BEFORE_RECOMMENDING'?'Obter o dado crítico ou agendar sua coleta.':next,
   cross_sell_candidates:crossSell,
   follow_up:next,
-  approach:{communication_style:profile.approach_guidance.communication_style,proof_preference:strategy.proof,decision_pace:strategy.pace,risk_orientation:profile.approach_guidance.risk_orientation},
+  approach:{communication_style:qualityPrepare&&thesis?.decision_context?text(thesis?.profile_strategy?.guidance||profile.approach_guidance.communication_style):profile.approach_guidance.communication_style,proof_preference:strategy.proof,decision_pace:strategy.pace,risk_orientation:profile.approach_guidance.risk_orientation},
+  decision_questions:qualityPrepare?questions:[],
+  commercial_signal:{price_status:status},
+  avoid_guidance:text(thesis.avoid_guidance),
   guardrails:{automatic_discount:false,max_priority_questions:3,no_pressure:true,technical_facts_unchanged:true,margin_and_producer_value:true}
  },validateValuePlan,'ValuePlan v1')
 }

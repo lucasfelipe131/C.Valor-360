@@ -84,7 +84,16 @@ function reviewedCandidates(interaction,input,actorId,now){
  return reviewed
 }
 
-function memorySpec(category){
+function memorySpec(candidate){
+ const category=candidate?.category
+ const semanticType=String(candidate?.metadata?.semantic_type||'').toUpperCase()
+ const semantic={
+  VISIT_INTENT:{key:'voice.visit_intent',domain:'COMMERCIAL'},
+  AGRONOMIC_STAGE:{key:'voice.agronomic_stage',domain:'AGRONOMIC'},
+  AGRONOMIC_TIMING:{key:'voice.agronomic_timing',domain:'AGRONOMIC'},
+  COMMERCIAL_SIGNAL:{key:'voice.commercial_signal',domain:'COMMERCIAL'}
+ }[semanticType]
+ if(semantic)return semantic
  return {
   FACT_CANDIDATE:{key:'voice.fact',domain:'PRODUCER'},
   COMMITMENT_CANDIDATE:{key:'voice.commitment',domain:'RELATIONSHIP'},
@@ -108,10 +117,10 @@ function memoryEpistemology(candidate){
 
 function memoryWrites(interaction,candidates,actorId,now){
  const at=nowIso(now);const sourceRef=`voice-interaction:${interaction.voice_interaction_id}`
- return candidates.map(candidate=>{const spec=memorySpec(candidate.category);const epistemology=memoryEpistemology(candidate);return {
+ return candidates.map(candidate=>{const spec=memorySpec(candidate);const epistemology=memoryEpistemology(candidate);return {
   id:randomUUID(),organization_id:interaction.organization_id,client_id:interaction.client_id,subject_type:interaction.visit_id?'visit':'client',subject_id:interaction.visit_id||interaction.client_id,
   memory_type:epistemology.type,memory_state:epistemology.state,memory_domain:spec.domain,key:spec.key,
-  value:{statement:candidate.statement,category:candidate.category,claim_status:candidate.category==='AGRONOMIC_OBSERVATION'?'REPORTED_OBSERVATION':undefined,requires_technical_review:candidate.category==='AGRONOMIC_OBSERVATION'||undefined,profile_certainty:candidate.category==='BEHAVIORAL_SIGNAL'?false:undefined,due_at:candidate.due_at||undefined},
+  value:{statement:candidate.statement,category:candidate.category,semantic_type:candidate?.metadata?.semantic_type||undefined,claim_status:candidate.category==='AGRONOMIC_OBSERVATION'?'REPORTED_OBSERVATION':undefined,requires_technical_review:candidate.category==='AGRONOMIC_OBSERVATION'||undefined,profile_certainty:candidate.category==='BEHAVIORAL_SIGNAL'?false:undefined,due_at:candidate.due_at||undefined},
   evidence:[{id:candidate.candidate_id,source_ref:sourceRef,confirmation_status:'CONFIRMED'}],confidence:Math.round(confidence(candidate.confidence)*100),status:epistemology.status,source:'confirmed_voice_interaction',source_ref:sourceRef,source_type:'confirmed_voice_interaction',observed_at:at,source_updated_at:at,freshness_policy_version:'val.context.freshness.v1',freshness_metadata:{domain:spec.domain,source_type:'confirmed_voice_interaction',voice_interaction_type:interaction.interaction_type,epistemic_status:candidate.epistemic_status},valid_from:at,valid_until:null,created_by:actorId,acl:{scope:'own_portfolio'}
  }} )
 }
