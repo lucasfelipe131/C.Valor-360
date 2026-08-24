@@ -31,12 +31,12 @@ test('migration da Fase 5 é expand-only e tenant-safe',()=>{
 })
 
 test('interface preserva simplicidade, limites e score experimental não vira KPI',()=>{
- const visits=read('src/pages/Visits.jsx');const radar=read('src/components/ConversionRadar.jsx')
+ const visits=read('src/pages/Visits.jsx');const preparationUi=`${visits}\n${read('src/components/visit/PrepareVisitSimple.jsx')}\n${read('src/lib/prepare-visit-presentation.js')}`;const radar=read('src/components/ConversionRadar.jsx')
  assert.match(radar,/O que merece minha atenção agora\?/)
  assert.match(radar,/item\.why_now/)
  assert.match(radar,/item\.recommended_action/)
- assert.match(visits,/golden_questions/)
- assert.match(visits,/priority_actions|actionPlan\.priorities/)
+ assert.match(preparationUi,/golden_questions/)
+ assert.match(preparationUi,/priority_actions|actionPlan\.priorities/)
  assert.doesNotMatch(radar,/score \{Math\.round\(Number\(item\.priority\)/)
 })
 

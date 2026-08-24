@@ -128,7 +128,7 @@ export default function App(){
     {page==='val'&&<ValWorkspace mode={valMode} onModeChange={setValMode} clients={clientList} selectedClient={selected} onSelect={openClient}/>}
     {page==='agro'&&<Agro clients={clientList}/>}
     {page==='questionnaire'&&<Questionnaire onCreate={addClient} onCreateMany={addClients} onOpen={openClient} onNotify={notify}/>}
-    {page==='visits'&&<Visits clients={clientList} visits={visits} onSave={saveVisit} onPrepare={prepareClient} onStarted={startVisitResult} onRegistered={registerVisitResult}/>}
+    {page==='visits'&&<Visits clients={clientList} visits={visits} storageScope={currentUser?.storageScope} onSave={saveVisit} onPrepare={prepareClient} onStarted={startVisitResult} onRegistered={registerVisitResult}/>}
     {page==='opportunities'&&<Opportunities clients={clientList} storageScope={currentUser?.storageScope} persistedItems={opportunities} onPersist={saveOpportunity} onClient={openClient} onSaved={notify}/>}
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
     {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}

@@ -17,6 +17,7 @@ const recorder=read('../src/hooks/useVoiceRecorder.js')
 const styles=read('../src/voice-capture.css')
 const client360=read('../src/pages/Client360.jsx')
 const visits=read('../src/pages/Visits.jsx')
+const prepareVisitSimple=read('../src/components/visit/PrepareVisitSimple.jsx')
 
 const occurrences=(source,fragment)=>source.split(fragment).length-1
 
@@ -45,14 +46,15 @@ test('VoiceCapture frontend — Cliente 360 expõe CLIENT_NOTE com confirmação
 })
 
 test('VoiceCapture frontend — PRE, FIELD e POST aparecem uma vez e usam contexto da visita',()=>{
- for(const type of ['PRE_VISIT','FIELD_NOTE','POST_VISIT'])assert.equal(occurrences(visits,`interactionType="${type}"`),1,type)
- assert.match(visits,/interactionType="PRE_VISIT"[^>]*preparation_id:preparation\.preparation_id/)
+ const visitSurfaces=`${visits}\n${prepareVisitSimple}`
+ for(const type of ['PRE_VISIT','FIELD_NOTE','POST_VISIT'])assert.equal(occurrences(visitSurfaces,`interactionType="${type}"`),1,type)
+ assert.match(prepareVisitSimple,/interactionType="PRE_VISIT"[^>]*preparation_id:preparation\.preparation_id/)
  assert.match(visits,/interactionType="FIELD_NOTE"[^>]*moment:'FIELD_WORK'/)
  assert.match(visits,/interactionType="POST_VISIT"[^>]*moment:'POST_VISIT'/)
- assert.match(visits,/label="Adicionar contexto por áudio"/)
+ assert.match(prepareVisitSimple,/label="Falar com a VAL"/)
  assert.match(visits,/label="Registrar observação rápida"/)
  assert.match(visits,/label="Me conte como foi"/)
- assert.ok(visits.indexOf('interactionType="FIELD_NOTE"')<visits.indexOf('{preparation&&'),'FIELD_NOTE deve existir fora da preparação')
+ assert.doesNotMatch(visits,/interactionType="PRE_VISIT"/)
  assert.match(visits,/payload\?\.result\?\.preparation_result/)
  assert.match(visits,/payload\?\.result\?\.visit/)
 })
@@ -66,7 +68,7 @@ test('VoiceCapture frontend — lifecycle canônico bloqueia superfícies em est
  assert.match(visits,/canPrepare=preVisitVoiceLifecycle\.has\(lifecycle\)/)
  assert.match(visits,/canCaptureDuring=fieldVoiceLifecycle\.has\(lifecycle\)/)
  assert.match(visits,/canCloseVisit=postVisitVoiceLifecycle\.has\(lifecycle\)/)
- assert.match(visits,/\{canPrepare&&<VoiceCapture[^>]*interactionType="PRE_VISIT"/)
+ assert.match(prepareVisitSimple,/\{canVoice&&<VoiceCapture[^>]*interactionType="PRE_VISIT"/)
  assert.match(visits,/\{canCaptureDuring&&<aside[^>]*visit-field-voice/)
  assert.match(visits,/\{canCloseVisit&&<VoiceCapture[^>]*interactionType="POST_VISIT"/)
 })
