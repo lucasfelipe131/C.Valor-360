@@ -8,9 +8,9 @@ Base auditada: `feature/voice-capture@85c6209c095702d4f02f0d31ff2c9ab224855ebf`
 Branch de desenvolvimento: `feature/prepare-visit-simple-ux`  
 Commit inicial de UI: `2076c5e30298d884442f97c5dcd549c0a85f24b6`
 
-Correção de entrada: pendente de hash remoto neste registro local
+Correção de entrada: `8a6cf894f4ae67610eecbf9835f5ed42369bec40`
 
-Deploy final: pendente de validação após a correção de entrada
+Deploy funcional final: `c074f6a1-12e6-4ad8-818f-7cb1faced650`
 
 ## Evidências do gate
 
@@ -30,12 +30,12 @@ Deploy final: pendente de validação após a correção de entrada
 | Cross-tenant | Aprovado | Gates existentes verdes; preferência local escopada por `storageScope` |
 | Suíte completa | Aprovado | 610/610 testes |
 | Builds | Aprovado | Vite/PWA e Manual Next.js aprovados localmente e no container Railway |
-| Entrada principal “Preparar visita” | Aprovado localmente | Centro de Decisão, Dashboard e Cliente 360 convergem para a jornada focada |
+| Entrada principal “Preparar visita” | Aprovado | Centro de Decisão, Dashboard e Cliente 360 convergem para a jornada focada |
 
 ## Validação de staging
 
-- CI GitHub Validate #181: `success` para a UI inicial; novo check será exigido para a correção de entrada.
-- Railway: novo deploy será exigido para a correção de entrada.
+- CI GitHub Validate #182: `success` para a correção de entrada.
+- Railway: deploy funcional `SUCCESS` para o commit `8a6cf894`.
 - PostgreSQL isolado: permaneceu `SUCCESS`; nenhum recurso novo criado.
 - Migrations: cinco versões verificadas, todas `already-applied`.
 - Health: `/live` retornou `{"status":"ok","service":"valor360"}`.
