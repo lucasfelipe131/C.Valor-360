@@ -69,4 +69,5 @@ test('experiência é responsiva e possui hierarquia visual própria',()=>{
 test('o layout oferece ações comerciais orientadas à conversão',()=>{
  for(const action of ['Priorizar a conta','Preparar visita','Sair do preço','Fechar próximo passo'])assert.ok(center.includes(action),`Ação rápida ausente: ${action}`)
  for(const stage of ['Descobrir','Dimensionar','Construir valor','Propor','Comprometer'])assert.ok(center.includes(stage),`Etapa ausente: ${stage}`)
+ assert.match(center,/id==='visit'&&onPrepareVisit\?onPrepareVisit\(client\):ask\(prompt\)/)
 })

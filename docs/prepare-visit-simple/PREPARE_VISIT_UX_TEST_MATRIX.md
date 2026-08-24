@@ -17,6 +17,8 @@
 | 13 | Regressão Fases 2–6 | Suíte completa verde |
 | 14 | Tenancy e safety | Gates existentes permanecem verdes |
 | 15 | Build/PWA/Manual | Artefatos compilam e verificam |
+| 16 | Entrada pelo Centro de Decisão | “Preparar visita” abre a jornada focada, não uma resposta genérica |
+| 17 | Produtor sem visita | Agendamento abre preselecionado, sem criar preparação órfã |
 
 ## UAT visual no staging
 
@@ -28,4 +30,3 @@ Validar com produtor fictício e sessão autenticada:
 4. abrir análise e números;
 5. testar voz confirmada e recálculo;
 6. testar “Estou saindo agora” em viewport móvel.
-

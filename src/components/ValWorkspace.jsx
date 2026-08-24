@@ -72,8 +72,8 @@ function ValEnvironmentSelector({onModeChange}){
  </section>
 }
 
-export default function ValWorkspace({mode,onModeChange,clients,selectedClient,onSelect}){
- if(mode==='insumos')return <div className="val-environment-active is-insumos"><EnvironmentSwitcher mode="insumos" onModeChange={onModeChange}/><ValDecisionWorkspace clients={clients} selectedClient={selectedClient} onSelect={onSelect}/></div>
+export default function ValWorkspace({mode,onModeChange,clients,selectedClient,onSelect,onPrepareVisit}){
+ if(mode==='insumos')return <div className="val-environment-active is-insumos"><EnvironmentSwitcher mode="insumos" onModeChange={onModeChange}/><ValDecisionWorkspace clients={clients} selectedClient={selectedClient} onSelect={onSelect} onPrepareVisit={onPrepareVisit}/></div>
  if(mode==='graos')return <div className="val-environment-active is-graos"><EnvironmentSwitcher mode="graos" onModeChange={onModeChange}/><SogWorkspace clients={clients} onSelect={onSelect}/></div>
  return <ValEnvironmentSelector onModeChange={onModeChange}/>
 }

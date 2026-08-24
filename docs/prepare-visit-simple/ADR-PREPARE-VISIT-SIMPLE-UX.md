@@ -18,8 +18,8 @@ Criar `PrepareVisitSimple`, uma tela focada que consome a resposta existente de 
 - `SIMPLE`, `BALANCED` e `ANALYTICAL` mudam somente a abertura inicial das camadas.
 - Voice Capture `PRE_VISIT` continua exigindo confirmação e recalcula a mesma preparação versionada.
 - “Estou saindo agora” e “Resumo em 60 segundos” são projeções do mesmo artefato, não novas decisões.
+- Os atalhos “Preparar visita” do Centro de Decisão, Dashboard e Cliente 360 abrem a mesma jornada focada. Havendo visita planejada, ela é preparada imediatamente; sem visita, abre-se o agendamento com o produtor já selecionado.
 
 ## Consequências e guardrails
 
 Não há migration nem alteração em MMI, MCTX, MIC, MDI, MVV, MEX, VIS, Commitment, Outcome ou LearningCandidate. IDs e provenance continuam no payload e deixam de aparecer apenas na primeira camada. A preferência é local, escopada pela sessão do consultor, nunca entra em prompt, facts, tese ou recomendação. Tenancy e safety permanecem nos serviços existentes.
-

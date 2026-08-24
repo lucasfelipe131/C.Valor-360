@@ -1,4 +1,4 @@
-import React,{useMemo,useState} from 'react'
+import React,{useEffect,useMemo,useRef,useState} from 'react'
 import {BrainCircuit,CalendarPlus,CheckCircle2,FileText,LoaderCircle,MapPin,Mic,PlayCircle,Route,Save,Sparkles,Trash2} from 'lucide-react'
 import VoiceCapture from '../components/voice/VoiceCapture'
 import PrepareVisitSimple from '../components/visit/PrepareVisitSimple'
@@ -18,7 +18,7 @@ const fileDataUrl=file=>new Promise((resolve,reject)=>{const reader=new FileRead
 const uiCandidate=(statement,sourceRef)=>({item_id:globalThis.crypto?.randomUUID?.()||`ui-${Date.now()}`,epistemic_status:'FACT_CANDIDATE',statement,source_ref:sourceRef,confidence:1,requires_confirmation:true})
 const deadline=value=>value?new Date(`${value}T23:59:59.999-03:00`).toISOString():null
 
-export default function Visits({clients,visits,storageScope,onSave,onPrepare,onStarted,onRegistered}){
+export default function Visits({clients,visits,storageScope,initialClientId='',onInitialHandled,onSave,onPrepare,onStarted,onRegistered}){
  const [showForm,setShowForm]=useState(false)
  const [form,setForm]=useState({clientId:clients[0]?.id||'',date:today(),time:'14:00',objective:''})
  const [saving,setSaving]=useState(false)
@@ -31,12 +31,27 @@ export default function Visits({clients,visits,storageScope,onSave,onPrepare,onS
  const [executionError,setExecutionError]=useState({})
  const [voiceNotice,setVoiceNotice]=useState({})
  const [registrations,setRegistrations]=useState({})
+ const initialRequestRef=useRef('')
  const registration=id=>registrations[id]||emptyRegistration()
  const setRegistration=(id,patch)=>setRegistrations(current=>{const value=current[id]||emptyRegistration();return {...current,[id]:typeof patch==='function'?patch(value):{...value,...patch}}})
  const {ordered,upcoming}=useMemo(()=>{const scheduled=[...visits].sort((a,b)=>visitDate(a)-visitDate(b));const future=scheduled.filter(visit=>visitDate(visit).getTime()>=Date.now()&&!closedVoiceLifecycle.has(lifecycleOf(visit)));const history=scheduled.filter(visit=>!future.includes(visit)).reverse();return {ordered:[...future,...history],upcoming:future}},[visits])
  const formValid=Boolean(form.clientId&&form.date&&form.time&&form.objective.trim())
  const save=async event=>{event.preventDefault();if(!formValid){setError('Preencha produtor, data, horário e objetivo antes de salvar.');return}setSaving(true);setError('');try{await onSave?.({clientId:form.clientId,scheduledAt:new Date(`${form.date}T${form.time}:00`).toISOString(),objective:form.objective.trim()});setShowForm(false);setForm({...form,objective:''})}catch(exception){setError(exception.message||'Não foi possível salvar a visita.')}finally{setSaving(false)}}
  const prepareVisit=async visit=>{setPreparingId(visit.id);setExecutionError(current=>({...current,[visit.id]:''}));try{const response=await fetch(`/api/v1/visits/${visit.id}/preparation`,{method:'POST',headers:{'Content-Type':'application/json'}});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível preparar a visita.');setPreparations(current=>({...current,[visit.id]:payload}));setActivePreparationId(visit.id)}catch(exception){setExecutionError(current=>({...current,[visit.id]:exception.message||'Não foi possível preparar a visita.'}))}finally{setPreparingId('')}}
+ useEffect(()=>{
+  if(!initialClientId){initialRequestRef.current='';return}
+  if(initialRequestRef.current===initialClientId)return
+  initialRequestRef.current=initialClientId
+  const candidates=[...visits].filter(item=>item.clientId===initialClientId&&preVisitVoiceLifecycle.has(lifecycleOf(item))).sort((a,b)=>visitDate(a)-visitDate(b))
+  const visit=candidates.find(item=>visitDate(item).getTime()>=Date.now())||candidates[0]
+  if(visit)prepareVisit(visit)
+  else{
+   setForm(current=>({...current,clientId:initialClientId,objective:''}))
+   setShowForm(true)
+   setError('Agende a visita deste produtor para a VAL preparar um roteiro com contexto, perguntas e compromisso-alvo.')
+  }
+  onInitialHandled?.()
+ },[initialClientId,visits])
  const startVisit=async visit=>{setStartingId(visit.id);setExecutionError(current=>({...current,[visit.id]:''}));try{const response=await fetch(`/api/v1/visits/${visit.id}/start`,{method:'POST',headers:{'Content-Type':'application/json'},signal:AbortSignal.timeout(10000)});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível iniciar a visita.');onStarted?.(payload.visit);setVoiceNotice(current=>({...current,[visit.id]:'Visita iniciada. Registre observações rápidas ou conte como foi ao encerrar.'}))}catch(exception){setExecutionError(current=>({...current,[visit.id]:exception.name==='TimeoutError'?'O servidor demorou para iniciar a visita. Tente novamente.':exception.message||'Não foi possível iniciar a visita.'}))}finally{setStartingId('')}}
  const acceptCommitment=async(visit,action,actionPlan)=>{setCommittingId(action.action_id);setExecutionError(current=>({...current,[visit.id]:''}));try{const response=await fetch('/api/v1/commitments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:visit.clientId,visit_id:visit.id,action_plan_id:actionPlan.action_plan_id,action_id:action.action_id,description:action.description,due_at:action.due_at,status:'ACCEPTED',success_criteria:action.success_criteria,agreed_with_client:true})});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'A ação ainda não pode virar compromisso.');setPreparations(current=>({...current,[visit.id]:{...current[visit.id],accepted_commitment:payload.commitment}}))}catch(exception){setExecutionError(current=>({...current,[visit.id]:exception.message||'Não foi possível registrar o compromisso.'}))}finally{setCommittingId('')}}
  const createReport=async visit=>{const current=registration(visit.id);setRegistration(visit.id,{sending:true,error:'',confirmed:null});try{let requestPayload={source_type:current.mode,text:current.text};if(current.mode==='AUDIO'){if(!current.audioFile)throw new Error('Selecione ou grave um áudio antes de continuar.');const uploaded=await fetch('/api/val/attachments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:visit.clientId,originalName:current.audioFile.name,mimeType:current.audioFile.type,dataUrl:await fileDataUrl(current.audioFile)})});const uploadPayload=await uploaded.json().catch(()=>({}));if(!uploaded.ok)throw new Error(uploadPayload.error||'Não foi possível validar o áudio.');requestPayload={source_type:'AUDIO',attachment_id:uploadPayload.attachment.id}}const response=await fetch(`/api/v1/visits/${visit.id}/report`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(requestPayload)});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível organizar o relato.');const review=payload.visit_report;const proposed=review.commitments_proposed||[];const next=(review.next_steps||[]).find(item=>item.type!=='NEEDS_CONFIRMATION');setRegistration(visit.id,{sending:false,review,selectedCommitments:proposed.filter(item=>item.due_at&&!item.date_confirmation_required).map(item=>item.item_id),nextStep:next?.description||'',nextStepAt:next?.due_at?String(next.due_at).slice(0,10):'',noAction:false})}catch(exception){setRegistration(visit.id,{sending:false,error:exception.message||'Não foi possível registrar o relato.'})}}
