@@ -94,7 +94,12 @@ CREATE INDEX IF NOT EXISTS idx_val_voice_interactions_visit
 
 CREATE INDEX IF NOT EXISTS idx_val_voice_interactions_pending
   ON val_voice_interactions(tenant_id,actor_id,status,updated_at DESC)
-  WHERE status IN ('AUDIO_STORED','FAILED_TRANSCRIPTION','FAILED_EXTRACTION','PENDING_REVIEW');
+  WHERE status::text = ANY (ARRAY[
+    'AUDIO_STORED'::text,
+    'FAILED_TRANSCRIPTION'::text,
+    'FAILED_EXTRACTION'::text,
+    'PENDING_REVIEW'::text
+  ]);
 
 CREATE TABLE IF NOT EXISTS val_voice_transcripts (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
