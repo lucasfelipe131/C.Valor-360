@@ -33,7 +33,27 @@ async function snapshot(pool){
     UNION ALL
     SELECT 'app_records',tenant_id::text,id::text,producer_name FROM app_records WHERE id IN ('00000000-0000-4000-8000-000000000301','00000000-0000-4000-8000-000000000302')
     ORDER BY entity,tenant,key`)).rows
-  return {database,tables,counts,migrations,synthetic,schemaSha256:digest({columns,indexes}),dataSha256:digest({counts,migrations,synthetic})}
+  return {database,tables,counts,migrations,synthetic,columns,indexes,schemaSha256:digest({columns,indexes}),dataSha256:digest({counts,migrations,synthetic})}
+}
+
+function schemaDifferences(sourceSnapshot,restoredSnapshot){
+  const compareRows=(sourceRows,restoredRows,keyFor)=>{
+    const sourceByKey=new Map(sourceRows.map(row=>[keyFor(row),row]))
+    const restoredByKey=new Map(restoredRows.map(row=>[keyFor(row),row]))
+    const keys=[...new Set([...sourceByKey.keys(),...restoredByKey.keys()])].sort()
+    const differences=keys.flatMap(key=>{
+      const source=sourceByKey.get(key)||null
+      const restored=restoredByKey.get(key)||null
+      return JSON.stringify(source)===JSON.stringify(restored)?[]:[{key,source,restored}]
+    })
+    return {count:differences.length,first:differences.slice(0,50)}
+  }
+  return {
+    sourceSha256:sourceSnapshot.schemaSha256,
+    restoredSha256:restoredSnapshot.schemaSha256,
+    columns:compareRows(sourceSnapshot.columns,restoredSnapshot.columns,row=>`${row.table_name}.${row.column_name}`),
+    indexes:compareRows(sourceSnapshot.indexes,restoredSnapshot.indexes,row=>`${row.tablename}.${row.indexname}`)
+  }
 }
 
 try{
@@ -43,6 +63,14 @@ try{
   assert.deepEqual(restoredSnapshot.counts,sourceSnapshot.counts)
   assert.deepEqual(restoredSnapshot.migrations,sourceSnapshot.migrations)
   assert.deepEqual(restoredSnapshot.synthetic,sourceSnapshot.synthetic)
+  if(restoredSnapshot.schemaSha256!==sourceSnapshot.schemaSha256){
+    const diagnostic=schemaDifferences(sourceSnapshot,restoredSnapshot)
+    console.error(JSON.stringify({schemaRestoreMismatch:diagnostic},null,2))
+    if(process.env.COMPARE_EVIDENCE_FILE){
+      await mkdir(dirname(process.env.COMPARE_EVIDENCE_FILE),{recursive:true})
+      await writeFile(`${process.env.COMPARE_EVIDENCE_FILE}.schema-diff.json`,JSON.stringify(diagnostic,null,2))
+    }
+  }
   assert.equal(restoredSnapshot.schemaSha256,sourceSnapshot.schemaSha256)
   assert.equal(restoredSnapshot.dataSha256,sourceSnapshot.dataSha256)
   const evidence={
