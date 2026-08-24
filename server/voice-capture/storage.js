@@ -54,14 +54,66 @@ function extensionForMime(mimeType){
   return {'audio/mpeg':'mp3','audio/mp3':'mp3','audio/mp4':'m4a','audio/x-m4a':'m4a','audio/wav':'wav','audio/x-wav':'wav','audio/webm':'webm','audio/ogg':'ogg'}[mimeType]||'audio'
 }
 
-export async function probeVoiceAudioDuration({bytes,mimeType,command='ffprobe',timeoutMs=8_000}={}){
+function finiteDuration(value){
+  const duration=Number(value)
+  return Number.isFinite(duration)&&duration>0?duration:null
+}
+
+function timeBaseSeconds(value){
+  const [numerator,denominator]=String(value||'').split('/').map(Number)
+  if(!Number.isFinite(numerator)||!Number.isFinite(denominator)||numerator<=0||denominator<=0)return null
+  return numerator/denominator
+}
+
+export function durationFromFfprobeMetadata(output){
+  let metadata
+  try{metadata=JSON.parse(String(output||''))}catch{return null}
+  const candidates=[]
+  const formatDuration=finiteDuration(metadata?.format?.duration)
+  if(formatDuration)candidates.push(formatDuration)
+  for(const stream of Array.isArray(metadata?.streams)?metadata.streams:[]){
+    const streamDuration=finiteDuration(stream?.duration)
+    if(streamDuration)candidates.push(streamDuration)
+    const durationTimestamp=Number(stream?.duration_ts)
+    const timeBase=timeBaseSeconds(stream?.time_base)
+    if(Number.isFinite(durationTimestamp)&&durationTimestamp>0&&timeBase)candidates.push(durationTimestamp*timeBase)
+  }
+  return candidates.length?Math.max(...candidates):null
+}
+
+export function durationFromFfprobePackets(output){
+  let firstTimestamp=Infinity
+  let lastTimestamp=-Infinity
+  let lastEnd=-Infinity
+  for(const line of String(output||'').split(/\r?\n/)){
+    if(!line.trim())continue
+    const [rawPts,rawDts,rawDuration]=line.split(',')
+    const pts=Number(rawPts)
+    const dts=Number(rawDts)
+    const packetDuration=finiteDuration(rawDuration)||0
+    const timestamp=Number.isFinite(pts)?pts:Number.isFinite(dts)?dts:null
+    if(timestamp===null)continue
+    firstTimestamp=Math.min(firstTimestamp,timestamp)
+    lastTimestamp=Math.max(lastTimestamp,timestamp)
+    lastEnd=Math.max(lastEnd,timestamp+packetDuration)
+  }
+  if(!Number.isFinite(firstTimestamp)||!Number.isFinite(lastTimestamp))return null
+  const end=Number.isFinite(lastEnd)&&lastEnd>lastTimestamp?lastEnd:lastTimestamp
+  return finiteDuration(end-firstTimestamp)
+}
+
+export async function probeVoiceAudioDuration({bytes,mimeType,command='ffprobe',timeoutMs=8_000,probeRunner=execFileAsync}={}){
   if(!Buffer.isBuffer(bytes)||!bytes.length)throw new VoiceStorageError('O áudio está vazio ou não pôde ser lido.',{code:'invalid_audio',statusCode:422})
   const directory=await mkdtemp(join(tmpdir(),'val-voice-probe-'))
   const filePath=join(directory,`audio.${extensionForMime(mimeType)}`)
   try{
     await writeFile(filePath,bytes,{mode:0o600})
-    const {stdout}=await execFileAsync(command,['-v','error','-show_entries','format=duration','-of','default=noprint_wrappers=1:nokey=1',filePath],{timeout:timeoutMs,maxBuffer:16_384,windowsHide:true})
-    const duration=Number(String(stdout||'').trim())
+    const metadataResult=await probeRunner(command,['-v','error','-select_streams','a:0','-show_entries','format=duration:stream=duration,duration_ts,time_base','-of','json',filePath],{timeout:timeoutMs,maxBuffer:65_536,windowsHide:true})
+    let duration=durationFromFfprobeMetadata(metadataResult?.stdout)
+    if(!duration){
+      const packetResult=await probeRunner(command,['-v','error','-select_streams','a:0','-show_entries','packet=pts_time,dts_time,duration_time','-of','csv=p=0',filePath],{timeout:timeoutMs,maxBuffer:2_000_000,windowsHide:true})
+      duration=durationFromFfprobePackets(packetResult?.stdout)
+    }
     if(!Number.isFinite(duration)||duration<=0)throw new VoiceStorageError('Não foi possível verificar a duração real do áudio.',{code:'audio_duration_unverified',statusCode:422})
     if(duration>maxVoiceAudioDurationSeconds)throw new VoiceStorageError('O áudio excede o limite de 15 minutos.',{code:'audio_too_long',statusCode:422})
     return duration

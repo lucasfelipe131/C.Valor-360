@@ -4,6 +4,8 @@ import {
   VoiceStorageError,
   buildRepositoryAttachmentRef,
   createRepositoryAttachmentVoiceStorage,
+  durationFromFfprobeMetadata,
+  durationFromFfprobePackets,
   maxVoiceAudioBytes,
   parseRepositoryAttachmentRef,
   probeVoiceAudioDuration,
@@ -167,6 +169,39 @@ test('Voice storage — probe do servidor impede fraude na duração declarada',
 test('Voice storage — ffprobe real valida o container e mede a duração no servidor',async()=>{
   const duration=await probeVoiceAudioDuration({bytes:playableWavBytes(),mimeType:'audio/wav'})
   assert.ok(duration>=0.24&&duration<=0.26,`Duração inesperada do WAV sintético: ${duration}`)
+})
+
+test('Voice storage — duração usa metadado do stream quando o container MP4 do Safari não informa duração',()=>{
+  const duration=durationFromFfprobeMetadata(JSON.stringify({
+    format:{duration:'N/A'},
+    streams:[{duration:'N/A',duration_ts:480_000,time_base:'1/48000'}]
+  }))
+  assert.equal(duration,10)
+})
+
+test('Voice storage — duração de MP4 fragmentado pode ser comprovada pelos timestamps dos pacotes',()=>{
+  const duration=durationFromFfprobePackets([
+    '-0.021333,-0.021333,0.021333',
+    '0.000000,0.000000,0.021333',
+    '9.962667,9.962667,0.021333',
+    '9.984000,9.984000,0.021333'
+  ].join('\n'))
+  assert.ok(duration>=10.026&&duration<=10.027,`Duração inesperada do timeline fragmentado: ${duration}`)
+})
+
+test('Voice storage — probe recorre aos pacotes sem confiar na duração enviada pelo Safari',async()=>{
+  const calls=[]
+  const duration=await probeVoiceAudioDuration({
+    bytes:Buffer.from('fixture-mp4-fragmentado-sintetico'),
+    mimeType:'audio/mp4',
+    probeRunner:async(_command,args)=>{
+      calls.push(args)
+      if(args.includes('format=duration:stream=duration,duration_ts,time_base'))return {stdout:JSON.stringify({format:{duration:'N/A'},streams:[{duration:'N/A',duration_ts:'N/A',time_base:'1/48000'}]})}
+      return {stdout:'0.000000,0.000000,0.021333\n11.968000,11.968000,0.021333\n'}
+    }
+  })
+  assert.equal(calls.length,2)
+  assert.ok(duration>=11.989&&duration<=11.990)
 })
 
 test('Voice storage — adapter grava referência opaca e sanitiza filename',async()=>{
