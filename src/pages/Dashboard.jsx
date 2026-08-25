@@ -7,6 +7,7 @@ import {
  ChevronRight,
  Clock3,
  Percent,
+ Send,
  Sparkles,
  Target,
  Users
@@ -44,7 +45,7 @@ const pipelineStages=[
  {name:'Fechado',detail:'Negócio marcado como concluído'}
 ]
 
-export default function Dashboard({clients,visits,opportunities=[],currentUser,setPage,onClient,onPrepare,onRefreshPortfolio}){
+export default function Dashboard({clients,visits,opportunities=[],currentUser,setPage,onClient,onPrepare,onRefreshPortfolio,onOpenCopilot}){
  const firstName=String(currentUser?.name||currentUser?.email?.split('@')[0]||'Equipe').trim().split(/\s+/)[0]
  const [insights,setInsights]=useState(null)
  const [insightsError,setInsightsError]=useState('')
@@ -52,6 +53,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  const [voiceNotice,setVoiceNotice]=useState('')
  const [voiceAnswer,setVoiceAnswer]=useState(null)
  const [voiceAnswerState,setVoiceAnswerState]=useState({loading:false,error:''})
+ const [homeQuestion,setHomeQuestion]=useState('')
  const [insightsRevision,setInsightsRevision]=useState(0)
  const portfolioMetrics=clients.map(client=>({client,metrics:commercialMetrics(client)}))
  const totalPotential=portfolioMetrics.reduce((sum,item)=>sum+(item.metrics.potentialKnown?item.metrics.potentialTotal:0),0)
@@ -135,9 +137,9 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
    {insightsError&&<p className="copilot-data-note" role="status">Prioridades locais exibidas. {insightsError}</p>}
   </section>
 
-  <section className="copilot-talk" aria-label="Falar com a VAL">
-   <div><BrainCircuit/><div><span className="eyebrow">CAPTURE O QUE MUDOU</span><h3>Falar com a VAL</h3><p>Escolha o produtor e conte uma informação, oportunidade ou compromisso. Você revisa antes de confirmar.</p></div></div>
-   <div className="copilot-talk-controls"><label>Produtor<select value={voiceClientId} onChange={event=>{setVoiceClientId(event.target.value);setVoiceNotice('');setVoiceAnswer(null);setVoiceAnswerState({loading:false,error:''})}} disabled={!clients.length}><option value="">Selecione um produtor</option>{clients.map(client=><option key={client.id} value={client.id}>{client.name}</option>)}</select></label><VoiceCapture clientId={selectedVoiceClient?.id||''} interactionType="GENERAL_CONTEXT" label="Falar com a VAL" description="Grave em um toque ou digite" sourceContext={{page:'VAL_HOME'}} onConfirmed={answerAfterVoice}/></div>
+  <section className="copilot-talk" aria-label="Perguntar ou falar com a VAL">
+   <div><BrainCircuit/><div><span className="eyebrow">PERGUNTE OU FALE</span><h3>Converse com a VAL</h3><p>Escolha o produtor e pergunte sem abrir uma visita. Registrar informação continua exigindo sua confirmação.</p></div></div>
+   <div className="copilot-talk-controls"><label>Produtor<select value={voiceClientId} onChange={event=>{setVoiceClientId(event.target.value);setVoiceNotice('');setVoiceAnswer(null);setVoiceAnswerState({loading:false,error:''})}} disabled={!clients.length}><option value="">Selecione um produtor</option>{clients.map(client=><option key={client.id} value={client.id}>{client.name}</option>)}</select></label><form className="copilot-home-question" onSubmit={event=>{event.preventDefault();if(selectedVoiceClient)onOpenCopilot?.({client:selectedVoiceClient,prompt:homeQuestion});setHomeQuestion('')}}><input value={homeQuestion} onChange={event=>setHomeQuestion(event.target.value)} placeholder="O que você precisa decidir?" disabled={!selectedVoiceClient}/><button type="submit" disabled={!selectedVoiceClient}><Send/>Perguntar</button></form><button className="copilot-open-voice" type="button" disabled={!selectedVoiceClient} onClick={()=>onOpenCopilot?.({client:selectedVoiceClient})}><BrainCircuit/>Abrir voz, foto ou arquivo</button><VoiceCapture clientId={selectedVoiceClient?.id||''} interactionType="GENERAL_CONTEXT" label="Registrar informação" description="Revisar antes de salvar" sourceContext={{page:'VAL_HOME'}} onConfirmed={answerAfterVoice}/></div>
    {voiceNotice&&<p className="copilot-confirmed" role="status">{voiceNotice}</p>}
    {voiceAnswerState.loading&&<p className="copilot-answer-loading" role="status">Relacionando memória, contexto, decisão e próximo passo…</p>}
    {voiceAnswerState.error&&<p className="copilot-answer-error" role="alert">{voiceAnswerState.error}</p>}

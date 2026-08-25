@@ -20,7 +20,7 @@ const visitDate=visit=>{const parsed=new Date(visit?.completedAt||visit?.occurre
 const shortDate=value=>{const parsed=value instanceof Date?value:new Date(value||'');return Number.isNaN(parsed.getTime())?'Data a confirmar':parsed.toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'}).replace('.','')}
 const terminalOpportunity=stage=>/fechado|ganho|perdido|cancelado|closed|won|lost/i.test(String(stage||''))
 
-export default function Client360({client,visits=[],opportunities=[],storageScope,onBack,onPrepare,onUpdate,onSaved,onRefreshPortfolio}){
+export default function Client360({client,visits=[],opportunities=[],storageScope,onBack,onPrepare,onUpdate,onSaved,onRefreshPortfolio,onAsk}){
  const metrics=commercialMetrics(client)
  const storageKey=`valor360-tech-${storageScope||'session'}-${localId(client.id)}`
  const [tech,setTech]=useState(()=>{
@@ -68,7 +68,7 @@ export default function Client360({client,visits=[],opportunities=[],storageScop
   <button className="back-btn" onClick={onBack}><ArrowLeft size={17}/>Voltar</button>
   <section className="client-hero">
    <div><span className="eyebrow">MEMÓRIA DO PRODUTOR</span><h2>{client.name}</h2><p><MapPin size={15}/>{client.municipality} • {client.area} • {client.cultures}</p><div className="tag-row"><span>{metrics.profileMeasured?client.primaryProfile:'Perfil a medir'}</span><span>IRT {metricValue(client.irt,metrics.irtKnown)}</span><span>NPS {metricValue(client.nps,metrics.npsKnown)}</span></div></div>
-   <div className="hero-actions"><button onClick={onPrepare}><BrainCircuit size={17}/>Preparar visita</button><VoiceCapture clientId={client.id} interactionType="CLIENT_NOTE" label="Registrar áudio" description="Conte o que mudou" sourceContext={{page:'CLIENT_360'}} onConfirmed={async payload=>{const canonical=canonicalVoiceChange(payload);setVoiceChange(canonical);setMemoryRefreshError('');setOverviewRevision(value=>value+1);try{await onRefreshPortfolio?.()}catch{setMemoryRefreshError('A informação foi confirmada, mas esta visão não conseguiu recarregar a carteira agora.')}onSaved?.(canonical?'Áudio confirmado e incorporado ao contexto futuro deste produtor.':'Revisão concluída sem nova informação consolidada.')}}/></div>
+   <div className="hero-actions"><button onClick={onAsk}><MessageSquareText size={17}/>Perguntar à VAL</button><button onClick={onPrepare}><BrainCircuit size={17}/>Preparar visita</button><VoiceCapture clientId={client.id} interactionType="CLIENT_NOTE" label="Registrar áudio" description="Conte o que mudou" sourceContext={{page:'CLIENT_360'}} onConfirmed={async payload=>{const canonical=canonicalVoiceChange(payload);setVoiceChange(canonical);setMemoryRefreshError('');setOverviewRevision(value=>value+1);try{await onRefreshPortfolio?.()}catch{setMemoryRefreshError('A informação foi confirmada, mas esta visão não conseguiu recarregar a carteira agora.')}onSaved?.(canonical?'Áudio confirmado e incorporado ao contexto futuro deste produtor.':'Revisão concluída sem nova informação consolidada.')}}/></div>
   </section>
 
   <section className="client-living-memory" aria-label="Memória viva do produtor">

@@ -101,7 +101,7 @@ test('VoiceCapture frontend — captura mantém um toque, fallback texto e cance
  assert.match(component,/recorder\.cancelRecording/)
  assert.match(component,/cancelVoiceInteraction\(remoteId\)/)
  assert.match(component,/>Cancelar operação</)
- assert.match(component,/aria-label=\{phase==='success'\?'Fechar':'Cancelar e fechar'\}/)
+ assert.match(component,/aria-label=\{\['success','transcribed'\]\.includes\(phase\)\?'Fechar':'Cancelar e fechar'\}/)
  assert.match(component,/disabled=\{recorder\.status==='recording'\} className=\{mode==='TEXT'/)
  assert.match(component,/recorder\.status==='validating'\?'Validando áudio…'/)
 })
@@ -143,7 +143,7 @@ test('VoiceCapture frontend — confirmação falha volta à revisão e sucesso 
  assert.match(component,/confirmationNotifiedRef=useRef\(false\)/)
  assert.match(component,/const finishSuccess=\(\)=>\{if\(confirmationNotifiedRef\.current\)\{close\(\{cancelRemote:false\}\);return\}/)
  assert.match(component,/onClick=\{finishSuccess\}>Concluir/)
- assert.match(component,/phase==='success'\?finishSuccess\(\):close\(\)/)
+ assert.match(component,/phase==='success'\?finishSuccess\(\):close\(\{cancelRemote:phase!=='transcribed'\}\)/)
  assert.match(component,/!isPostVisit\(interactionType\)&&onConfirmed&&!confirmationNotifiedRef\.current/)
 })
 

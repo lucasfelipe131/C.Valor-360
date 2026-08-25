@@ -96,7 +96,7 @@ function CandidateReview({candidates,setCandidates,transcript,additions,setAddit
  </div>
 }
 
-export default function VoiceCapture({clientId,visitId,interactionType='GENERAL_CONTEXT',label='Registrar áudio',description='',sourceContext={},onConfirmed}){
+export default function VoiceCapture({clientId,visitId,interactionType='GENERAL_CONTEXT',label='Registrar áudio',description='',sourceContext={},onConfirmed,transient=false,onTranscribed}){
  const instanceId=useId().replace(/:/g,'')
  const [open,setOpen]=useState(false)
  const [mode,setMode]=useState('AUDIO')
@@ -219,7 +219,13 @@ export default function VoiceCapture({clientId,visitId,interactionType='GENERAL_
    }
    setPhase('processing');setRetryStage('process')
    const result=await processRemote(id,controller)
-   if(mountedRef.current)hydrateReview(result)
+   if(transient){
+    const transcript=transcriptOf(result).trim()
+    if(!transcript)throw new Error('A VAL não conseguiu transformar este áudio em texto.')
+    forgetPending();await cancelVoiceInteraction(id,{signal:controller.signal}).catch(()=>null)
+    if(mountedRef.current){setInteractionId('');setPayload(result);setPhase('transcribed');setError('')}
+    try{await onTranscribed?.(transcript,result)}catch{}
+   }else if(mountedRef.current)hydrateReview(result)
   }catch(processError){if(processError?.name==='AbortError')return;if(mountedRef.current){setError(processError.message||'Não foi possível processar esta informação.');setPhase('error')}}finally{if(operationRef.current===controller)operationRef.current=null}
  }
 
@@ -245,12 +251,12 @@ export default function VoiceCapture({clientId,visitId,interactionType='GENERAL_
  const launch=()=>{confirmationNotifiedRef.current=false;setOpen(true);setMode('AUDIO');setPhase('capture');setError('');const pendingId=readPending();if(pendingId)resumePending(pendingId);else recorder.start()}
  const finishSuccess=()=>{if(confirmationNotifiedRef.current){close({cancelRemote:false});return}confirmationNotifiedRef.current=true;const result=payload;close({cancelRemote:false});if(onConfirmed)Promise.resolve(onConfirmed(result)).catch(()=>{})}
  const chooseFile=async event=>{const file=event.target.files?.[0];event.target.value='';if(file)await recorder.selectFile(file)}
- const title=isPostVisit(interactionType)?'Me conte como foi':label
+ const title=transient?'Perguntar por voz':isPostVisit(interactionType)?'Me conte como foi':label
  const recorderBusy=recorder.status==='requesting'||recorder.status==='validating'
  const portal=typeof document==='undefined'?null:createPortal(<div className="voice-modal-layer">
   <button className="voice-backdrop" type="button" tabIndex="-1" aria-label="Fechar captura de áudio" onClick={()=>{if(!busy&&recorder.status!=='recording'){if(phase==='success')finishSuccess();else close()}}}/>
   <section ref={dialogRef} className="voice-sheet" role="dialog" aria-modal="true" aria-busy={busy} aria-labelledby={titleId} aria-describedby={description?descriptionId:undefined} tabIndex="-1">
-   <header className="voice-sheet-header"><div><span><Mic/></span><div><small>VAL • CAPTURA DE CONHECIMENTO</small><h2 id={titleId}>{title}</h2>{description&&<p id={descriptionId}>{description}</p>}</div></div><button type="button" aria-label={phase==='success'?'Fechar':'Cancelar e fechar'} disabled={busy} onClick={()=>phase==='success'?finishSuccess():close()}><X/></button></header>
+   <header className="voice-sheet-header"><div><span><Mic/></span><div><small>{transient?'VAL • PERGUNTA SEM REGISTRO':'VAL • CAPTURA DE CONHECIMENTO'}</small><h2 id={titleId}>{title}</h2>{description&&<p id={descriptionId}>{description}</p>}</div></div><button type="button" aria-label={['success','transcribed'].includes(phase)?'Fechar':'Cancelar e fechar'} disabled={busy} onClick={()=>phase==='success'?finishSuccess():close({cancelRemote:phase!=='transcribed'})}><X/></button></header>
    <div className="voice-sheet-body">
     {phase==='capture'&&<>
      <div className="voice-mode-tabs" role="group" aria-label="Forma de registrar"><button type="button" aria-pressed={mode==='AUDIO'} className={mode==='AUDIO'?'is-active':''} onClick={()=>{setMode('AUDIO');setError('')}}><Mic/>Áudio</button><button type="button" aria-pressed={mode==='TEXT'} aria-disabled={recorder.status==='recording'} disabled={recorder.status==='recording'} className={mode==='TEXT'?'is-active':''} onClick={()=>{recorder.cancelRecording();setMode('TEXT');setError('')}}><Keyboard/>Digitar</button></div>
@@ -267,6 +273,7 @@ export default function VoiceCapture({clientId,visitId,interactionType='GENERAL_
      noAction={noAction} setNoAction={setNoAction} onConfirm={confirm} busy={busy} error={error} errorId={reviewErrorId}
     />}
     {phase==='error'&&<div className="voice-failure" role="alert"><span><AlertTriangle/></span><h3>Não foi possível concluir agora.</h3><p>{error}</p><div><button type="button" onClick={()=>close()}>Cancelar</button>{retryStage!=='confirm'&&<button type="button" onClick={fallbackToText}><Keyboard/>Digitar em vez disso</button>}<button type="button" onClick={retry}><RotateCcw/>Tentar novamente</button></div>{interactionId&&<small>O retry continuará na mesma interação, sem promover memória parcial.</small>}</div>}
+    {phase==='transcribed'&&<div className="voice-success" role="status"><span><CheckCircle2/></span><small>PERGUNTA TRANSCRITA</small><h3>Estou analisando sua pergunta.</h3><p>Esta fala foi usada somente nesta conversa e não atualizou a memória confirmada do produtor.</p><button type="button" onClick={()=>close({cancelRemote:false})}>Voltar à conversa</button></div>}
     {phase==='success'&&<div className="voice-success" role="status"><span><CheckCircle2/></span><small>CONFIRMAÇÃO CONCLUÍDA</small><h3>{successCopy[String(interactionType||'').toUpperCase()]||successCopy.GENERAL_CONTEXT}</h3><p>A VAL incorporou somente o que você confirmou, com origem e rastreabilidade.</p><button type="button" onClick={finishSuccess}>Concluir</button></div>}
    </div>
   </section>
