@@ -1,5 +1,6 @@
 import {assertContract,decisionThesisVersion,validateDecisionThesis} from './contracts.js'
 import {buildPrepareVisitDecisionModel} from '../execution/prepare-visit-quality.js'
+import {compactKnowledgeRefs,normalizeKnowledgeRetrieval} from './knowledge-support.js'
 
 const list=value=>Array.isArray(value)?value:[]
 const text=(value,max=800)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,max)
@@ -45,8 +46,12 @@ export function buildDecisionThesis(input={}){
  ensureTenant(snapshot,organizationId,profile)
  const advice=input.advice||{}
  const conversion=input.conversion||input.context?.conversionIntelligence||{}
+ const knowledgeRetrieval=normalizeKnowledgeRetrieval(input.knowledgeRetrieval,{now:input.now||new Date()})
+ const knowledgeRefs=compactKnowledgeRefs(knowledgeRetrieval)
+ const decisionKnowledge=knowledgeRetrieval.items.filter(item=>!item.requires_human_review)
+ const guardrailKnowledge=knowledgeRetrieval.items.filter(item=>item.requires_human_review)
  const prepareQuality=/prepare_visit|preparar\s+visita/i.test(`${snapshot?.objective||''} ${input.message||''}`)
- const decisionModel=buildPrepareVisitDecisionModel({contextSnapshot:snapshot,context:input.context,visitObjective:input.message||'',behavioralProfile:profile})
+ const decisionModel=buildPrepareVisitDecisionModel({contextSnapshot:snapshot,context:input.context,visitObjective:input.message||'',behavioralProfile:profile,knowledgeRetrieval})
  const evidence=snapshotEvidence(snapshot)
  const criticalMissing=list(snapshot.missing_information).filter(item=>item?.critical)
  const conflicts=list(snapshot.conflicts)
@@ -70,8 +75,11 @@ export function buildDecisionThesis(input={}){
     :mustDiscover
      ?`Antes de recomendar, precisamos descobrir ${highestUnknown||'a informação crítica que muda esta decisão'}.`
      :legacyAction||'Avançar com a alternativa priorizada, mantendo premissas, evidências e próximo passo verificáveis.'
- const rationale=prepareQuality&&!decisionModel.insufficient
-  ?unique([...decisionModel.material_facts,decisionModel.commercial_signal.price_present&&decisionModel.commercial_signal.price_status==='HYPOTHESIS'?'Preço apareceu como sinal comercial ainda não confirmado como objeção.':'']).slice(0,6)
+ const baseRationale=prepareQuality&&!decisionModel.insufficient
+  ?unique([
+    ...decisionModel.material_facts,
+    decisionModel.commercial_signal.price_present&&decisionModel.commercial_signal.price_status==='HYPOTHESIS'?'Preço apareceu como sinal comercial ainda não confirmado como objeção.':''
+   ])
   :mustDiscover
   ?unique([criticalMissing[0]?.description,conflicts.length&&'Há fontes materiais divergentes.',blocked&&'A barreira técnica exige revisão humana.',!hasCommercialContext&&'Não existe histórico autorizado suficiente.'])
   :unique([
@@ -79,12 +87,21 @@ export function buildDecisionThesis(input={}){
     ...list(conversion?.selectedOpportunity?.reasons),
     ...list(input?.decisionIntelligence?.strategic_synthesis?.connections).map(item=>item?.insight||item?.claim),
     evidence.length&&`${evidence.length} referência(s) autorizada(s) sustentam o contexto.`
-   ]).slice(0,6)
+   ])
+ const knowledgeRationale=decisionKnowledge.slice(0,3).map(item=>({knowledge_item_id:item.knowledge_item_id,text:`${item.title}: ${text(item.application_val||item.recommended_actions[0]||item.statement,520)}`}))
+ const rationale=unique([...baseRationale.slice(0,Math.max(1,6-knowledgeRationale.length)),...knowledgeRationale.map(item=>item.text)]).slice(0,6)
+ const usedKnowledgeIds=new Set(knowledgeRationale.filter(item=>rationale.includes(item.text)).map(item=>item.knowledge_item_id))
+ const knowledgeSupport=knowledgeRefs.map(ref=>{
+  if(ref.requires_human_review)return {...ref,reason:'O item limitou a decisão e manteve revisão humana obrigatória; não foi tratado como evidência factual nem prescrição.',used_in:['SAFETY_GUARDRAIL']}
+  if(usedKnowledgeIds.has(ref.knowledge_item_id))return {...ref,reason:'O princípio selecionado alterou explicitamente a justificativa da tese de decisão.',used_in:['DECISION_RATIONALE']}
+  return {...ref,reason:'',used_in:[]}
+ })
  const confidence=baseConfidence(snapshot,evidence.length)
  const risks=unique([
   ...list(advice?.confidence?.contradictions),
   ...conflicts.map(item=>`Conflito material em ${item.key}.`),
   blocked&&'Risco técnico: orientação acionável bloqueada até revisão.',
+  ...guardrailKnowledge.map(item=>`${item.title}: uso limitado a guardrail; exige revisão humana e não autoriza prescrição.`),
   confidence<0.5&&'Confiança baixa: não transformar plausibilidade em decisão.'
  ])
  const tradeoffs=[
@@ -119,6 +136,9 @@ export function buildDecisionThesis(input={}){
   avoid_guidance:prepareQuality?decisionModel.avoid_guidance:null,
   commitment_target:prepareQuality?decisionModel.commitment_target:null,
   proof_candidates:prepareQuality?decisionModel.proofs:[],
-  profile_strategy:prepareQuality?decisionModel.profile_strategy:null
+  profile_strategy:prepareQuality?decisionModel.profile_strategy:null,
+  knowledge_status:knowledgeRetrieval.status,
+  knowledge_support:knowledgeSupport,
+  knowledge_human_review_required:guardrailKnowledge.length>0
  },validateDecisionThesis,'DecisionThesis v1')
 }

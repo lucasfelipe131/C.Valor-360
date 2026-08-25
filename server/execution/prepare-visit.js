@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto'
 import {artifactReference,buildActionPlan} from './action-plan.js'
 import {assertExecutionContract,prepareVisitVersion,validatePrepareVisit} from './contracts.js'
 import {buildPrepareVisitDecisionModel,evaluatePrepareVisitQuality,isForbiddenPrepareVisitLanguage} from './prepare-visit-quality.js'
+import {compactKnowledgeRefs,normalizeKnowledgeRetrieval} from '../commercial/knowledge-support.js'
 
 const list=value=>Array.isArray(value)?value:[]
 const text=(value,max=1600)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,max)
@@ -123,11 +124,19 @@ export function buildPrepareVisit(input={}){
  const thesis=input.decisionThesis||{}
  const valuePlan=input.valuePlan||{}
  const visit=input.visit||{}
- const type=classifyVisitType(visit.objective||thesis.objective)
  const now=input.now instanceof Date?input.now:new Date(input.now||Date.now())
+ const knowledgeRetrieval=normalizeKnowledgeRetrieval(input.knowledgeRetrieval??{status:thesis.knowledge_status,items:thesis.knowledge_support},{now})
+ const declaredKnowledgeUsage=[...list(thesis.knowledge_support),...list(valuePlan.knowledge_support),...list(valuePlan.knowledge_guidance)]
+ const knowledgeRefs=compactKnowledgeRefs(knowledgeRetrieval).map(ref=>{
+  const declarations=declaredKnowledgeUsage.filter(item=>text(item?.knowledge_item_id,180)===ref.knowledge_item_id)
+  const reasons=declarations.map(item=>text(item?.reason||item?.guidance,320)).filter(Boolean)
+  const usedIn=[...new Set(declarations.flatMap(item=>list(item?.used_in)).map(item=>text(item,80)).filter(Boolean))]
+  return {...ref,reason:reasons[0]||'',used_in:usedIn}
+ }).filter(ref=>ref.reason&&ref.used_in.length)
+ const type=classifyVisitType(visit.objective||thesis.objective)
  const actionPlan=input.actionPlan||buildActionPlan({organizationId,subjectId:snapshot.subject?.id,contextSnapshot:snapshot,decisionThesis:thesis,valuePlan,actor:input.actor,defaultDueAt:visit.scheduled_at??visit.scheduledAt,now})
  const opportunity=opportunities(snapshot,valuePlan)
- const decisionModel=buildPrepareVisitDecisionModel({contextSnapshot:snapshot,context:input.context,visitObjective:visit.objective||thesis.objective,behavioralProfile:profile})
+ const decisionModel=buildPrepareVisitDecisionModel({contextSnapshot:snapshot,context:input.context,visitObjective:visit.objective||thesis.objective,behavioralProfile:profile,knowledgeRetrieval})
  const questions=goldenQuestions(snapshot,profile,valuePlan,type)
  const missing=[...list(snapshot.missing_information).map(item=>text(item?.description||item?.code)),...(type==='TECHNICAL'&&!list(snapshot?.agronomic_context?.soil_analyses).some(item=>item?.freshness==='CURRENT')?['Falta análise de solo atualizada ou confirmação de que ela não é necessária para o objetivo desta visita.']:[])].filter(Boolean)
  const commercialApplicable=type==='COMMERCIAL'
@@ -174,10 +183,12 @@ export function buildPrepareVisit(input={}){
   priority_actions:actionPlan.priorities.slice(0,3),
   missing_information:missing,
   secondary_opportunities:commercialApplicable?opportunity.secondary:[],
-  safety:{technical_review_required:Boolean(input.technicalReviewRequired),commercial_close_forced:false,profile_changes_facts:false},
+  knowledge_status:knowledgeRetrieval.status,
+  knowledge_refs:knowledgeRefs,
+  safety:{technical_review_required:Boolean(input.technicalReviewRequired),knowledge_review_required:knowledgeRefs.some(item=>item.requires_human_review),commercial_close_forced:false,profile_changes_facts:false},
   created_at:createdAt
  }
- const quality=evaluatePrepareVisitQuality(draft,{model:decisionModel,profile})
+ const quality=evaluatePrepareVisitQuality(draft,{model:decisionModel,profile,knowledgeRetrieval})
  draft.quality_audit={...quality,status:quality.passed?'PASSED':decisionModel.insufficient?'INSUFFICIENT_CONTEXT':'CONTROLLED_REPAIR_REQUIRED'}
  if(!quality.passed){
   draft.objective=decisionModel.objective
@@ -187,7 +198,7 @@ export function buildPrepareVisit(input={}){
   draft.objection_guidance=decisionModel.avoid_guidance
   draft.avoid_guidance=decisionModel.avoid_guidance
   draft.commitment_target=decisionModel.commitment_target
-  const repaired=evaluatePrepareVisitQuality(draft,{model:decisionModel,profile})
+  const repaired=evaluatePrepareVisitQuality(draft,{model:decisionModel,profile,knowledgeRetrieval})
   draft.quality_audit={...repaired,status:repaired.passed?'PASSED_AFTER_CONTROLLED_REPAIR':'INSUFFICIENT_CONTEXT',regeneration_attempted:true}
  }
  return assertExecutionContract(draft,validatePrepareVisit,'PrepareVisit v1')

@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { createServer } from "node:http";
+import { register } from "node:module";
+
+// `server-only` is a Next.js build marker, not runtime behavior. The smoke
+// imports the integration module directly under Node, so resolve only that
+// marker to an empty module while preserving every other package resolution.
+register(
+  'data:text/javascript,export async function resolve(s,c,n){if(s==="server-only")return{url:"data:text/javascript,export%20default%20%7B%7D",shortCircuit:true};return n(s,c)}',
+  import.meta.url,
+);
 
 const received = [];
 const server = createServer((request, response) => {

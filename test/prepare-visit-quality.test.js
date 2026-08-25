@@ -102,11 +102,12 @@ test('caso técnico soja/fungicida não vira produto, dose ou prescrição',()=>
  assert.doesNotMatch(allDisplay(preparation),/\b(?:dose|dosagem|ml\s*\/\s*ha|l\s*\/\s*ha|aplique|misture)\b/i)
 })
 
-test('quality gate avalia oito dimensões e bloqueia linguagem genérica/interna',()=>{
+test('quality gate avalia nove dimensões, incluindo uso governado de conhecimento, e bloqueia linguagem genérica/interna',()=>{
  for(const fixture of [costaBeberFixture(),soyFungicideFixture(),newProducerFixture()]){
   const quality=fixture.preparation.quality_audit
   assert.equal(quality.version,prepareVisitQualityVersion)
-  assert.equal(Object.keys(quality.dimensions).length,8)
+  assert.equal(Object.keys(quality.dimensions).length,9)
+  assert.equal(quality.dimensions.KNOWLEDGE_USAGE,1)
   assert.equal(quality.passed,true)
   assert.equal(quality.forbidden_language_detected.length,0)
  }
