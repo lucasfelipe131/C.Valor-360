@@ -9,7 +9,9 @@ const generic=/\b(?:entenda as necessidades|fa[cç]a uma abordagem consultiva|ap
 const genericQuestion=/\b(?:o que voce acha|pode explicar melhor|qual sua necessidade|como posso ajudar)\b/i
 const openQuestion=/^(?:qual|quais|como|o que|quem|onde|quanto|quando|por que)\b/i
 
-const questionTokens=value=>new Set(normalize(value).replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(token=>token.length>=3&&!['que','para','com','uma','das','dos','ela','ele','isso','esta','este','sobre'].includes(token)))
+const questionAliases={quais:'qual',dado:'evidencia',dados:'evidencia',fonte:'evidencia',fontes:'evidencia',metodo:'evidencia',metodos:'evidencia',unidade:'evidencia',unidades:'evidencia',contexto:'evidencia',contextos:'evidencia',falta:'requisito',faltam:'requisito',precisa:'requisito',precisam:'requisito',responsavel:'revisao',tecnico:'revisao',tecnica:'revisao',revisar:'validar',revisao:'validar',acao:'decisao',acoes:'decisao'}
+const questionStopwords=new Set(['que','para','com','uma','das','dos','ela','ele','isso','esta','este','sobre','ainda','antes','qualquer','orientar','depois'])
+const questionTokens=value=>new Set(normalize(value).replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(token=>token.length>=3&&!questionStopwords.has(token)).map(token=>questionAliases[token]||token))
 
 export function questionSimilarity(left,right){
  const a=questionTokens(left);const b=questionTokens(right)

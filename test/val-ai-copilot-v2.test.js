@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import test from 'node:test'
-import {aiReasoningResultVersion,composeAIReasoning,evaluateGoldenQuestions,evaluateValResponseQuality,runContextRemovalTest,runNameSwapTest} from '../server/ai-reasoning/index.js'
+import {aiReasoningResultVersion,composeAIReasoning,evaluateGoldenQuestions,evaluateValResponseQuality,questionSimilarity,runContextRemovalTest,runNameSwapTest} from '../server/ai-reasoning/index.js'
 import {routeValIntent,valIntents} from '../server/ai-reasoning/intent-router.js'
 
 const read=path=>readFileSync(new URL(`../${path}`,import.meta.url),'utf8')
@@ -57,6 +57,7 @@ test('Perguntas de Ouro avaliam cinco dimensões e reprovam repetição semânti
  assert.equal(quality.items[1].dimensions.novelty,.15)
  assert.equal(quality.items[1].passed,false)
  assert.equal(quality.passed,false)
+ assert.ok(questionSimilarity('Qual dado, fonte ou método ainda falta para o responsável técnico revisar esta decisão?','Quais dados, método, unidade e contexto o responsável técnico precisa validar antes de orientar qualquer ação?')>=.68)
 })
 
 test('NAME_SWAP_TEST e CONTEXT_REMOVAL_TEST reprovam resposta genérica sem fontes',()=>{
