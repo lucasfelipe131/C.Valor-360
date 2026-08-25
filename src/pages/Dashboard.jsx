@@ -128,7 +128,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
    <header><div><span className="eyebrow">AGORA</span><h3 id="copilot-priorities-title">Até 3 prioridades para agir</h3></div><small>Somente sinais registrados na sua carteira.</small></header>
    {priorities.length?<div className="copilot-priority-grid">{priorities.slice(0,3).map((priority,index)=>{
     const client=clients.find(item=>String(item.id)===String(priority.subject_id))
-    return <article key={priority.insight_id||`${priority.subject_id}-${index}`}>
+    return <article key={`${priority.insight_id||priority.subject_id||'priority'}-${index}`}>
      <span>{String(index+1).padStart(2,'0')}</span>
      <div><small>{priority.category==='PREPARE'?'PREPARAR':priority.category==='ACT_NOW'?'AGIR AGORA':'ACOMPANHAR'}</small><h4>{priority.title}</h4><p>{priority.summary}</p>{priority.why_now&&<em><Clock3/>{priority.why_now}</em>}<b>{priority.recommended_action}</b></div>
      <button type="button" disabled={!client} onClick={()=>openPriority(priority)}>{priority.category==='PREPARE'?'Preparar visita':'Abrir produtor'}<ChevronRight/></button>

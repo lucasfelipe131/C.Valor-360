@@ -6,6 +6,18 @@ const clean=(value,max=2000)=>String(value??'').replace(/\s+/g,' ').trim().slice
 const normalize=value=>clean(value,20_000).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
 const unique=values=>[...new Set(values.map(value=>clean(value,280)).filter(Boolean))]
 const generic=/\b(?:entenda as necessidades|fa[cç]a uma abordagem consultiva|apresente os benef[ií]cios|avalie o cen[aá]rio|verifique se existe necessidade em outras categorias|busque mais informa[cç][oõ]es|adapte a abordagem)\b/i
+const genericQuestion=/\b(?:o que voce acha|pode explicar melhor|qual sua necessidade|como posso ajudar)\b/i
+const openQuestion=/^(?:qual|quais|como|o que|quem|onde|quanto|quando|por que)\b/i
+
+const questionTokens=value=>new Set(normalize(value).replace(/[^a-z0-9\s]/g,' ').split(/\s+/).filter(token=>token.length>=3&&!['que','para','com','uma','das','dos','ela','ele','isso','esta','este','sobre'].includes(token)))
+
+export function questionSimilarity(left,right){
+ const a=questionTokens(left);const b=questionTokens(right)
+ if(!a.size||!b.size)return 0
+ const intersection=[...a].filter(token=>b.has(token)).length
+ const union=new Set([...a,...b]).size
+ return Number((intersection/Math.max(1,union)).toFixed(2))
+}
 
 function materialAnchors(result={},context={}){
  const client=context.client||{}
@@ -50,11 +62,15 @@ export function runContextRemovalTest(result={},context={}){
 }
 
 export function evaluateGoldenQuestions(questions=[]){
+ const previous=[]
  const items=list(questions).slice(0,3).map(item=>{
   const question=clean(item?.question)
   const contextRefs=unique(item?.context_refs||[])
-  const score=[question.endsWith('?'),clean(item?.unknown),clean(item?.decision_impact),contextRefs.length].filter(Boolean).length/4
-  return {...item,question,context_refs:contextRefs,quality_score:Number(score.toFixed(2)),passed:score>=.75}
+  const highestSimilarity=previous.length?Math.max(...previous.map(prior=>questionSimilarity(prior,question))):0
+  const dimensions={specificity:question.length>=28&&!genericQuestion.test(question)?1:.25,openness:openQuestion.test(normalize(question))?1:.35,novelty:highestSimilarity<.68?1:.15,decision_impact:clean(item?.decision_impact).length>=12?1:.3,context_grounding:contextRefs.length?1:.2}
+  previous.push(question)
+  const score=Object.values(dimensions).reduce((sum,value)=>sum+value,0)/Object.keys(dimensions).length
+  return {...item,question,context_refs:contextRefs,quality_score:Number(score.toFixed(2)),dimensions,highest_similarity:highestSimilarity,passed:score>=.75&&dimensions.novelty===1}
  })
  return {version:goldenQuestionQualityVersion,items,passed:items.length>0&&items.every(item=>item.passed)}
 }
@@ -63,18 +79,24 @@ export function evaluateValResponseQuality(result={},context={}){
  const nameSwap=runNameSwapTest(result,context)
  const contextRemoval=runContextRemovalTest(result,context)
  const questions=evaluateGoldenQuestions(result.golden_questions)
- const facts=list(result.facts_used)
+ const facts=list(result.facts_used);const sourceTypes=new Set(facts.map(item=>normalize(item.source_type)))
+ const hasHistory=list(context.priorRecommendations).length+list(context.visits).length+list(context.interactions).length>0
+ const historyMatches=[...sourceTypes].filter(type=>/visit|interaction|history|recommendation|opportun|voice|memory/.test(type)).length
+ const knowledgeAvailable=list(context.knowledgeSelection?.items||context.knowledgeSelection||context.knowledge).length
+ const agronomicSources=Object.values(result.agronomic_context?.sources||{}).reduce((sum,value)=>sum+Number(value||0),0)
  const dimensions={
   specificity:nameSwap.passed?1:.35,
-  context_grounding:contextRemoval.dependency_score,
-  evidence_traceability:Math.min(1,list(result.evidence_to_use).length/3),
-  uncertainty_honesty:list(result.missing_information).length||clean(result.decision_thesis?.KEY_UNCERTAINTY)?.length?1:.4,
-  decision_usefulness:clean(result.recommended_strategy?.action).length>=25?.95:.35,
+  context_usage:contextRemoval.dependency_score,
+  history_usage:hasHistory?Math.min(1,.45+(historyMatches*.25)):.85,
   question_quality:questions.items.length?questions.items.reduce((sum,item)=>sum+item.quality_score,0)/questions.items.length:.2,
-  profile_adaptation:clean(result.commercial_context?.profile_strategy||result.commercial_context?.adaptation).length>=15?.9:.4,
-  agronomic_safety:(result.agronomic_context?.human_review_required===true||result.agronomic_context?.status==='not_applicable')?0.95:0.8,
-  concision:responseCorpus(result).length<=6500?.9:.55,
-  non_generic:generic.test(responseCorpus(result))?.15:.95
+  decision_relevance:clean(result.decision_thesis?.THESIS).length>=25&&clean(result.decision_thesis?.WHAT_MATTERS).length>=25?.95:.35,
+  agronomic_relevance:result.agronomic_context?.status==='not_applicable'?.9:result.agronomic_context?.human_review_required===true?1:Math.min(1,.55+(agronomicSources*.08)),
+  commercial_relevance:(clean(result.commercial_context?.profile_strategy||result.commercial_context?.adaptation).length>=15||list(context.opportunities).length>0)?0.9:0.4,
+  knowledge_usage:knowledgeAvailable?Math.min(1,.4+(list(result.knowledge_refs).length*.25)):.85,
+  actionability:clean(result.recommended_strategy?.action).length>=25&&clean(result.next_commitment).length>=20?.95:.35,
+  clarity:responseCorpus(result).length<=6500&&clean(result.situation_summary).length<=1800?.9:.55,
+  non_generic_language:generic.test(responseCorpus(result))?.15:.95,
+  confidence_calibration:(Number.isFinite(Number(result.confidence?.score))&&clean(result.confidence?.rationale).length>=20&&(list(result.missing_information).length>0||clean(result.decision_thesis?.KEY_UNCERTAINTY).length>0))?0.95:0.4
  }
  const overall=Object.values(dimensions).reduce((sum,value)=>sum+Number(value||0),0)/Object.keys(dimensions).length
  const passed=nameSwap.passed&&contextRemoval.passed&&questions.passed&&overall>=.72

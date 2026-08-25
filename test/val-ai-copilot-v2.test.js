@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import test from 'node:test'
-import {aiReasoningResultVersion,composeAIReasoning,evaluateValResponseQuality,runContextRemovalTest,runNameSwapTest} from '../server/ai-reasoning/index.js'
+import {aiReasoningResultVersion,composeAIReasoning,evaluateGoldenQuestions,evaluateValResponseQuality,runContextRemovalTest,runNameSwapTest} from '../server/ai-reasoning/index.js'
 import {routeValIntent,valIntents} from '../server/ai-reasoning/intent-router.js'
 
 const read=path=>readFileSync(new URL(`../${path}`,import.meta.url),'utf8')
@@ -13,6 +13,7 @@ const voice=read('src/components/voice/VoiceCapture.jsx')
 const server=read('server.js')
 const repository=read('server/repository.js')
 const bootstrap=read('server/conversion-bootstrap.js')
+const dashboard=read('src/pages/Dashboard.jsx')
 
 function fixture({id='ana',name='Ana Ribeiro',profile='Analítico',crop='Soja',opportunity='Programa fungicida',proof='dados da própria área'}={}){
  const context={
@@ -43,6 +44,19 @@ test('AIReasoningResult v1 materializa o contrato completo no mesmo pipeline',()
  assert.equal(result.premises.recomputed_for_request,true)
  assert.equal(result.premises.conversation_is_not_confirmed_memory,true)
  assert.equal(quality.status,'PASSED')
+ assert.deepEqual(Object.keys(quality.dimensions),['specificity','context_usage','history_usage','question_quality','decision_relevance','agronomic_relevance','commercial_relevance','knowledge_usage','actionability','clarity','non_generic_language','confidence_calibration'])
+})
+
+test('Perguntas de Ouro avaliam cinco dimensões e reprovam repetição semântica',()=>{
+ const shared={reason:'Muda o próximo passo.',unknown:'Critério de decisão.',decision_impact:'Define se a oportunidade avança.',context_refs:['interaction-1']}
+ const quality=evaluateGoldenQuestions([
+  {...shared,question:'Qual decisão de fertilizante vocês precisam fechar nesta semana, e quem participa dela?'},
+  {...shared,question:'Qual decisão sobre o fertilizante vocês precisam fechar nesta semana, e quem participa dela?'}
+ ])
+ assert.deepEqual(Object.keys(quality.items[0].dimensions),['specificity','openness','novelty','decision_impact','context_grounding'])
+ assert.equal(quality.items[1].dimensions.novelty,.15)
+ assert.equal(quality.items[1].passed,false)
+ assert.equal(quality.passed,false)
 })
 
 test('NAME_SWAP_TEST e CONTEXT_REMOVAL_TEST reprovam resposta genérica sem fontes',()=>{
@@ -101,6 +115,7 @@ test('copiloto global mantém contexto por produtor e oferece texto, voz, foto e
  assert.match(globalCopilot,/capture="environment"/)
  assert.match(globalCopilot,/Por que a VAL disse isso\?/)
  assert.match(globalCopilot,/reasoning\.golden_questions\.slice\(0,3\)/)
+ assert.match(dashboard,/key=\{`\$\{priority\.insight_id\|\|priority\.subject_id\|\|'priority'\}-\$\{index\}`\}/)
 })
 
 test('perguntar por voz cancela a interação sem confirmação e sem memória',()=>{

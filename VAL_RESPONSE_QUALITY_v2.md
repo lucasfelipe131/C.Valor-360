@@ -2,7 +2,7 @@
 
 Contrato: `val.response_quality.v2`.
 
-Dimensões: especificidade, ancoragem contextual, rastreabilidade, honestidade sobre incerteza, utilidade decisória, qualidade das perguntas, adaptação ao perfil, segurança agronômica, concisão e ausência de texto genérico.
+Dimensões: `specificity`, `context_usage`, `history_usage`, `question_quality`, `decision_relevance`, `agronomic_relevance`, `commercial_relevance`, `knowledge_usage`, `actionability`, `clarity`, `non_generic_language` e `confidence_calibration`.
 
 Gates automáticos:
 

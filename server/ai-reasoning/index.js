@@ -2,11 +2,11 @@ import {createHash,randomUUID} from 'node:crypto'
 import {assertAIReasoningResult,aiReasoningResultVersion} from './contracts.js'
 import {routeValIntent} from './intent-router.js'
 import {ComposedAdviceReasoningProvider} from './provider.js'
-import {evaluateValResponseQuality} from './quality.js'
+import {evaluateValResponseQuality,questionSimilarity} from './quality.js'
 
 export {aiReasoningResultVersion,goldenQuestionQualityVersion,valResponseQualityVersion} from './contracts.js'
 export {routeValIntent,valIntents,valIntentRouterVersion} from './intent-router.js'
-export {evaluateGoldenQuestions,evaluateValResponseQuality,runContextRemovalTest,runNameSwapTest} from './quality.js'
+export {evaluateGoldenQuestions,evaluateValResponseQuality,questionSimilarity,runContextRemovalTest,runNameSwapTest} from './quality.js'
 export {ComposedAdviceReasoningProvider,ReasoningProvider,reasoningProviderVersion} from './provider.js'
 
 const list=value=>Array.isArray(value)?value:[]
@@ -39,8 +39,14 @@ function goldenQuestions(advice={},context={}){
   {question:strategic.highest_value_unknown?.question||advice.next_question?.question,reason:strategic.highest_value_unknown?.why_it_matters||'Separa as hipóteses e muda o próximo passo.',unknown:missing[0]||'A variável que mais muda a decisão.',decision_impact:strategic.decision_at_stake||advice.executive_brief?.action,context_refs:refs},
   ...list(advice.questions).map(item=>({question:item?.question,reason:item?.purpose||'Preenche uma lacuna material.',unknown:item?.evidence_needed||missing[0]||'Dado ainda não confirmado.',decision_impact:advice.next_best_action,context_refs:item?.grounding_ids||refs}))
  ]
- const seen=new Set()
- return candidates.flatMap(item=>{const question=clean(item.question,700);if(!question||seen.has(question))return [];seen.add(question);return [{question:question.endsWith('?')?question:`${question}?`,reason:clean(item.reason,600),unknown:clean(item.unknown,500),decision_impact:clean(item.decision_impact,700),context_refs:unique(item.context_refs||[]).slice(0,8)}]}).slice(0,3)
+ const selected=[]
+ for(const item of candidates){
+  const raw=clean(item.question,700);const question=raw.endsWith('?')?raw:`${raw}?`
+  if(!raw||selected.some(existing=>questionSimilarity(existing.question,question)>=.68))continue
+  selected.push({question,reason:clean(item.reason,600),unknown:clean(item.unknown,500),decision_impact:clean(item.decision_impact,700),context_refs:unique(item.context_refs||[]).slice(0,8)})
+  if(selected.length===3)break
+ }
+ return selected
 }
 
 function knowledgeRefs(advice={}){
