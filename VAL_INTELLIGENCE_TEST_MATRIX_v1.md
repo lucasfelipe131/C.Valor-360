@@ -52,4 +52,12 @@ Nenhum `knowledge:sync` ou recurso externo faz parte desta versão.
 - `git diff --check` e sintaxe dos módulos alterados: verdes;
 - warning conhecido: chunk Vite acima de 500 kB, não bloqueante.
 
+## Evidência remota e staging
+
+- GitHub Actions `Validate #185`: `success` no commit remoto `91430010212a3cf3dc5aac6c1d70983b64df26bd`;
+- Railway deployment `bd35a9ab-5ab2-4772-a9bc-8543d4339b9a`: `SUCCESS` na mesma árvore validada localmente;
+- `/health`, `/ready` e landing: HTTP `200`;
+- cinco migrations: `already-applied`; nenhuma migration desta entrega;
+- logs de build/deploy sem erro severo ou conteúdo sensível detectado.
+
 UAT físico de voz não é contado como teste de inteligência local e permanece bloqueio separado no gate final.

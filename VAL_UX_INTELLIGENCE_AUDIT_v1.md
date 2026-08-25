@@ -63,6 +63,21 @@ O repositório do Manual não possui, nesta versão, um catálogo normativo de c
 
 Na reprodução de 24/08/2026, a URL de staging respondeu `502 — Application failed to respond` (request id `_shF2Y2XRaG81hau9o6EoQ`). O container voltou a responder antes da publicação desta branch e a landing pública foi reaberta. A ocorrência permanece registrada como baseline operacional; a evidência do deploy desta entrega será adicionada ao gate final, sem reescrever esse histórico.
 
+## Publicação controlada no staging
+
+- commit local: `23896e2885d923cb0e9c40fb6e6a1fc7ca4192e1`;
+- commit remoto autenticado: `91430010212a3cf3dc5aac6c1d70983b64df26bd`;
+- árvore local/remota idêntica: `07f85a31d262499d08825350401d6281f30fa215`;
+- PR `#88` mantido em DRAFT contra `feature/prepare-visit-quality`;
+- CI `Validate #185`: `success`;
+- Railway staging: deployment `bd35a9ab-5ab2-4772-a9bc-8543d4339b9a`, `SUCCESS`, na branch `feature/val-copilot-knowledge-v1`;
+- `/health`, `/ready` e landing pública: HTTP `200`;
+- cinco migrations existentes: `already-applied`; nenhuma migration nova;
+- logs do deployment: nenhum erro severo e nenhum marcador de áudio, transcript ou segredo;
+- PostgreSQL isolado permaneceu `SUCCESS` e nenhum recurso foi criado.
+
+A primeira tentativa operacional (`4864c71b-b0aa-436e-92c5-f7c3ba837796`) recompilou a branch anterior e foi registrada, mas não aceita como evidência desta entrega. A troca de origem só foi considerada válida após a configuração e o metadata do deployment apontarem para `feature/val-copilot-knowledge-v1@9143001`.
+
 ## Decisão arquitetural
 
 1. Preservar contratos, migrations e engines existentes.
