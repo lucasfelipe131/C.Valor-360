@@ -2,6 +2,7 @@ import React,{useEffect,useState} from 'react'
 import {BrainCircuit} from 'lucide-react'
 import Sidebar from './components/Sidebar'
 import MobileNav from './components/MobileNav'
+import GlobalValCopilot from './components/GlobalValCopilot'
 import Topbar from './components/Topbar'
 import Dashboard from './pages/Dashboard'
 import Clients from './pages/Clients'
@@ -68,10 +69,13 @@ export default function App(){
  const [visits,setVisits]=useState([])
  const [opportunities,setOpportunities]=useState([])
  const [toast,setToast]=useState('')
+ const [copilotOpen,setCopilotOpen]=useState(false)
+ const [copilotSeed,setCopilotSeed]=useState(null)
  const openClient=c=>{setSelected(c);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
  const notify=message=>{const text=typeof message==='string'?message:String(message?.message||'Ação concluída.');setToast(text);window.clearTimeout(window.__valorToast);window.__valorToast=window.setTimeout(()=>setToast(''),2800)}
  const prepareClient=c=>{if(!c?.id)return;setSelected(c);setPrepareVisitClientId(c.id);setPage('visits');if(page==='visits')window.requestAnimationFrame(resetPageViewport)}
  const openValClient=c=>{setSelected(c);setValMode('insumos');setPage('val');if(page==='val')window.requestAnimationFrame(resetPageViewport)}
+ const openCopilot=(input={})=>{const contextual=input.client||clientList.find(item=>String(item.id)===String(input.clientId))||(page==='client360'?selected:null);setCopilotSeed({clientId:contextual?.id||'',prompt:String(input.prompt||''),mode:input.mode||'ASK',nonce:Date.now()});setCopilotOpen(true)}
  const navigate=next=>{if(next!=='client360')setSelected(null);if(next!=='visits')setPrepareVisitClientId('');if(next==='val')setValMode(null);setPage(next);if(next===page)window.requestAnimationFrame(resetPageViewport)}
  const addClient=client=>{
   let saved
@@ -105,6 +109,7 @@ export default function App(){
  useEffect(()=>{if(authenticated!==true)return;const revalidate=()=>fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(!session?.authenticated){expireSession();return}setCurrentUser(session.user);rememberStorageScope(session.user)}).catch(()=>invalidateSession('Não foi possível revalidar o servidor. Entre novamente para proteger os dados.'));window.addEventListener('focus',revalidate);const timer=window.setInterval(revalidate,300000);return()=>{window.removeEventListener('focus',revalidate);window.clearInterval(timer)}},[authenticated,currentUser?.storageScope])
  useEffect(()=>{if(authenticated!==true||currentUser?.mustChangePassword)return;clearLegacyPortfolioCache();fetch('/api/intelligence',{signal:AbortSignal.timeout(12000)}).then(async response=>{if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));return null}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'A carteira protegida não pôde ser carregada.');return payload}).then(data=>{if(!data)return;const serverClients=Array.isArray(data.clients)?data.clients:[];setClientList(serverClients);setVisits(Array.isArray(data.visits)?data.visits:[]);setOpportunities(Array.isArray(data.opportunities)?data.opportunities:[]);setSelected(serverClients[0]||null);setPortfolioReady(true)}).catch(error=>{if(currentUser?.demo){setPortfolioReady(true);return}setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setPortfolioReady(true);notify(error.name==='TimeoutError'?'A carteira demorou além do limite e permaneceu bloqueada.':error.message)})},[authenticated,currentUser?.demo,currentUser?.mustChangePassword])
  useEffect(()=>{if(authenticated!==true)return;const frame=window.requestAnimationFrame(resetPageViewport);return()=>window.cancelAnimationFrame(frame)},[page,valMode,authenticated])
+ useEffect(()=>{if(authenticated!==true)return;const keydown=event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();openCopilot()}};window.addEventListener('keydown',keydown);return()=>window.removeEventListener('keydown',keydown)},[authenticated,page,selected?.id,clientList])
  useEffect(()=>{
   if(authenticated!==true||!portfolioReady||currentUser?.demo||!currentUser?.id)return
   const controller=new AbortController()
@@ -120,17 +125,18 @@ export default function App(){
  if(!portfolioReady)return <main className="auth-loading" role="status"><BrainCircuit/><span>Carregando carteira protegida…</span></main>
  return <div className="app-shell">
   <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-  <Sidebar page={page} currentUser={currentUser} setPage={navigate}/>
+  <Sidebar page={page} currentUser={currentUser} setPage={navigate} onOpenVal={()=>openCopilot()}/>
   <main className="main" id="main-content" tabIndex="-1">
-   <Topbar title={title} subtitle={subtitle} onNavigate={navigate}/>
+   <Topbar title={title} subtitle={subtitle} onNavigate={navigate} onOpenVal={()=>openCopilot()}/>
    <div className="content">
-    {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient} onRefreshPortfolio={refreshPortfolio}/>}
+    {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient} onRefreshPortfolio={refreshPortfolio} onOpenCopilot={openCopilot}/>}
     {page==='clients'&&<Clients clients={clientList} opportunities={opportunities} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
     {page==='datahub'&&<DataHub clients={clientList} onImport={importClients} onProfileImport={addClients} onUpdate={updateClient} onDelete={deleteClient} onNotify={notify}/>}
     {page==='client360'&&selected&&<Client360
      key={selected.id} client={selected} visits={visits} opportunities={opportunities}
      storageScope={currentUser?.storageScope} onBack={()=>navigate('clients')}
      onPrepare={()=>prepareClient(selected)} onUpdate={updateClient} onRefreshPortfolio={refreshPortfolio}
+     onAsk={()=>openCopilot({client:selected})}
      onSaved={message=>notify(message||'Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}
     />}
     {page==='val'&&<ValWorkspace mode={valMode} onModeChange={setValMode} clients={clientList} selectedClient={selected} onSelect={openClient} onPrepareVisit={prepareClient}/>}
@@ -143,7 +149,8 @@ export default function App(){
     {page==='admin'&&currentUser?.role==='admin'&&<Admin currentUser={currentUser} onNotify={notify}/>}
    </div>
   </main>
-  <MobileNav page={page} setPage={navigate} currentUser={currentUser}/>
+  <MobileNav page={page} setPage={navigate} currentUser={currentUser} onOpenVal={()=>openCopilot()}/>
+  <GlobalValCopilot open={copilotOpen} onClose={()=>setCopilotOpen(false)} clients={clientList} contextClient={page==='client360'?selected:null} seed={copilotSeed} onRefreshPortfolio={refreshPortfolio} onOpenClient={openClient}/>
   {toast&&<div className="toast" role="status">{toast}</div>}
  </div>
 }

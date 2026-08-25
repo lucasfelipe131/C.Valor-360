@@ -114,12 +114,14 @@ test('Cliente 360 mantém dossiê em drill-down sem chamar agendamento de intera
 })
 
 test('navegação preserva agronomia nativa e deixa o workspace como aprofundamento',()=>{
- assert.match(sidebar,/\['dashboard','VAL',BrainCircuit\]/)
+ assert.match(sidebar,/\['dashboard','Hoje',BrainCircuit\]/)
+ assert.match(sidebar,/Perguntar à VAL/)
  assert.doesNotMatch(sidebar,/\['val','Ambientes VAL'/)
  assert.match(sidebar,/\['questionnaire','Coletar preferências'/)
  assert.match(sidebar,/\['agro','Ferramentas agronômicas'/)
  assert.doesNotMatch(sidebar,/Manual agronômico/)
- assert.match(mobile,/onClick=\{\(\)=>navigate\('dashboard'\)\} aria-label="Abrir a VAL"/)
+ assert.match(mobile,/onClick=\{onOpenVal\} aria-label="Abrir a VAL"/)
+ assert.match(mobile,/\['dashboard','Hoje',CalendarDays\]/)
  assert.match(mobile,/\['agro','Ferramentas agronômicas',Sprout\]/)
 })
 

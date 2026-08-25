@@ -30,6 +30,7 @@ import {createOpenAITranscriptionProvider,createUnavailableTranscriptionProvider
 import {createRepositoryAttachmentVoiceStorage} from './server/voice-capture/storage.js'
 import {createVoiceCandidateExtractor} from './server/voice-capture/extraction.js'
 import {createVoiceCaptureService} from './server/voice-capture/service.js'
+import {normalizeValIntent,routeValIntent} from './server/ai-reasoning/intent-router.js'
 
 const port=Number(process.env.PORT||3000)
 const appRoot=dirname(fileURLToPath(import.meta.url))
@@ -282,6 +283,11 @@ async function handleApi(request,response,url){
   const payload=await body(request);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const message=String(payload.message||payload.question||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).trim().slice(0,3000)
   const clientId=clean(payload.clientId||payload.client?.id)
   if(!clientId)return json(response,400,{error:'Selecione um cliente para ativar o contexto da VAL.'})
+  const requestedIntent=payload.intent==null?'':String(payload.intent)
+  if(requestedIntent&&!normalizeValIntent(requestedIntent))return json(response,400,{error:'A intenção informada não é reconhecida pela VAL.',code:'val_intent_invalid'})
+  const routedIntent=routeValIntent({message,intentHint:requestedIntent,hasClient:true,attachmentTypes:attachmentIds.length?['application/octet-stream']:[]})
+  if(routedIntent.persistence_mode!=='NONE')return json(response,409,{error:'Use Registrar informação para revisar e confirmar qualquer atualização de memória.',code:'val_confirmation_required'})
+  const conversationId=clean(payload.conversationId)
   const requestId=normalizeValProgressRequestId(payload.requestId)||randomUUID()
   const ownerKey=progressOwnerKey(identity,request)
   const requestMode=clean(payload.mode)||'daily'
@@ -301,11 +307,11 @@ async function handleApi(request,response,url){
     context_refs:[{type:'client',id:clientId},...attachmentIds.map(id=>({type:'attachment',id}))],
     policy_context:{resource:'val_recommendation',operation:'execute',scope:'own_portfolio',scope_ref:actorId}
    })
-   const coreResponse=await valCore.execute(requestEnvelope,{engineInput:{tenantId:organizationId,ownerId:identity?.id,clientId,client:payload.client||{},message,attachmentIds,mode:requestMode,requestedStage:clean(payload.requestedStage),signal:controller.signal,onProgress:stage=>valProgress.update({requestId,ownerId:ownerKey,stage})}})
+   const coreResponse=await valCore.execute(requestEnvelope,{engineInput:{tenantId:organizationId,ownerId:identity?.id,clientId,client:payload.client||{},message,attachmentIds,mode:requestMode,requestedStage:clean(payload.requestedStage),intent:routedIntent.intent,conversationId,signal:controller.signal,onProgress:stage=>valProgress.update({requestId,ownerId:ownerKey,stage})}})
    const result=coreResponse.recommendation
    observe('val.answer.completed',{mode:requestMode,engineMode:result.engineMode,outcome:'ok'})
    valProgress.complete({requestId,ownerId:ownerKey})
-   await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:requestMode,engineMode:result.engineMode,attachments:attachmentIds.length}})
+   await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:requestMode,engineMode:result.engineMode,attachments:attachmentIds.length,intent:routedIntent.intent,conversationScoped:Boolean(conversationId)}})
    return json(response,200,url.pathname==='/api/v1/val/recommendations'?coreResponse:legacyRecommendationResponse(coreResponse,requestId))
   }catch(error){valProgress.fail({requestId,ownerId:ownerKey});throw error}
  }

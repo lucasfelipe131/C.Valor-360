@@ -16,8 +16,8 @@ import {
 } from 'lucide-react'
 
 const primary=[
- ['clients','Clientes',Users],
- ['visits','Visitas',CalendarDays]
+ ['dashboard','Hoje',CalendarDays],
+ ['clients','Clientes',Users]
 ]
 
 const secondary=[
@@ -30,7 +30,7 @@ const secondary=[
  ['settings','Configurações',Settings]
 ]
 
-export default function MobileNav({page,setPage,currentUser}){
+export default function MobileNav({page,setPage,currentUser,onOpenVal}){
  const [open,setOpen]=useState(false)
  useEffect(()=>setOpen(false),[page])
  const navigate=id=>{setPage(id);setOpen(false)}
@@ -44,7 +44,7 @@ export default function MobileNav({page,setPage,currentUser}){
   </section></>}
   <nav className="mobile-nav" aria-label="Navegação principal">
    {primary.map(([id,label,Icon])=><button type="button" key={id} className={page===id?'active':''} aria-current={page===id?'page':undefined} onClick={()=>navigate(id)}><Icon/><span>{label}</span></button>)}
-   <button type="button" className={`mobile-val-button ${page==='dashboard'?'active':''}`} onClick={()=>navigate('dashboard')} aria-label="Abrir a VAL" aria-current={page==='dashboard'?'page':undefined}><span><BrainCircuit/></span><b>VAL</b></button>
+   <button type="button" className="mobile-val-button" onClick={onOpenVal} aria-label="Abrir a VAL"><span><BrainCircuit/></span><b>VAL</b></button>
    <button type="button" className={secondaryActive||open?'active':''} onClick={()=>setOpen(value=>!value)} aria-expanded={open} aria-label="Abrir ações e módulos"><MoreHorizontal/><span>Mais</span></button>
   </nav>
  </>

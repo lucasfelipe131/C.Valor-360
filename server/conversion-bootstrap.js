@@ -15,6 +15,7 @@ import {buildInsightFeed} from './execution/insight-card.js'
 import {enforceValSpecificity,mergeStructuredReasoning,resolveStructuredReasoningRoute,specificityVersion} from './val-specificity.js'
 import {attachCommercialComposition} from './commercial/composition.js'
 import {attachExecutionComposition} from './execution/composition.js'
+import {aiReasoningResultVersion,attachAIReasoning,valResponseQualityVersion} from './ai-reasoning/index.js'
 import {observe} from './observability.js'
 
 const PATCHED=Symbol.for('valor360.conversion-core.patched')
@@ -82,7 +83,8 @@ function finalAdvice(advice,rawContext,message,usedGenerativeAi=false,executionI
   const commercial=attachCommercialComposition(specific,{context,message:effectiveMessage,conversion,orchestration})
   const selectedDueAt=conversion?.selectedOpportunity?.nextActionAt||conversion?.selectedOpportunity?.next_action_at||null
   const execution=attachExecutionComposition(commercial,{context,contextSnapshot:context.contextSnapshot,organizationId:context.contextSnapshot?.organization_id,actor:executionInput.actorId?{type:'USER',id:executionInput.actorId}:null,defaultDueAt:selectedDueAt})
-  return {context,thread,conversion,orchestration,advice:execution}
+  const reasoning=attachAIReasoning(execution,{context,message:thread.originalMessage||message,run:executionInput.modelRun||{model:usedGenerativeAi?'structured-provider':'rules-v7-specific',promptVersion:'val-ai-copilot-v2',status:usedGenerativeAi?'completed':'fallback',generativeUsed:usedGenerativeAi},conversationId:context.conversationSession?.id,intentHint:executionInput.intentHint})
+  return {context,thread,conversion,orchestration,advice:reasoning}
 }
 
 function deterministicDecision(context,effectiveMessage,originalMessage,input){
@@ -97,7 +99,7 @@ function deterministicDecision(context,effectiveMessage,originalMessage,input){
     requestedStage:input.requestedStage||null
   })
   const safe=enforceValSafety(fallback,context,effectiveMessage,{requestedStage:input.requestedStage||null})
-  return finalAdvice(safe,context,originalMessage,false,{actorId:input.ownerId})
+  return finalAdvice(safe,context,originalMessage,false,{actorId:input.ownerId,intentHint:input.intent,modelRun:{model:'rules-v7-specific',promptVersion:'val-ai-copilot-v2',status:'fallback',generativeUsed:false}})
 }
 
 function conversionEnvelope(resolved){
@@ -117,7 +119,11 @@ export function installConversionComposition(){
   const originalGetClientContext=ValRepository.prototype.getClientContext
   ValRepository.prototype.getClientContext=async function conversionAwareContext(input){
     const context=await originalGetClientContext.call(this,input)
-    return {...context,conversionFoundation:buildConversionFoundation(context)}
+    const conversationId=String(input?.contextRequest?.conversationId||'').trim().slice(0,180)
+    const priorRecommendations=conversationId
+      ?list(context.priorRecommendations).filter(item=>String(item?.conversation_id||'')===conversationId)
+      :context.priorRecommendations
+    return {...context,priorRecommendations,conversationSession:conversationId?{id:conversationId,scope:'client_session',clientId:String(input?.clientId||context.client?.id||'')}:{id:'',scope:'stateless',clientId:String(input?.clientId||context.client?.id||'')},conversionFoundation:buildConversionFoundation({...context,priorRecommendations})}
   }
 
   const originalGetIntelligence=ValRepository.prototype.getIntelligence
@@ -156,7 +162,7 @@ export function installConversionComposition(){
     const rawContext=input.context||{}
     const canonicalQuestion=String(originalQuestionContext.getStore()||input.question||'')
     const usedGenerativeAi=(input.modelRun?.status==='completed'&&input.modelRun?.generativeUsed!==false)||input.modelRun?.generativeUsed===true||/openai|gpt-/i.test(String(input.model||''))
-    const resolved=finalAdvice(input.advice||{},rawContext,canonicalQuestion,usedGenerativeAi,{actorId:input.ownerId})
+    const resolved=finalAdvice(input.advice||{},rawContext,canonicalQuestion,usedGenerativeAi,{actorId:input.ownerId,intentHint:input.responseMetadata?.intent,modelRun:input.modelRun})
     const persistedAdvice=preserveEnhancedLanguage(resolved.advice,input.advice||{})
     return originalRecordRecommendation.call(this,{
       ...input,
@@ -215,7 +221,7 @@ export function installConversionComposition(){
       }))
       emitProgress(input,'complete')
       const providerUsed=result.engineMode==='openai'
-      const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed,{actorId:input.ownerId})
+      const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed,{actorId:input.ownerId,intentHint:input.intent,modelRun:{model:result.model,promptVersion:'val-ai-copilot-v2',status:providerUsed?'completed':'fallback',generativeUsed:providerUsed}})
       return {
         ...result,
         engineMode:providerUsed?'structured_hybrid':'rules_fallback',
@@ -249,7 +255,7 @@ export function installConversionComposition(){
         model,
         context:resolved.context,
         advice:resolved.advice,
-        responseMetadata:{automaticRoute:orchestration.route.mode,conversationContinued:thread.continued,structuredReasoning:'not_requested'},
+        responseMetadata:{automaticRoute:orchestration.route.mode,conversationContinued:thread.continued,structuredReasoning:'not_requested',intent:input.intent||null,conversationId:context.conversationSession?.id||null},
         promptHash:createHash('sha256').update(`${conversationOrchestratorVersion}:${specificityVersion}`).digest('hex'),
         modelRun:{
           model,
@@ -293,7 +299,7 @@ export function installConversionComposition(){
     const result=await originalQuestionContext.run(originalMessage,()=>originalAnswer.call(this,{...input,message:effectiveMessage,mode:reasoning.tier}))
     emitProgress(input,'complete')
     const providerUsed=result.engineMode==='openai'
-    const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed,{actorId:input.ownerId})
+    const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed,{actorId:input.ownerId,intentHint:input.intent,modelRun:{model:result.model,promptVersion:'val-ai-copilot-v2',status:providerUsed?'completed':'fallback',generativeUsed:providerUsed}})
     const providerFallback=!providerUsed
     return {
       ...result,
@@ -303,6 +309,9 @@ export function installConversionComposition(){
       conversationOrchestrator:conversationOrchestratorVersion,
       languageEnhancer:languageEnhancerVersion,
       specificityEngine:specificityVersion,
+      aiReasoningResult:aiReasoningResultVersion,
+      responseQuality:valResponseQualityVersion,
+      globalCopilot:true,
       generativeRole:providerUsed?'multimodal_structured_reasoning':'fallback_rules',
       automaticRouting:resolved.orchestration.route,
       conversationContinuity:resolved.orchestration.continuity,
