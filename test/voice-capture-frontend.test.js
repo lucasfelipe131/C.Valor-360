@@ -41,7 +41,9 @@ test('VoiceCapture frontend — Cliente 360 expõe CLIENT_NOTE com confirmação
  assert.equal(occurrences(client360,'interactionType="CLIENT_NOTE"'),1)
  assert.match(client360,/label="Registrar áudio"/)
  assert.match(client360,/sourceContext=\{\{page:'CLIENT_360'\}\}/)
- assert.match(client360,/onConfirmed=\{\(\)=>\{setOverviewRevision/)
+ assert.match(client360,/onConfirmed=\{async payload=>\{const canonical=canonicalVoiceChange\(payload\)/)
+ assert.match(client360,/setOverviewRevision\(value=>value\+1\)/)
+ assert.match(client360,/await onRefreshPortfolio\?\.\(\)/)
  assert.doesNotMatch(client360,/interactionType="CLIENT_NOTE"[^>]*visitId=/)
 })
 

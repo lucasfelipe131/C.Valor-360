@@ -1,0 +1,27 @@
+{
+  "library_name": "VAL Knowledge Library",
+  "version": "1.0",
+  "created_for": "VAL",
+  "language": "pt-BR",
+  "counts": {
+    "knowledge_items": 100,
+    "sources": 30,
+    "scenarios": 30
+  },
+  "ingestion_policy": {
+    "target_module": "MCA",
+    "default_status": "DRAFT_FOR_REVIEW",
+    "require_source_refs": true,
+    "high_risk_requires_human_review": true,
+    "do_not_auto_promote_cases": true,
+    "do_not_use_as_system_prompt_dump": true
+  },
+  "files": [
+    "knowledge_items.jsonl",
+    "source_registry.json",
+    "scenario_bank.jsonl",
+    "taxonomy.md",
+    "README.md",
+    "VAL_Biblioteca_Mestre_v1.docx"
+  ]
+}

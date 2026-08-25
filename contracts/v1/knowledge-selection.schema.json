@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://val.local/contracts/v1/knowledge-selection.schema.json",
+  "title": "KnowledgeSelection v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "policy_version", "status", "items", "selected", "reason_code", "audit"],
+  "properties": {
+    "contract_version": {"const": "val.knowledge_selection.v1"},
+    "policy_version": {"const": "val.knowledge.selection.staging.v1"},
+    "status": {"enum": ["SELECTED", "NO_APPLICABLE_KNOWLEDGE"]},
+    "items": {"type": "array", "maxItems": 3, "items": {"$ref": "#/$defs/selectionItem"}},
+    "selected": {"type": "array", "maxItems": 3, "items": {"$ref": "#/$defs/selectionItem"}},
+    "reason_code": {"type": "string", "minLength": 1},
+    "audit": {"type": "object", "additionalProperties": true}
+  },
+  "$defs": {
+    "selectionItem": {
+      "type": "object",
+      "required": ["knowledge_item_id", "title", "source_refs", "authority", "risk", "usage_mode", "requires_human_review", "reason_codes"],
+      "properties": {
+        "knowledge_item_id": {"type": "string"},
+        "title": {"type": "string"},
+        "source_refs": {"type": "array", "items": {"type": "string"}, "uniqueItems": true},
+        "authority": {"enum": ["A", "B", "C", "D"]},
+        "risk": {"enum": ["LOW", "HIGH"]},
+        "usage_mode": {"enum": ["DECISION_SUPPORT", "GUARDRAIL_ONLY"]},
+        "requires_human_review": {"type": "boolean"},
+        "reason_codes": {"type": "array", "items": {"type": "string"}}
+      }
+    }
+  }
+}

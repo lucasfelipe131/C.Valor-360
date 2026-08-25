@@ -1,3 +1,5 @@
+import {compactKnowledgeRefs,knowledgeQualityState,normalizeKnowledgeRetrieval} from '../commercial/knowledge-support.js'
+
 export const prepareVisitQualityVersion='val.prepare_visit.quality.v1'
 
 const list=value=>Array.isArray(value)?value:[]
@@ -99,7 +101,8 @@ function questionSet({crop,solution,hasTiming,hasPrice,participantKnown,insuffic
  return unique(questions).slice(0,3)
 }
 
-export function buildPrepareVisitDecisionModel({contextSnapshot={},visitObjective='',behavioralProfile={}}={}){
+export function buildPrepareVisitDecisionModel({contextSnapshot={},visitObjective='',behavioralProfile={},knowledgeRetrieval}={}){
+ const selectedKnowledge=normalizeKnowledgeRetrieval(knowledgeRetrieval)
  const knowledge=allKnowledge(contextSnapshot)
  const statements=knowledge.map(item=>itemStatement(item)).filter(Boolean)
  const corpus=[visitObjective,...statements].join(' ')
@@ -170,7 +173,9 @@ export function buildPrepareVisitDecisionModel({contextSnapshot={},visitObjectiv
   proofs,profile_strategy:strategy,
   main_opportunity:mainOpportunity?{id:text(mainOpportunity.id,180)||null,title:text(mainOpportunity.title||mainOpportunity.category,500),stage:text(mainOpportunity.stage,80)||null}:{id:null,title:solution?`${solution[0].toUpperCase()}${solution.slice(1)}${cropContext} — decisão ainda em qualificação.`:'Prioridade da visita ainda em qualificação.',stage:null},
   problem_statement:hasPrice?`A diferença entre preço e valor percebido ainda precisa ser qualificada para ${target}${cropContext}.`:`Os critérios que definem ${target}${cropContext} ainda precisam ser confirmados.`,
-  material_facts:attention
+  material_facts:attention,
+  knowledge_status:selectedKnowledge.status,
+  knowledge_refs:compactKnowledgeRefs(selectedKnowledge)
  }
 }
 
@@ -184,9 +189,10 @@ function scoreQuestions(questions,tokens){
 
 function actionable(value){return Boolean(value)&&!genericOnly.test(text(value))&&!forbiddenFinalLanguage.test(text(value))}
 
-export function evaluatePrepareVisitQuality(preparation,{model,profile}={}){
+export function evaluatePrepareVisitQuality(preparation,{model,profile,knowledgeRetrieval}={}){
  const tokens=[model?.crop,model?.solution].filter(Boolean)
  const display=[preparation?.objective,preparation?.why_now,preparation?.val_thesis,preparation?.objection_guidance,preparation?.commitment_target,...list(preparation?.golden_questions),...list(preparation?.material_attention)].map(text).filter(Boolean)
+ const knowledgeState=knowledgeQualityState(knowledgeRetrieval??{status:model?.knowledge_status,items:model?.knowledge_refs},preparation?.knowledge_refs)
  const dimensions={
   CONTEXT_SPECIFICITY:model?.insufficient?1:tokens.length&&tokens.some(token=>display.some(value=>normalized(value).includes(normalized(token))))?1:.35,
   DECISION_RELEVANCE:actionable(preparation?.val_thesis)&&list(preparation?.golden_questions).length>=2?1:.35,
@@ -195,11 +201,12 @@ export function evaluatePrepareVisitQuality(preparation,{model,profile}={}){
   BEHAVIOR_ADAPTATION:Number(profile?.confidence)<.3?!preparation?.profile_approach?.known?1:.2:preparation?.profile_approach?.known?1:.45,
   AGRONOMIC_TIMING_USAGE:model?.agronomic_timing?.material?normalized(preparation?.why_now).includes(normalized(model?.crop||''))&&/janela|est[aá]gio|aplica[cç][aã]o|emerg/i.test(preparation?.why_now||'')?1:.2:1,
   ACTIONABILITY:actionable(preparation?.commitment_target)&&actionable(preparation?.objection_guidance)?1:.35,
-  NON_GENERIC_LANGUAGE:display.some(value=>forbiddenFinalLanguage.test(value)||genericOnly.test(value))?0:1
+  NON_GENERIC_LANGUAGE:display.some(value=>forbiddenFinalLanguage.test(value)||genericOnly.test(value))?0:1,
+  KNOWLEDGE_USAGE:knowledgeState.score
  }
  const values=Object.values(dimensions)
  const score=Number((values.reduce((sum,value)=>sum+value,0)/values.length).toFixed(3))
- return {version:prepareVisitQualityVersion,threshold:.78,score,passed:score>=.78,dimensions,forbidden_language_detected:display.filter(value=>forbiddenFinalLanguage.test(value)||genericOnly.test(value)).slice(0,5)}
+ return {version:prepareVisitQualityVersion,threshold:.78,score,passed:score>=.78,dimensions,knowledge_usage:knowledgeState,forbidden_language_detected:display.filter(value=>forbiddenFinalLanguage.test(value)||genericOnly.test(value)).slice(0,5)}
 }
 
 export function isForbiddenPrepareVisitLanguage(value){return forbiddenFinalLanguage.test(text(value))||genericOnly.test(text(value))}

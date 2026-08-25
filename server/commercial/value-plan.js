@@ -1,4 +1,5 @@
 import {assertContract,valuePlanVersion,validateValuePlan} from './contracts.js'
+import {compactKnowledgeRefs,normalizeKnowledgeRetrieval} from './knowledge-support.js'
 
 const list=value=>Array.isArray(value)?value:[]
 const text=(value,max=900)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,max)
@@ -15,7 +16,7 @@ function priorityQuestions({snapshot,profile,thesis,advice}){
  const push=(question,reason,evidenceRefs=[])=>{
   const value=text(question,420)
   if(!value||candidates.some(item=>item.question===value))return
-  candidates.push({question:value,materiality:reason,evidence_refs:list(evidenceRefs).map(item=>({id:text(item?.id??item)})).filter(item=>item.id)})
+  candidates.push({question:value,materiality:reason,evidence_refs:list(evidenceRefs).map(item=>({id:text(item?.id??item)})).filter(item=>item.id),knowledge_refs:[]})
  }
  for(const item of list(thesis.decision_questions))push(item,'A resposta pode mudar materialmente a tese, a estratégia ou o próximo passo.',thesis.evidence_refs)
  if(candidates.length)return candidates.slice(0,3)
@@ -76,6 +77,8 @@ export function buildValuePlan(input={}){
  const organizationId=text(input.organizationId||snapshot?.organization_id)
  ensureTenant(snapshot,organizationId,profile,thesis)
  const advice=input.advice||{}
+ const knowledgeRetrieval=normalizeKnowledgeRetrieval(input.knowledgeRetrieval,{now:input.now||new Date()})
+ const knowledgeRefs=compactKnowledgeRefs(knowledgeRetrieval)
  const methodology=advice.methodology_state||{}
  const commercialStage=stageMap[text(methodology.working_stage||methodology.current_stage)]||input.commercialStage||'EXPLORE'
  const strategy=profileStrategy(profile)
@@ -84,7 +87,22 @@ export function buildValuePlan(input={}){
  const questions=priorityQuestions({snapshot,profile,thesis,advice})
  const problem=text(thesis?.decision_context?.problem_statement||advice?.value_hypothesis?.problem||advice?.commercial_context?.problem||thesis.missing_information[0]||'Problema comercial ainda precisa ser confirmado com o produtor.')
  const next=text(thesis.commitment_target||thesis.next_action||advice.next_best_action||'Registrar um próximo passo proporcional à evidência disponível.')
- const proof=unique([...(qualityPrepare?list(thesis.proof_candidates):[strategy.proof]),...list(advice?.value_bridge?.proof_strategy),...list(advice?.evidence_used).map(item=>item?.claim_supported)]).slice(0,5)
+ const knowledgeProofCandidates=knowledgeRetrieval.items.filter(item=>!item.requires_human_review).map(item=>{
+  const action=list(item.recommended_actions).find(value=>/compar|calcul|premiss|hist[oó]ric|dados|custo|roi|retorno|prova|resultado|fonte|refer[eê]ncia/i.test(text(value)))
+  const candidate=text(action,500)
+  return candidate?{knowledge_item_id:item.knowledge_item_id,text:`${candidate.charAt(0).toUpperCase()}${candidate.slice(1)}`} :null
+ }).filter(Boolean).slice(0,2)
+ const baseProof=unique([...(qualityPrepare?list(thesis.proof_candidates):[strategy.proof]),...list(advice?.value_bridge?.proof_strategy),...list(advice?.evidence_used).map(item=>item?.claim_supported)])
+ const proof=unique([...knowledgeProofCandidates.map(item=>item.text),...baseProof]).slice(0,5)
+ const proofKnowledgeIds=new Set(knowledgeProofCandidates.filter(item=>proof.includes(item.text)).map(item=>item.knowledge_item_id))
+ const thesisUsage=new Map(list(thesis.knowledge_support).map(item=>[text(item?.knowledge_item_id,120),item]))
+ const knowledgeSupport=knowledgeRefs.map(ref=>{
+  const inherited=thesisUsage.get(ref.knowledge_item_id)
+  const usedIn=new Set(list(inherited?.used_in).map(item=>text(item,80)).filter(Boolean))
+  const reasons=[text(inherited?.reason,320)].filter(Boolean)
+  if(proofKnowledgeIds.has(ref.knowledge_item_id)){usedIn.add('PROOF_STRATEGY');reasons.push('A ação governada alterou a prova priorizada no ValuePlan.')}
+  return {...ref,reason:unique(reasons)[0]||'',used_in:[...usedIn]}
+ })
  const expected=unique([...(status==='CONFIRMED_OBJECTION'?['Objeção de preço confirmada pelo produtor.']:status==='HYPOTHESIS'?['Preço ou condição comercial pode ser um ponto de fricção a validar.']:[]),...list(input?.context?.conversionInnovations?.objectionLibrary?.items).map(item=>item?.label||item?.objection)]).slice(0,5)
  const crossSell=list(input?.context?.conversionInnovations?.postConversionExpansion?.candidates).map(item=>({id:text(item?.id),description:text(item?.title||item?.label),evidence_refs:list(item?.evidenceIds).map(id=>({id:text(id)}))})).filter(item=>item.description).slice(0,5)
  return assertContract({
@@ -114,6 +132,10 @@ export function buildValuePlan(input={}){
   decision_questions:qualityPrepare?questions:[],
   commercial_signal:{price_status:status},
   avoid_guidance:text(thesis.avoid_guidance),
+  knowledge_status:knowledgeRetrieval.status,
+  knowledge_support:knowledgeSupport,
+  knowledge_guidance:knowledgeSupport.filter(item=>item.used_in.length&&!item.requires_human_review).map(item=>({knowledge_item_id:item.knowledge_item_id,guidance:item.reason,used_in:item.used_in})),
+  knowledge_human_review_required:knowledgeSupport.some(item=>item.requires_human_review),
   guardrails:{automatic_discount:false,max_priority_questions:3,no_pressure:true,technical_facts_unchanged:true,margin_and_producer_value:true}
  },validateValuePlan,'ValuePlan v1')
 }
