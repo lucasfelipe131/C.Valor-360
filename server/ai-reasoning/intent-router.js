@@ -30,7 +30,7 @@ function semanticCurrentDataIntent(source=''){
 }
 
 function semanticCommandIntent(source=''){
- if(/\b(?:prepar|roteiro|antes da)\w*\b.*\b(?:visita|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b|\b(?:visita|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))return 'PREPARE_VISIT'
+ if(/\b(?:prepar|roteiro|antes da)\w*\b.*\b(?:visit\w*|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b|\b(?:visit\w*|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))return 'PREPARE_VISIT'
  if(/\b(?:obje[cç][aã]o|resist[eê]ncia|discord|recus|n[aã]o quer)\b/i.test(source))return 'OBJECTION_HELP'
  if(/\b(?:oportunidade|pipeline|neg[oó]cio|proposta)\b/i.test(source))return 'CHECK_OPPORTUNITY'
  if(/\b(?:follow.?up|retomar|cobrar retorno|pr[oó]ximo contato)\b/i.test(source))return 'FOLLOW_UP_HELP'
@@ -58,7 +58,7 @@ export function routeValIntent({message='',intentHint='',hasClient=false,attachm
   else if(/\b(?:an[aá]lise de solo|laudo de solo|solo|ph|v%|satura[cç][aã]o|ctc|f[oó]sforo|pot[aá]ssio)\b/i.test(source))intent='ANALYZE_SOIL'
   else if(hasImage||/\b(?:foto|imagem|folha|planta|lavoura)\b.*\b(?:analis|diagn[oó]st|observe|interpre)/i.test(source))intent='IMAGE_DIAGNOSIS'
   else if(/\b(?:agron[oô]mic|praga|doen[cç]a|daninha|manejo|talh[aã]o|safra|cultiv)/i.test(source))intent='ASK_AGRONOMIC'
-  else if(/\b(?:prepar|roteiro|antes da)\w*\b.*\bvisita\b|\bvisita\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))intent='PREPARE_VISIT'
+  else if(/\b(?:prepar|roteiro|antes da)\w*\b.*\bvisit\w*\b|\bvisit\w*\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))intent='PREPARE_VISIT'
   else if(/\b(?:registr|salv|grave|anote|memorize)\b.*\b(?:informa[cç][aã]o|nota|hist[oó]rico|mem[oó]ria|fato)\b/i.test(source))intent='REGISTER_INFORMATION'
   else if(/\b(?:p[oó]s[- ]?visita|depois da visita|resultado da visita)\b/i.test(source))intent='POST_VISIT'
   else if(/\b(?:obje[cç][aã]o|resist[eê]ncia|discord|recus|n[aã]o quer)\b/i.test(source))intent='OBJECTION_HELP'

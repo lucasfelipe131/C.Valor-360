@@ -98,6 +98,7 @@ test('Intent Router v2 — intents canônicos, aliases e persistência permanece
  const market=routeValIntent({message:'Qual é o preço da soja hoje?',hasClient:false})
  assert.equal(market.intent,'ASK_COMMODITY')
  assert.equal(routeValIntent({message:'Me prepare para uma conversa comercial com este produtor.',intentHint:'ASK_COMMODITY',hasClient:true}).intent,'PREPARE_VISIT')
+ assert.equal(routeValIntent({message:'Me prepare para visitar João amanhã.',hasClient:true}).intent,'PREPARE_VISIT')
  assert.equal(routeValIntent({message:'Como isso afeta ele?',intentHint:'ASK_COMMODITY',hasClient:true}).intent,'ASK_COMMODITY')
  assert.equal(routeValIntent({message:'E para milho?',intentHint:'ASK_COMMODITY',hasClient:true}).intent,'ASK_COMMODITY')
  assert.equal(market.client_context_required,false)
