@@ -5,7 +5,7 @@ import DecisionInterviewCard from './copilot/DecisionInterviewCard'
 import ValAudioResponse from './copilot/ValAudioResponse'
 import {canonicalVoiceChange} from '../lib/copilot-view-model'
 import {readConsultantExperiencePreference,writeConsultantExperiencePreference} from '../lib/consultant-experience-preference'
-import {buildMarketContinuationMessage,buildRegisterPrefill,buildSessionReplyMessage,limitValChatMessage,selectMarketContinuation,sessionRepliesForAsk} from '../lib/global-val-conversation'
+import {buildMarketContinuationMessage,buildRegisterPrefill,buildSessionReplyMessage,limitValChatMessage,normalizeValChatPayload,selectMarketContinuation,sessionRepliesForAsk} from '../lib/global-val-conversation'
 import {createValProgressRequestId,initialValProgress,startValProgressPolling} from '../lib/val-progress-client'
 import '../global-val-copilot.css'
 
@@ -142,7 +142,8 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   try{
    const timeout=AbortSignal.timeout(120_000);const signal=typeof AbortSignal.any==='function'?AbortSignal.any([controller.signal,timeout]):timeout
    const response=await fetch('/api/val/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:client?.id||'',client:client||undefined,message:requestMessage,attachmentIds:attachments.map(item=>item.id),mode:'daily',intent:effectiveIntent,conversationId:conversationId(client?.id||'global'),requestId}),signal})
-   const payload=await response.json().catch(()=>({}));if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error(payload.error||'A VAL não respondeu agora.')
+   const rawPayload=await response.json().catch(()=>null);if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error(rawPayload?.error||'A VAL não respondeu agora.')
+   const payload=normalizeValChatPayload(rawPayload);if(!payload)throw new Error('A resposta chegou fora do contrato esperado. Tente novamente; nenhuma memória foi alterada.')
    setThreads(current=>({...current,[activeThreadKey]:[...(current[activeThreadKey]||[]),{role:'assistant',payload,at:new Date().toISOString()}].slice(-20)}));setAttachments([])
    if(activeReply){setSessionReplies(current=>({...current,[activeThreadKey]:currentSessionReplies.slice(-6)}));setSessionReplyOffer({question:activeReply.question,answer:prompt,intent:activeReply.intent||effectiveIntent||''})}
   }catch(requestError){setError(requestError.name==='TimeoutError'?'A análise ultrapassou o tempo. Tente novamente.':requestError.message)}finally{stopProgress();controller.abort();setProgress(null);setBusy(false)}

@@ -14,6 +14,13 @@ const clip=(value,max)=>{
 
 export const isMarketIntent=intent=>marketIntents.has(String(intent||'').toUpperCase())
 
+export function normalizeValChatPayload(value){
+ const source=value&&typeof value==='object'?value:null
+ if(!source)return null
+ const candidates=[source,source.recommendation,source.result,source.data,source.response]
+ return candidates.find(candidate=>candidate?.advice&&typeof candidate.advice==='object')||null
+}
+
 function lastCommodity(value=''){
  const source=normalize(value)
  let selected='';let selectedAt=-1

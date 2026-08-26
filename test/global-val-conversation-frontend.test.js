@@ -6,6 +6,7 @@ import {
  buildRegisterPrefill,
  buildSessionReplyMessage,
  limitValChatMessage,
+ normalizeValChatPayload,
  selectMarketContinuation,
  sessionRepliesForAsk,
  VAL_CHAT_MESSAGE_LIMIT
@@ -25,6 +26,16 @@ test('nova ASK normal zera respostas transitórias mesmo quando repete a intenç
  assert.match(component,/if\(!activeReply\)\{setSessionReplies\(current=>\(\{\.\.\.current,\[activeThreadKey\]:\[\]\}\)\);setSessionReplyOffer\(null\)\}/)
  assert.match(component,/objective:reasoning\.objective/)
  assert.match(component,/sessionObjective=activeReply\?\.objective\|\|priorSessionReplies/)
+})
+
+test('resposta HTTP direta ou envelopada é normalizada e contrato ausente falha fechado',()=>{
+ const direct={advice:{answer:'direta'}}
+ const wrapped={recommendation:{advice:{answer:'envelopada'}}}
+ assert.equal(normalizeValChatPayload(direct),direct)
+ assert.equal(normalizeValChatPayload(wrapped),wrapped.recommendation)
+ assert.equal(normalizeValChatPayload({status:'ok'}),null)
+ assert.match(component,/normalizeValChatPayload\(rawPayload\)/)
+ assert.match(component,/resposta chegou fora do contrato esperado/)
 })
 
 test('payload de respostas fica abaixo de 3000 caracteres e prioriza a resposta mais recente',()=>{
