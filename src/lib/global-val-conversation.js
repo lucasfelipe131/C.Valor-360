@@ -34,7 +34,8 @@ function seasonFrom(value=''){
 
 export const isContextualContinuation=prompt=>{
  const source=clean(prompt)
- return /\b(?:isso|isto|aquilo|ele|ela|eles|elas|dele|dela|deles|delas|ess[ae]|ess[ae]s|est[ae]|est[ae]s|ness[ae]|ness[ae]s|dess[ae]|dess[ae]s)\b/i.test(source)
+ if(/\b(?:prepar|roteiro|antes da)\w*\b.*\b(?:visita|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b|\b(?:visita|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))return false
+ return /\b(?:isso|isto|aquilo|ele|ela|eles|elas|dele|dela|deles|delas|ess[ae]|ess[ae]s|ness[ae]|ness[ae]s|dess[ae]|dess[ae]s)\b/i.test(source)
   ||Boolean(lastCommodity(source)&&/^\s*(?:e|agora|mas|quanto\s+a)\b/i.test(source))
 }
 
