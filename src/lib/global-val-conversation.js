@@ -17,8 +17,15 @@ export const isMarketIntent=intent=>marketIntents.has(String(intent||'').toUpper
 export function normalizeValChatPayload(value){
  const source=value&&typeof value==='object'?value:null
  if(!source)return null
- const candidates=[source,source.recommendation,source.result,source.data,source.response]
- return candidates.find(candidate=>candidate?.advice&&typeof candidate.advice==='object')||null
+ const queue=[source];const visited=new Set()
+ for(let depth=0;queue.length&&depth<12;depth+=1){
+  const candidate=queue.shift()
+  if(!candidate||typeof candidate!=='object'||visited.has(candidate))continue
+  visited.add(candidate)
+  if(candidate.advice&&typeof candidate.advice==='object')return candidate
+  for(const key of ['recommendation','result','data','response','payload','envelope'])if(candidate[key]&&typeof candidate[key]==='object')queue.push(candidate[key])
+ }
+ return null
 }
 
 function lastCommodity(value=''){

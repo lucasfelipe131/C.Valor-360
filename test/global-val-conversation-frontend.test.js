@@ -31,8 +31,10 @@ test('nova ASK normal zera respostas transitórias mesmo quando repete a intenç
 test('resposta HTTP direta ou envelopada é normalizada e contrato ausente falha fechado',()=>{
  const direct={advice:{answer:'direta'}}
  const wrapped={recommendation:{advice:{answer:'envelopada'}}}
+ const nested={data:{response:{recommendation:{advice:{answer:'aninhada'}}}}}
  assert.equal(normalizeValChatPayload(direct),direct)
  assert.equal(normalizeValChatPayload(wrapped),wrapped.recommendation)
+ assert.equal(normalizeValChatPayload(nested),nested.data.response.recommendation)
  assert.equal(normalizeValChatPayload({status:'ok'}),null)
  assert.match(component,/normalizeValChatPayload\(rawPayload\)/)
  assert.match(component,/resposta chegou fora do contrato esperado/)
