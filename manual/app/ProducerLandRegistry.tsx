@@ -205,19 +205,24 @@ export default function ProducerLandRegistry({
     setActiveId(item.id);
     setDraft(emptyRegistration());
     setEditing(false);
-    setMessage("Matrícula salva; o cadastro e o croqui serão sincronizados com a conta.");
-    await saveRecord({
-      type: "land_registry",
-      title: `Matrícula ${item.number || item.propertyName}`,
-      producerName,
-      payload: {
-        registration: item,
-        linkedFieldIds: fields
-          .filter((field) => field.registrationId === item.id)
-          .map((field) => field.id),
-        savedAt: new Date().toISOString(),
-      },
-    }).catch(() => undefined);
+    setMessage("Salvando matrícula e confirmando a integração…");
+    try {
+      await saveRecord({
+        type: "land_registry",
+        title: `Matrícula ${item.number || item.propertyName}`,
+        producerName,
+        payload: {
+          registration: item,
+          linkedFieldIds: fields
+            .filter((field) => field.registrationId === item.id)
+            .map((field) => field.id),
+          savedAt: new Date().toISOString(),
+        },
+      });
+      setMessage("Matrícula salva e integração com a conta confirmada.");
+    } catch (error) {
+      setMessage((error instanceof Error ? error.message : "A integração com o VALOR 360 não foi confirmada.") + " A matrícula permanece salva para nova tentativa.");
+    }
   }
 
   function chooseDocument(event: ChangeEvent<HTMLInputElement>) {

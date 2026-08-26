@@ -1,4 +1,4 @@
-import React,{useEffect,useState} from 'react'
+import React,{useCallback,useEffect,useState} from 'react'
 import {BrainCircuit} from 'lucide-react'
 import Sidebar from './components/Sidebar'
 import MobileNav from './components/MobileNav'
@@ -21,6 +21,7 @@ import Admin from './pages/Admin'
 import PublicSurvey from './pages/PublicSurvey'
 import {normalizeText,reconcileOpportunityProjection} from './lib/profile'
 import {opportunityCacheKey} from './lib/opportunity-pipeline'
+import {resolveCopilotLaunch} from './lib/copilot-context'
 
 const activeStorageScopeKey='valor360-active-storage-scope'
 const clearLegacyPortfolioCache=()=>{
@@ -71,11 +72,14 @@ export default function App(){
  const [toast,setToast]=useState('')
  const [copilotOpen,setCopilotOpen]=useState(false)
  const [copilotSeed,setCopilotSeed]=useState(null)
+ const [copilotPageContext,setCopilotPageContext]=useState(null)
+ const copilotOwnerScope=currentUser?.storageScope||currentUser?.id||''
  const openClient=c=>{setSelected(c);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
  const notify=message=>{const text=typeof message==='string'?message:String(message?.message||'Ação concluída.');setToast(text);window.clearTimeout(window.__valorToast);window.__valorToast=window.setTimeout(()=>setToast(''),2800)}
  const prepareClient=c=>{if(!c?.id)return;setSelected(c);setPrepareVisitClientId(c.id);setPage('visits');if(page==='visits')window.requestAnimationFrame(resetPageViewport)}
  const openValClient=c=>{setSelected(c);setValMode('insumos');setPage('val');if(page==='val')window.requestAnimationFrame(resetPageViewport)}
- const openCopilot=(input={})=>{const contextual=input.client||clientList.find(item=>String(item.id)===String(input.clientId))||(page==='client360'?selected:null);setCopilotSeed({clientId:contextual?.id||'',prompt:String(input.prompt||''),mode:input.mode||'ASK',nonce:Date.now()});setCopilotOpen(true)}
+ const updateCopilotPageContext=useCallback(input=>setCopilotPageContext(input?{...input,storageScope:copilotOwnerScope}:null),[copilotOwnerScope])
+ const openCopilot=(input={})=>{const launch=resolveCopilotLaunch({input,implicitContext:copilotPageContext,page,storageScope:copilotOwnerScope,clients:clientList,selectedClient:selected});setCopilotSeed({...launch,nonce:Date.now()});setCopilotOpen(true)}
  const navigate=next=>{if(next!=='client360')setSelected(null);if(next!=='visits')setPrepareVisitClientId('');if(next==='val')setValMode(null);setPage(next);if(next===page)window.requestAnimationFrame(resetPageViewport)}
  const addClient=client=>{
   let saved
@@ -104,12 +108,13 @@ export default function App(){
  const invalidateSession=notice=>{clearSessionPortfolioCache(currentUser?.storageScope);setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setValMode(null);setAuthNotice(notice);setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}
  const expireSession=()=>invalidateSession('Sua sessão expirou. Entre novamente.')
  useEffect(()=>{if(!selected&&clientList.length)setSelected(clientList[0])},[clientList,selected])
+ useEffect(()=>{setCopilotPageContext(null);setCopilotSeed(null);setCopilotOpen(false)},[copilotOwnerScope])
  useEffect(()=>{fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(session?.authenticated)rememberStorageScope(session.user);else clearSessionPortfolioCache();setCurrentUser(session?.user||null);setPortfolioReady(Boolean(session?.user?.demo));setAuthenticated(Boolean(session?.authenticated));if(!session?.authenticated&&session?.misconfigured)setAuthNotice('O acesso seguro do servidor ainda não foi configurado.')}).catch(()=>{clearSessionPortfolioCache();setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setCurrentUser(null);setAuthNotice('Não foi possível validar o servidor. O acesso permaneceu bloqueado.');setPortfolioReady(false);setAuthenticated(false)})},[])
  useEffect(()=>{window.addEventListener('valor360:unauthorized',expireSession);return()=>window.removeEventListener('valor360:unauthorized',expireSession)},[currentUser?.storageScope])
  useEffect(()=>{if(authenticated!==true)return;const revalidate=()=>fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(!session?.authenticated){expireSession();return}setCurrentUser(session.user);rememberStorageScope(session.user)}).catch(()=>invalidateSession('Não foi possível revalidar o servidor. Entre novamente para proteger os dados.'));window.addEventListener('focus',revalidate);const timer=window.setInterval(revalidate,300000);return()=>{window.removeEventListener('focus',revalidate);window.clearInterval(timer)}},[authenticated,currentUser?.storageScope])
  useEffect(()=>{if(authenticated!==true||currentUser?.mustChangePassword)return;clearLegacyPortfolioCache();fetch('/api/intelligence',{signal:AbortSignal.timeout(12000)}).then(async response=>{if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));return null}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'A carteira protegida não pôde ser carregada.');return payload}).then(data=>{if(!data)return;const serverClients=Array.isArray(data.clients)?data.clients:[];setClientList(serverClients);setVisits(Array.isArray(data.visits)?data.visits:[]);setOpportunities(Array.isArray(data.opportunities)?data.opportunities:[]);setSelected(serverClients[0]||null);setPortfolioReady(true)}).catch(error=>{if(currentUser?.demo){setPortfolioReady(true);return}setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setPortfolioReady(true);notify(error.name==='TimeoutError'?'A carteira demorou além do limite e permaneceu bloqueada.':error.message)})},[authenticated,currentUser?.demo,currentUser?.mustChangePassword])
  useEffect(()=>{if(authenticated!==true)return;const frame=window.requestAnimationFrame(resetPageViewport);return()=>window.cancelAnimationFrame(frame)},[page,valMode,authenticated])
- useEffect(()=>{if(authenticated!==true)return;const keydown=event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();openCopilot()}};window.addEventListener('keydown',keydown);return()=>window.removeEventListener('keydown',keydown)},[authenticated,page,selected?.id,clientList])
+ useEffect(()=>{if(authenticated!==true)return;const keydown=event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();openCopilot()}};window.addEventListener('keydown',keydown);return()=>window.removeEventListener('keydown',keydown)},[authenticated,page,selected?.id,clientList,copilotPageContext,copilotOwnerScope])
  useEffect(()=>{
   if(authenticated!==true||!portfolioReady||currentUser?.demo||!currentUser?.id)return
   const controller=new AbortController()
@@ -140,17 +145,17 @@ export default function App(){
      onSaved={message=>notify(message||'Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}
     />}
     {page==='val'&&<ValWorkspace mode={valMode} onModeChange={setValMode} clients={clientList} selectedClient={selected} onSelect={openClient} onPrepareVisit={prepareClient}/>}
-    {page==='agro'&&<Agro clients={clientList}/>}
+    {page==='agro'&&<Agro onAsk={openCopilot} onContextChange={updateCopilotPageContext}/>}
     {page==='questionnaire'&&<Questionnaire onCreate={addClient} onCreateMany={addClients} onOpen={openClient} onNotify={notify}/>}
-    {page==='visits'&&<Visits clients={clientList} visits={visits} storageScope={currentUser?.storageScope} initialClientId={prepareVisitClientId} onInitialHandled={()=>setPrepareVisitClientId('')} onSave={saveVisit} onPrepare={openValClient} onStarted={startVisitResult} onRegistered={registerVisitResult}/>}
-    {page==='opportunities'&&<Opportunities clients={clientList} storageScope={currentUser?.storageScope} persistedItems={opportunities} onPersist={saveOpportunity} onClient={openClient} onSaved={notify}/>}
+    {page==='visits'&&<Visits clients={clientList} visits={visits} storageScope={currentUser?.storageScope} initialClientId={prepareVisitClientId} onInitialHandled={()=>setPrepareVisitClientId('')} onSave={saveVisit} onPrepare={openValClient} onAsk={openCopilot} onContextChange={updateCopilotPageContext} onStarted={startVisitResult} onRegistered={registerVisitResult}/>}
+    {page==='opportunities'&&<Opportunities clients={clientList} storageScope={currentUser?.storageScope} persistedItems={opportunities} onPersist={saveOpportunity} onClient={openClient} onAsk={openCopilot} onContextChange={updateCopilotPageContext} onSaved={notify}/>}
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
     {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
     {page==='admin'&&currentUser?.role==='admin'&&<Admin currentUser={currentUser} onNotify={notify}/>}
    </div>
   </main>
   <MobileNav page={page} setPage={navigate} currentUser={currentUser} onOpenVal={()=>openCopilot()}/>
-  <GlobalValCopilot open={copilotOpen} onClose={()=>setCopilotOpen(false)} clients={clientList} contextClient={page==='client360'?selected:null} seed={copilotSeed} onRefreshPortfolio={refreshPortfolio} onOpenClient={openClient}/>
+  <GlobalValCopilot key={copilotOwnerScope||'session'} open={copilotOpen} onClose={()=>setCopilotOpen(false)} clients={clientList} contextClient={page==='client360'?selected:null} seed={copilotSeed} storageScope={currentUser?.storageScope} onRefreshPortfolio={refreshPortfolio} onOpenClient={openClient}/>
   {toast&&<div className="toast" role="status">{toast}</div>}
  </div>
 }

@@ -4,6 +4,7 @@ import test from 'node:test'
 import {ValEngine} from '../server/val-engine.js'
 import {ValRepository} from '../server/repository.js'
 import {installValRuntimeComposition} from '../server/core/composition.js'
+import {finalizeAttachmentRecommendation} from '../server/decision-copilot/capability-router.js'
 
 const source=path=>readFileSync(new URL(path,import.meta.url),'utf8')
 
@@ -45,6 +46,21 @@ test('a composição explícita preserva fundação, inovações e fallback dete
   assert.equal(answer.engineArchitecture,'deterministic-specific-fallback')
   assert.equal(answer.decisionCore,'val-conversion-core-v1')
   assert.equal(store.val.recommendations.length,1)
+
+  const attachment=await repository.createAttachment({tenantId:'tenant-a',ownerId:'consultor-a',clientId:client.id,originalName:'analise.pdf',mimeType:'application/pdf',sizeBytes:9,dataBase64:Buffer.from('documento').toString('base64')})
+  await repository.updateAttachment({tenantId:'tenant-a',ownerId:'consultor-a',id:attachment.id,status:'confirmed',analysis:{summary:'Documento confirmado para análise.'}})
+  const attachmentAnswer=await engine.answer({
+    tenantId:'tenant-a',ownerId:'consultor-a',clientId:client.id,client,
+    message:'Analise este documento no contexto do produtor.',attachmentIds:[attachment.id],mode:'daily',
+    finalizeRecommendation:draft=>finalizeAttachmentRecommendation({draft,attachmentIds:[attachment.id],attachmentTypes:['application/pdf']})
+  })
+  assert.equal(attachmentAnswer.responseMetadata?.prePersistFinalized,undefined)
+  assert.equal(store.val.recommendations.at(-1).responseMetadata?.prePersistFinalized,undefined)
+  assert.ok(attachmentAnswer.advice.ai_reasoning)
+  assert.ok(attachmentAnswer.advice.val_response_quality)
+  assert.equal(attachmentAnswer.engineArchitecture,'deterministic-first-multimodal')
+  assert.equal(store.val.recommendations.length,2)
+
   const status=await engine.status({configured:false,ready:false,mode:'json-fallback'})
   assert.equal(status.decisionCore,'val-conversion-core-v1')
   assert.equal(status.automaticRouting,true)

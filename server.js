@@ -31,6 +31,7 @@ import {createRepositoryAttachmentVoiceStorage} from './server/voice-capture/sto
 import {createVoiceCandidateExtractor} from './server/voice-capture/extraction.js'
 import {createVoiceCaptureService} from './server/voice-capture/service.js'
 import {normalizeValIntent,routeValIntent} from './server/ai-reasoning/intent-router.js'
+import {buildClientMarketResponse,buildFastClientResponse,buildFastMarketResponse,finalizeAttachmentRecommendation,routeSystemCapability} from './server/decision-copilot/capability-router.js'
 
 const port=Number(process.env.PORT||3000)
 const appRoot=dirname(fileURLToPath(import.meta.url))
@@ -282,13 +283,62 @@ async function handleApi(request,response,url){
   if(!consumeRateLimit('val',rateIdentity,config.aiRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de análises atingido. Aguarde alguns minutos.'})
   const payload=await body(request);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const message=String(payload.message||payload.question||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).trim().slice(0,3000)
   const clientId=clean(payload.clientId||payload.client?.id)
-  if(!clientId)return json(response,400,{error:'Selecione um cliente para ativar o contexto da VAL.'})
   const requestedIntent=payload.intent==null?'':String(payload.intent)
   if(requestedIntent&&!normalizeValIntent(requestedIntent))return json(response,400,{error:'A intenção informada não é reconhecida pela VAL.',code:'val_intent_invalid'})
-  const routedIntent=routeValIntent({message,intentHint:requestedIntent,hasClient:true,attachmentTypes:attachmentIds.length?['application/octet-stream']:[]})
+  if(attachmentIds.length&&!clientId)return json(response,422,{error:'Escolha o produtor antes de anexar uma evidência à conta.',code:'val_attachment_client_required'})
+  const requestedAttachments=attachmentIds.length?await repository.getAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,ids:attachmentIds}):[]
+  const requestedAttachmentIds=new Set(requestedAttachments.map(item=>String(item.id)))
+  if(attachmentIds.some(id=>!requestedAttachmentIds.has(String(id))))return json(response,404,{error:'Um ou mais arquivos não pertencem ao produtor selecionado ou não estão mais disponíveis.',code:'val_attachment_scope_invalid'})
+  if(requestedAttachments.some(item=>!item.dataBase64))return json(response,422,{error:'Um ou mais arquivos persistidos não puderam ser carregados para análise.',code:'val_attachment_content_unavailable'})
+  const requestedAttachmentTypes=requestedAttachments.map(item=>String(item.mimeType||'').toLowerCase()).filter(Boolean)
+  const routedIntent=routeValIntent({message,intentHint:requestedIntent,hasClient:Boolean(clientId),attachmentTypes:requestedAttachmentTypes})
   if(routedIntent.persistence_mode!=='NONE')return json(response,409,{error:'Use Registrar informação para revisar e confirmar qualquer atualização de memória.',code:'val_confirmation_required'})
   const conversationId=clean(payload.conversationId)
   const requestId=normalizeValProgressRequestId(payload.requestId)||randomUUID()
+  if(!clientId){
+   const capability=routeSystemCapability({message,intentHint:routedIntent.intent,hasClient:false})
+   if(!capability.direct||!capability.capabilities.includes('MARKET_COMMODITY'))return json(response,422,{error:'Para cruzar esta pergunta com histórico, agronomia ou oportunidade, escolha um produtor. Mercado e commodities podem ser consultados sem selecionar uma conta.',code:'val_client_context_required',intent:routedIntent.intent})
+   const startedAt=Date.now();const workspace=await grainRepository.getMarketReferences(identity?.id)
+   const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,latencyMs:Date.now()-startedAt})
+   observe('val.answer.completed',{mode:'fast',engineMode:'rules',reasoningPath:'FAST',capability:'MARKET_COMMODITY',outcome:'ok'})
+   await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'portfolio',entityId:null,metadata:{mode:'fast',engineMode:'rules',intent:routedIntent.intent,reasoningPath:'FAST',currentDataStatus:fast.responseMetadata.currentDataStatus}})
+   return json(response,200,fast)
+  }
+  const clientCapability=routeSystemCapability({message,intentHint:routedIntent.intent,hasClient:true,attachmentTypes:requestedAttachmentTypes})
+  if(clientCapability.current_data_required&&clientCapability.capabilities.some(capability=>['WEATHER','LABELS'].includes(capability))){
+   const missingSource=clientCapability.capabilities.includes('WEATHER')?'clima':'bula/rótulo oficial'
+   return json(response,422,{error:`A fonte atual autorizada de ${missingSource} não está conectada neste ambiente. A VAL não usará memória ou conteúdo antigo como dado atual.`,code:'val_current_source_unavailable',intent:routedIntent.intent,reasoningPath:clientCapability.path,capabilitiesPlanned:clientCapability.capabilities})
+  }
+  let marketAttachmentBase=null
+  if(clientCapability.capabilities.includes('MARKET_COMMODITY')){
+   const startedAt=Date.now()
+   const facts=await repository.getFastClientFacts({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId})
+   if(!attachmentIds.length&&clientCapability.path==='FAST'&&clientCapability.direct){
+    const workspace=await grainRepository.getMarketReferences(identity?.id)
+    const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,latencyMs:Date.now()-startedAt})
+    observe('val.answer.completed',{mode:'fast',engineMode:'rules',reasoningPath:'FAST',capability:'MARKET_COMMODITY',outcome:'ok'})
+    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:'fast',engineMode:'rules',intent:routedIntent.intent,reasoningPath:'FAST',currentDataStatus:fast.responseMetadata.currentDataStatus}})
+    return json(response,200,fast)
+   }
+   const [context,workspace]=await Promise.all([
+    repository.getClientContext({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,client:facts.client,contextRequest:{requestId,objective:'market_account_cross',actorRole:identity?.role||'consultant',conversationId}}),
+    grainRepository.getWorkspace(identity?.id)
+   ])
+   const deep=buildClientMarketResponse({workspace,context,facts,message,intentHint:routedIntent.intent,attachmentTypes:requestedAttachmentTypes,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,latencyMs:Date.now()-startedAt})
+   if(!attachmentIds.length){
+    observe('val.answer.completed',{mode:'deep',engineMode:'rules',reasoningPath:'DEEP',capability:'MARKET_COMMODITY',outcome:'ok'})
+    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:'deep',engineMode:'rules',intent:routedIntent.intent,reasoningPath:'DEEP',currentDataStatus:deep.responseMetadata.currentDataStatus}})
+    return json(response,200,deep)
+   }
+   marketAttachmentBase=deep
+  }
+  if(!attachmentIds.length&&clientCapability.direct&&clientCapability.path==='FAST'&&clientCapability.capabilities.includes('VISIT_HISTORY')){
+   const startedAt=Date.now();const facts=await repository.getFastClientFacts({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId})
+   const fast=buildFastClientResponse({facts,message,organizationId:identity?.tenantId||config.defaultTenantId,conversationId,latencyMs:Date.now()-startedAt})
+   observe('val.answer.completed',{mode:'fast',engineMode:'rules',reasoningPath:'FAST',capability:'VISIT_HISTORY',outcome:'ok'})
+   await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:'fast',engineMode:'rules',intent:routedIntent.intent,reasoningPath:'FAST'}})
+   return json(response,200,fast)
+  }
   const ownerKey=progressOwnerKey(identity,request)
   const requestMode=clean(payload.mode)||'daily'
   valProgress.start({requestId,ownerId:ownerKey,clientId,mode:requestMode})
@@ -307,12 +357,20 @@ async function handleApi(request,response,url){
     context_refs:[{type:'client',id:clientId},...attachmentIds.map(id=>({type:'attachment',id}))],
     policy_context:{resource:'val_recommendation',operation:'execute',scope:'own_portfolio',scope_ref:actorId}
    })
-   const coreResponse=await valCore.execute(requestEnvelope,{engineInput:{tenantId:organizationId,ownerId:identity?.id,clientId,client:payload.client||{},message,attachmentIds,mode:requestMode,requestedStage:clean(payload.requestedStage),intent:routedIntent.intent,conversationId,signal:controller.signal,onProgress:stage=>valProgress.update({requestId,ownerId:ownerKey,stage})}})
-   const result=coreResponse.recommendation
+   const finalizeRecommendation=attachmentIds.length?draft=>finalizeAttachmentRecommendation({draft,attachmentIds,attachmentTypes:requestedAttachmentTypes,marketResponse:marketAttachmentBase}):undefined
+   const coreResponse=await valCore.execute(requestEnvelope,{engineInput:{tenantId:organizationId,ownerId:identity?.id,clientId,client:payload.client||{},message,attachmentIds,mode:requestMode,requestedStage:clean(payload.requestedStage),intent:routedIntent.intent,conversationId,finalizeRecommendation,signal:controller.signal,onProgress:stage=>valProgress.update({requestId,ownerId:ownerKey,stage})}})
+   let result=coreResponse.recommendation
+   if(attachmentIds.length){
+    const processed=new Set((Array.isArray(result.attachments)?result.attachments:[]).filter(item=>['interpreted','confirmed'].includes(String(item?.status||'').toLowerCase())).map(item=>String(item.id)))
+    if(attachmentIds.some(id=>!processed.has(String(id)))){valProgress.fail({requestId,ownerId:ownerKey});controller.abort();return json(response,422,{error:'A VAL validou os arquivos, mas a leitura multimodal não ficou disponível. Nenhuma cotação, diagnóstico, clima ou bula foi apresentado como se o anexo tivesse sido consumido.',code:'val_attachment_analysis_unavailable',intent:routedIntent.intent,reasoningPath:'DEEP',capabilitiesPlanned:clientCapability.capabilities})}
+    if(marketAttachmentBase&&result.responseMetadata?.attachmentCompositionStatus!=='EXECUTED'){valProgress.fail({requestId,ownerId:ownerKey});controller.abort();return json(response,422,{error:'A leitura do anexo não foi composta com a cotação atual antes da persistência.',code:'val_attachment_composition_unavailable',intent:routedIntent.intent,reasoningPath:'DEEP',capabilitiesPlanned:clientCapability.capabilities})}
+   }
    observe('val.answer.completed',{mode:requestMode,engineMode:result.engineMode,outcome:'ok'})
    valProgress.complete({requestId,ownerId:ownerKey})
    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:requestMode,engineMode:result.engineMode,attachments:attachmentIds.length,intent:routedIntent.intent,conversationScoped:Boolean(conversationId)}})
-   return json(response,200,url.pathname==='/api/v1/val/recommendations'?coreResponse:legacyRecommendationResponse(coreResponse,requestId))
+   if(result===coreResponse.recommendation)return json(response,200,url.pathname==='/api/v1/val/recommendations'?coreResponse:legacyRecommendationResponse(coreResponse,requestId))
+   const effectiveCoreResponse={...coreResponse,recommendation:result}
+   return json(response,200,url.pathname==='/api/v1/val/recommendations'?effectiveCoreResponse:legacyRecommendationResponse(effectiveCoreResponse,requestId))
   }catch(error){valProgress.fail({requestId,ownerId:ownerKey});throw error}
  }
  if(url.pathname==='/api/val/feedback'&&request.method==='POST'){
@@ -470,7 +528,7 @@ async function handleApi(request,response,url){
   const payload=await body(request);const rows=Array.isArray(payload.rows)?payload.rows.slice(0,5000):[];const mapping=payload.mapping||{};if(!rows.length||!mapping.client||!payload.summary)return json(response,400,{error:'Importação inválida ou sem linhas para validação no servidor.'})
   const clients=buildCommercialIntelligence(rows,mapping);const learned=summarizeLearning(clients,rows.length,clean(payload.summary.fileName)||'importação comercial');const summary={...learned,id:randomUUID(),rawRowCount:rows.length,rawRowsSent:rows.length,truncated:Boolean(payload.summary.truncated)}
   const persistence=await repository.ingestCommercialImport({tenantId:config.defaultTenantId,ownerId:identity?.id,summary,clients,rows,mapping})
-  if(!database.configured){const store=readStore();store.imports.push({...summary,clients:clients.slice(0,500)});store.imports=store.imports.slice(-20);saveStore(store)}
+  if(!database.configured){const store=readStore();store.imports.push({...summary,tenantId:config.defaultTenantId,ownerId:identity?.id,clients:clients.slice(0,500)});store.imports=store.imports.slice(-20);saveStore(store)}
   await accessRepository.recordUsage(identity,{eventType:'commercial_import',page:'datahub',metadata:{clientCount:clients.length,rowCount:rows.length}});return json(response,201,{saved:true,clientCount:clients.length,database:persistence.persisted,clients,summary})
  }
  if(url.pathname==='/api/import/google-sheet'&&request.method==='POST'){

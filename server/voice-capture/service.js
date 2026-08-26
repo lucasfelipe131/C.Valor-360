@@ -3,7 +3,7 @@ import {observe} from '../observability.js'
 import {buildCommitmentCandidate} from '../execution/commitment.js'
 import {resolveVisitDueDate} from '../visit-loop/report.js'
 import {buildVoiceCandidate,transitionVoiceInteraction,voiceCandidateCategories,voiceInteractionTypes} from './contracts.js'
-import {voiceCandidateTextSecurityReason} from './extraction.js'
+import {normalizeValSessionResponse,voiceCandidateTextSecurityReason} from './extraction.js'
 
 const text=(value,max=2_000)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,max)
 const list=value=>Array.isArray(value)?value:[]
@@ -56,6 +56,15 @@ function safeProviderMetadata(error,fallback={}){
  }
 }
 
+function refreshedSessionCandidate(candidate,statement){
+ const metadata=object(candidate?.metadata)?candidate.metadata:{}
+ if(metadata.registration_envelope!=='VAL_SESSION_REGISTER_V1')return {...candidate,statement}
+ const normalized=normalizeValSessionResponse(metadata.field,statement)
+ const {semantic_type:ignoredSemantic,targetPrice:ignoredTarget,priceUnit:ignoredUnit,decisionWindow:ignoredWindow,...baseMetadata}=metadata
+ const {category,semantic_type,...structured}=normalized
+ return {...candidate,category,epistemic_status:'FACT_CANDIDATE',statement,metadata:{...baseMetadata,semantic_type,...structured}}
+}
+
 function reviewedCandidates(interaction,input,actorId,now){
  if(input.items!==undefined&&!Array.isArray(input.items))throw voiceError('A revisão de informações deve ser uma lista.','invalid_voice_review')
  if(input.additions!==undefined&&!Array.isArray(input.additions))throw voiceError('As informações adicionadas devem ser uma lista.','invalid_voice_review')
@@ -70,7 +79,7 @@ function reviewedCandidates(interaction,input,actorId,now){
   decisions.set(id,{...item,decision})
  }
  if(decisions.size!==interaction.candidates.length)throw voiceError('Revise explicitamente todas as informações antes de confirmar.','voice_review_incomplete')
- const reviewed=interaction.candidates.map(candidate=>{const decision=decisions.get(String(candidate.candidate_id));const status=decision.decision;const statement=status==='REJECTED'?candidate.statement:text(decision.statement??candidate.statement,2_000);if(status==='CONFIRMED'&&!statement)throw voiceError('Uma informação confirmada não pode ficar vazia.','voice_review_statement_required');if(status==='CONFIRMED'&&voiceCandidateTextSecurityReason(statement))throw voiceError('A edição contém instrução, atributo sensível ou prescrição incompatível com o Voice Capture.','voice_review_unsafe_text');return {...candidate,statement,due_at:dueAt(decision.due_at??candidate.due_at,{anchor:now}),review_status:status,reviewed_by:actorId,reviewed_at:at}})
+ const reviewed=interaction.candidates.map(candidate=>{const decision=decisions.get(String(candidate.candidate_id));const status=decision.decision;const statement=status==='REJECTED'?candidate.statement:text(decision.statement??candidate.statement,2_000);if(status==='CONFIRMED'&&!statement)throw voiceError('Uma informação confirmada não pode ficar vazia.','voice_review_statement_required');if(status==='CONFIRMED'&&voiceCandidateTextSecurityReason(statement))throw voiceError('A edição contém instrução, atributo sensível ou prescrição incompatível com o Voice Capture.','voice_review_unsafe_text');const refreshed=status==='CONFIRMED'?refreshedSessionCandidate(candidate,statement):{...candidate,statement};return {...refreshed,due_at:dueAt(decision.due_at??candidate.due_at,{anchor:now}),review_status:status,reviewed_by:actorId,reviewed_at:at}})
  const usedIds=new Set(originalIds)
  for(const item of list(input.additions)){
   const category=String(item?.category||'').toUpperCase();if(!voiceCandidateCategories.includes(category))throw voiceError('Uma informação adicionada possui categoria inválida.','invalid_voice_candidate_category')
@@ -91,7 +100,11 @@ function memorySpec(candidate){
   VISIT_INTENT:{key:'voice.visit_intent',domain:'COMMERCIAL'},
   AGRONOMIC_STAGE:{key:'voice.agronomic_stage',domain:'AGRONOMIC'},
   AGRONOMIC_TIMING:{key:'voice.agronomic_timing',domain:'AGRONOMIC'},
-  COMMERCIAL_SIGNAL:{key:'voice.commercial_signal',domain:'COMMERCIAL'}
+  COMMERCIAL_SIGNAL:{key:'voice.commercial_signal',domain:'COMMERCIAL'},
+  MARKET_TARGET_PRICE:{key:'grain_decision.target_price',domain:'COMMERCIAL'},
+  MARKET_DECISION_WINDOW:{key:'grain_decision.decision_window',domain:'COMMERCIAL'},
+  MARKET_TARGET_PRICE_MISSING:{key:'grain_decision.missing_information',domain:'COMMERCIAL'},
+  MARKET_DECISION_WINDOW_MISSING:{key:'grain_decision.missing_information',domain:'COMMERCIAL'}
  }[semanticType]
  if(semantic)return semantic
  return {
@@ -117,10 +130,10 @@ function memoryEpistemology(candidate){
 
 function memoryWrites(interaction,candidates,actorId,now){
  const at=nowIso(now);const sourceRef=`voice-interaction:${interaction.voice_interaction_id}`
- return candidates.map(candidate=>{const spec=memorySpec(candidate);const epistemology=memoryEpistemology(candidate);return {
+ return candidates.map(candidate=>{const spec=memorySpec(candidate);const epistemology=memoryEpistemology(candidate);const metadata=candidate?.metadata||{};return {
   id:randomUUID(),organization_id:interaction.organization_id,client_id:interaction.client_id,subject_type:interaction.visit_id?'visit':'client',subject_id:interaction.visit_id||interaction.client_id,
   memory_type:epistemology.type,memory_state:epistemology.state,memory_domain:spec.domain,key:spec.key,
-  value:{statement:candidate.statement,category:candidate.category,semantic_type:candidate?.metadata?.semantic_type||undefined,claim_status:candidate.category==='AGRONOMIC_OBSERVATION'?'REPORTED_OBSERVATION':undefined,requires_technical_review:candidate.category==='AGRONOMIC_OBSERVATION'||undefined,profile_certainty:candidate.category==='BEHAVIORAL_SIGNAL'?false:undefined,due_at:candidate.due_at||undefined},
+  value:{statement:candidate.statement,category:candidate.category,semantic_type:metadata.semantic_type||undefined,field:metadata.field||undefined,objective:metadata.objective||undefined,intent:metadata.intent||undefined,commodity:metadata.commodity||undefined,season:metadata.season||undefined,targetPrice:metadata.semantic_type==='MARKET_TARGET_PRICE'?metadata.targetPrice:undefined,priceUnit:metadata.semantic_type==='MARKET_TARGET_PRICE'?metadata.priceUnit:undefined,decisionWindow:metadata.semantic_type==='MARKET_DECISION_WINDOW'?metadata.decisionWindow:undefined,claim_status:candidate.category==='AGRONOMIC_OBSERVATION'?'REPORTED_OBSERVATION':undefined,requires_technical_review:candidate.category==='AGRONOMIC_OBSERVATION'||undefined,profile_certainty:candidate.category==='BEHAVIORAL_SIGNAL'?false:undefined,due_at:candidate.due_at||undefined},
   evidence:[{id:candidate.candidate_id,source_ref:sourceRef,confirmation_status:'CONFIRMED'}],confidence:Math.round(confidence(candidate.confidence)*100),status:epistemology.status,source:'confirmed_voice_interaction',source_ref:sourceRef,source_type:'confirmed_voice_interaction',observed_at:at,source_updated_at:at,freshness_policy_version:'val.context.freshness.v1',freshness_metadata:{domain:spec.domain,source_type:'confirmed_voice_interaction',voice_interaction_type:interaction.interaction_type,epistemic_status:candidate.epistemic_status},valid_from:at,valid_until:null,created_by:actorId,acl:{scope:'own_portfolio'}
  }} )
 }

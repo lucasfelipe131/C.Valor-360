@@ -109,7 +109,77 @@ function securitySummary(counts){
   return Object.entries(counts).filter(([,count])=>count>0).map(([code,count])=>({code,count}))
 }
 
+function marketPrice(value=''){
+  const source=normalized(value)
+  if(/\b(?:nao\s+sei|nao\s+informad[oa]|a\s+confirmar|desconhecid[oa])\b/.test(source))return null
+  const amount=source.match(/(?:r\$\s*)?(\d+(?:[.,]\d+)?)/)
+  const priceUnit=/\b(?:por\s+saca|saca(?:\s+de\s+60\s*kg)?|sc(?:\s*60\s*kg)?|brl\s*\/\s*sc|r\$\s*\/\s*sc|\/\s*(?:saca|sc))\b/.test(source)
+    ?'BRL/sc_60kg'
+    :/\b(?:por\s+tonelada|tonelada|brl\s*\/\s*t|r\$\s*\/\s*t|\/\s*t)\b/.test(source)
+      ?'BRL/t'
+      :''
+  const targetPrice=amount?Number(amount[1].replace(',','.')):NaN
+  return Number.isFinite(targetPrice)&&targetPrice>0&&priceUnit?{targetPrice,priceUnit}:null
+}
+
+function decisionWindow(value=''){
+  const answer=text(value,500);const source=normalized(answer)
+  if(!answer||/^(?:nao\s+sei|nao\s+informad[oa]|a\s+confirmar|desconhecid[oa]|sem\s+informacao)[.!]?$/.test(source))return ''
+  return /\b(?:hoje|amanha|esta\s+semana|proxima\s+semana|em\s+\d+\s+dias?|ate\s+\d+\s+dias?|janeiro|fevereiro|marco|abril|maio|junho|julho|agosto|setembro|outubro|novembro|dezembro|20\d{2}[-\/]\d{1,2}(?:[-\/]\d{1,2})?|\d{1,2}[\/-]\d{1,2}(?:[\/-]20\d{2})?)\b/.test(source)?answer:''
+}
+
+export function normalizeValSessionResponse(field='',answer=''){
+  const normalizedField=normalized(field).replace(/[^a-z0-9_-]/g,'_')
+  if(normalizedField==='target_price'){
+    const price=marketPrice(answer)
+    return price?{category:'FACT_CANDIDATE',semantic_type:'MARKET_TARGET_PRICE',...price}:{category:'MISSING_INFORMATION',semantic_type:'MARKET_TARGET_PRICE_MISSING'}
+  }
+  if(normalizedField==='decision_window'){
+    const window=decisionWindow(answer)
+    return window?{category:'FACT_CANDIDATE',semantic_type:'MARKET_DECISION_WINDOW',decisionWindow:window}:{category:'MISSING_INFORMATION',semantic_type:'MARKET_DECISION_WINDOW_MISSING'}
+  }
+  return {category:'FACT_CANDIDATE',semantic_type:'SESSION_MATERIAL_RESPONSE'}
+}
+
+export function parseValSessionRegister(transcript=''){
+  const raw=String(transcript||'')
+  if(!/^\s*VAL_SESSION_REGISTER_V1\b/.test(raw))return null
+  const objective=text(raw.match(/\bObjetivo:\s*([\s\S]*?)\s+Inten[cç][aã]o:/i)?.[1]?.replace(/\.\s*$/,''),1_200)
+  const intent=text(raw.match(/\bInten[cç][aã]o:\s*([\s\S]*?)\s+Commodity:/i)?.[1]?.replace(/\.\s*$/,''),80).toUpperCase()
+  const commodity=normalized(raw.match(/\bCommodity:\s*([\s\S]*?)\s+Safra:/i)?.[1]?.replace(/\.\s*$/,'')).match(/\b(?:soja|milho|trigo|sorgo|feijao|arroz|cevada)\b/)?.[0]||''
+  const seasonMatch=text(raw.match(/\bSafra:\s*(20\d{2})\s*[\/_-]\s*((?:20)?\d{2})\b/i)?.[0],80).match(/(20\d{2}).*?((?:20)?\d{2})\s*$/)
+  const season=seasonMatch?`${seasonMatch[1]}/${seasonMatch[2].slice(-2)}`:''
+  const responses=[...raw.matchAll(/Resposta\s+\d+\s*\[([^\]]+)\]\s*:\s*([\s\S]*?)(?=\s+Resposta\s+\d+\s*\[|\s+FIM_VAL_SESSION_REGISTER_V1|$)/gi)].map(match=>({field:normalized(match[1]).replace(/[^a-z0-9_-]/g,'_'),answer:text(match[2].replace(/\.\s*$/,''),2_000)})).filter(item=>item.answer)
+  return {version:'VAL_SESSION_REGISTER_V1',objective,intent,commodity,season,responses}
+}
+
+function structuredSessionExtraction({transcript,voiceInteractionId,transcriptRef,now}={}){
+  const envelope=parseValSessionRegister(transcript)
+  if(!envelope)return null
+  const blocked={PROMPT_INJECTION_IGNORED:0,PROTECTED_ATTRIBUTE_IGNORED:0,AGRONOMIC_PRESCRIPTION_IGNORED:0}
+  const candidates=[]
+  for(const response of envelope.responses){
+    const reason=voiceCandidateTextSecurityReason(response.answer)
+    if(reason){blocked[reason]++;continue}
+    const normalizedResponse=normalizeValSessionResponse(response.field,response.answer)
+    const {category,semantic_type:semanticType,...structuredMetadata}=normalizedResponse
+    const metadata={
+      extraction:'deterministic_session_register',untrusted_source:true,registration_envelope:envelope.version,
+      semantic_type:semanticType,field:response.field,objective:envelope.objective,intent:envelope.intent,
+      commodity:envelope.commodity||undefined,season:envelope.season||undefined,...structuredMetadata
+    }
+    candidates.push(buildVoiceCandidate({
+      voiceInteractionId,category,epistemicStatus:'FACT_CANDIDATE',statement:response.answer,
+      evidenceExcerpt:response.answer,sourceRef:transcriptRef,confidence:.9,metadata,now
+    }))
+    if(candidates.length>=MAX_CANDIDATES)break
+  }
+  return {candidates,security_flags:securitySummary(blocked),session_register:envelope}
+}
+
 export function deterministicVoiceCandidateExtraction({transcript,voiceInteractionId,transcriptRef,interactionType,now}={}){
+  const structured=structuredSessionExtraction({transcript,voiceInteractionId,transcriptRef,now})
+  if(structured)return structured
   const candidates=[]
   const seen=new Set()
   const blocked={PROMPT_INJECTION_IGNORED:0,PROTECTED_ATTRIBUTE_IGNORED:0,AGRONOMIC_PRESCRIPTION_IGNORED:0}
@@ -209,6 +279,11 @@ export class VoiceCandidateExtractor{
     const transcriptRef=text(input.transcriptRef??input.transcript_ref,240)||`voice-transcript:${voiceInteractionId}`
     if(!transcript)throw Object.assign(new Error('A transcrição está vazia.'),{code:'empty_transcript',statusCode:422})
     if(!voiceInteractionId)throw Object.assign(new Error('A interação de voz é obrigatória.'),{code:'voice_interaction_required',statusCode:422})
+    const structured=structuredSessionExtraction({transcript,voiceInteractionId,transcriptRef,now:input.now})
+    if(structured){
+      const metadata={provider:'deterministic',model:'session-register-v1',version:this.version,status:'deterministic',security_flags:structured.security_flags}
+      return {...structured,metadata,extraction_metadata:metadata}
+    }
     if(!this.client?.responses?.create){
       const fallback=deterministicVoiceCandidateExtraction({transcript,voiceInteractionId,transcriptRef,interactionType:input.interactionType??input.interaction_type,now:input.now})
       const metadata={provider:'deterministic',model:'rules-v1',version:this.version,status:'deterministic',security_flags:fallback.security_flags}

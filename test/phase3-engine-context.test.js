@@ -17,5 +17,7 @@ test('toda recomendação da ValEngine aponta ao snapshot autorizado persistido'
   assert.equal(store.val.recommendations[0].contextSnapshotId,answer.contextSnapshotId)
   assert.equal(store.val.recommendations[0].context.contextSnapshot.context_snapshot_id,answer.contextSnapshotId)
   assert.equal(store.val.recommendations[0].context.contextSnapshot.organization_id,'tenant-a')
-  assert.deepEqual(store.val.recommendations[0].context.contextSnapshot.selection.selected_refs,[store.val.technicalContexts['client-a'].id])
+  const [scopedTechnicalContext]=Object.values(store.val.technicalContexts)
+  assert.equal(scopedTechnicalContext.ownerId,'actor-a')
+  assert.deepEqual(store.val.recommendations[0].context.contextSnapshot.selection.selected_refs,[scopedTechnicalContext.id])
 })

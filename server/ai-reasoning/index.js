@@ -3,11 +3,14 @@ import {assertAIReasoningResult,aiReasoningResultVersion} from './contracts.js'
 import {routeValIntent} from './intent-router.js'
 import {ComposedAdviceReasoningProvider} from './provider.js'
 import {evaluateValResponseQuality,questionSimilarity} from './quality.js'
+import {buildDecisionInterview,buildReasoningConfidence,decisionInterviewVersion,reasoningConfidenceVersion} from './decision-interview.js'
+import {routeSystemCapability} from '../decision-copilot/capability-router.js'
 
 export {aiReasoningResultVersion,goldenQuestionQualityVersion,valResponseQualityVersion} from './contracts.js'
 export {routeValIntent,valIntents,valIntentRouterVersion} from './intent-router.js'
 export {evaluateGoldenQuestions,evaluateValResponseQuality,questionSimilarity,runContextRemovalTest,runNameSwapTest} from './quality.js'
 export {ComposedAdviceReasoningProvider,ReasoningProvider,reasoningProviderVersion} from './provider.js'
+export {buildDecisionInterview,buildReasoningConfidence,decisionInterviewVersion,reasoningConfidenceVersion} from './decision-interview.js'
 
 const list=value=>Array.isArray(value)?value:[]
 const clean=(value,max=2000)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,max)
@@ -57,6 +60,53 @@ function memoryRefs(context={}){
  return [...list(context.contextSnapshot?.facts),...list(context.contextSnapshot?.inferences),...list(context.contextSnapshot?.hypotheses),...list(context.contextSnapshot?.validated_knowledge)].map(item=>({id:idOf(item),key:clean(item.key,180),state:clean(item.memory_state||item.epistemic_state,80),source_ref:clean(item.source_ref,240)})).filter(item=>item.id).slice(0,16)
 }
 
+function confirmedMemoryRefs(context={}){
+ return [...list(context.contextSnapshot?.facts),...list(context.contextSnapshot?.validated_knowledge)]
+  .filter(item=>!/^(?:HYPOTHESIS|INFERENCE|PROPOSED)$/i.test(String(item?.memory_state||item?.epistemic_state||item?.status||'')))
+  .map(item=>({id:idOf(item),key:clean(item.key,180),state:clean(item.memory_state||item.epistemic_state||'CONFIRMED',80),source_ref:clean(item.source_ref,240)}))
+  .filter(item=>item.id)
+  .slice(0,16)
+}
+
+const successfulCapabilityStatus=value=>/^(?:EXECUTED|SUCCESS|COMPLETED|USED)$/.test(String(value||'').toUpperCase())
+
+function capabilityExecutionAudit({route={},run={},context={},advice={},facts=[],knowledge=[],confirmed=[]}={}){
+ const explicitResults=list(run.capabilityResults||run.capability_results).map(item=>({
+  ...item,capability:clean(item?.capability||item?.name||item?.id,120),status:clean(item?.status,80).toUpperCase()||'NO_DATA',source_ref:clean(item?.source_ref||item?.sourceRef,240)||null
+ })).filter(item=>item.capability)
+ const explicitUsed=unique(run.capabilitiesUsed||run.capabilities_used||[])
+ if(explicitResults.length||explicitUsed.length){
+  const results=[...explicitResults]
+  for(const capability of explicitUsed)if(!results.some(item=>item.capability===capability))results.push({capability,status:'EXECUTED',source_ref:null})
+  const used=unique(results.filter(item=>successfulCapabilityStatus(item.status)).map(item=>item.capability))
+  return {used,results}
+ }
+
+ const client=context.client||{}
+ const factBy=pattern=>facts.find(item=>pattern.test(String(item?.source_type||'')))
+ const firstId=items=>idOf(first(items))
+ const sources={
+  CLIENT_CONTEXT:clean(client.id,180)||null,
+  CONFIRMED_MEMORY:idOf(first(confirmed))||null,
+  COMMERCIAL_HISTORY:idOf(factBy(/business|commercial|interaction|visit|opportunity/i))||firstId([...list(context.businessHistory),...list(context.interactions)])||null,
+  VISIT_HISTORY:idOf(factBy(/visit/i))||firstId(context.visits)||null,
+  OPPORTUNITY_PIPELINE:idOf(factBy(/opportunity/i))||firstId(context.opportunities)||null,
+  KNOWLEDGE_LIBRARY:clean(first(knowledge)?.id,180)||null,
+  AGRONOMIC_WORKSPACE:firstId([...list(context.fieldReports),...list(context.soilAnalyses),...list(context.ndviObservations),...list(context.manualRecords)])||idOf(factBy(/field|soil|ndvi|agronom|manual/i))||null,
+  SOIL_ANALYSIS:firstId(context.soilAnalyses)||idOf(factBy(/soil/i))||null,
+  AGRONOMIST_MANUAL:firstId(context.manualRecords)||idOf(factBy(/manual/i))||null,
+  IMAGE_DIAGNOSIS:firstId(list(context.currentAttachments).filter(item=>String(item?.mimeType||item?.mime_type||'').startsWith('image/')&&['interpreted','confirmed'].includes(String(item?.status||'').toLowerCase())))||null
+ }
+ const results=unique(route.capabilities||[]).map(capability=>({capability,status:sources[capability]?'EXECUTED':'NO_DATA',source_ref:sources[capability]||null}))
+ return {used:results.filter(item=>item.status==='EXECUTED').map(item=>item.capability),results}
+}
+
+function latencyBreakdown(run={}){
+ const source=run.latency&&typeof run.latency==='object'?run.latency:{}
+ const measured=key=>Object.hasOwn(source,key)&&Number.isFinite(Number(source[key]))?Number(source[key]):null
+ return Object.fromEntries(['AUTH','CONTEXT_RETRIEVAL','MEMORY','DATABASE','MCA','MIA','EXTERNAL_DATA','MODEL_INPUT','MODEL_INFERENCE','VALIDATION','RESPONSE'].map(key=>[key,measured(key)]))
+}
+
 function confidence(advice={},context={}){
  const thesis=advice.decision_thesis||{}
  const numeric=Number(thesis.confidence)
@@ -78,7 +128,11 @@ function buildResult({advice={},context={},message='',run={},conversationId='',i
  const client=context.client||{}
  const facts=factsUsed(advice,context)
  const intent=routeValIntent({message,intentHint,hasClient:Boolean(client.id),attachmentTypes:list(context.currentAttachments).map(item=>item.mimeType||item.mime_type)})
+ const capabilityRoute=routeSystemCapability({message,intentHint:intent.intent,hasClient:Boolean(client.id),attachmentTypes:list(context.currentAttachments).map(item=>item.mimeType||item.mime_type)})
  const missing=unique([...list(thesis.missing_information),...list(advice.executive_brief?.missing_data),...list(advice.confidence?.missing_data),...list(snapshot.missing_information).map(item=>item?.description||item?.code)]).slice(0,12)
+ const selectedKnowledge=knowledgeRefs(advice)
+ const selectedConfirmedMemories=confirmedMemoryRefs(context)
+ const capabilityAudit=capabilityExecutionAudit({route:capabilityRoute,run,context,advice,facts,knowledge:selectedKnowledge,confirmed:selectedConfirmedMemories})
  const result={
   contract_version:aiReasoningResultVersion,
   reasoning_id:randomUUID(),
@@ -111,14 +165,17 @@ function buildResult({advice={},context={},message='',run={},conversationId='',i
   next_commitment:nextCommitment(advice)||'Confirmar o próximo passo com responsável, prazo e evidência.',
   risks:unique([...list(thesis.risks),...list(advice.blocked_actions),...list(advice.guardrails)]).slice(0,12),
   confidence:confidence(advice,context),
-  knowledge_refs:knowledgeRefs(advice),
+  knowledge_refs:selectedKnowledge,
   memory_refs:memoryRefs(context),
   created_at:new Date().toISOString(),
   model:clean(run.model||provider.model||'rules-v7-specific',180),
   prompt_version:clean(run.promptVersion||run.prompt_version||'val-ai-copilot-v2',180),
-  run:{provider:clean(provider.name||'val-composed-advice',120),model:clean(run.model||provider.model||'rules-v7-specific',180),prompt_version:clean(run.promptVersion||run.prompt_version||'val-ai-copilot-v2',180),context_hash:digest({snapshot:snapshot.context_snapshot_id,message,client:client.id}),latency_ms:Number(run.latencyMs??run.latency_ms??0)||0,status:clean(run.status||'completed',80),fallback:Boolean(run.generativeUsed===false||/fallback|rules|demonstration/i.test(String(run.status||run.model||'')))},
-  premises:{recomputed_for_request:true,source:'confirmed_context_snapshot',profile_specific:true,conversation_is_not_confirmed_memory:true}
+  run:{provider:clean(provider.name||'val-composed-advice',120),model:clean(run.model||provider.model||'rules-v7-specific',180),prompt_version:clean(run.promptVersion||run.prompt_version||'val-ai-copilot-v2',180),context_hash:digest({snapshot:snapshot.context_snapshot_id,message,client:client.id,conversation:conversationId}),latency_ms:Number(run.latencyMs??run.latency_ms??0)||0,status:clean(run.status||'completed',80),fallback:Boolean(run.generativeUsed===false||/fallback|rules|demonstration/i.test(String(run.status||run.model||''))),path:clean(run.reasoningPath||run.reasoning_path||capabilityRoute.path,20),capabilities_planned:capabilityRoute.capabilities,capabilities_used:capabilityAudit.used,capability_results:capabilityAudit.results,latency_breakdown:latencyBreakdown(run)},
+  premises:{recomputed_for_request:true,source:'confirmed_context_snapshot_plus_session',profile_specific:true,conversation_is_not_confirmed_memory:true,confirmed_memory_refs:selectedConfirmedMemories,session_context:{conversation_id:clean(conversationId||context.conversationSession?.id||'stateless',180),persistence_mode:'NONE',turns:list(context.priorRecommendations).slice(0,8).map(item=>({text:clean(item?.user_question||item?.userQuestion||item?.question,1000),created_at:item?.created_at||item?.createdAt||null})).filter(item=>item.text)},current_data:{required:capabilityRoute.current_data_required,status:capabilityRoute.current_data_required?'SOURCE_REQUIRED':'NOT_REQUIRED'}},
+  voice_output:{version:'val.voice_output.v1',speakable_text:clean(advice.answer||strategic.non_obvious_connection||advice.executive_brief?.action,3800),persistence:'NONE',automatic_memory_effect:false}
  }
+ result.reasoning_confidence=buildReasoningConfidence({context,result})
+ result.decision_interview=buildDecisionInterview({intent:intent.intent,message,context,result})
  return assertAIReasoningResult(result)
 }
 
@@ -165,6 +222,10 @@ export function composeAIReasoning({advice={},context={},message='',run={},conve
  if(!quality.passed&&!safetyPreserved)result=insufficientResult(result)
  quality={...quality,regeneration_count:regenerationCount,status:quality.passed?'PASSED':safetyPreserved?'SAFETY_PRESERVED':'REASONING_DEGRADED'}
  result.quality=quality
+ result.reasoning_confidence=buildReasoningConfidence({context,result})
+ result.decision_interview=buildDecisionInterview({intent:result.intent,message,context,result})
+ const spokenQuestions=list(result.decision_interview?.questions).map((item,index)=>`Pergunta ${index+1}: ${clean(item?.question,500)}`).filter(Boolean)
+ result.voice_output={version:'val.voice_output.v1',speakable_text:clean([result.recommended_strategy?.reading,result.recommended_strategy?.action,spokenQuestions.length?'Para melhorar esta leitura: '+spokenQuestions.join(' '):''].filter(Boolean).join(' '),3800),persistence:'NONE',automatic_memory_effect:false}
  return {result,quality,intent:routeValIntent({message,intentHint,hasClient:Boolean(context.client?.id),attachmentTypes:list(context.currentAttachments).map(item=>item.mimeType||item.mime_type)})}
 }
 

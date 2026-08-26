@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { ensureRecordsSchema, hasDatabase } from "../../lib/db";
 import { sessionFromRequest } from "../../lib/access";
-import { publishManualRecordToValor } from "../../lib/valor360";
+import { publishManualRecordToValor, valor360Configured } from "../../lib/valor360";
+import { authenticatedValor360OwnerForWorkspace } from "../../lib/valor360-workspace-owner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -100,6 +101,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Sessão expirada." }, { status: 401 });
   }
   const workspace = workspaceId(request, session.user);
+  const valor360OwnerId = authenticatedValor360OwnerForWorkspace(session, workspace);
   try {
     const body = (await request.json()) as {
       id?: string;
@@ -147,21 +149,45 @@ export async function POST(request: NextRequest) {
       );
     }
     const record = result.rows[0];
-    const integration = await publishManualRecordToValor(
-      record,
-      session.valor360OwnerId ?? session.user.id,
-      request.headers.get("x-request-id") ?? "",
-    );
+    const integration = valor360OwnerId
+      ? await publishManualRecordToValor(
+          record,
+          valor360OwnerId,
+          request.headers.get("x-request-id") ?? "",
+        )
+      : [{
+          ok: false,
+          skipped: true,
+          eventType: "workspace.owner_validation",
+          externalId: record.id,
+          status: 403,
+          error: "valor360_workspace_owner_not_authenticated",
+        }];
+    const integrationSummary = {
+      configured: valor360Configured(),
+      delivered: integration.filter((item) => item.ok).length,
+      failed: integration.filter((item) => !item.ok && !item.skipped).length,
+      skipped: integration.filter((item) => item.skipped).length,
+      blockedCode: valor360OwnerId ? null : "valor360_workspace_owner_not_authenticated",
+      errors: integration
+        .filter((item) => !item.ok && !item.skipped)
+        .slice(0, 5)
+        .map((item) => ({
+          eventType: item.eventType,
+          externalId: item.externalId,
+          status: item.status ?? null,
+          error: item.error ?? "Falha de integração não detalhada.",
+        })),
+    };
+    const integrationNeedsAttention = !integrationSummary.configured ||
+      integrationSummary.failed > 0 ||
+      integrationSummary.skipped > 0;
     return withWorkspaceCookie(
       NextResponse.json({
         record,
         storage: "postgresql",
-        integration: {
-          configured: !integration.every((item) => item.skipped),
-          delivered: integration.filter((item) => item.ok).length,
-          failed: integration.filter((item) => !item.ok && !item.skipped).length,
-        },
-      }),
+        integration: integrationSummary,
+      }, { status: integrationNeedsAttention ? 207 : 200 }),
       request,
       workspace,
     );

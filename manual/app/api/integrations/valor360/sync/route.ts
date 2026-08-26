@@ -6,6 +6,7 @@ import {
   publishWorkspaceToValor,
   valor360Configured,
 } from "../../../../lib/valor360";
+import { authenticatedValor360OwnerForWorkspace } from "../../../../lib/valor360-workspace-owner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -23,6 +24,17 @@ export async function POST(request: NextRequest) {
       { status: 403 },
     );
   }
+  const workspace = workspaceId(request, session.user.id);
+  const valor360OwnerId = authenticatedValor360OwnerForWorkspace(session, workspace);
+  if (!valor360OwnerId) {
+    return NextResponse.json(
+      {
+        error: "Entre no workspace do titular antes de sincronizar o histórico com o VALOR 360.",
+        code: "valor360_workspace_owner_not_authenticated",
+      },
+      { status: 403 },
+    );
+  }
   if (!valor360Configured()) {
     return NextResponse.json(
       { error: "A integração com o VALOR 360 ainda não foi configurada." },
@@ -32,7 +44,6 @@ export async function POST(request: NextRequest) {
 
   try {
     const pool = await ensureRecordsSchema();
-    const workspace = workspaceId(request, session.user.id);
     const records = await pool.query(
       `SELECT id, record_type AS type, title,
               producer_name AS "producerName", payload,
@@ -67,7 +78,7 @@ export async function POST(request: NextRequest) {
     const workspaceResult = await publishWorkspaceToValor(
       producers,
       soilAnalyses,
-      session.valor360OwnerId ?? session.user.id,
+      valor360OwnerId,
       request.headers.get("x-request-id") ?? "",
     );
     const recordResults = [];
@@ -77,24 +88,42 @@ export async function POST(request: NextRequest) {
       const results = await Promise.all(
         batch.map((record) => publishManualRecordToValor(
           record,
-          session.valor360OwnerId ?? session.user.id,
+          valor360OwnerId,
           request.headers.get("x-request-id") ?? "",
         )),
       );
       recordResults.push(...results.flat());
     }
 
+    const recordSummary = {
+      attempted: recordResults.length,
+      delivered: recordResults.filter((item) => item.ok).length,
+      failed: recordResults.filter((item) => !item.ok && !item.skipped).length,
+      skipped: recordResults.filter((item) => item.skipped).length,
+      truncated: records.rows.length >= 1000,
+      errors: recordResults
+        .filter((item) => !item.ok && !item.skipped)
+        .slice(0, 5)
+        .map((item) => ({
+          eventType: item.eventType,
+          externalId: item.externalId,
+          status: item.status ?? null,
+          error: item.error ?? "Falha de integração não detalhada.",
+        })),
+    };
+    const partial = !workspaceResult.configured ||
+      workspaceResult.failed > 0 ||
+      workspaceResult.skipped > 0 ||
+      workspaceResult.truncated ||
+      recordSummary.failed > 0 ||
+      recordSummary.skipped > 0 ||
+      recordSummary.truncated;
     return NextResponse.json({
-      synchronized: true,
+      synchronized: !partial,
+      partial,
       workspace: workspaceResult,
-      records: {
-        attempted: recordResults.length,
-        delivered: recordResults.filter((item) => item.ok).length,
-        failed: recordResults.filter((item) => !item.ok && !item.skipped).length,
-        skipped: recordResults.filter((item) => item.skipped).length,
-        truncated: records.rows.length >= 1000,
-      },
-    });
+      records: recordSummary,
+    }, { status: partial ? 207 : 200 });
   } catch (error) {
     console.error("valor360:sync", error);
     return NextResponse.json(

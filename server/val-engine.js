@@ -66,6 +66,14 @@ const imageMimeTypes=new Set(['image/jpeg','image/png','image/webp','image/gif']
 const imageAttachment=item=>imageMimeTypes.has(String(item?.mimeType||'').toLowerCase())
 const observationText=value=>String(value||'').replace(/\s+/g,' ').trim().slice(0,1200)
 
+export async function applyRecommendationFinalizer(draft,finalizeRecommendation){
+  if(typeof finalizeRecommendation!=='function')return {recommendation:draft,finalized:false}
+  const transformed=await finalizeRecommendation(structuredClone(draft))
+  if(transformed===undefined||transformed===null)return {recommendation:draft,finalized:false}
+  if(!transformed||typeof transformed!=='object'||!transformed.advice||typeof transformed.advice!=='object')throw Object.assign(new Error('A finalização da recomendação não produziu um contrato válido.'),{statusCode:500,code:'val_recommendation_finalization_invalid'})
+  return {recommendation:{...draft,...transformed,recommendationId:null},finalized:true}
+}
+
 function persistedFieldPhotoMetadata(attachment){
   const fieldPhoto=attachment?.analysis?.fieldPhoto
   if(!fieldPhoto||typeof fieldPhoto!=='object')return null
@@ -536,7 +544,7 @@ export class ValEngine{
 
   async status(dbHealth){return {configured:Boolean(this.client),mode:this.client?'openai':'demonstration',database:dbHealth,models:{daily:this.config.modelDaily,strategic:this.config.modelStrategic,fast:this.config.modelFast},knowledgeBase:Boolean(this.config.knowledgeVectorStoreId),storeResponses:this.config.openaiStoreResponses}}
 
-  async answer({tenantId,ownerId,clientId,client,message,attachmentIds=[],mode='daily',requestedStage=null,signal,contextRequest={}}){
+  async answer({tenantId,ownerId,clientId,client,message,attachmentIds=[],mode='daily',requestedStage=null,signal,contextRequest={},finalizeRecommendation}){
     const context=await this.repository.getClientContext({tenantId,ownerId,clientId,client,contextRequest:{...contextRequest,message}})
     observe('engine.context.ready',{contextSnapshotId:context.contextSnapshot?.context_snapshot_id,contractVersion:context.contextSnapshot?.contract_version||contextSnapshotVersion,confidence:context.contextSnapshot?.confidence?.level,outcome:'ok'})
     const selectedWorkingStage=normalizeValMethodStage(requestedStage)
@@ -619,7 +627,12 @@ export class ValEngine{
       }
     }
     const modelRun={model:this.client?route.model:'rules-v4',promptVersion:`${VAL_INSTRUCTIONS_VERSION}:${instructionBlocks.tier}`,promptPrefixHash,instructionTier:instructionBlocks.tier,status:engineMode==='openai'?'completed':this.client?'fallback':'demonstration',retryPolicy:this.openaiRetryPolicy,...responseMetadata,routing:routeAudit,technicalSafety:technicalSafetyAudit}
-    const recommendationId=await this.repository.recordRecommendation({tenantId,ownerId,clientId,question:message,mode:route.tier,model:engineMode==='openai'?route.model:'rules-v4',context,advice,responseMetadata,promptHash:createHash('sha256').update(instructions).digest('hex'),modelRun})
-    return {recommendationId,contextSnapshotId:context.contextSnapshot?.context_snapshot_id||null,contextSnapshotVersion:context.contextSnapshot?.contract_version||null,engineMode,route:route.tier,model:engineMode==='openai'?route.model:'rules-v4',warning,contextCoverage,knowledge_retrieval:{status:knowledgeRetrieval.status,items:compactKnowledgeRefs(knowledgeRetrieval)},attachments:interpretedAttachments,technicalSafety:technicalSafetyAudit,advice}
+    const draft={recommendationId:null,contextSnapshotId:context.contextSnapshot?.context_snapshot_id||null,contextSnapshotVersion:context.contextSnapshot?.contract_version||null,engineMode,route:route.tier,model:engineMode==='openai'?route.model:'rules-v4',warning,contextCoverage,knowledge_retrieval:{status:knowledgeRetrieval.status,items:compactKnowledgeRefs(knowledgeRetrieval)},attachments:interpretedAttachments,technicalSafety:technicalSafetyAudit,responseMetadata,advice}
+    const finalizedResult=await applyRecommendationFinalizer(draft,finalizeRecommendation)
+    const finalized=finalizedResult.recommendation
+    const persistedResponseMetadata={...(finalized.responseMetadata||{}),...(finalizedResult.finalized?{prePersistFinalized:true}:{})}
+    const persistedModelRun={...modelRun,...(finalizedResult.finalized?{prePersistFinalization:{status:'completed',engineArchitecture:String(finalized.engineArchitecture||'custom').slice(0,120)}}:{})}
+    const recommendationId=await this.repository.recordRecommendation({tenantId,ownerId,clientId,question:message,mode:route.tier,model:finalized.model||draft.model,context,advice:finalized.advice,responseMetadata:persistedResponseMetadata,promptHash:createHash('sha256').update(instructions).digest('hex'),modelRun:persistedModelRun})
+    return {...finalized,recommendationId,responseMetadata:persistedResponseMetadata}
   }
 }

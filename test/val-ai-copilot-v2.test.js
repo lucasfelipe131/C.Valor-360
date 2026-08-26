@@ -47,6 +47,21 @@ test('AIReasoningResult v1 materializa o contrato completo no mesmo pipeline',()
  assert.deepEqual(Object.keys(quality.dimensions),['specificity','context_usage','history_usage','question_quality','decision_relevance','agronomic_relevance','commercial_relevance','knowledge_usage','actionability','clarity','non_generic_language','confidence_calibration'])
 })
 
+test('AIReasoningResult DEEP audita somente contexto, conhecimento e manual realmente usados',()=>{
+ const {context,advice}=fixture({})
+ context.fieldReports=[{id:'field-report-a',summary:'Observação do talhão.'}]
+ context.manualRecords=[{id:'manual-record-a',summary:'Registro confirmado do manual.'}]
+ advice.knowledge_retrieval={items:[{knowledge_item_id:'knowledge-a',title:'Referência selecionada',source_refs:['library:knowledge-a'],status:'APPLICABLE'}]}
+ const {result}=composeAIReasoning({advice,context,message:'Analise o manejo agronômico desta conta.',intentHint:'ASK_AGRONOMIC',run:{latency:{MIA:0}}})
+ assert.deepEqual(result.run.capabilities_planned,['AGRONOMIC_WORKSPACE','AGRONOMIST_MANUAL','KNOWLEDGE_LIBRARY'])
+ assert.deepEqual(result.run.capabilities_used,['AGRONOMIC_WORKSPACE','AGRONOMIST_MANUAL','KNOWLEDGE_LIBRARY'])
+ assert.deepEqual(result.run.capability_results.map(item=>[item.capability,item.status]),[
+  ['AGRONOMIC_WORKSPACE','EXECUTED'],['AGRONOMIST_MANUAL','EXECUTED'],['KNOWLEDGE_LIBRARY','EXECUTED']
+ ])
+ assert.equal(result.run.latency_breakdown.MIA,0)
+ assert.equal(result.run.latency_breakdown.DATABASE,null)
+})
+
 test('Perguntas de Ouro avaliam cinco dimensões e reprovam repetição semântica',()=>{
  const shared={reason:'Muda o próximo passo.',unknown:'Critério de decisão.',decision_impact:'Define se a oportunidade avança.',context_refs:['interaction-1']}
  const quality=evaluateGoldenQuestions([
@@ -94,12 +109,14 @@ test('perfis de produtores materialmente diferentes geram premissas e teses dife
  assert.ok(results.every(item=>item.premises.profile_specific))
 })
 
-test('roteador cobre as 12 intenções e nunca promove ASK para memória',()=>{
- assert.equal(valIntents.length,12)
+test('roteador v3 cobre as 17 intenções, mantém aliases e nunca promove ASK para memória',()=>{
+ assert.equal(valIntents.length,17)
  const cases=[
-  ['ASK_GENERAL','Explique o que é margem.',false],['ASK_CLIENT','O que importa nesta conta?',true],['PREPARE_VISIT','Prepare a próxima visita.',true],['REGISTER_NOTE','Registrar nota.',true],['POST_VISIT','Registrar o pós-visita.',true],['AGRONOMIC_ANALYSIS','Analise o manejo agronômico.',true],['IMAGE_DIAGNOSIS','Analise esta foto.',true],['SOIL_INTERPRETATION','Interprete esta análise de solo.',true],['VALUE_ANALYSIS','Calcule o ponto de equilíbrio.',true],['OBJECTION_HELP','Ajude com esta objeção.',true],['OPPORTUNITY_REVIEW','Revise a oportunidade no pipeline.',true],['FOLLOW_UP_HELP','Ajude no follow-up.',true]
+  ['ASK_GENERAL','Explique o que é margem.',false],['ASK_CLIENT','O que importa nesta conta?',true],['ASK_AGRONOMIC','Analise o manejo agronômico.',true],['ASK_MARKET','Como está o mercado?',false],['ASK_COMMODITY','Qual é o preço da soja?',false],['PREPARE_VISIT','Prepare a próxima visita.',true],['REGISTER_INFORMATION','Registrar nota.',true],['POST_VISIT','Registrar o pós-visita.',true],['ANALYZE_SOIL','Interprete esta análise de solo.',true],['IMAGE_DIAGNOSIS','Analise esta foto.',true],['CALCULATE','Calcule o ponto de equilíbrio.',true],['CHECK_LABEL','Confira a bula.',false],['CHECK_WEATHER','Como está o clima?',false],['CHECK_MARKET','Confira o mercado.',false],['CHECK_OPPORTUNITY','Revise a oportunidade no pipeline.',true],['OBJECTION_HELP','Ajude com esta objeção.',true],['FOLLOW_UP_HELP','Ajude no follow-up.',true]
  ]
- for(const [intent,message,hasClient] of cases){const route=routeValIntent({message,intentHint:intent,hasClient});assert.equal(route.intent,intent);assert.equal(route.persistence_mode,['REGISTER_NOTE','POST_VISIT'].includes(intent)?'CONFIRM_REQUIRED':'NONE')}
+ for(const [intent,message,hasClient] of cases){const route=routeValIntent({message,intentHint:intent,hasClient});assert.equal(route.intent,intent);assert.equal(route.persistence_mode,['REGISTER_INFORMATION','POST_VISIT'].includes(intent)?'CONFIRM_REQUIRED':'NONE')}
+ assert.equal(routeValIntent({intentHint:'REGISTER_NOTE',hasClient:true}).intent,'REGISTER_INFORMATION')
+ assert.equal(routeValIntent({intentHint:'SOIL_INTERPRETATION',hasClient:true}).intent,'ANALYZE_SOIL')
 })
 
 test('copiloto global mantém contexto por produtor e oferece texto, voz, foto e arquivo',()=>{
@@ -108,7 +125,7 @@ test('copiloto global mantém contexto por produtor e oferece texto, voz, foto e
  assert.match(sidebar,/Perguntar à VAL/)
  assert.match(mobile,/\['dashboard','Hoje'/)
  assert.match(mobile,/onClick=\{onOpenVal\}/)
- assert.match(globalCopilot,/conversationKey=clientId=>`valor360:val-copilot-thread:v2:/)
+ assert.match(globalCopilot,/conversationKey=clientId=>`valor360:val-copilot-thread:v3:/)
  assert.match(globalCopilot,/setAttachments\(\[\]\);setError\(''\)/)
  assert.match(globalCopilot,/Perguntar por voz/)
  assert.match(globalCopilot,/persistence_mode:'NONE'/)

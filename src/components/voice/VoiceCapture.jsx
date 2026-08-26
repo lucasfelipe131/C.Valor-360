@@ -96,7 +96,7 @@ function CandidateReview({candidates,setCandidates,transcript,additions,setAddit
  </div>
 }
 
-export default function VoiceCapture({clientId,visitId,interactionType='GENERAL_CONTEXT',label='Registrar áudio',description='',sourceContext={},onConfirmed,transient=false,onTranscribed}){
+export default function VoiceCapture({clientId,visitId,interactionType='GENERAL_CONTEXT',label='Registrar áudio',description='',initialText='',sourceContext={},onConfirmed,transient=false,onTranscribed}){
  const instanceId=useId().replace(/:/g,'')
  const [open,setOpen]=useState(false)
  const [mode,setMode]=useState('AUDIO')
@@ -248,7 +248,7 @@ export default function VoiceCapture({clientId,visitId,interactionType='GENERAL_
  const retry=()=>retryStage==='confirm'?confirm():processInput()
  const redo=()=>{const remoteId=interactionId;forgetPending();if(remoteId)cancelVoiceInteraction(remoteId).catch(()=>{});recorder.reset();setInteractionId('');setAudioUploaded(false);setPayload(null);setError('');setPhase('capture')}
  const fallbackToText=()=>{const remoteId=interactionId;operationRef.current?.abort();operationRef.current=null;forgetPending();if(remoteId)cancelVoiceInteraction(remoteId).catch(()=>{});recorder.reset();setInteractionId('');setAudioUploaded(false);setPayload(null);setMode('TEXT');setPhase('capture');setError('');setRetryStage('process')}
- const launch=()=>{confirmationNotifiedRef.current=false;setOpen(true);setMode('AUDIO');setPhase('capture');setError('');const pendingId=readPending();if(pendingId)resumePending(pendingId);else recorder.start()}
+ const launch=()=>{const seeded=String(initialText||'').trim().slice(0,3000);confirmationNotifiedRef.current=false;setOpen(true);setMode(seeded?'TEXT':'AUDIO');setManualText(seeded);setPhase('capture');setError('');const pendingId=readPending();if(pendingId)resumePending(pendingId);else if(!seeded)recorder.start()}
  const finishSuccess=()=>{if(confirmationNotifiedRef.current){close({cancelRemote:false});return}confirmationNotifiedRef.current=true;const result=payload;close({cancelRemote:false});if(onConfirmed)Promise.resolve(onConfirmed(result)).catch(()=>{})}
  const chooseFile=async event=>{const file=event.target.files?.[0];event.target.value='';if(file)await recorder.selectFile(file)}
  const title=transient?'Perguntar por voz':isPostVisit(interactionType)?'Me conte como foi':label

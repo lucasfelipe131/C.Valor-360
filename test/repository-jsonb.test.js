@@ -158,12 +158,12 @@ test('idempotência rejeita o mesmo externalId quando o payload_hash diverge',as
   await assert.rejects(makeRepository('hash-antigo').ingestEvent({event,signals:[]}),error=>error.statusCode===409&&/conteúdo diferente/.test(error.message))
 })
 
-test('sincronização do Manual enriquece cliente existente sem criar carteira comercial',async()=>{
+test('sincronização do Manual faz upsert do produtor na carteira do mesmo consultor',async()=>{
   const calls=[]
   const query=async(sql,params=[])=>{
     calls.push({sql,params})
     if(sql.includes('INSERT INTO integration_events'))return {rowCount:1,rows:[{id:'event-db-id'}]}
-    if(sql.startsWith('SELECT id FROM clients'))return {rowCount:0,rows:[]}
+    if(sql.startsWith('SELECT id FROM clients'))return {rowCount:1,rows:[{id:'00000000-0000-4000-8000-000000000020'}]}
     return {rowCount:1,rows:[]}
   }
   const repository=repositoryWith({configured:true,transaction:work=>work({query})})
@@ -172,8 +172,10 @@ test('sincronização do Manual enriquece cliente existente sem criar carteira c
     event:{externalId:'producer-001',type:'manual.producer.updated',schemaVersion:1,source:'manual-do-agronomo',occurredAt:'2026-08-10T12:00:00.000Z',payloadHash:'hash',clientExternalKey:'producer-1',payload:{producer:{name:'Produtor 1',areaHa:120}}},
     signals:[]
   })
-  assert.ok(calls.some(call=>call.sql.startsWith('UPDATE clients SET name=')))
-  assert.equal(calls.some(call=>call.sql.includes('INSERT INTO clients')),false)
+  const clientUpsert=calls.find(call=>call.sql.includes('INSERT INTO clients'))
+  assert.ok(clientUpsert)
+  assert.match(clientUpsert.sql,/ON CONFLICT \(tenant_id,consultant_id,external_key\)/)
+  assert.deepEqual(clientUpsert.params.slice(0,3),['00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000010','producer-1'])
 })
 
 test('visão global calcula o potencial e cruza somente o workspace do mesmo login',async()=>{
@@ -281,13 +283,16 @@ test('saveTechnicalContext mantém o parâmetro do produtor como UUID ao derivar
 test('fallback demonstrativo também mantém histórico do contexto técnico',async()=>{
   let store={surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[],technicalContexts:{}}}
   const repository=new ValRepository({db:{configured:false},tenantId:'tenant',readStore:()=>store,saveStore:next=>{store=next}})
-  await repository.saveTechnicalContext('client-ext',{property:'Versão 1'})
-  await repository.saveTechnicalContext('client-ext',{property:'Versão 2'})
-  assert.equal(store.val.technicalContexts['client-ext'].property,'Versão 2')
+  await repository.saveTechnicalContext('client-ext',{property:'Versão 1'},'owner-1')
+  await repository.saveTechnicalContext('client-ext',{property:'Versão 2'},'owner-1')
+  const [scopedTechnicalContext]=Object.values(store.val.technicalContexts)
+  assert.equal(scopedTechnicalContext.property,'Versão 2')
+  assert.equal(scopedTechnicalContext.tenantId,'tenant')
+  assert.equal(scopedTechnicalContext.ownerId,'owner-1')
   assert.equal(store.val.technicalContextHistory.length,1)
   assert.equal(store.val.technicalContextHistory[0].property,'Versão 1')
   assert.equal(store.val.technicalContextHistory[0].status,'expired')
-  assert.equal(store.val.technicalContexts['client-ext'].supersedesId,store.val.technicalContextHistory[0].id)
+  assert.equal(scopedTechnicalContext.supersedesId,store.val.technicalContextHistory[0].id)
 })
 
 test('importação não fabrica data ou desfecho e serializa o registro aceito',async()=>{

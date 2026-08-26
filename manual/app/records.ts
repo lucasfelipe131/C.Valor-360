@@ -40,7 +40,7 @@ const DB_NAME = "manual-do-agronomo-local";
 const DB_VERSION = 2;
 const STORE_NAME = "records";
 const OWNER_KEY = "mp-record-owner";
-const SERVER_SYNC_VERSION = "valor360-v1";
+const SERVER_SYNC_VERSION = "valor360-v2";
 const LOCAL_DATA_KEYS = [
   "mp-producers",
   "mp-professional-profile",
@@ -113,11 +113,29 @@ async function persistRecordOnServer(record: SavedRecord) {
       payload: record.payload,
     }),
   });
-  const result = (await response.json().catch(() => ({}))) as { error?: string };
+  const result = (await response.json().catch(() => ({}))) as {
+    error?: string;
+    integration?: {
+      configured?: boolean;
+      failed?: number;
+      skipped?: number;
+      errors?: Array<{ error?: string }>;
+    };
+  };
   if (!response.ok) {
     throw new Error(
       result.error ||
         "O registro foi preservado neste dispositivo, mas a nuvem não confirmou o salvamento.",
+    );
+  }
+  if (
+    result.integration?.configured === false ||
+    Number(result.integration?.failed ?? 0) > 0 ||
+    Number(result.integration?.skipped ?? 0) > 0
+  ) {
+    throw new Error(
+      result.integration?.errors?.[0]?.error ||
+        "O registro foi preservado neste dispositivo e na nuvem do Manual, mas a integração com o VALOR 360 não foi confirmada.",
     );
   }
 }

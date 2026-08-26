@@ -72,7 +72,7 @@ function finalAdvice(advice,rawContext,message,usedGenerativeAi=false,executionI
   const conversion=buildConversionIntelligence(context,effectiveMessage)
   let orchestration=buildConversationOrchestration(context,effectiveMessage,{attachmentCount:context.currentAttachments?.length||0})
   if(usedGenerativeAi){
-    const reasoning=resolveStructuredReasoningRoute(orchestration,context,effectiveMessage,{providerConfigured:true})
+    const reasoning=resolveStructuredReasoningRoute(orchestration,context,effectiveMessage,{providerConfigured:true,intentHint:executionInput.intentHint})
     orchestration={...orchestration,route:{...reasoning.route,useGenerativeAi:true,mode:'structured_hybrid'}}
   }
   const reconciled=reconcileAdviceWithConversion(advice||{},conversion,{preserveSafety:true})
@@ -159,6 +159,10 @@ export function installConversionComposition(){
 
   const originalRecordRecommendation=ValRepository.prototype.recordRecommendation
   ValRepository.prototype.recordRecommendation=async function recordContextualRecommendation(input){
+    // A pre-persist finalizer already produced the exact response contract that
+    // will be returned (for example current market + a processed attachment).
+    // Re-enriching it here would make the stored recommendation diverge again.
+    if(input?.responseMetadata?.prePersistFinalized===true)return originalRecordRecommendation.call(this,{...input,question:String(originalQuestionContext.getStore()||input.question||'')})
     const rawContext=input.context||{}
     const canonicalQuestion=String(originalQuestionContext.getStore()||input.question||'')
     const usedGenerativeAi=(input.modelRun?.status==='completed'&&input.modelRun?.generativeUsed!==false)||input.modelRun?.generativeUsed===true||/openai|gpt-/i.test(String(input.model||''))
@@ -207,7 +211,7 @@ export function installConversionComposition(){
     const effectiveMessage=thread.message
     const attachmentCount=Array.isArray(input.attachmentIds)?input.attachmentIds.length:0
     let orchestration=buildConversationOrchestration(context,effectiveMessage,{attachmentCount})
-    const reasoning=resolveStructuredReasoningRoute(orchestration,context,effectiveMessage,{providerConfigured:Boolean(this.client)})
+    const reasoning=resolveStructuredReasoningRoute(orchestration,context,effectiveMessage,{providerConfigured:Boolean(this.client),intentHint:input.intent})
     orchestration={...orchestration,route:reasoning.route}
 
     if(attachmentCount===0&&reasoning.useGenerativeAi){
@@ -298,6 +302,20 @@ export function installConversionComposition(){
     emitProgress(input,'language')
     const result=await originalQuestionContext.run(originalMessage,()=>originalAnswer.call(this,{...input,message:effectiveMessage,mode:reasoning.tier}))
     emitProgress(input,'complete')
+    if(result?.responseMetadata?.prePersistFinalized===true){
+      return {
+        ...result,
+        decisionCore:conversionCoreVersion,
+        conversationOrchestrator:conversationOrchestratorVersion,
+        languageEnhancer:languageEnhancerVersion,
+        specificityEngine:specificityVersion,
+        aiReasoningResult:aiReasoningResultVersion,
+        responseQuality:valResponseQualityVersion,
+        globalCopilot:true,
+        automaticRouting:orchestration.route,
+        conversationContinuity:orchestration.continuity
+      }
+    }
     const providerUsed=result.engineMode==='openai'
     const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed,{actorId:input.ownerId,intentHint:input.intent,modelRun:{model:result.model,promptVersion:'val-ai-copilot-v2',status:providerUsed?'completed':'fallback',generativeUsed:providerUsed}})
     const providerFallback=!providerUsed

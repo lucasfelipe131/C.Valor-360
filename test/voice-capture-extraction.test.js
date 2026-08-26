@@ -4,11 +4,13 @@ import {
   VoiceCandidateExtractor,
   deterministicVoiceCandidateExtraction,
   filterUnsafeVoiceCandidates,
+  parseValSessionRegister,
   voiceCandidateExtractionFormat,
   voiceExtractionSafety,
   voiceExtractionVersion
 } from '../server/voice-capture/extraction.js'
 import {validateVoiceCandidate} from '../server/voice-capture/contracts.js'
+import {buildRegisterPrefill} from '../src/lib/global-val-conversation.js'
 
 const voiceInteractionId='00000000-0000-4000-8000-000000000301'
 const transcriptRef='voice-transcript:00000000-0000-4000-8000-000000000302'
@@ -170,4 +172,34 @@ test('Voice extraction — falha externa degrada para regras seguras sem consoli
   assert.ok(flagCount(result,'PROMPT_INJECTION_IGNORED')>=1)
   assert.ok(result.candidates.some(item=>item.category==='BEHAVIORAL_SIGNAL'))
   assertCandidatesSafe(result)
+})
+
+test('Voice extraction — REGISTER de sessão extrai só respostas estruturadas e preserva objetivo/commodity/safra',async()=>{
+  const transcript=buildRegisterPrefill([
+    {field:'target_price',question:'Qual é o preço-alvo?',answer:'R$ 118 por saca',intent:'ASK_COMMODITY',objective:'Como a soja da safra 2026/27 muda a negociação?',commodity:'soja',season:'2026/27'},
+    {field:'decision_window',question:'Qual é a janela real?',answer:'Vender na próxima semana',intent:'ASK_COMMODITY',objective:'Como a soja da safra 2026/27 muda a negociação?',commodity:'soja',season:'2026/27'}
+  ])
+  const envelope=parseValSessionRegister(transcript)
+  assert.equal(envelope.objective,'Como a soja da safra 2026/27 muda a negociação?')
+  assert.equal(envelope.commodity,'soja')
+  assert.equal(envelope.season,'2026/27')
+  assert.deepEqual(envelope.responses.map(item=>item.field),['target_price','decision_window'])
+
+  const extractor=new VoiceCandidateExtractor({client:{responses:{create:async()=>{throw new Error('não deve chamar provider para envelope local')}}}})
+  const result=await extractor.extract({transcript,voiceInteractionId,transcriptRef,organizationId,clientId,interactionType:'CLIENT_NOTE',now})
+  assert.equal(result.metadata.model,'session-register-v1')
+  assert.deepEqual(result.candidates.map(item=>item.metadata.semantic_type),['MARKET_TARGET_PRICE','MARKET_DECISION_WINDOW'])
+  assert.deepEqual(result.candidates.map(item=>item.statement),['R$ 118 por saca','Vender na próxima semana'])
+  assert.equal(result.candidates.some(item=>/Objetivo:|Intenção:|Commodity:|Safra:|Qual é/i.test(item.statement)),false)
+  assert.deepEqual(result.candidates[0].metadata,{extraction:'deterministic_session_register',untrusted_source:true,registration_envelope:'VAL_SESSION_REGISTER_V1',semantic_type:'MARKET_TARGET_PRICE',field:'target_price',objective:'Como a soja da safra 2026/27 muda a negociação?',intent:'ASK_COMMODITY',commodity:'soja',season:'2026/27',targetPrice:118,priceUnit:'BRL/sc_60kg'})
+  assertCandidatesSafe(result)
+})
+
+test('Voice extraction — “não sei” em preço-alvo permanece lacuna e nunca vira preço estruturado',()=>{
+  const transcript=buildRegisterPrefill([{field:'target_price',answer:'não sei',intent:'ASK_COMMODITY',objective:'Preço da soja na safra 2026/27',commodity:'soja',season:'2026/27'}])
+  const result=deterministicVoiceCandidateExtraction({transcript,voiceInteractionId,transcriptRef,interactionType:'CLIENT_NOTE',now})
+  assert.equal(result.candidates.length,1)
+  assert.equal(result.candidates[0].category,'MISSING_INFORMATION')
+  assert.equal(result.candidates[0].metadata.semantic_type,'MARKET_TARGET_PRICE_MISSING')
+  assert.equal('targetPrice' in result.candidates[0].metadata,false)
 })

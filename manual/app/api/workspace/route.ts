@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ensureAccessSchema, sessionFromRequest } from "../../lib/access";
 import { publishWorkspaceToValor } from "../../lib/valor360";
+import { authenticatedValor360OwnerForWorkspace } from "../../lib/valor360-workspace-owner";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -64,6 +65,13 @@ export async function PUT(request: NextRequest) {
   try {
     const session = await sessionFromRequest(request);
     if (!session) return NextResponse.json({ error: "Sessão expirada." }, { status: 401 });
+    const valor360OwnerId = authenticatedValor360OwnerForWorkspace(session, session.user.id);
+    if (!valor360OwnerId) {
+      return NextResponse.json(
+        { error: "A identidade deste workspace não foi validada para sincronização.", code: "valor360_workspace_owner_not_authenticated" },
+        { status: 403 },
+      );
+    }
     const raw = await request.text();
     if (Buffer.byteLength(raw, "utf8") > 12 * 1024 * 1024) {
       return NextResponse.json({ error: "A base excedeu o limite de 12 MB por sincronização." }, { status: 413 });
@@ -89,15 +97,19 @@ export async function PUT(request: NextRequest) {
     const integration = await publishWorkspaceToValor(
       body.producers,
       body.soilAnalyses,
-      session.valor360OwnerId ?? session.user.id,
+      valor360OwnerId,
       request.headers.get("x-request-id") ?? "",
     );
+    const integrationNeedsAttention = !integration.configured ||
+      integration.failed > 0 ||
+      integration.skipped > 0 ||
+      integration.truncated;
     return noStore(NextResponse.json({
       saved: true,
       updatedAt: result.rows[0]?.updatedAt ?? new Date().toISOString(),
       storage: "postgresql",
       integration,
-    }));
+    }, { status: integrationNeedsAttention ? 207 : 200 }));
   } catch (error) {
     console.error("workspace:put", error);
     return NextResponse.json({ error: "Não foi possível salvar o backup da conta." }, { status: 500 });

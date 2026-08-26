@@ -92,6 +92,11 @@ const nav: { key: PageKey; label: string; icon: IconName }[] = [
   { key: "perfil", label: "Meu perfil", icon: "users" },
 ];
 
+function isPageKey(value: unknown): value is PageKey {
+  return typeof value === "string" &&
+    (value === "empresa" || nav.some((item) => item.key === value));
+}
+
 type NdviScene = {
   id: string;
   date: string;
@@ -115,6 +120,7 @@ type Producer = {
   id: string;
   name: string;
   crmCode?: string;
+  valor360LegacyExternalKeys?: string[];
   document: string;
   phone: string;
   email: string;
@@ -182,8 +188,41 @@ type SoilInterpretationItem = {
   action: string;
 };
 
+type SoilLinkState =
+  | "UNLINKED"
+  | "LINKED_TO_CLIENT"
+  | "LINKED_TO_PROPERTY"
+  | "LINKED_TO_FIELD";
+
+type SoilLinkTarget = {
+  producerId: string;
+  property: string;
+  fieldId: string;
+};
+
+type SoilLinkHistoryEntry = {
+  version: number;
+  action: "LINK" | "CHANGE" | "UNLINK" | "MIGRATE";
+  fromState: SoilLinkState;
+  toState: SoilLinkState;
+  from: SoilLinkTarget;
+  to: SoilLinkTarget;
+  changedAt: string;
+  actorId: string;
+  source: "manual-do-agronomo" | "legacy-workspace";
+};
+
+type SoilLinkProvenance = {
+  source: "document-import" | "manual-do-agronomo" | "legacy-workspace";
+  actorId: string;
+  changedAt: string;
+  reason: "CREATED_UNLINKED" | "USER_CONFIRMED" | "LEGACY_MIGRATION";
+  target: SoilLinkTarget;
+};
+
 type SoilDraft = {
   id: string;
+  recordId: string;
   fileName: string;
   sourceType: "PDF" | "Imagem" | "Câmera";
   importedAt: string;
@@ -207,11 +246,110 @@ type SoilDraft = {
   targetCrop?: string;
   yieldTarget?: string;
   productionSystem?: string;
+  linkState: SoilLinkState;
+  linkVersion: number;
+  linkHistory: SoilLinkHistoryEntry[];
+  linkProvenance: SoilLinkProvenance;
 };
 
 type SoilAnalysis = SoilDraft & {
   savedAt: string;
 };
+
+const soilLinkStates = new Set<SoilLinkState>([
+  "UNLINKED",
+  "LINKED_TO_CLIENT",
+  "LINKED_TO_PROPERTY",
+  "LINKED_TO_FIELD",
+]);
+
+const soilLinkStateLabels: Record<SoilLinkState, string> = {
+  UNLINKED: "Não vinculada",
+  LINKED_TO_CLIENT: "Vinculada ao produtor",
+  LINKED_TO_PROPERTY: "Vinculada à propriedade",
+  LINKED_TO_FIELD: "Vinculada ao talhão",
+};
+
+function soilLinkTarget(value: Pick<SoilDraft, "producerId" | "property" | "fieldId">): SoilLinkTarget {
+  return {
+    producerId: String(value.producerId ?? ""),
+    property: String(value.property ?? ""),
+    fieldId: String(value.fieldId ?? ""),
+  };
+}
+
+function soilLinkStateFor(target: SoilLinkTarget): SoilLinkState {
+  if (!target.producerId) return "UNLINKED";
+  if (target.fieldId) return "LINKED_TO_FIELD";
+  if (target.property.trim()) return "LINKED_TO_PROPERTY";
+  return "LINKED_TO_CLIENT";
+}
+
+function sameSoilLink(
+  currentState: SoilLinkState,
+  current: SoilLinkTarget,
+  nextState: SoilLinkState,
+  next: SoilLinkTarget,
+) {
+  if (currentState !== nextState) return false;
+  if (currentState === "UNLINKED") return true;
+  return current.producerId === next.producerId &&
+    current.property === next.property &&
+    current.fieldId === next.fieldId;
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function normalizeSoilAnalysis(value: SoilAnalysis): SoilAnalysis {
+  const target = soilLinkTarget(value);
+  const explicitState = soilLinkStates.has(value.linkState)
+    ? value.linkState
+    : soilLinkStateFor(target);
+  const changedAt = value.linkProvenance?.changedAt || value.savedAt || value.importedAt || new Date().toISOString();
+  const actorId = value.linkProvenance?.actorId || "";
+  const hasGovernedLink = Boolean(
+    soilLinkStates.has(value.linkState) &&
+    Number.isInteger(value.linkVersion) &&
+    Array.isArray(value.linkHistory) &&
+    value.linkProvenance?.target,
+  );
+  if (hasGovernedLink && isUuid(value.recordId)) return value;
+
+  const version = hasGovernedLink
+    ? Math.max(0, Number(value.linkVersion))
+    : explicitState === "UNLINKED" ? 0 : 1;
+  const history = hasGovernedLink
+    ? value.linkHistory
+    : [{
+        version,
+        action: "MIGRATE" as const,
+        fromState: explicitState,
+        toState: explicitState,
+        from: target,
+        to: target,
+        changedAt,
+        actorId,
+        source: "legacy-workspace" as const,
+      }];
+  return {
+    ...value,
+    recordId: isUuid(value.recordId) ? value.recordId : isUuid(value.id) ? value.id : crypto.randomUUID(),
+    linkState: explicitState,
+    linkVersion: version,
+    linkHistory: history,
+    linkProvenance: hasGovernedLink
+      ? value.linkProvenance
+      : {
+          source: "legacy-workspace",
+          actorId,
+          changedAt,
+          reason: "LEGACY_MIGRATION",
+          target,
+        },
+  };
+}
 
 type SoilImportState = {
   status: "idle" | "processing" | "ready" | "error";
@@ -251,6 +389,16 @@ const GATE_ONE_COMPANY = {
 
 function accountStorageKey(base: string, userId: string) {
   return `${base}:${userId}`;
+}
+
+function valor360LegacyExternalKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 180);
 }
 
 function isLegacyExampleProducer(producer: Producer) {
@@ -1188,12 +1336,20 @@ function buildSoilDraft(
   });
   const firstTechSoloSample = techSoloSamples[0];
   const isTechSolo = techSoloSamples.length > 0;
+  const analysisId = crypto.randomUUID();
+  const importedAt = new Date().toISOString();
+  const initialTarget = {
+    producerId: "",
+    property: metadata.property,
+    fieldId: "",
+  } satisfies SoilLinkTarget;
 
   return {
-    id: `soil-${Date.now()}`,
+    id: analysisId,
+    recordId: analysisId,
     fileName,
     sourceType,
-    importedAt: new Date().toISOString(),
+    importedAt,
     sampleDate: metadata.sampleDate,
     laboratory: metadata.laboratory || (isTechSolo ? "TechSolo · Agricultura de Precisão" : ""),
     sampleCode: firstTechSoloSample?.code || metadata.sampleCode || metadata.field,
@@ -1220,6 +1376,16 @@ function buildSoilDraft(
     targetCrop: "Soja",
     yieldTarget: "",
     productionSystem: "Plantio direto",
+    linkState: "UNLINKED",
+    linkVersion: 0,
+    linkHistory: [],
+    linkProvenance: {
+      source: "document-import",
+      actorId: "",
+      changedAt: importedAt,
+      reason: "CREATED_UNLINKED",
+      target: initialTarget,
+    },
   };
 }
 
@@ -2100,7 +2266,7 @@ export default function Home() {
   });
   const [accountReady, setAccountReady] = useState(false);
   const [workspaceSync, setWorkspaceSync] = useState<
-    "loading" | "saving" | "saved" | "offline"
+    "loading" | "saving" | "saved" | "attention" | "offline"
   >("loading");
 
   const [population, setPopulation] = useState(70000);
@@ -2151,6 +2317,22 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    const requestedPage = new URL(window.location.href).searchParams.get("page");
+    if (isPageKey(requestedPage)) setActivePage(requestedPage);
+
+    const receiveNavigation = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return;
+      const message = event.data as { type?: unknown; page?: unknown } | null;
+      if (message?.type !== "valor360:navigate" || !isPageKey(message.page)) return;
+      setActivePage(message.page);
+      setMobileMenu(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    };
+    window.addEventListener("message", receiveNavigation);
+    return () => window.removeEventListener("message", receiveNavigation);
+  }, []);
+
+  useEffect(() => {
     if (!accessUser) {
       setAccountReady(false);
       return;
@@ -2172,30 +2354,41 @@ export default function Home() {
 
       const normalizeProducerItems = (items: Producer[]) => items
         .filter((producer) => !isLegacyExampleProducer(producer))
-        .map((producer) => ({
-          ...producer,
-          cultures: Array.isArray(producer.cultures) ? producer.cultures : [],
-          registrations: Array.isArray(producer.registrations) ? producer.registrations : [],
-          fields: Array.isArray(producer.fields)
-            ? producer.fields.map((field) => ({
-                ...field,
-                points: Array.isArray(field.points) ? field.points : [],
-                ndviScenes: Array.isArray(field.ndviScenes) ? field.ndviScenes : [],
-                season: /^2026\/27$/i.test(field.season ?? "") ? "" : field.season,
-              }))
-            : [],
-        }));
+        .map((producer) => {
+          const legacyExternalKeys = Array.from(new Set([
+            ...(Array.isArray(producer.valor360LegacyExternalKeys)
+              ? producer.valor360LegacyExternalKeys
+              : []),
+            valor360LegacyExternalKey(producer.name),
+          ].filter(Boolean))).slice(0, 20);
+          return {
+            ...producer,
+            valor360LegacyExternalKeys: legacyExternalKeys,
+            cultures: Array.isArray(producer.cultures) ? producer.cultures : [],
+            registrations: Array.isArray(producer.registrations) ? producer.registrations : [],
+            fields: Array.isArray(producer.fields)
+              ? producer.fields.map((field) => ({
+                  ...field,
+                  points: Array.isArray(field.points) ? field.points : [],
+                  ndviScenes: Array.isArray(field.ndviScenes) ? field.ndviScenes : [],
+                  season: /^2026\/27$/i.test(field.season ?? "") ? "" : field.season,
+                }))
+              : [],
+          };
+        });
 
       let nextProducers: Producer[] = [];
       let nextSoilAnalyses: SoilAnalysis[] = [];
       let localProfile: Partial<ProfessionalProfile> = {};
+      let integrationNeedsAttention = false;
       try {
         if (savedProducers) {
           nextProducers = normalizeProducerItems(JSON.parse(savedProducers) as Producer[]);
         }
         if (savedProfile) localProfile = JSON.parse(savedProfile) as Partial<ProfessionalProfile>;
         if (savedSoilAnalyses) {
-          nextSoilAnalyses = JSON.parse(savedSoilAnalyses) as SoilAnalysis[];
+          nextSoilAnalyses = (JSON.parse(savedSoilAnalyses) as SoilAnalysis[])
+            .map(normalizeSoilAnalysis);
         }
       } catch (error) {
         console.warn("Não foi possível recuperar todos os dados locais desta conta.", error);
@@ -2212,9 +2405,8 @@ export default function Home() {
         };
         if (remote.hasData) {
           nextProducers = normalizeProducerItems(Array.isArray(remote.producers) ? remote.producers : []);
-          const validProducerIds = new Set(nextProducers.map((producer) => producer.id));
           nextSoilAnalyses = (Array.isArray(remote.soilAnalyses) ? remote.soilAnalyses : [])
-            .filter((analysis) => !analysis.producerId || validProducerIds.has(analysis.producerId));
+            .map(normalizeSoilAnalysis);
           if (remote.professionalProfile && typeof remote.professionalProfile === "object" && Object.keys(remote.professionalProfile).length) {
             localProfile = { ...localProfile, ...remote.professionalProfile };
           }
@@ -2224,9 +2416,17 @@ export default function Home() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ producers: nextProducers, soilAnalyses: nextSoilAnalyses, professionalProfile: localProfile }),
           });
+          const migrationResult = (await migration.json().catch(() => ({}))) as {
+            error?: string;
+            integration?: { configured?: boolean; failed?: number; skipped?: number; truncated?: boolean };
+          };
           if (!migration.ok) throw new Error("Falha ao criar backup inicial");
+          integrationNeedsAttention = migrationResult.integration?.configured === false ||
+            Number(migrationResult.integration?.failed ?? 0) > 0 ||
+            Number(migrationResult.integration?.skipped ?? 0) > 0 ||
+            migrationResult.integration?.truncated === true;
         }
-        setWorkspaceSync("saved");
+        setWorkspaceSync(integrationNeedsAttention ? "attention" : "saved");
       } catch (error) {
         console.warn("A nuvem não respondeu; usando o cache deste aparelho.", error);
         setWorkspaceSync("offline");
@@ -2268,17 +2468,12 @@ export default function Home() {
             }),
             ...nextProducers.filter((producer) => !incomingIds.has(producer.id)),
           ];
-          setWorkspaceSync("saved");
         } catch (error) {
           console.warn("A carteira comercial não pôde ser conciliada agora.", error);
         }
       }
 
       if (cancelled) return;
-      const validProducerIds = new Set(nextProducers.map((producer) => producer.id));
-      nextSoilAnalyses = nextSoilAnalyses.filter(
-        (analysis) => !analysis.producerId || validProducerIds.has(analysis.producerId),
-      );
       const nextProfile: ProfessionalProfile = {
         ...initialProfile,
         ...localProfile,
@@ -2323,9 +2518,16 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ producers, soilAnalyses, professionalProfile: profile }),
       })
-        .then((response) => {
+        .then(async (response) => {
+          const result = (await response.json().catch(() => ({}))) as {
+            integration?: { configured?: boolean; failed?: number; skipped?: number; truncated?: boolean };
+          };
           if (!response.ok) throw new Error("Falha na sincronização");
-          setWorkspaceSync("saved");
+          const integrationNeedsAttention = result.integration?.configured === false ||
+            Number(result.integration?.failed ?? 0) > 0 ||
+            Number(result.integration?.skipped ?? 0) > 0 ||
+            result.integration?.truncated === true;
+          setWorkspaceSync(integrationNeedsAttention ? "attention" : "saved");
         })
         .catch(() => setWorkspaceSync("offline"));
     }, 700);
@@ -2836,6 +3038,7 @@ export default function Home() {
             producers={producers}
             profile={profile}
             analyses={soilAnalyses}
+            linkActorId={accessUser?.id ?? ""}
             onSave={(analysis) => {
               const analysisProducer = producers.find(
                 (item) => item.id === analysis.producerId,
@@ -2853,6 +3056,7 @@ export default function Home() {
                 message: "Salvando a análise conferida…",
               });
               void saveRecord({
+                id: analysis.recordId,
                 type: "soil_analysis",
                 title: `${analysisProducer?.name || "Análise de solo"} · ${
                   analysisField?.name || analysis.property || "Área não informada"
@@ -2889,6 +3093,7 @@ export default function Home() {
             producers={producers}
             setProducers={setProducers}
             syncStatus={workspaceSync}
+            onSyncAttention={() => setWorkspaceSync("attention")}
             onUse={(producer) => {
               setSprayProducer(producer.name);
               setSprayPhone(producer.phone);
@@ -6822,6 +7027,7 @@ function SoilPage({
   producers,
   profile,
   analyses,
+  linkActorId,
   onSave,
   onClear,
 }: {
@@ -6833,6 +7039,7 @@ function SoilPage({
   producers: Producer[];
   profile: ProfessionalProfile;
   analyses: SoilAnalysis[];
+  linkActorId: string;
   onSave: (analysis: SoilAnalysis) => void;
   onClear: () => void;
 }) {
@@ -6853,6 +7060,20 @@ function SoilPage({
   const highIndicators = interpretation.filter((item) => item.status === "high");
   const priorityIndicators = interpretation.filter((item) =>
     ["critical", "low"].includes(item.status),
+  );
+  const selectedLinkTarget = draft ? soilLinkTarget(draft) : null;
+  const selectedLinkState = selectedLinkTarget
+    ? soilLinkStateFor(selectedLinkTarget)
+    : "UNLINKED";
+  const committedLinkTarget = draft?.linkProvenance?.target ?? selectedLinkTarget;
+  const hasPendingLinkChange = Boolean(
+    draft && selectedLinkTarget && committedLinkTarget &&
+    !sameSoilLink(
+      draft.linkState,
+      committedLinkTarget,
+      selectedLinkState,
+      selectedLinkTarget,
+    ),
   );
 
   function updateDraft(patch: Partial<SoilDraft>) {
@@ -6900,8 +7121,81 @@ function SoilPage({
     });
   }
 
-  function saveAnalysis() {
+  function confirmLink() {
     if (!draft) return;
+    const next = soilLinkTarget(draft);
+    const nextState = soilLinkStateFor(next);
+    if (nextState === "UNLINKED") return;
+    const previous = draft.linkProvenance?.target ?? soilLinkTarget(draft);
+    const previousState = draft.linkState;
+    const changedAt = new Date().toISOString();
+    const version = Math.max(0, Number(draft.linkVersion) || 0) + 1;
+    const entry: SoilLinkHistoryEntry = {
+      version,
+      action: previousState === "UNLINKED" ? "LINK" : "CHANGE",
+      fromState: previousState,
+      toState: nextState,
+      from: previous,
+      to: next,
+      changedAt,
+      actorId: linkActorId,
+      source: "manual-do-agronomo",
+    };
+    setDraft({
+      ...draft,
+      linkState: nextState,
+      linkVersion: version,
+      linkHistory: [...draft.linkHistory, entry],
+      linkProvenance: {
+        source: "manual-do-agronomo",
+        actorId: linkActorId,
+        changedAt,
+        reason: "USER_CONFIRMED",
+        target: next,
+      },
+    });
+  }
+
+  function unlinkAnalysis() {
+    if (!draft || draft.linkState === "UNLINKED") return;
+    const previous = draft.linkProvenance?.target ?? soilLinkTarget(draft);
+    const next = {
+      producerId: "",
+      property: draft.property,
+      fieldId: "",
+    } satisfies SoilLinkTarget;
+    const changedAt = new Date().toISOString();
+    const version = Math.max(0, Number(draft.linkVersion) || 0) + 1;
+    const entry: SoilLinkHistoryEntry = {
+      version,
+      action: "UNLINK",
+      fromState: draft.linkState,
+      toState: "UNLINKED",
+      from: previous,
+      to: next,
+      changedAt,
+      actorId: linkActorId,
+      source: "manual-do-agronomo",
+    };
+    setDraft({
+      ...draft,
+      producerId: "",
+      fieldId: "",
+      linkState: "UNLINKED",
+      linkVersion: version,
+      linkHistory: [...draft.linkHistory, entry],
+      linkProvenance: {
+        source: "manual-do-agronomo",
+        actorId: linkActorId,
+        changedAt,
+        reason: "USER_CONFIRMED",
+        target: next,
+      },
+    });
+  }
+
+  function saveAnalysis() {
+    if (!draft || hasPendingLinkChange) return;
     onSave({
       ...draft,
       savedAt: new Date().toISOString(),
@@ -7322,6 +7616,54 @@ function SoilPage({
             )}
           </div>
 
+          <section className={`soil-link-governance ${draft.linkState.toLocaleLowerCase("pt-BR")}`}>
+            <div className="soil-link-summary">
+              <span>Vínculo auditável</span>
+              <strong>{soilLinkStateLabels[draft.linkState]}</strong>
+              <small>
+                Versão {draft.linkVersion} · as medições e o laudo original não são alterados pelo vínculo.
+              </small>
+              {hasPendingLinkChange && (
+                <p>
+                  Há uma seleção pendente para {soilLinkStateLabels[selectedLinkState].toLocaleLowerCase("pt-BR")}. Confirme o vínculo antes de salvar.
+                </p>
+              )}
+            </div>
+            <div className="soil-link-actions">
+              <button
+                type="button"
+                className="button secondary"
+                onClick={confirmLink}
+                disabled={selectedLinkState === "UNLINKED" || !hasPendingLinkChange}
+              >
+                {draft.linkState === "UNLINKED" ? "Vincular análise" : "Alterar vínculo"}
+              </button>
+              {draft.linkState !== "UNLINKED" && (
+                <button
+                  type="button"
+                  className="button secondary danger"
+                  onClick={unlinkAnalysis}
+                >
+                  Desvincular
+                </button>
+              )}
+            </div>
+            {draft.linkHistory.length > 0 && (
+              <details className="soil-link-history">
+                <summary>Ver histórico do vínculo ({draft.linkHistory.length})</summary>
+                <ol>
+                  {[...draft.linkHistory].reverse().map((entry) => (
+                    <li key={`${entry.version}-${entry.changedAt}-${entry.action}`}>
+                      <b>v{entry.version} · {entry.action}</b>
+                      <span>{soilLinkStateLabels[entry.fromState]} → {soilLinkStateLabels[entry.toState]}</span>
+                      <time>{new Date(entry.changedAt).toLocaleString("pt-BR")}</time>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
+          </section>
+
           <section className="soil-context-panel">
             <div>
               <span className="eyebrow">CONTEXTO PARA O MANEJO</span>
@@ -7512,16 +7854,18 @@ function SoilPage({
             <button
               className="button primary"
               onClick={saveAnalysis}
-              disabled={recognizedCount === 0}
+              disabled={recognizedCount === 0 || hasPendingLinkChange}
             >
               <Icon name="check" size={18} />
               Conferir e salvar análise
             </button>
           </div>
           <small className="legal-note soil-legal-note">
+            {hasPendingLinkChange
+              ? "Confirme Vincular análise, Alterar vínculo ou Desvincular antes de salvar. "
+              : ""}
             Compare cada campo com o documento original. Métodos de extração,
-            unidades e classes de interpretação variam entre laboratórios e
-            regiões.
+            unidades e classes de interpretação variam entre laboratórios e regiões.
           </small>
         </section>
       )}
@@ -7567,7 +7911,7 @@ function SoilPage({
               <button
                 className="soil-row"
                 key={analysis.id}
-                onClick={() => setDraft({ ...analysis })}
+                onClick={() => setDraft(normalizeSoilAnalysis({ ...analysis }))}
               >
                 <span className="soil-icon"><Icon name="layers" /></span>
                 <div>
@@ -7578,6 +7922,9 @@ function SoilPage({
                     {producer?.name || "Produtor não vinculado"} ·{" "}
                     {analysis.laboratory || analysis.fileName} · {analysis.depth}
                   </small>
+                  <span className={`soil-link-state ${analysis.linkState.toLocaleLowerCase("pt-BR")}`}>
+                    {soilLinkStateLabels[analysis.linkState]} · v{analysis.linkVersion}
+                  </span>
                 </div>
                 <time>
                   {new Date(`${analysis.sampleDate}T12:00:00`).toLocaleDateString(
@@ -7604,11 +7951,13 @@ function ProducersPage({
   producers,
   setProducers,
   syncStatus,
+  onSyncAttention,
   onUse,
 }: {
   producers: Producer[];
   setProducers: (items: Producer[]) => void;
-  syncStatus: "loading" | "saving" | "saved" | "offline";
+  syncStatus: "loading" | "saving" | "saved" | "attention" | "offline";
+  onSyncAttention: () => void;
   onUse: (producer: Producer) => void;
 }) {
   const empty: Producer = {
@@ -7659,7 +8008,7 @@ function ProducersPage({
         areaHa: item.area,
         savedAt: new Date().toISOString(),
       },
-    }).catch(() => undefined);
+    }).catch(onSyncAttention);
     setDraft(empty);
     setEditing(false);
   }
@@ -7679,7 +8028,7 @@ function ProducersPage({
 
       <section className="producer-toolbar producer-cloud-toolbar">
         <span>{producers.length} clientes cadastrados</span>
-        <span className={"cloud-sync-badge " + syncStatus}><Icon name="cloud" size={17} />{{ loading: "Carregando dados da nuvem…", saving: "Salvando na nuvem…", saved: "Backup na nuvem atualizado", offline: "Sem nuvem: usando cache local" }[syncStatus]}</span>
+        <span className={"cloud-sync-badge " + syncStatus}><Icon name="cloud" size={17} />{{ loading: "Carregando dados da nuvem…", saving: "Salvando na nuvem…", saved: "Backup e integração VAL atualizados", attention: "Backup salvo; integração VAL requer atenção", offline: "Sem nuvem: usando cache local" }[syncStatus]}</span>
       </section>
 
       <ProducerCrmImport

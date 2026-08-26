@@ -1,8 +1,9 @@
 import React,{useEffect,useMemo,useState} from 'react'
-import {ArrowLeft,BarChart3,CheckCircle2,ChevronRight,Clock3,Lightbulb,LoaderCircle,Mic,Target} from 'lucide-react'
+import {ArrowLeft,BarChart3,BrainCircuit,CheckCircle2,ChevronRight,Clock3,Lightbulb,LoaderCircle,Mic,Target} from 'lucide-react'
 import VoiceCapture from '../voice/VoiceCapture'
 import {readConsultantExperiencePreference,writeConsultantExperiencePreference} from '../../lib/consultant-experience-preference.js'
 import {buildPrepareVisitPresentation} from '../../lib/prepare-visit-presentation.js'
+import {buildVisitCopilotContext} from '../../lib/copilot-context.js'
 import '../../prepare-visit-simple.css'
 
 const money=value=>Number(value).toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0})
@@ -22,7 +23,7 @@ function QuickSummary({model,mode,onClose}){
  </section>
 }
 
-export default function PrepareVisitSimple({visit,client,prepared,storageScope,onBack,onVoiceConfirmed,onAcceptCommitment,committingId='',error='',notice=''}){
+export default function PrepareVisitSimple({visit,client,prepared,storageScope,onBack,onAsk,onVoiceConfirmed,onAcceptCommitment,committingId='',error='',notice=''}){
  const [preference,setPreference]=useState(()=>readConsultantExperiencePreference(storageScope))
  const [quickMode,setQuickMode]=useState('')
  const [analysisOpen,setAnalysisOpen]=useState(preference!=='SIMPLE')
@@ -52,6 +53,7 @@ export default function PrepareVisitSimple({visit,client,prepared,storageScope,o
   </main>
 
   <section className="prepare-simple-actions" aria-label="Atalhos da preparação">
+   <button type="button" disabled={!client} onClick={()=>onAsk?.(buildVisitCopilotContext({visit,client,preparing:true}))}><BrainCircuit size={18}/><span><b>Perguntar à VAL</b><small>Usar este produtor e esta visita</small></span></button>
    {canVoice&&<VoiceCapture clientId={visit.clientId} visitId={visit.id} interactionType="PRE_VISIT" label="Falar com a VAL" description="Pergunte ou adicione contexto por áudio" sourceContext={{page:'PREPARE_VISIT_SIMPLE',moment:'PRE_VISIT',preparation_id:preparation.preparation_id,lifecycle:visit.lifecycleStatus||'PLANNED'}} onConfirmed={onVoiceConfirmed}/>} 
    <button type="button" onClick={()=>setQuickMode('leaving')}><ChevronRight size={18}/><span><b>Estou saindo agora</b><small>Versão para ler antes de entrar</small></span></button>
    <button type="button" onClick={()=>setQuickMode('sixty')}><Clock3 size={18}/><span><b>Resumo em 60 segundos</b><small>Situação, risco, perguntas e compromisso</small></span></button>

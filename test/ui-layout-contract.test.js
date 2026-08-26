@@ -228,15 +228,16 @@ test('versioned atmospheric artwork is present and referenced by the visual syst
  assert.match(styles,/background-position:center,center,70% center/)
 })
 
-test('inteligência agronômica executa o Manual dentro da sessão do VALOR 360',()=>{
+test('inteligência agronômica organiza capacidades nativas e abre o núcleo técnico na mesma sessão',()=>{
  const agro=read('src/pages/Agro.jsx')
  const app=read('src/App.jsx')
  const manualConfig=read('manual/next.config.ts')
  const manualPage=read('manual/app/page.tsx')
  const manualStyles=read('manual/app/globals.css')
- assert.match(agro,/src="\/tecnico\?embedded=1"/)
- assert.match(agro,/Mesmo login ativo/)
- assert.match(app,/<Agro clients=\{clientList\}\/>/)
+ assert.match(agro,/\/tecnico\?embedded=1&page=/)
+ assert.match(agro,/Mantendo sua sessão/)
+ assert.match(agro,/O que você precisa analisar\?/)
+ assert.match(app,/<Agro onAsk=\{openCopilot\} onContextChange=\{updateCopilotPageContext\}\/>/)
  assert.match(manualConfig,/basePath: "\/tecnico"/)
  assert.match(manualPage,/fetch\("\/api\/technical\/bootstrap"/)
  assert.match(manualStyles,/\.valor360-embedded body \{[\s\S]*var\(--bg\)/)

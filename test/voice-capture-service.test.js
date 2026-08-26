@@ -5,6 +5,8 @@ import {createVoiceCandidateExtractor} from '../server/voice-capture/extraction.
 import {createVoiceCaptureService} from '../server/voice-capture/service.js'
 import {VoiceStorageError} from '../server/voice-capture/storage.js'
 import {confirmedMemoryWrites} from '../server/visit-loop/report.js'
+import {buildClientMarketResponse} from '../server/decision-copilot/capability-router.js'
+import {buildRegisterPrefill} from '../src/lib/global-val-conversation.js'
 
 const tenantId='00000000-0000-4000-8000-000000000401'
 const actorId='00000000-0000-4000-8000-000000000402'
@@ -894,4 +896,61 @@ test('VoiceCaptureService — fallback manual pós-visita preserva source_type T
   assert.equal(result.result.visit_report.source_type,'TEXT')
   assert.equal(context.storageProvider.storeCalls.length,0)
   assert.equal(context.transcriptionProvider.calls.length,0)
+})
+
+test('VoiceCaptureService — confirmação do REGISTER grava preço e janela como fatos comerciais estruturados',async()=>{
+  const context=harness({extractor:createVoiceCandidateExtractor()})
+  const manualText=buildRegisterPrefill([
+    {field:'target_price',answer:'R$ 118 por saca',intent:'ASK_COMMODITY',objective:'Como a soja da safra 2026/27 muda a negociação?',commodity:'soja',season:'2026/27'},
+    {field:'decision_window',answer:'Vender na próxima semana',intent:'ASK_COMMODITY',objective:'Como a soja da safra 2026/27 muda a negociação?',commodity:'soja',season:'2026/27'}
+  ])
+  const created=await context.service.create({tenantId,ownerId:actorId,actorId,requestId,now,input:{client_id:clientId,interaction_type:'CLIENT_NOTE',manual_text:manualText,language:'pt-BR',source_context:{surface:'GLOBAL_VAL_COPILOT'}}})
+  const id=created.voice_interaction.voice_interaction_id
+  const processed=await context.service.process({tenantId,ownerId:actorId,actorId,id,requestId,now})
+  assert.deepEqual(processed.voice_interaction.candidates.map(item=>item.metadata.semantic_type),['MARKET_TARGET_PRICE','MARKET_DECISION_WINDOW'])
+  const review=confirmAll(processed.voice_interaction)
+  review.items[0].statement='R$ 125 por saca'
+  await context.service.confirm({tenantId,ownerId:actorId,actorId,id,requestId,now:later,input:review})
+  assert.equal(context.repository.memories.length,2)
+  const target=context.repository.memories.find(item=>item.key==='grain_decision.target_price')
+  const window=context.repository.memories.find(item=>item.key==='grain_decision.decision_window')
+  assert.deepEqual({domain:target.memory_domain,state:target.memory_state,status:target.status,commodity:target.value.commodity,season:target.value.season,targetPrice:target.value.targetPrice,priceUnit:target.value.priceUnit},{domain:'COMMERCIAL',state:'FACT',status:'verified',commodity:'soja',season:'2026/27',targetPrice:125,priceUnit:'BRL/sc_60kg'})
+  assert.deepEqual({domain:window.memory_domain,state:window.memory_state,status:window.status,commodity:window.value.commodity,season:window.value.season,decisionWindow:window.value.decisionWindow},{domain:'COMMERCIAL',state:'FACT',status:'verified',commodity:'soja',season:'2026/27',decisionWindow:'Vender na próxima semana'})
+
+  const nextRequest=buildClientMarketResponse({
+    workspace:{marketSnapshots:[{id:'quote-register',commodity:'soja',marketKind:'forward',region:'Cascavel/PR',price:120,priceUnit:'BRL/sc_60kg',deliveryStart:'2026-10-01',deliveryEnd:'2026-10-31',sourceName:'Fonte autorizada',observedAt:'2026-08-23T14:00:00.000Z',notes:'Safra 2026/27',status:'active'}],intentions:[]},
+    context:{client:{id:clientId,name:'Produtor REGISTER'},opportunities:[],memories:context.repository.memories},
+    facts:{client:{id:clientId,name:'Produtor REGISTER'}},message:'Como a soja da safra 2026/27 muda a negociação deste produtor?',intentHint:'ASK_COMMODITY',now:later
+  })
+  const reasoning=nextRequest.advice.ai_reasoning
+  assert.equal(reasoning.decision_interview.status,'NOT_NEEDED')
+  assert.deepEqual(reasoning.premises.confirmed_memory_refs.map(item=>item.id).sort(),[target.id,window.id].sort())
+  assert.match(reasoning.decision_thesis.THESIS,/alvo e a janela confirmados/i)
+})
+
+test('VoiceCaptureService — rejeição no REGISTER não vira premissa e nova requisição mantém a lacuna',async()=>{
+  const context=harness({extractor:createVoiceCandidateExtractor()})
+  const manualText=buildRegisterPrefill([
+    {field:'target_price',answer:'R$ 118 por saca',intent:'ASK_COMMODITY',objective:'Soja 2026/27',commodity:'soja',season:'2026/27'},
+    {field:'decision_window',answer:'Vender na próxima semana',intent:'ASK_COMMODITY',objective:'Soja 2026/27',commodity:'soja',season:'2026/27'}
+  ])
+  const created=await context.service.create({tenantId,ownerId:actorId,actorId,requestId,now,input:{client_id:clientId,interaction_type:'CLIENT_NOTE',manual_text:manualText,language:'pt-BR',source_context:{surface:'GLOBAL_VAL_COPILOT'}}})
+  const id=created.voice_interaction.voice_interaction_id
+  const processed=await context.service.process({tenantId,ownerId:actorId,actorId,id,requestId,now})
+  const review=confirmAll(processed.voice_interaction)
+  review.items[0].statement='R$ 126 por saca'
+  review.items[1]={candidate_id:processed.voice_interaction.candidates[1].candidate_id,decision:'REJECTED'}
+  await context.service.confirm({tenantId,ownerId:actorId,actorId,id,requestId,now:later,input:review})
+  assert.equal(context.repository.memories.length,1)
+  assert.equal(context.repository.memories[0].value.targetPrice,126)
+
+  const nextRequest=buildClientMarketResponse({
+    workspace:{marketSnapshots:[{id:'quote-register-reject',commodity:'soja',marketKind:'forward',region:'Cascavel/PR',price:120,priceUnit:'BRL/sc_60kg',deliveryStart:'2026-10-01',deliveryEnd:'2026-10-31',sourceName:'Fonte autorizada',observedAt:'2026-08-23T14:00:00.000Z',notes:'Safra 2026/27',status:'active'}],intentions:[]},
+    context:{client:{id:clientId,name:'Produtor REGISTER'},opportunities:[],memories:context.repository.memories},
+    facts:{client:{id:clientId,name:'Produtor REGISTER'}},message:'Como a soja da safra 2026/27 muda a negociação deste produtor?',intentHint:'ASK_COMMODITY',now:later
+  })
+  const reasoning=nextRequest.advice.ai_reasoning
+  assert.deepEqual(reasoning.decision_interview.material_missing_information,['decision_window'])
+  assert.deepEqual(reasoning.premises.confirmed_memory_refs.map(item=>item.id),[context.repository.memories[0].id])
+  assert.match(reasoning.decision_thesis.KEY_UNCERTAINTY,/janela real/i)
 })

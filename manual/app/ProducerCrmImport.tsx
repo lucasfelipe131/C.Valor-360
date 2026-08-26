@@ -630,28 +630,32 @@ export default function ProducerCrmImport({
     const items: CrmProducer[] = preview.map(({ confidence: _confidence, uncertainFields: _uncertainFields, ...item }) => item);
     const linkedPropertyCount = items.reduce((sum, item) => sum + (item.propertyRecords?.length ?? 0), 0);
     onImport(items);
-    await saveRecord({
-      type: "crm_import",
-      title: "Importação de CRM · " + fileName,
-      payload: {
-        fileName,
-        recognition: source === "ai" ? "IA com conferência" : "leitura local",
-        producerCount: items.length,
-        linkedPropertyCount,
-        unlinkedProperties: unlinkedProperties.map((property) => ({ name: property.name, code: property.code, city: property.city, areaHa: property.areaHa })),
-        producers: items.map((item) => ({
-          id: item.id,
-          name: item.name,
-          crmCode: item.crmCode,
-          totalArea: item.area,
-          cultureArea: item.cultureArea,
-          cropAreas: item.cropAreas,
-          properties: item.propertyRecords?.map((property) => ({ name: property.name, code: property.code, areaHa: property.areaHa })),
-        })),
-        savedAt: new Date().toISOString(),
-      },
-    }).catch(() => undefined);
-    setMessage(items.length + " produtores e " + linkedPropertyCount + " propriedade(s) vinculada(s) foram cadastrados e serão sincronizados com a conta." + (unlinkedProperties.length ? " " + unlinkedProperties.length + " propriedade(s) sem vínculo ficaram registradas para conferência." : ""));
+    try {
+      await saveRecord({
+        type: "crm_import",
+        title: "Importação de CRM · " + fileName,
+        payload: {
+          fileName,
+          recognition: source === "ai" ? "IA com conferência" : "leitura local",
+          producerCount: items.length,
+          linkedPropertyCount,
+          unlinkedProperties: unlinkedProperties.map((property) => ({ name: property.name, code: property.code, city: property.city, areaHa: property.areaHa })),
+          producers: items.map((item) => ({
+            id: item.id,
+            name: item.name,
+            crmCode: item.crmCode,
+            totalArea: item.area,
+            cultureArea: item.cultureArea,
+            cropAreas: item.cropAreas,
+            properties: item.propertyRecords?.map((property) => ({ name: property.name, code: property.code, areaHa: property.areaHa })),
+          })),
+          savedAt: new Date().toISOString(),
+        },
+      });
+      setMessage(items.length + " produtores e " + linkedPropertyCount + " propriedade(s) vinculada(s) foram cadastrados e sincronizados com a conta." + (unlinkedProperties.length ? " " + unlinkedProperties.length + " propriedade(s) sem vínculo ficaram registradas para conferência." : ""));
+    } catch (error) {
+      setMessage((error instanceof Error ? error.message : "A integração com o VALOR 360 não foi confirmada.") + " Os produtores importados permanecem no workspace para nova tentativa.");
+    }
     setPreview([]);
   }
   return (

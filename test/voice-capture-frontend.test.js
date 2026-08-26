@@ -90,8 +90,12 @@ test('VoiceCapture frontend — hook invalida operações antigas e limpa mídia
  assert.doesNotMatch(recorder,/cancelledRef/)
 })
 
-test('VoiceCapture frontend — captura mantém um toque, fallback texto e cancelamento explícito',()=>{
- assert.match(component,/const launch=\(\)=>\{confirmationNotifiedRef\.current=false;setOpen\(true\);setMode\('AUDIO'\);setPhase\('capture'\);setError\(''\);const pendingId=readPending\(\);if\(pendingId\)resumePending\(pendingId\);else recorder\.start\(\)\}/)
+test('VoiceCapture frontend — captura mantém um toque, texto inicial, retomada pendente e cancelamento explícito',()=>{
+ assert.match(component,/export default function VoiceCapture\(\{clientId,visitId,interactionType='GENERAL_CONTEXT',label='Registrar áudio',description='',initialText='',sourceContext=\{\},onConfirmed,transient=false,onTranscribed\}\)/)
+ assert.match(component,/const launch=\(\)=>\{const seeded=String\(initialText\|\|''\)\.trim\(\)\.slice\(0,3000\);/)
+ assert.match(component,/setMode\(seeded\?'TEXT':'AUDIO'\);setManualText\(seeded\);setPhase\('capture'\);setError\(''\)/)
+ assert.match(component,/const pendingId=readPending\(\);if\(pendingId\)resumePending\(pendingId\);else if\(!seeded\)recorder\.start\(\)\}/)
+ assert.doesNotMatch(component,/const pendingId=readPending\(\);if\(pendingId\)resumePending\(pendingId\);else recorder\.start\(\)/)
  assert.match(component,/const recorderBusy=recorder\.status==='requesting'\|\|recorder\.status==='validating'/)
  assert.match(component,/disabled=\{recorderBusy\}[^>]*>.*Escolher áudio salvo/s)
  assert.match(component,/aria-label="Escolher arquivo de áudio"[^>]*disabled=\{recorderBusy\}/)
