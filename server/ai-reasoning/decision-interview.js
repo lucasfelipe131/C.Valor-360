@@ -62,7 +62,7 @@ const questionLibrary={
  ASK_AGRONOMIC:[
   {field:'agronomic_scope',known:/\b(?:talhao|fazenda|propriedade|area|lavoura)\b/,question:'Em qual área ou talhão esse sinal foi observado?',why:'Sem localização, não consigo cruzar histórico, clima e outras evidências do campo.'},
   {field:'crop_stage',known:/\b(?:v\d+|r\d+|estadio|fase|emergencia|vegetativo|reprodutivo|florescimento|enchimento)\b/,question:'Qual é a cultura e o estádio atual da lavoura?',why:'O estádio muda risco, urgência e quais hipóteses são plausíveis.'},
-  {field:'observed_pattern',known:/\b(?:reboleira|borda|uniforme|foco|incidencia|severidade|sintoma|observado)\b/,question:'O problema aparece em reboleiras, bordas ou de forma uniforme?',why:'O padrão espacial ajuda a separar hipóteses antes de qualquer orientação técnica.'}
+  {field:'observed_pattern',known:/\b(?:reboleira\w*|borda\w*|uniform\w*|foco\w*|incidenc\w*|sever\w*|sintom\w*|observad\w*)\b/,question:'O problema aparece em reboleiras, bordas ou de forma uniforme?',why:'O padrão espacial ajuda a separar hipóteses antes de qualquer orientação técnica.'}
  ],
  CALCULATE:[
   {field:'calculation_basis',known:/\b\d+(?:[.,]\d+)?\b/,question:'Quais valores e unidades confirmados devo usar no cálculo?',why:'Sem base e unidade, um resultado numérico pode parecer preciso e estar errado.'},
@@ -140,7 +140,7 @@ export function buildDecisionInterview({intent='ASK_CLIENT',message='',context={
    confirmed_memory_unchanged:true
   },
   explanation:questions.length
-   ?`Faltam ${questions.length} informaç${questions.length===1?'ão':'ões'} materiais que podem mudar a tese. A resposta será usada apenas nesta conversa até uma confirmação de registro.`
+   ?`${questions.length===1?'Falta':'Faltam'} ${questions.length} informaç${questions.length===1?'ão material':'ões materiais'} que pode${questions.length===1?'':'m'} mudar a tese. A resposta será usada apenas nesta conversa até uma confirmação de registro.`
    :'O contexto atual é suficiente para responder sem transformar a conversa em questionário.',
   recompute_after_reply:true,
   register_offer:{available:true,automatic:false,confirmation_required:true}

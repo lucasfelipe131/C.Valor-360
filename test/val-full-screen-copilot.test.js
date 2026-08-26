@@ -22,6 +22,7 @@ const mobile=read('src/components/MobileNav.jsx')
 const panel=read('src/components/copilot/ValContextualPanel.jsx')
 const cards=read('src/components/copilot/DecisionCards.jsx')
 const speech=read('src/components/copilot/EphemeralSpeechButton.jsx')
+const interviewCard=read('src/components/copilot/DecisionInterviewCard.jsx')
 const styles=read('src/val-full-screen-copilot.css')
 
 const requiredDocuments=[
@@ -120,6 +121,7 @@ test('composer multimodal diferencia ASK, REGISTER, voz efêmera e arquivo sem v
  assert.match(speech,/SpeechRecognition\|\|globalThis\.webkitSpeechRecognition/)
  assert.match(speech,/onTranscript/)
  assert.match(copilot,/DecisionInterviewCard/)
+ assert.match(interviewCard,/useId\(\)/)
 })
 
 test('FAST/DEEP, qualidade, current data e governança continuam no mesmo pipeline',()=>{
@@ -131,4 +133,3 @@ test('FAST/DEEP, qualidade, current data e governança continuam no mesmo pipeli
  assert.match(copilot,/teste sem contexto/)
  assert.match(copilot,/As premissas são recalculadas/)
 })
-

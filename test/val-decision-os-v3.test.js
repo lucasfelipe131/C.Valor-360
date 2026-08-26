@@ -4,6 +4,7 @@ import test from 'node:test'
 import {validateAIReasoningResult} from '../server/ai-reasoning/contracts.js'
 import {buildDecisionInterview,buildReasoningConfidence} from '../server/ai-reasoning/decision-interview.js'
 import {legacyIntentAliases,normalizeValIntent,routeValIntent,valIntents} from '../server/ai-reasoning/intent-router.js'
+import {buildSessionReplyMessage} from '../src/lib/global-val-conversation.js'
 import {
  answerCurrentMarket,
  buildFastClientResponse,
@@ -195,6 +196,10 @@ test('Decision Interview — pergunta no máximo três lacunas materiais e não 
  assert.equal(interview.session_context.confirmed_memory_unchanged,true)
  assert.equal(interview.register_offer.confirmation_required,true)
 
+ const single=buildDecisionInterview({intent:'ASK_AGRONOMIC',message:'No talhão Norte, soja em estádio V4.',context:{},result})
+ assert.equal(single.questions.length,1)
+ assert.match(single.explanation,/^Falta 1 informação material que pode mudar/)
+
  const knownContext={
   conversationSession:{id:'thread-1'},
   memories:[{status:'verified',memory_state:'FACT',value:{decision:'fechar a proposta',participants:'pai e sócio',timing:'amanhã nesta semana'}}]
@@ -226,6 +231,24 @@ test('Decision Interview — segunda rodada preserva intenção e elimina a perg
  const copilot=read('src/components/GlobalValCopilot.jsx')
  assert.ok(copilot.includes('intent:reasoning.intent'))
  assert.ok(copilot.includes('intent||activeReply?.intent||'))
+})
+
+test('Decision Interview — reconhece padrão agronômico no plural e não repete a pergunta confirmada na sessão',()=>{
+ const result={
+  conversation_id:'thread-agro',confidence:{score:.3},facts_used:[],knowledge_refs:[],golden_questions:[],
+  missing_information:['área','estádio','padrão'],agronomic_context:{status:'limited'}
+ }
+ const message=buildSessionReplyMessage({
+  objective:'O que o contexto agronômico disponível muda na visita?',
+  replies:[{
+   field:'observed_pattern',
+   question:'O problema aparece em reboleiras, bordas ou de forma uniforme?',
+   answer:'Em reboleiras no talhão Norte, soja em V4.'
+  }]
+ })
+ const interview=buildDecisionInterview({intent:'ASK_AGRONOMIC',message,context:{conversationSession:{id:'thread-agro'}},result})
+ assert.equal(interview.questions.some(item=>item.field==='observed_pattern'),false)
+ assert.equal(interview.status,'NOT_NEEDED')
 })
 
 test('Reasoning Confidence — dimensões são calibradas e agronomia não aplicável fica nula',()=>{
