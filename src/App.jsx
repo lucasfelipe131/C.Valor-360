@@ -54,7 +54,8 @@ const meta={
  questionnaire:['Produtor 360','Perfil e preferências do produtor'],
  reports:['Relatórios','Indicadores, NPS, IRT e execução comercial'],
  settings:['Configurações','Conta, governança e parâmetros'],
- admin:['Administração','Acessos, uso e métricas globais do sistema']
+ admin:['Administração','Acessos, uso e métricas globais do sistema'],
+ copilot:['VAL Copilot','Centro de conversa, decisão e orquestração do ecossistema']
 }
 export default function App(){
  const publicSurveyToken=new URLSearchParams(window.location.search).get('responder')
@@ -71,6 +72,7 @@ export default function App(){
  const [opportunities,setOpportunities]=useState([])
  const [toast,setToast]=useState('')
  const [copilotOpen,setCopilotOpen]=useState(false)
+ const [copilotReturnPage,setCopilotReturnPage]=useState('dashboard')
  const [copilotSeed,setCopilotSeed]=useState(null)
  const [copilotPageContext,setCopilotPageContext]=useState(null)
  const copilotOwnerScope=currentUser?.storageScope||currentUser?.id||''
@@ -79,8 +81,9 @@ export default function App(){
  const prepareClient=c=>{if(!c?.id)return;setSelected(c);setPrepareVisitClientId(c.id);setPage('visits');if(page==='visits')window.requestAnimationFrame(resetPageViewport)}
  const openValClient=c=>{setSelected(c);setValMode('insumos');setPage('val');if(page==='val')window.requestAnimationFrame(resetPageViewport)}
  const updateCopilotPageContext=useCallback(input=>setCopilotPageContext(input?{...input,storageScope:copilotOwnerScope}:null),[copilotOwnerScope])
- const openCopilot=(input={})=>{const launch=resolveCopilotLaunch({input,implicitContext:copilotPageContext,page,storageScope:copilotOwnerScope,clients:clientList,selectedClient:selected});setCopilotSeed({...launch,nonce:Date.now()});setCopilotOpen(true)}
- const navigate=next=>{if(next!=='client360')setSelected(null);if(next!=='visits')setPrepareVisitClientId('');if(next==='val')setValMode(null);setPage(next);if(next===page)window.requestAnimationFrame(resetPageViewport)}
+ const openCopilot=(input={})=>{const launch=resolveCopilotLaunch({input,implicitContext:copilotPageContext,page,storageScope:copilotOwnerScope,clients:clientList,selectedClient:selected});setCopilotSeed({...launch,nonce:Date.now()});if(page!=='copilot')setCopilotReturnPage(page);setCopilotOpen(true);setPage('copilot')}
+ const closeCopilot=()=>{setCopilotOpen(false);setPage(copilotReturnPage&&copilotReturnPage!=='copilot'?copilotReturnPage:'dashboard')}
+ const navigate=next=>{if(next!=='client360'&&next!=='copilot')setSelected(null);if(next!=='visits')setPrepareVisitClientId('');if(next==='val')setValMode(null);if(next!=='copilot')setCopilotOpen(false);setPage(next);if(next===page)window.requestAnimationFrame(resetPageViewport)}
  const addClient=client=>{
   let saved
   const incomingCommercial=Object.fromEntries(Object.entries(client.commercial||{}).filter(([,value])=>value!==''&&value!==null&&value!==undefined))
@@ -132,8 +135,8 @@ export default function App(){
   <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
   <Sidebar page={page} currentUser={currentUser} setPage={navigate} onOpenVal={()=>openCopilot()}/>
   <main className="main" id="main-content" tabIndex="-1">
-   <Topbar title={title} subtitle={subtitle} onNavigate={navigate} onOpenVal={()=>openCopilot()}/>
-   <div className="content">
+   {page!=='copilot'&&<Topbar title={title} subtitle={subtitle} onNavigate={navigate} onOpenVal={()=>openCopilot()}/>}
+   <div className={`content ${page==='copilot'?'content-copilot-fullscreen':''}`}>
     {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient} onRefreshPortfolio={refreshPortfolio} onOpenCopilot={openCopilot}/>}
     {page==='clients'&&<Clients clients={clientList} opportunities={opportunities} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
     {page==='datahub'&&<DataHub clients={clientList} onImport={importClients} onProfileImport={addClients} onUpdate={updateClient} onDelete={deleteClient} onNotify={notify}/>}
@@ -152,10 +155,10 @@ export default function App(){
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
     {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
     {page==='admin'&&currentUser?.role==='admin'&&<Admin currentUser={currentUser} onNotify={notify}/>}
+    <GlobalValCopilot key={copilotOwnerScope||'session'} open={page==='copilot'&&copilotOpen} onClose={closeCopilot} clients={clientList} seed={copilotSeed} storageScope={currentUser?.storageScope} visits={visits} opportunities={opportunities} onRefreshPortfolio={refreshPortfolio} onOpenClient={openClient} onPrepareVisit={prepareClient} onNavigate={navigate}/>
    </div>
   </main>
-  <MobileNav page={page} setPage={navigate} currentUser={currentUser} onOpenVal={()=>openCopilot()}/>
-  <GlobalValCopilot key={copilotOwnerScope||'session'} open={copilotOpen} onClose={()=>setCopilotOpen(false)} clients={clientList} contextClient={page==='client360'?selected:null} seed={copilotSeed} storageScope={currentUser?.storageScope} onRefreshPortfolio={refreshPortfolio} onOpenClient={openClient}/>
+  {page!=='copilot'&&<MobileNav page={page} setPage={navigate} currentUser={currentUser} onOpenVal={()=>openCopilot()}/>}
   {toast&&<div className="toast" role="status">{toast}</div>}
  </div>
 }

@@ -2,7 +2,7 @@ import React from 'react'
 import { BrainCircuit, Users, CalendarDays, Target, Search, Sprout, FileBarChart, Settings, ClipboardList, DatabaseZap, ShieldCheck } from 'lucide-react'
 import Logo from './Logo'
 const primary=[
- ['dashboard','Hoje',BrainCircuit],['clients','Clientes',Users],['visits','Visitas',CalendarDays],['opportunities','Oportunidades',Target]
+ ['dashboard','Hoje',BrainCircuit],['clients','Clientes',Users],['visits','Visitas',CalendarDays],['opportunities','Oportunidades',Target],['copilot','VAL',BrainCircuit]
 ]
 const secondary=[
  ['val','Análise avançada',Search],['datahub','Base Inteligente',DatabaseZap],['questionnaire','Coletar preferências',ClipboardList],
@@ -15,7 +15,7 @@ export default function Sidebar({page,setPage,currentUser,onOpenVal}){
  const secondaryActive=visibleSecondary.some(([id])=>id===page)
  return <aside className="sidebar">
   <Logo/>
-  <nav aria-label="Jornada principal">{primary.map(([id,label,Icon])=><button type="button" key={id} className={page===id?'active':''} aria-current={page===id?'page':undefined} onClick={()=>setPage(id)}><Icon size={18}/><span>{label}</span></button>)}<button type="button" className="sidebar-val-copilot" onClick={onOpenVal}><BrainCircuit size={18}/><span>Perguntar à VAL</span></button></nav>
+  <nav aria-label="Jornada principal">{primary.map(([id,label,Icon])=><button type="button" key={id} className={page===id?'active':''} aria-current={page===id?'page':undefined} aria-label={id==='copilot'?'Perguntar à VAL':undefined} onClick={()=>id==='copilot'?onOpenVal?.():setPage(id)}><Icon size={18}/><span>{label}</span></button>)}</nav>
   <details className="sidebar-support" open={secondaryActive||undefined}><summary><Search size={17}/><span>Mais recursos</span></summary><div>{visibleSecondary.map(([id,label,Icon])=><button type="button" key={id} className={page===id?'active':''} aria-current={page===id?'page':undefined} onClick={()=>setPage(id)}><Icon size={17}/><span>{label}</span></button>)}</div></details>
   <div className="user-card"><div className="user-avatar">{initials}</div><div><strong>{account}</strong><small>{currentUser?.demo?'Modo demonstrativo':'Acesso protegido do piloto'}</small></div></div>
  </aside>
