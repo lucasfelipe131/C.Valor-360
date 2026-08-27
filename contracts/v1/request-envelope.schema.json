@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://val.local/contracts/v1/request-envelope.schema.json",
+  "title": "VAL RequestEnvelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "request_id",
+    "organization_id",
+    "actor",
+    "subject",
+    "objective",
+    "context_refs",
+    "policy_context"
+  ],
+  "properties": {
+    "contract_version": {"const": "val.request.v1"},
+    "request_id": {"type": "string", "format": "uuid"},
+    "organization_id": {"type": "string", "minLength": 1, "maxLength": 180, "pattern": "^[a-zA-Z0-9][a-zA-Z0-9._:@-]{0,179}$"},
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "role"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "role": {"enum": ["admin", "manager", "consultant", "technical_reviewer"]}
+      }
+    },
+    "subject": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {"const": "client"},
+        "id": {"type": "string", "minLength": 1, "maxLength": 180}
+      }
+    },
+    "objective": {"enum": ["prepare_visit", "agronomic_question", "agronomic_critical", "next_best_action", "general_assistance"]},
+    "context_refs": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "id"],
+        "properties": {
+          "type": {"type": "string", "minLength": 1, "maxLength": 80},
+          "id": {"type": "string", "minLength": 1, "maxLength": 180},
+          "version": {"type": "string", "minLength": 1, "maxLength": 80}
+        }
+      }
+    },
+    "policy_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["resource", "operation", "scope", "scope_ref"],
+      "properties": {
+        "resource": {"const": "val_recommendation"},
+        "operation": {"const": "execute"},
+        "scope": {"const": "own_portfolio"},
+        "scope_ref": {"type": "string", "minLength": 1, "maxLength": 180}
+      }
+    }
+  }
+}

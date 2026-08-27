@@ -45,6 +45,24 @@
   color: var(--text);
 }
 
+.valor360-embedded .sidebar,
+.valor360-embedded .mobile-header,
+.valor360-embedded .mobile-menu,
+.valor360-embedded .bottom-nav,
+.valor360-embedded .mobile-company-signature {
+  display: none !important;
+}
+
+.valor360-embedded .main {
+  width: 100%;
+  max-width: none;
+  margin-left: 0;
+}
+
+.valor360-embedded body {
+  padding-bottom: 0;
+}
+
 .valor360-embedded input,
 .valor360-embedded select,
 .valor360-embedded textarea {
@@ -5280,6 +5298,115 @@ a {
   font-size: 8px;
 }
 
+.soil-link-governance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px 18px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid rgba(65, 223, 150, .18);
+  border-radius: 12px;
+  background: rgba(65, 223, 150, .035);
+}
+
+.soil-link-governance.unlinked {
+  border-color: rgba(255, 180, 91, .22);
+  background: rgba(255, 180, 91, .04);
+}
+
+.soil-link-summary span,
+.soil-link-summary strong,
+.soil-link-summary small {
+  display: block;
+}
+
+.soil-link-summary span {
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.soil-link-summary strong {
+  margin-top: 4px;
+  font-size: 11px;
+}
+
+.soil-link-summary small {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 8px;
+}
+
+.soil-link-summary p {
+  margin: 8px 0 0;
+  color: var(--orange);
+  font-size: 8px;
+}
+
+.soil-link-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.soil-link-actions .danger {
+  border-color: rgba(255, 117, 111, .25);
+  color: var(--red);
+}
+
+.soil-link-history {
+  grid-column: 1 / -1;
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.soil-link-history summary {
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 8px;
+}
+
+.soil-link-history ol {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.soil-link-history li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
+  padding: 8px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, .025);
+  font-size: 8px;
+}
+
+.soil-link-history li span,
+.soil-link-history li time {
+  color: var(--muted);
+}
+
+.soil-link-state {
+  display: inline-flex;
+  width: fit-content;
+  margin-top: 5px;
+  padding: 3px 6px;
+  border: 1px solid rgba(65, 223, 150, .18);
+  border-radius: 999px;
+  color: var(--green);
+  font-size: 7px;
+  font-weight: 750;
+}
+
+.soil-link-state.unlinked {
+  border-color: rgba(255, 180, 91, .2);
+  color: var(--orange);
+}
+
 .soil-field-link strong {
   margin-top: 4px;
   font-size: 10px;
@@ -6822,6 +6949,21 @@ a {
     flex: 1;
   }
 
+  .soil-link-governance,
+  .soil-link-history li {
+    grid-template-columns: 1fr;
+  }
+
+  .soil-link-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .soil-link-actions .button {
+    width: 100%;
+    justify-content: center;
+  }
+
   .soil-identification-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -7979,6 +8121,7 @@ a {
 .cloud-sync-badge { display: inline-flex; align-items: center; gap: 7px; padding: 8px 12px; border-radius: 999px; font-size: .82rem; font-weight: 750; background: #eef5f2; color: #284d43; }
 .cloud-sync-badge.saved { background: #e8f6eb; color: #21653a; }
 .cloud-sync-badge.saving, .cloud-sync-badge.loading { background: #eef4ff; color: #315a91; }
+.cloud-sync-badge.attention { background: #fff1d6; color: #7c4a09; }
 .cloud-sync-badge.offline { background: #fff3e2; color: #8a5414; }
 .producer-selection-panel { display: grid; gap: 18px; }
 .producer-select-field { max-width: 760px; }

@@ -66,6 +66,18 @@ export class GrainRepository{
   }catch{throw serviceError('A SOG não pôde carregar os dados protegidos no PostgreSQL.')}
  }
 
+ async getMarketReferences(ownerId,{limit=80}={}){
+  const boundedLimit=Math.max(2,Math.min(200,Number(limit)||80))
+  if(!this.db.configured){
+   const store=this.fallback()
+   return {marketSnapshots:store.grains.marketSnapshots.filter(item=>ownerMatches(item,ownerId)&&item.status!=='inactive').map(marketRecord).sort((left,right)=>String(right.observedAt).localeCompare(String(left.observedAt))).slice(0,boundedLimit)}
+  }
+  try{
+   const result=await this.db.query(`SELECT * FROM sog_market_snapshots WHERE tenant_id=$1 AND owner_user_id=$2 AND status='active' ORDER BY observed_at DESC LIMIT $3`,[this.tenantId,ownerId,boundedLimit])
+   return {marketSnapshots:result.rows.map(marketRecord)}
+  }catch{throw serviceError('A referência de mercado não pôde ser consultada no PostgreSQL.')}
+ }
+
  async saveProfile(input,ownerId){
   const now=new Date().toISOString()
   if(!this.db.configured){

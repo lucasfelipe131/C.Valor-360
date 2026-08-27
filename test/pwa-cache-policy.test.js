@@ -39,9 +39,13 @@ test('build carimba e valida o service worker sem depender de edição manual',(
   writeFileSync(join(root,'public','sw.js'),read('public/sw.js'))
   const stamped=stampServiceWorker({root,releaseId:'release-abc123'})
   assert.equal(stamped.cacheName,'valor360-vrelease-abc123')
+  assert.ok(stamped.manifestPath.endsWith('dist/release.json'))
   const compiled=readFileSync(join(root,'dist','sw.js'),'utf8')
   assert.match(compiled,/const CACHE='valor360-vrelease-abc123'/)
   assert.doesNotMatch(compiled,/__VAL_RELEASE__/)
+  const manifest=JSON.parse(readFileSync(join(root,'dist','release.json'),'utf8'))
+  assert.equal(manifest.schemaVersion,'val.release.v1')
+  assert.equal(manifest.release.id,'release-abc123')
   assert.equal(verifyServiceWorker({root,releaseId:'release-abc123'}).cacheName,stamped.cacheName)
  }finally{rmSync(root,{recursive:true,force:true})}
 })

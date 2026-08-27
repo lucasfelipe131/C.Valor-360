@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://val.local/contracts/v1/commitment.schema.json",
+  "title": "Commitment v1",
+  "type": "object",
+  "required": ["contract_version", "version", "commitment_id", "organization_id", "client_id", "description", "owner_type", "owner_id", "due_at", "status", "success_criteria", "agreed_with_client", "evidence_refs", "source_ref", "audit", "created_at"],
+  "properties": {
+    "contract_version": {"const": "val.commitment.v1"},
+    "version": {"const": "val.commitment.v1"},
+    "commitment_id": {"type": "string", "minLength": 1},
+    "organization_id": {"type": "string", "minLength": 1},
+    "client_id": {"type": "string", "minLength": 1},
+    "visit_id": {"type": ["string", "null"]},
+    "opportunity_id": {"type": ["string", "null"]},
+    "action_plan_id": {"type": ["string", "null"]},
+    "action_id": {"type": ["string", "null"]},
+    "description": {"type": "string", "minLength": 1},
+    "owner_type": {"enum": ["USER", "CLIENT", "EXTERNAL"]},
+    "owner_id": {"type": "string", "minLength": 1},
+    "due_at": {"type": "string", "format": "date-time"},
+    "status": {"enum": ["PROPOSED", "ACCEPTED", "IN_PROGRESS", "DONE", "BLOCKED", "CANCELLED"]},
+    "success_criteria": {"type": "string", "minLength": 1},
+    "agreed_with_client": {"type": "boolean"},
+    "evidence_refs": {"type": "array", "items": {"type": "object", "required": ["id"], "properties": {"id": {"type": "string", "minLength": 1}, "type": {"type": "string"}}}},
+    "source_ref": {"type": "string", "minLength": 1},
+    "audit": {"type": "object", "required": ["created_by", "request_id"], "properties": {"created_by": {"type": "string", "minLength": 1}, "request_id": {"type": "string", "minLength": 1}, "updated_by": {"type": "string"}, "transition_reason": {"type": ["string", "null"]}}},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": ["string", "null"], "format": "date-time"},
+    "completed_at": {"type": ["string", "null"], "format": "date-time"},
+    "cancelled_at": {"type": ["string", "null"], "format": "date-time"}
+  }
+}

@@ -3,9 +3,10 @@ import {createHash,createHmac,timingSafeEqual} from 'node:crypto'
 export const supportedIntegrationEvents=new Set([
   'business.closed','business.lost','business.updated',
   'field_report.completed','soil_analysis.completed','ndvi.observation',
+  'agronomic.scan.completed',
   'manual.record.saved','manual.producer.updated','manual.workspace.updated'
 ])
-const signedTechnicalEvents=new Set(['field_report.completed','soil_analysis.completed','manual.record.saved','manual.producer.updated','manual.workspace.updated'])
+const signedTechnicalEvents=new Set(['field_report.completed','soil_analysis.completed','agronomic.scan.completed','manual.record.saved','manual.producer.updated','manual.workspace.updated'])
 
 const clean=value=>String(value??'').trim().slice(0,500)
 const externalKey=value=>clean(value).slice(0,180)
@@ -32,10 +33,18 @@ export function requiresTechnicalSignature(type){
   return signedTechnicalEvents.has(clean(type))
 }
 
-function compact(value,depth=0){
-  if(depth>7)return null
-  if(Array.isArray(value))return value.slice(0,100).map(item=>compact(item,depth+1))
-  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).slice(0,100).map(([key,item])=>[clean(key).slice(0,80),compact(item,depth+1)]))
+function compact(value,depth=0,path=[]){
+  if(depth>12)return null
+  const geometryScoped=path.some(segment=>['geometry','points','polygons'].includes(segment))
+  if(Array.isArray(value)){
+    if(geometryScoped&&value.length>5_000)throw new Error('A geometria excede 5000 posições e não pode ser truncada silenciosamente.')
+    const limit=geometryScoped?5_000:100
+    return value.slice(0,limit).map(item=>compact(item,depth+1,path))
+  }
+  if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).slice(0,100).map(([key,item])=>{
+    const normalizedKey=clean(key).slice(0,80)
+    return [normalizedKey,compact(item,depth+1,[...path,normalizedKey])]
+  }))
   if(typeof value==='string')return value.slice(0,10_000)
   if(typeof value==='number'||typeof value==='boolean'||value===null)return value
   return clean(value)
@@ -60,6 +69,19 @@ export function normalizeIntegrationEvent(input){
     requireRange(payload.depthFromCm,'payload.depthFromCm',0,10_000);requireRange(payload.depthToCm,'payload.depthToCm',0,10_000)
     if(provided(payload.depthFromCm)&&provided(payload.depthToCm)&&Number(payload.depthToCm)<=Number(payload.depthFromCm))throw new Error('payload.depthToCm precisa ser maior que depthFromCm.')
     for(const measurement of Array.isArray(payload.measurements)?payload.measurements:[])requireRange(measurement?.confidence,'measurement.confidence',0,100)
+  }
+  if(type==='agronomic.scan.completed'){
+    if(clean(payload.provenanceContractVersion)!=='AgronomicScanProvenance.v1')throw new Error('Versão de proveniência do scan não suportada.')
+    if(!['NUTRISCAN','FITOSCAN','INSETOSCAN','DANINHASCAN'].includes(clean(payload.analysisType).toUpperCase()))throw new Error('payload.analysisType não é suportado.')
+    if(!clean(payload.resultReference))throw new Error('payload.resultReference é obrigatório.')
+    requireDate(payload.resultCreatedAt,'payload.resultCreatedAt')
+    const sources=Array.isArray(payload.sourceAttachments)?payload.sourceAttachments:[]
+    if(sources.length<1||sources.length>3)throw new Error('payload.sourceAttachments precisa conter de um a três attachments.')
+    for(const source of sources){
+      if(!/^[0-9a-f-]{36}$/i.test(clean(source?.attachmentId)))throw new Error('sourceAttachments.attachmentId é inválido.')
+      if(!['LINKED_CLIENT','UNLINKED'].includes(clean(source?.association).toUpperCase()))throw new Error('sourceAttachments.association é inválida.')
+      requireDate(source?.createdAt,'sourceAttachments.createdAt')
+    }
   }
   if(type==='field_report.completed')for(const finding of Array.isArray(payload.findings)?payload.findings:[])requireRange(finding?.confidence,'finding.confidence',0,100)
   return {

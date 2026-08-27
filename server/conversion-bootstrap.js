@@ -11,9 +11,15 @@ import {buildConversationOrchestration,enrichAdviceWithOrchestration,conversatio
 import {prepareConversationThread} from './conversation-thread-context.js'
 import {languageEnhancerVersion,preserveEnhancedLanguage} from './language-enhancer.js'
 import {buildPortfolioRadar} from './portfolio-radar.js'
+import {buildInsightFeed} from './execution/insight-card.js'
 import {enforceValSpecificity,mergeStructuredReasoning,resolveStructuredReasoningRoute,specificityVersion} from './val-specificity.js'
+import {attachCommercialComposition} from './commercial/composition.js'
+import {attachExecutionComposition} from './execution/composition.js'
+import {aiReasoningResultVersion,attachAIReasoning,valResponseQualityVersion} from './ai-reasoning/index.js'
+import {observe} from './observability.js'
 
 const PATCHED=Symbol.for('valor360.conversion-core.patched')
+export const conversionCompositionVersion='conversion-bootstrap-v1'
 const RADAR_CACHE_TTL_MS=10*60_000
 const radarCache=new Map()
 const originalQuestionContext=new AsyncLocalStorage()
@@ -59,14 +65,14 @@ function radarFingerprint(intelligence,ownerId,now){
   })).digest('hex').slice(0,20)
 }
 
-function finalAdvice(advice,rawContext,message,usedGenerativeAi=false){
+function finalAdvice(advice,rawContext,message,usedGenerativeAi=false,executionInput={}){
   const thread=prepareConversationThread(rawContext||{},message||'')
   const context=thread.context
   const effectiveMessage=thread.message
   const conversion=buildConversionIntelligence(context,effectiveMessage)
   let orchestration=buildConversationOrchestration(context,effectiveMessage,{attachmentCount:context.currentAttachments?.length||0})
   if(usedGenerativeAi){
-    const reasoning=resolveStructuredReasoningRoute(orchestration,context,effectiveMessage,{providerConfigured:true})
+    const reasoning=resolveStructuredReasoningRoute(orchestration,context,effectiveMessage,{providerConfigured:true,intentHint:executionInput.intentHint})
     orchestration={...orchestration,route:{...reasoning.route,useGenerativeAi:true,mode:'structured_hybrid'}}
   }
   const reconciled=reconcileAdviceWithConversion(advice||{},conversion,{preserveSafety:true})
@@ -74,7 +80,11 @@ function finalAdvice(advice,rawContext,message,usedGenerativeAi=false){
   const merged=mergeStructuredReasoning(enriched,advice||{},context,effectiveMessage,{usedGenerativeAi})
   const normalized=normalizeAdviceForValUi(merged,conversion)
   const specific=enforceValSpecificity(normalized,context,effectiveMessage,{usedGenerativeAi,route:orchestration.route})
-  return {context,thread,conversion,orchestration,advice:specific}
+  const commercial=attachCommercialComposition(specific,{context,message:effectiveMessage,conversion,orchestration})
+  const selectedDueAt=conversion?.selectedOpportunity?.nextActionAt||conversion?.selectedOpportunity?.next_action_at||null
+  const execution=attachExecutionComposition(commercial,{context,contextSnapshot:context.contextSnapshot,organizationId:context.contextSnapshot?.organization_id,actor:executionInput.actorId?{type:'USER',id:executionInput.actorId}:null,defaultDueAt:selectedDueAt})
+  const reasoning=attachAIReasoning(execution,{context,message:thread.originalMessage||message,run:executionInput.modelRun||{model:usedGenerativeAi?'structured-provider':'rules-v7-specific',promptVersion:'val-ai-copilot-v2',status:usedGenerativeAi?'completed':'fallback',generativeUsed:usedGenerativeAi},conversationId:context.conversationSession?.id,intentHint:executionInput.intentHint})
+  return {context,thread,conversion,orchestration,advice:reasoning}
 }
 
 function deterministicDecision(context,effectiveMessage,originalMessage,input){
@@ -89,7 +99,7 @@ function deterministicDecision(context,effectiveMessage,originalMessage,input){
     requestedStage:input.requestedStage||null
   })
   const safe=enforceValSafety(fallback,context,effectiveMessage,{requestedStage:input.requestedStage||null})
-  return finalAdvice(safe,context,originalMessage,false)
+  return finalAdvice(safe,context,originalMessage,false,{actorId:input.ownerId,intentHint:input.intent,modelRun:{model:'rules-v7-specific',promptVersion:'val-ai-copilot-v2',status:'fallback',generativeUsed:false}})
 }
 
 function conversionEnvelope(resolved){
@@ -102,53 +112,61 @@ function conversionEnvelope(resolved){
   }
 }
 
-if(!globalThis[PATCHED]){
+export function installConversionComposition(){
+  if(globalThis[PATCHED])return Object.freeze({id:'conversion',version:conversionCompositionVersion,installed:false,methods:['ValRepository.getClientContext','ValRepository.getIntelligence','ValRepository.recordRecommendation','ValEngine.answer','ValEngine.status']})
   globalThis[PATCHED]=true
 
   const originalGetClientContext=ValRepository.prototype.getClientContext
   ValRepository.prototype.getClientContext=async function conversionAwareContext(input){
     const context=await originalGetClientContext.call(this,input)
-    return {...context,conversionFoundation:buildConversionFoundation(context)}
+    const conversationId=String(input?.contextRequest?.conversationId||'').trim().slice(0,180)
+    const priorRecommendations=conversationId
+      ?list(context.priorRecommendations).filter(item=>String(item?.conversation_id||'')===conversationId)
+      :context.priorRecommendations
+    return {...context,priorRecommendations,conversationSession:conversationId?{id:conversationId,scope:'client_session',clientId:String(input?.clientId||context.client?.id||'')}:{id:'',scope:'stateless',clientId:String(input?.clientId||context.client?.id||'')},conversionFoundation:buildConversionFoundation({...context,priorRecommendations})}
   }
 
   const originalGetIntelligence=ValRepository.prototype.getIntelligence
-  ValRepository.prototype.getIntelligence=async function intelligenceWithPortfolioRadar(ownerId){
+  ValRepository.prototype.getIntelligence=async function intelligenceWithPortfolioRadar(ownerId,options={}){
     const intelligence=await originalGetIntelligence.call(this,ownerId)
     const now=Date.now()
     const fingerprint=radarFingerprint(intelligence,ownerId,now)
-    const cacheKey=`${String(ownerId||'demo')}:${fingerprint}`
+    const cacheKey=`${String(this.tenantId||'tenant')}:${String(ownerId||'demo')}:${fingerprint}`
     const cached=radarCache.get(cacheKey)
-    if(cached&&cached.expiresAt>now)return {...intelligence,radar:cached.radar}
 
     const allClients=list(intelligence.clients)
     const partialContexts=allClients.map(client=>radarPartialContext(client,intelligence))
     const preliminary=buildPortfolioRadar(partialContexts,{now,maxItems:5})
     const ordered=allClients.map(client=>({client,score:radarCandidateScore(client,intelligence,now)})).sort((a,b)=>b.score-a.score||String(a.client.name||'').localeCompare(String(b.client.name||''),'pt-BR'))
-    const selectedIds=new Set([...list(preliminary.items).map(item=>item.clientId),...ordered.slice(0,24).map(item=>String(item.client.id))])
+    const selectedIds=new Set([...list(cached?.radar?.items||preliminary.items).map(item=>item.clientId),...ordered.slice(0,24).map(item=>String(item.client.id))])
     const selectedClients=allClients.filter(client=>selectedIds.has(String(client.id)))
     const contexts=await Promise.all(selectedClients.map(async client=>{
-      try{return await originalGetClientContext.call(this,{clientId:client.id,client,ownerId})}
+      try{return await originalGetClientContext.call(this,{clientId:client.id,client,ownerId,contextRequest:{objective:'portfolio_attention',actorRole:options.role||'consultant',scope:'own_portfolio'}})}
       catch{return radarPartialContext(client,intelligence)}
     }))
-    const radar=buildPortfolioRadar(contexts,{now,maxItems:5})
-    radar.considered=allClients.length
-    radar.enriched=contexts.length
-    radar.policy={...radar.policy,visibility:'consultant_and_manager',portfolioWidePreselection:true}
+    const radar=cached&&cached.expiresAt>now?cached.radar:buildPortfolioRadar(contexts,{now,maxItems:5})
+    radar.considered=allClients.length;radar.enriched=contexts.length;radar.policy={...radar.policy,visibility:'consultant_and_manager',portfolioWidePreselection:true}
     const finalRadar=radar.items.length?radar:preliminary
     finalRadar.considered=allClients.length
     finalRadar.enriched=contexts.length
     finalRadar.policy={...finalRadar.policy,visibility:'consultant_and_manager',portfolioWidePreselection:true}
     for(const [key,value] of radarCache)if(value.expiresAt<=now)radarCache.delete(key)
     radarCache.set(cacheKey,{expiresAt:now+RADAR_CACHE_TTL_MS,radar:finalRadar})
-    return {...intelligence,radar:finalRadar}
+    const insights=buildInsightFeed({organizationId:this.tenantId,actor:{id:ownerId||'demo',role:options.role||'consultant'},contexts,radar:finalRadar,now,maxItems:5})
+    observe('insights.feed.completed',{insightIds:insights.items.map(item=>item.insight_id).join(','),modulesCalled:'VIS',durationMs:0,outcome:'ok'})
+    return {...intelligence,radar:finalRadar,insights}
   }
 
   const originalRecordRecommendation=ValRepository.prototype.recordRecommendation
   ValRepository.prototype.recordRecommendation=async function recordContextualRecommendation(input){
+    // A pre-persist finalizer already produced the exact response contract that
+    // will be returned (for example current market + a processed attachment).
+    // Re-enriching it here would make the stored recommendation diverge again.
+    if(input?.responseMetadata?.prePersistFinalized===true)return originalRecordRecommendation.call(this,{...input,question:String(originalQuestionContext.getStore()||input.question||'')})
     const rawContext=input.context||{}
     const canonicalQuestion=String(originalQuestionContext.getStore()||input.question||'')
     const usedGenerativeAi=(input.modelRun?.status==='completed'&&input.modelRun?.generativeUsed!==false)||input.modelRun?.generativeUsed===true||/openai|gpt-/i.test(String(input.model||''))
-    const resolved=finalAdvice(input.advice||{},rawContext,canonicalQuestion,usedGenerativeAi)
+    const resolved=finalAdvice(input.advice||{},rawContext,canonicalQuestion,usedGenerativeAi,{actorId:input.ownerId,intentHint:input.responseMetadata?.intent,modelRun:input.modelRun})
     const persistedAdvice=preserveEnhancedLanguage(resolved.advice,input.advice||{})
     return originalRecordRecommendation.call(this,{
       ...input,
@@ -185,14 +203,15 @@ if(!globalThis[PATCHED]){
       tenantId:input.tenantId,
       ownerId:input.ownerId,
       clientId:input.clientId,
-      client:input.client
+      client:input.client,
+      contextRequest:{...(input.contextRequest||{}),message:originalMessage}
     })
     const thread=prepareConversationThread(rawContext,originalMessage)
     const context=thread.context
     const effectiveMessage=thread.message
     const attachmentCount=Array.isArray(input.attachmentIds)?input.attachmentIds.length:0
     let orchestration=buildConversationOrchestration(context,effectiveMessage,{attachmentCount})
-    const reasoning=resolveStructuredReasoningRoute(orchestration,context,effectiveMessage,{providerConfigured:Boolean(this.client)})
+    const reasoning=resolveStructuredReasoningRoute(orchestration,context,effectiveMessage,{providerConfigured:Boolean(this.client),intentHint:input.intent})
     orchestration={...orchestration,route:reasoning.route}
 
     if(attachmentCount===0&&reasoning.useGenerativeAi){
@@ -206,7 +225,7 @@ if(!globalThis[PATCHED]){
       }))
       emitProgress(input,'complete')
       const providerUsed=result.engineMode==='openai'
-      const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed)
+      const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed,{actorId:input.ownerId,intentHint:input.intent,modelRun:{model:result.model,promptVersion:'val-ai-copilot-v2',status:providerUsed?'completed':'fallback',generativeUsed:providerUsed}})
       return {
         ...result,
         engineMode:providerUsed?'structured_hybrid':'rules_fallback',
@@ -240,7 +259,7 @@ if(!globalThis[PATCHED]){
         model,
         context:resolved.context,
         advice:resolved.advice,
-        responseMetadata:{automaticRoute:orchestration.route.mode,conversationContinued:thread.continued,structuredReasoning:'not_requested'},
+        responseMetadata:{automaticRoute:orchestration.route.mode,conversationContinued:thread.continued,structuredReasoning:'not_requested',intent:input.intent||null,conversationId:context.conversationSession?.id||null},
         promptHash:createHash('sha256').update(`${conversationOrchestratorVersion}:${specificityVersion}`).digest('hex'),
         modelRun:{
           model,
@@ -255,6 +274,8 @@ if(!globalThis[PATCHED]){
       emitProgress(input,'complete')
       return {
         recommendationId,
+        contextSnapshotId:resolved.context.contextSnapshot?.context_snapshot_id||null,
+        contextSnapshotVersion:resolved.context.contextSnapshot?.contract_version||null,
         engineMode:'rules',
         engineArchitecture:'deterministic-specific-fallback',
         route:orchestration.route.mode,
@@ -281,8 +302,22 @@ if(!globalThis[PATCHED]){
     emitProgress(input,'language')
     const result=await originalQuestionContext.run(originalMessage,()=>originalAnswer.call(this,{...input,message:effectiveMessage,mode:reasoning.tier}))
     emitProgress(input,'complete')
+    if(result?.responseMetadata?.prePersistFinalized===true){
+      return {
+        ...result,
+        decisionCore:conversionCoreVersion,
+        conversationOrchestrator:conversationOrchestratorVersion,
+        languageEnhancer:languageEnhancerVersion,
+        specificityEngine:specificityVersion,
+        aiReasoningResult:aiReasoningResultVersion,
+        responseQuality:valResponseQualityVersion,
+        globalCopilot:true,
+        automaticRouting:orchestration.route,
+        conversationContinuity:orchestration.continuity
+      }
+    }
     const providerUsed=result.engineMode==='openai'
-    const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed)
+    const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed,{actorId:input.ownerId,intentHint:input.intent,modelRun:{model:result.model,promptVersion:'val-ai-copilot-v2',status:providerUsed?'completed':'fallback',generativeUsed:providerUsed}})
     const providerFallback=!providerUsed
     return {
       ...result,
@@ -292,6 +327,9 @@ if(!globalThis[PATCHED]){
       conversationOrchestrator:conversationOrchestratorVersion,
       languageEnhancer:languageEnhancerVersion,
       specificityEngine:specificityVersion,
+      aiReasoningResult:aiReasoningResultVersion,
+      responseQuality:valResponseQualityVersion,
+      globalCopilot:true,
       generativeRole:providerUsed?'multimodal_structured_reasoning':'fallback_rules',
       automaticRouting:resolved.orchestration.route,
       conversationContinuity:resolved.orchestration.continuity,
@@ -324,4 +362,6 @@ if(!globalThis[PATCHED]){
       portfolioRadar:true
     }
   }
+
+  return Object.freeze({id:'conversion',version:conversionCompositionVersion,installed:true,methods:['ValRepository.getClientContext','ValRepository.getIntelligence','ValRepository.recordRecommendation','ValEngine.answer','ValEngine.status']})
 }

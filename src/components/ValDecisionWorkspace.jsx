@@ -89,7 +89,7 @@ function EmptyDecision({client,onAsk,loading}){
  </section>
 }
 
-export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect}){
+export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect,onPrepareVisit}){
  const [selected,setSelected]=useState(selectedClient?.id||clients[0]?.id||'')
  const [mode,setMode]=useState('daily')
  const [requestedStage,setRequestedStage]=useState(null)
@@ -218,7 +218,7 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
     <button className="vdc-refresh" type="button" onClick={()=>ask(response?text(response?.advice?.objective,'Recalcule a próxima melhor ação desta conta com os dados mais recentes.'):quickActions[0].prompt)} disabled={loading}><RefreshCw className={loading?'is-spinning':''}/>Atualizar decisão</button>
    </div>
 
-   <div className="vdc-quick-actions">{quickActions.map(({id,label,icon:Icon,prompt})=><button key={id} type="button" onClick={()=>ask(prompt)} disabled={loading}><Icon/><span>{label}</span><ChevronRight/></button>)}</div>
+   <div className="vdc-quick-actions">{quickActions.map(({id,label,icon:Icon,prompt})=><button key={id} type="button" onClick={()=>id==='visit'&&onPrepareVisit?onPrepareVisit(client):ask(prompt)} disabled={loading}><Icon/><span>{label}</span><ChevronRight/></button>)}</div>
 
    <div className="vdc-stage-control"><span>Etapa que você quer trabalhar</span><div>{stages.map(stage=><button key={stage.id} type="button" className={requestedStage===stage.id?'is-active':''} aria-pressed={requestedStage===stage.id} onClick={()=>setRequestedStage(current=>current===stage.id?null:stage.id)} disabled={loading}>{stage.label}</button>)}</div></div>
 

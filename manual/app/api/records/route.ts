@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { ensureRecordsSchema, hasDatabase } from "../../lib/db";
 import { sessionFromRequest } from "../../lib/access";
-import { publishManualRecordToValor } from "../../lib/valor360";
+import { publishManualRecordToValor, valor360Configured } from "../../lib/valor360";
+import { authenticatedValor360OwnerForWorkspace } from "../../lib/valor360-workspace-owner";
+import { containsInlineImage, sanitizePhotoDiagnosisPayload } from "../../lib/photo-diagnosis-record";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -14,6 +16,7 @@ const recordTypes = new Set([
   "fertilizer_comparison",
   "season_report",
   "field_analysis",
+  "photo_diagnosis",
   "calculator",
   "crm_import",
   "producer_change",
@@ -64,17 +67,17 @@ export async function GET(request: NextRequest) {
   const type = request.nextUrl.searchParams.get("type") ?? "";
   try {
     const pool = await ensureRecordsSchema();
-    const params: string[] = [workspace];
+    const params: string[] = [session.tenantId, workspace];
     let filter = "";
     if (type && recordTypes.has(type)) {
       params.push(type);
-      filter = " AND record_type = $2";
+      filter = " AND record_type = $3";
     }
     const result = await pool.query(
       `SELECT id, record_type AS type, title, producer_name AS "producerName",
               payload, created_at AS "createdAt", updated_at AS "updatedAt"
        FROM app_records
-       WHERE workspace_id = $1${filter}
+       WHERE tenant_id = $1 AND workspace_id = $2${filter}
        ORDER BY updated_at DESC
        LIMIT 250`,
       params,
@@ -100,6 +103,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Sessão expirada." }, { status: 401 });
   }
   const workspace = workspaceId(request, session.user);
+  const valor360OwnerId = authenticatedValor360OwnerForWorkspace(session, workspace);
   try {
     const body = (await request.json()) as {
       id?: string;
@@ -114,28 +118,39 @@ export async function POST(request: NextRequest) {
     if (!body.payload || typeof body.payload !== "object") {
       return NextResponse.json({ error: "Conteúdo do registro inválido." }, { status: 400 });
     }
+    if (body.type === "photo_diagnosis" && containsInlineImage(body.payload)) {
+      return NextResponse.json(
+        { error: "O histórico do diagnóstico aceita somente metadados; a imagem original não é armazenada aqui." },
+        { status: 400 },
+      );
+    }
+    const recordPayload = body.type === "photo_diagnosis"
+      ? sanitizePhotoDiagnosisPayload(body.payload)
+      : body.payload;
     const id = /^[0-9a-f-]{36}$/i.test(body.id ?? "") ? body.id! : randomUUID();
     const pool = await ensureRecordsSchema();
     const result = await pool.query(
       `INSERT INTO app_records
-        (id, workspace_id, record_type, title, producer_name, payload)
-       VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+        (id, tenant_id, workspace_id, record_type, title, producer_name, payload)
+       VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
        ON CONFLICT (id) DO UPDATE SET
          title = EXCLUDED.title,
          producer_name = EXCLUDED.producer_name,
          payload = EXCLUDED.payload,
          updated_at = NOW()
-       WHERE app_records.workspace_id = EXCLUDED.workspace_id
+       WHERE app_records.tenant_id = EXCLUDED.tenant_id
+         AND app_records.workspace_id = EXCLUDED.workspace_id
        RETURNING id, record_type AS type, title,
                  producer_name AS "producerName", payload,
                  created_at AS "createdAt", updated_at AS "updatedAt"`,
       [
         id,
+        session.tenantId,
         workspace,
         body.type,
         String(body.title ?? "").slice(0, 240),
         String(body.producerName ?? "").slice(0, 180),
-        JSON.stringify(body.payload),
+        JSON.stringify(recordPayload),
       ],
     );
     if (!result.rows[0]) {
@@ -145,20 +160,45 @@ export async function POST(request: NextRequest) {
       );
     }
     const record = result.rows[0];
-    const integration = await publishManualRecordToValor(
-      record,
-      session.valor360OwnerId ?? session.user.id,
-    );
+    const integration = valor360OwnerId
+      ? await publishManualRecordToValor(
+          record,
+          valor360OwnerId,
+          request.headers.get("x-request-id") ?? "",
+        )
+      : [{
+          ok: false,
+          skipped: true,
+          eventType: "workspace.owner_validation",
+          externalId: record.id,
+          status: 403,
+          error: "valor360_workspace_owner_not_authenticated",
+        }];
+    const integrationSummary = {
+      configured: valor360Configured(),
+      delivered: integration.filter((item) => item.ok).length,
+      failed: integration.filter((item) => !item.ok && !item.skipped).length,
+      skipped: integration.filter((item) => item.skipped).length,
+      blockedCode: valor360OwnerId ? null : "valor360_workspace_owner_not_authenticated",
+      errors: integration
+        .filter((item) => !item.ok && !item.skipped)
+        .slice(0, 5)
+        .map((item) => ({
+          eventType: item.eventType,
+          externalId: item.externalId,
+          status: item.status ?? null,
+          error: item.error ?? "Falha de integração não detalhada.",
+        })),
+    };
+    const integrationNeedsAttention = !integrationSummary.configured ||
+      integrationSummary.failed > 0 ||
+      integrationSummary.skipped > 0;
     return withWorkspaceCookie(
       NextResponse.json({
         record,
         storage: "postgresql",
-        integration: {
-          configured: !integration.every((item) => item.skipped),
-          delivered: integration.filter((item) => item.ok).length,
-          failed: integration.filter((item) => !item.ok && !item.skipped).length,
-        },
-      }),
+        integration: integrationSummary,
+      }, { status: integrationNeedsAttention ? 207 : 200 }),
       request,
       workspace,
     );
@@ -185,8 +225,8 @@ export async function DELETE(request: NextRequest) {
   try {
     const pool = await ensureRecordsSchema();
     const result = await pool.query(
-      "DELETE FROM app_records WHERE id = $1 AND workspace_id = $2 RETURNING id",
-      [id, workspace],
+      "DELETE FROM app_records WHERE id = $1 AND tenant_id = $2 AND workspace_id = $3 RETURNING id",
+      [id, session.tenantId, workspace],
     );
     return withWorkspaceCookie(
       NextResponse.json({ deleted: Boolean(result.rowCount), id }),

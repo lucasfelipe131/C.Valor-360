@@ -8,6 +8,7 @@ import {buildPostConversionExpansion,hasRecentClosedBusiness} from './post-conve
 import {buildMessageCalibration} from './message-calibration.js'
 
 const PATCHED=Symbol.for('valor360.conversion-innovations.patched')
+export const innovationCompositionVersion='innovation-bootstrap-v1'
 const GRAIN_CACHE_TTL_MS=5*60_000
 const grainCache=new Map()
 
@@ -59,7 +60,8 @@ async function portfolioHistoryFor(repository,input,context){
  catch(error){return {events:context.businessHistory||[],error:String(error?.message||'A biblioteca da carteira não pôde ser consultada.').slice(0,300)}}
 }
 
-if(!globalThis[PATCHED]){
+export function installInnovationComposition(){
+ if(globalThis[PATCHED])return Object.freeze({id:'innovation',version:innovationCompositionVersion,installed:false,methods:['ValRepository.getClientContext']})
  globalThis[PATCHED]=true
  const originalGetClientContext=ValRepository.prototype.getClientContext
  ValRepository.prototype.getClientContext=async function contextWithConversionInnovations(input){
@@ -83,4 +85,5 @@ if(!globalThis[PATCHED]){
    }
   }
  }
+ return Object.freeze({id:'innovation',version:innovationCompositionVersion,installed:true,methods:['ValRepository.getClientContext']})
 }

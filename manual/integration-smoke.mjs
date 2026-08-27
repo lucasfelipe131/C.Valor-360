@@ -1,6 +1,15 @@
 import assert from "node:assert/strict";
 import { createHmac } from "node:crypto";
 import { createServer } from "node:http";
+import { register } from "node:module";
+
+// `server-only` is a Next.js build marker, not runtime behavior. The smoke
+// imports the integration module directly under Node, so resolve only that
+// marker to an empty module while preserving every other package resolution.
+register(
+  'data:text/javascript,export async function resolve(s,c,n){if(s==="server-only")return{url:"data:text/javascript,export%20default%20%7B%7D",shortCircuit:true};return n(s,c)}',
+  import.meta.url,
+);
 
 const received = [];
 const server = createServer((request, response) => {
@@ -62,11 +71,15 @@ for (const item of received) {
   assert.equal(item.signature, `sha256=${expected}`);
   assert(!item.raw.includes("123.456.789-00"));
   assert(!item.raw.includes("base64"));
-  assert.equal(JSON.parse(item.raw).clientExternalKey, "genor-brum-filho");
 }
+const eventPayloads = received.map((item) => JSON.parse(item.raw));
 assert.deepEqual(
-  received.map((item) => JSON.parse(item.raw).type),
+  eventPayloads.map((item) => item.type),
   ["manual.record.saved", "soil_analysis.completed", "manual.producer.updated"],
+);
+assert.deepEqual(
+  eventPayloads.map((item) => item.clientExternalKey),
+  ["genor-brum-filho", "genor-brum-filho", "produtor-1"],
 );
 
 server.close();

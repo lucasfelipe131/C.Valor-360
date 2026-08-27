@@ -5,14 +5,17 @@ import test from 'node:test'
 const packageJson=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8'))
 const bootstrap=readFileSync(new URL('../server/conversion-bootstrap.js',import.meta.url),'utf8')
 const innovationBootstrap=readFileSync(new URL('../server/innovation-bootstrap.js',import.meta.url),'utf8')
+const start=readFileSync(new URL('../server/start.js',import.meta.url),'utf8')
+const composition=readFileSync(new URL('../server/core/composition.js',import.meta.url),'utf8')
 const engine=readFileSync(new URL('../server/conversion-engine.js',import.meta.url),'utf8')
 const specificity=readFileSync(new URL('../server/val-specificity.js',import.meta.url),'utf8')
 const golden=JSON.parse(readFileSync(new URL('../evals/conversion-golden.json',import.meta.url),'utf8'))
 
-test('produção carrega o núcleo determinístico, as inovações e depois o servidor',()=>{
-  assert.match(packageJson.scripts.start,/--import\s+\.\/server\/conversion-bootstrap\.js\s+--import\s+\.\/server\/innovation-bootstrap\.js\s+server\.js/)
-  assert.ok(packageJson.scripts.start.indexOf('conversion-bootstrap.js')<packageJson.scripts.start.indexOf('innovation-bootstrap.js'))
-  assert.ok(packageJson.scripts.start.indexOf('innovation-bootstrap.js')<packageJson.scripts.start.indexOf('server.js'))
+test('produção instala explicitamente o núcleo determinístico, as inovações e depois o servidor',()=>{
+  assert.equal(packageJson.scripts.start,'node server/start.js')
+  assert.match(start,/installValRuntimeComposition\(\)/)
+  assert.ok(start.indexOf('installValRuntimeComposition()')<start.indexOf("import('../server.js')"))
+  assert.ok(composition.indexOf('installConversionComposition()')<composition.indexOf('installInnovationComposition()'))
   assert.match(bootstrap,/ValEngine\.prototype\.answer/)
   assert.match(bootstrap,/ValRepository\.prototype\.recordRecommendation/)
   assert.match(bootstrap,/decisionMode:'deterministic_facts_structured_reasoning'/)
@@ -21,6 +24,8 @@ test('produção carrega o núcleo determinístico, as inovações e depois o se
   assert.match(bootstrap,/textRequestsUseStructuredReasoning:true/)
   assert.match(bootstrap,/specificityEngine:specificityVersion/)
   assert.match(innovationBootstrap,/ValRepository\.prototype\.getClientContext/)
+  assert.match(bootstrap,/export function installConversionComposition/)
+  assert.match(innovationBootstrap,/export function installInnovationComposition/)
 })
 
 test('núcleo declara regras de não invenção, reconciliação e especificidade final',()=>{

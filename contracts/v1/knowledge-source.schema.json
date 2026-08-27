@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://val.local/contracts/v1/knowledge-source.schema.json",
+  "title": "KnowledgeSource v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "source_id", "title", "publisher", "year", "url", "authority", "geography", "domain", "notes"],
+  "properties": {
+    "contract_version": {"const": "val.knowledge_source.v1"},
+    "source_id": {"type": "string", "pattern": "^SRC-[0-9]{3,}$"},
+    "title": {"type": "string", "minLength": 1},
+    "publisher": {"type": "string", "minLength": 1},
+    "year": {"type": ["integer", "null"], "minimum": 1900},
+    "url": {"type": ["string", "null"], "format": "uri"},
+    "authority": {"enum": ["A", "B", "C", "D"]},
+    "geography": {"type": "string", "minLength": 1},
+    "domain": {"type": "string", "minLength": 1},
+    "notes": {"type": ["string", "null"]}
+  }
+}

@@ -39,7 +39,9 @@ test('guardrails proíbem pressão artificial e preservam revisão técnica',()=
 test('produção carrega o bootstrap de inovação depois do Conversion Core',()=>{
  const packageJson=JSON.parse(readFileSync(new URL('../package.json',import.meta.url),'utf8'))
  const bootstrap=readFileSync(new URL('../server/innovation-bootstrap.js',import.meta.url),'utf8')
- assert.match(packageJson.scripts.start,/conversion-bootstrap\.js --import \.\/server\/innovation-bootstrap\.js server\.js/)
+ const composition=readFileSync(new URL('../server/core/composition.js',import.meta.url),'utf8')
+ assert.equal(packageJson.scripts.start,'node server/start.js')
+ assert.ok(composition.indexOf('installConversionComposition()')<composition.indexOf('installInnovationComposition()'))
  assert.match(bootstrap,/commitmentLadders:buildCommitmentLadders/)
 })
 

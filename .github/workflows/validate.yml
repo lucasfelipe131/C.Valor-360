@@ -1,14 +1,22 @@
 name: Validate
 
 on:
-  pull_request:
+  pull_request: {}
   push:
     branches: [main]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: validate-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  build-and-test:
+  test:
+    name: npm test
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -16,5 +24,413 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
+      - name: Install server-side audio validator
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Run full test suite
+        run: npm test
+      - name: Run VAL Core and API contract regression
+        run: node --test test/phase2-*.test.js
+      - name: Run MMI and MCTX regression
+        run: node --test test/phase3-*.test.js
+      - name: Run MIC, MDI and MVV regression
+        run: node --test test/phase4-*.test.js
+      - name: Run MEX and VIS regression
+        run: node --test test/phase5-*.test.js
+      - name: Run Phase 6 contracts and visit-learning-loop cases
+        run: node --test test/phase6-migration-contract.test.js test/phase6-visit-loop.test.js
+      - name: Run legacy and VAL Core v1 smoke
+        run: npm run test:phase2:smoke
+      - name: Run Phase 5 API smoke
+        run: npm run test:phase5:smoke
+      - name: Run Phase 6 API smoke explicitly
+        run: npm run test:phase6:smoke
+
+  build:
+    name: npm run build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
       - run: npm run build
+      - run: npm run bundle:audit
+
+  manual-build:
+    name: manual npm run build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: manual
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: manual/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  golden-performance-gate:
+    name: GP-001–GP-016 component SLO
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare performance evidence directory
+        run: mkdir -p .gate/performance
+      - name: Execute all golden cases with sufficient p95 sample
+        run: npm run performance:golden:local -- --repeat 20 --warmup 2 --output .gate/performance/samples.json
+      - name: Aggregate latency and quality evidence
+        run: node scripts/val-performance-benchmark.mjs --samples .gate/performance/samples.json --output .gate/performance/result.json
+      - name: Enforce measured component SLO and quality floors
+        run: npm run performance:slo:check -- --result .gate/performance/result.json --output .gate/performance/slo-check.json
+      - name: Upload golden performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-performance-evidence-${{ github.run_id }}
+          path: .gate/performance
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: true
+
+  vnext-data-gate-postgres:
+    name: vNext geometry and scan provenance postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gate
+          POSTGRES_PASSWORD: gate-only
+          POSTGRES_DB: val_vnext_gate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gate -d val_vnext_gate"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_vnext_gate
+      DRIFT_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_vnext_gate
+      PG_SSL: "false"
+      VAL_DEMO_MODE: "false"
+      VAL_DEFAULT_TENANT_ID: 00000000-0000-4000-8000-000000000001
+      CONFIRM_CONTROLLED_STAGING: STAGING_ONLY
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare vNext data evidence directory
+        run: mkdir -p .gate/vnext-data
+      - name: Apply schema and all versioned migrations in PostgreSQL 16
+        run: npm run db:migrate | tee .gate/vnext-data/migrations.log
+      - name: Exercise geometry and scan provenance with isolated synthetic tenants
+        env:
+          VNEXT_VERIFY_MODE: source
+          VNEXT_EVIDENCE_FILE: .gate/vnext-data/source-evidence.json
+        run: node scripts/val-vnext-postgres-verify.mjs | tee .gate/vnext-data/source-runtime.log
+      - name: Repeat migration 007 without data loss
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/20260827_007_attachment_scan_provenance_expand.sql | tee .gate/vnext-data/migration-007-repeat.log
+      - name: Revalidate persisted contracts after migration repeat
+        env:
+          VNEXT_VERIFY_MODE: repeat
+          VNEXT_SOURCE_EVIDENCE_FILE: .gate/vnext-data/source-evidence.json
+          VNEXT_EVIDENCE_FILE: .gate/vnext-data/repeat-evidence.json
+        run: node scripts/val-vnext-postgres-verify.mjs | tee .gate/vnext-data/repeat-runtime.log
+      - name: Verify schema drift including migration 007
+        env:
+          DRIFT_EVIDENCE_FILE: .gate/vnext-data/drift.json
+        run: npm run db:drift -- --strict
+      - name: Back up migrated vNext data
+        run: |
+          pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges --file=.gate/vnext-data/vnext-migrated.dump
+          sha256sum .gate/vnext-data/vnext-migrated.dump > .gate/vnext-data/backup.sha256
+      - name: Create a different clean PostgreSQL 16 restore database
+        run: psql "postgresql://gate:gate-only@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE val_vnext_restore"
+      - name: Restore vNext backup
+        run: pg_restore --exit-on-error --no-owner --no-privileges --dbname="postgresql://gate:gate-only@127.0.0.1:5432/val_vnext_restore" .gate/vnext-data/vnext-migrated.dump | tee .gate/vnext-data/restore.log
+      - name: Revalidate geometry, provenance and isolation after restore
+        env:
+          DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_vnext_restore
+          VNEXT_VERIFY_MODE: restore
+          VNEXT_SOURCE_EVIDENCE_FILE: .gate/vnext-data/source-evidence.json
+          VNEXT_EVIDENCE_FILE: .gate/vnext-data/restore-evidence.json
+        run: node scripts/val-vnext-postgres-verify.mjs | tee .gate/vnext-data/restore-runtime.log
+      - name: Upload vNext PostgreSQL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-data-gate-evidence-${{ github.run_id }}
+          path: .gate/vnext-data
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: true
+
+  phase1-gate-staging:
+    name: phase1 gate staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gate
+          POSTGRES_PASSWORD: gate-only
+          POSTGRES_DB: val_staging
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gate -d val_staging"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_staging
+      STAGING_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_staging
+      DRIFT_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_staging
+      RESTORE_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_restore
+      SOURCE_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_staging
+      PG_SSL: "false"
+      VAL_DEMO_MODE: "false"
+      VAL_DEFAULT_TENANT_ID: 00000000-0000-4000-8000-000000000001
+      CONFIRM_CONTROLLED_STAGING: STAGING_ONLY
+      CONFIRM_CONTROLLED_RESTORE: RESTORE_ONLY
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare evidence directory
+        run: mkdir -p .gate .backups/staging
+      - name: Apply baseline and versioned migrations
+        run: npm run db:migrate | tee .gate/migrations.log
+      - name: Prove negative tenant isolation with synthetic data
+        env:
+          GATE_EVIDENCE_FILE: .gate/tenant-isolation-source.json
+        run: node scripts/phase1-staging-verify.mjs
+      - name: Prove MMI and MCTX with synthetic data
+        env:
+          GATE_EVIDENCE_FILE: .gate/phase3-memory-context-source.json
+        run: node scripts/phase3-staging-verify.mjs
+      - name: Verify schema drift
+        env:
+          DRIFT_EVIDENCE_FILE: .gate/drift.json
+        run: npm run db:drift -- --strict
+      - name: Create logical staging backup
+        env:
+          BACKUP_DIR: .backups/staging
+        run: npm run db:backup
+      - name: Select backup and create disposable restore database
+        run: |
+          BACKUP_FILE="$(find .backups/staging -maxdepth 1 -type f -name '*.dump' | sort | tail -n 1)"
+          test -n "$BACKUP_FILE"
+          echo "BACKUP_FILE=$BACKUP_FILE" >> "$GITHUB_ENV"
+          cp "$BACKUP_FILE.json" .gate/backup.json
+          psql "postgresql://gate:gate-only@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE val_restore"
+      - name: Restore backup into a different disposable database
+        env:
+          RESTORE_EVIDENCE_FILE: .gate/restore.json
+        run: npm run db:restore:verify
+      - name: Repeat tenant isolation checks after restore
+        env:
+          GATE_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_restore
+          GATE_VERIFY_ONLY: "true"
+          GATE_ALLOW_PHASE3_EMPTY_FIXTURE: "true"
+          GATE_EVIDENCE_FILE: .gate/tenant-isolation-restored.json
+        run: node scripts/phase1-staging-verify.mjs
+      - name: Repeat MMI and MCTX checks after restore
+        env:
+          GATE_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_restore
+          GATE_VERIFY_ONLY: "true"
+          GATE_EVIDENCE_FILE: .gate/phase3-memory-context-restored.json
+        run: node scripts/phase3-staging-verify.mjs
+      - name: Compare source and restored database
+        env:
+          COMPARE_EVIDENCE_FILE: .gate/restore-compare.json
+        run: node scripts/phase1-restore-compare.mjs
+      - name: Consolidate database gate evidence
+        run: node scripts/phase1-gate-manifest.mjs
+      - name: Upload controlled gate evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase1-gate-evidence-${{ github.run_id }}
+          path: |
+            .gate
+            .backups/staging/*.dump
+            .backups/staging/*.json
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: true
+
+  phase6-gate-postgres:
+    name: phase6 gate postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gate
+          POSTGRES_PASSWORD: gate-only
+          POSTGRES_DB: val_phase6
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gate -d val_phase6"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_phase6
+      PG_SSL: "false"
+      VAL_DEMO_MODE: "false"
+      VAL_DEFAULT_TENANT_ID: 00000000-0000-4000-8000-000000000001
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare Phase 6 evidence directory
+        run: mkdir -p .gate/phase6
+      - name: Apply schema and migrations in PostgreSQL 16
+        run: npm run db:migrate | tee .gate/phase6/migrations.log
+      - name: Prove Phase 6 migration idempotence
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/20260823_004_visit_learning_loop_expand.sql | tee .gate/phase6/migration-004-repeat.log
+      - name: Seed isolated Phase 6 fixtures
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/phase6-ci-seed.sql | tee .gate/phase6/seed.log
+      - name: Validate visit loop, tenant isolation and second-visit learning
+        env:
+          PHASE6_VERIFY_MODE: source
+          PHASE6_EVIDENCE_FILE: .gate/phase6/source-catalog.json
+        run: node scripts/phase6-postgres-verify.mjs | tee .gate/phase6/source-runtime.log
+      - name: Back up migrated Phase 6 database
+        run: pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges --file=.gate/phase6/phase6-migrated.dump
+      - name: Create a different clean PostgreSQL 16 restore database
+        run: psql "postgresql://gate:gate-only@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE val_phase6_restore"
+      - name: Restore Phase 6 backup
+        run: pg_restore --exit-on-error --no-owner --no-privileges --dbname="postgresql://gate:gate-only@127.0.0.1:5432/val_phase6_restore" .gate/phase6/phase6-migrated.dump | tee .gate/phase6/restore.log
+      - name: Revalidate restored schema, data, references and isolation
+        env:
+          DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_phase6_restore
+          PHASE6_VERIFY_MODE: restore
+          PHASE6_EVIDENCE_FILE: .gate/phase6/source-catalog.json
+          PHASE6_RESTORE_EVIDENCE_FILE: .gate/phase6/restore-catalog.json
+        run: node scripts/phase6-postgres-verify.mjs | tee .gate/phase6/restore-runtime.log
+      - name: Upload Phase 6 PostgreSQL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase6-gate-evidence-${{ github.run_id }}
+          path: .gate/phase6
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: true
+
+  voice-capture-gate-postgres:
+    name: voice capture gate postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gate
+          POSTGRES_PASSWORD: gate-only
+          POSTGRES_DB: val_voice_capture_gate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gate -d val_voice_capture_gate"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_voice_capture_gate
+      DRIFT_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_voice_capture_gate
+      PG_SSL: "false"
+      VAL_DEMO_MODE: "false"
+      VAL_DEFAULT_TENANT_ID: 00000000-0000-4000-8000-000000000001
+      CONFIRM_CONTROLLED_STAGING: STAGING_ONLY
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare Voice Capture evidence directory
+        run: mkdir -p .gate/voice-capture
+      - name: Apply schema and all versioned migrations in PostgreSQL 16
+        run: npm run db:migrate | tee .gate/voice-capture/migrations.log
+      - name: Seed isolated Voice Capture fixtures
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f scripts/voice-capture-ci-seed.sql | tee .gate/voice-capture/seed.log
+      - name: Capture data and schema before migration 005 repeat
+        run: |
+          psql "$DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "SELECT 'clients='||count(*) FROM clients UNION ALL SELECT 'visits='||count(*) FROM visits UNION ALL SELECT 'memories='||count(*) FROM val_memories UNION ALL SELECT 'voice_interactions='||count(*) FROM val_voice_interactions UNION ALL SELECT 'voice_transcripts='||count(*) FROM val_voice_transcripts ORDER BY 1" > .gate/voice-capture/pre-repeat-counts.txt
+          pg_dump "$DATABASE_URL" --schema-only --no-owner --no-privileges > .gate/voice-capture/pre-repeat-schema.sql
+          sed -E '/^-- Dumped (from|by)/d;/^\\(un)?restrict /d;s/::character varying::text/::character varying/g;s/]::text\[\]/]/g' .gate/voice-capture/pre-repeat-schema.sql > .gate/voice-capture/pre-repeat-schema.normalized.sql
+      - name: Prove migration 005 repeatability without data drift
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/20260823_005_voice_capture_expand.sql | tee .gate/voice-capture/migration-005-repeat.log
+          psql "$DATABASE_URL" -At -v ON_ERROR_STOP=1 -c "SELECT 'clients='||count(*) FROM clients UNION ALL SELECT 'visits='||count(*) FROM visits UNION ALL SELECT 'memories='||count(*) FROM val_memories UNION ALL SELECT 'voice_interactions='||count(*) FROM val_voice_interactions UNION ALL SELECT 'voice_transcripts='||count(*) FROM val_voice_transcripts ORDER BY 1" > .gate/voice-capture/post-repeat-counts.txt
+          cmp .gate/voice-capture/pre-repeat-counts.txt .gate/voice-capture/post-repeat-counts.txt
+          pg_dump "$DATABASE_URL" --schema-only --no-owner --no-privileges > .gate/voice-capture/post-repeat-schema.sql
+          sed -E '/^-- Dumped (from|by)/d;/^\\(un)?restrict /d;s/::character varying::text/::character varying/g;s/]::text\[\]/]/g' .gate/voice-capture/post-repeat-schema.sql > .gate/voice-capture/post-repeat-schema.normalized.sql
+          cmp .gate/voice-capture/pre-repeat-schema.normalized.sql .gate/voice-capture/post-repeat-schema.normalized.sql
+          sha256sum .gate/voice-capture/post-repeat-schema.normalized.sql > .gate/voice-capture/migration-005-schema.sha256
+      - name: Verify schema drift including Voice Capture
+        env:
+          DRIFT_EVIDENCE_FILE: .gate/voice-capture/drift.json
+        run: npm run db:drift -- --strict
+      - name: Validate Voice Capture runtime, atomicity, isolation and second preparation
+        env:
+          VOICE_CAPTURE_VERIFY_MODE: source
+          VOICE_CAPTURE_EVIDENCE_FILE: .gate/voice-capture/source-evidence.json
+        run: node scripts/voice-capture-postgres-verify.mjs | tee .gate/voice-capture/source-runtime.log
+      - name: Back up migrated Voice Capture database
+        run: |
+          pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges --file=.gate/voice-capture/voice-capture-migrated.dump
+          sha256sum .gate/voice-capture/voice-capture-migrated.dump > .gate/voice-capture/backup.sha256
+          pg_restore --list .gate/voice-capture/voice-capture-migrated.dump > .gate/voice-capture/backup-contents.txt
+      - name: Create a different clean PostgreSQL 16 restore database
+        run: psql "postgresql://gate:gate-only@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE val_voice_capture_restore"
+      - name: Restore Voice Capture backup
+        run: pg_restore --exit-on-error --no-owner --no-privileges --dbname="postgresql://gate:gate-only@127.0.0.1:5432/val_voice_capture_restore" .gate/voice-capture/voice-capture-migrated.dump | tee .gate/voice-capture/restore.log
+      - name: Revalidate restored Voice Capture schema, data and isolation
+        env:
+          DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_voice_capture_restore
+          VOICE_CAPTURE_VERIFY_MODE: restore
+          VOICE_CAPTURE_EVIDENCE_FILE: .gate/voice-capture/source-evidence.json
+          VOICE_CAPTURE_RESTORE_EVIDENCE_FILE: .gate/voice-capture/restore-evidence.json
+        run: node scripts/voice-capture-postgres-verify.mjs | tee .gate/voice-capture/restore-runtime.log
+      - name: Upload Voice Capture PostgreSQL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: voice-capture-gate-evidence-${{ github.run_id }}
+          path: .gate/voice-capture
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: true

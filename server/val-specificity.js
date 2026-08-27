@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto'
+import {routeSystemCapability} from './decision-copilot/capability-router.js'
 
 const VERSION='val-specificity-v1'
 const GENERIC_TEXT=/\b(?:converse com (?:o )?(?:cliente|produtor)|entenda (?:melhor )?(?:as )?necessidades|apresente os benef[ií]cios|fa[cç]a contato|acompanhe de perto|mostre o valor agregado|explore oportunidades|fortale[cç]a (?:o )?relacionamento|gere valor|identifique necessidades)\b/i
@@ -33,19 +34,22 @@ function sourceCount(context={}){
 export function resolveStructuredReasoningRoute(orchestration={},context={},message='',options={}){
   const base={...(orchestration?.route||{})}
   const providerConfigured=options.providerConfigured!==false
+  const capabilityRoute=routeSystemCapability({message,intentHint:options.intentHint||options.intent||'',hasClient:Boolean(context?.client?.id),attachmentTypes:array(context?.currentAttachments).map(item=>item?.mimeType||item?.mime_type)})
   const distinctCollections=sourceCount(context)
   const intent=String(base.intent||'decision_support')
   const commonIntent=['account_priority','visit_preparation','commitment','value_sale','decision_support'].includes(intent)
   const continued=Boolean(orchestration?.continuity?.carryForward||context?.conversationThread?.continued)
   const request=clean(message,3_000)
   const nuanced=request.length>180||/(?:por[eé]m|ao mesmo tempo|considerando|cruze|estrat[eé]gia|cen[aá]rio|alternativa|compare|por que)/i.test(request)
-  const requested=Boolean(base.useGenerativeAi||
+  const requested=capabilityRoute.path==='FAST'?false:Boolean(base.useGenerativeAi||
     (commonIntent&&distinctCollections>=2)||
     (continued&&distinctCollections>=1)||
     (nuanced&&distinctCollections>=1))
   const useGenerativeAi=Boolean(providerConfigured&&requested)
   const tier=(base.mode==='retrieval_hybrid'||['agronomic_commercial_decision','technical_decision'].includes(intent)||distinctCollections>=6||request.length>700)?'strategic':'daily'
-  const reason=useGenerativeAi
+  const reason=capabilityRoute.path==='FAST'
+    ?capabilityRoute.reason
+    :useGenerativeAi
     ?'O dossiê contém fontes suficientes para raciocínio estruturado; fatos, números, score e segurança continuam sob reconciliação determinística.'
     :requested
       ?'A rota pede raciocínio estruturado, mas o provedor não está disponível; a VAL usa o fallback específico e auditável.'
@@ -55,7 +59,8 @@ export function resolveStructuredReasoningRoute(orchestration={},context={},mess
     useGenerativeAi,
     tier,
     distinctCollections,
-    route:{...base,mode:useGenerativeAi?'structured_hybrid':base.mode||'deterministic',useGenerativeAi,reason,structuredReasoning:requested,specificityVersion:VERSION}
+    capabilityRoute,
+    route:{...base,mode:useGenerativeAi?'structured_hybrid':capabilityRoute.path==='FAST'?'fast_data':base.mode||'deterministic',useGenerativeAi,reason,structuredReasoning:requested,specificityVersion:VERSION,reasoningPath:capabilityRoute.path,capabilities:capabilityRoute.capabilities}
   }
 }
 
