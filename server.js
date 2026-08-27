@@ -577,7 +577,7 @@ async function handleApi(request,response,url){
   return json(response,200,{contract_version:'val.commitment.response.v1',commitment})
  }
  if(url.pathname==='/api/v1/insights'&&request.method==='GET'){
-  const intelligence=await repository.getIntelligence(identity?.id,{role:identity?.role||'consultant'})
+  const intelligence=await repository.getIntelligence(identity?.id||identity?.email,{role:identity?.role||'consultant'})
   return json(response,200,intelligence.insights)
  }
  if(url.pathname==='/api/opportunities'&&request.method==='POST'){
