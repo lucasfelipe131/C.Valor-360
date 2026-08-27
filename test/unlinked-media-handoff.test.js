@@ -12,6 +12,15 @@ import {createAgroSessionMediaMessage} from '../src/lib/agro-hero-actions.js'
 const read=relative=>readFileSync(new URL(`../${relative}`,import.meta.url),'utf8')
 const image=(name='campo.jpg',type='image/jpeg',size=512)=>new File([new Uint8Array(size)],name,{type})
 const pdf=(name='laudo-solo.pdf',size=512)=>new File([new Uint8Array(size)],name,{type:'application/pdf'})
+// Browsers preserve File during structured clone. Node 22 demotes it to Blob,
+// so restore only the File metadata that the browser transport would retain.
+const browserStructuredClone=value=>{
+ const cloned=structuredClone(value)
+ cloned.files=cloned.files.map((file,index)=>file instanceof File
+  ? file
+  : new File([file],value.files[index].name,{type:file.type,lastModified:value.files[index].lastModified}))
+ return cloned
+}
 const envelope=(patch={})=>({
  type:'valor360:session-media',version:2,transferId:'transfer-1',navigationRequestId:'navigation-1',
  persistenceMode:'NONE',association:'UNLINKED',intent:'IMAGE_DIAGNOSIS',files:[image()],sourceAttachments:[],...patch,
@@ -36,7 +45,7 @@ test('host e Manual compartilham o contrato por structured clone sem serializar 
  const outbound=createAgroSessionMediaMessage({
   files:[image()],intent:'IMAGE_DIAGNOSIS',navigationRequestId:'navigation-1',transferId:'transfer-bridge',
  })
- const inbound=normalizeManualSessionMedia(structuredClone(outbound))
+ const inbound=normalizeManualSessionMedia(browserStructuredClone(outbound))
  assert.equal(inbound.transferId,'transfer-bridge')
  assert.equal(inbound.navigationRequestId,'navigation-1')
  assert.equal(inbound.intent,'IMAGE_DIAGNOSIS')
@@ -48,7 +57,7 @@ test('host e Manual compartilham o contrato por structured clone sem serializar 
 test('handoff preserva attachment_id e associação como claim sem delegar autorização',()=>{
  const attachment={id:'50000000-0000-4000-8000-000000000005',organizationId:'10000000-0000-4000-8000-000000000001',clientId:'cliente-a',association:'LINKED_CLIENT',createdAt:'2026-08-27T10:00:00Z',sha256:'a'.repeat(64)}
  const outbound=createAgroSessionMediaMessage({files:[image()],sourceAttachments:[attachment],intent:'IMAGE_DIAGNOSIS',navigationRequestId:'navigation-1'})
- const inbound=normalizeManualSessionMedia(structuredClone(outbound))
+ const inbound=normalizeManualSessionMedia(browserStructuredClone(outbound))
  assert.equal(inbound.version,2)
  assert.equal(inbound.association,'LINKED_CLIENT')
  assert.equal(inbound.sourceAttachments[0].attachmentId,attachment.id)
@@ -67,6 +76,7 @@ test('receiver falha fechado para política, MIME, tamanho e lote incompatíveis
  assert.equal(normalizeManualSessionMedia(envelope({intent:'ANALYZE_SOIL',files:[pdf('a.pdf'),pdf('b.pdf')]})),null)
  assert.equal(normalizeManualSessionMedia(envelope({intent:'IMAGE_DIAGNOSIS',files:[image(),pdf()]})),null)
  assert.equal(normalizeManualSessionMedia(envelope({intent:'ANALYZE_SOIL',files:[new File(['x'],'dados.csv',{type:'text/csv'})]})),null)
+ assert.equal(normalizeManualSessionMedia(envelope({files:[new Blob(['x'],{type:'image/jpeg'})]})),null)
  assert.equal(normalizeManualSessionMedia(envelope({version:1})),null)
  assert.equal(validateManualSessionMedia(envelope({files:[image('animada.gif','image/gif')]})).errorCode,'UNSUPPORTED_MEDIA_TYPE')
  assert.equal(validateManualSessionMedia(envelope({files:[image('vazia.jpg','image/jpeg',0)]})).errorCode,'FILE_EMPTY')
