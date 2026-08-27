@@ -7,7 +7,7 @@ import commercialAgrochemicalsData from "./commercial-agrochemicals.json";
 import cultivarsData from "./cultivars.json";
 import fertilizerFormulasData from "./fertilizer-formulas.json";
 import foliarProductsData from "./foliar-products.json";
-import FieldMap, { MapPoint } from "./FieldMap";
+import FieldMap, { MapPoint, type BoundarySelection } from "./FieldMap";
 import FieldInsights, {
   spectralPreviewUrl,
   spectralTileUrl,
@@ -45,6 +45,13 @@ import {
   recommendPlantPopulation,
   type ProductionEnvironment,
 } from "./agronomy-planning";
+import {
+  calculateFertilizer,
+  calculatePlanter,
+  calculateQuote,
+  calculateSeedDemand,
+  calculateSpraying,
+} from "../../src/lib/agronomic-calculators.js";
 
 const embeddedInValor360 = process.env.NEXT_PUBLIC_VALOR360_EMBEDDED === "1";
 
@@ -122,11 +129,21 @@ type NdviScene = {
 
 type FieldPlot = {
   id: string;
+  canonicalFieldId?: string;
+  propertyId?: string;
+  propertyName?: string;
   name: string;
   crop: string;
   season: string;
   area: number;
   points: MapPoint[];
+  polygons?: MapPoint[][][];
+  geometry?: { type: "Polygon" | "MultiPolygon"; coordinates: unknown } | null;
+  geometryAdapterVersion?: string | null;
+  geometryVersion?: string | null;
+  geometryStatus?: "NOT_MAPPED" | "LEGACY_REFERENCE" | "CANONICAL" | "REJECTED";
+  geometryAction?: "UNCHANGED" | "UPSERT" | "CLEAR";
+  geometryProvenance?: Record<string, unknown> | null;
   ndviScenes: NdviScene[];
   registrationId?: string;
 };
@@ -2213,11 +2230,13 @@ type QuoteItem = {
 };
 
 function quoteUnitPrice(item: QuoteItem) {
-  return item.systemPrice * (1 - Math.min(Math.max(item.discount, 0), 100) / 100);
+  const result = calculateQuote({ items: [item] });
+  return Number(result.items[0]?.finalUnitPrice ?? 0);
 }
 
 function quoteItemTotal(item: QuoteItem) {
-  return item.quantity * quoteUnitPrice(item);
+  const result = calculateQuote({ items: [item] });
+  return Number(result.items[0]?.finalTotal ?? 0);
 }
 
 function currency(value: number) {
@@ -2228,17 +2247,14 @@ function currency(value: number) {
 }
 
 function doseTotal(item: SprayItem, area: number) {
-  const total = item.dose * area;
-  if (item.unit === "L/ha") return `${formatDecimal(total)} L`;
-  if (item.unit === "mL/ha") {
-    return total >= 1000
-      ? `${formatDecimal(total / 1000)} L`
-      : `${formatNumber(total)} mL`;
-  }
-  if (item.unit === "kg/ha") return `${formatDecimal(total)} kg`;
-  return total >= 1000
-    ? `${formatDecimal(total / 1000)} kg`
-    : `${formatNumber(total)} g`;
+  const result = calculateSpraying({
+    areaHa: area,
+    sprayVolumeLHa: 1,
+    tankVolumeL: 1,
+    items: [item],
+  });
+  const total = result.items[0]?.total as { value?: number; unit?: string } | undefined;
+  return `${formatDecimal(Number(total?.value ?? 0))} ${total?.unit ?? "L"}`;
 }
 
 function recommendationText(
@@ -2742,27 +2758,17 @@ export default function Home() {
     });
   }, [accessUser, activePage, calc]);
 
-  const planter = useMemo(() => {
-    const rowSpacing = Math.max(spacing, 0.1) / 100;
-    const targetPlantsMeter = (population * rowSpacing) / 10000;
-    const establishment = Math.max(
-      (germination / 100) * (fieldSurvival / 100),
-      0.01,
-    );
-    const rawSeedsMeter = targetPlantsMeter / establishment;
-    const seedsMeter = rawSeedsMeter * (1 + slippage / 100);
-    const seedsHa = (seedsMeter * 10000) / rowSpacing;
-    return {
-      targetPlantsMeter,
-      seedsMeter,
-      seedsHa,
-      distance: seedsMeter > 0 ? 100 / seedsMeter : 0,
-      bagsHa: bagSeeds > 0 ? seedsHa / bagSeeds : 0,
-      expectedTest: seedsMeter * testDistance * testRows,
-      wheelTurns:
-        wheelCircumference > 0 ? testDistance / wheelCircumference : 0,
-    };
-  }, [
+  const planter = useMemo(() => calculatePlanter({
+    populationPlantsHa: population,
+    spacingCm: spacing,
+    germinationPercent: germination,
+    fieldSurvivalPercent: fieldSurvival,
+    slippagePercent: slippage,
+    bagSeeds,
+    testDistanceM: testDistance,
+    testRows,
+    wheelCircumferenceM: wheelCircumference,
+  }), [
     spacing,
     population,
     germination,
@@ -4486,10 +4492,26 @@ function Calculators({
       : fertPriceUnit === "R$/kg"
         ? fertPrice
         : fertPrice / Math.max(values.fertBag, 1);
-  const pointsPerHa =
-    (activeFertNutrients.N + activeFertNutrients.P2O5 + activeFertNutrients.K2O) *
-    fertRateKgHa / 100;
-  const effectivePoints = pointsPerHa * fertEfficiency / 100;
+  const seedCalculation = calculateSeedDemand({
+    areaHa: seedAreaHa,
+    populationSeedsHa: values.seedPopulation,
+    marginPercent: values.seedMargin,
+    bagSeeds: values.seedBag,
+  });
+  const sprayCalculation = calculateSpraying({
+    areaHa: sprayAreaHa,
+    sprayVolumeLHa: values.sprayVolume,
+    tankVolumeL: values.tankVolume,
+    items: recommendation.items,
+  });
+  const fertilizerCalculation = calculateFertilizer({
+    areaHa: fertAreaHa,
+    rateKgHa: fertRateKgHa,
+    bagKg: values.fertBag,
+    pricePerKg: fertPricePerKg,
+    efficiencyPercent: fertEfficiency,
+    guarantees: activeFertNutrients,
+  });
   const activeCultivars =
     harvestCrop === "Soja"
       ? cultivarCatalog.soybean
@@ -4680,12 +4702,18 @@ function Calculators({
           ? (comparisonTarget * 100) / formula.nutrients[comparisonNutrient]
           : 0
         : fertRateKgHa;
-    const nutrientKg = (key: NutrientKey) =>
-      (formula.nutrients[key] * rateKgHa) / 100;
-    const pointsNpk =
-      nutrientKg("N") + nutrientKg("P2O5") + nutrientKg("K2O");
     const pricePerTon = comparisonPricesPerTon[formula.id] ?? 0;
-    const costHa = (rateKgHa * pricePerTon) / 1000;
+    const calculation = calculateFertilizer({
+      areaHa: 1,
+      rateKgHa,
+      bagKg: values.fertBag,
+      pricePerKg: pricePerTon / 1000,
+      efficiencyPercent: 100,
+      guarantees: formula.nutrients,
+    });
+    const nutrientKg = (key: NutrientKey) => calculation.suppliedKgHa[key] ?? 0;
+    const pointsNpk = calculation.pointsNpkHa;
+    const costHa = calculation.costPerHa;
     const costPerPoint = pointsNpk > 0 ? costHa / pointsNpk : 0;
     return {
       rateKgHa,
@@ -4697,15 +4725,10 @@ function Calculators({
     };
   }
 
-  const quoteSubtotal = quoteItems.reduce(
-    (total, item) => total + item.quantity * item.systemPrice,
-    0,
-  );
-  const quoteTotal = quoteItems.reduce(
-    (total, item) => total + quoteItemTotal(item),
-    0,
-  );
-  const quoteDiscount = quoteSubtotal - quoteTotal;
+  const quoteCalculation = calculateQuote({ items: quoteItems });
+  const quoteSubtotal = quoteCalculation.subtotal;
+  const quoteTotal = quoteCalculation.total;
+  const quoteDiscount = quoteCalculation.discount;
 
   function updateQuoteItem(id: number, patch: Partial<QuoteItem>) {
     setQuoteItems((current) =>
@@ -5621,8 +5644,8 @@ function Calculators({
           </div>
           <aside className="result-card">
             <span className="eyebrow">RESULTADO</span>
-            <Metric label="Sementes necessárias" value={formatNumber(seedAreaHa * values.seedPopulation * (1 + values.seedMargin / 100))} emphasis />
-            <Metric label="Embalagens" value={`${Math.ceil((seedAreaHa * values.seedPopulation * (1 + values.seedMargin / 100)) / Math.max(values.seedBag, 1))} un.`} />
+            <Metric label="Sementes necessárias" value={formatNumber(seedCalculation.seedsRequired)} emphasis />
+            <Metric label="Embalagens" value={`${seedCalculation.bagsRequired} un.`} />
             <Metric label="Margem incluída" value={`${values.seedMargin.toFixed(1)}%`} />
           </aside>
         </section>
@@ -6084,10 +6107,10 @@ function Calculators({
             </div>
             <aside className="result-card spray-result-card">
               <span className="eyebrow">RESUMO DA OPERAÇÃO</span>
-              <Metric label="Calda total" value={`${formatNumber(sprayAreaHa * values.sprayVolume)} L`} emphasis />
+              <Metric label="Calda total" value={`${formatNumber(sprayCalculation.totalSprayL)} L`} emphasis />
               <div className="result-grid">
-                <Metric label="Tanques" value={`${Math.ceil((sprayAreaHa * values.sprayVolume) / Math.max(values.tankVolume, 1))}`} />
-                <Metric label="Área/tanque" value={`${(values.tankVolume / Math.max(values.sprayVolume, 1)).toFixed(1)} ha`} />
+                <Metric label="Tanques" value={`${sprayCalculation.tankCount}`} />
+                <Metric label="Área/tanque" value={`${sprayCalculation.areaPerTankHa.toFixed(1)} ha`} />
               </div>
               <div className="recommendation-preview">
                 <span>Mensagem pronta</span>
@@ -6231,12 +6254,12 @@ function Calculators({
             <aside className="result-card fertilizer-results">
               <span className="eyebrow">FORNECIMENTO POR HECTARE</span>
               <h3>{activeFertName}</h3>
-              <Metric label="Pontos NPK/ha" value={`${pointsPerHa.toFixed(1)} pontos`} emphasis />
+              <Metric label="Pontos NPK/ha" value={`${fertilizerCalculation.pointsNpkHa.toFixed(1)} pontos`} emphasis />
               <div className="nutrient-results">
                 {suppliedNutrientKeys.map((key) => (
                   <div key={key} className={activeFertNutrients[key] > 0 ? "supplied" : ""}>
                     <span>{nutrientLabel[key]}</span>
-                    <strong>{formatDecimal(activeFertNutrients[key] * fertRateKgHa / 100)}</strong>
+                    <strong>{formatDecimal(fertilizerCalculation.suppliedKgHa[key] ?? 0)}</strong>
                     <small>kg/ha</small>
                   </div>
                 ))}
@@ -6247,10 +6270,10 @@ function Calculators({
                 )}
               </div>
               <div className="result-grid">
-                <Metric label="Pontos ajustados" value={effectivePoints.toFixed(1)} />
-                <Metric label="Custo/ha" value={fertPrice > 0 ? currency(fertPricePerKg * fertRateKgHa) : "Informe o preço"} />
-                <Metric label="Quantidade total" value={`${formatNumber(fertAreaHa * fertRateKgHa)} kg`} />
-                <Metric label="Embalagens" value={`${Math.ceil(fertAreaHa * fertRateKgHa / Math.max(values.fertBag, 1))} un.`} />
+                <Metric label="Pontos ajustados" value={fertilizerCalculation.effectivePointsNpkHa.toFixed(1)} />
+                <Metric label="Custo/ha" value={fertPrice > 0 ? currency(fertilizerCalculation.costPerHa) : "Informe o preço"} />
+                <Metric label="Quantidade total" value={`${formatNumber(fertilizerCalculation.totalKg)} kg`} />
+                <Metric label="Embalagens" value={`${fertilizerCalculation.bagsRequired} un.`} />
               </div>
               <small className="legal-note">“Pontos” = kg/ha de N + P₂O₅ + K₂O. Eficiência ajustada é um cenário do usuário, não uma garantia de resposta ou produtividade.</small>
             </aside>
@@ -8454,10 +8477,41 @@ function ProducerFieldsPanel({
     });
   }
 
-  function updatePoints(points: MapPoint[]) {
+  function updatePoints(points: MapPoint[], boundary?: BoundarySelection) {
+    const observedAt = new Date().toISOString();
+    const priorProvenance = activeField?.geometryProvenance && typeof activeField.geometryProvenance === "object"
+      ? activeField.geometryProvenance
+      : {};
+    const geometryProvenance = boundary
+      ? {
+          source: "manual-do-agronomo",
+          method: boundary.sourceKind,
+          observedAt: boundary.queriedAt || observedAt,
+          details: {
+            sourceLabel: boundary.sourceLabel,
+            registry: boundary.registry || "",
+            propertyName: boundary.propertyName || "",
+            parcelCode: boundary.parcelCode || "",
+            propertyCode: boundary.propertyCode || "",
+            status: boundary.status || "",
+            ownerStatus: boundary.ownerStatus,
+          },
+        }
+      : {
+          ...priorProvenance,
+          source: "manual-do-agronomo",
+          method: Object.keys(priorProvenance).length ? "manual-edit" : "manual-draw",
+          observedAt,
+        };
     updateField({
       points,
       area: points.length >= 3 ? Number(calculatePolygonArea(points).toFixed(2)) : activeField?.area ?? 0,
+      polygons: points.length >= 3 ? [[points]] : [],
+      geometry: null,
+      geometryVersion: null,
+      geometryStatus: points.length >= 3 ? "CANONICAL" : "NOT_MAPPED",
+      geometryAction: points.length >= 3 ? "UPSERT" : "CLEAR",
+      geometryProvenance,
       ndviScenes: [],
     });
     setSelectedSceneId("");
@@ -8736,6 +8790,8 @@ function ProducerFieldsPanel({
           <FieldMap
             points={activeField.points}
             onChange={updatePoints}
+            contextMunicipality={producer.city}
+            onBoundaryUse={(selection) => updatePoints(selection.points, selection)}
             referencePolygons={(producer.registrations ?? [])
               .filter((registration) => registration.id === activeField.registrationId)
               .map((registration) => ({

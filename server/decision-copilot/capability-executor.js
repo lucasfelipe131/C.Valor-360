@@ -1,5 +1,6 @@
 import {createHash,randomUUID} from 'node:crypto'
 import {isCurrentClientIdentityRequest} from '../ai-reasoning/intent-router.js'
+import {executeCopilotCalculator} from '../agronomic-calculator-adapter.js'
 
 export const capabilityExecutorVersion='val.capability_executor.v1'
 
@@ -39,7 +40,7 @@ const agronomicCatalogPolicy=Object.freeze({
  IMAGE_DIAGNOSIS:{availability:'SPECIALIZED_WORKSPACE',integration_state:'PARTIAL',requires_current_source:false,human_review_required:true},
  NUTRISCAN:{availability:'SPECIALIZED_WORKSPACE',integration_state:'PARTIAL',requires_current_source:false,human_review_required:true},
  FITOSCAN:{availability:'SPECIALIZED_WORKSPACE',integration_state:'PARTIAL',requires_current_source:false,human_review_required:true},
- CALCULATORS:{availability:'SPECIALIZED_WORKSPACE',integration_state:'PARTIAL',requires_current_source:false,human_review_required:true},
+ CALCULATORS:{availability:'SPECIALIZED_WORKSPACE',integration_state:'AVAILABLE',requires_current_source:false,human_review_required:true},
  LABELS:{availability:'CURRENT_SOURCE_REQUIRED',integration_state:'SOURCE_DEPENDENT',requires_current_source:true,human_review_required:true},
  WEATHER:{availability:'CURRENT_SOURCE_REQUIRED',integration_state:'SOURCE_DEPENDENT',requires_current_source:true,human_review_required:false},
  MARKET_COMMODITY:{availability:'CURRENT_SOURCE_REQUIRED',integration_state:'SOURCE_DEPENDENT',requires_current_source:true,human_review_required:false},
@@ -95,7 +96,7 @@ function result(capability,status,toolResult,sourceRef=null){
 
 function agronomicToolCatalogResult(){
  const availableTools=agronomicCatalogCapabilities.map(capability=>Object.freeze({capability,...navigation[capability],...agronomicCatalogPolicy[capability]}))
- const summary='Na Inteligência Agronômica há módulos para propriedades, talhões e mapeamento de áreas; análises de solo; diagnóstico por foto, incluindo NutriScan e FitoScan; calculadoras; bulas; clima; mercado; Manual e Biblioteca. Clima, mercado e bulas exigem fonte atual autorizada; diagnósticos exigem revisão humana; mapeamento, diagnóstico por foto, scans e paridade nativa de calculadoras permanecem parciais. Use o ambiente especializado para aprofundar cada capacidade.'
+ const summary='Na Inteligência Agronômica há módulos para propriedades, talhões e mapeamento de áreas; análises de solo; diagnóstico por foto, incluindo NutriScan e FitoScan; nove calculadoras canônicas; bulas; clima; mercado; Manual e Biblioteca. Clima, mercado e bulas exigem fonte atual autorizada; diagnósticos exigem revisão humana; mapeamento, diagnóstico por foto e scans ainda dependem de UAT físico e agronômico. Use o ambiente especializado para aprofundar cada capacidade.'
  const tool=descriptor('AGRONOMIC_WORKSPACE',{status:'CATALOG',summary,context:{client_id:null,private_memory_used:false,catalog_version:'val.agronomic_tool_catalog.v1'},toolResult:{available_tools:availableTools}})
  return result('AGRONOMIC_WORKSPACE','EXECUTED',tool,'val.agronomic_tool_catalog.v1')
 }
@@ -111,25 +112,21 @@ function mappingResult({context,clientId,activeContext}){
  return result('AREA_MAPPING','EXECUTED',tool,activeContext?.source_ref||context?.contextSnapshot?.context_snapshot_id||null)
 }
 
-function costPerHectare(message=''){
- const normalized=String(message).replace(/\./g,'').replace(/,(?=\d{1,2}\b)/g,'.')
- const costMatch=normalized.match(/(?:custo(?:\s+total)?|total)\s*(?:de|=|:)?\s*(?:r\$\s*)?(\d+(?:\.\d+)?)/i)||normalized.match(/r\$\s*(\d+(?:\.\d+)?)/i)
- const areaMatch=normalized.match(/(?:area|em)\s*(?:de|=|:)?\s*(\d+(?:\.\d+)?)\s*(?:ha|hectares?)/i)||normalized.match(/(\d+(?:\.\d+)?)\s*(?:ha|hectares?)/i)
- const total=Number(costMatch?.[1]);const area=Number(areaMatch?.[1])
- if(!(total>0&&area>0))return null
- return {total_cost:total,area_ha:area,cost_per_ha:Number((total/area).toFixed(2)),currency:'BRL',formula:'total_cost / area_ha'}
-}
-
-function calculatorResult({message,clientId,activeContext}){
- const values=costPerHectare(message)
- const askingToCalculate=/\b(?:calcule|calcular|quanto|resultado|custo\s*\/\s*ha)\b/i.test(message)
- if(askingToCalculate&&!values){
-  const tool=descriptor('CALCULATORS',{status:'INPUT_REQUIRED',summary:'Informe o custo total e a área em hectares para calcular custo/ha sem assumir valores.',context:{client_id:clientId||null,active_context:activeContext||null},toolResult:{required_inputs:['total_cost_brl','area_ha']}})
-  return result('CALCULATORS','INPUT_REQUIRED',tool,null)
- }
- const summary=values?`Custo calculado: R$ ${values.cost_per_ha.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}/ha, usando custo total e área informados.`:'Calculadoras abertas com os valores ainda sob controle do consultor.'
- const tool=descriptor('CALCULATORS',{summary,context:{client_id:clientId||null,active_context:activeContext||null},toolResult:values?{facts:values}:{}})
- return result('CALCULATORS','EXECUTED',tool,values?'calculator:cost_per_ha':null)
+async function calculatorResult({message,clientId,activeContext,calculatorOptions}){
+ const execution=await executeCopilotCalculator(message,calculatorOptions)
+ const status=execution.status==='EXECUTED'?'EXECUTED':execution.status==='READY'?'READY':execution.status
+ const tool=descriptor('CALCULATORS',{
+  status,
+  summary:execution.summary,
+  context:{client_id:clientId||null,active_context:activeContext||null,calculator:execution.calculator||null},
+  toolResult:{
+   calculator:execution.calculator||null,calculator_contract_version:execution.contract_version,
+   calculator_adapter_version:execution.adapter_version,required_inputs:execution.required_inputs||[],
+   catalog:execution.catalog||undefined,inputs:execution.input||execution.inputs||undefined,
+   facts:execution.output||undefined,source_status:execution.status,
+  },
+ })
+ return result('CALCULATORS',status,tool,execution.source_ref||null)
 }
 
 function soilResult({context,clientId,activeContext}){
@@ -145,7 +142,19 @@ function soilResult({context,clientId,activeContext}){
  return result('SOIL_ANALYSIS','EXECUTED',tool,idOf(selected))
 }
 
-function imageResult({capability,attachments,clientId,activeContext}){
+function imageResult({capability,attachments,savedAttachments,message,clientId,activeContext}){
+ const source=String(message||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+ const wantsLatest=['NUTRISCAN','FITOSCAN'].includes(capability)&&/\b(?:ultimo|ultima|mais recente|mostr\w*|abr\w*|ver)\b/.test(source)
+ if(wantsLatest){
+  const scan=list(savedAttachments).map(attachment=>({attachment,scan:attachment?.analysis?.latestScanResult})).find(item=>item.scan?.analysis_type===capability)
+  if(!scan){
+   const tool=descriptor(capability,{status:'NO_DATA',summary:`Nenhum ${capability==='NUTRISCAN'?'NutriScan':'FitoScan'} foi localizado neste produtor e nesta carteira.`,context:{client_id:clientId||null,active_context:activeContext||null,latest_result:true}})
+   return result(capability,'NO_DATA',tool,null)
+  }
+  const summary=clean(scan.scan?.result?.summary,1200)||`${capability==='NUTRISCAN'?'NutriScan':'FitoScan'} localizado; o resultado permanece uma triagem assistida e exige revisão agronômica.`
+  const tool=descriptor(capability,{summary,context:{client_id:clientId||null,attachment_id:idOf(scan.attachment),result_reference:scan.scan.result_reference,property_id:scan.scan.property_id||null,field_id:scan.scan.field_id||null,active_context:activeContext||null,latest_result:true},toolResult:{facts:{attachment_id:idOf(scan.attachment),organization_id:scan.scan.organization_id,client_external_key:scan.scan.client_external_key||null,property_id:scan.scan.property_id||null,field_id:scan.scan.field_id||null,association:scan.scan.association,analysis_type:scan.scan.analysis_type,result_reference:scan.scan.result_reference,result_created_at:scan.scan.result_created_at,source_attachment_reference:scan.scan.attachment_id,provenance_contract_version:scan.scan.contract_version},human_review_required:true,diagnostic_status:'assisted_triage_not_prescription'}})
+  return result(capability,'EXECUTED',tool,idOf(scan.attachment))
+ }
  const image=list(attachments).find(item=>imageTypes.has(String(item?.mimeType||item?.mime_type||'').toLowerCase()))
  if(!image){
   const tool=descriptor(capability,{status:'INPUT_REQUIRED',summary:'Envie uma foto de campo para iniciar a triagem; nenhuma imagem foi presumida.',context:{client_id:clientId||null,active_context:activeContext||null},toolResult:{required_inputs:['image']}})
@@ -214,22 +223,22 @@ function fastContextResult({capability,message,context,clientId}){
  return result(capability,'PLANNED',null,null)
 }
 
-export async function executeCapabilityPlan({route={},message='',context={},attachments=[],clientId='',activeContext=null,liveData={}}={}){
+export async function executeCapabilityPlan({route={},message='',context={},attachments=[],clientId='',activeContext=null,liveData={},calculatorOptions={}}={}){
  const validatedContext=activeContext?validateActiveContext({activeContext,context,clientId}):null
  const results=[]
  for(const capability of list(route.capabilities)){
   if(capability==='SESSION_COMMAND')results.push(sessionCommandResult({route,context,clientId}))
   else if(capability==='AGRONOMIC_WORKSPACE'&&route.tool_hint==='AGRONOMIC_TOOL_CATALOG')results.push(agronomicToolCatalogResult())
   else if(capability==='AREA_MAPPING')results.push(mappingResult({context,clientId,activeContext:validatedContext}))
-  else if(capability==='CALCULATORS')results.push(calculatorResult({message,clientId,activeContext:validatedContext}))
+  else if(capability==='CALCULATORS')results.push(await calculatorResult({message,clientId,activeContext:validatedContext,calculatorOptions}))
   else if(capability==='SOIL_ANALYSIS')results.push(soilResult({context,clientId,activeContext:validatedContext}))
-  else if(['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability))results.push(imageResult({capability,attachments,clientId,activeContext:validatedContext}))
+  else if(['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability))results.push(imageResult({capability,attachments,savedAttachments:context.attachments,message,clientId,activeContext:validatedContext}))
   else if(['MARKET_COMMODITY','WEATHER','LABELS'].includes(capability)&&route.path==='LIVE_DATA')results.push(liveDataResult({capability,liveData}))
   else if(route.path==='FAST'&&['CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY'].includes(capability))results.push(fastContextResult({capability,message,context,clientId}))
   else results.push(result(capability,'PLANNED',null,null))
  }
  const used=results.filter(item=>item.status==='EXECUTED').map(item=>item.capability)
- const primary=results.find(item=>item.tool_result&&['EXECUTED','INPUT_REQUIRED','READY','NO_DATA'].includes(item.status))?.tool_result||null
+ const primary=results.find(item=>item.tool_result&&['EXECUTED','INPUT_REQUIRED','READY','NO_DATA','SOURCE_UNAVAILABLE'].includes(item.status))?.tool_result||null
  return Object.freeze({
   version:capabilityExecutorVersion,
   path:route.path,

@@ -20,9 +20,9 @@ export function resolveValNaturalCommand(input){
  if(!normalized)return null
  if(exact(normalized,'resume','resuma'))return {action:'SUMMARIZE',local:true,persistence:'NONE'}
  if(exact(normalized,'repete','repita'))return {action:'REPEAT',local:true,persistence:'NONE'}
- if(exact(normalized,'so as perguntas de ouro','somente as perguntas de ouro'))return {action:'GOLDEN_QUESTIONS_ONLY',local:true,persistence:'NONE'}
+ if(exact(normalized,'so as perguntas de ouro','somente as perguntas de ouro','so me manda as perguntas de ouro'))return {action:'GOLDEN_QUESTIONS_ONLY',local:true,persistence:'NONE'}
  if(exact(normalized,'agora por escrito','responda por escrito'))return {action:'OUTPUT_TEXT',local:true,outputMode:'text',persistence:'NONE'}
- if(exact(normalized,'agora fala comigo','fale comigo','responda em audio'))return {action:'OUTPUT_AUDIO',local:true,outputMode:'audio',persistence:'NONE'}
+ if(exact(normalized,'agora fala comigo','agora fala elas pra mim','agora fala isso pra mim','fale comigo','responda em audio'))return {action:'OUTPUT_AUDIO',local:true,outputMode:'audio',persistence:'NONE'}
  if(exact(normalized,'texto e audio','agora texto e audio'))return {action:'OUTPUT_BOTH',local:true,outputMode:'both',persistence:'NONE'}
  if(exact(normalized,'registra','registre'))return {action:'OPEN_REGISTER',local:true,persistence:'CONFIRM_REQUIRED'}
  if(exact(normalized,'nao registra','nao registre'))return {action:'KEEP_SESSION_ONLY',local:true,persistence:'NONE'}

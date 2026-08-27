@@ -20,6 +20,7 @@ test('vNext — os cinco paths são explícitos e materialidade governa o uso da
   assert.equal(typeof route.materiality.engine_required,'boolean')
   assert.match(route.materiality.question,/mudar materialmente/i)
  }
+ assert.equal(routeSystemCapability({message:'Qual é o preço da soja hoje?',hasClient:false}).path,'LIVE_DATA')
  assert.equal(routeSystemCapability({message:'Qual é o preço da soja hoje?',hasClient:false}).data_path,'LIVE_DATA')
  assert.equal(routeSystemCapability({message:'Qual foi a última visita?',hasClient:true}).materiality.engine_required,false)
  assert.equal(routeSystemCapability({message:'Cruze perfil e agronomia.',hasClient:true}).materiality.engine_required,true)
@@ -27,8 +28,8 @@ test('vNext — os cinco paths são explícitos e materialidade governa o uso da
 
 test('vNext — comandos naturais ficam na sessão e preservam confirmação humana',()=>{
  const samples={
-  'Resume.':'SUMMARIZE','Repete.':'REPEAT','Explica melhor.':'EXPLAIN','Só as Perguntas de Ouro.':'GOLDEN_QUESTIONS',
-  'Agora por escrito.':'OUTPUT_TEXT','Agora fala comigo.':'OUTPUT_AUDIO','Me mostra os números.':'SHOW_NUMBERS',
+  'Resume.':'SUMMARIZE','Repete.':'REPEAT','Explica melhor.':'EXPLAIN','Só as Perguntas de Ouro.':'GOLDEN_QUESTIONS','Só me manda as Perguntas de Ouro.':'GOLDEN_QUESTIONS',
+  'Agora por escrito.':'OUTPUT_TEXT','Agora fala comigo.':'OUTPUT_AUDIO','Agora fala elas pra mim.':'OUTPUT_AUDIO','Me mostra os números.':'SHOW_NUMBERS',
   'Registra.':'REGISTER_LAST','Não registra.':'DO_NOT_REGISTER','Aprofunda.':'DEEPEN','Só o essencial.':'BRIEF'
  }
  assert.equal(sessionCommands.length,11)
@@ -94,7 +95,7 @@ test('vNext — catálogo agronômico responde com ou sem produtor pelo FAST det
  assert.match(response.advice.answer,/NutriScan e FitoScan/)
  assert.match(response.advice.answer,/Manual e Biblioteca/)
  assert.match(response.advice.answer,/exigem fonte atual autorizada/)
- assert.match(response.advice.answer,/permanecem parciais/)
+ assert.match(response.advice.answer,/dependem de UAT físico e agronômico/)
  assert.doesNotMatch(response.advice.answer,/Informe a cultura/i)
  assert.deepEqual(reasoning.run.capabilities_used,['AGRONOMIC_WORKSPACE'])
  assert.equal(reasoning.run.tool_result.status,'CATALOG')

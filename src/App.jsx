@@ -1,27 +1,28 @@
-import React,{useCallback,useEffect,useState} from 'react'
+import React,{lazy,Suspense,useCallback,useEffect,useState} from 'react'
 import {BrainCircuit} from 'lucide-react'
 import Sidebar from './components/Sidebar'
 import MobileNav from './components/MobileNav'
-import GlobalValCopilot from './components/GlobalValCopilot'
 import Topbar from './components/Topbar'
-import Dashboard from './pages/Dashboard'
-import Clients from './pages/Clients'
-import Client360 from './pages/Client360'
-import Agro from './pages/Agro'
-import Questionnaire from './pages/Questionnaire'
-import ValWorkspace from './components/ValWorkspace'
-import Visits from './pages/Visits'
-import Opportunities from './pages/Opportunities'
-import Reports from './pages/Reports'
-import Settings from './pages/Settings'
 import Login from './pages/Login'
 import PasswordChange from './pages/PasswordChange'
-import DataHub from './pages/DataHub'
-import Admin from './pages/Admin'
-import PublicSurvey from './pages/PublicSurvey'
 import {normalizeText,reconcileOpportunityProjection} from './lib/profile'
 import {opportunityCacheKey} from './lib/opportunity-pipeline'
 import {resolveCopilotLaunch} from './lib/copilot-context'
+
+const GlobalValCopilot=lazy(()=>import('./components/GlobalValCopilot'))
+const Dashboard=lazy(()=>import('./pages/Dashboard'))
+const Clients=lazy(()=>import('./pages/Clients'))
+const Client360=lazy(()=>import('./pages/Client360'))
+const Agro=lazy(()=>import('./pages/Agro'))
+const Questionnaire=lazy(()=>import('./pages/Questionnaire'))
+const ValWorkspace=lazy(()=>import('./components/ValWorkspace'))
+const Visits=lazy(()=>import('./pages/Visits'))
+const Opportunities=lazy(()=>import('./pages/Opportunities'))
+const Reports=lazy(()=>import('./pages/Reports'))
+const Settings=lazy(()=>import('./pages/Settings'))
+const DataHub=lazy(()=>import('./pages/DataHub'))
+const Admin=lazy(()=>import('./pages/Admin'))
+const PublicSurvey=lazy(()=>import('./pages/PublicSurvey'))
 
 const activeStorageScopeKey='valor360-active-storage-scope'
 const createEmptyAgroLaunch=()=>({nonce:0,client:null,property:null,field:null,analysis:null,context:{},initialTool:null,initialFiles:[]})
@@ -42,6 +43,7 @@ const resetPageViewport=()=>{
  window.scrollTo({top:0,left:0,behavior:'auto'})
  document.querySelector('.topbar h1')?.focus({preventScroll:true})
 }
+const RouteFallback=()=> <div className="auth-loading" role="status"><BrainCircuit/><span>Carregando ambiente…</span></div>
 
 const meta={
  dashboard:['VAL','Seu copiloto comercial e agronômico para o que importa agora'],
@@ -73,6 +75,7 @@ export default function App(){
  const [opportunities,setOpportunities]=useState([])
  const [toast,setToast]=useState('')
  const [copilotOpen,setCopilotOpen]=useState(false)
+ const [copilotLoaded,setCopilotLoaded]=useState(false)
  const [copilotReturnPage,setCopilotReturnPage]=useState('dashboard')
  const [copilotSeed,setCopilotSeed]=useState(null)
  const [copilotPageContext,setCopilotPageContext]=useState(null)
@@ -84,7 +87,7 @@ export default function App(){
  const openValClient=c=>{setSelected(c);setValMode('insumos');setPage('val');if(page==='val')window.requestAnimationFrame(resetPageViewport)}
  const updateCopilotPageContext=useCallback(input=>setCopilotPageContext(input?{...input,storageScope:copilotOwnerScope}:null),[copilotOwnerScope])
  const consumeAgroInitialFile=useCallback(file=>setAgroLaunch(current=>{let removed=false;const initialFiles=current.initialFiles.filter(item=>{const candidate=item?.file||item;const match=candidate===file||(!removed&&candidate?.name===file?.name&&candidate?.type===file?.type&&Number(candidate?.size||0)===Number(file?.size||0));if(match&&!removed){removed=true;return false}return true});return initialFiles.length===current.initialFiles.length?current:{...current,initialFiles}}),[])
- const openCopilot=(input={})=>{const launch=resolveCopilotLaunch({input,implicitContext:copilotPageContext,page,storageScope:copilotOwnerScope,clients:clientList,selectedClient:selected});setCopilotSeed({...launch,nonce:Date.now()});if(page!=='copilot')setCopilotReturnPage(page);setCopilotOpen(true);setPage('copilot')}
+ const openCopilot=(input={})=>{const launch=resolveCopilotLaunch({input,implicitContext:copilotPageContext,page,storageScope:copilotOwnerScope,clients:clientList,selectedClient:selected});setCopilotSeed({...launch,nonce:Date.now()});if(page!=='copilot')setCopilotReturnPage(page);setCopilotLoaded(true);setCopilotOpen(true);setPage('copilot')}
  const closeCopilot=()=>{setCopilotOpen(false);setPage(copilotReturnPage&&copilotReturnPage!=='copilot'?copilotReturnPage:'dashboard')}
  const navigate=target=>{
   const descriptor=target&&typeof target==='object'?target:{page:target}
@@ -154,7 +157,7 @@ export default function App(){
  const invalidateSession=notice=>{clearSessionPortfolioCache(currentUser?.storageScope);setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setValMode(null);setAgroLaunch(createEmptyAgroLaunch());setAuthNotice(notice);setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}
  const expireSession=()=>invalidateSession('Sua sessão expirou. Entre novamente.')
  useEffect(()=>{if(!selected&&clientList.length)setSelected(clientList[0])},[clientList,selected])
- useEffect(()=>{setCopilotPageContext(null);setCopilotSeed(null);setCopilotOpen(false);setAgroLaunch(createEmptyAgroLaunch())},[copilotOwnerScope])
+ useEffect(()=>{setCopilotPageContext(null);setCopilotSeed(null);setCopilotOpen(false);setCopilotLoaded(false);setAgroLaunch(createEmptyAgroLaunch())},[copilotOwnerScope])
  useEffect(()=>{fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(session?.authenticated)rememberStorageScope(session.user);else clearSessionPortfolioCache();setCurrentUser(session?.user||null);setPortfolioReady(Boolean(session?.user?.demo));setAuthenticated(Boolean(session?.authenticated));if(!session?.authenticated&&session?.misconfigured)setAuthNotice('O acesso seguro do servidor ainda não foi configurado.')}).catch(()=>{clearSessionPortfolioCache();setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setCurrentUser(null);setAuthNotice('Não foi possível validar o servidor. O acesso permaneceu bloqueado.');setPortfolioReady(false);setAuthenticated(false)})},[])
  useEffect(()=>{window.addEventListener('valor360:unauthorized',expireSession);return()=>window.removeEventListener('valor360:unauthorized',expireSession)},[currentUser?.storageScope])
  useEffect(()=>{if(authenticated!==true)return;const revalidate=()=>fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(!session?.authenticated){expireSession();return}setCurrentUser(session.user);rememberStorageScope(session.user)}).catch(()=>invalidateSession('Não foi possível revalidar o servidor. Entre novamente para proteger os dados.'));window.addEventListener('focus',revalidate);const timer=window.setInterval(revalidate,300000);return()=>{window.removeEventListener('focus',revalidate);window.clearInterval(timer)}},[authenticated,currentUser?.storageScope])
@@ -169,7 +172,7 @@ export default function App(){
  },[page,selected?.id,authenticated,portfolioReady,currentUser?.id,currentUser?.demo])
  const valMeta=valMode==='insumos'?['VAL Insumos','Inteligência comercial, técnica e consultiva para gerar valor']:valMode==='graos'?['VAL Grãos','Ambiente dedicado à originação e às operações de grãos']:meta.val
  const [title,subtitle]=page==='val'?valMeta:(meta[page]||['VAL',''])
- if(publicSurveyToken)return <PublicSurvey token={publicSurveyToken}/>
+ if(publicSurveyToken)return <Suspense fallback={<RouteFallback/>}><PublicSurvey token={publicSurveyToken}/></Suspense>
  if(authenticated===null)return <main className="auth-loading" role="status"><BrainCircuit/><span>Validando acesso seguro…</span></main>
  if(!authenticated)return <Login onLogin={login} notice={authNotice}/>
  if(currentUser?.mustChangePassword)return <PasswordChange user={currentUser} onChange={changePassword} onLogout={logout}/>
@@ -180,6 +183,7 @@ export default function App(){
   <main className="main" id="main-content" tabIndex="-1">
    {page!=='copilot'&&<Topbar title={title} subtitle={subtitle} onNavigate={navigate} onOpenVal={()=>openCopilot()}/>}
    <div className={`content ${page==='copilot'?'content-copilot-fullscreen':''}`}>
+    <Suspense fallback={<RouteFallback/>}>
     {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient} onRefreshPortfolio={refreshPortfolio} onOpenCopilot={openCopilot}/>}
     {page==='clients'&&<Clients clients={clientList} opportunities={opportunities} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
     {page==='datahub'&&<DataHub clients={clientList} onImport={importClients} onProfileImport={addClients} onUpdate={updateClient} onDelete={deleteClient} onNotify={notify}/>}
@@ -198,7 +202,8 @@ export default function App(){
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
     {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
     {page==='admin'&&currentUser?.role==='admin'&&<Admin currentUser={currentUser} onNotify={notify}/>}
-    <GlobalValCopilot key={copilotOwnerScope||'session'} open={page==='copilot'&&copilotOpen} onClose={closeCopilot} clients={clientList} seed={copilotSeed} storageScope={currentUser?.storageScope} visits={visits} opportunities={opportunities} onRefreshPortfolio={refreshPortfolio} onOpenClient={openClient} onPrepareVisit={prepareClient} onNavigate={navigate}/>
+    {copilotLoaded&&<GlobalValCopilot key={copilotOwnerScope||'session'} open={page==='copilot'&&copilotOpen} onClose={closeCopilot} clients={clientList} seed={copilotSeed} storageScope={currentUser?.storageScope} visits={visits} opportunities={opportunities} onRefreshPortfolio={refreshPortfolio} onOpenClient={openClient} onPrepareVisit={prepareClient} onNavigate={navigate}/>}
+    </Suspense>
    </div>
   </main>
   {page!=='copilot'&&<MobileNav page={page} setPage={navigate} currentUser={currentUser} onOpenVal={()=>openCopilot()}/>}

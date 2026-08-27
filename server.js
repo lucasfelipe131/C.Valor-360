@@ -37,10 +37,14 @@ import {attachLatencyPerformance,createLatencyTrace,valLatencyMetrics} from './s
 import {createSessionContextCache} from './server/decision-copilot/session-context-cache.js'
 import {normalizeSessionCommand} from './server/decision-copilot/session-command-router.js'
 import {probeVoiceAudioDuration,validateVoiceAudio} from './server/voice-capture/storage.js'
+import {readReleaseMetadata} from './server/release-metadata.js'
+import {createReadinessReport} from './server/readiness.js'
+import {technicalBootstrapFromValClients} from './server/agronomic-geometry-bridge.js'
 
 const port=Number(process.env.PORT||3000)
 const appRoot=dirname(fileURLToPath(import.meta.url))
 const root=resolve(appRoot,'dist')
+const releaseMetadata=readReleaseMetadata({root:appRoot})
 const dataRoot=process.env.DATA_DIR||join(appRoot,'.data')
 const storePath=join(dataRoot,'valor360-store.json')
 const profileMatrix=JSON.parse(readFileSync(join(appRoot,'src','data','profile-matrix.json'),'utf8'))
@@ -124,13 +128,13 @@ function parseCsv(text){
 
 async function handleApi(request,response,url){
  if(url.pathname==='/live'&&request.method==='GET')return json(response,200,{status:'ok',service:'valor360'})
- if(url.pathname==='/health'&&request.method==='GET'){
+ if((url.pathname==='/ready'||url.pathname==='/health')&&request.method==='GET'){
   const databaseHealth=await database.health()
-  const securityReady=auth.configured||config.demoMode
-  const storageReady=databaseHealth.ready||(config.demoMode&&!databaseHealth.configured&&!config.openaiApiKey)
-  const healthy=securityReady&&storageReady
-  return json(response,healthy?200:503,{status:healthy?'ok':'degraded',service:'valor360',storage:databaseHealth.ready?'postgresql':databaseHealth.configured?'postgresql-unavailable':process.env.DATA_DIR?'persistent-json':'local-json',ai:Boolean(config.openaiApiKey),security:auth.configured?'protected':config.demoMode?'demo':'misconfigured'})
+  const readiness=createReadinessReport({databaseHealth,authConfigured:auth.configured,demoMode:config.demoMode,openaiConfigured:Boolean(config.openaiApiKey),releaseMetadata})
+  if(url.pathname==='/ready')return json(response,readiness.ready?200:503,readiness)
+  return json(response,readiness.ready?200:503,{status:readiness.ready?'ok':'degraded',service:'valor360',storage:readiness.dependencies.storage.mode,ai:Boolean(config.openaiApiKey),security:readiness.dependencies.security.mode,ready:readiness.ready,dependencies:readiness.dependencies,source:readiness.source})
  }
+ if(url.pathname==='/api/release'&&request.method==='GET')return json(response,releaseMetadata?.source?.match===false?409:200,releaseMetadata)
  if(url.pathname==='/api/val/status'&&request.method==='GET'){
   if(!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
   if(auth.configured&&!await sessionIdentity(request))return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
@@ -267,15 +271,9 @@ async function handleApi(request,response,url){
   return json(response,201,{saved:true,marketSnapshot:saved})
  }
  if(url.pathname==='/api/technical/bootstrap'&&request.method==='GET'){
-  const intelligence=await repository.getIntelligence(identity?.id)
-  const producers=(intelligence.clients||[]).map(client=>{
-   const rawArea=typeof client.area==='number'?client.area:Number(String(client.area||'').replace(/\./g,'').replace(',','.').match(/\d+(?:\.\d+)?/)?.[0]||0)
-   const cultures=Array.isArray(client.cultures)?client.cultures:String(client.cultures||'').split(/[,;/|]+/).map(item=>item.trim()).filter(Boolean)
-   return {
-    id:String(client.id),name:String(client.name||'Produtor'),crmCode:String(client.id),document:'',phone:String(client.commercial?.phone||''),email:String(client.commercial?.email||''),city:String(client.municipality||''),properties:String(client.commercial?.property||''),area:Number.isFinite(rawArea)?rawArea:0,cultures,notes:[client.primaryProfile&&`Perfil Produtor 360: ${client.primaryProfile}`,client.additionalNeed&&`Necessidade declarada: ${client.additionalNeed}`].filter(Boolean).join('\n'),fields:[],registrations:[],mappingStatus:'pending',crmSource:'VALOR 360'
-   }
-  })
-  return json(response,200,{producers,source:'valor360',syncedAt:new Date().toISOString()})
+  const clients=await repository.getTechnicalBootstrap(identity?.id)
+  const bootstrap=technicalBootstrapFromValClients(clients,{organizationId:identity?.tenantId||config.defaultTenantId})
+  return json(response,200,{...bootstrap,source:'valor360',syncedAt:new Date().toISOString()})
  }
  if(url.pathname==='/api/val/progress'&&request.method==='GET'){
   const requestId=normalizeValProgressRequestId(url.searchParams.get('requestId'))
@@ -285,24 +283,24 @@ async function handleApi(request,response,url){
   return json(response,200,progress)
  }
  if(url.pathname==='/api/val/attachments'&&request.method==='GET'){
-  const clientId=clean(url.searchParams.get('clientId'));if(!clientId)return json(response,400,{error:'Selecione um produtor para ver os arquivos.'})
+  const clientId=clean(url.searchParams.get('clientId'));const association=clean(url.searchParams.get('association')).toUpperCase();if(!clientId&&association!=='UNLINKED')return json(response,400,{error:'Selecione um produtor ou informe explicitamente association=UNLINKED.'})
   const attachments=await repository.listAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,limit:30})
   return json(response,200,{attachments})
  }
  if(url.pathname==='/api/val/attachments'&&request.method==='POST'){
-  const payload=await body(request);const clientId=clean(payload.clientId);if(!clientId)return json(response,400,{error:'Selecione um produtor antes de anexar.'})
+  const payload=await body(request);const clientId=clean(payload.clientId);const association=clean(payload.association).toUpperCase()||'LINKED_CLIENT';if(!['LINKED_CLIENT','UNLINKED'].includes(association))return json(response,400,{error:'Associação de arquivo inválida.'});if(association==='LINKED_CLIENT'&&!clientId)return json(response,400,{error:'Selecione um produtor antes de anexar.'});if(association==='UNLINKED'&&clientId)return json(response,400,{error:'Um attachment UNLINKED não pode declarar produtor.'})
   const normalized=normalizedAttachment(payload)
-  const attachment=await repository.createAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,...normalized})
-  valSessionContextCache.invalidate({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId})
-  await accessRepository.recordUsage(identity,{eventType:'val_attachment_uploaded',page:'val',entityType:'client',entityId:clientId,metadata:{mimeType:normalized.mimeType,sizeBytes:normalized.sizeBytes}})
+  const attachment=await repository.createAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId:clientId||null,association,...normalized})
+  if(clientId)valSessionContextCache.invalidate({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId})
+  await accessRepository.recordUsage(identity,{eventType:'val_attachment_uploaded',page:'val',entityType:clientId?'client':'attachment',entityId:clientId||attachment.id,metadata:{attachmentId:attachment.id,association,mimeType:normalized.mimeType,sizeBytes:normalized.sizeBytes}})
   return json(response,201,{attachment})
  }
  if(url.pathname==='/api/val/attachments'&&request.method==='PATCH'){
   const payload=await body(request);const id=attachmentId(payload.id);if(!id)return json(response,400,{error:'Arquivo inválido.'})
   const status=clean(payload.status);const analysis=payload.analysis&&typeof payload.analysis==='object'?payload.analysis:undefined
   const attachment=await repository.updateAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id,status,analysis})
-  valSessionContextCache.invalidate({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:attachment.clientId})
-  await accessRepository.recordUsage(identity,{eventType:'val_attachment_'+status,page:'val',entityType:'client',entityId:attachment.clientId,metadata:{attachmentId:id}})
+  if(attachment.clientId)valSessionContextCache.invalidate({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:attachment.clientId})
+  await accessRepository.recordUsage(identity,{eventType:'val_attachment_'+status,page:'val',entityType:attachment.clientId?'client':'attachment',entityId:attachment.clientId||attachment.id,metadata:{attachmentId:id,association:attachment.association}})
   return json(response,200,{attachment})
  }
  const attachmentContentMatch=url.pathname.match(/^\/api\/val\/attachments\/([0-9a-f-]{36})$/i)
@@ -347,7 +345,7 @@ async function handleApi(request,response,url){
     const startedAt=Date.now();latency.start('TOOL');const workspace=await grainRepository.getMarketReferences(identity?.id);latency.end('TOOL')
     const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,latencyMs:Date.now()-startedAt})
     const final=complete(fast)
-    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'portfolio',entityId:null,metadata:{mode:'fast',engineMode:'rules',intent:routedIntent.intent,reasoningPath:capability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
+    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'portfolio',entityId:null,metadata:{mode:capability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:capability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
     return json(response,200,final)
    }
    if(capability.session_command){
@@ -394,10 +392,10 @@ async function handleApi(request,response,url){
   if(clientCapability.capabilities.includes('MARKET_COMMODITY')){
    const startedAt=Date.now()
    const facts=await repository.getFastClientFacts({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId})
-   if(!attachmentIds.length&&clientCapability.path==='FAST'&&clientCapability.direct){
+   if(!attachmentIds.length&&['FAST','LIVE_DATA'].includes(clientCapability.path)&&clientCapability.direct){
     latency.start('TOOL');const workspace=await grainRepository.getMarketReferences(identity?.id);latency.end('TOOL')
     const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,latencyMs:Date.now()-startedAt})
-    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:'fast',engineMode:'rules',intent:routedIntent.intent,reasoningPath:'FAST',currentDataStatus:fast.responseMetadata.currentDataStatus}})
+    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:clientCapability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
     return json(response,200,completeClient(fast,null))
    }
    const [context,workspace]=await Promise.all([
@@ -479,6 +477,7 @@ async function handleApi(request,response,url){
   if(requiresTechnicalSignature(event.type)&&!signed)return json(response,401,{error:'Eventos técnicos validados exigem assinatura HMAC do corpo.'})
   const ownerId=database.configured?await accessRepository.resolveIntegrationOwner(event.ownerUserId):null
   const signals=deriveSignals(event);const result=await repository.ingestEvent({tenantId:config.defaultTenantId,ownerId,event,signals})
+  if(!result.duplicate&&event.clientExternalKey&&ownerId)valSessionContextCache.invalidate({tenantId:config.defaultTenantId,ownerId,clientId:event.clientExternalKey})
   if(!result.duplicate)await accessRepository.recordUsage(ownerId,{eventType:'manual_sync',page:'agro',entityType:'client',entityId:event.clientExternalKey||null,metadata:{eventType:event.type}})
   return json(response,result.duplicate?200:202,{accepted:true,...result,eventType:event.type,externalId:event.externalId})
  }
@@ -642,7 +641,7 @@ createServer((request,response)=>{
  if(isTechnicalWorkspaceRequest(url.pathname)){
   try{if(technicalWorkspace.handle(request,response,url,await sessionIdentity(request)))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
  }
- if(url.pathname==='/live'||url.pathname==='/health'||url.pathname.startsWith('/api/')){
+ if(url.pathname==='/live'||url.pathname==='/ready'||url.pathname==='/health'||url.pathname.startsWith('/api/')){
   try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){const status=Number(exception.statusCode)||400;const safeMessage=status<500||exception.safeToRetry===true?exception.message:'Não foi possível processar a solicitação.';return json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception.code?{code:String(exception.code).slice(0,100)}:{}),...(exception.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{})})}
   return json(response,404,{error:'Rota não encontrada.'})
  }

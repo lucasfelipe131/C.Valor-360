@@ -16,7 +16,7 @@ export const AGRO_HERO_FILE_POLICY=Object.freeze({
  ])
 })
 
-export const AGRO_SESSION_MEDIA_PROTOCOL_VERSION=1
+export const AGRO_SESSION_MEDIA_PROTOCOL_VERSION=2
 export const AGRO_SESSION_MEDIA_TYPES=Object.freeze(['IMAGE_DIAGNOSIS','ANALYZE_SOIL'])
 
 const extensionMimeTypes=Object.freeze({
@@ -28,6 +28,7 @@ const extensionMimeTypes=Object.freeze({
 
 const clean=(value,max=240)=>String(value??'').replace(/[\r\n\t]+/g,' ').replace(/\s+/g,' ').trim().slice(0,max)
 const identifier=value=>clean(value,120)
+const attachmentIdentifier=value=>/^[0-9a-f-]{36}$/i.test(String(value||''))?String(value):''
 const fileExtension=file=>clean(file?.name,300).toLowerCase().match(/\.([a-z0-9]+)$/)?.[1]||''
 
 export function resolveAgroHeroFileMime(file){
@@ -162,6 +163,7 @@ export function validateAgroHeroFile(file,action='file'){
 
 export function createAgroHeroFileCandidate(value){
  const file=value?.file||value
+ const sourceAttachment=value?.sourceAttachment&&typeof value.sourceAttachment==='object'?value.sourceAttachment:null
  const validation=validateAgroHeroFile(file,'file')
  const name=clean(file?.name,300)||'arquivo'
  const mimeType=resolveAgroHeroFileMime(file)
@@ -170,6 +172,7 @@ export function createAgroHeroFileCandidate(value){
  return Object.freeze({
   key:`${name}:${mimeType}:${sizeBytes}`,
   file,
+  sourceAttachment,
   name,
   mimeType,
   sizeBytes,
@@ -179,7 +182,7 @@ export function createAgroHeroFileCandidate(value){
  })
 }
 
-export function createAgroSessionMediaMessage({files=[],intent='',navigationRequestId='',transferId=''}={}){
+export function createAgroSessionMediaMessage({files=[],sourceAttachments=[],intent='',navigationRequestId='',transferId=''}={}){
  const selected=Array.isArray(files)?files.filter(Boolean):[]
  const normalizedIntent=clean(intent,80).toUpperCase()
  const requestId=identifier(navigationRequestId)
@@ -194,11 +197,30 @@ export function createAgroSessionMediaMessage({files=[],intent='',navigationRequ
   if(!validation.ok)throw Object.assign(new TypeError(validation.message),{code:validation.code})
   if(!allowed.has(resolveAgroHeroFileMime(file)))throw Object.assign(new TypeError('Este formato não pode ser interpretado sem vínculo. Use foto ou PDF.'),{code:'UNSUPPORTED_MEDIA_TYPE'})
  }
+ const sources=(Array.isArray(sourceAttachments)?sourceAttachments:[]).map(value=>{
+  if(!value||typeof value!=='object')throw Object.assign(new TypeError('A proveniência do attachment é inválida.'),{code:'INVALID_ATTACHMENT_PROVENANCE'})
+  const attachmentId=attachmentIdentifier(value.id??value.attachmentId??value.attachment_id)
+  const association=clean(value.association,40).toUpperCase()
+  if(!attachmentId||!['LINKED_CLIENT','UNLINKED'].includes(association))throw Object.assign(new TypeError('A proveniência do attachment é inválida.'),{code:'INVALID_ATTACHMENT_PROVENANCE'})
+  return Object.freeze({
+   attachmentId,association,
+   organizationId:identifier(value.organizationId??value.organization_id),
+   clientId:identifier(value.clientId??value.client_id),
+   propertyId:identifier(value.propertyId??value.property_id),
+   fieldId:identifier(value.fieldId??value.field_id),
+   createdAt:clean(value.createdAt??value.created_at,60),
+   sha256:/^[0-9a-f]{64}$/i.test(String(value.sha256||''))?String(value.sha256).toLowerCase():''
+  })
+ })
+ if(sources.length&&sources.length!==selected.length)throw Object.assign(new TypeError('Cada arquivo precisa da sua referência de origem.'),{code:'ATTACHMENT_PROVENANCE_COUNT_MISMATCH'})
+ const associations=new Set(sources.map(item=>item.association))
+ if(associations.size>1)throw Object.assign(new TypeError('O lote não pode misturar attachments vinculados e UNLINKED.'),{code:'ATTACHMENT_ASSOCIATION_MISMATCH'})
+ const association=sources[0]?.association||'UNLINKED'
  return Object.freeze({
   type:'valor360:session-media',version:AGRO_SESSION_MEDIA_PROTOCOL_VERSION,
   transferId:resolvedTransferId,navigationRequestId:requestId,
-  persistenceMode:'NONE',association:'UNLINKED',intent:normalizedIntent,
-  files:Object.freeze(selected.slice())
+  persistenceMode:'NONE',association,intent:normalizedIntent,
+  files:Object.freeze(selected.slice()),sourceAttachments:Object.freeze(sources)
  })
 }
 

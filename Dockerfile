@@ -4,6 +4,12 @@ FROM node:22-alpine AS build
 
 WORKDIR /app
 
+# Railway variables are available to Docker builds only when explicitly
+# declared as build arguments. The value is used to produce dist/release.json;
+# it is not a hardcoded application version.
+ARG RAILWAY_GIT_COMMIT_SHA
+ENV RAILWAY_GIT_COMMIT_SHA=${RAILWAY_GIT_COMMIT_SHA}
+
 COPY package.json package-lock.json ./
 RUN npm ci --ignore-scripts
 

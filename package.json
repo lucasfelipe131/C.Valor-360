@@ -9,6 +9,9 @@
   "scripts": {
     "dev": "vite --host 0.0.0.0",
     "build": "vite build && node scripts/pwa-release.mjs stamp && node scripts/pwa-release.mjs verify",
+    "bundle:audit": "node scripts/bundle-audit.mjs",
+    "performance:golden:local": "node scripts/val-golden-performance-local.mjs",
+    "performance:slo:check": "node scripts/val-performance-slo-check.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "start": "node server/start.js",
     "test": "node --test",

@@ -40,7 +40,7 @@ Uma referência `DATED` ou `STALE` pode ser mostrada como histórico, com aviso 
 
 ## Consulta sem produtor
 
-“Qual a última cotação de soja?” pode usar FAST e responder sem selecionar conta.
+“Qual a última cotação de soja?” usa `LIVE_DATA` e pode responder sem selecionar conta, sempre com fonte e data.
 
 Sem commodity explícita, a resposta diz que se trata da referência mais recente **entre as referências autorizadas registradas**. Ela não sugere que o item seja a cotação mais recente de todo o mercado.
 

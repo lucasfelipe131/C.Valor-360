@@ -217,7 +217,7 @@ export default function Agro({onAsk,onCapture,onTelemetry,onContextChange,onInit
   if(!navigationAck||!workspaceMessage||navigationAck.requestId!==workspaceMessage.requestId||navigationAck.status!=='APPLIED'){updateAction('file','error',{phase:'navigation',message:'A ferramenta ainda está preparando o ambiente. Aguarde e tente novamente.',errorCode:'NAVIGATION_NOT_READY'});return}
   if(sessionMediaRef.current)return
   let message
-  try{message=createAgroSessionMediaMessage({files:[candidate.file],intent:candidate.intent,navigationRequestId:workspaceMessage.requestId})}catch(error){updateAction('file','error',{phase:'validation',message:error?.message||'Este arquivo não pode ser preparado sem vínculo.',errorCode:error?.code||'SESSION_MEDIA_INVALID'});return}
+  try{message=createAgroSessionMediaMessage({files:[candidate.file],sourceAttachments:candidate.sourceAttachment?[candidate.sourceAttachment]:[],intent:candidate.intent,navigationRequestId:workspaceMessage.requestId})}catch(error){updateAction('file','error',{phase:'validation',message:error?.message||'Este arquivo não pode ser preparado.',errorCode:error?.code||'SESSION_MEDIA_INVALID'});return}
   sessionMediaRef.current={transferId:message.transferId,instanceKey:candidate.instanceKey,file:candidate.file,intent:candidate.intent}
   updateAction('file','loading',{phase:'session_media',message:'Preparando o arquivo somente nesta sessão…'})
   frameRef.current?.contentWindow?.postMessage(message,window.location.origin)

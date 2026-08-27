@@ -73,6 +73,10 @@ Text streaming and progressive server TTS were evaluated but are not claimed as 
 
 Disabled cases remain `SKIPPED`, not passed. Microphone, camera, file picker and authenticated producer context are browser/device UAT scenarios and are not simulated as backend performance successes. A distribution is only reported for observed samples; missing cases and missing TTFR remain visible.
 
+The reproduced local integration run is recorded in `VAL_GOLDEN_PERFORMANCE_RESULT_v1.md` and `evals/val-golden-performance-local-result-v1.json`: 320/320 technical executions, 20 per GP, zero path mismatch, zero target miss and zero technical error. Quality, specificity, grounding, service class and explicit PARTIAL device boundaries are part of every sample. This evidence does not replace Railway or physical-device measurements.
+
+The measured critical path is MCA/`buildCommercialComposition` for GP-004, GP-011 and GP-014 (93.7%–96.9% of local p95). Its p95 remains below the component SLO in `VAL_PERFORMANCE_SLOS_v1.md`; changing it now would be speculative, so no additional MCA/MIA rewrite was made.
+
 ## Acceptance evidence
 
 Performance approval requires all applicable layers:

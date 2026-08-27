@@ -366,6 +366,58 @@ function specializedRecordEvent(record: ManualRecordForValor, ownerUserId = "") 
     });
   }
 
+  if (record.type === "photo_diagnosis") {
+    const context = object(payload.context);
+    const sources = (Array.isArray(payload.sourceAttachments) ? payload.sourceAttachments : [])
+      .map((value) => object(value))
+      .filter((value) => /^[0-9a-f-]{36}$/i.test(text(value.attachmentId, 72)))
+      .slice(0, 3)
+      .map((value) => ({
+        attachmentId: text(value.attachmentId, 72),
+        association: text(value.association, 40).toUpperCase() === "LINKED_CLIENT" ? "LINKED_CLIENT" : "UNLINKED",
+        organizationId: text(value.organizationId, 180),
+        clientId: text(value.clientId, 180),
+        propertyId: text(value.propertyId, 180),
+        fieldId: text(value.fieldId, 180),
+        createdAt: date(value.createdAt, ""),
+        sha256: /^[0-9a-f]{64}$/i.test(text(value.sha256, 64)) ? text(value.sha256, 64).toLowerCase() : "",
+      }));
+    if (!sources.length) return null;
+    const association = sources.every((item) => item.association === "LINKED_CLIENT") ? "LINKED_CLIENT" : "UNLINKED";
+    const linkedClientKey = association === "LINKED_CLIENT"
+      ? text(sources[0].clientId || context.clientId || clientExternalKey, 180)
+      : "";
+    const resultReference = text(payload.resultReference, 240) || `manual-photo-diagnosis:${record.id}`;
+    const specializedPayload = {
+      provenanceContractVersion: "AgronomicScanProvenance.v1",
+      recordId: record.id,
+      resultReference,
+      resultCreatedAt: date(object(payload.provenance).savedAt || occurredAt),
+      analysisType: text(payload.analysisType, 40),
+      association,
+      context: {
+        clientId: linkedClientKey,
+        propertyId: association === "LINKED_CLIENT" ? text(sources[0].propertyId || context.propertyId, 180) : "",
+        fieldId: association === "LINKED_CLIENT" ? text(sources[0].fieldId || context.fieldId, 180) : "",
+      },
+      sourceAttachments: sources,
+      result: object(payload.result),
+      safety: object(payload.safety),
+      provenance: object(payload.provenance),
+      validation: { status: "pending", humanReviewRequired: true },
+    };
+    return event({
+      type: "agronomic.scan.completed",
+      externalId: `manual-scan:${record.id}:${fingerprint(specializedPayload)}`,
+      occurredAt,
+      clientExternalKey: linkedClientKey,
+      ownerUserId,
+      propertyExternalKey: association === "LINKED_CLIENT" ? text(specializedPayload.context.propertyId, 180) : "",
+      fieldExternalKey: association === "LINKED_CLIENT" ? text(specializedPayload.context.fieldId, 180) : "",
+      payload: specializedPayload,
+    });
+  }
+
   if (!clientExternalKey) return null;
 
   if (record.type === "field_analysis") {

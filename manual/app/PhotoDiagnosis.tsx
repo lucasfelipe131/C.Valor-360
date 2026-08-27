@@ -2,7 +2,7 @@
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { saveRecord } from "./records";
-import type { ManualSessionMediaCommand, ManualSessionMediaStatus } from "./valor360-session-media";
+import type { ManualSessionMediaCommand, ManualSessionMediaStatus, ManualSourceAttachment } from "./valor360-session-media";
 
 export type DiagnosisMode = "nutrition" | "disease" | "insect" | "weed";
 type DiagnosisStatus = "idle" | "preparing" | "analyzing" | "ready" | "error";
@@ -50,6 +50,7 @@ type PreparedPhoto = {
   sha256?: string;
   preview: string;
   dataUrl: string;
+  sourceAttachment?: ManualSourceAttachment;
 };
 
 const crops = ["Soja", "Milho", "Trigo", "Canola", "Arroz", "Feijão", "Pastagem", "Área não cultivada", "Outra"];
@@ -328,7 +329,7 @@ export default function PhotoDiagnosis({
     diagnosisRecordId.current = "";
   }
 
-  async function ingestPhotos(files: File[]) {
+  async function ingestPhotos(files: File[], sourceAttachments: ManualSourceAttachment[] = []) {
     if (!files.length) return false;
     if (photos.length + files.length > 3) {
       setMessage("Use no máximo três fotos por análise.");
@@ -338,7 +339,7 @@ export default function PhotoDiagnosis({
     setStatus("preparing");
     setMessage("Otimizando as imagens para análise…");
     try {
-      const prepared = await Promise.all(files.map(async (file) => ({
+      const prepared = await Promise.all(files.map(async (file, index) => ({
         id: `${file.name}-${file.lastModified}-${Math.random()}`,
         name: file.name,
         mimeType: file.type,
@@ -346,6 +347,7 @@ export default function PhotoDiagnosis({
         sha256: await fileSha256(file),
         preview: URL.createObjectURL(file),
         dataUrl: await prepareImage(file),
+        ...(sourceAttachments[index] ? { sourceAttachment: sourceAttachments[index] } : {}),
       })));
       setPhotos((current) => [...current, ...prepared]);
       setStatus("idle");
@@ -373,7 +375,7 @@ export default function PhotoDiagnosis({
     let disposed = false;
     let task = sessionTransferTasks.current.get(sessionMedia.transferId);
     if (!task) {
-      task = ingestPhotos(sessionMedia.files);
+      task = ingestPhotos(sessionMedia.files, sessionMedia.sourceAttachments);
       sessionTransferTasks.current.set(sessionMedia.transferId, task);
     }
     void task.then((accepted) => {
@@ -444,6 +446,18 @@ export default function PhotoDiagnosis({
     const savedAt = new Date().toISOString();
     const recordId = diagnosisRecordId.current || crypto.randomUUID();
     diagnosisRecordId.current = recordId;
+    const resultReference = `manual-photo-diagnosis:${recordId}`;
+    const analysisType = mode === "nutrition" ? "NUTRISCAN" : mode === "disease" ? "FITOSCAN" : mode === "insect" ? "INSETOSCAN" : "DANINHASCAN";
+    const sourceAttachments = photos.flatMap((photo) => photo.sourceAttachment ? [{
+      attachmentId: photo.sourceAttachment.attachmentId,
+      association: photo.sourceAttachment.association,
+      organizationId: photo.sourceAttachment.organizationId || null,
+      clientId: photo.sourceAttachment.clientId || context.clientId || null,
+      propertyId: photo.sourceAttachment.propertyId || context.propertyId || null,
+      fieldId: photo.sourceAttachment.fieldId || context.fieldId || null,
+      createdAt: photo.sourceAttachment.createdAt || null,
+      sha256: photo.sourceAttachment.sha256 || photo.sha256 || null,
+    }] : []);
     try {
       await saveRecord({
         id: recordId,
@@ -451,7 +465,10 @@ export default function PhotoDiagnosis({
         title: `${methodology.name} · ${context.clientName || crop} · ${new Date(result.analyzedAt).toLocaleDateString("pt-BR")}`,
         producerName: context.clientName || "",
         payload: {
-          schemaVersion: "manual-photo-diagnosis-v1",
+          schemaVersion: "manual-photo-diagnosis-v2",
+          provenanceContractVersion: "AgronomicScanProvenance.v1",
+          analysisType,
+          resultReference,
           methodology: {
             mode,
             name: methodology.name,
@@ -478,7 +495,9 @@ export default function PhotoDiagnosis({
             mimeType: photo.mimeType,
             sizeBytes: photo.sizeBytes,
             sha256: photo.sha256 || null,
+            sourceAttachmentId: photo.sourceAttachment?.attachmentId || null,
           })),
+          sourceAttachments,
           result,
           provenance: {
             source: "manual-do-agronomo",
@@ -486,6 +505,7 @@ export default function PhotoDiagnosis({
             navigationRequestId: navigationRequestId || null,
             analyzedAt: result.analyzedAt,
             savedAt,
+            resultReference,
             confirmation: "USER_EXPLICIT",
             imageRetention: "METADATA_ONLY",
           },

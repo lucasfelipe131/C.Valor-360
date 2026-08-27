@@ -13,8 +13,8 @@ const read=relative=>readFileSync(new URL(`../${relative}`,import.meta.url),'utf
 const image=(name='campo.jpg',type='image/jpeg',size=512)=>new File([new Uint8Array(size)],name,{type})
 const pdf=(name='laudo-solo.pdf',size=512)=>new File([new Uint8Array(size)],name,{type:'application/pdf'})
 const envelope=(patch={})=>({
- type:'valor360:session-media',version:1,transferId:'transfer-1',navigationRequestId:'navigation-1',
- persistenceMode:'NONE',association:'UNLINKED',intent:'IMAGE_DIAGNOSIS',files:[image()],...patch,
+ type:'valor360:session-media',version:2,transferId:'transfer-1',navigationRequestId:'navigation-1',
+ persistenceMode:'NONE',association:'UNLINKED',intent:'IMAGE_DIAGNOSIS',files:[image()],sourceAttachments:[],...patch,
 })
 
 test('handoff efêmero aceita foto e laudo sem produtor ou autoridade',()=>{
@@ -23,6 +23,7 @@ test('handoff efêmero aceita foto e laudo sem produtor ou autoridade',()=>{
  assert.equal(photo.persistenceMode,'NONE')
  assert.equal(photo.association,'UNLINKED')
  assert.equal(photo.files.length,1)
+ assert.deepEqual(photo.sourceAttachments,[])
  assert.equal('tenantId' in photo,false)
  assert.equal('ownerId' in photo,false)
 
@@ -44,6 +45,18 @@ test('host e Manual compartilham o contrato por structured clone sem serializar 
  assert.doesNotMatch(JSON.stringify(outbound),/base64|dataUrl|tenant|owner/i)
 })
 
+test('handoff preserva attachment_id e associação como claim sem delegar autorização',()=>{
+ const attachment={id:'50000000-0000-4000-8000-000000000005',organizationId:'10000000-0000-4000-8000-000000000001',clientId:'cliente-a',association:'LINKED_CLIENT',createdAt:'2026-08-27T10:00:00Z',sha256:'a'.repeat(64)}
+ const outbound=createAgroSessionMediaMessage({files:[image()],sourceAttachments:[attachment],intent:'IMAGE_DIAGNOSIS',navigationRequestId:'navigation-1'})
+ const inbound=normalizeManualSessionMedia(structuredClone(outbound))
+ assert.equal(inbound.version,2)
+ assert.equal(inbound.association,'LINKED_CLIENT')
+ assert.equal(inbound.sourceAttachments[0].attachmentId,attachment.id)
+ assert.equal(inbound.sourceAttachments[0].organizationId,attachment.organizationId)
+ assert.equal(inbound.sourceAttachments[0].clientId,attachment.clientId)
+ assert.equal('ownerId' in inbound.sourceAttachments[0],false)
+})
+
 test('receiver falha fechado para política, MIME, tamanho e lote incompatíveis',()=>{
  assert.equal(manualSessionMediaMaxBytes,6_000_000)
  assert.equal(normalizeManualSessionMedia(envelope({persistenceMode:'STORE'})),null)
@@ -54,7 +67,7 @@ test('receiver falha fechado para política, MIME, tamanho e lote incompatíveis
  assert.equal(normalizeManualSessionMedia(envelope({intent:'ANALYZE_SOIL',files:[pdf('a.pdf'),pdf('b.pdf')]})),null)
  assert.equal(normalizeManualSessionMedia(envelope({intent:'IMAGE_DIAGNOSIS',files:[image(),pdf()]})),null)
  assert.equal(normalizeManualSessionMedia(envelope({intent:'ANALYZE_SOIL',files:[new File(['x'],'dados.csv',{type:'text/csv'})]})),null)
- assert.equal(normalizeManualSessionMedia(envelope({version:2})),null)
+ assert.equal(normalizeManualSessionMedia(envelope({version:1})),null)
  assert.equal(validateManualSessionMedia(envelope({files:[image('animada.gif','image/gif')]})).errorCode,'UNSUPPORTED_MEDIA_TYPE')
  assert.equal(validateManualSessionMedia(envelope({files:[image('vazia.jpg','image/jpeg',0)]})).errorCode,'FILE_EMPTY')
  assert.equal(validateManualSessionMedia(envelope({files:[image('grande.jpg','image/jpeg',manualSessionMediaMaxBytes+1)]})).errorCode,'FILE_TOO_LARGE')
@@ -67,7 +80,7 @@ test('ACK não devolve nome, bytes ou autoridade',()=>{
   intent:'IMAGE_DIAGNOSIS',acceptedCount:2,
  })
  assert.deepEqual(result,{
-  type:'valor360:session-media-result',version:1,transferId:'transfer-1',navigationRequestId:'navigation-1',
+  type:'valor360:session-media-result',version:2,transferId:'transfer-1',navigationRequestId:'navigation-1',
   status:'APPLIED',intent:'IMAGE_DIAGNOSIS',acceptedCount:2,errorCode:null,
  })
  assert.doesNotMatch(JSON.stringify(result),/filename|content|tenant|owner|base64/i)
@@ -92,16 +105,18 @@ test('foto é apenas preparada e solo apenas staged até ação explícita',()=>
  assert.match(receiver,/setSoilSessionMedia\(command\)/)
  assert.doesNotMatch(receiver,/importSoilFile|saveRecord|onSave/)
  const sessionEffect=diagnosis.slice(diagnosis.indexOf('if (!sessionMedia || sessionMedia.intent'),diagnosis.indexOf('function removePhoto'))
- assert.match(sessionEffect,/ingestPhotos\(sessionMedia\.files\)/)
+ assert.match(sessionEffect,/ingestPhotos\(sessionMedia\.files, sessionMedia\.sourceAttachments\)/)
  assert.doesNotMatch(sessionEffect,/analyze\(|saveDiagnosis\(|saveRecord\(/)
  assert.match(page,/Sem vínculo e somente nesta sessão/)
  assert.match(page,/Interpretar arquivo/)
  assert.match(page,/if \(file\) void onFile\(file\)/)
 })
 
-test('backend persistente continua exigindo produtor no upload',()=>{
+test('backend exige produtor por padrão e aceita somente UNLINKED explícito',()=>{
  const server=read('server.js')
- assert.match(server,/if\(!clientId\)return json\(response,400,\{error:'Selecione um produtor antes de anexar\.'\}\)/)
+ assert.match(server,/association==='LINKED_CLIENT'&&!clientId/)
+ assert.match(server,/association==='UNLINKED'&&clientId/)
+ assert.match(server,/association=clean\(payload\.association\)\.toUpperCase\(\)\|\|'LINKED_CLIENT'/)
  assert.doesNotMatch(read('manual/app/valor360-session-media.ts'),/fetch\(|sessionStorage|localStorage|saveRecord/)
 })
 

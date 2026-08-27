@@ -105,12 +105,13 @@ test('API de diagnóstico mantém limites, autenticação, schema e safety de tr
  assert.match(route,/Cache-Control": "no-store"/)
 })
 
-test('integração Manual → VAL remove binário e o diff não inventa ligação com attachments',()=>{
+test('integração Manual → VAL remove binário e preserva ligação formal por referência',()=>{
  const integration=read('manual/app/lib/valor360.ts')
  const diff=read('VAL_AGRONOMIC_CAPABILITY_DIFF.md')
  assert.match(integration,/const blockedKey = .*base64.*image.*photo.*file/i)
  assert.ok(integration.includes('/^(?:data:|blob:)/i'))
- assert.match(diff,/Manual scan records are not connected to this bank/i)
- assert.match(diff,/no persistent scan-result → VAL-attachment reference/i)
- assert.match(diff,/This boundary is intentionally `PARTIAL`/)
+ assert.match(integration,/type: "agronomic\.scan\.completed"/)
+ assert.match(diff,/Protocol v2 passes `attachment_id`/i)
+ assert.match(diff,/signed `agronomic\.scan\.completed` event validates tenant\/owner\/link claims/i)
+ assert.match(diff,/source-level boundary is `ENGINE_CONFIRMED`/i)
 })

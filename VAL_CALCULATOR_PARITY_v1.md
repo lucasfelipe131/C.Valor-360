@@ -1,206 +1,67 @@
 # VAL Calculator Parity v1
 
-## Objetivo
+## Resultado
 
-Comparar a versão atual das calculadoras do Manual do Agrônomo com a experiência VAL e definir a ação necessária sem duplicar motores.
+As nove calculadoras atuais usam o contrato compartilhado `AgronomicCalculatorAdapter.v1`. O Manual chama diretamente as funções canônicas em `src/lib/agronomic-calculators.js`; o Copilot reconhece a intenção, extrai somente entradas explícitas e chama `executeAgronomicCalculator` por `server/agronomic-calculator-adapter.js`. A matemática não é reproduzida no prompt nem pelo modelo.
 
-## Baseline
+O ZARC é a única calculadora dependente de fonte atual. Manual e Copilot chamam `consultZarc`, em `server/zarc-provider.js`, que preserva a fonte pública oficial MAPA, safra, horário da consulta, dataset usado, cache de seis horas e falha fechada. Nenhum provider ou segredo novo foi criado.
 
-- Fonte funcional: `manual/app/page.tsx`.
-- Componentes especializados: `manual/app/NutrientRemovalCalculator.tsx`, `manual/app/ZarcPlanner.tsx` e `manual/app/agronomy-planning.ts`.
-- Roteamento VAL: `server/decision-copilot/capability-router.js`.
-- Executor inicial: `server/decision-copilot/capability-executor.js`.
-- Protocolo contextual: `manual/app/valor360-navigation.ts`.
-- Card atual: `src/components/copilot/DecisionCards.jsx`.
-- Acesso atual pela Inteligência Agronômica: `src/pages/Agro.jsx`.
+Status técnico em código e teste: **PASS nas 9/9 calculadoras**. Publicação da branch, CI remoto e UAT físico continuam sendo gates separados.
 
-## Resultado de paridade
+## Matriz obrigatória
 
-O Manual possui nove calculadoras funcionais. A VAL preserva acesso a todas por drill-down para o Manual embutido. O Copilot reconhece `CALCULATE`, usa `TOOL PATH` e solicita `CALCULATORS`. O executor em implementação calcula custo/ha quando custo total e área estão explícitos, pede os inputs ausentes e devolve um descritor de ferramenta. O protocolo `valor360:navigate` v1 abre a calculadora canônica solicitada, resolve contexto no workspace e retorna ack.
+| CALCULADORA | IMPLEMENTAÇÃO CANÔNICA | ACESSO DIRETO | ACESSO COPILOT | INPUTS | OUTPUTS | PARIDADE | TESTE |
+|---|---|---|---|---|---|---|---|
+| Regulagem de semeadora (`semeadora`) | `calculatePlanter` | Manual / Calculadoras | `CALCULATE → TOOL → CALCULATORS` | população, espaçamento, germinação, sobrevivência, patinagem, embalagem, distância/linhas de teste, roda | plantas/m, sementes/m e /ha, distância, embalagens, sementes no teste, voltas | PASS | comparação direta/Copilot |
+| População ideal (`populacao`) | `recommendPlantPopulation` em `src/lib/agronomic-planning.js` | Manual / Calculadoras | mesmo adapter canônico | cultura, cultivar/ciclo, data, município/UF, ambiente, yield gap, germinação, emergência, espaçamento | faixa/alvo de plantas, sementes/ha e /m, estabelecimento, warnings e premissas | PASS | comparação direta/Copilot + testes regionais |
+| Demanda de sementes (`sementes`) | `calculateSeedDemand` | Manual / Calculadoras | mesmo adapter canônico | área, população de semeadura, margem, sementes/embalagem | sementes necessárias e embalagens | PASS | comparação direta/Copilot |
+| Previsão de colheita (`colheita`) | `estimateRegionalHarvest` em `src/lib/agronomic-planning.js` | Manual / Calculadoras | mesmo adapter canônico | cultura, cultivar/ciclo/faixa, plantio, município/UF, latitude opcional, ajuste de colheita | data central, janela, ciclo decomposto, fonte da premissa e warnings | PASS | comparação direta/Copilot + testes regionais |
+| Zoneamento ZARC (`zoneamento`) | `consultZarc` / `val.zarc_provider.v1` | Manual `/api/zarc` | mesmo provider canônico | cultura/safra, UF, município, classe de solo/AD, grupo de ciclo | janelas 20/30/40%, decêndios, portaria, safra, fonte, timestamp e dataset | PASS | provider sintético, igualdade e falha fechada |
+| Pulverização (`pulverizacao`) | `calculateSpraying` | Manual / Calculadoras | mesmo adapter canônico | área, volume de calda, tanque, produto/dose/unidade opcional | calda total, tanques, área/tanque e total por produto | PASS | comparação direta/Copilot |
+| Fertilizantes (`fertilizante`) | `calculateFertilizer` | Manual / Calculadoras | mesmo adapter canônico | área, dose kg/ha, embalagem, preço/unidade, eficiência, garantias | nutrientes kg/ha, pontos NPK, pontos ajustados, custo/ha, total e embalagens | PASS | comparação direta/Copilot |
+| Extração e exportação (`reposicao`) | `calculateNutrientRemoval` + `NUTRIENT_PROFILES` | Manual / Calculadoras | mesmo adapter canônico | cultura, produtividade/unidade, base, créditos, eficiência e ajuste de solo | produtividade t/ha, demanda, metas por nutriente, coeficientes, fonte e nota técnica | PASS | comparação direta/Copilot e fontes preservadas |
+| Cotação de insumos (`cotacao`) | `calculateQuote` | Manual / Calculadoras | mesmo adapter canônico | itens, quantidade, unidade, preço de sistema e desconto | preço final unitário, total por item, subtotal, desconto e total | PASS | comparação direta/Copilot |
 
-Esse adapter inicial não executa os nove motores do Manual dentro do chat. O resultado de custo/ha é uma capacidade determinística adicional e não prova paridade numérica com cada uma das nove calculadoras.
+## Fluxo canônico
 
-Portanto:
+1. `routeValIntent` identifica `CALCULATE` antes dos termos agronômicos amplos.
+2. `routeSystemCapability` seleciona `TOOL` e `CALCULATORS`.
+3. `identifyAgronomicCalculator` seleciona um dos nove IDs.
+4. `parseAgronomicCalculatorRequest` extrai apenas valores e unidades presentes na solicitação.
+5. `requiredCalculatorInputs` retorna `INPUT_REQUIRED` para lacunas materiais.
+6. `executeAgronomicCalculator` chama a mesma função usada pelo Manual.
+7. O Copilot recebe fatos estruturados e apenas explica o resultado; não recalcula a fórmula.
 
-- **paridade de acesso:** existente, com protocolo contextual v1 implementado/validado em código;
-- **execução no Copilot:** parcial para custo/ha;
-- **paridade dos nove motores:** ainda ausente;
-- **ação correta:** ampliar adapters/tools sobre os motores atuais, não criar reimplementação paralela.
+Pedidos genéricos como “roda a calculadora” abrem o catálogo e não inventam cultura, área, dose, cultivar, preço ou unidade. O cálculo histórico de custo/ha permanece compatível, mas é auxiliar e não é contado entre as nove calculadoras do Manual.
 
-## Matriz Manual × VAL
+## Safety, persistência e tenancy
 
-| Calculadora | Versão Manual atual | Versão VAL atual | Diferença | Ação |
-|---|---|---|---|---|
-| Regulagem de semeadora (`semeadora`) | População, sementes por metro, germinação, sobrevivência, patinagem, teste de coleta, voltas e sacos | `CALCULATE` roteia; protocolo v1 abre `semeadora` | Não calcula esse motor no chat | Expor função atual por adapter validado |
-| População ideal (`populacao`) | Cultura, cultivar, local, ambiente produtivo, yield gap, germinação, emergência e espaçamento | Drill-down | Sem execução/resultado estruturado | Reusar `recommendPlantPopulation` e catálogo atual |
-| Demanda de sementes (`sementes`) | Área, margem técnica, quantidade e embalagens | Drill-down | Sem execução no Copilot | Adapter determinístico com unidades explícitas |
-| Previsão de colheita (`colheita`) | Data de plantio, cultivar, ciclo/GMR, região e janela estimada; cenário hídrico de milho | Drill-down | Sem execução no Copilot | Reusar `estimateRegionalHarvest`; não inferir dados faltantes |
-| Zoneamento ZARC (`zoneamento`) | Consulta oficial por município, solo, ciclo e risco; fonte MAPA 2026/27 e fallback 2025/26 no código | Drill-down | Sem consulta in-chat | Adapter para `/api/zarc` com fonte, safra, data e fallback visíveis |
-| Pulverização (`pulverizacao`) | Volume de calda, tanques e quantidade de produto; recomendação exportável | Drill-down | Sem execução no Copilot | Tool determinística; manter revisão, dose/unidade e safety |
-| Fertilizantes (`fertilizante`) | Dose, área, preço, eficiência, total, sacaria, custo e comparação de até quatro fórmulas | Drill-down | Sem execução no Copilot | Adapter para motor/catálogo atual; declarar hipóteses e fontes |
-| Extração e exportação (`reposicao`) | Cultura, produtividade, demanda de nutrientes, solo opcional e comparação de fórmulas | Drill-down | Sem execução no Copilot | Reusar `NutrientRemovalCalculator`; não tratar como prescrição |
-| Cotação de insumos (`cotacao`) | Produtos, desconto por item, pagamento/vencimento e PDF | VAL possui ROI/value scenarios separado, além do drill-down | ROI VAL não equivale à cotação do Manual | Manter ambas e rotear pelo objetivo correto |
+- O resultado do Copilot usa `persistence_mode: NONE`; salvar cálculo, cotação ou recomendação continua sendo ação humana explícita.
+- Pulverização e fertilidade são cálculos técnicos, não prescrição automática. Bula vigente, registro, contexto agronômico e responsável técnico continuam obrigatórios.
+- O adapter não recebe nem escolhe tenant; contexto, cliente e objeto ativo permanecem validados no servidor antes da execução.
+- O ZARC não reutiliza memória como dado atual e não devolve janela quando o MAPA falha.
+- Nenhuma migration, conta paga, secret ou integração externa nova foi necessária.
 
-## Grupos reais do Manual
+## Evidência automatizada
 
-| Grupo | Calculadoras |
-|---|---|
-| Plantabilidade | Regulagem de semeadora, População ideal, Demanda de sementes, Previsão de colheita, Zoneamento ZARC |
-| Pulverização | Pulverização |
-| Fertilizantes | Fertilizantes, Extração e exportação |
-| Custos | Cotação de insumos |
+`test/agronomic-calculator-adapter.test.js` executa:
 
-## Catálogos encontrados
+- inventário exato 9/9;
+- mensagem real → `CALCULATE` → `TOOL` → motor correto;
+- cálculo direto e via Copilot com igualdade profunda de outputs para as nove calculadoras;
+- ZARC com fonte, data, safra, cache e falha fechada;
+- `INPUT_REQUIRED` sem valores inventados;
+- persistência `NONE` e fatos estruturados;
+- inspeção estática de que a UI direta importa os módulos canônicos.
 
-| Catálogo | Quantidade no baseline | Arquivo |
-|---|---:|---|
-| Fórmulas de fertilizantes | 99 | `manual/app/fertilizer-formulas.json` |
-| Agrofit | 1.632 | `manual/app/agrofit-products.json` |
-| Defensivos comerciais | 209 | `manual/app/commercial-agrochemicals.json` |
-| Produtos foliares | 296 | `manual/app/foliar-products.json` |
-| Cultivares de soja | 26 | `manual/app/cultivars.json` |
-| Cultivares de milho | 29 | `manual/app/cultivars.json` |
-| Cultivares de trigo | 25 | `manual/app/cultivars.json` |
-| Cultivares de canola | 13 | `manual/app/cultivars.json` |
+Resultado reproduzido desta bateria: **15/15 PASS**, incluindo nove subtestes de igualdade.
 
-Alguns itens de catálogo possuem fonte vazia, e os JSONs não apresentam uma versão global homogênea. A VAL deve exibir fonte/vigência somente quando elas existirem e forem verificadas; quantidade no arquivo não comprova atualidade oficial.
-
-## Persistência atual
-
-O Manual possui `saveRecord` local + remoto. Os tipos incluem:
-
-- `calculator`;
-- `quote`;
-- `spray_recommendation`;
-- `fertilizer_comparison`.
-
-O resultado salvo é owner-scoped e sincronizado com `/api/records`. Erro ou integração não configurada não é reportado como sincronização concluída.
-
-O fato de uma calculadora produzir resultado não autoriza gravação automática em memória. Dentro do Copilot, calcular é `ASK`/tool result; registrar ou anexar ao histórico exige ação humana correspondente.
-
-## Protocolo de abertura contextual v1
-
-O comando `valor360:navigate` versão 1 suporta:
-
-- aliases `calculator`, `calculators`, `calculate`, `calculadoras` e `calcular`;
-- `calculator`/`calculatorKey` com um dos nove IDs canônicos;
-- `requestId`;
-- contexto opcional de cliente, propriedade, talhão e análise.
-
-O Manual recebe o comando somente no modo embedded, com same-origin e `event.source === window.parent`. Cliente/talhão/análise são resolvidos no workspace antes da aplicação. O ack `valor360:navigation-result` devolve o mesmo `requestId`, calculadora aplicada, contexto resolvido, issues e status `APPLIED`, `PARTIAL` ou `CONTEXT_REJECTED`.
-
-O protocolo seleciona a UI correta; ele não calcula os inputs nem substitui o adapter numérico.
-
-## Contrato de adapter
-
-O descritor `CALCULATORS`, a validação de inputs e o cálculo de custo/ha estão em implementação. O contrato abaixo define a ampliação necessária para os nove motores.
-
-### Request
-
-- `calculator_id` canônico;
-- `tenant_id` e `actor_id` resolvidos pelo servidor;
-- `client_id`, `property_id` e `field_id` opcionais, todos validados;
-- inputs nomeados;
-- valores e unidades separados;
-- safra/local/data de referência quando relevantes;
-- modo `preview` por padrão.
-
-### Response
-
-- valores calculados e unidades;
-- inputs efetivamente usados;
-- hipóteses/defaults;
-- dados faltantes que podem mudar a decisão;
-- warnings e limites;
-- versão do motor/calculadora;
-- fontes e vigência quando a ferramenta usar dados externos;
-- ação de abrir a calculadora completa;
-- token/ref de resultado, nunca persistência silenciosa.
-
-### Regras
-
-1. Tool primeiro; reasoning depois, se material.
-2. Cálculo determinístico não deve ser refeito pelo modelo em texto.
-3. Unidade ausente ou ambígua gera pergunta curta.
-4. Não inventar cultivar, área, dose, preço, eficiência ou fonte.
-5. ZARC e outros dados atuais mostram safra, data, fonte e eventual fallback.
-6. Resultado de pulverização/fertilidade não substitui bula, prescrição ou responsável técnico.
-7. Persistência e exportação exigem comando/ação humana.
-8. Tenant e permissões são validados fora do modelo.
-
-## Renderização no Copilot
-
-O resultado deve usar um card de cálculo com:
-
-- conclusão curta;
-- valores principais e unidades;
-- inputs usados;
-- hipóteses/lacunas;
-- aviso técnico aplicável;
-- `Ver números`;
-- `Editar entradas`;
-- `Abrir calculadora completa`;
-- `Registrar`, somente quando permitido.
-
-O `CalculationCard` atual é genérico e abre a área agronômica. O executor pode devolver custo/ha e required inputs, mas ainda não representa a execução das nove ferramentas.
-
-## FAST/TOOL/DEEP path
-
-- Cálculo com entradas completas: `TOOL PATH`, sem carregar a engine completa.
-- Entrada faltante material: pergunta de 1–3 itens.
-- Interpretação do resultado no contexto do produtor: tool result + `CONTEXT PATH` ou `DEEP PATH`, somente se puder mudar a recomendação.
-- Consulta ZARC/dado atual: `TOOL PATH` + fonte live/oficial.
-
-## Testes existentes
-
-`test/agronomy-planning.test.js` cobre:
-
-- regionalização;
-- decomposição da previsão de colheita;
-- recomendação de população;
-- guard de yield gap;
-- presença das nove calculadoras e agrupamento.
-
-Esses testes validam parte dos motores e o contrato estático, não a execução pelo Copilot.
-
-`test/manual-current-capabilities.test.js` valida o protocolo v1 para calculadoras, seleção de `fertilizante`, aliases, rejeição de versão incompatível, same-origin/parent, ack e preservação das nove ferramentas. Esse teste integrou o conjunto novo 8/8; a suíte relevante do Manual passou em 43/43 e o build do Manual foi aprovado.
-
-## Testes adicionais para paridade no Copilot
-
-- Cada `calculator_id` chega ao motor correto.
-- Comando v1 seleciona a calculadora canônica e preserva `requestId` no ack.
-- Mensagem de mesma origem enviada por janela diferente de `window.parent` é ignorada.
-- Contexto inexistente no workspace retorna `PARTIAL`/`CONTEXT_REJECTED`, não sucesso falso.
-- Custo total + área calculam custo/ha; falta de qualquer input retorna `INPUT_REQUIRED`.
-- Inputs/unidades completos produzem o mesmo resultado da UI do Manual.
-- Unidade ambígua pergunta, não assume.
-- Alterar uma entrada altera o resultado de forma determinística.
-- Resultado não é persistido em `ASK`.
-- Registro/export exige confirmação e preserva owner/tenant.
-- ZARC mostra fonte, safra e fallback real.
-- Falha da fonte atual não retorna dados antigos como atuais.
-- Cotação do Manual e ROI da VAL não são confundidos.
-- Cross-tenant/cross-client falha fechado.
-- Safety de dose, mistura, compatibilidade e prescrição permanece.
-- Card abre o módulo tradicional no mesmo contexto.
-- Mobile e desktop funcionam.
+Os testes anteriores de planejamento regional continuam cobrindo 27 UFs, decomposição de colheita, estabelecimento e yield gap.
 
 ## Rollback
 
-Desabilitar o executor/deep-link contextual e conservar o acesso simples a `/tecnico?embedded=1&page=calculadoras`. Não remover calculadoras, registros existentes ou catálogos. Nenhuma migration destrutiva é necessária para essa estratégia.
+Reverter o adapter do Copilot e os imports compartilhados, mantendo o acesso ao Manual em `/tecnico?embedded=1&page=calculadoras`. Não há alteração de dados nem migration associada a esta ressalva. O rollback não deve remover calculadoras ou registros já salvos.
 
-## Gate de paridade
+## Limite da evidência
 
-| Item | Baseline |
-|---|---|
-| Nove calculadoras presentes no Manual | Aprovado |
-| Acesso pela VAL | Aprovado via Manual embutido |
-| Roteamento `CALCULATE` / `TOOL PATH` | Em implementação |
-| Protocolo contextual v1 + ack | Implementado/validado em código |
-| Execução de custo/ha | Em implementação |
-| Execução dos nove motores | Pendente |
-| Resultado estruturado no chat | Parcial para custo/ha; pendente para os nove motores |
-| Igualdade numérica Manual/adapter | Pendente de implementação/teste |
-| Safety/tenancy do fluxo atual | Preservados; precisam ser revalidados no adapter |
-
-A paridade total não deve ser declarada enquanto os nove motores não forem executados pelos adapters e comparados numericamente com o Manual. Deep-link contextual validado e custo/ha isolado não bastam para esse gate. UAT físico/mobile do deep-link no staging também permanece pendente.
+Este documento fecha a paridade em código e teste automatizado. O gate geral só poderá usar essa evidência como definitiva depois de CI remoto, deploy Railway do mesmo SHA, regressão completa e UAT conversacional/físico exigidos no gate mestre.

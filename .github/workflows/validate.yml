@@ -57,6 +57,7 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - run: npm run bundle:audit
 
   manual-build:
     name: manual npm run build
@@ -74,6 +75,113 @@ jobs:
           cache-dependency-path: manual/package-lock.json
       - run: npm ci
       - run: npm run build
+
+  golden-performance-gate:
+    name: GP-001–GP-016 component SLO
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare performance evidence directory
+        run: mkdir -p .gate/performance
+      - name: Execute all golden cases with sufficient p95 sample
+        run: npm run performance:golden:local -- --repeat 20 --warmup 2 --output .gate/performance/samples.json
+      - name: Aggregate latency and quality evidence
+        run: node scripts/val-performance-benchmark.mjs --samples .gate/performance/samples.json --output .gate/performance/result.json
+      - name: Enforce measured component SLO and quality floors
+        run: npm run performance:slo:check -- --result .gate/performance/result.json --output .gate/performance/slo-check.json
+      - name: Upload golden performance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: golden-performance-evidence-${{ github.run_id }}
+          path: .gate/performance
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: true
+
+  vnext-data-gate-postgres:
+    name: vNext geometry and scan provenance postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: gate
+          POSTGRES_PASSWORD: gate-only
+          POSTGRES_DB: val_vnext_gate
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gate -d val_vnext_gate"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_vnext_gate
+      DRIFT_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_vnext_gate
+      PG_SSL: "false"
+      VAL_DEMO_MODE: "false"
+      VAL_DEFAULT_TENANT_ID: 00000000-0000-4000-8000-000000000001
+      CONFIRM_CONTROLLED_STAGING: STAGING_ONLY
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Prepare vNext data evidence directory
+        run: mkdir -p .gate/vnext-data
+      - name: Apply schema and all versioned migrations in PostgreSQL 16
+        run: npm run db:migrate | tee .gate/vnext-data/migrations.log
+      - name: Exercise geometry and scan provenance with isolated synthetic tenants
+        env:
+          VNEXT_VERIFY_MODE: source
+          VNEXT_EVIDENCE_FILE: .gate/vnext-data/source-evidence.json
+        run: node scripts/val-vnext-postgres-verify.mjs | tee .gate/vnext-data/source-runtime.log
+      - name: Repeat migration 007 without data loss
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f database/migrations/20260827_007_attachment_scan_provenance_expand.sql | tee .gate/vnext-data/migration-007-repeat.log
+      - name: Revalidate persisted contracts after migration repeat
+        env:
+          VNEXT_VERIFY_MODE: repeat
+          VNEXT_SOURCE_EVIDENCE_FILE: .gate/vnext-data/source-evidence.json
+          VNEXT_EVIDENCE_FILE: .gate/vnext-data/repeat-evidence.json
+        run: node scripts/val-vnext-postgres-verify.mjs | tee .gate/vnext-data/repeat-runtime.log
+      - name: Verify schema drift including migration 007
+        env:
+          DRIFT_EVIDENCE_FILE: .gate/vnext-data/drift.json
+        run: npm run db:drift -- --strict
+      - name: Back up migrated vNext data
+        run: |
+          pg_dump "$DATABASE_URL" --format=custom --no-owner --no-privileges --file=.gate/vnext-data/vnext-migrated.dump
+          sha256sum .gate/vnext-data/vnext-migrated.dump > .gate/vnext-data/backup.sha256
+      - name: Create a different clean PostgreSQL 16 restore database
+        run: psql "postgresql://gate:gate-only@127.0.0.1:5432/postgres" -v ON_ERROR_STOP=1 -c "CREATE DATABASE val_vnext_restore"
+      - name: Restore vNext backup
+        run: pg_restore --exit-on-error --no-owner --no-privileges --dbname="postgresql://gate:gate-only@127.0.0.1:5432/val_vnext_restore" .gate/vnext-data/vnext-migrated.dump | tee .gate/vnext-data/restore.log
+      - name: Revalidate geometry, provenance and isolation after restore
+        env:
+          DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_vnext_restore
+          VNEXT_VERIFY_MODE: restore
+          VNEXT_SOURCE_EVIDENCE_FILE: .gate/vnext-data/source-evidence.json
+          VNEXT_EVIDENCE_FILE: .gate/vnext-data/restore-evidence.json
+        run: node scripts/val-vnext-postgres-verify.mjs | tee .gate/vnext-data/restore-runtime.log
+      - name: Upload vNext PostgreSQL evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vnext-data-gate-evidence-${{ github.run_id }}
+          path: .gate/vnext-data
+          if-no-files-found: error
+          retention-days: 7
+          include-hidden-files: true
 
   phase1-gate-staging:
     name: phase1 gate staging

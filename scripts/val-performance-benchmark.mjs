@@ -10,10 +10,12 @@ export const CANONICAL_STAGES=Object.freeze([
 export const BENCHMARK_PERCENTILES=Object.freeze([50,75,90,95])
 
 const ALLOWED_PATHS=new Set(['FAST','CONTEXT','DEEP','TOOL','LIVE_DATA'])
+const ALLOWED_SERVICE_CLASSES=new Set(['FAST','CONTEXT','DEEP','TOOL','LIVE_DATA','VOICE'])
 const ALLOWED_SAMPLE_KEYS=new Set([
- 'case_id','path','status','ttfr_ms','transport_first_byte_ms','total_ms','stages_ms',
+ 'case_id','path','service_class','intent','status','ttfr_ms','transport_first_byte_ms','total_ms','stages_ms',
  'latency_breakdown','observed_at','source','http_status','observed_path','path_matches_contract',
- 'target','target_executed','error_code'
+ 'target','target_executed','error_code','quality_score','specificity_score','grounding_score',
+ 'quality_status','result','evidence_class'
 ])
 const STAGE_ALIASES=Object.freeze({
  AUTH:['AUTH'],
@@ -32,6 +34,11 @@ const STAGE_ALIASES=Object.freeze({
 const round=value=>Number(Number(value).toFixed(3))
 const finiteNonNegative=value=>Number.isFinite(Number(value))&&Number(value)>=0
 const list=value=>Array.isArray(value)?value:[]
+const boundedScore=(value,label,caseId)=>{
+ if(value==null||value==='')return null
+ if(!Number.isFinite(Number(value))||Number(value)<0||Number(value)>1)throw new TypeError(`Amostra ${caseId} possui ${label} fora do intervalo [0, 1].`)
+ return round(Number(value))
+}
 
 export function nearestRankPercentile(values,percentile){
  const sample=list(values).map(Number).filter(Number.isFinite).sort((left,right)=>left-right)
@@ -67,6 +74,8 @@ export function normalizeBenchmarkSample(sample,index=0){
  if(!/^GP-\d{3}$/.test(caseId))throw new TypeError(`Amostra ${index+1} não possui case_id GP válido.`)
  const path=String(sample.path||'').trim().toUpperCase()
  if(!ALLOWED_PATHS.has(path))throw new TypeError(`Amostra ${caseId} possui path inválido.`)
+ const serviceClass=String(sample.service_class||path).trim().toUpperCase()
+ if(!ALLOWED_SERVICE_CLASSES.has(serviceClass))throw new TypeError(`Amostra ${caseId} possui service_class inválida.`)
  const status=String(sample.status||'SUCCESS').trim().toUpperCase()
  if(!['SUCCESS','FAILED','SKIPPED'].includes(status))throw new TypeError(`Amostra ${caseId} possui status inválido.`)
  if(status==='SUCCESS'&&!finiteNonNegative(sample.total_ms))throw new TypeError(`Amostra ${caseId} SUCCESS exige total_ms não negativo.`)
@@ -84,6 +93,8 @@ export function normalizeBenchmarkSample(sample,index=0){
  return Object.freeze({
   case_id:caseId,
   path,
+  service_class:serviceClass,
+  intent:String(sample.intent||'').trim().toUpperCase().slice(0,80),
   status,
   ttfr_ms:sample.ttfr_ms==null?null:round(Number(sample.ttfr_ms)),
   transport_first_byte_ms:sample.transport_first_byte_ms==null?null:round(Number(sample.transport_first_byte_ms)),
@@ -96,13 +107,20 @@ export function normalizeBenchmarkSample(sample,index=0){
   path_matches_contract:typeof sample.path_matches_contract==='boolean'?sample.path_matches_contract:null,
   target:String(sample.target||''),
   target_executed:typeof sample.target_executed==='boolean'?sample.target_executed:null,
-  error_code:String(sample.error_code||'')
+  error_code:String(sample.error_code||''),
+  quality_score:boundedScore(sample.quality_score,'quality_score',caseId),
+  specificity_score:boundedScore(sample.specificity_score,'specificity_score',caseId),
+  grounding_score:boundedScore(sample.grounding_score,'grounding_score',caseId),
+  quality_status:String(sample.quality_status||'NOT_EVALUATED').trim().toUpperCase().slice(0,80),
+  result:String(sample.result||'NOT_EVALUATED').trim().toUpperCase().slice(0,120),
+  evidence_class:String(sample.evidence_class||'UNSPECIFIED').trim().toUpperCase().slice(0,80)
  })
 }
 
 function summarizeGroup(samples){
  const normalized=list(samples)
  const successful=normalized.filter(sample=>sample.status==='SUCCESS')
+ const attempted=normalized.filter(sample=>sample.status!=='SKIPPED')
  const stages={}
  for(const stage of CANONICAL_STAGES)stages[stage]=metricDistribution(successful.flatMap(sample=>sample.stages_ms[stage]==null?[]:[sample.stages_ms[stage]]))
  return {
@@ -110,8 +128,17 @@ function summarizeGroup(samples){
   success:successful.length,
   failed:normalized.filter(sample=>sample.status==='FAILED').length,
   skipped:normalized.filter(sample=>sample.status==='SKIPPED').length,
+  error_rate_percent:attempted.length?round(normalized.filter(sample=>sample.status==='FAILED').length/attempted.length*100):null,
   contract_path_mismatches:normalized.filter(sample=>sample.path_matches_contract===false).length,
   target_execution_misses:normalized.filter(sample=>sample.target_executed===false).length,
+  fast_generic_failures:normalized.filter(sample=>sample.path==='FAST'&&sample.status==='SUCCESS'&&sample.specificity_score!=null&&sample.specificity_score<.8).length,
+  quality:{
+   SCORE:metricDistribution(successful.flatMap(sample=>sample.quality_score==null?[]:[sample.quality_score])),
+   SPECIFICITY:metricDistribution(successful.flatMap(sample=>sample.specificity_score==null?[]:[sample.specificity_score])),
+   GROUNDING:metricDistribution(successful.flatMap(sample=>sample.grounding_score==null?[]:[sample.grounding_score])),
+   status_counts:Object.fromEntries([...new Set(normalized.map(sample=>sample.quality_status))].sort().map(status=>[status,normalized.filter(sample=>sample.quality_status===status).length])),
+   result_counts:Object.fromEntries([...new Set(normalized.map(sample=>sample.result))].sort().map(result=>[result,normalized.filter(sample=>sample.result===result).length]))
+  },
   metrics_ms:{
    TTFR:metricDistribution(successful.flatMap(sample=>sample.ttfr_ms==null?[]:[sample.ttfr_ms])),
    TRANSPORT_FIRST_BYTE:metricDistribution(successful.flatMap(sample=>sample.transport_first_byte_ms==null?[]:[sample.transport_first_byte_ms])),
@@ -125,6 +152,8 @@ export function summarizeSamples(samples,{goldenSet=null,source='json-samples'}=
  const normalized=list(samples).map(normalizeBenchmarkSample)
  const byPath={}
  for(const path of ALLOWED_PATHS)byPath[path]=summarizeGroup(normalized.filter(sample=>sample.path===path))
+ const byServiceClass={}
+ for(const serviceClass of ALLOWED_SERVICE_CLASSES)byServiceClass[serviceClass]=summarizeGroup(normalized.filter(sample=>sample.service_class===serviceClass))
  const byCase={}
  for(const caseId of [...new Set(normalized.map(sample=>sample.case_id))].sort())byCase[caseId]=summarizeGroup(normalized.filter(sample=>sample.case_id===caseId))
  const expectedIds=list(goldenSet?.cases).map(item=>String(item.id||''))
@@ -142,10 +171,13 @@ export function summarizeSamples(samples,{goldenSet=null,source='json-samples'}=
    observed_cases:observedIds.length,
    missing_cases:expectedIds.length?expectedIds.filter(id=>!observedIds.includes(id)):[],
    ttfr_observations:normalized.filter(sample=>sample.status==='SUCCESS'&&sample.ttfr_ms!=null).length,
+   quality_observations:normalized.filter(sample=>sample.status==='SUCCESS'&&sample.quality_score!=null).length,
+   p95_sufficient_sample_min:20,
    ttfr_not_inferred_from_transport:true
   },
   overall:summarizeGroup(normalized),
   by_path:byPath,
+  by_service_class:byServiceClass,
   by_case:byCase,
   samples:normalized
  }
@@ -207,6 +239,28 @@ function reportedTtfr(payload){
  return null
 }
 
+function reportedIntent(payload,run){
+ const value=run?.performance?.intent||run?.intent||nestedObjects(payload).find(item=>typeof item?.intent==='string')?.intent
+ return String(value||'').trim().toUpperCase().slice(0,80)
+}
+
+function reportedQuality(payload){
+ for(const item of nestedObjects(payload)){
+  const quality=item?.val_response_quality&&typeof item.val_response_quality==='object'?item.val_response_quality:item?.quality&&typeof item.quality==='object'?item.quality:null
+  if(!quality)continue
+  const overall=Number(quality.overall)
+  const specificity=Number(quality.dimensions?.specificity)
+  const grounding=Number(quality.dimensions?.context_usage)
+  return {
+   score:Number.isFinite(overall)?overall:null,
+   specificity:Number.isFinite(specificity)?specificity:null,
+   grounding:Number.isFinite(grounding)?grounding:null,
+   status:String(quality.status||'NOT_EVALUATED').toUpperCase()
+  }
+ }
+ return {score:null,specificity:null,grounding:null,status:'NOT_EVALUATED'}
+}
+
 function reportedLatency(payload,run){
  if(run?.performance?.latency&&typeof run.performance.latency==='object')return run.performance.latency
  for(const item of nestedObjects(payload)){
@@ -251,7 +305,7 @@ async function responseBodyWithFirstByte(response,startedAt){
 async function executeStagingProbe({baseUrl,goldenCase,repeatIndex,timeoutMs}){
  const probe=goldenCase.staging_probe||{}
  if(probe.enabled!==true)return normalizeBenchmarkSample({
-  case_id:goldenCase.id,path:goldenCase.path,target:goldenCase.target,status:'SKIPPED',source:'staging-opt-in',error_code:String(probe.kind||'PROBE_DISABLED')
+  case_id:goldenCase.id,path:goldenCase.path,service_class:goldenCase.service_class||goldenCase.path,intent:goldenCase.intent,target:goldenCase.target,status:'SKIPPED',source:'staging-opt-in',error_code:String(probe.kind||'PROBE_DISABLED'),quality_status:'NOT_EVALUATED',result:'SKIPPED_CONTRACT_BOUNDARY',evidence_class:'STAGING_NETWORK'
  })
  const endpoint=new URL(String(probe.endpoint||'/api/val/chat'),baseUrl)
  const body=structuredClone(probe.body||{})
@@ -263,12 +317,14 @@ async function executeStagingProbe({baseUrl,goldenCase,repeatIndex,timeoutMs}){
   const totalMs=performance.now()-startedAt
   let payload=null
   try{payload=text?JSON.parse(text):null}catch{}
-  const run=reportedRun(payload);const observedPath=String(run?.path||'').toUpperCase()
+  const run=reportedRun(payload);const observedPath=String(run?.path||'').toUpperCase();const quality=reportedQuality(payload)
   const latency=reportedLatency(payload,run)
   const success=response.ok
   return normalizeBenchmarkSample({
    case_id:goldenCase.id,
    path:goldenCase.path,
+   service_class:goldenCase.service_class||goldenCase.path,
+   intent:reportedIntent(payload,run)||goldenCase.intent,
    target:goldenCase.target,
    status:success?'SUCCESS':'FAILED',
    ttfr_ms:success?reportedTtfr(payload):null,
@@ -281,13 +337,15 @@ async function executeStagingProbe({baseUrl,goldenCase,repeatIndex,timeoutMs}){
    observed_path:observedPath,
    path_matches_contract:observedPath?observedPath===String(goldenCase.path).toUpperCase():null,
    target_executed:capabilityExecuted(payload,goldenCase.target),
-   error_code:success?'':String(payload?.code||`HTTP_${response.status}`)
+   error_code:success?'':String(payload?.code||`HTTP_${response.status}`),
+   quality_score:quality.score,specificity_score:quality.specificity,grounding_score:quality.grounding,
+   quality_status:quality.status,result:success?'PASS_NETWORK_CONTRACT':'FAIL_NETWORK_CONTRACT',evidence_class:'STAGING_NETWORK'
   })
  }catch(error){
   return normalizeBenchmarkSample({
-   case_id:goldenCase.id,path:goldenCase.path,target:goldenCase.target,status:'FAILED',
+   case_id:goldenCase.id,path:goldenCase.path,service_class:goldenCase.service_class||goldenCase.path,intent:goldenCase.intent,target:goldenCase.target,status:'FAILED',
    total_ms:performance.now()-startedAt,observed_at:new Date().toISOString(),source:'staging-opt-in',
-   error_code:error?.name==='TimeoutError'?'TIMEOUT':'TRANSPORT_ERROR'
+   error_code:error?.name==='TimeoutError'?'TIMEOUT':'TRANSPORT_ERROR',quality_status:'FAIL',result:'FAIL_NETWORK_CONTRACT',evidence_class:'STAGING_NETWORK'
   })
  }
 }

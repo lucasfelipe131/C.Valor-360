@@ -11,7 +11,8 @@ test('imagem de produção é multi-stage, não privilegiada e não declara segr
  assert.match(dockerfile,/^FROM node:22-alpine AS build$/m)
  assert.match(dockerfile,/^FROM node:22-alpine AS runtime$/m)
  assert.match(dockerfile,/^USER node$/m)
- assert.doesNotMatch(dockerfile,/^ARG\b/m)
+ const buildArgs=[...dockerfile.matchAll(/^ARG\s+([^\s=]+)/gm)].map(([,name])=>name)
+ assert.deepEqual(buildArgs,['RAILWAY_GIT_COMMIT_SHA'])
  assert.doesNotMatch(dockerfile,/(?:OPENAI_API_KEY|DATABASE_URL|VAL_ADMIN_PASSWORD|VAL_SESSION_SECRET|VAL_INTEGRATION_TOKEN)/)
 })
 

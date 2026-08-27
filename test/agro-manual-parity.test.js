@@ -45,9 +45,10 @@ test('bridge Manual ↔ VAL valida origem, janela pai e contexto navegacional',(
  assert.match(technical,/signature|signed|hmac/i)
 })
 
-test('roteador preserva capacidades agronômicas sem afirmar execução inexistente',()=>{
+test('roteador preserva capacidades agronômicas e a paridade canônica das nove calculadoras',()=>{
  const router=read('server/decision-copilot/capability-router.js')
  const diff=read('VAL_AGRONOMIC_CAPABILITY_DIFF.md')
+ const parity=read('VAL_CALCULATOR_PARITY_v1.md')
  for(const capability of [
   'AGRONOMIC_WORKSPACE','SOIL_ANALYSIS','IMAGE_DIAGNOSIS','CALCULATORS','LABELS',
   'WEATHER','MARKET_COMMODITY','KNOWLEDGE_LIBRARY','AGRONOMIST_MANUAL'
@@ -55,8 +56,9 @@ test('roteador preserva capacidades agronômicas sem afirmar execução inexiste
  assert.match(router,/intentRoute\.intent==='CALCULATE'/)
  assert.match(router,/intentRoute\.intent==='ANALYZE_SOIL'/)
  assert.match(router,/intentRoute\.intent==='IMAGE_DIAGNOSIS'/)
- assert.match(diff,/native execution parity for the nine Manual engines must not be claimed/i)
- assert.match(diff,/`ACCESS_PRESERVED`/)
+ assert.match(diff,/same canonical input/i)
+ assert.match(parity,/mesma função usada pelo Manual/)
+ assert.match(parity,/9\/9 calculadoras/)
 })
 
 test('mapeamento atual mantém desenho, edição, geometria, fontes e exportação',()=>{
@@ -70,7 +72,8 @@ test('mapeamento atual mantém desenho, edição, geometria, fontes e exportaç�
  assert.match(official,/acervofundiario\.incra\.gov\.br/)
  assert.match(official,/geoserver\.car\.gov\.br/)
  const diff=read('VAL_AGRONOMIC_CAPABILITY_DIFF.md')
- assert.match(diff,/`geometry_ref`\/`geometry_version` are not populated/)
+ assert.match(diff,/`AgronomicGeometryAdapter\.v1` validates and writes the canonical geometry reference\/version/)
+ assert.match(read('server/repository.js'),/encodeCanonicalGeometryRef\(canonical\)/)
 })
 
 test('análise de solo preserva os quatro estados reais de vínculo e histórico versionado',()=>{
@@ -93,7 +96,7 @@ test('nomes de diagnóstico são canônicos e FitScan permanece apenas alias de 
  for(const mode of ['nutrition','disease','insect','weed'])assert.match(route,new RegExp(`"${mode}"`))
  assert.match(route,/minItems: 3/)
  assert.match(route,/maxItems: 3/)
- assert.match(diff,/`FitScan` to the same methodology/)
+ assert.match(diff,/FitoScan\/FitScan normalizes to `FITOSCAN`/)
  assert.match(diff,/never create a second product/i)
 })
 

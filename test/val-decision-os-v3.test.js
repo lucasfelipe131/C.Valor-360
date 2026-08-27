@@ -122,7 +122,7 @@ test('Capability Router — FAST é direto e DEEP cruza contexto sem conceder pe
  assert.deepEqual(visit.capabilities,['VISIT_HISTORY'])
 
  const quote=routeSystemCapability({message:'Qual é o preço da soja hoje?',hasClient:false})
- assert.equal(quote.path,'FAST')
+ assert.equal(quote.path,'LIVE_DATA')
  assert.equal(quote.current_data_required,true)
  assert.equal(quote.client_context_required,false)
 
@@ -177,7 +177,8 @@ test('FAST envelopes — respostas diretas preservam AIReasoningResult, provenan
  const marketResponse=buildFastMarketResponse({workspace:{marketSnapshots:[]},message:'Preço da soja hoje',organizationId:'tenant-a',conversationId:'global',now,latencyMs:8})
  const marketReasoning=marketResponse.advice.ai_reasoning
  assert.deepEqual(validateAIReasoningResult(marketReasoning),[])
- assert.equal(marketReasoning.run.path,'FAST')
+ assert.equal(marketResponse.route,'LIVE_DATA')
+ assert.equal(marketReasoning.run.path,'LIVE_DATA')
  assert.equal(marketReasoning.premises.current_data.required,true)
  assert.equal(marketReasoning.premises.conversation_is_not_confirmed_memory,true)
 })

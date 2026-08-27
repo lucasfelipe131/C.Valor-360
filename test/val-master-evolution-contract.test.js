@@ -22,12 +22,14 @@ test('GP-001–GP-016 formam um conjunto sintético, sequencial e roteável',()=
  assert.equal(golden.contains_real_data,false)
  assert.deepEqual(golden.measurement_contract.canonical_stages,CANONICAL_STAGES)
  assert.deepEqual(golden.measurement_contract.percentiles,[50,75,90,95])
+ assert.equal(golden.measurement_contract.p95_sufficient_sample_min,20)
  assert.equal(golden.cases.length,16)
  assert.deepEqual(golden.cases.map(item=>item.id),Array.from({length:16},(_,index)=>`GP-${String(index+1).padStart(3,'0')}`))
  assert.equal(new Set(golden.cases.map(item=>item.id)).size,16)
  const paths=new Set(golden.allowed_paths)
  for(const item of golden.cases){
   assert.ok(paths.has(item.path),`${item.id} possui path desconhecido`)
+  assert.ok(golden.allowed_service_classes.includes(item.service_class),`${item.id} possui service_class desconhecida`)
   assert.match(item.target,/^[A-Z][A-Z0-9_]+$/,`${item.id} precisa declarar target canônico`)
   assert.equal(typeof item.staging_probe?.enabled,'boolean')
   if(item.staging_probe.enabled){
@@ -37,6 +39,7 @@ test('GP-001–GP-016 formam um conjunto sintético, sequencial e roteável',()=
   }else assert.ok(item.staging_probe.reason,'probe desabilitado deve explicar a fronteira de evidência')
  }
  assert.deepEqual([...new Set(golden.cases.map(item=>item.path))].sort(),['CONTEXT','DEEP','FAST','LIVE_DATA','TOOL'])
+ assert.ok(golden.cases.some(item=>item.service_class==='VOICE'))
  assert.doesNotMatch(JSON.stringify(golden),/Costa Beber|Matheus Nascimento|João Pereira/i)
 })
 
@@ -53,7 +56,7 @@ test('percentis nearest-rank e TTFR são calculados sem inferir first byte',()=>
  assert.equal(nearestRankPercentile([4,1,3,2],90),4)
  assert.deepEqual(metricDistribution([]),{count:0,min:null,max:null,mean:null,p50:null,p75:null,p90:null,p95:null})
  const report=summarizeSamples([
-  {case_id:'GP-001',path:'FAST',status:'SUCCESS',ttfr_ms:10,transport_first_byte_ms:2,total_ms:50,stages_ms:{AUTH:1,INTENT:2,TOTAL:50}},
+  {case_id:'GP-001',path:'FAST',status:'SUCCESS',ttfr_ms:10,transport_first_byte_ms:2,total_ms:50,quality_score:.8,specificity_score:.9,grounding_score:.7,quality_status:'PASS',result:'PASS_LOCAL',stages_ms:{AUTH:1,INTENT:2,TOTAL:50}},
   {case_id:'GP-001',path:'FAST',status:'SUCCESS',ttfr_ms:20,transport_first_byte_ms:3,total_ms:60,stages_ms:{AUTH:2,INTENT:3,TOTAL:60}},
   {case_id:'GP-001',path:'FAST',status:'SUCCESS',ttfr_ms:30,transport_first_byte_ms:4,total_ms:70,stages_ms:{AUTH:3,INTENT:4,TOTAL:70}},
   {case_id:'GP-001',path:'FAST',status:'SUCCESS',ttfr_ms:40,transport_first_byte_ms:5,total_ms:80,stages_ms:{AUTH:4,INTENT:5,TOTAL:80}},
@@ -66,6 +69,10 @@ test('percentis nearest-rank e TTFR são calculados sem inferir first byte',()=>
  assert.equal(report.coverage.ttfr_observations,4)
  assert.equal(report.coverage.ttfr_not_inferred_from_transport,true)
  assert.equal(report.overall.metrics_ms.TRANSPORT_FIRST_BYTE.count,5)
+ assert.equal(report.overall.quality.SCORE.count,1)
+ assert.equal(report.overall.fast_generic_failures,0)
+ assert.equal(report.by_service_class.FAST.count,5)
+ assert.equal(report.coverage.p95_sufficient_sample_min,20)
  assert.equal(report.overall.metrics_ms.stages.AUTH.count,4)
  assert.ok(report.coverage.missing_cases.includes('GP-016'))
 })
@@ -76,9 +83,11 @@ test('arquivo de amostras aceita apenas métricas sintéticas e não payload de 
  const normalized=normalizeBenchmarkSample({case_id:'gp-001',path:'fast',status:'SUCCESS',total_ms:25,latency_breakdown:{CONTEXT_RETRIEVAL:4,MODEL_INFERENCE:8}})
  assert.equal(normalized.case_id,'GP-001')
  assert.equal(normalized.path,'FAST')
+ assert.equal(normalized.service_class,'FAST')
  assert.equal(normalized.stages_ms.CONTEXT,4)
  assert.equal(normalized.stages_ms.MODEL,8)
  assert.equal(normalized.stages_ms.TOTAL,25)
+ assert.throws(()=>normalizeBenchmarkSample({case_id:'GP-001',path:'FAST',status:'SUCCESS',total_ms:10,quality_score:1.1}),/quality_score/)
 })
 
 test('benchmark de rede exige opt-in e recusa host que não identifica staging',async()=>{

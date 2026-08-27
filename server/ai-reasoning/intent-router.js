@@ -49,7 +49,7 @@ function semanticToolHint(source='',hasImage=false){
  if(/\b(?:nutriscan|nutri scan)\b/i.test(normalized))return 'NUTRISCAN'
  if(/\b(?:fitoscan|fito scan|fitscan|fit scan)\b/i.test(normalized))return 'FITOSCAN'
  if(/\b(?:mapeamento|mapear|mapa da (?:area|propriedade|fazenda)|desenhar (?:a )?area|geometria do talhao)\b/i.test(normalized))return 'AREA_MAPPING'
- if(/\b(?:calculadora|calcule|calcular|calculo|simule|simular|custo\s*\/\s*ha|roi|margem|ponto de equilibrio)\b/i.test(normalized))return 'CALCULATOR'
+ if(/\b(?:calcul\w*|simul\w*|custo\s*\/\s*ha|roi|margem|ponto de equilibrio)\b/i.test(normalized))return 'CALCULATOR'
  if(/\b(?:analise de solo|laudo de solo|interpreta(?:r)? (?:essa|esta|a) analise)\b/i.test(normalized))return 'SOIL_ANALYSIS'
  if(hasImage||/\b(?:analis\w*|diagnostic\w*|interpret\w*)\b.*\b(?:foto|imagem)\b|\b(?:foto|imagem)\b.*\b(?:analis\w*|diagnostic\w*|interpret\w*)\b/i.test(normalized))return 'PHOTO_DIAGNOSIS'
  if(/\b(?:quais|que|liste|listar|mostre|mostrar|resuma)\b.*\b(?:ferramentas?|capacidades?|recursos?)\b.*\b(?:agronom\w*|tecnic\w*|de campo|aqui|na val)\b/i.test(normalized))return 'AGRONOMIC_TOOL_CATALOG'
@@ -85,7 +85,9 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
  // current-data request or a new explicit task into stale continuation.
  // Persistence remains fail-closed and can only be requested explicitly.
  const genericAgroToolOverride=hinted==='ASK_AGRONOMIC'?toolIntent:''
- let intent=sessionCommand?.command==='REGISTER_LAST'?'REGISTER_INFORMATION':persistenceIntents.has(hinted)?hinted:semanticCurrent||semanticCommand||semanticClientIdentity||genericAgroToolOverride||hinted
+ const explicitCalculatorAction=/\b(?:calcul\w*|simul\w*|rod\w*|execut\w*|abr\w*)\b/i.test(source)
+ const calculatorToolOverride=toolHint==='CALCULATOR'&&explicitCalculatorAction?'CALCULATE':''
+ let intent=sessionCommand?.command==='REGISTER_LAST'?'REGISTER_INFORMATION':persistenceIntents.has(hinted)?hinted:semanticCurrent||semanticCommand||semanticClientIdentity||calculatorToolOverride||genericAgroToolOverride||hinted
  if(!intent){
   if(/\b(?:mercado|commodity|commodities|not[ií]cia econ[oô]mica)\b/i.test(source))intent='ASK_MARKET'
   else if(toolHint==='SOIL_ANALYSIS'||/\b(?:an[aá]lise de solo|laudo de solo|solo|ph|v%|satura[cç][aã]o|ctc|f[oó]sforo|pot[aá]ssio)\b/i.test(source))intent='ANALYZE_SOIL'

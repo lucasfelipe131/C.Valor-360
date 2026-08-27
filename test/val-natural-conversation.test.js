@@ -13,8 +13,8 @@ const payload={advice:{answer:'Leitura curta.',ai_reasoning:{recommended_strateg
 
 test('comandos naturais reconhecem as formas autorizadas sem reiniciar contexto',()=>{
  const expected=new Map([
-  ['Resume.','SUMMARIZE'],['Repete.','REPEAT'],['Explica melhor.','EXPLAIN'],['Só as Perguntas de Ouro.','GOLDEN_QUESTIONS_ONLY'],
-  ['Agora por escrito.','OUTPUT_TEXT'],['Agora fala comigo.','OUTPUT_AUDIO'],['Me mostra os números.','SHOW_NUMBERS'],
+  ['Resume.','SUMMARIZE'],['Repete.','REPEAT'],['Explica melhor.','EXPLAIN'],['Só as Perguntas de Ouro.','GOLDEN_QUESTIONS_ONLY'],['Só me manda as Perguntas de Ouro.','GOLDEN_QUESTIONS_ONLY'],
+  ['Agora por escrito.','OUTPUT_TEXT'],['Agora fala comigo.','OUTPUT_AUDIO'],['Agora fala elas pra mim.','OUTPUT_AUDIO'],['Me mostra os números.','SHOW_NUMBERS'],
   ['Por que você acha isso?','EXPLAIN_WHY'],['Registra.','OPEN_REGISTER'],['Não registra.','KEEP_SESSION_ONLY'],
   ['Aprofunda.','DEEPEN'],['Só o essencial.','SET_SIMPLE']
  ])

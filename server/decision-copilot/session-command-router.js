@@ -11,8 +11,8 @@ const normalize=value=>String(value??'')
 
 const rules=Object.freeze([
  ['OUTPUT_TEXT',/^(?:agora\s+)?(?:por escrito|so texto|apenas texto)[.!?]*$/],
- ['OUTPUT_AUDIO',/^(?:agora\s+)?(?:fala comigo|por audio|em audio|so audio)[.!?]*$/],
- ['GOLDEN_QUESTIONS',/^(?:mostra|me mostra|quero|traga|so|apenas)?\s*(?:as\s+)?perguntas de ouro[.!?]*$/],
+ ['OUTPUT_AUDIO',/^(?:agora\s+)?(?:fala comigo|fala (?:elas|isso) (?:para|pra) mim|por audio|em audio|so audio)[.!?]*$/],
+ ['GOLDEN_QUESTIONS',/^(?:(?:mostra|manda|traga)(?:\s+para|\s+pra)?(?:\s+mim)?|(?:(?:so|apenas)\s+)?me\s+(?:mostra|manda)|quero|so|apenas)?\s*(?:as\s+)?perguntas de ouro[.!?]*$/],
  ['SHOW_NUMBERS',/^(?:me\s+)?mostra(?:r)?\s+(?:os\s+)?numeros[.!?]*$/],
  ['DO_NOT_REGISTER',/^(?:nao|não)\s+(?:registra|registre|salva|grave|anote)[.!?]*$/],
  ['REGISTER_LAST',/^(?:registra|registre|salva|grave|anote)(?:\s+isso)?[.!?]*$/],

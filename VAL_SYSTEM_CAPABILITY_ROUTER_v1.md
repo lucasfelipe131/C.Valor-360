@@ -79,7 +79,7 @@ Capacidade indisponível, bloqueada ou não chamada permanece visível no result
 ## Regras principais
 
 - “Qual foi a última visita?” -> `VISIT_HISTORY`, FAST, leitura direta.
-- “Qual a última cotação de soja?” -> `MARKET_COMMODITY`, FAST, fonte/data obrigatórias.
+- “Qual a última cotação de soja?” -> `MARKET_COMMODITY`, `LIVE_DATA`, fonte/data obrigatórias.
 - “Isso muda a negociação com João?” -> mercado + contexto do cliente, DEEP.
 - solo, imagem e agronomia -> capacidades técnicas, DEEP.
 - cálculo determinístico com valores suficientes -> `CALCULATORS`, FAST.

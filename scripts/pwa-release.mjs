@@ -3,6 +3,7 @@ import {createHash} from 'node:crypto'
 import {existsSync,mkdirSync,readdirSync,readFileSync,statSync,writeFileSync} from 'node:fs'
 import {dirname,join,relative,resolve} from 'node:path'
 import {fileURLToPath} from 'node:url'
+import {RELEASE_SCHEMA_VERSION,resolveSourceCommit} from '../server/release-metadata.js'
 
 export const PWA_RELEASE_PLACEHOLDER='__VAL_RELEASE__'
 export const PWA_CACHE_PREFIX='valor360-v'
@@ -88,7 +89,15 @@ export function stampServiceWorker({
  const destination=resolve(root,outputPath)
  mkdirSync(dirname(destination),{recursive:true})
  writeFileSync(destination,output)
- return {releaseId:normalized,cacheName:`${PWA_CACHE_PREFIX}${normalized}`,outputPath:destination}
+ const source=resolveSourceCommit({root})
+ const manifest={
+  schemaVersion:RELEASE_SCHEMA_VERSION,
+  release:{id:normalized,sourceHash:hashReleaseSources(root)},
+  source:{commitSha:source.commitSha,origin:source.origin}
+ }
+ const manifestPath=resolve(root,'dist/release.json')
+ writeFileSync(manifestPath,`${JSON.stringify(manifest,null,2)}\n`)
+ return {releaseId:normalized,cacheName:`${PWA_CACHE_PREFIX}${normalized}`,outputPath:destination,manifestPath,sourceCommitSha:source.commitSha}
 }
 
 export function verifyServiceWorker({root=process.cwd(),outputPath='dist/sw.js',releaseId}={}){
@@ -101,7 +110,13 @@ export function verifyServiceWorker({root=process.cwd(),outputPath='dist/sw.js',
  const actual=sanitizeReleaseId(match[1])
  const expected=releaseId?sanitizeReleaseId(releaseId):''
  if(expected&&actual!==expected)throw new Error(`CACHE ${actual} não corresponde à release ${expected}.`)
- return {releaseId:actual,cacheName:`${PWA_CACHE_PREFIX}${actual}`,outputPath:destination}
+ const manifestPath=resolve(root,'dist/release.json')
+ if(!existsSync(manifestPath))throw new Error('Manifesto dist/release.json não encontrado.')
+ const manifest=JSON.parse(readFileSync(manifestPath,'utf8'))
+ if(manifest?.schemaVersion!==RELEASE_SCHEMA_VERSION)throw new Error('Manifesto de release possui versão inválida.')
+ if(sanitizeReleaseId(manifest?.release?.id)!==actual)throw new Error('Manifesto de release não corresponde ao service worker compilado.')
+ if(manifest?.source?.commitSha&&!/^[0-9a-f]{7,64}$/i.test(manifest.source.commitSha))throw new Error('Manifesto de release possui commit inválido.')
+ return {releaseId:actual,cacheName:`${PWA_CACHE_PREFIX}${actual}`,outputPath:destination,manifestPath,sourceCommitSha:manifest?.source?.commitSha||null}
 }
 
 const invokedDirectly=process.argv[1]&&resolve(process.argv[1])===fileURLToPath(import.meta.url)

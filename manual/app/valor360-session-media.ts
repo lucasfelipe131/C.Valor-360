@@ -1,7 +1,17 @@
-export const manualSessionMediaProtocolVersion = 1 as const;
+export const manualSessionMediaProtocolVersion = 2 as const;
 
 export type ManualSessionMediaIntent = "IMAGE_DIAGNOSIS" | "ANALYZE_SOIL";
 export type ManualSessionMediaStatus = "APPLIED" | "REJECTED";
+export type ManualSourceAttachment = {
+  attachmentId: string;
+  association: "LINKED_CLIENT" | "UNLINKED";
+  organizationId: string;
+  clientId: string;
+  propertyId: string;
+  fieldId: string;
+  createdAt: string;
+  sha256: string;
+};
 
 export type ManualSessionMediaCommand = {
   type: "valor360:session-media";
@@ -10,8 +20,9 @@ export type ManualSessionMediaCommand = {
   navigationRequestId: string;
   intent: ManualSessionMediaIntent;
   persistenceMode: "NONE";
-  association: "UNLINKED";
+  association: "LINKED_CLIENT" | "UNLINKED";
   files: File[];
+  sourceAttachments: ManualSourceAttachment[];
 };
 
 export type ManualSessionMediaResult = {
@@ -42,6 +53,35 @@ function identifier(value: unknown) {
     : "";
 }
 
+function attachmentIdentifier(value: unknown) {
+  const candidate = typeof value === "string" ? value.trim() : "";
+  return /^[0-9a-f-]{36}$/i.test(candidate) ? candidate : "";
+}
+
+function sourceAttachment(value: unknown): ManualSourceAttachment | null {
+  const source = object(value);
+  const attachmentId = attachmentIdentifier(source.attachmentId);
+  const association = source.association === "LINKED_CLIENT" || source.association === "UNLINKED"
+    ? source.association
+    : null;
+  if (!attachmentId || !association) return null;
+  const createdAt = typeof source.createdAt === "string" ? source.createdAt.trim().slice(0, 60) : "";
+  if (createdAt && Number.isNaN(Date.parse(createdAt))) return null;
+  const sha256 = typeof source.sha256 === "string" && /^[0-9a-f]{64}$/i.test(source.sha256)
+    ? source.sha256.toLowerCase()
+    : "";
+  return {
+    attachmentId,
+    association,
+    organizationId: identifier(source.organizationId),
+    clientId: identifier(source.clientId),
+    propertyId: identifier(source.propertyId),
+    fieldId: identifier(source.fieldId),
+    createdAt,
+    sha256,
+  };
+}
+
 export function manualSessionMediaIdentity(input: unknown) {
   const source = object(input);
   return {
@@ -68,7 +108,10 @@ export function validateManualSessionMedia(input: unknown): {
     ? source.intent
     : null;
   if (!transferId || !navigationRequestId || !intent) return { command: null, errorCode: "INVALID_ENVELOPE" };
-  if (source.persistenceMode !== "NONE" || source.association !== "UNLINKED") return { command: null, errorCode: "INVALID_ENVELOPE" };
+  const association = source.association === "LINKED_CLIENT" || source.association === "UNLINKED"
+    ? source.association
+    : null;
+  if (source.persistenceMode !== "NONE" || !association) return { command: null, errorCode: "INVALID_ENVELOPE" };
 
   const values = Array.isArray(source.files) ? source.files : [];
   const expectedCount = intent === "IMAGE_DIAGNOSIS"
@@ -83,6 +126,12 @@ export function validateManualSessionMedia(input: unknown): {
   if (files.some((file) => !types.has(String(file.type || "").toLowerCase()))) {
     return { command: null, errorCode: "UNSUPPORTED_MEDIA_TYPE" };
   }
+  const sourceValues = Array.isArray(source.sourceAttachments) ? source.sourceAttachments : [];
+  const sourceAttachments = sourceValues.map(sourceAttachment);
+  if (sourceAttachments.some((item) => !item)) return { command: null, errorCode: "INVALID_ATTACHMENT_PROVENANCE" };
+  if (sourceAttachments.length && sourceAttachments.length !== files.length) return { command: null, errorCode: "ATTACHMENT_PROVENANCE_COUNT_MISMATCH" };
+  if (association === "LINKED_CLIENT" && !sourceAttachments.length) return { command: null, errorCode: "INVALID_ATTACHMENT_PROVENANCE" };
+  if (sourceAttachments.some((item) => item?.association !== association)) return { command: null, errorCode: "ATTACHMENT_ASSOCIATION_MISMATCH" };
 
   return { command: {
     type: "valor360:session-media",
@@ -91,8 +140,9 @@ export function validateManualSessionMedia(input: unknown): {
     navigationRequestId,
     intent,
     persistenceMode: "NONE",
-    association: "UNLINKED",
+    association,
     files,
+    sourceAttachments: sourceAttachments as ManualSourceAttachment[],
   }, errorCode: null };
 }
 

@@ -79,8 +79,8 @@ test('handoff efêmero do host é one-shot, sem autoridade e correlacionado à n
  const file={name:'campo.png',type:'image/png',size:1024}
  const message=createAgroSessionMediaMessage({files:[file],intent:'IMAGE_DIAGNOSIS',navigationRequestId:'navigation-1',transferId:'transfer-1'})
  assert.deepEqual(message,{
-  type:'valor360:session-media',version:1,transferId:'transfer-1',navigationRequestId:'navigation-1',
-  persistenceMode:'NONE',association:'UNLINKED',intent:'IMAGE_DIAGNOSIS',files:[file]
+  type:'valor360:session-media',version:2,transferId:'transfer-1',navigationRequestId:'navigation-1',
+  persistenceMode:'NONE',association:'UNLINKED',intent:'IMAGE_DIAGNOSIS',files:[file],sourceAttachments:[]
  })
  assert.doesNotMatch(JSON.stringify({...message,files:[]}),/tenant|owner|clientId|producer/i)
  assert.throws(()=>createAgroSessionMediaMessage({files:[{name:'dados.txt',type:'text/plain',size:10}],intent:'ASK_AGRONOMIC',navigationRequestId:'navigation-1'}),error=>error.code==='UNSUPPORTED_MEDIA_TYPE')

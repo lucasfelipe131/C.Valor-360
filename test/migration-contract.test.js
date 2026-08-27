@@ -46,3 +46,11 @@ test('migração legacy é versionada, bloqueada e preserva contexto técnico',a
   assert.match(sql,/source_name VARCHAR\(240\) NOT NULL/)
   assert.match(sql,/COMMIT;/)
 })
+
+test('expansão de attachment UNLINKED é compatível e não destrutiva',async()=>{
+  const sql=await readFile(new URL('../database/migrations/20260827_007_attachment_scan_provenance_expand.sql',import.meta.url),'utf8')
+  assert.match(sql,/ALTER COLUMN client_id DROP NOT NULL/)
+  assert.match(sql,/CREATE INDEX IF NOT EXISTS idx_val_attachments_unlinked_date/)
+  assert.match(sql,/WHERE client_id IS NULL/)
+  assert.doesNotMatch(sql,/\b(?:DELETE|TRUNCATE|DROP TABLE|DROP COLUMN|UPDATE)\b/i)
+})

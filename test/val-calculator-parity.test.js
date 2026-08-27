@@ -114,20 +114,22 @@ test('Manual salva cálculos em histórico owner-scoped, separado de memória co
 
 test('fontes técnicas e safety permanecem visíveis nos cálculos sensíveis',()=>{
  const nutrient=read('manual/app/NutrientRemovalCalculator.tsx')
+ const canonical=read('src/lib/agronomic-calculators.js')
  const page=read('manual/app/page.tsx')
- for(const source of ['Embrapa Soja','Embrapa Milho e Sorgo','Embrapa Trigo','Canola Council of Canada'])assert.match(nutrient,new RegExp(source))
+ for(const source of ['Embrapa Soja','Embrapa Milho e Sorgo','Embrapa Trigo','Canola Council of Canada'])assert.match(canonical,new RegExp(source))
+ assert.match(nutrient,/NUTRIENT_PROFILES/)
  assert.match(nutrient,/profile\.source/)
  assert.match(page,/ZARC define janela e risco de semeadura — não o ciclo da cultivar/)
  assert.match(page,/Fonte técnica do material/)
  assert.match(page,/Resultados instantâneos, unidades visíveis e memória de cálculo para/)
 })
 
-test('documentação declara paridade parcial: custo/ha não equivale aos nove motores',()=>{
+test('documentação registra paridade 9/9 sem contar custo/ha como décima calculadora',()=>{
  const parity=read('VAL_CALCULATOR_PARITY_v1.md')
  const diff=read('VAL_AGRONOMIC_CAPABILITY_DIFF.md')
- assert.match(parity,/execução no Copilot:\*\* parcial para custo\/ha/i)
- assert.match(parity,/não prova paridade numérica com cada uma das nove calculadoras/i)
+ assert.match(parity,/PASS nas 9\/9 calculadoras/i)
+ assert.match(parity,/auxiliar e não é contado entre as nove calculadoras/i)
  assert.match(diff,/Generic cost per hectare/)
- assert.match(diff,/must not be presented as parity with the nine Manual engines/i)
- assert.match(diff,/numerically compared|numeric comparison/i)
+ assert.match(diff,/not counted as a tenth Manual calculator/i)
+ assert.match(diff,/deeply compares each Copilot output/i)
 })

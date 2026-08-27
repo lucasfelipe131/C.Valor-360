@@ -1,0 +1,36 @@
+{
+  "schema_version": "val.performance_slos.v1",
+  "evidence_scope": "LOCAL_CANONICAL_COMPONENT_ONLY",
+  "p95_min_samples": 20,
+  "expected_cases": [
+    "GP-001",
+    "GP-002",
+    "GP-003",
+    "GP-004",
+    "GP-005",
+    "GP-006",
+    "GP-007",
+    "GP-008",
+    "GP-009",
+    "GP-010",
+    "GP-011",
+    "GP-012",
+    "GP-013",
+    "GP-014",
+    "GP-015",
+    "GP-016"
+  ],
+  "quality_floors": {
+    "quality_score": 0.9,
+    "specificity_score": 0.8,
+    "grounding_score": 0.8
+  },
+  "service_classes": {
+    "FAST": {"ttfur_p95_ms": 25, "total_p95_ms": 25, "max_error_rate_percent": 1},
+    "CONTEXT": {"ttfur_p95_ms": 200, "total_p95_ms": 200, "max_error_rate_percent": 1},
+    "DEEP": {"ttfur_p95_ms": 200, "total_p95_ms": 200, "max_error_rate_percent": 1},
+    "TOOL": {"ttfur_p95_ms": 50, "total_p95_ms": 50, "max_error_rate_percent": 1},
+    "LIVE_DATA": {"ttfur_p95_ms": 20, "total_p95_ms": 20, "max_error_rate_percent": 2},
+    "VOICE": {"ttfur_p95_ms": 25, "total_p95_ms": 25, "max_error_rate_percent": 2}
+  }
+}

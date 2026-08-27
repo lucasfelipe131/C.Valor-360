@@ -62,7 +62,7 @@ async function prepareFile(file){
  return new File([file],file.name,{type:mimeType,lastModified:file.lastModified||Date.now()})
 }
 
-function ReasoningResponse({payload,density,outputMode,onReply,onRegister,onOpenModule,onOpenEvidence}){
+function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onReply,onRegister,onOpenModule,onOpenEvidence}){
  const advice=payload?.advice||{}
  const reasoning=advice.ai_reasoning||{}
  const thesis=reasoning.decision_thesis||{}
@@ -77,13 +77,14 @@ function ReasoningResponse({payload,density,outputMode,onReply,onRegister,onOpen
  const intent=String(reasoning.intent||'ASK_CLIENT').toUpperCase()
  const qualityTestLabel=test=>test?.evaluated===false?'não executado':test?.passed?'aprovado':'não aprovado'
  const audioNode=outputMode!=='text'?<ValAudioResponse text={reasoning.voice_output?.speakable_text||answer}/>:null
+ const openWithSources=target=>onOpenModule?.({...((target&&typeof target==='object')?target:{page:target}),sourceAttachments})
  return <article className={`global-val-answer is-${density}`}>
   {degraded&&<p className="global-val-degraded">Tenho pouca informação para te orientar com precisão.</p>}
   <DecisionCard reasoning={reasoning} answer={answer} action={strategy.action} showText={outputMode!=='audio'} audioNode={audioNode}/>
-  {toolResult&&<GenericToolCard title={toolResult.title} summary={toolResult.summary} status={toolResult.status} onOpen={()=>onOpenModule?.({page:toolResult.page||'agro',tool:toolResult.tool,manualPage:toolResult.manual_page,mode:toolResult.mode,context:toolResult.context})}/>}
+  {toolResult&&<GenericToolCard title={toolResult.title} summary={toolResult.summary} status={toolResult.status} onOpen={()=>openWithSources({page:toolResult.page||'agro',tool:toolResult.tool,manualPage:toolResult.manual_page,mode:toolResult.mode,context:toolResult.context})}/>}
   {intent==='PREPARE_VISIT'&&<PrepareVisitCard reasoning={reasoning} questions={questions} onOpen={onOpenModule}/>}
   {toolResult?.status!=='CATALOG'&&['ASK_AGRONOMIC','ANALYZE_SOIL'].includes(intent)&&<AgronomicInsightCard reasoning={reasoning} onOpen={onOpenModule}/>}
-  {intent==='IMAGE_DIAGNOSIS'&&<DiagnosisCard reasoning={reasoning} onOpen={onOpenModule}/>}
+  {intent==='IMAGE_DIAGNOSIS'&&<DiagnosisCard reasoning={reasoning} onOpen={openWithSources}/>}
   {intent==='CHECK_OPPORTUNITY'&&<OpportunityCard reasoning={reasoning} onOpen={onOpenModule}/>}
   {['ASK_MARKET','ASK_COMMODITY','CHECK_MARKET','CHECK_WEATHER','CHECK_LABEL'].includes(intent)&&<MarketCard reasoning={reasoning} onOpen={onOpenModule}/>}
   {intent==='CALCULATE'&&<CalculationCard reasoning={reasoning} onOpen={onOpenModule}/>}
@@ -243,7 +244,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   setSelectedId(target.id);setActiveContext(null)
   if(await uploadFiles(pendingFiles,target))setPendingFiles([])
  }
- const openUnlinkedWorkspace=()=>{
+ const openUnlinkedWorkspace=async()=>{
   if(uploading||uploadRunRef.current.controller)return
   const probableFiles=pendingFiles.map(probableAttachmentIntent)
   const imageBatch=pendingFiles.length>=1&&pendingFiles.length<=3&&pendingFiles.every((file,index)=>probableFiles[index].intent==='IMAGE_DIAGNOSIS'&&['image/jpeg','image/png','image/webp'].includes(resolveAgroHeroFileMime(file)))
@@ -251,12 +252,18 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   if(!imageBatch&&!soilFile){setError('Sem vínculo, envie de uma a três fotos do mesmo diagnóstico ou um único PDF/imagem de análise de solo. Para Word, Excel, CSV ou TXT, escolha um produtor.');return}
   const probable=probableFiles[0]
   const context={type:'unlinked_attachment',id:`session-${Date.now()}`,label:pendingFiles.length===1?pendingFiles[0].name:`${pendingFiles.length} arquivos`,tool:probable.tool,page:probable.page,unlinked:true}
-  setSeedAttachmentIntent('')
-  setSeedFiles([])
-  setAttachments([])
-  setPendingFiles([])
-  setMessage('')
-  onNavigate?.({page:'agro',tool:probable.tool||probable.page,manualPage:probable.page,label:probable.label,intent:probable.intent,context,files:pendingFiles.slice(0,3)})
+  const selected=pendingFiles.slice(0,3);setUploading(true);setError('')
+  try{
+   const staged=[]
+   for(const file of selected){
+    const dataUrl=await fileDataUrl(file)
+    const response=await fetch('/api/val/attachments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({association:'UNLINKED',originalName:file.name,mimeType:file.type,sizeBytes:file.size,dataUrl})})
+    const payload=await response.json().catch(()=>({}));if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error(payload.error||'Não consegui preservar a origem deste arquivo.')
+    staged.push({file,sourceAttachment:payload.attachment})
+   }
+   setSeedAttachmentIntent('');setSeedFiles([]);setAttachments([]);setPendingFiles([]);setMessage('')
+   onNavigate?.({page:'agro',tool:probable.tool||probable.page,manualPage:probable.page,label:probable.label,intent:probable.intent,context,files:staged})
+  }catch(uploadError){setError(uploadError.message||'Não foi possível criar o attachment UNLINKED.')}finally{setUploading(false)}
  }
 
  const ask=async(rawMessage,intent)=>{
@@ -292,6 +299,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
     ?buildMarketContinuationMessage({objective:continuation.objective,prompt})
     :limitValChatMessage(prompt)
   const requestMessage=naturalCommand?naturalCommandRequest(naturalCommand,contextualRequest):contextualRequest
+  const submittedAttachments=attachments.slice(0,3)
   const userItem={role:'user',text:prompt||'Analisar os arquivos enviados.',objective:continuation?requestMessage:prompt,intent:effectiveIntent||'',at:new Date().toISOString()}
   if(!activeReply){setSessionReplies(current=>({...current,[activeThreadKey]:[]}));setSessionReplyOffer(null)}
   append(userItem,activeThreadKey);setBusy(true);setError('');setMessage('');setReplyingTo(null);setProgress(client?initialValProgress():{stage:'current_data',label:'Consultando a fonte autorizada mais recente',done:false})
@@ -301,7 +309,8 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
    const response=await fetch('/api/val/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:client?.id||'',client:client||undefined,message:requestMessage,attachmentIds:attachments.map(item=>item.id),mode:'daily',intent:effectiveIntent,sessionCommand:naturalCommand?.action||undefined,conversationId:conversationId(activeThreadKey,storageScope),requestId,context:activeContext||undefined,sessionContext:{objective:sessionObjective,replies:currentSessionReplies.slice(-6),active_object:activeContext||null,persistence_mode:'NONE'}}),signal})
    const rawPayload=await response.json().catch(()=>null);if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error(rawPayload?.error||'A VAL não respondeu agora.')
    const payload=normalizeValChatPayload(rawPayload);if(!payload)throw new Error('A resposta chegou fora do contrato esperado. Tente novamente; nenhuma memória foi alterada.')
-   setThreads(current=>({...current,[activeThreadKey]:[...(current[activeThreadKey]||[]),{role:'assistant',payload,at:new Date().toISOString()}].slice(-20)}));setAttachments([])
+   const sourceAttachments=(Array.isArray(payload.attachments)&&payload.attachments.length?payload.attachments:submittedAttachments).map(item=>({id:item.id,organizationId:item.organizationId||'',clientId:item.clientId||client?.id||'',association:item.association||'LINKED_CLIENT',propertyId:activeContext?.type==='property'?activeContext.id:'',fieldId:activeContext?.type==='field'?activeContext.id:'',originalName:item.originalName||'',mimeType:item.mimeType||'',createdAt:item.createdAt||'',sha256:item.sha256||''})).filter(item=>item.id)
+   setThreads(current=>({...current,[activeThreadKey]:[...(current[activeThreadKey]||[]),{role:'assistant',payload,sourceAttachments,at:new Date().toISOString()}].slice(-20)}));setAttachments([])
    if(activeReply){setSessionReplies(current=>({...current,[activeThreadKey]:currentSessionReplies.slice(-6)}));setSessionReplyOffer({question:activeReply.question,answer:prompt,intent:activeReply.intent||effectiveIntent||''})}
  }catch(requestError){setError(requestError.name==='TimeoutError'?'A análise ultrapassou o tempo. Tente novamente.':requestError.message)}finally{stopProgress();controller.abort();setProgress(null);setBusy(false)}
  }
@@ -365,9 +374,23 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   ask(prompt,intent)
  }
  const openEvidence=()=>{setContextTab('evidence');setContextPanelOpen(true)}
- const openModule=target=>{
+ const openModule=async target=>{
   const descriptor=target&&typeof target==='object'?target:{page:target}
   if(descriptor.page==='visits'&&client){onPrepareVisit?.(client);return}
+  const sourceAttachments=Array.isArray(descriptor.sourceAttachments)?descriptor.sourceAttachments.slice(0,3):[]
+  if(descriptor.page==='agro'&&sourceAttachments.length){
+   setUploading(true);setError('')
+   try{
+    const files=await Promise.all(sourceAttachments.map(async sourceAttachment=>{
+     const response=await fetch(`/api/val/attachments/${encodeURIComponent(sourceAttachment.id)}`,{headers:{Accept:'*/*'}})
+     if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error('O attachment de origem não está mais disponível neste escopo.')
+     const blob=await response.blob();const file=new File([blob],sourceAttachment.originalName||`attachment-${sourceAttachment.id}`,{type:blob.type||sourceAttachment.mimeType||'application/octet-stream',lastModified:Date.parse(sourceAttachment.createdAt)||Date.now()})
+     return {file,sourceAttachment}
+    }))
+    onNavigate?.({...descriptor,files,clientId:client?.id||'',context:{...(activeContext||{}),...(descriptor.context||{})}})
+   }catch(openError){setError(openError.message||'Não foi possível abrir o attachment no diagnóstico.')}finally{setUploading(false)}
+   return
+  }
   onNavigate?.({...descriptor,clientId:client?.id||'',context:{...(activeContext||{}),...(descriptor.context||{})}})
  }
  const historyGroups=history.reduce((map,item)=>{const values=map.get(item.group)||[];values.push(item);map.set(item.group,values);return map},new Map())
@@ -392,7 +415,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
     </div>
     <div className="global-val-thread" aria-live="polite">
      {!thread.length&&mode==='ASK'&&<section className="global-val-empty"><span><BrainCircuit/></span><small>VAL • AMBIENTE DE TRABALHO</small><h2>O que você precisa resolver?</h2><p>{client?`Estou usando o contexto confirmado de ${client.name}.`:'Escolha um produtor ou comece por uma consulta de mercado.'}</p><div>{(client?clientQuickPrompts:globalQuickPrompts).map(([intent,label,prompt])=><button type="button" key={`${intent}-${label}`} disabled={busy} onClick={()=>runQuickAction(intent,prompt)}><b>{label}</b>{!client&&prompt&&<small>{prompt}</small>}</button>)}</div></section>}
-     {thread.map((item,index)=>item.role==='assistant'?<ReasoningResponse key={`${item.at||index}-${index}`} payload={item.payload} density={density} outputMode={outputMode} onReply={question=>{setReplyingTo(question);setMessage('');setMode('ASK');requestAnimationFrame(()=>messageInput.current?.focus())}} onRegister={()=>setMode('REGISTER')} onOpenModule={openModule} onOpenEvidence={openEvidence}/>:<p key={`${item.at||index}-${index}`} className={`global-val-message is-${item.role}`}>{item.text}</p>)}
+     {thread.map((item,index)=>item.role==='assistant'?<ReasoningResponse key={`${item.at||index}-${index}`} payload={item.payload} sourceAttachments={item.sourceAttachments} density={density} outputMode={outputMode} onReply={question=>{setReplyingTo(question);setMessage('');setMode('ASK');requestAnimationFrame(()=>messageInput.current?.focus())}} onRegister={()=>setMode('REGISTER')} onOpenModule={openModule} onOpenEvidence={openEvidence}/>:<p key={`${item.at||index}-${index}`} className={`global-val-message is-${item.role}`}>{item.text}</p>)}
      {mode==='REGISTER'&&<section className="global-val-register"><ShieldCheck/><h3>Atualize as premissas com confirmação.</h3><p>{client?'Fale ou digite o que mudou. A VAL separa fatos, hipóteses e compromissos para você revisar antes de incorporar à memória.':'Escolha um produtor acima. Uma informação só pode entrar na memória quando sabemos a qual conta ela pertence.'}</p><VoiceCapture clientId={client?.id||''} interactionType="CLIENT_NOTE" label="Falar ou digitar" description="Revisar antes de salvar" initialText={registerInitialText} sourceContext={{page:'GLOBAL_VAL_COPILOT',persistence_mode:'CONFIRM_REQUIRED'}} onConfirmed={registered}/></section>}
      {busy&&<div className="global-val-thinking" role="status"><LoaderCircle/><span><b>{progress?.label||'Analisando a solicitação…'}</b><small>{client?'Etapa real do processamento. Se faltar algo material, a VAL perguntará.':'A VAL não usa memória antiga como dado atual.'}</small></span></div>}
     </div>
