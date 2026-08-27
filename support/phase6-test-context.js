@@ -18,7 +18,7 @@ export function phase6InitialStore(options={}){
  return {
   surveys:[],imports:[],visits:structuredClone(visits),interactions:[],opportunities:[],
   val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[],modelRuns:[],technicalContexts:{},technicalContextHistory:[],memories:[],attachments:[{
-   id:phase6AudioA,ownerId:phase6ActorA,clientId:'producer-a',client_external_key:'producer-a',original_name:'visita.webm',mime_type:'audio/webm',size_bytes:24,content_base64:'YXVkaW8tZml4dHVyZQ==',sha256:'phase6-audio-fixture',status:'received',analysis:{},created_at:'2026-08-23T14:00:00.000Z',updated_at:'2026-08-23T14:00:00.000Z'
+   id:phase6AudioA,tenantId:phase6TenantA,tenant_id:phase6TenantA,ownerId:phase6ActorA,clientId:'producer-a',client_external_key:'producer-a',original_name:'visita.webm',mime_type:'audio/webm',size_bytes:24,content_base64:'YXVkaW8tZml4dHVyZQ==',sha256:'phase6-audio-fixture',status:'received',analysis:{},created_at:'2026-08-23T14:00:00.000Z',updated_at:'2026-08-23T14:00:00.000Z'
   }],contextSnapshots:[],actionPlans:[],commitments:[],visitPreparations:[],visitTranscripts:[],visitReports:[],outcomes:[],learningCandidates:[],visitLifecycleEvents:[]}
  }
 }

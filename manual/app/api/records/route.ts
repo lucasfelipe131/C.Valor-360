@@ -4,6 +4,7 @@ import { ensureRecordsSchema, hasDatabase } from "../../lib/db";
 import { sessionFromRequest } from "../../lib/access";
 import { publishManualRecordToValor, valor360Configured } from "../../lib/valor360";
 import { authenticatedValor360OwnerForWorkspace } from "../../lib/valor360-workspace-owner";
+import { containsInlineImage, sanitizePhotoDiagnosisPayload } from "../../lib/photo-diagnosis-record";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -15,6 +16,7 @@ const recordTypes = new Set([
   "fertilizer_comparison",
   "season_report",
   "field_analysis",
+  "photo_diagnosis",
   "calculator",
   "crm_import",
   "producer_change",
@@ -116,6 +118,15 @@ export async function POST(request: NextRequest) {
     if (!body.payload || typeof body.payload !== "object") {
       return NextResponse.json({ error: "Conteúdo do registro inválido." }, { status: 400 });
     }
+    if (body.type === "photo_diagnosis" && containsInlineImage(body.payload)) {
+      return NextResponse.json(
+        { error: "O histórico do diagnóstico aceita somente metadados; a imagem original não é armazenada aqui." },
+        { status: 400 },
+      );
+    }
+    const recordPayload = body.type === "photo_diagnosis"
+      ? sanitizePhotoDiagnosisPayload(body.payload)
+      : body.payload;
     const id = /^[0-9a-f-]{36}$/i.test(body.id ?? "") ? body.id! : randomUUID();
     const pool = await ensureRecordsSchema();
     const result = await pool.query(
@@ -139,7 +150,7 @@ export async function POST(request: NextRequest) {
         body.type,
         String(body.title ?? "").slice(0, 240),
         String(body.producerName ?? "").slice(0, 180),
-        JSON.stringify(body.payload),
+        JSON.stringify(recordPayload),
       ],
     );
     if (!result.rows[0]) {

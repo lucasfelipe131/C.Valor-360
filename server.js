@@ -32,6 +32,11 @@ import {createVoiceCandidateExtractor} from './server/voice-capture/extraction.j
 import {createVoiceCaptureService} from './server/voice-capture/service.js'
 import {normalizeValIntent,routeValIntent} from './server/ai-reasoning/intent-router.js'
 import {buildClientMarketResponse,buildFastClientResponse,buildFastMarketResponse,finalizeAttachmentRecommendation,routeSystemCapability} from './server/decision-copilot/capability-router.js'
+import {buildCapabilityExecutionResponse,buildGeneralNoClientResponse,executeCapabilityPlan,validateActiveContext} from './server/decision-copilot/capability-executor.js'
+import {attachLatencyPerformance,createLatencyTrace,valLatencyMetrics} from './server/decision-copilot/latency-observability.js'
+import {createSessionContextCache} from './server/decision-copilot/session-context-cache.js'
+import {normalizeSessionCommand} from './server/decision-copilot/session-command-router.js'
+import {probeVoiceAudioDuration,validateVoiceAudio} from './server/voice-capture/storage.js'
 
 const port=Number(process.env.PORT||3000)
 const appRoot=dirname(fileURLToPath(import.meta.url))
@@ -87,6 +92,7 @@ const voiceStorage=createRepositoryAttachmentVoiceStorage({repository,maxAudioBy
 const voiceExtractor=createVoiceCandidateExtractor({client:voiceOpenAI,model:config.voiceExtractionModel,timeoutMs:Math.min(config.openaiTimeoutMs,60_000)})
 const voiceCapture=createVoiceCaptureService({repository,storageProvider:voiceStorage,transcriptionProvider:voiceTranscriptionProvider,extractor:voiceExtractor,visitLoop,prepareVisit:prepareVisitExecution,maxDurationSeconds:config.voiceMaxDurationSeconds})
 const valProgress=createValProgressTracker()
+const valSessionContextCache=createSessionContextCache()
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
 function consumeRateLimit(scope,key,limit){const now=Date.now();const bucketKey=`${scope}:${key}`;const current=rateBuckets.get(bucketKey);if(!current||current.resetAt<=now){rateBuckets.set(bucketKey,{count:1,resetAt:now+600_000});return true}if(current.count>=limit)return false;current.count+=1;return true}
@@ -152,9 +158,11 @@ async function handleApi(request,response,url){
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
- const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
+ const requestStartedAt=performance.now();const authStartedAt=performance.now()
  const identity=protectedPath?await sessionIdentity(request):null
+ const authLatencyMs=performance.now()-authStartedAt
  if(protectedPath&&auth.configured&&!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
  if(protectedPath&&identity?.mustChangePassword)return json(response,403,{error:'Troque a senha temporária antes de acessar a carteira.'})
  if(protectedPath&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para operar dados fora do modo demonstrativo.'})}
@@ -163,6 +171,7 @@ async function handleApi(request,response,url){
  if(valRecommendationPath&&config.openaiApiKey&&!auth.configured)return json(response,503,{error:'Configure VAL_ADMIN_EMAIL, VAL_ADMIN_PASSWORD e VAL_SESSION_SECRET antes de ativar a IA em produção.'})
  if(valRecommendationPath&&config.openaiApiKey&&!database.configured)return json(response,503,{error:'Configure DATABASE_URL antes de ativar a IA com dados reais.'})
  if(url.pathname==='/api/admin/metrics'&&request.method==='GET')return json(response,200,await accessRepository.getAdminMetrics(identity,Number(url.searchParams.get('days')||30)))
+ if(url.pathname==='/api/val/latency-metrics'&&request.method==='GET')return json(response,200,{...valLatencyMetrics.snapshot(),cache:valSessionContextCache.stats()})
  if(url.pathname==='/api/portfolio-admin/users'&&request.method==='GET')return json(response,200,{users:await accessRepository.listUsers(identity)})
  if(url.pathname==='/api/portfolio-admin/users'&&request.method==='POST')return json(response,201,await accessRepository.createUser(identity,await body(request)))
  if(url.pathname==='/api/portfolio-admin/users'&&request.method==='PATCH')return json(response,200,{saved:true,user:await accessRepository.updateUser(identity,await body(request))})
@@ -170,7 +179,29 @@ async function handleApi(request,response,url){
   const payload=await body(request);return json(response,200,{saved:true,...await accessRepository.resetPassword(identity,payload.id)})
  }
  if(url.pathname==='/api/usage/events'&&request.method==='POST'){
-  const payload=await body(request);await accessRepository.recordUsage(identity,{eventType:'page_view',page:clean(payload.page),entityType:clean(payload.entityType),entityId:clean(payload.entityId)});return json(response,202,{accepted:true})
+  const payload=await body(request)
+  if(payload.eventType==='agro_hero_interaction'){
+   const allowedActions=new Set(['voice','text','photo','file']);const allowedStatuses=new Set(['idle','loading','success','error']);const allowedPhases=new Set(['idle','dispatching','integration','permission','processing','recording','requesting','selecting','validation','composer_open','delivered','cancelled'])
+   const action=clean(payload.metadata?.action).toLowerCase();const status=clean(payload.metadata?.status).toLowerCase();const phase=clean(payload.metadata?.phase).toLowerCase()
+   if(!allowedActions.has(action)||!allowedStatuses.has(status)||!allowedPhases.has(phase))return json(response,400,{error:'Evento do hero inválido.',code:'agro_hero_event_invalid'})
+   const errorCode=clean(payload.metadata?.errorCode).toLowerCase().replace(/[^a-z0-9_-]/g,'').slice(0,80)||null
+   const contextTypes=[...new Set((Array.isArray(payload.metadata?.contextTypes)?payload.metadata.contextTypes:[]).map(value=>clean(value).toLowerCase().replace(/[^a-z0-9_-]/g,'')).filter(Boolean))].slice(0,8)
+   const entityType=clean(payload.entityType)==='client'?'client':null;const entityId=entityType?clean(payload.entityId)||null:null
+   await accessRepository.recordUsage(identity,{eventType:'agro_hero_interaction',page:'agro',entityType,entityId,metadata:{action,status,phase,...(errorCode?{errorCode}:{}),contextTypes}})
+   return json(response,202,{accepted:true})
+  }
+  await accessRepository.recordUsage(identity,{eventType:'page_view',page:clean(payload.page),entityType:clean(payload.entityType),entityId:clean(payload.entityId)});return json(response,202,{accepted:true})
+ }
+ if(url.pathname==='/api/val/voice/transcribe'&&request.method==='POST'){
+  const actorId=String(identity?.id||identity?.email||'demo@valor360.local')
+  if(!consumeRateLimit('voice-transient',actorId,config.voiceRequestsPerTenMinutes*2))return json(response,429,{error:'Limite temporário de transcrições atingido. Aguarde alguns minutos.',code:'voice_rate_limit'})
+  const payload=await body(request);const supplied=payload?.attachment?.file&&typeof payload.attachment.file==='object'?payload.attachment.file:payload
+  const audio=validateVoiceAudio({dataBase64:supplied.dataUrl||supplied.dataBase64,mimeType:supplied.mimeType,originalName:supplied.originalName||supplied.name,durationSeconds:supplied.durationSeconds})
+  const durationSeconds=await probeVoiceAudioDuration({bytes:audio.bytes,mimeType:audio.mimeType})
+  const controller=new AbortController();request.once('aborted',()=>controller.abort());response.once('close',()=>{if(!response.writableEnded)controller.abort()})
+  const startedAt=Date.now();const transcription=await voiceTranscriptionProvider.transcribe({bytes:audio.bytes,mimeType:audio.mimeType,fileName:audio.originalName,durationSeconds,language:'pt-BR',signal:controller.signal})
+  observe('voice.transient.transcribed',{provider:transcription.provider,model:transcription.model,sizeBytes:audio.bytes.length,durationSeconds,durationMs:Date.now()-startedAt,outcome:'ok'})
+  return json(response,200,{contract_version:'val.voice_transient.v1',transcript:transcription.text,language:transcription.language||'pt-BR',durationSeconds:transcription.duration_seconds||durationSeconds,persistenceMode:'NONE',storage:'NONE'})
  }
  if(url.pathname==='/api/v1/voice-interactions'&&request.method==='POST'){
   const actorId=String(identity?.id||identity?.email||'demo@valor360.local');if(!consumeRateLimit('voice-create',actorId,config.voiceRequestsPerTenMinutes*2))return json(response,429,{error:'Limite temporário de capturas atingido. Aguarde alguns minutos.',code:'voice_rate_limit'});const payload=await body(request)
@@ -197,6 +228,8 @@ async function handleApi(request,response,url){
   if(action==='confirm'&&request.method==='POST'){
    if(!consumeRateLimit('voice-confirm',actorId,config.voiceRequestsPerTenMinutes*2))return json(response,429,{error:'Limite temporário de confirmações atingido. Aguarde alguns minutos.',code:'voice_rate_limit'})
    const result=await voiceCapture.confirm({tenantId,ownerId:identity?.id,actorId,id,input:await body(request),requestId:currentRequestContext()?.requestId})
+   const confirmedClientId=clean(result.voice_interaction?.client_id||result.voice_interaction?.clientId||result.voice_interaction?.source_context?.client_id)
+   if(confirmedClientId)valSessionContextCache.invalidate({tenantId,ownerId:identity?.id||identity?.email,clientId:confirmedClientId})
    await accessRepository.recordUsage(identity,{eventType:'voice_interaction_confirmed',page:'val',entityType:'voice_interaction',entityId:id,metadata:{interactionType:result.voice_interaction.interaction_type,status:result.voice_interaction.state,confirmedCandidates:result.voice_interaction.reviewed_candidates?.filter(item=>item.review_status==='CONFIRMED').length||0}}).catch(()=>null)
    return json(response,200,result)
   }
@@ -253,37 +286,43 @@ async function handleApi(request,response,url){
  }
  if(url.pathname==='/api/val/attachments'&&request.method==='GET'){
   const clientId=clean(url.searchParams.get('clientId'));if(!clientId)return json(response,400,{error:'Selecione um produtor para ver os arquivos.'})
-  const attachments=await repository.listAttachments({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,limit:30})
+  const attachments=await repository.listAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,limit:30})
   return json(response,200,{attachments})
  }
  if(url.pathname==='/api/val/attachments'&&request.method==='POST'){
   const payload=await body(request);const clientId=clean(payload.clientId);if(!clientId)return json(response,400,{error:'Selecione um produtor antes de anexar.'})
   const normalized=normalizedAttachment(payload)
-  const attachment=await repository.createAttachment({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,...normalized})
+  const attachment=await repository.createAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,...normalized})
+  valSessionContextCache.invalidate({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId})
   await accessRepository.recordUsage(identity,{eventType:'val_attachment_uploaded',page:'val',entityType:'client',entityId:clientId,metadata:{mimeType:normalized.mimeType,sizeBytes:normalized.sizeBytes}})
   return json(response,201,{attachment})
  }
  if(url.pathname==='/api/val/attachments'&&request.method==='PATCH'){
   const payload=await body(request);const id=attachmentId(payload.id);if(!id)return json(response,400,{error:'Arquivo inválido.'})
   const status=clean(payload.status);const analysis=payload.analysis&&typeof payload.analysis==='object'?payload.analysis:undefined
-  const attachment=await repository.updateAttachment({tenantId:config.defaultTenantId,ownerId:identity?.id,id,status,analysis})
+  const attachment=await repository.updateAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id,status,analysis})
+  valSessionContextCache.invalidate({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:attachment.clientId})
   await accessRepository.recordUsage(identity,{eventType:'val_attachment_'+status,page:'val',entityType:'client',entityId:attachment.clientId,metadata:{attachmentId:id}})
   return json(response,200,{attachment})
  }
  const attachmentContentMatch=url.pathname.match(/^\/api\/val\/attachments\/([0-9a-f-]{36})$/i)
  if(attachmentContentMatch&&request.method==='GET'){
-  const attachment=await repository.getAttachment({tenantId:config.defaultTenantId,ownerId:identity?.id,id:attachmentContentMatch[1]})
+  const attachment=await repository.getAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id:attachmentContentMatch[1]})
   if(!attachment)return json(response,404,{error:'Arquivo não encontrado.'})
   const binary=Buffer.from(attachment.dataBase64||'','base64')
   response.writeHead(200,{...securityHeaders,'Content-Type':attachment.mimeType,'Content-Length':binary.length,'Content-Disposition':"inline; filename*=UTF-8''"+encodeURIComponent(attachment.originalName),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'})
   response.end(binary);return true
  }
  if(valRecommendationPath&&request.method==='POST'){
+  const intentStartedAt=performance.now()
   const rateIdentity=identity?.id||identity?.email||requestIdentity(request)
   if(!consumeRateLimit('val',rateIdentity,config.aiRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de análises atingido. Aguarde alguns minutos.'})
   const payload=await body(request);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const message=String(payload.message||payload.question||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).trim().slice(0,3000)
   const clientId=clean(payload.clientId||payload.client?.id)
   const requestedIntent=payload.intent==null?'':String(payload.intent)
+  const requestedSessionCommand=payload.sessionCommand==null?'':String(payload.sessionCommand)
+  if(requestedSessionCommand&&!normalizeSessionCommand(requestedSessionCommand))return json(response,400,{error:'O comando de conversa informado não é reconhecido.',code:'val_session_command_invalid'})
+  const activeContext=payload.context&&typeof payload.context==='object'&&!Array.isArray(payload.context)?{type:clean(payload.context.type).toLowerCase(),id:clean(payload.context.id),label:clean(payload.context.label)}:null
   if(requestedIntent&&!normalizeValIntent(requestedIntent))return json(response,400,{error:'A intenção informada não é reconhecida pela VAL.',code:'val_intent_invalid'})
   if(attachmentIds.length&&!clientId)return json(response,422,{error:'Escolha o produtor antes de anexar uma evidência à conta.',code:'val_attachment_client_required'})
   const requestedAttachments=attachmentIds.length?await repository.getAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,ids:attachmentIds}):[]
@@ -291,53 +330,92 @@ async function handleApi(request,response,url){
   if(attachmentIds.some(id=>!requestedAttachmentIds.has(String(id))))return json(response,404,{error:'Um ou mais arquivos não pertencem ao produtor selecionado ou não estão mais disponíveis.',code:'val_attachment_scope_invalid'})
   if(requestedAttachments.some(item=>!item.dataBase64))return json(response,422,{error:'Um ou mais arquivos persistidos não puderam ser carregados para análise.',code:'val_attachment_content_unavailable'})
   const requestedAttachmentTypes=requestedAttachments.map(item=>String(item.mimeType||'').toLowerCase()).filter(Boolean)
-  const routedIntent=routeValIntent({message,intentHint:requestedIntent,hasClient:Boolean(clientId),attachmentTypes:requestedAttachmentTypes})
-  if(routedIntent.persistence_mode!=='NONE')return json(response,409,{error:'Use Registrar informação para revisar e confirmar qualquer atualização de memória.',code:'val_confirmation_required'})
+  const routedIntent=routeValIntent({message,intentHint:requestedIntent,sessionCommandHint:requestedSessionCommand,hasClient:Boolean(clientId),attachmentTypes:requestedAttachmentTypes})
+  if(routedIntent.persistence_mode!=='NONE'){
+   if(clientId)valSessionContextCache.invalidate({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId})
+   return json(response,409,{error:'Use Registrar informação para revisar e confirmar qualquer atualização de memória.',code:'val_confirmation_required'})
+  }
   const conversationId=clean(payload.conversationId)
   const requestId=normalizeValProgressRequestId(payload.requestId)||randomUUID()
   if(!clientId){
-   const capability=routeSystemCapability({message,intentHint:routedIntent.intent,hasClient:false})
-   if(!capability.direct||!capability.capabilities.includes('MARKET_COMMODITY'))return json(response,422,{error:'Para cruzar esta pergunta com histórico, agronomia ou oportunidade, escolha um produtor. Mercado e commodities podem ser consultados sem selecionar uma conta.',code:'val_client_context_required',intent:routedIntent.intent})
-   const startedAt=Date.now();const workspace=await grainRepository.getMarketReferences(identity?.id)
-   const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,latencyMs:Date.now()-startedAt})
-   observe('val.answer.completed',{mode:'fast',engineMode:'rules',reasoningPath:'FAST',capability:'MARKET_COMMODITY',outcome:'ok'})
-   await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'portfolio',entityId:null,metadata:{mode:'fast',engineMode:'rules',intent:routedIntent.intent,reasoningPath:'FAST',currentDataStatus:fast.responseMetadata.currentDataStatus}})
-   return json(response,200,fast)
+   const capability=routeSystemCapability({message,intentHint:routedIntent.intent,sessionCommandHint:requestedSessionCommand,hasClient:false,activeContext})
+   const latency=createLatencyTrace({path:capability.path,intent:routedIntent.intent,startAt:requestStartedAt});latency.set('AUTH',authLatencyMs);latency.set('INTENT',performance.now()-intentStartedAt)
+   const complete=(payloadResult,execution=null)=>{latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(payloadResult,{latency:values,path:capability.path,intent:routedIntent.intent,toolExecution:execution});const measuredLatency=enriched?.responseMetadata?.performance?.latency||values;valLatencyMetrics.record({path:capability.path,intent:routedIntent.intent,latency:measuredLatency});observe('val.answer.completed',{mode:'direct',engineMode:'rules',intent:routedIntent.intent,reasoningPath:capability.path,capability:execution?.tool_result?.capability||capability.capabilities[0],capabilityStatus:execution?.tool_result?.status,ttfrMs:measuredLatency.TTFR,outcome:'ok'});return enriched}
+   if(activeContext)validateActiveContext({activeContext,context:{},clientId:''})
+   if(capability.current_data_required&&capability.capabilities.some(item=>['WEATHER','LABELS'].includes(item)))return json(response,422,{error:'A fonte atual autorizada não está conectada neste ambiente. A VAL não usará memória ou conteúdo antigo como dado atual.',code:'val_current_source_unavailable',intent:routedIntent.intent,reasoningPath:capability.path,capabilitiesPlanned:capability.capabilities})
+   if(capability.capabilities.includes('MARKET_COMMODITY')){
+    const startedAt=Date.now();latency.start('TOOL');const workspace=await grainRepository.getMarketReferences(identity?.id);latency.end('TOOL')
+    const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,latencyMs:Date.now()-startedAt})
+    const final=complete(fast)
+    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'portfolio',entityId:null,metadata:{mode:'fast',engineMode:'rules',intent:routedIntent.intent,reasoningPath:capability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
+    return json(response,200,final)
+   }
+   if(capability.session_command){
+    latency.start('TOOL');const execution=await executeCapabilityPlan({route:capability,message,context:{priorRecommendations:[]},clientId:'',activeContext});latency.end('TOOL')
+    const direct=buildCapabilityExecutionResponse({execution,route:capability,message,organizationId:identity?.tenantId||config.defaultTenantId,conversationId})
+    return json(response,200,complete(direct,execution))
+   }
+   const general=buildGeneralNoClientResponse({message,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,conversationId})
+   return json(response,200,complete(general))
   }
-  const clientCapability=routeSystemCapability({message,intentHint:routedIntent.intent,hasClient:true,attachmentTypes:requestedAttachmentTypes})
+  const clientCapability=routeSystemCapability({message,intentHint:routedIntent.intent,sessionCommandHint:requestedSessionCommand,hasClient:true,attachmentTypes:requestedAttachmentTypes,activeContext})
+  const latency=createLatencyTrace({path:clientCapability.path,intent:routedIntent.intent,startAt:requestStartedAt});latency.set('AUTH',authLatencyMs);latency.set('INTENT',performance.now()-intentStartedAt)
+  const tenantId=identity?.tenantId||config.defaultTenantId;const scopedOwnerId=identity?.id||identity?.email
+  let authorizedContext=null;let activeContextRef=null;let toolExecution=null
+  const loadAuthorizedContext=async()=>{
+   if(authorizedContext)return authorizedContext
+   latency.start('CONTEXT')
+   authorizedContext=await valSessionContextCache.getOrLoad({tenantId,ownerId:scopedOwnerId,clientId},()=>repository.getClientContext({tenantId,ownerId:identity?.id,clientId,client:payload.client||{},contextRequest:{requestId,objective:`copilot_${clientCapability.path.toLowerCase()}`,actorRole:identity?.role||'consultant',conversationId}}))
+   latency.end('CONTEXT');return authorizedContext
+  }
+  const completeClient=(payloadResult,execution=toolExecution)=>{latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(payloadResult,{latency:values,path:clientCapability.path,intent:routedIntent.intent,toolExecution:execution});const measuredLatency=enriched?.responseMetadata?.performance?.latency||values;valLatencyMetrics.record({path:clientCapability.path,intent:routedIntent.intent,latency:measuredLatency});observe('val.answer.completed',{mode:clientCapability.path.toLowerCase(),engineMode:payloadResult?.engineMode||'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,capability:execution?.tool_result?.capability||clientCapability.capabilities[0],capabilityStatus:execution?.tool_result?.status,materialityScore:clientCapability.materiality.score,engineRequired:clientCapability.materiality.engine_required,ttfrMs:measuredLatency.TTFR,outcome:'ok'});return enriched}
+  if(activeContext){const scoped=await loadAuthorizedContext();activeContextRef=validateActiveContext({activeContext,context:scoped,clientId})}
   if(clientCapability.current_data_required&&clientCapability.capabilities.some(capability=>['WEATHER','LABELS'].includes(capability))){
    const missingSource=clientCapability.capabilities.includes('WEATHER')?'clima':'bula/rótulo oficial'
    return json(response,422,{error:`A fonte atual autorizada de ${missingSource} não está conectada neste ambiente. A VAL não usará memória ou conteúdo antigo como dado atual.`,code:'val_current_source_unavailable',intent:routedIntent.intent,reasoningPath:clientCapability.path,capabilitiesPlanned:clientCapability.capabilities})
+  }
+  if(clientCapability.path==='TOOL'||clientCapability.session_command){
+   const scoped=await loadAuthorizedContext();latency.start('TOOL')
+   toolExecution=await executeCapabilityPlan({route:clientCapability,message,context:scoped,attachments:requestedAttachments,clientId,activeContext})
+   latency.end('TOOL');activeContextRef=toolExecution.active_context||activeContextRef
+   if(clientCapability.direct||!toolExecution.reasoning_required){
+    const direct=buildCapabilityExecutionResponse({execution:toolExecution,route:clientCapability,message,organizationId:tenantId,clientId,clientName:scoped.client?.name||payload.client?.name,conversationId})
+    const final=completeClient(direct,toolExecution)
+    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:clientCapability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,toolStatus:toolExecution.tool_result?.status}})
+    return json(response,200,final)
+   }
+  }
+  if(clientCapability.path==='FAST'&&clientCapability.direct&&!clientCapability.capabilities.some(item=>['MARKET_COMMODITY','VISIT_HISTORY'].includes(item))){
+   const scoped=await loadAuthorizedContext();latency.start('TOOL');toolExecution=await executeCapabilityPlan({route:clientCapability,message,context:scoped,clientId,activeContext});latency.end('TOOL')
+   const direct=buildCapabilityExecutionResponse({execution:toolExecution,route:clientCapability,message,organizationId:tenantId,clientId,clientName:scoped.client?.name||payload.client?.name,conversationId})
+   return json(response,200,completeClient(direct,toolExecution))
   }
   let marketAttachmentBase=null
   if(clientCapability.capabilities.includes('MARKET_COMMODITY')){
    const startedAt=Date.now()
    const facts=await repository.getFastClientFacts({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId})
    if(!attachmentIds.length&&clientCapability.path==='FAST'&&clientCapability.direct){
-    const workspace=await grainRepository.getMarketReferences(identity?.id)
+    latency.start('TOOL');const workspace=await grainRepository.getMarketReferences(identity?.id);latency.end('TOOL')
     const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,latencyMs:Date.now()-startedAt})
-    observe('val.answer.completed',{mode:'fast',engineMode:'rules',reasoningPath:'FAST',capability:'MARKET_COMMODITY',outcome:'ok'})
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:'fast',engineMode:'rules',intent:routedIntent.intent,reasoningPath:'FAST',currentDataStatus:fast.responseMetadata.currentDataStatus}})
-    return json(response,200,fast)
+    return json(response,200,completeClient(fast,null))
    }
    const [context,workspace]=await Promise.all([
-    repository.getClientContext({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,client:facts.client,contextRequest:{requestId,objective:'market_account_cross',actorRole:identity?.role||'consultant',conversationId}}),
+    loadAuthorizedContext(),
     grainRepository.getWorkspace(identity?.id)
    ])
    const deep=buildClientMarketResponse({workspace,context,facts,message,intentHint:routedIntent.intent,attachmentTypes:requestedAttachmentTypes,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,latencyMs:Date.now()-startedAt})
    if(!attachmentIds.length){
-    observe('val.answer.completed',{mode:'deep',engineMode:'rules',reasoningPath:'DEEP',capability:'MARKET_COMMODITY',outcome:'ok'})
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:'deep',engineMode:'rules',intent:routedIntent.intent,reasoningPath:'DEEP',currentDataStatus:deep.responseMetadata.currentDataStatus}})
-    return json(response,200,deep)
+    return json(response,200,completeClient(deep,null))
    }
    marketAttachmentBase=deep
   }
   if(!attachmentIds.length&&clientCapability.direct&&clientCapability.path==='FAST'&&clientCapability.capabilities.includes('VISIT_HISTORY')){
    const startedAt=Date.now();const facts=await repository.getFastClientFacts({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId})
    const fast=buildFastClientResponse({facts,message,organizationId:identity?.tenantId||config.defaultTenantId,conversationId,latencyMs:Date.now()-startedAt})
-   observe('val.answer.completed',{mode:'fast',engineMode:'rules',reasoningPath:'FAST',capability:'VISIT_HISTORY',outcome:'ok'})
    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:'fast',engineMode:'rules',intent:routedIntent.intent,reasoningPath:'FAST'}})
-   return json(response,200,fast)
+   return json(response,200,completeClient(fast,null))
   }
   const ownerKey=progressOwnerKey(identity,request)
   const requestMode=clean(payload.mode)||'daily'
@@ -354,21 +432,27 @@ async function handleApi(request,response,url){
     actor:{id:actorId,role:identity?.role||'consultant'},
     subject:{type:'client',id:clientId},
     objective:resolveCoreObjective({message,requestedStage}),
-    context_refs:[{type:'client',id:clientId},...attachmentIds.map(id=>({type:'attachment',id}))],
+    context_refs:[{type:'client',id:clientId},...(activeContextRef?[{type:activeContextRef.type,id:activeContextRef.id}]:[]),...attachmentIds.map(id=>({type:'attachment',id}))],
     policy_context:{resource:'val_recommendation',operation:'execute',scope:'own_portfolio',scope_ref:actorId}
    })
    const finalizeRecommendation=attachmentIds.length?draft=>finalizeAttachmentRecommendation({draft,attachmentIds,attachmentTypes:requestedAttachmentTypes,marketResponse:marketAttachmentBase}):undefined
+   latency.start('MODEL')
    const coreResponse=await valCore.execute(requestEnvelope,{engineInput:{tenantId:organizationId,ownerId:identity?.id,clientId,client:payload.client||{},message,attachmentIds,mode:requestMode,requestedStage:clean(payload.requestedStage),intent:routedIntent.intent,conversationId,finalizeRecommendation,signal:controller.signal,onProgress:stage=>valProgress.update({requestId,ownerId:ownerKey,stage})}})
+   latency.end('MODEL')
    let result=coreResponse.recommendation
+   latency.start('VALIDATION')
    if(attachmentIds.length){
     const processed=new Set((Array.isArray(result.attachments)?result.attachments:[]).filter(item=>['interpreted','confirmed'].includes(String(item?.status||'').toLowerCase())).map(item=>String(item.id)))
     if(attachmentIds.some(id=>!processed.has(String(id)))){valProgress.fail({requestId,ownerId:ownerKey});controller.abort();return json(response,422,{error:'A VAL validou os arquivos, mas a leitura multimodal não ficou disponível. Nenhuma cotação, diagnóstico, clima ou bula foi apresentado como se o anexo tivesse sido consumido.',code:'val_attachment_analysis_unavailable',intent:routedIntent.intent,reasoningPath:'DEEP',capabilitiesPlanned:clientCapability.capabilities})}
     if(marketAttachmentBase&&result.responseMetadata?.attachmentCompositionStatus!=='EXECUTED'){valProgress.fail({requestId,ownerId:ownerKey});controller.abort();return json(response,422,{error:'A leitura do anexo não foi composta com a cotação atual antes da persistência.',code:'val_attachment_composition_unavailable',intent:routedIntent.intent,reasoningPath:'DEEP',capabilitiesPlanned:clientCapability.capabilities})}
    }
-   observe('val.answer.completed',{mode:requestMode,engineMode:result.engineMode,outcome:'ok'})
+   latency.end('VALIDATION')
+   if(toolExecution&&attachmentIds.length){
+    const scoped=authorizedContext||await loadAuthorizedContext();toolExecution=await executeCapabilityPlan({route:clientCapability,message,context:scoped,attachments:result.attachments||requestedAttachments,clientId,activeContext})
+   }
    valProgress.complete({requestId,ownerId:ownerKey})
    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:requestMode,engineMode:result.engineMode,attachments:attachmentIds.length,intent:routedIntent.intent,conversationScoped:Boolean(conversationId)}})
-   if(result===coreResponse.recommendation)return json(response,200,url.pathname==='/api/v1/val/recommendations'?coreResponse:legacyRecommendationResponse(coreResponse,requestId))
+   result=completeClient(result,toolExecution)
    const effectiveCoreResponse={...coreResponse,recommendation:result}
    return json(response,200,url.pathname==='/api/v1/val/recommendations'?effectiveCoreResponse:legacyRecommendationResponse(effectiveCoreResponse,requestId))
   }catch(error){valProgress.fail({requestId,ownerId:ownerKey});throw error}
@@ -379,7 +463,7 @@ async function handleApi(request,response,url){
   if(!Number.isInteger(rating)||rating<1||rating>5)return json(response,400,{error:'Avalie de 1 a 5.'})
   const requestedOutcome=clean(payload.outcome);const normalizedOutcome=requestedOutcome?feedbackOutcomes[requestedOutcome]:null
   if(requestedOutcome&&!normalizedOutcome)return json(response,400,{error:'Resultado de feedback inválido.'})
-  const id=await repository.recordFeedback({tenantId:config.defaultTenantId,ownerId:identity?.id,recommendationId,rating,outcome:normalizedOutcome,value:Number.isFinite(Number(payload.value))?Number(payload.value):null,reason:clean(payload.reason)||null,notes:String(payload.notes||'').slice(0,2000)})
+  const id=await repository.recordFeedback({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,recommendationId,rating,outcome:normalizedOutcome,value:Number.isFinite(Number(payload.value))?Number(payload.value):null,reason:clean(payload.reason)||null,notes:String(payload.notes||'').slice(0,2000)})
   await accessRepository.recordUsage(identity,{eventType:'val_feedback',page:'val',entityType:'recommendation',entityId:recommendationId})
   return json(response,201,{saved:true,id})
  }

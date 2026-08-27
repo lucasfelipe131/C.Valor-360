@@ -43,6 +43,21 @@ test('entradas públicas do repositório não aceitam sobrescrever o tenant',asy
   assert.equal(saved,0)
 })
 
+test('fallback de anexos não deduplica, lista nem abre conteúdo entre tenants',async()=>{
+  const store={surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[],modelRuns:[],technicalContexts:{},attachments:[]}}
+  const config={db:{configured:false},readStore:()=>store,saveStore:()=>{}}
+  const repositoryA=new ValRepository({...config,tenantId:tenantA})
+  const repositoryB=new ValRepository({...config,tenantId:tenantB})
+  const shared={ownerId:'mesmo-consultor',clientId:'mesmo-produtor',originalName:'campo.jpg',mimeType:'image/jpeg',sizeBytes:3,dataBase64:'YWJj'}
+  const attachmentA=await repositoryA.createAttachment({...shared,tenantId:tenantA})
+  const attachmentB=await repositoryB.createAttachment({...shared,tenantId:tenantB})
+  assert.notEqual(attachmentA.id,attachmentB.id)
+  assert.equal((await repositoryA.listAttachments({...shared,tenantId:tenantA})).length,1)
+  assert.equal((await repositoryB.listAttachments({...shared,tenantId:tenantB})).length,1)
+  assert.equal('dataBase64' in (await repositoryA.listAttachments({...shared,tenantId:tenantA}))[0],false)
+  assert.equal(await repositoryB.getAttachment({tenantId:tenantB,ownerId:shared.ownerId,id:attachmentA.id}),null)
+})
+
 test('a identidade do Manual carrega o tenant assinado e as queries críticas o filtram',()=>{
   const secret='segredo-de-embed-com-mais-de-trinta-e-dois-caracteres'
   const signed=signedTechnicalIdentity({session:{email:'campo@example.com',role:'consultant'},tenantId:tenantA,secret})

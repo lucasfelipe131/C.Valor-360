@@ -4,11 +4,14 @@ import {legacyVisitLifecycle} from '../visit-loop/lifecycle.js'
 
 export const systemCapabilityRouterVersion='val.system_capability_router.v1'
 export const reasoningPathVersion='val.fast_deep_reasoning.v1'
+export const reasoningPathsArchitectureVersion='val.reasoning_paths.v2'
+export const reasoningPaths=Object.freeze(['FAST','CONTEXT','DEEP','TOOL','LIVE_DATA'])
 
 export const systemCapabilities=Object.freeze([
  'CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY','VISIT_HISTORY','OPPORTUNITY_PIPELINE',
  'AGRONOMIC_WORKSPACE','SOIL_ANALYSIS','IMAGE_DIAGNOSIS','CALCULATORS','LABELS','WEATHER',
- 'MARKET_COMMODITY','KNOWLEDGE_LIBRARY','AGRONOMIST_MANUAL','VOICE_INPUT','VOICE_OUTPUT'
+ 'MARKET_COMMODITY','KNOWLEDGE_LIBRARY','AGRONOMIST_MANUAL','VOICE_INPUT','VOICE_OUTPUT',
+ 'AREA_MAPPING','NUTRISCAN','FITOSCAN','SESSION_COMMAND'
 ])
 
 const list=value=>Array.isArray(value)?value:[]
@@ -16,7 +19,7 @@ const clean=(value,max=2000)=>String(value??'').replace(/\s+/g,' ').trim().slice
 const normalize=value=>clean(value,4000).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR')
 const commodityLabels={soja:'Soja',milho:'Milho',trigo:'Trigo',sorgo:'Sorgo',feijao:'Feijão',arroz:'Arroz',cevada:'Cevada'}
 const marketKindLabels={spot:'disponível (spot)',forward:'a termo (forward)',futures:'futuro (futures)'}
-const clientIndependent=new Set(['ASK_MARKET','ASK_COMMODITY','CHECK_MARKET'])
+const clientIndependent=new Set(['ASK_GENERAL','ASK_MARKET','ASK_COMMODITY','CHECK_MARKET','CHECK_WEATHER','CHECK_LABEL'])
 
 function commodityFrom(message=''){
  const source=normalize(message)
@@ -103,52 +106,97 @@ function overlapsRange(item={},range=null){
  return first<=range.end&&last>=range.start
 }
 
-export function routeSystemCapability({message='',intentHint='',hasClient=false,attachmentTypes=[]}={}){
- const intentRoute=routeValIntent({message,intentHint,hasClient,attachmentTypes})
+function materialityFor({path,intent,source,capabilities,attachmentTypes=[]}={}){
+ const crossDomain=/\b(?:cruz|compare|estrateg|alternativ|historico.*(?:agronom|preco)|agronom.*(?:historico|preco)|perfil.*mercado)\w*\b/.test(source)
+ const explanatory=/\b(?:por que|explique|o que voce faria|recomenda|estrategia|muda a decisao)\b/.test(source)
+ const toolNeedsInterpretation=['ANALYZE_SOIL','IMAGE_DIAGNOSIS'].includes(intent)||attachmentTypes.length>0
+ if(path==='FAST')return {engine_required:false,score:0,reason:'A resposta é uma leitura literal e determinística de um fato autorizado.'}
+ if(path==='LIVE_DATA')return {engine_required:false,score:.15,reason:'A fonte atual deve responder primeiro; raciocínio só ocorre se o usuário pedir impacto ou comparação.'}
+ if(path==='TOOL')return {engine_required:toolNeedsInterpretation||explanatory,score:toolNeedsInterpretation?.72:.25,reason:toolNeedsInterpretation?'A saída da ferramenta precisa de interpretação governada.':'A ferramenta ou o deep-link resolvem o pedido sem inventar análise.'}
+ if(path==='CONTEXT')return {engine_required:true,score:.55,reason:'A resposta muda com um subconjunto material do contexto da conta.'}
+ return {engine_required:true,score:crossDomain?1:.82,reason:'A decisão exige cruzamento de múltiplos domínios, hipóteses ou evidências.'}
+}
+
+export function assessEngineMateriality(input={}){
+ const materiality=materialityFor(input)
+ return Object.freeze({...materiality,question:'Isso pode mudar materialmente a resposta?'})
+}
+
+export function routeSystemCapability({message='',intentHint='',sessionCommandHint='',hasClient=false,attachmentTypes=[],activeContext=null}={}){
+ const intentRoute=routeValIntent({message,intentHint,sessionCommandHint,hasClient,attachmentTypes})
  const source=normalize(message)
  const capabilities=[]
  let path='DEEP'
  let direct=false
+ let dataPath=null
 
- if(intentRoute.intent==='ASK_CLIENT'&&(/\b(?:ultima|ultimo|mais recente)\b.*\bvisita\b|\bvisita\b.*\b(?:ultima|ultimo|mais recente)\b/.test(source))){
+ if(intentRoute.session_command){
+  capabilities.push('SESSION_COMMAND')
+  if(intentRoute.session_command.command==='DEEPEN'){
+   capabilities.push('CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY','AGRONOMIC_WORKSPACE','KNOWLEDGE_LIBRARY');path='DEEP';direct=false
+  }else if(['EXPLAIN','SHOW_NUMBERS'].includes(intentRoute.session_command.command)){
+   capabilities.push('CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY');path='CONTEXT';direct=false
+  }else path='FAST',direct=true
+ }else if(intentRoute.intent==='ASK_CLIENT'&&(/\b(?:ultima|ultimo|mais recente)\b.*\bvisita\b|\bvisita\b.*\b(?:ultima|ultimo|mais recente)\b/.test(source))){
   capabilities.push('VISIT_HISTORY');path='FAST';direct=true
+ }else if(intentRoute.intent==='ASK_CLIENT'&&/\b(?:quem decide|decisor|compromisso (?:esta )?aberto|qual compromisso|resume (?:a )?conta)\b/.test(source)){
+  capabilities.push('CLIENT_CONTEXT',/compromisso/.test(source)?'COMMERCIAL_HISTORY':'CONFIRMED_MEMORY');path='FAST';direct=true
  }else if(['ASK_MARKET','ASK_COMMODITY','CHECK_MARKET'].includes(intentRoute.intent)){
   capabilities.push('MARKET_COMMODITY')
   const crossAccount=hasClient&&/\b(?:muda|impacta|conversa|abordagem|oportunidade|negociacao|produtor|conta)\b/.test(source)
   if(crossAccount)capabilities.push('CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY','OPPORTUNITY_PIPELINE')
   if(attachmentTypes.length)capabilities.push(attachmentTypes.some(type=>String(type).startsWith('image/'))?'IMAGE_DIAGNOSIS':'KNOWLEDGE_LIBRARY')
-  path=crossAccount||attachmentTypes.length?'DEEP':'FAST';direct=!crossAccount&&!attachmentTypes.length
+  path=crossAccount||attachmentTypes.length?'DEEP':intentRoute.intent==='ASK_COMMODITY'?'FAST':'LIVE_DATA'
+  dataPath='LIVE_DATA';direct=!crossAccount&&!attachmentTypes.length
  }else if(intentRoute.intent==='CHECK_WEATHER'){
-  capabilities.push('WEATHER');path='DEEP';direct=false
+  capabilities.push('WEATHER');path='LIVE_DATA';direct=true
  }else if(intentRoute.intent==='CHECK_LABEL'){
-  capabilities.push('LABELS','AGRONOMIST_MANUAL');path='DEEP';direct=false
+  capabilities.push('LABELS','AGRONOMIST_MANUAL');path='LIVE_DATA';direct=true
  }else if(intentRoute.intent==='CHECK_OPPORTUNITY'){
   capabilities.push('OPPORTUNITY_PIPELINE','COMMERCIAL_HISTORY');path='DEEP';direct=false
  }else if(intentRoute.intent==='CALCULATE'){
-  capabilities.push('CALCULATORS');path='DEEP';direct=false
+  capabilities.push('CALCULATORS');path='TOOL';direct=true
  }else if(intentRoute.intent==='ANALYZE_SOIL'){
-  capabilities.push('SOIL_ANALYSIS','AGRONOMIC_WORKSPACE','AGRONOMIST_MANUAL');path='DEEP'
+  capabilities.push('SOIL_ANALYSIS','AGRONOMIC_WORKSPACE','AGRONOMIST_MANUAL');path='TOOL';direct=false
  }else if(intentRoute.intent==='IMAGE_DIAGNOSIS'){
-  capabilities.push('IMAGE_DIAGNOSIS','AGRONOMIST_MANUAL');path='DEEP'
+  capabilities.push(intentRoute.tool_hint==='NUTRISCAN'?'NUTRISCAN':intentRoute.tool_hint==='FITOSCAN'?'FITOSCAN':'IMAGE_DIAGNOSIS','AGRONOMIST_MANUAL');path='TOOL';direct=false
+ }else if(intentRoute.tool_hint==='AREA_MAPPING'){
+  capabilities.push('AREA_MAPPING','AGRONOMIC_WORKSPACE');path='TOOL';direct=true
  }else if(intentRoute.intent==='ASK_AGRONOMIC'){
-  capabilities.push('AGRONOMIC_WORKSPACE','AGRONOMIST_MANUAL','KNOWLEDGE_LIBRARY');path='DEEP'
+  capabilities.push('AGRONOMIC_WORKSPACE','AGRONOMIST_MANUAL','KNOWLEDGE_LIBRARY')
+  path=/\b(?:cruz|compare|historico|perfil|preco|mercado)\w*\b/.test(source)?'DEEP':'CONTEXT';direct=false
  }else if(intentRoute.intent==='PREPARE_VISIT'){
-  capabilities.push('CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY','VISIT_HISTORY','OPPORTUNITY_PIPELINE','KNOWLEDGE_LIBRARY');path='DEEP'
+  capabilities.push('CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY','VISIT_HISTORY','OPPORTUNITY_PIPELINE','KNOWLEDGE_LIBRARY');path='DEEP';direct=false
  }else if(intentRoute.intent==='ASK_CLIENT'){
-  capabilities.push('CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY');path='DEEP'
- }else capabilities.push('KNOWLEDGE_LIBRARY')
+  capabilities.push('CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY')
+  const multiDomain=/\b(?:cruz|estrateg)\w*\b/.test(source)&&[/\b(?:agronomia|agronomico|talhao|safra)\b/,/\b(?:historico|perfil|memoria|visita)\b/,/\b(?:preco|mercado|commodity)\b/].filter(pattern=>pattern.test(source)).length>=2
+  path=multiDomain?'DEEP':'CONTEXT';direct=false
+ }else{
+  capabilities.push('KNOWLEDGE_LIBRARY');path='CONTEXT';direct=false
+ }
 
+ if(activeContext?.type==='opportunity'&&!capabilities.includes('OPPORTUNITY_PIPELINE'))capabilities.push('OPPORTUNITY_PIPELINE')
+ if(['visit','visit_draft'].includes(activeContext?.type)&&!capabilities.includes('VISIT_HISTORY'))capabilities.push('VISIT_HISTORY')
+ if(activeContext?.type==='agronomic_tool'&&!capabilities.includes('AGRONOMIC_WORKSPACE'))capabilities.push('AGRONOMIC_WORKSPACE')
+ const planned=[...new Set(capabilities)]
+ const materiality=assessEngineMateriality({path,intent:intentRoute.intent,source,capabilities:planned,attachmentTypes})
  return Object.freeze({
   version:systemCapabilityRouterVersion,
   reasoning_path_version:reasoningPathVersion,
+  path_architecture_version:reasoningPathsArchitectureVersion,
   intent:intentRoute.intent,
   path,
+  data_path:dataPath,
   direct,
-  capabilities:[...new Set(capabilities)],
+  capabilities:planned,
   current_data_required:intentRoute.requires_current_data,
-  client_context_required:!clientIndependent.has(intentRoute.intent),
+  client_context_required:!clientIndependent.has(intentRoute.intent)&&!intentRoute.session_command?.local_only,
   persistence_mode:intentRoute.persistence_mode,
-  reason:path==='FAST'?'Uma capacidade determinística responde sem acionar raciocínio profundo.':'A pergunta exige cruzamento de contexto, fontes ou hipóteses.'
+  session_command:intentRoute.session_command,
+  tool_hint:intentRoute.tool_hint,
+  materiality,
+  reasoning_after_tool:path==='TOOL'?'IF_MATERIAL':'NOT_APPLICABLE',
+  reason:materiality.reason
  })
 }
 

@@ -86,7 +86,8 @@ export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}
   if(!isTechnicalWorkspaceRequest(url.pathname))return false
   if(!enabled){json(response,503,{error:'O núcleo técnico ainda não foi incluído neste build.'});return true}
   const resolvedSession=(session||runtimeConfig.demoMode)?session||{email:'demo@valor360.local',tenantId:runtimeConfig.defaultTenantId,role:'admin'}:null
-  const signed=signedTechnicalIdentity({session:resolvedSession,tenantId:runtimeConfig.defaultTenantId,secret:embedSecret})
+  const tenantId=String(resolvedSession?.tenantId||runtimeConfig.defaultTenantId)
+  const signed=signedTechnicalIdentity({session:resolvedSession,tenantId,secret:embedSecret})
   if(!signed){json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'});return true}
   request.headers['x-valor360-identity']=signed.payload
   request.headers['x-valor360-signature']=signed.signature

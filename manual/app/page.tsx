@@ -22,8 +22,16 @@ import AccessPortal, { type AccessSessionUser } from "./AccessPortal";
 import AdminAccessPanel from "./AdminAccessPanel";
 import ProducerCrmImport from "./ProducerCrmImport";
 import NutrientRemovalCalculator from "./NutrientRemovalCalculator";
-import PhotoDiagnosis from "./PhotoDiagnosis";
+import PhotoDiagnosis, { type PhotoDiagnosisContext } from "./PhotoDiagnosis";
 import ProducerLandRegistry, { type LandRegistration } from "./ProducerLandRegistry";
+import {
+  manualNavigationFromUrl,
+  manualNavigationProtocolVersion,
+  normalizeManualNavigation,
+  resolveManualNavigationContext,
+  type ManualNavigationContext,
+  type ManualNavigationCommand,
+} from "./valor360-navigation";
 import {
   BRAZIL_UFS,
   estimateRegionalHarvest,
@@ -1648,6 +1656,26 @@ function linkSoilDraftToProducer(draft: SoilDraft, producers: Producer[]) {
   };
 }
 
+function prefillSoilDraftFromNavigation(
+  draft: SoilDraft,
+  producers: Producer[],
+  context: ManualNavigationContext,
+) {
+  const ocrLinkedDraft = linkSoilDraftToProducer(draft, producers);
+  if (!context.clientId) return ocrLinkedDraft;
+  const producer = producers.find((item) => item.id === context.clientId);
+  if (!producer) return ocrLinkedDraft;
+  const field = context.fieldId
+    ? producer.fields.find((item) => item.id === context.fieldId)
+    : undefined;
+  return {
+    ...ocrLinkedDraft,
+    producerId: producer.id,
+    property: context.propertyName || ocrLinkedDraft.property || producer.properties,
+    fieldId: field?.id ?? "",
+  };
+}
+
 async function extractPdfText(
   file: File,
   onProgress: (progress: number) => void,
@@ -2241,6 +2269,8 @@ function recommendationText(
 export default function Home() {
   const [accessUser, setAccessUser] = useState<AccessSessionUser | null>(null);
   const [activePage, setActivePage] = useState<PageKey>("inicio");
+  const [navigationCommand, setNavigationCommand] = useState<ManualNavigationCommand | null>(null);
+  const navigationAcks = useRef(new Set<string>());
   const [mobileMenu, setMobileMenu] = useState(false);
   const [calc, setCalc] = useState<CalcKey>("semeadora");
   const [crop, setCrop] = useState<Crop>("Todas");
@@ -2268,6 +2298,13 @@ export default function Home() {
   const [workspaceSync, setWorkspaceSync] = useState<
     "loading" | "saving" | "saved" | "attention" | "offline"
   >("loading");
+
+  const navigationResolution = useMemo(
+    () => navigationCommand
+      ? resolveManualNavigationContext(navigationCommand, producers, soilAnalyses)
+      : { context: {}, issues: [] },
+    [navigationCommand, producers, soilAnalyses],
+  );
 
   const [population, setPopulation] = useState(70000);
   const [spacing, setSpacing] = useState(45);
@@ -2317,20 +2354,80 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    const requestedPage = new URL(window.location.href).searchParams.get("page");
-    if (isPageKey(requestedPage)) setActivePage(requestedPage);
+    const initialUrl = new URL(window.location.href);
+    const requestedPage = initialUrl.searchParams.get("page");
+    const initialNavigation = manualNavigationFromUrl(initialUrl);
+    if (initialNavigation) setNavigationCommand(initialNavigation);
+    else if (isPageKey(requestedPage)) setActivePage(requestedPage);
 
     const receiveNavigation = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin) return;
-      const message = event.data as { type?: unknown; page?: unknown } | null;
-      if (message?.type !== "valor360:navigate" || !isPageKey(message.page)) return;
-      setActivePage(message.page);
-      setMobileMenu(false);
-      window.scrollTo({ top: 0, behavior: "smooth" });
+      if (!embeddedInValor360 || event.origin !== window.location.origin || event.source !== window.parent) return;
+      const message = event.data as { type?: unknown } | null;
+      if (message?.type !== "valor360:navigate") return;
+      const command = normalizeManualNavigation(message);
+      if (!command) return;
+      setNavigationCommand(command);
     };
     window.addEventListener("message", receiveNavigation);
     return () => window.removeEventListener("message", receiveNavigation);
   }, []);
+
+  useEffect(() => {
+    if (!navigationCommand) return;
+    setActivePage(navigationCommand.page as PageKey);
+    if (navigationCommand.calculator) setCalc(navigationCommand.calculator as CalcKey);
+    setMobileMenu(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [navigationCommand]);
+
+  useEffect(() => {
+    if (!navigationCommand || !accountReady) return;
+    const analysisId = navigationResolution.context.analysisId;
+    if (navigationCommand.page === "solo" && analysisId) {
+      const analysis = soilAnalyses.find((item) => item.id === analysisId || item.recordId === analysisId);
+      if (analysis) setSoilDraft(normalizeSoilAnalysis({ ...analysis }));
+    }
+
+    if (navigationAcks.current.has(navigationCommand.requestId)) return;
+    navigationAcks.current.add(navigationCommand.requestId);
+    const requestedContextCount = Object.values(navigationCommand.context).filter(Boolean).length;
+    const resolvedContextCount = Object.values(navigationResolution.context).filter(Boolean).length;
+    const status = !navigationResolution.issues.length
+      ? "APPLIED"
+      : requestedContextCount > 0 && resolvedContextCount === 0
+        ? "CONTEXT_REJECTED"
+        : "PARTIAL";
+    if (embeddedInValor360 && window.parent !== window) {
+      window.parent.postMessage({
+        type: "valor360:navigation-result",
+        version: manualNavigationProtocolVersion,
+        requestId: navigationCommand.requestId,
+        status,
+        page: navigationCommand.page,
+        tool: navigationCommand.tool || null,
+        calculator: navigationCommand.calculator || null,
+        diagnosisMode: navigationCommand.diagnosisMode || null,
+        context: navigationResolution.context,
+        issues: navigationResolution.issues,
+      }, window.location.origin);
+    }
+    if (accessUser) {
+      void fetch("/api/access/activity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventType: "valor360_deep_link",
+          pageKey: navigationCommand.page,
+          detail: {
+            requestId: navigationCommand.requestId,
+            tool: navigationCommand.tool || null,
+            status,
+            issues: navigationResolution.issues,
+          },
+        }),
+      }).catch(() => undefined);
+    }
+  }, [accessUser, accountReady, navigationCommand, navigationResolution, soilAnalyses]);
 
   useEffect(() => {
     if (!accessUser) {
@@ -2718,7 +2815,11 @@ export default function Home() {
               : "A leitura inteligente não respondeu; a extração local foi mantida.",
           ];
         }
-        setSoilDraft(linkSoilDraftToProducer(nextDraft, producers));
+        setSoilDraft(prefillSoilDraftFromNavigation(
+          nextDraft,
+          producers,
+          navigationCommand?.page === "solo" ? navigationResolution.context : {},
+        ));
         setSoilImport({
           status: "ready",
           progress: 100,
@@ -2813,7 +2914,11 @@ export default function Home() {
         ];
       }
       const detected = Object.values(nextDraft.values).filter(Boolean).length;
-      setSoilDraft(linkSoilDraftToProducer(nextDraft, producers));
+      setSoilDraft(prefillSoilDraftFromNavigation(
+        nextDraft,
+        producers,
+        navigationCommand?.page === "solo" ? navigationResolution.context : {},
+      ));
       setSoilImport({
         status: "ready",
         progress: 100,
@@ -3027,7 +3132,13 @@ export default function Home() {
           />
         )}
         {activePage === "mercado" && <AgroMarketPage />}
-        {activePage === "diagnostico" && <PhotoDiagnosis />}
+        {activePage === "diagnostico" && (
+          <PhotoDiagnosis
+            initialMode={navigationCommand?.diagnosisMode ?? "nutrition"}
+            context={navigationResolution.context as PhotoDiagnosisContext}
+            navigationRequestId={navigationCommand?.requestId ?? ""}
+          />
+        )}
         {activePage === "solo" && (
           <SoilPage
             onCamera={() => openCamera("solo")}
@@ -3094,6 +3205,13 @@ export default function Home() {
             setProducers={setProducers}
             syncStatus={workspaceSync}
             onSyncAttention={() => setWorkspaceSync("attention")}
+            deepLink={navigationCommand?.tool === "mapping"
+              ? {
+                  requestId: navigationCommand.requestId,
+                  clientId: navigationResolution.context.clientId,
+                  fieldId: navigationResolution.context.fieldId,
+                }
+              : undefined}
             onUse={(producer) => {
               setSprayProducer(producer.name);
               setSprayPhone(producer.phone);
@@ -7953,12 +8071,14 @@ function ProducersPage({
   syncStatus,
   onSyncAttention,
   onUse,
+  deepLink,
 }: {
   producers: Producer[];
   setProducers: (items: Producer[]) => void;
   syncStatus: "loading" | "saving" | "saved" | "attention" | "offline";
   onSyncAttention: () => void;
   onUse: (producer: Producer) => void;
+  deepLink?: { requestId: string; clientId?: string; fieldId?: string };
 }) {
   const empty: Producer = {
     id: "",
@@ -7982,6 +8102,12 @@ function ProducersPage({
   const visible = producers;
   const selectedProducer =
     visible.find((producer) => producer.id === selectedProducerId) ?? visible[0] ?? null;
+
+  useEffect(() => {
+    if (!deepLink?.clientId || !visible.some((producer) => producer.id === deepLink.clientId)) return;
+    setSelectedProducerId(deepLink.clientId);
+    setOpenProducerId(deepLink.clientId);
+  }, [deepLink?.requestId, deepLink?.clientId, deepLink?.fieldId, visible]);
 
   function save() {
     if (!draft.name.trim()) return;
@@ -8108,6 +8234,7 @@ function ProducersPage({
       {openProducerId && (
         <ProducerFieldsPanel
           producer={producers.find((producer) => producer.id === openProducerId) ?? producers[0]}
+          initialFieldId={deepLink?.clientId === openProducerId ? deepLink.fieldId : undefined}
           onClose={() => setOpenProducerId("")}
           onChange={(nextProducer) =>
             setProducers(
@@ -8161,13 +8288,17 @@ function ProducerFieldsPanel({
   producer,
   onChange,
   onClose,
+  initialFieldId,
 }: {
   producer: Producer;
   onChange: (producer: Producer) => void;
   onClose: () => void;
+  initialFieldId?: string;
 }) {
   const fields = producer.fields ?? [];
-  const [activeFieldId, setActiveFieldId] = useState(fields[0]?.id ?? "");
+  const [activeFieldId, setActiveFieldId] = useState(
+    fields.some((field) => field.id === initialFieldId) ? initialFieldId! : fields[0]?.id ?? "",
+  );
   const [manualLat, setManualLat] = useState(-28.41);
   const [manualLng, setManualLng] = useState(-54.96);
   const [ndviStart, setNdviStart] = useState(() => {
@@ -8186,6 +8317,12 @@ function ProducerFieldsPanel({
   const activeScene =
     activeField?.ndviScenes.find((scene) => scene.id === selectedSceneId) ??
     activeField?.ndviScenes[0];
+
+  useEffect(() => {
+    if (initialFieldId && fields.some((field) => field.id === initialFieldId)) {
+      setActiveFieldId(initialFieldId);
+    }
+  }, [initialFieldId, fields]);
 
   function updateField(patch: Partial<FieldPlot>) {
     if (!activeField) return;

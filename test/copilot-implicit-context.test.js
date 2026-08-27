@@ -54,13 +54,23 @@ test('troca de objeto selecionado troca produtor sem reaproveitar o contexto ant
  assert.equal(launchB.source,'prepare_visit')
 })
 
-test('agronomia leva a ferramenta ativa e limpa qualquer produtor implícito anterior',()=>{
+test('agronomia leva a ferramenta ativa sem inventar produtor quando não há contexto explícito',()=>{
  const context=buildAgroCopilotContext({tool:{id:'solo',label:'Análises de solo'}})
  const launch=resolveCopilotLaunch({input:context,page:'agro',storageScope:'scope',clients,selectedClient:clients[0]})
  assert.equal(launch.clientId,'')
- assert.deepEqual(launch.context,{type:'agronomic_tool',id:'solo',label:'Análises de solo'})
+ assert.deepEqual(launch.context,{type:'agronomic_tool',id:'solo',label:'Análises de solo',tool:'solo'})
  assert.match(launch.prompt,/Análises de solo/)
  assert.match(launch.prompt,/hipótese em prescrição/)
+})
+
+test('agronomia preserva produtor, propriedade, talhão e análise válidos',()=>{
+ const context=buildAgroCopilotContext({
+  tool:{id:'mapping',page:'produtores',label:'Mapeamento'},client:clients[0],property:{id:'property-a'},field:{id:'field-a',crop:'Soja',season:'2026/27'},analysis:{id:'analysis-a'}
+ })
+ const launch=resolveCopilotLaunch({input:context,page:'agro',storageScope:'scope',clients})
+ assert.equal(launch.clientId,'producer-a')
+ assert.deepEqual(launch.context,{type:'agronomic_tool',id:'mapping',label:'Mapeamento',tool:'mapping',page:'produtores',propertyId:'property-a',fieldId:'field-a',analysisId:'analysis-a',crop:'Soja',season:'2026/27'})
+ assert.equal(launch.persistenceMode,'NONE')
 })
 
 test('superfícies registram o objeto ativo e abrem Perguntar à VAL sem persistência implícita',()=>{
@@ -82,8 +92,8 @@ test('superfícies registram o objeto ativo e abrem Perguntar à VAL sem persist
  assert.match(visits,/onContextChange\?\.\(pageContext\)/)
  assert.match(prepare,/Perguntar à VAL/)
  assert.match(prepare,/preparing:true/)
- assert.match(agro,/buildAgroCopilotContext/)
- assert.match(agro,/clientId:''/)
+ assert.match(agro,/buildAgroCopilotLaunchContext/)
+ assert.match(agro,/createAgroHeroContext/)
  assert.match(copilot,/setMessage\(seed\.prompt\|\|''\)/)
  assert.doesNotMatch(helper,/localStorage|sessionStorage|fetch\(/)
 })

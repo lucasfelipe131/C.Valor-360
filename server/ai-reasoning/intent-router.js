@@ -1,4 +1,6 @@
-export const valIntentRouterVersion='val.intent_router.v2'
+import {routeSessionCommand} from '../decision-copilot/session-command-router.js'
+
+export const valIntentRouterVersion='val.intent_router.v3'
 
 // Canonical Decision Copilot intents. Legacy v2 names remain accepted through
 // aliases so saved shortcuts and stacked branches do not break.
@@ -19,7 +21,7 @@ export const legacyIntentAliases=Object.freeze({
 const allowed=new Set(valIntents)
 const clean=value=>String(value??'').replace(/\s+/g,' ').trim().slice(0,3000)
 const currentDataIntents=new Set(['ASK_MARKET','ASK_COMMODITY','CHECK_MARKET','CHECK_WEATHER','CHECK_LABEL'])
-const clientOptionalIntents=new Set(['ASK_MARKET','ASK_COMMODITY','CHECK_MARKET'])
+const clientOptionalIntents=new Set(['ASK_GENERAL','ASK_MARKET','ASK_COMMODITY','CHECK_MARKET','CHECK_WEATHER','CHECK_LABEL'])
 const persistenceIntents=new Set(['REGISTER_INFORMATION','POST_VISIT'])
 
 function semanticCurrentDataIntent(source=''){
@@ -37,26 +39,40 @@ function semanticCommandIntent(source=''){
  return ''
 }
 
+function semanticToolHint(source='',hasImage=false){
+ const normalized=String(source).normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+ if(/\b(?:nutriscan|nutri scan)\b/i.test(normalized))return 'NUTRISCAN'
+ if(/\b(?:fitoscan|fito scan|fitscan|fit scan)\b/i.test(normalized))return 'FITOSCAN'
+ if(/\b(?:mapeamento|mapear|mapa da (?:area|propriedade|fazenda)|desenhar (?:a )?area|geometria do talhao)\b/i.test(normalized))return 'AREA_MAPPING'
+ if(/\b(?:calculadora|calcule|calcular|calculo|simule|simular|custo\s*\/\s*ha|roi|margem|ponto de equilibrio)\b/i.test(normalized))return 'CALCULATOR'
+ if(/\b(?:analise de solo|laudo de solo|interpreta(?:r)? (?:essa|esta|a) analise)\b/i.test(normalized))return 'SOIL_ANALYSIS'
+ if(hasImage||/\b(?:analis\w*|diagnostic\w*|interpret\w*)\b.*\b(?:foto|imagem)\b|\b(?:foto|imagem)\b.*\b(?:analis\w*|diagnostic\w*|interpret\w*)\b/i.test(normalized))return 'PHOTO_DIAGNOSIS'
+ return null
+}
+
 export function normalizeValIntent(value){
  const normalized=clean(value).toUpperCase()
  const canonical=legacyIntentAliases[normalized]||normalized
  return allowed.has(canonical)?canonical:null
 }
 
-export function routeValIntent({message='',intentHint='',hasClient=false,attachmentTypes=[]}={}){
+export function routeValIntent({message='',intentHint='',sessionCommandHint='',hasClient=false,attachmentTypes=[]}={}){
  const hinted=normalizeValIntent(intentHint)
  const source=clean(message).toLocaleLowerCase('pt-BR')
  const hasImage=attachmentTypes.some(type=>String(type).startsWith('image/'))
+ const sessionCommand=routeSessionCommand(source,sessionCommandHint)
+ const toolHint=semanticToolHint(source,hasImage)
  const semanticCurrent=semanticCurrentDataIntent(source)
  const semanticCommand=semanticCommandIntent(source)
  // Hints may come from an older client. They cannot downgrade an explicit
  // current-data request or a new explicit task into stale continuation.
  // Persistence remains fail-closed and can only be requested explicitly.
- let intent=persistenceIntents.has(hinted)?hinted:semanticCurrent||semanticCommand||hinted
+ let intent=sessionCommand?.command==='REGISTER_LAST'?'REGISTER_INFORMATION':persistenceIntents.has(hinted)?hinted:semanticCurrent||semanticCommand||hinted
  if(!intent){
   if(/\b(?:mercado|commodity|commodities|not[ií]cia econ[oô]mica)\b/i.test(source))intent='ASK_MARKET'
-  else if(/\b(?:an[aá]lise de solo|laudo de solo|solo|ph|v%|satura[cç][aã]o|ctc|f[oó]sforo|pot[aá]ssio)\b/i.test(source))intent='ANALYZE_SOIL'
-  else if(hasImage||/\b(?:foto|imagem|folha|planta|lavoura)\b.*\b(?:analis|diagn[oó]st|observe|interpre)/i.test(source))intent='IMAGE_DIAGNOSIS'
+  else if(toolHint==='SOIL_ANALYSIS'||/\b(?:an[aá]lise de solo|laudo de solo|solo|ph|v%|satura[cç][aã]o|ctc|f[oó]sforo|pot[aá]ssio)\b/i.test(source))intent='ANALYZE_SOIL'
+  else if(['NUTRISCAN','FITOSCAN','PHOTO_DIAGNOSIS'].includes(toolHint)||hasImage)intent='IMAGE_DIAGNOSIS'
+  else if(toolHint==='AREA_MAPPING')intent='ASK_AGRONOMIC'
   else if(/\b(?:agron[oô]mic|praga|doen[cç]a|daninha|manejo|talh[aã]o|safra|cultiv)/i.test(source))intent='ASK_AGRONOMIC'
   else if(/\b(?:prepar|roteiro|antes da)\w*\b.*\bvisit\w*\b|\bvisit\w*\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))intent='PREPARE_VISIT'
   else if(/\b(?:registr|salv|grave|anote|memorize)\b.*\b(?:informa[cç][aã]o|nota|hist[oó]rico|mem[oó]ria|fato)\b/i.test(source))intent='REGISTER_INFORMATION'
@@ -64,16 +80,18 @@ export function routeValIntent({message='',intentHint='',hasClient=false,attachm
   else if(/\b(?:obje[cç][aã]o|resist[eê]ncia|discord|recus|n[aã]o quer)\b/i.test(source))intent='OBJECTION_HELP'
   else if(/\b(?:oportunidade|pipeline|neg[oó]cio|proposta)\b/i.test(source))intent='CHECK_OPPORTUNITY'
   else if(/\b(?:follow.?up|retomar|cobrar retorno|pr[oó]ximo contato)\b/i.test(source))intent='FOLLOW_UP_HELP'
-  else if(/\b(?:calcul|simul|retorno|roi|margem|ponto de equil[ií]brio|convers[aã]o de unidade)\b/i.test(source))intent='CALCULATE'
+  else if(toolHint==='CALCULATOR'||/\b(?:calcul\w*|simul\w*|retorno|roi|margem|ponto de equil[ií]brio|convers[aã]o de unidade)\b/i.test(source))intent='CALCULATE'
   else intent=hasClient?'ASK_CLIENT':'ASK_GENERAL'
  }
- const persistenceMode=['REGISTER_INFORMATION','POST_VISIT'].includes(intent)?'CONFIRM_REQUIRED':'NONE'
+ const persistenceMode=sessionCommand?.persistence_mode||(['REGISTER_INFORMATION','POST_VISIT'].includes(intent)?'CONFIRM_REQUIRED':'NONE')
  return Object.freeze({
   version:valIntentRouterVersion,
   intent,
   persistence_mode:persistenceMode,
   client_context_required:!clientOptionalIntents.has(intent),
   requires_current_data:currentDataIntents.has(intent),
-  reason:semanticCurrent&&semanticCurrent!==hinted?'semantic_current_data_override':hinted?'explicit_intent':'message_and_context'
+  session_command:sessionCommand,
+  tool_hint:toolHint,
+  reason:sessionCommand?'session_command':semanticCurrent&&semanticCurrent!==hinted?'semantic_current_data_override':hinted?'explicit_intent':'message_and_context'
  })
 }

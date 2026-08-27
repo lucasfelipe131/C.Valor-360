@@ -3,32 +3,27 @@
  align-items:center;
  gap:9px;
  min-width:0;
- color:inherit;
+ color:var(--val-logo-word,#082c57);
 }
 
 .val-final-brand .brand-mark{
  display:block;
- flex:0 0 auto;
  width:48px;
  height:48px;
- filter:drop-shadow(0 8px 14px rgba(7,73,125,.16));
-}
-
-.val-final-brand .brand-mark svg{
- display:block;
- width:100%;
- height:100%;
- overflow:visible;
-}
-
-.val-final-brand .brand-word{
- display:block;
  flex:0 0 auto;
- width:98px;
- height:34px;
- margin:0;
+ filter:drop-shadow(0 8px 14px rgba(7,73,125,.15));
 }
 
+.val-final-brand.is-surface-dark .brand-mark,
+[data-val-surface="dark"] .val-final-brand.is-surface-auto .brand-mark,
+.sidebar .val-final-brand.is-surface-auto .brand-mark,
+.public-welcome .val-final-brand.is-surface-auto .brand-mark,
+.login-story .val-final-brand.is-surface-auto .brand-mark,
+.val-fs-header .val-final-brand.is-surface-auto .brand-mark{
+ filter:drop-shadow(0 9px 16px rgba(0,0,0,.2));
+}
+
+.val-final-brand .brand-mark svg,
 .val-final-brand .val-wordmark{
  display:block;
  width:100%;
@@ -36,10 +31,49 @@
  overflow:visible;
 }
 
+.val-final-brand .brand-word{
+ display:flex;
+ width:104px;
+ min-width:0;
+ height:34px;
+ margin:0;
+ flex:0 0 auto;
+ flex-direction:column;
+ justify-content:center;
+}
+
+.val-final-brand.is-full{
+ gap:11px;
+}
+
+.val-final-brand.is-full .brand-mark{
+ width:52px;
+ height:52px;
+}
+
+.val-final-brand.is-full .brand-word{
+ width:118px;
+ height:auto;
+ min-height:42px;
+}
+
+.val-final-brand.is-full .val-wordmark{
+ height:auto;
+ aspect-ratio:220/72;
+}
+
+.val-final-brand.is-compact .brand-word,
+.val-final-brand.is-monochrome .brand-word{
+ width:104px;
+ height:34px;
+}
+
+.val-final-brand.is-icon-only,
 .val-final-brand.compact{
  gap:0;
 }
 
+.val-final-brand.is-icon-only .brand-mark,
 .val-final-brand.compact .brand-mark{
  width:46px;
  height:46px;
@@ -55,8 +89,8 @@
 }
 
 .sidebar .val-final-brand .brand-word{
- width:92px;
- height:30px;
+ width:98px;
+ height:32px;
 }
 
 .val-login-shell .login-story>.val-final-brand .brand-mark{
@@ -72,7 +106,7 @@
 .password-change-card>.val-final-brand .brand-word,
 .public-welcome>.val-final-brand .brand-word,
 .public-survey-header>.val-final-brand .brand-word{
- width:104px;
+ width:108px;
  height:35px;
 }
 
@@ -82,6 +116,7 @@
 }
 
 @media(max-width:760px){
+ .topbar-mobile-logo .val-final-brand.is-icon-only .brand-mark,
  .topbar-mobile-logo .val-final-brand.compact .brand-mark{
   width:38px!important;
   height:38px!important;

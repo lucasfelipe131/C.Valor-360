@@ -1,9 +1,20 @@
 "use client";
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { saveRecord } from "./records";
 
-type DiagnosisMode = "nutrition" | "disease" | "insect" | "weed";
+export type DiagnosisMode = "nutrition" | "disease" | "insect" | "weed";
 type DiagnosisStatus = "idle" | "preparing" | "analyzing" | "ready" | "error";
+
+export type PhotoDiagnosisContext = {
+  clientId?: string;
+  clientName?: string;
+  propertyId?: string;
+  propertyName?: string;
+  fieldId?: string;
+  fieldName?: string;
+  analysisId?: string;
+};
 
 type RankedHypothesis = {
   rank: number;
@@ -33,6 +44,9 @@ type DiagnosisResult = {
 type PreparedPhoto = {
   id: string;
   name: string;
+  mimeType: string;
+  sizeBytes: number;
+  sha256?: string;
   preview: string;
   dataUrl: string;
 };
@@ -212,26 +226,47 @@ async function prepareImage(file: File) {
   return canvas.toDataURL("image/jpeg", 0.84);
 }
 
+async function fileSha256(file: File) {
+  try {
+    const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+    return Array.from(new Uint8Array(digest), (value) => value.toString(16).padStart(2, "0")).join("");
+  } catch {
+    return undefined;
+  }
+}
+
 function confidenceClass(confidence: number) {
   if (confidence >= 70) return "high";
   if (confidence >= 45) return "medium";
   return "low";
 }
 
-export default function PhotoDiagnosis() {
-  const [mode, setMode] = useState<DiagnosisMode>("nutrition");
-  const [crop, setCrop] = useState("Soja");
-  const [stage, setStage] = useState("Vegetativo avançado");
-  const [organ, setOrgan] = useState("Folhas");
-  const [canopyPosition, setCanopyPosition] = useState("Sem padrão claro");
-  const [distribution, setDistribution] = useState("Sem informação");
+export default function PhotoDiagnosis({
+  initialMode = "nutrition",
+  context = {},
+  navigationRequestId = "",
+}: {
+  initialMode?: DiagnosisMode;
+  context?: PhotoDiagnosisContext;
+  navigationRequestId?: string;
+}) {
+  const [mode, setMode] = useState<DiagnosisMode>(initialMode);
+  const initialMethodology = methodologies[initialMode];
+  const [crop, setCrop] = useState<string>("Soja");
+  const [stage, setStage] = useState<string>(initialMethodology.stageDefault);
+  const [organ, setOrgan] = useState<string>(initialMethodology.organDefault);
+  const [canopyPosition, setCanopyPosition] = useState<string>(initialMethodology.positionDefault);
+  const [distribution, setDistribution] = useState<string>(initialMethodology.distributionDefault);
   const [notes, setNotes] = useState("");
   const [photos, setPhotos] = useState<PreparedPhoto[]>([]);
   const [status, setStatus] = useState<DiagnosisStatus>("idle");
   const [message, setMessage] = useState("");
   const [result, setResult] = useState<DiagnosisResult | null>(null);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const [saveMessage, setSaveMessage] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
   const photosRef = useRef<PreparedPhoto[]>([]);
+  const diagnosisRecordId = useRef("");
 
   useEffect(() => {
     photosRef.current = photos;
@@ -240,6 +275,23 @@ export default function PhotoDiagnosis() {
   useEffect(() => () => {
     photosRef.current.forEach((photo) => URL.revokeObjectURL(photo.preview));
   }, []);
+
+  useEffect(() => {
+    if (initialMode !== mode) selectMode(initialMode);
+  }, [initialMode]);
+
+  useEffect(() => {
+    setResult(null);
+    setSaveStatus("idle");
+    setSaveMessage("");
+    diagnosisRecordId.current = "";
+  }, [
+    navigationRequestId,
+    context.clientId,
+    context.propertyId,
+    context.fieldId,
+    context.analysisId,
+  ]);
 
   const methodology = useMemo(() => methodologies[mode], [mode]);
 
@@ -253,6 +305,17 @@ export default function PhotoDiagnosis() {
     setResult(null);
     setStatus("idle");
     setMessage("");
+    setSaveStatus("idle");
+    setSaveMessage("");
+    diagnosisRecordId.current = "";
+  }
+
+  function updateAgronomicContext(apply: () => void) {
+    apply();
+    setResult(null);
+    setSaveStatus("idle");
+    setSaveMessage("");
+    diagnosisRecordId.current = "";
   }
 
   async function addPhotos(event: ChangeEvent<HTMLInputElement>) {
@@ -270,6 +333,9 @@ export default function PhotoDiagnosis() {
       const prepared = await Promise.all(files.map(async (file) => ({
         id: `${file.name}-${file.lastModified}-${Math.random()}`,
         name: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        sha256: await fileSha256(file),
         preview: URL.createObjectURL(file),
         dataUrl: await prepareImage(file),
       })));
@@ -277,6 +343,9 @@ export default function PhotoDiagnosis() {
       setStatus("idle");
       setMessage("");
       setResult(null);
+      setSaveStatus("idle");
+      setSaveMessage("");
+      diagnosisRecordId.current = "";
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "Não foi possível preparar as fotos.");
@@ -290,6 +359,9 @@ export default function PhotoDiagnosis() {
       return current.filter((photo) => photo.id !== id);
     });
     setResult(null);
+    setSaveStatus("idle");
+    setSaveMessage("");
+    diagnosisRecordId.current = "";
   }
 
   async function analyze() {
@@ -301,6 +373,9 @@ export default function PhotoDiagnosis() {
     setStatus("analyzing");
     setMessage(methodology.analysisMessage);
     setResult(null);
+    setSaveStatus("idle");
+    setSaveMessage("");
+    diagnosisRecordId.current = "";
     try {
       const response = await fetch("/api/diagnosis", {
         method: "POST",
@@ -318,12 +393,84 @@ export default function PhotoDiagnosis() {
       });
       const data = (await response.json()) as DiagnosisResult & { error?: string };
       if (!response.ok) throw new Error(data.error || "A análise não pôde ser concluída.");
+      diagnosisRecordId.current = crypto.randomUUID();
       setResult(data);
       setStatus("ready");
       setMessage("");
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "A análise não pôde ser concluída.");
+    }
+  }
+
+  async function saveDiagnosis() {
+    if (!result || saveStatus === "saving" || saveStatus === "saved") return;
+    setSaveStatus("saving");
+    setSaveMessage("Salvando somente o resultado revisado e os metadados das fotos…");
+    const savedAt = new Date().toISOString();
+    const recordId = diagnosisRecordId.current || crypto.randomUUID();
+    diagnosisRecordId.current = recordId;
+    try {
+      await saveRecord({
+        id: recordId,
+        type: "photo_diagnosis",
+        title: `${methodology.name} · ${context.clientName || crop} · ${new Date(result.analyzedAt).toLocaleDateString("pt-BR")}`,
+        producerName: context.clientName || "",
+        payload: {
+          schemaVersion: "manual-photo-diagnosis-v1",
+          methodology: {
+            mode,
+            name: methodology.name,
+          },
+          context: {
+            clientId: context.clientId || null,
+            clientName: context.clientName || null,
+            propertyId: context.propertyId || null,
+            propertyName: context.propertyName || null,
+            fieldId: context.fieldId || null,
+            fieldName: context.fieldName || null,
+            analysisId: context.analysisId || null,
+          },
+          agronomicContext: {
+            crop,
+            stage,
+            organ,
+            canopyPosition,
+            distribution,
+            notes: notes.trim(),
+          },
+          imageEvidence: photos.map((photo) => ({
+            fileName: photo.name,
+            mimeType: photo.mimeType,
+            sizeBytes: photo.sizeBytes,
+            sha256: photo.sha256 || null,
+          })),
+          result,
+          provenance: {
+            source: "manual-do-agronomo",
+            capability: methodology.name,
+            navigationRequestId: navigationRequestId || null,
+            analyzedAt: result.analyzedAt,
+            savedAt,
+            confirmation: "USER_EXPLICIT",
+            imageRetention: "METADATA_ONLY",
+          },
+          safety: {
+            classification: "ASSISTED_TRIAGE_NOT_PRESCRIPTION",
+            humanReviewRequired: true,
+            note: result.safetyNote,
+          },
+          storagePolicy: {
+            rawImagesStored: false,
+            inlineBinaryStored: false,
+          },
+        },
+      });
+      setSaveStatus("saved");
+      setSaveMessage("Resultado salvo no histórico. As imagens originais não foram armazenadas neste registro.");
+    } catch (error) {
+      setSaveStatus("error");
+      setSaveMessage(error instanceof Error ? error.message : "Não foi possível confirmar o salvamento do diagnóstico.");
     }
   }
 
@@ -334,6 +481,9 @@ export default function PhotoDiagnosis() {
     setStatus("idle");
     setMessage("");
     setNotes("");
+    setSaveStatus("idle");
+    setSaveMessage("");
+    diagnosisRecordId.current = "";
   }
 
   return (
@@ -343,6 +493,16 @@ export default function PhotoDiagnosis() {
         <h1>Da foto ao ranking técnico</h1>
         <p>Triagem visual com quatro metodologias independentes, contexto agronômico e hipóteses explicáveis.</p>
       </div>
+
+      {(context.clientName || context.propertyName || context.fieldName || context.analysisId) && (
+        <div className="diagnosis-guidance" aria-label="Contexto confirmado do diagnóstico">
+          <b>Contexto recebido da VAL</b>
+          {context.clientName && <span>Produtor: {context.clientName}</span>}
+          {context.propertyName && <span>Propriedade: {context.propertyName}</span>}
+          {context.fieldName && <span>Talhão: {context.fieldName}</span>}
+          {context.analysisId && <span>Análise vinculada: {context.analysisId}</span>}
+        </div>
+      )}
 
       <div className="diagnosis-products" role="tablist" aria-label="Produto de diagnóstico">
         {(Object.keys(methodologies) as DiagnosisMode[]).map((item) => {
@@ -391,12 +551,12 @@ export default function PhotoDiagnosis() {
           </div>
 
           <div className="diagnosis-form-grid">
-            <label className="field"><span>{methodology.cropLabel}</span><select value={crop} onChange={(event) => setCrop(event.target.value)}>{crops.map((item) => <option key={item}>{item}</option>)}</select></label>
-            <label className="field"><span>{methodology.stageLabel}</span><select value={stage} onChange={(event) => setStage(event.target.value)}>{methodology.stageOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
-            <label className="field"><span>{methodology.organLabel}</span><select value={organ} onChange={(event) => setOrgan(event.target.value)}>{methodology.organOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
-            <label className="field"><span>{methodology.positionLabel}</span><select value={canopyPosition} onChange={(event) => setCanopyPosition(event.target.value)}>{methodology.positionOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
-            <label className="field"><span>Distribuição no talhão</span><select value={distribution} onChange={(event) => setDistribution(event.target.value)}>{methodology.distributionOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
-            <label className="field diagnosis-notes"><span>Observações de campo</span><textarea value={notes} maxLength={800} onChange={(event) => setNotes(event.target.value)} placeholder={methodology.notesPlaceholder} /></label>
+            <label className="field"><span>{methodology.cropLabel}</span><select value={crop} onChange={(event) => updateAgronomicContext(() => setCrop(event.target.value))}>{crops.map((item) => <option key={item}>{item}</option>)}</select></label>
+            <label className="field"><span>{methodology.stageLabel}</span><select value={stage} onChange={(event) => updateAgronomicContext(() => setStage(event.target.value))}>{methodology.stageOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+            <label className="field"><span>{methodology.organLabel}</span><select value={organ} onChange={(event) => updateAgronomicContext(() => setOrgan(event.target.value))}>{methodology.organOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+            <label className="field"><span>{methodology.positionLabel}</span><select value={canopyPosition} onChange={(event) => updateAgronomicContext(() => setCanopyPosition(event.target.value))}>{methodology.positionOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+            <label className="field"><span>Distribuição no talhão</span><select value={distribution} onChange={(event) => updateAgronomicContext(() => setDistribution(event.target.value))}>{methodology.distributionOptions.map((item) => <option key={item}>{item}</option>)}</select></label>
+            <label className="field diagnosis-notes"><span>Observações de campo</span><textarea value={notes} maxLength={800} onChange={(event) => updateAgronomicContext(() => setNotes(event.target.value))} placeholder={methodology.notesPlaceholder} /></label>
           </div>
 
           {(status === "preparing" || status === "analyzing") && <div className="diagnosis-progress"><i /><span>{message}</span></div>}
@@ -447,6 +607,17 @@ export default function PhotoDiagnosis() {
             <article><span className="eyebrow">PRÓXIMOS PASSOS</span><h3>Protocolo de confirmação</h3>{result.nextSteps.map((item) => <p key={item}>• {item}</p>)}</article>
           </div>
           <p className="diagnosis-disclaimer"><b>Decisão assistida:</b> {result.safetyNote}</p>
+          <div className="form-actions">
+            <button
+              className="button primary"
+              onClick={() => void saveDiagnosis()}
+              disabled={saveStatus === "saving" || saveStatus === "saved"}
+            >
+              {saveStatus === "saving" ? "Salvando…" : saveStatus === "saved" ? "Salvo no histórico" : "Salvar resultado revisado no histórico"}
+            </button>
+            <small>Salvamento explícito: guarda contexto, resultado, provenance e safety; nunca a imagem/base64.</small>
+          </div>
+          {saveMessage && <p className={saveStatus === "error" ? "diagnosis-error" : "record-message"}>{saveMessage}</p>}
         </section>
       )}
     </div>

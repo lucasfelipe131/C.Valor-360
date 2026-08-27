@@ -97,6 +97,7 @@ function CandidateReview({candidates,setCandidates,transcript,additions,setAddit
 }
 
 export default function VoiceCapture({clientId,visitId,interactionType='GENERAL_CONTEXT',label='Registrar áudio',description='',initialText='',sourceContext={},onConfirmed,transient=false,onTranscribed}){
+ const {autoOpenKey='',onOpenChange}=arguments[0]||{}
  const instanceId=useId().replace(/:/g,'')
  const [open,setOpen]=useState(false)
  const [mode,setMode]=useState('AUDIO')
@@ -119,6 +120,7 @@ export default function VoiceCapture({clientId,visitId,interactionType='GENERAL_
  const operationRef=useRef(null)
  const mountedRef=useRef(true)
  const confirmationNotifiedRef=useRef(false)
+ const lastAutoOpenKeyRef=useRef('')
  const busy=['uploading','processing','confirming'].includes(phase)
  const pendingKey=useMemo(()=>pendingStorageKey({clientId,visitId,interactionType}),[clientId,visitId,interactionType])
  const titleId=`voice-sheet-title-${instanceId}`
@@ -130,7 +132,7 @@ export default function VoiceCapture({clientId,visitId,interactionType='GENERAL_
  const forgetPending=()=>{if(!pendingKey)return;try{localStorage.removeItem(pendingKey)}catch{}}
  const readPending=()=>{if(!pendingKey)return '';try{const stored=JSON.parse(localStorage.getItem(pendingKey)||'null');const id=String(stored?.interaction_id||'');const savedAt=Number(stored?.saved_at||0);if(!id||!savedAt||Date.now()-savedAt>pendingMaxAgeMs){localStorage.removeItem(pendingKey);return ''}return id}catch{try{localStorage.removeItem(pendingKey)}catch{};return ''}}
  const resetLocal=()=>{operationRef.current?.abort();operationRef.current=null;recorder.reset();setMode('AUDIO');setPhase('capture');setManualText('');setInteractionId('');setAudioUploaded(false);setPayload(null);setCandidates([]);setAdditions([]);setAdditionDraft({category:'FACT_CANDIDATE',statement:'',due_at:''});setError('');setRetryStage('process');setOutcomeType('NO_DECISION');setNoAction(false)}
- const close=({cancelRemote=true}={})=>{const remoteId=interactionId;operationRef.current?.abort();if(cancelRemote)forgetPending();resetLocal();setOpen(false);requestAnimationFrame(()=>launcherRef.current?.focus());if(cancelRemote&&remoteId)cancelVoiceInteraction(remoteId).catch(()=>{})}
+ const close=({cancelRemote=true}={})=>{const remoteId=interactionId;operationRef.current?.abort();if(cancelRemote)forgetPending();resetLocal();setOpen(false);onOpenChange?.(false);requestAnimationFrame(()=>launcherRef.current?.focus());if(cancelRemote&&remoteId)cancelVoiceInteraction(remoteId).catch(()=>{})}
 
  useEffect(()=>{mountedRef.current=true;return()=>{mountedRef.current=false;operationRef.current?.abort()}},[])
  useEffect(()=>{
@@ -249,6 +251,13 @@ export default function VoiceCapture({clientId,visitId,interactionType='GENERAL_
  const redo=()=>{const remoteId=interactionId;forgetPending();if(remoteId)cancelVoiceInteraction(remoteId).catch(()=>{});recorder.reset();setInteractionId('');setAudioUploaded(false);setPayload(null);setError('');setPhase('capture')}
  const fallbackToText=()=>{const remoteId=interactionId;operationRef.current?.abort();operationRef.current=null;forgetPending();if(remoteId)cancelVoiceInteraction(remoteId).catch(()=>{});recorder.reset();setInteractionId('');setAudioUploaded(false);setPayload(null);setMode('TEXT');setPhase('capture');setError('');setRetryStage('process')}
  const launch=()=>{const seeded=String(initialText||'').trim().slice(0,3000);confirmationNotifiedRef.current=false;setOpen(true);setMode(seeded?'TEXT':'AUDIO');setManualText(seeded);setPhase('capture');setError('');const pendingId=readPending();if(pendingId)resumePending(pendingId);else if(!seeded)recorder.start()}
+ const launchWithNotification=()=>{launch();onOpenChange?.(true)}
+ useEffect(()=>{
+  const key=String(autoOpenKey||'')
+  if(!key||!clientId||lastAutoOpenKeyRef.current===key)return
+  lastAutoOpenKeyRef.current=key
+  launchWithNotification()
+ },[autoOpenKey,clientId])
  const finishSuccess=()=>{if(confirmationNotifiedRef.current){close({cancelRemote:false});return}confirmationNotifiedRef.current=true;const result=payload;close({cancelRemote:false});if(onConfirmed)Promise.resolve(onConfirmed(result)).catch(()=>{})}
  const chooseFile=async event=>{const file=event.target.files?.[0];event.target.value='';if(file)await recorder.selectFile(file)}
  const title=transient?'Perguntar por voz':isPostVisit(interactionType)?'Me conte como foi':label
@@ -278,5 +287,5 @@ export default function VoiceCapture({clientId,visitId,interactionType='GENERAL_
    </div>
   </section>
  </div>,document.body)
- return <><button ref={launcherRef} type="button" className="voice-capture-launcher" onClick={launch} aria-haspopup="dialog" aria-expanded={open} disabled={!clientId}><Mic/><span><b>{label}</b>{description&&<small>{description}</small>}</span></button>{open&&portal}</>
+ return <><button ref={launcherRef} type="button" className="voice-capture-launcher" onClick={launchWithNotification} aria-haspopup="dialog" aria-expanded={open} disabled={!clientId}><Mic/><span><b>{label}</b>{description&&<small>{description}</small>}</span></button>{open&&portal}</>
 }

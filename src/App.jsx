@@ -75,6 +75,7 @@ export default function App(){
  const [copilotReturnPage,setCopilotReturnPage]=useState('dashboard')
  const [copilotSeed,setCopilotSeed]=useState(null)
  const [copilotPageContext,setCopilotPageContext]=useState(null)
+ const [agroLaunch,setAgroLaunch]=useState({nonce:0,client:null,property:null,field:null,analysis:null,context:{},initialTool:null,initialFiles:[]})
  const copilotOwnerScope=currentUser?.storageScope||currentUser?.id||''
  const openClient=c=>{setSelected(c);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
  const notify=message=>{const text=typeof message==='string'?message:String(message?.message||'Ação concluída.');setToast(text);window.clearTimeout(window.__valorToast);window.__valorToast=window.setTimeout(()=>setToast(''),2800)}
@@ -83,7 +84,44 @@ export default function App(){
  const updateCopilotPageContext=useCallback(input=>setCopilotPageContext(input?{...input,storageScope:copilotOwnerScope}:null),[copilotOwnerScope])
  const openCopilot=(input={})=>{const launch=resolveCopilotLaunch({input,implicitContext:copilotPageContext,page,storageScope:copilotOwnerScope,clients:clientList,selectedClient:selected});setCopilotSeed({...launch,nonce:Date.now()});if(page!=='copilot')setCopilotReturnPage(page);setCopilotOpen(true);setPage('copilot')}
  const closeCopilot=()=>{setCopilotOpen(false);setPage(copilotReturnPage&&copilotReturnPage!=='copilot'?copilotReturnPage:'dashboard')}
- const navigate=next=>{if(next!=='client360'&&next!=='copilot')setSelected(null);if(next!=='visits')setPrepareVisitClientId('');if(next==='val')setValMode(null);if(next!=='copilot')setCopilotOpen(false);setPage(next);if(next===page)window.requestAnimationFrame(resetPageViewport)}
+ const navigate=target=>{
+  const descriptor=target&&typeof target==='object'?target:{page:target}
+  const next=String(descriptor.page||'dashboard')
+  if(next==='agro'){
+   const context=descriptor.context&&typeof descriptor.context==='object'?descriptor.context:{}
+   const requestedClientId=String(descriptor.clientId||context.clientId||'')
+   const explicitClient=requestedClientId?clientList.find(item=>String(item.id)===requestedClientId)||null:null
+   const inheritedClient=!requestedClientId&&page==='client360'&&selected?.id?clientList.find(item=>String(item.id)===String(selected.id))||null:null
+   const agroClient=explicitClient||inheritedClient
+   const entity=(value,id,label)=>value&&typeof value==='object'?value:id?{id,label:label||id}:null
+   const nextContext=requestedClientId&&!explicitClient?{}:context
+   setAgroLaunch({
+    nonce:Date.now(),client:agroClient,context:nextContext,
+    property:entity(descriptor.property,context.propertyId,context.propertyLabel),
+    field:entity(descriptor.field,context.fieldId,context.fieldLabel),
+    analysis:entity(descriptor.analysis,context.analysisId,context.analysisLabel),
+    initialTool:descriptor.toolDescriptor||{
+     id:String(descriptor.tool||descriptor.manualPage||context.tool||context.page||''),
+     tool:String(descriptor.tool||context.tool||''),
+     page:String(descriptor.manualPage||descriptor.pagePath||context.page||''),
+     mode:String(descriptor.mode||context.mode||''),
+     diagnosisMode:String(descriptor.diagnosisMode||context.diagnosisMode||''),
+     calculator:String(descriptor.calculator||context.calculator||''),
+     label:String(descriptor.label||context.label||'')
+    },
+    initialFiles:Array.isArray(descriptor.files)?descriptor.files.slice(0,3):[]
+   })
+   setSelected(agroClient||null)
+  }else if(next!=='client360'&&next!=='copilot')setSelected(null)
+  if(next!=='visits')setPrepareVisitClientId('')
+  if(next==='val')setValMode(null)
+  if(next!=='copilot')setCopilotOpen(false)
+  setPage(next);if(next===page)window.requestAnimationFrame(resetPageViewport)
+ }
+ const recordAgroHeroTelemetry=useCallback(event=>{
+  try{window.dispatchEvent(new CustomEvent('valor360:agro-hero-telemetry',{detail:event}))}catch{}
+  fetch('/api/usage/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({eventType:'agro_hero_interaction',page:'agro',entityType:event?.clientContext?'client':'',entityId:event?.clientContext?agroLaunch.client?.id||'':'',metadata:{action:event?.action,status:event?.status,phase:event?.phase,errorCode:event?.errorCode,contextTypes:event?.contextTypes}}),signal:AbortSignal.timeout(5000)}).catch(()=>null)
+ },[agroLaunch.client?.id])
  const addClient=client=>{
   let saved
   const incomingCommercial=Object.fromEntries(Object.entries(client.commercial||{}).filter(([,value])=>value!==''&&value!==null&&value!==undefined))
@@ -148,7 +186,7 @@ export default function App(){
      onSaved={message=>notify(message||'Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}
     />}
     {page==='val'&&<ValWorkspace mode={valMode} onModeChange={setValMode} clients={clientList} selectedClient={selected} onSelect={openClient} onPrepareVisit={prepareClient}/>}
-    {page==='agro'&&<Agro onAsk={openCopilot} onContextChange={updateCopilotPageContext}/>}
+    {page==='agro'&&<Agro key={agroLaunch.nonce||'agro'} onAsk={openCopilot} onCapture={openCopilot} onTelemetry={recordAgroHeroTelemetry} onContextChange={updateCopilotPageContext} client={agroLaunch.client} property={agroLaunch.property} field={agroLaunch.field} analysis={agroLaunch.analysis} context={agroLaunch.context} initialTool={agroLaunch.initialTool} initialFiles={agroLaunch.initialFiles}/>}
     {page==='questionnaire'&&<Questionnaire onCreate={addClient} onCreateMany={addClients} onOpen={openClient} onNotify={notify}/>}
     {page==='visits'&&<Visits clients={clientList} visits={visits} storageScope={currentUser?.storageScope} initialClientId={prepareVisitClientId} onInitialHandled={()=>setPrepareVisitClientId('')} onSave={saveVisit} onPrepare={openValClient} onAsk={openCopilot} onContextChange={updateCopilotPageContext} onStarted={startVisitResult} onRegistered={registerVisitResult}/>}
     {page==='opportunities'&&<Opportunities clients={clientList} storageScope={currentUser?.storageScope} persistedItems={opportunities} onPersist={saveOpportunity} onClient={openClient} onAsk={openCopilot} onContextChange={updateCopilotPageContext} onSaved={notify}/>}

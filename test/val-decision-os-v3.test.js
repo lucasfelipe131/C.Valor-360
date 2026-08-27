@@ -273,8 +273,10 @@ test('arquivos de UX v3 — entrevista, áudio e workspace agronômico têm supe
  assert.ok(copilot.includes('DecisionInterviewCard'))
  assert.ok(copilot.includes('ValAudioResponse'))
  const agro=read('src/pages/Agro.jsx')
+ const agroActions=read('src/lib/agro-hero-actions.js')
  assert.ok(agro.includes('/tecnico?embedded=1&page='))
- assert.ok(agro.includes('valor360:navigate'))
+ assert.ok(agro.includes('createAgroWorkspaceMessage'))
+ assert.ok(agroActions.includes("type:'valor360:navigate'"))
 })
 
 test('solo auditável + headless — vínculo muda refs sem perder identidade ou medições',()=>{
@@ -282,6 +284,7 @@ test('solo auditável + headless — vínculo muda refs sem perder identidade ou
  const integration=read('manual/app/lib/valor360.ts')
  const repository=read('server/repository.js')
  const agro=read('src/pages/Agro.jsx')
+ const agroActions=read('src/lib/agro-hero-actions.js')
 
  for(const state of ['UNLINKED','LINKED_TO_CLIENT','LINKED_TO_PROPERTY','LINKED_TO_FIELD']){
   assert.ok(manual.includes(`"${state}"`),state)
@@ -306,5 +309,6 @@ test('solo auditável + headless — vínculo muda refs sem perder identidade ou
  assert.ok(manual.includes('event.origin !== window.location.origin'))
  assert.ok(manual.includes('message?.type !== "valor360:navigate"'))
  assert.ok(agro.includes('/tecnico?embedded=1&page='))
- assert.ok(agro.includes("postMessage({type:'valor360:navigate'"))
+ assert.ok(agro.includes('postMessage(createAgroWorkspaceMessage'))
+ assert.ok(agroActions.includes("type:'valor360:navigate'"))
 })

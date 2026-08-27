@@ -229,3 +229,83 @@
 .agro-preserved-functions{display:flex;align-items:center;gap:12px;padding:14px 16px;border:1px solid #d7e5e0;border-radius:15px;background:#f7faf9;color:#557069}.agro-preserved-functions>svg{width:19px;color:#16805f}.agro-preserved-functions>svg:nth-last-child(-n+2){margin-left:auto;color:#8ba098}.agro-preserved-functions>svg:last-child{margin-left:0}.agro-preserved-functions b,.agro-preserved-functions span{display:block}.agro-preserved-functions b{font-size:10px}.agro-preserved-functions span{margin-top:2px;font-size:9px}
 @media(max-width:980px){.agro-decision-hero{grid-template-columns:1fr}.agro-capability-groups{grid-template-columns:1fr}.agro-capability-group:last-child{grid-column:auto}.agro-tool-workspace iframe{min-height:680px}}
 @media(max-width:700px){.agro-decision-page{gap:13px}.agro-decision-hero{padding:20px;border-radius:18px}.agro-decision-copy h2{font-size:29px}.agro-decision-inputs{grid-template-columns:1fr 1fr}.agro-decision-inputs button.is-primary{grid-column:1/-1}.agro-capability-group{padding:16px;border-radius:17px}.agro-capability-group>div{grid-template-columns:1fr}.agro-capability-group button{min-height:76px}.agro-tool-workspace{grid-template-rows:56px minmax(0,1fr);min-height:730px;border-radius:16px}.agro-tool-workspace .agro-minimal-header{height:56px;padding:0 8px}.agro-tool-title>.val-brand{display:none}.agro-tool-title small{display:none}.agro-workspace-actions>span,.agro-workspace-actions .agro-ask-inline b{display:none}.agro-workspace-actions .agro-ask-inline{min-width:38px;padding:7px}.agro-tool-workspace iframe{height:max(670px,calc(100dvh - 190px));min-height:670px}.agro-tool-workspace .agro-frame-loading{top:56px;min-height:calc(100% - 56px)}.agro-preserved-functions>svg:nth-last-child(-n+2){display:none}}
+
+/* VAL Agronomic Intelligence v3 — hero operacional, sem segunda plataforma. */
+.agro-hero-workbench{min-width:0;align-self:center;display:grid;gap:9px}
+.agro-decision-inputs button[data-agro-hero-action]{position:relative;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease,background .16s ease}
+.agro-decision-inputs button[data-agro-hero-action]:focus-visible{outline:3px solid rgba(25,139,101,.28);outline-offset:2px}
+.agro-decision-inputs button[data-state="success"]{border-color:#61b998;box-shadow:0 8px 25px rgba(17,128,91,.13)}
+.agro-decision-inputs button[data-state="error"]{border-color:#d99a8f;color:#8d4037;background:#fff8f6}
+.agro-decision-inputs button:disabled{cursor:wait;opacity:.82;transform:none}
+.agro-hero-native-input{position:fixed!important;left:-10000px!important;width:1px!important;height:1px!important;overflow:hidden!important;opacity:0!important}
+.agro-hero-session-files{display:grid;gap:6px}
+.agro-hero-session-files>div{min-width:0;display:grid;grid-template-columns:auto minmax(0,1fr) auto auto;align-items:center;gap:8px;padding:8px;border:1px solid #c8ddd5;border-radius:12px;color:#315e50;background:#f8fbfa}
+.agro-hero-session-files>div[data-valid="false"]{border-color:#e4beb7;color:#82483f;background:#fff8f6}
+.agro-hero-session-files>div>svg{width:18px;color:#16805f}
+.agro-hero-session-files b,.agro-hero-session-files small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agro-hero-session-files b{font-size:9px}
+.agro-hero-session-files small{margin-top:3px;color:#6f837c;font-size:8px}
+.agro-hero-session-files button{min-height:34px;padding:0 9px;border:1px solid #c5ddd4;border-radius:9px;color:#196d54;background:#fff;font-size:8px;font-weight:900}
+.agro-hero-session-files button:last-child{width:34px;padding:0;display:grid;place-items:center}
+.agro-hero-session-files button svg{width:14px}
+.agro-hero-context{display:flex;flex-wrap:wrap;gap:6px;margin-top:17px}
+.agro-hero-context>span{min-width:0;max-width:260px;padding:7px 10px;border:1px solid #c9e1d7;border-radius:10px;background:rgba(255,255,255,.72)}
+.agro-hero-context small,.agro-hero-context b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.agro-hero-context small{color:#39816b;font-size:7px;font-weight:900;letter-spacing:.09em}
+.agro-hero-context b{margin-top:3px;color:#28584a;font-size:9px}
+.agro-hero-composer{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:end;gap:6px;padding:7px;border:1px solid #bddacf;border-radius:14px;background:#fff;box-shadow:0 10px 27px rgba(8,65,51,.09)}
+.agro-hero-composer[hidden]{display:none}
+.agro-hero-composer label{min-width:0}
+.agro-hero-composer textarea{display:block;width:100%;min-height:62px;max-height:150px;resize:vertical;padding:10px;border:0;border-radius:10px;color:#204f41;background:#f5f9f7;font:inherit;font-size:13px;line-height:1.45;outline:none}
+.agro-hero-composer textarea:focus{box-shadow:inset 0 0 0 2px #75bca4}
+.agro-hero-composer button{min-height:42px;display:flex;align-items:center;justify-content:center;gap:6px;padding:0 12px;border:1px solid #c9ded6;border-radius:10px;color:#27624f;background:#edf7f3;font-size:9px;font-weight:900}
+.agro-hero-composer button[type="submit"]{color:#fff;border-color:#0c765a;background:#0c765a}
+.agro-hero-composer button:last-child{width:42px;padding:0}
+.agro-hero-composer svg{width:15px}
+.agro-hero-recorder{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:7px;padding:9px 10px;border:1px solid #e8c4bd;border-radius:13px;background:#fff8f6;color:#6f433d}
+.agro-hero-recorder>span{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:900}
+.agro-hero-recorder>span i{width:9px;height:9px;border-radius:50%;background:#c54e45;box-shadow:0 0 0 5px rgba(197,78,69,.12);animation:agro-hero-record 1.2s ease-in-out infinite}
+.agro-hero-recorder button{min-height:36px;display:flex;align-items:center;gap:5px;padding:0 9px;border:1px solid #dfb4ac;border-radius:9px;color:#7e4038;background:#fff;font-size:8px;font-weight:900}
+.agro-hero-recorder button:first-of-type{color:#fff;border-color:#a9463d;background:#a9463d}
+.agro-hero-recorder svg{width:13px}
+.agro-hero-feedback{display:flex;align-items:center;gap:9px;min-height:48px;padding:9px 11px;border:1px solid #cfe2db;border-radius:13px;color:#396458;background:#f7fbf9}
+.agro-hero-feedback>svg{width:19px;flex:none;color:#16805f}
+.agro-hero-feedback b,.agro-hero-feedback small{display:block}
+.agro-hero-feedback b{font-size:9px}
+.agro-hero-feedback small{margin-top:3px;color:#6b7f78;font-size:8px;line-height:1.35}
+.agro-hero-feedback.is-error{border-color:#e8c3bc;color:#8b4138;background:#fff8f6}
+.agro-hero-feedback.is-error>svg{color:#b64f44}
+.agro-hero-feedback.is-success{border-color:#b8dccd;background:#eff9f5}
+.agro-hero-spin{animation:agro-hero-spin .8s linear infinite}
+.agro-capability-group>header>span{display:block;padding-bottom:8px;border-bottom:1px solid #e4ece8}
+.agro-capability-group h3{font-size:19px;letter-spacing:-.025em}
+@keyframes agro-hero-spin{to{transform:rotate(360deg)}}
+@keyframes agro-hero-record{50%{opacity:.55;box-shadow:0 0 0 8px rgba(197,78,69,.08)}}
+
+@media(max-width:700px){
+ .agro-decision-hero{gap:18px}
+ .agro-decision-copy h2{max-width:420px;font-size:31px;line-height:1.08}
+ .agro-decision-inputs{grid-template-columns:1fr 1fr}
+ .agro-decision-inputs button[data-agro-hero-action]{min-height:76px;padding:11px}
+ .agro-decision-inputs button[data-agro-hero-action="voice"]{grid-column:1/-1;min-height:58px}
+ .agro-decision-inputs button[data-agro-hero-action="file"]{grid-column:1/-1;min-height:58px}
+ .agro-hero-context>span{max-width:100%;flex:1 1 145px}
+ .agro-hero-session-files>div{grid-template-columns:auto minmax(0,1fr) auto}
+ .agro-hero-session-files>div>button:first-of-type{grid-column:2/-1}
+ .agro-hero-session-files>div>button:last-child{grid-column:3;grid-row:1}
+ .agro-hero-session-files small{white-space:normal;line-height:1.35}
+ .agro-hero-composer{grid-template-columns:minmax(0,1fr) auto}
+ .agro-hero-composer button:last-child{grid-column:2;grid-row:1;width:40px;align-self:start}
+ .agro-hero-composer button[type="submit"]{grid-column:1/-1;grid-row:2}
+ .agro-hero-composer textarea{font-size:16px}
+ .agro-hero-recorder{grid-template-columns:1fr 1fr}
+ .agro-hero-recorder>span{grid-column:1/-1}
+ .agro-hero-recorder button{justify-content:center}
+ .agro-tool-workspace{min-height:max(560px,calc(100dvh - 130px))}
+ .agro-tool-workspace iframe{height:max(520px,calc(100dvh - 190px));min-height:520px}
+}
+
+@media(prefers-reduced-motion:reduce){
+ .agro-decision-inputs button[data-agro-hero-action]{transition:none}
+ .agro-hero-spin,.agro-hero-recorder>span i{animation:none}
+}

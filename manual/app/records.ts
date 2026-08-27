@@ -1,3 +1,5 @@
+import { sanitizePhotoDiagnosisPayload } from "./lib/photo-diagnosis-record";
+
 export type RecordType =
   | "quote"
   | "soil_analysis"
@@ -5,6 +7,7 @@ export type RecordType =
   | "fertilizer_comparison"
   | "season_report"
   | "field_analysis"
+  | "photo_diagnosis"
   | "calculator"
   | "crm_import"
   | "producer_change"
@@ -29,6 +32,7 @@ export const recordTypeLabels: Record<RecordType, string> = {
   fertilizer_comparison: "Comparativo de fertilizantes",
   season_report: "Fechamento de safra",
   field_analysis: "Interpretação de talhão",
+  photo_diagnosis: "Diagnóstico assistido por imagem",
   calculator: "Cálculo salvo",
   crm_import: "Importação de CRM",
   producer_change: "Alteração de produtor",
@@ -101,16 +105,19 @@ function transactionDone(transaction: IDBTransaction) {
 }
 
 async function persistRecordOnServer(record: SavedRecord) {
+  const safeRecord = record.type === "photo_diagnosis"
+    ? { ...record, payload: sanitizePhotoDiagnosisPayload(record.payload) }
+    : record;
   const response = await fetch("/api/records", {
     method: "POST",
     credentials: "same-origin",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      id: record.id,
-      type: record.type,
-      title: record.title,
-      producerName: record.producerName,
-      payload: record.payload,
+      id: safeRecord.id,
+      type: safeRecord.type,
+      title: safeRecord.title,
+      producerName: safeRecord.producerName,
+      payload: safeRecord.payload,
     }),
   });
   const result = (await response.json().catch(() => ({}))) as {
@@ -182,7 +189,9 @@ export async function saveRecord(input: {
     type: input.type,
     title: input.title.trim().slice(0, 220),
     producerName: String(input.producerName ?? "").trim().slice(0, 180),
-    payload: JSON.parse(JSON.stringify(input.payload)) as Record<string, unknown>,
+    payload: input.type === "photo_diagnosis"
+      ? sanitizePhotoDiagnosisPayload(input.payload)
+      : JSON.parse(JSON.stringify(input.payload)) as Record<string, unknown>,
     createdAt: previous?.ownerId === currentOwner ? previous.createdAt : now,
     updatedAt: now,
   };
@@ -207,7 +216,11 @@ async function listLocalRecords(type?: RecordType) {
         store.index("ownerId").getAll(IDBKeyRange.only(currentOwner)) as IDBRequest<SavedRecord[]>,
       );
   database.close();
-  return values.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  return values
+    .map((record) => record.type === "photo_diagnosis"
+      ? { ...record, payload: sanitizePhotoDiagnosisPayload(record.payload) }
+      : record)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
 async function cacheRecords(records: SavedRecord[]) {
@@ -243,9 +256,11 @@ async function listServerRecords(type?: RecordType) {
       type: recordType,
       title: String(source.title ?? "").slice(0, 220),
       producerName: String(source.producerName ?? "").slice(0, 180),
-      payload: source.payload && typeof source.payload === "object" && !Array.isArray(source.payload)
-        ? source.payload
-        : {},
+      payload: recordType === "photo_diagnosis"
+        ? sanitizePhotoDiagnosisPayload(source.payload)
+        : source.payload && typeof source.payload === "object" && !Array.isArray(source.payload)
+          ? source.payload
+          : {},
       createdAt: String(source.createdAt || now),
       updatedAt: String(source.updatedAt || source.createdAt || now),
     } satisfies SavedRecord];
@@ -339,7 +354,9 @@ export async function importRecords(raw: string) {
       ownerId: currentOwner,
       title: String(source.title ?? "").slice(0, 220),
       producerName: String(source.producerName ?? "").slice(0, 180),
-      payload: source.payload && typeof source.payload === "object" ? source.payload : {},
+      payload: source.type === "photo_diagnosis"
+        ? sanitizePhotoDiagnosisPayload(source.payload)
+        : source.payload && typeof source.payload === "object" ? source.payload : {},
       createdAt: source.createdAt || now,
       updatedAt: source.updatedAt || now,
     } satisfies SavedRecord);

@@ -8,7 +8,7 @@ test('API canônica é aditiva e rotas legadas usam o mesmo adaptador',()=>{
   const server=read('../server.js')
   assert.match(server,/url\.pathname==='\/api\/v1\/val\/recommendations'/)
   assert.match(server,/valCore\.execute\(requestEnvelope/)
-  assert.match(server,/url\.pathname==='\/api\/v1\/val\/recommendations'\?coreResponse:legacyRecommendationResponse\(coreResponse,requestId\)/)
+  assert.match(server,/url\.pathname==='\/api\/v1\/val\/recommendations'\?effectiveCoreResponse:legacyRecommendationResponse\(effectiveCoreResponse,requestId\)/)
   assert.match(server,/organization_id:organizationId/)
   assert.doesNotMatch(server,/organization_id:payload/)
 })

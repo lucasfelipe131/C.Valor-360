@@ -71,11 +71,15 @@ for (const item of received) {
   assert.equal(item.signature, `sha256=${expected}`);
   assert(!item.raw.includes("123.456.789-00"));
   assert(!item.raw.includes("base64"));
-  assert.equal(JSON.parse(item.raw).clientExternalKey, "genor-brum-filho");
 }
+const eventPayloads = received.map((item) => JSON.parse(item.raw));
 assert.deepEqual(
-  received.map((item) => JSON.parse(item.raw).type),
+  eventPayloads.map((item) => item.type),
   ["manual.record.saved", "soil_analysis.completed", "manual.producer.updated"],
+);
+assert.deepEqual(
+  eventPayloads.map((item) => item.clientExternalKey),
+  ["genor-brum-filho", "genor-brum-filho", "produtor-1"],
 );
 
 server.close();

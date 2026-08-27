@@ -35,7 +35,8 @@ export function PrepareVisitCard({reasoning={},questions=[],onOpen}){
 export function AgronomicInsightCard({reasoning={},onOpen}){
  const agronomy=reasoning.agronomic_context||{}
  const sources=Object.entries(agronomy.sources||{}).filter(([,value])=>Number(value)>0)
- return <Card className="val-agronomic-card" icon={Sprout} label="ANÁLISE AGRONÔMICA" title={agronomy.status==='available'?'Contexto técnico disponível':'Leitura técnica com dados limitados'} actionLabel="Ver Inteligência Agronômica" onAction={()=>onOpen?.('agro')}>
+ const tool=String(reasoning.intent||'').toUpperCase()==='ANALYZE_SOIL'?'solo':''
+ return <Card className="val-agronomic-card" icon={Sprout} label="ANÁLISE AGRONÔMICA" title={agronomy.status==='available'?'Contexto técnico disponível':'Leitura técnica com dados limitados'} actionLabel="Ver Inteligência Agronômica" onAction={()=>onOpen?.({page:'agro',tool,manualPage:tool})}>
   <p>{agronomy.safety_note||'Nenhuma prescrição técnica é executada automaticamente.'}</p>
   {sources.length>0&&<div className="val-source-chips">{sources.map(([key,value])=><span key={key}>{key.replaceAll('_',' ')} • {value}</span>)}</div>}
   {agronomy.human_review_required&&<div className="val-card-guardrail"><ShieldCheck/>Revisão humana técnica obrigatória antes de qualquer ação.</div>}
@@ -88,13 +89,14 @@ export function ConfirmationCard({title='Informação para confirmar',children,a
 }
 
 export function CalculationCard({reasoning={},onOpen}){
- return <Card className="val-calculation-card" icon={CircleDollarSign} label="VALOR / ROI" title="Leitura econômica" actionLabel="Abrir ferramentas de cálculo" onAction={()=>onOpen?.('agro')}><p>{reasoning.recommended_strategy?.reading||reasoning.situation_summary}</p><small>Hipóteses e unidades devem ser confirmadas antes de usar o resultado em proposta.</small></Card>
+ return <Card className="val-calculation-card" icon={CircleDollarSign} label="VALOR / ROI" title="Leitura econômica" actionLabel="Abrir ferramentas de cálculo" onAction={()=>onOpen?.({page:'agro',tool:'calculators',manualPage:'calculadoras'})}><p>{reasoning.recommended_strategy?.reading||reasoning.situation_summary}</p><small>Hipóteses e unidades devem ser confirmadas antes de usar o resultado em proposta.</small></Card>
 }
 
 export function DiagnosisCard({reasoning={},onOpen}){
- return <Card className="val-diagnosis-card" icon={Leaf} label="DIAGNÓSTICO" title="Leitura do material enviado" actionLabel="Abrir diagnóstico completo" onAction={()=>onOpen?.('agro')}><p>{reasoning.situation_summary||reasoning.recommended_strategy?.reading}</p><small>Diagnóstico assistido não substitui validação agronômica responsável.</small></Card>
+ return <Card className="val-diagnosis-card" icon={Leaf} label="DIAGNÓSTICO" title="Leitura do material enviado" actionLabel="Abrir diagnóstico completo" onAction={()=>onOpen?.({page:'agro',tool:'diagnosis',manualPage:'diagnostico'})}><p>{reasoning.situation_summary||reasoning.recommended_strategy?.reading}</p><small>Diagnóstico assistido não substitui validação agronômica responsável.</small></Card>
 }
 
-export function GenericToolCard({title,summary,onOpen}){
- return <Card className="val-tool-result-card" icon={ClipboardCheck} label="RESULTADO DA FERRAMENTA" title={title||'Resultado estruturado'} actionLabel="Abrir análise completa" onAction={onOpen}><p>{summary}</p></Card>
+export function GenericToolCard({title,summary,status='EXECUTED',onOpen}){
+ const normalized=text(status,40)||'EXECUTED'
+ return <Card className="val-tool-result-card" icon={ClipboardCheck} label={normalized==='EXECUTED'?'FERRAMENTA EXECUTADA':'FERRAMENTA PRONTA'} title={title||'Resultado estruturado'} actionLabel="Abrir análise completa" onAction={onOpen}><p>{summary}</p><small>{normalized==='INPUT_REQUIRED'?'A VAL precisa dos dados indicados antes de calcular ou diagnosticar.':'Resultado governado pelo orquestrador; nenhuma autorização foi delegada ao modelo.'}</small></Card>
 }
