@@ -110,6 +110,11 @@ test('resposta usa cards reutilizáveis e drill-down sem remover módulos',()=>{
  assert.match(copilot,/context:\{\.\.\.\(activeContext\|\|\{\}\),\.\.\.\(descriptor\.context\|\|\{\}\)\}/)
  assert.match(cards,/Abrir preparação completa/)
  assert.match(cards,/Ver Inteligência Agronômica/)
+ assert.match(cards,/CAPACIDADES AGRONÔMICAS/)
+ assert.match(cards,/disponibilidade não significa execução/)
+ assert.match(cards,/CONTEXTO NECESSÁRIO/)
+ assert.doesNotMatch(cards,/normalized==='EXECUTED'\?'FERRAMENTA EXECUTADA':'FERRAMENTA PRONTA'/)
+ assert.match(copilot,/toolResult\?\.status!=='CATALOG'/)
 })
 
 test('composer multimodal diferencia ASK, REGISTER, voz efêmera e arquivo sem vínculo',()=>{

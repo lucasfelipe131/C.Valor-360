@@ -98,5 +98,13 @@ export function DiagnosisCard({reasoning={},onOpen}){
 
 export function GenericToolCard({title,summary,status='EXECUTED',onOpen}){
  const normalized=text(status,40)||'EXECUTED'
- return <Card className="val-tool-result-card" icon={ClipboardCheck} label={normalized==='EXECUTED'?'FERRAMENTA EXECUTADA':'FERRAMENTA PRONTA'} title={title||'Resultado estruturado'} actionLabel="Abrir análise completa" onAction={onOpen}><p>{summary}</p><small>{normalized==='INPUT_REQUIRED'?'A VAL precisa dos dados indicados antes de calcular ou diagnosticar.':'Resultado governado pelo orquestrador; nenhuma autorização foi delegada ao modelo.'}</small></Card>
+ const presentation={
+  EXECUTED:{label:'FERRAMENTA EXECUTADA',action:'Abrir análise completa',detail:'Resultado governado pelo orquestrador; nenhuma autorização foi delegada ao modelo.'},
+  INPUT_REQUIRED:{label:'DADOS NECESSÁRIOS',action:'Abrir ferramenta',detail:'A VAL precisa dos dados indicados antes de calcular ou diagnosticar.'},
+  CATALOG:{label:'CAPACIDADES AGRONÔMICAS',action:'Ver Inteligência Agronômica',detail:'Catálogo informativo: disponibilidade não significa execução, fonte atual ou paridade completa.'},
+  READY:{label:'MATERIAL RECEBIDO',action:'Abrir ferramenta',detail:'O material foi recebido, mas a análise ainda precisa ser executada e revisada.'},
+  CONTEXT_REQUIRED:{label:'CONTEXTO NECESSÁRIO',action:'Selecionar produtor',detail:'Selecione explicitamente um produtor autorizado; a VAL não consultou memória privada sem esse contexto.'},
+  NO_DATA:{label:'FONTE NÃO DISPONÍVEL',action:'Abrir módulo',detail:'Nenhum dado atual foi presumido; conecte ou consulte uma fonte autorizada.'}
+ }[normalized]||{label:'RESULTADO DA FERRAMENTA',action:'Abrir módulo',detail:'Estado informado pelo orquestrador; nenhuma autorização foi delegada ao modelo.'}
+ return <Card className="val-tool-result-card" icon={ClipboardCheck} label={presentation.label} title={title||'Resultado estruturado'} actionLabel={presentation.action} onAction={onOpen}><p>{summary}</p><small>{presentation.detail}</small></Card>
 }

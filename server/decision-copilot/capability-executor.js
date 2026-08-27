@@ -1,4 +1,5 @@
 import {createHash,randomUUID} from 'node:crypto'
+import {isCurrentClientIdentityRequest} from '../ai-reasoning/intent-router.js'
 
 export const capabilityExecutorVersion='val.capability_executor.v1'
 
@@ -9,6 +10,7 @@ const imageTypes=new Set(['image/jpeg','image/png','image/webp','image/gif'])
 const supportedAgroTools=new Set(['solo','produtores','diagnostico','calculadoras','bulas','mercado','clima','manual','biblioteca','observacoes'])
 
 const navigation=Object.freeze({
+ AGRONOMIC_WORKSPACE:{tool:'',title:'Ferramentas agronômicas da VAL',page:'agro',manual_page:null,mode:'catalog'},
  AREA_MAPPING:{tool:'area_mapping',title:'Mapeamento de áreas',page:'agro',manual_page:'produtores',mode:'mapping'},
  CALCULATORS:{tool:'calculators',title:'Calculadoras agronômicas',page:'agro',manual_page:'calculadoras',mode:'calculator'},
  SOIL_ANALYSIS:{tool:'soil_analysis',title:'Análise de solo',page:'agro',manual_page:'solo',mode:'soil'},
@@ -18,10 +20,31 @@ const navigation=Object.freeze({
  SESSION_COMMAND:{tool:'session_command',title:'Comando da conversa',page:'copilot',manual_page:null,mode:'session'},
  MARKET_COMMODITY:{tool:'market',title:'Mercado e commodities',page:'agro',manual_page:'mercado',mode:'live_data'},
  WEATHER:{tool:'weather',title:'Clima',page:'agro',manual_page:'inicio',mode:'live_data'},
- LABELS:{tool:'labels',title:'Bulas e registros',page:'agro',manual_page:'bulas',mode:'live_data'}
+ LABELS:{tool:'labels',title:'Bulas e registros',page:'agro',manual_page:'bulas',mode:'live_data'},
+ AGRONOMIST_MANUAL:{tool:'manual',title:'Manual do Agrônomo',page:'agro',manual_page:'inicio',mode:'knowledge'},
+ KNOWLEDGE_LIBRARY:{tool:'biblioteca',title:'Biblioteca e histórico',page:'agro',manual_page:'relatorios',mode:'knowledge'}
  ,CLIENT_CONTEXT:{tool:'client_fact',title:'Contexto do produtor',page:'copilot',manual_page:null,mode:'fast'}
  ,CONFIRMED_MEMORY:{tool:'confirmed_memory',title:'Memória confirmada',page:'copilot',manual_page:null,mode:'fast'}
  ,COMMERCIAL_HISTORY:{tool:'commercial_history',title:'Histórico comercial',page:'copilot',manual_page:null,mode:'fast'}
+})
+
+const agronomicCatalogCapabilities=Object.freeze([
+ 'AREA_MAPPING','SOIL_ANALYSIS','IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN','CALCULATORS',
+ 'LABELS','WEATHER','MARKET_COMMODITY','AGRONOMIST_MANUAL','KNOWLEDGE_LIBRARY'
+])
+
+const agronomicCatalogPolicy=Object.freeze({
+ AREA_MAPPING:{availability:'SPECIALIZED_WORKSPACE',integration_state:'PARTIAL',requires_current_source:false,human_review_required:true},
+ SOIL_ANALYSIS:{availability:'SPECIALIZED_WORKSPACE',integration_state:'AVAILABLE',requires_current_source:false,human_review_required:true},
+ IMAGE_DIAGNOSIS:{availability:'SPECIALIZED_WORKSPACE',integration_state:'PARTIAL',requires_current_source:false,human_review_required:true},
+ NUTRISCAN:{availability:'SPECIALIZED_WORKSPACE',integration_state:'PARTIAL',requires_current_source:false,human_review_required:true},
+ FITOSCAN:{availability:'SPECIALIZED_WORKSPACE',integration_state:'PARTIAL',requires_current_source:false,human_review_required:true},
+ CALCULATORS:{availability:'SPECIALIZED_WORKSPACE',integration_state:'PARTIAL',requires_current_source:false,human_review_required:true},
+ LABELS:{availability:'CURRENT_SOURCE_REQUIRED',integration_state:'SOURCE_DEPENDENT',requires_current_source:true,human_review_required:true},
+ WEATHER:{availability:'CURRENT_SOURCE_REQUIRED',integration_state:'SOURCE_DEPENDENT',requires_current_source:true,human_review_required:false},
+ MARKET_COMMODITY:{availability:'CURRENT_SOURCE_REQUIRED',integration_state:'SOURCE_DEPENDENT',requires_current_source:true,human_review_required:false},
+ AGRONOMIST_MANUAL:{availability:'SPECIALIZED_WORKSPACE',integration_state:'AVAILABLE',requires_current_source:false,human_review_required:false},
+ KNOWLEDGE_LIBRARY:{availability:'SPECIALIZED_WORKSPACE',integration_state:'AVAILABLE',requires_current_source:false,human_review_required:false}
 })
 
 const contextCollections=Object.freeze({
@@ -68,6 +91,13 @@ function descriptor(capability,{status='EXECUTED',summary='',context=null,toolRe
 
 function result(capability,status,toolResult,sourceRef=null){
  return Object.freeze({capability,status,source_ref:sourceRef||null,tool_result:toolResult})
+}
+
+function agronomicToolCatalogResult(){
+ const availableTools=agronomicCatalogCapabilities.map(capability=>Object.freeze({capability,...navigation[capability],...agronomicCatalogPolicy[capability]}))
+ const summary='Na Inteligência Agronômica há módulos para propriedades, talhões e mapeamento de áreas; análises de solo; diagnóstico por foto, incluindo NutriScan e FitoScan; calculadoras; bulas; clima; mercado; Manual e Biblioteca. Clima, mercado e bulas exigem fonte atual autorizada; diagnósticos exigem revisão humana; mapeamento, diagnóstico por foto, scans e paridade nativa de calculadoras permanecem parciais. Use o ambiente especializado para aprofundar cada capacidade.'
+ const tool=descriptor('AGRONOMIC_WORKSPACE',{status:'CATALOG',summary,context:{client_id:null,private_memory_used:false,catalog_version:'val.agronomic_tool_catalog.v1'},toolResult:{available_tools:availableTools}})
+ return result('AGRONOMIC_WORKSPACE','EXECUTED',tool,'val.agronomic_tool_catalog.v1')
 }
 
 function mappingResult({context,clientId,activeContext}){
@@ -159,6 +189,12 @@ function confirmedMemoryValue(item={}){
 
 function fastContextResult({capability,message,context,clientId}){
  const source=String(message).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+ if(capability==='CLIENT_CONTEXT'&&isCurrentClientIdentityRequest(source)){
+  const clientName=clean(context?.client?.name,180)
+  const status=clientName?'EXECUTED':'NO_DATA'
+  const summary=clientName?`Produtor atual: ${clientName}.`:'Não consegui confirmar o produtor atual no contexto autorizado.'
+  return result(capability,status,descriptor(capability,{status,summary,context:{client_id:clientId||null,current_client_only:true}}),clientName?`client:${clientId}`:null)
+ }
  if(capability==='CONFIRMED_MEMORY'&&/\b(?:quem decide|decisor)\b/.test(source)){
   const memory=list(context.memories).find(item=>String(item?.status||'').toLowerCase()==='verified'&&String(item?.memory_state||item?.memoryState||'FACT').toUpperCase()==='FACT'&&(/decis|quem decide/i.test(String(item?.key||''))||confirmedMemoryValue(item)))
   const value=memory&&confirmedMemoryValue(memory)
@@ -183,6 +219,7 @@ export async function executeCapabilityPlan({route={},message='',context={},atta
  const results=[]
  for(const capability of list(route.capabilities)){
   if(capability==='SESSION_COMMAND')results.push(sessionCommandResult({route,context,clientId}))
+  else if(capability==='AGRONOMIC_WORKSPACE'&&route.tool_hint==='AGRONOMIC_TOOL_CATALOG')results.push(agronomicToolCatalogResult())
   else if(capability==='AREA_MAPPING')results.push(mappingResult({context,clientId,activeContext:validatedContext}))
   else if(capability==='CALCULATORS')results.push(calculatorResult({message,clientId,activeContext:validatedContext}))
   else if(capability==='SOIL_ANALYSIS')results.push(soilResult({context,clientId,activeContext:validatedContext}))
@@ -207,16 +244,28 @@ export async function executeCapabilityPlan({route={},message='',context={},atta
 
 function generalAnswer(message=''){
  const source=String(message).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+ if(isCurrentClientIdentityRequest(source))return 'Nenhum produtor está selecionado nesta conversa.'
  if(/\bmargem\b/.test(source))return 'Margem é a diferença entre receita e custos. Em percentual, divida a margem em valor pela receita e multiplique por 100; confirme quais custos entram na comparação.'
  if(/\broi\b|retorno sobre investimento/.test(source))return 'ROI compara o ganho líquido com o investimento: (retorno menos investimento) dividido pelo investimento. Informe período, custos e premissas para evitar uma precisão falsa.'
  if(/\bcusto\s*\/\s*ha|custo por hectare/.test(source))return 'Custo por hectare é o custo total dividido pela área efetivamente considerada. Informe ambos com unidade e período para a VAL calcular.'
  if(/\bctc\b/.test(source))return 'CTC representa a capacidade do solo de reter e trocar cátions. Sua interpretação depende do método, da camada amostrada, do pH e das demais medições do laudo.'
+ if(/\bph\b/.test(source))return 'O pH indica a acidez ou alcalinidade do solo e influencia disponibilidade de nutrientes e manejo de correção. A interpretação prática depende do método, da camada, da cultura e das demais medições do laudo.'
  return 'Posso tratar esta dúvida sem selecionar um produtor e sem consultar memória privada. Informe a cultura, o conceito ou a decisão geral que deseja entender; dados atuais e recomendações técnicas continuam exigindo fonte, contexto e revisão.'
+}
+
+function isGeneralConceptRequest(message=''){
+ const source=String(message).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim()
+ const contextual=/\b(?:deste|desse|dessa|daquele|daquela|atual|selecionad[oa]|produtor|cliente|conta|oportunidade|visita|talhao|propriedade|laudo|analise)\b/.test(source)
+ if(contextual)return false
+ const definition=/\b(?:o que (?:e|significa)|explique|defina|qual (?:e )?a importancia)\b.*\b(?:ctc|ph|margem|roi|retorno sobre investimento|custo\s*\/\s*ha|custo por hectare)\b/.test(source)
+ const formula=/\bcomo (?:se )?(?:calcula|calcular)\b.*\b(?:margem|roi|retorno sobre investimento|custo\s*\/\s*ha|custo por hectare)\b/.test(source)
+ return definition||formula
 }
 
 export function buildCapabilityExecutionResponse({execution,route,message='',organizationId='unknown',clientId='',clientName='',conversationId='',now=new Date()}={}){
  const createdAt=(now instanceof Date?now:new Date(now)).toISOString()
  const tool=execution?.tool_result||null
+ const contextRequired=tool?.status==='CONTEXT_REQUIRED'
  const summary=clean(tool?.summary||'A capacidade solicitada não produziu resultado factual.',1200)
  const sourceRefs=list(execution?.capability_results).filter(item=>item.status==='EXECUTED'&&item.source_ref).map(item=>({id:item.source_ref,source_type:'system_capability'}))
  const client={id:clientId||'portfolio',name:clean(clientName,180)||'Carteira'}
@@ -226,21 +275,32 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
   context_snapshot:{id:`tool-${hash.slice(0,16)}`,version:'val.tool_context.v1',confidence:{level:execution?.capabilities_used?.length?'VERIFICADO':'INSUFICIENTE'},hash},
   conversation_id:clean(conversationId,180)||'stateless',intent:route?.intent||'ASK_GENERAL',persistence_mode:'NONE',objective:clean(message,1200)||tool?.title||'Executar capacidade',situation_summary:summary,
   key_signals:[],facts_used:sourceRefs,hypotheses:[],missing_information:tool?.required_inputs||[],
-  decision_thesis:{CURRENT_SITUATION:summary,WHAT_MATTERS:'A ferramenta precisa produzir evidência própria antes de qualquer síntese.',KEY_UNCERTAINTY:tool?.status==='INPUT_REQUIRED'?'Faltam entradas materiais para executar com segurança.':'O resultado ainda depende de validação humana quando houver decisão técnica.',THESIS:summary,WHY:'A resposta reflete somente o adapter e os dados autorizados desta requisição.',WHAT_TO_VALIDATE:'Confirme contexto, unidades, fonte e vínculo antes de usar o resultado.',WHAT_WOULD_CHANGE_MY_VIEW:'Novas entradas confirmadas ou uma execução técnica revisada.'},
-  golden_questions:[],recommended_strategy:{reading:summary,action:tool?.status==='INPUT_REQUIRED'?'Forneça apenas as entradas faltantes.':'Revise o resultado e abra a ferramenta para aprofundar.',do_not_do:'Não transformar disponibilidade da ferramenta em cálculo, diagnóstico ou prescrição.'},evidence_to_use:sourceRefs,
-  agronomic_context:{status:['AREA_MAPPING','CALCULATORS','SOIL_ANALYSIS','IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(tool?.capability)?'tool_result':'not_applicable',human_review_required:Boolean(tool?.human_review_required),sources:{}},commercial_context:{status:'not_applicable'},next_commitment:tool?.status==='INPUT_REQUIRED'?'Completar as entradas materiais.':'Validar o resultado antes de decidir.',risks:[],confidence:{level:execution?.capabilities_used?.length?'VERIFICADO':'INSUFICIENTE',score:execution?.capabilities_used?.length?.9:.2,rationale:'Confiança limitada à execução factual da capability; nenhuma capability planejada é contada como usada.'},reasoning_confidence:{version:'val.reasoning_confidence.v1',context:execution?.active_context?.source_ref?.length?.9:.5,thesis:.8,question:.8,agronomy:tool?.human_review_required?.5:null,knowledge:1,threshold:{ask_below:.72,answer_at_or_above:.72}},knowledge_refs:[],memory_refs:[],created_at:createdAt,model:'rules-capability-executor-v1',prompt_version:'val-performance-architecture-v2',
+  decision_thesis:{CURRENT_SITUATION:summary,WHAT_MATTERS:contextRequired?'A solicitação depende de um produtor autorizado selecionado.':'A ferramenta precisa produzir evidência própria antes de qualquer síntese.',KEY_UNCERTAINTY:contextRequired?'Nenhum produtor autorizado está ativo nesta conversa.':tool?.status==='INPUT_REQUIRED'?'Faltam entradas materiais para executar com segurança.':'O resultado ainda depende de validação humana quando houver decisão técnica.',THESIS:summary,WHY:'A resposta reflete somente o adapter e os dados autorizados desta requisição.',WHAT_TO_VALIDATE:contextRequired?'Selecione explicitamente um produtor da carteira autorizada.':'Confirme contexto, unidades, fonte e vínculo antes de usar o resultado.',WHAT_WOULD_CHANGE_MY_VIEW:contextRequired?'A seleção de um produtor autorizado.':'Novas entradas confirmadas ou uma execução técnica revisada.'},
+  golden_questions:[],recommended_strategy:{reading:summary,action:contextRequired?'Selecione um produtor autorizado para continuar.':tool?.status==='INPUT_REQUIRED'?'Forneça apenas as entradas faltantes.':'Revise o resultado e abra a ferramenta para aprofundar.',do_not_do:'Não transformar disponibilidade da ferramenta em cálculo, diagnóstico ou prescrição.'},evidence_to_use:sourceRefs,
+  agronomic_context:{status:['AREA_MAPPING','CALCULATORS','SOIL_ANALYSIS','IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(tool?.capability)?'tool_result':'not_applicable',human_review_required:Boolean(tool?.human_review_required),sources:{}},commercial_context:{status:'not_applicable'},next_commitment:contextRequired?'Selecionar o produtor autorizado.':tool?.status==='INPUT_REQUIRED'?'Completar as entradas materiais.':'Validar o resultado antes de decidir.',risks:[],confidence:{level:execution?.capabilities_used?.length?'VERIFICADO':'INSUFICIENTE',score:execution?.capabilities_used?.length?.9:.2,rationale:'Confiança limitada à execução factual da capability; nenhuma capability planejada é contada como usada.'},reasoning_confidence:{version:'val.reasoning_confidence.v1',context:execution?.active_context?.source_ref?.length?.9:.5,thesis:.8,question:.8,agronomy:tool?.human_review_required?.5:null,knowledge:1,threshold:{ask_below:.72,answer_at_or_above:.72}},knowledge_refs:[],memory_refs:[],created_at:createdAt,model:'rules-capability-executor-v1',prompt_version:'val-performance-architecture-v2',
   run:{provider:'capability-executor',model:'rules-capability-executor-v1',prompt_version:'val-performance-architecture-v2',context_hash:hash,latency_ms:0,status:'completed',fallback:false,path:route?.path||execution?.path||'TOOL',capabilities_planned:execution?.capabilities_planned||[],capabilities_used:execution?.capabilities_used||[],capability_results:execution?.capability_results||[],tool_result:tool,latency_breakdown:{AUTH:null,CONTEXT_RETRIEVAL:null,MEMORY:null,DATABASE:null,MCA:null,MIA:null,EXTERNAL_DATA:null,MODEL_INPUT:null,MODEL_INFERENCE:null,VALIDATION:null,RESPONSE:null}},
-  premises:{recomputed_for_request:true,source:'authorized_capability_execution',profile_specific:Boolean(clientId),conversation_is_not_confirmed_memory:true,confirmed_memory_refs:[]},voice_output:{version:'val.voice_output.v1',speakable_text:summary,persistence:'NONE',automatic_memory_effect:false},decision_interview:{version:'val.decision_interview.v1',status:tool?.status==='INPUT_REQUIRED'?'NEEDS_INPUT':'NOT_NEEDED',questions:[],material_missing_information:tool?.required_inputs||[],non_material_missing_information:[],session_context:{conversation_id:clean(conversationId,180)||'stateless',persistence_mode:'NONE'},explanation:tool?.status==='INPUT_REQUIRED'?'Faltam entradas materiais; nenhum valor foi inventado.':'A capability respondeu sem alterar memória.'},quality:{status:'NOT_EVALUATED',dimensions:{},automatic_tests:{}}
+  premises:{recomputed_for_request:true,source:'authorized_capability_execution',profile_specific:Boolean(clientId)&&route?.tool_hint!=='AGRONOMIC_TOOL_CATALOG',conversation_is_not_confirmed_memory:true,confirmed_memory_refs:[]},voice_output:{version:'val.voice_output.v1',speakable_text:summary,persistence:'NONE',automatic_memory_effect:false},decision_interview:{version:'val.decision_interview.v1',status:tool?.status==='INPUT_REQUIRED'?'NEEDS_INPUT':'NOT_NEEDED',questions:[],material_missing_information:tool?.required_inputs||[],non_material_missing_information:[],session_context:{conversation_id:clean(conversationId,180)||'stateless',persistence_mode:'NONE'},explanation:tool?.status==='INPUT_REQUIRED'?'Faltam entradas materiais; nenhum valor foi inventado.':'A capability respondeu sem alterar memória.'},quality:{status:'NOT_EVALUATED',dimensions:{},automatic_tests:{}}
  }
  return {route:route?.path||execution?.path||'TOOL',engineMode:'rules',model:'rules-capability-executor-v1',warning:'',responseMetadata:{toolExecutionVersion:capabilityExecutorVersion},advice:{answer:summary,executive_brief:{headline:tool?.title||'Capacidade da VAL',reason:summary,action:reasoning.recommended_strategy.action},next_best_action:reasoning.recommended_strategy.action,ai_reasoning:reasoning}}
 }
 
 export function buildGeneralNoClientResponse({message='',route={},organizationId='unknown',conversationId='',now=new Date()}={}){
- const summary=generalAnswer(message)
- const execution={path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'EXECUTED',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:'Orientação geral',summary,page:'copilot',manual_page:null,mode:'general',context:{client_id:null,private_memory_used:false}},active_context:null}
+ const catalog=route?.tool_hint==='AGRONOMIC_TOOL_CATALOG'&&list(route.capabilities).includes('AGRONOMIC_WORKSPACE')
+ const contextRequired=!catalog&&route?.client_context_required===true&&!isGeneralConceptRequest(message)
+ const catalogExecution=catalog?agronomicToolCatalogResult():null
+ const summary=catalog
+  ?catalogExecution.tool_result.summary
+  :contextRequired
+   ?isCurrentClientIdentityRequest(message)?'Nenhum produtor está selecionado nesta conversa.':'Nenhum produtor está selecionado nesta conversa. Selecione um produtor autorizado para consultar oportunidades, histórico ou outro contexto privado.'
+   :generalAnswer(message)
+ const execution=catalog
+  ?{path:route.path,capabilities_planned:[...list(route.capabilities)],capabilities_used:['AGRONOMIC_WORKSPACE'],capability_results:[catalogExecution],tool_result:catalogExecution.tool_result,active_context:null}
+  :contextRequired
+   ?{path:route.path,capabilities_planned:[...list(route.capabilities)],capabilities_used:[],capability_results:[{capability:'CLIENT_CONTEXT',status:'CONTEXT_REQUIRED',source_ref:null,tool_result:null},...list(route.capabilities).filter(capability=>capability!=='CLIENT_CONTEXT').map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null}))],tool_result:{status:'CONTEXT_REQUIRED',capability:'CLIENT_CONTEXT',tool:'client_selector',title:'Produtor necessário',summary,page:'clients',manual_page:null,mode:'select_client',context:{client_id:null,private_memory_used:false},required_inputs:['client_id']},active_context:null}
+  :{path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'EXECUTED',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:'Orientação geral',summary,page:'copilot',manual_page:null,mode:'general',context:{client_id:null,private_memory_used:false}},active_context:null}
  const response=buildCapabilityExecutionResponse({execution,route,message,organizationId,conversationId,now})
  response.advice.ai_reasoning.client={id:'portfolio',name:'Conversa geral'}
  response.advice.ai_reasoning.premises.profile_specific=false
- response.advice.ai_reasoning.premises.source='general_request_without_private_context'
+ response.advice.ai_reasoning.premises.source=contextRequired?'client_context_required':'general_request_without_private_context'
  return response
 }

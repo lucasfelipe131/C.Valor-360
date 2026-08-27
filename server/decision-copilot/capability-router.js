@@ -1,5 +1,5 @@
 import {createHash,randomUUID} from 'node:crypto'
-import {routeValIntent} from '../ai-reasoning/intent-router.js'
+import {isCurrentClientIdentityRequest,routeValIntent} from '../ai-reasoning/intent-router.js'
 import {legacyVisitLifecycle} from '../visit-loop/lifecycle.js'
 
 export const systemCapabilityRouterVersion='val.system_capability_router.v1'
@@ -137,13 +137,15 @@ export function routeSystemCapability({message='',intentHint='',sessionCommandHi
   }else if(['EXPLAIN','SHOW_NUMBERS'].includes(intentRoute.session_command.command)){
    capabilities.push('CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY');path='CONTEXT';direct=false
   }else path='FAST',direct=true
+ }else if(intentRoute.intent==='ASK_CLIENT'&&isCurrentClientIdentityRequest(source)){
+  capabilities.push('CLIENT_CONTEXT');path='FAST';direct=true
  }else if(intentRoute.intent==='ASK_CLIENT'&&(/\b(?:ultima|ultimo|mais recente)\b.*\bvisita\b|\bvisita\b.*\b(?:ultima|ultimo|mais recente)\b/.test(source))){
   capabilities.push('VISIT_HISTORY');path='FAST';direct=true
  }else if(intentRoute.intent==='ASK_CLIENT'&&/\b(?:quem decide|decisor|compromisso (?:esta )?aberto|qual compromisso|resume (?:a )?conta)\b/.test(source)){
   capabilities.push('CLIENT_CONTEXT',/compromisso/.test(source)?'COMMERCIAL_HISTORY':'CONFIRMED_MEMORY');path='FAST';direct=true
  }else if(['ASK_MARKET','ASK_COMMODITY','CHECK_MARKET'].includes(intentRoute.intent)){
   capabilities.push('MARKET_COMMODITY')
-  const crossAccount=hasClient&&/\b(?:muda|impacta|conversa|abordagem|oportunidade|negociacao|produtor|conta)\b/.test(source)
+  const crossAccount=hasClient&&/\b(?:muda|impacta|conversa|abordagem|oportunidades?|negociacao|produtor|conta)\b/.test(source)
   if(crossAccount)capabilities.push('CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY','OPPORTUNITY_PIPELINE')
   if(attachmentTypes.length)capabilities.push(attachmentTypes.some(type=>String(type).startsWith('image/'))?'IMAGE_DIAGNOSIS':'KNOWLEDGE_LIBRARY')
   path=crossAccount||attachmentTypes.length?'DEEP':intentRoute.intent==='ASK_COMMODITY'?'FAST':'LIVE_DATA'
@@ -160,6 +162,8 @@ export function routeSystemCapability({message='',intentHint='',sessionCommandHi
   capabilities.push('SOIL_ANALYSIS','AGRONOMIC_WORKSPACE','AGRONOMIST_MANUAL');path='TOOL';direct=false
  }else if(intentRoute.intent==='IMAGE_DIAGNOSIS'){
   capabilities.push(intentRoute.tool_hint==='NUTRISCAN'?'NUTRISCAN':intentRoute.tool_hint==='FITOSCAN'?'FITOSCAN':'IMAGE_DIAGNOSIS','AGRONOMIST_MANUAL');path='TOOL';direct=false
+ }else if(intentRoute.tool_hint==='AGRONOMIC_TOOL_CATALOG'){
+  capabilities.push('AGRONOMIC_WORKSPACE');path='FAST';direct=true
  }else if(intentRoute.tool_hint==='AREA_MAPPING'){
   capabilities.push('AREA_MAPPING','AGRONOMIC_WORKSPACE');path='TOOL';direct=true
  }else if(intentRoute.intent==='ASK_AGRONOMIC'){
@@ -190,7 +194,7 @@ export function routeSystemCapability({message='',intentHint='',sessionCommandHi
   direct,
   capabilities:planned,
   current_data_required:intentRoute.requires_current_data,
-  client_context_required:!clientIndependent.has(intentRoute.intent)&&!intentRoute.session_command?.local_only,
+  client_context_required:intentRoute.tool_hint!=='AGRONOMIC_TOOL_CATALOG'&&!clientIndependent.has(intentRoute.intent)&&!intentRoute.session_command?.local_only,
   persistence_mode:intentRoute.persistence_mode,
   session_command:intentRoute.session_command,
   tool_hint:intentRoute.tool_hint,
