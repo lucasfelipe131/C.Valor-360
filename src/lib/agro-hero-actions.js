@@ -178,6 +178,7 @@ export function createAgroHeroActionPayload({action,prompt='',context={},file=nu
   capture:action,
   mode:'ASK',
   source:'agro_hero',
+  autoSubmit:action==='text',
   persistenceMode:'NONE',
   clientId:launch.clientId,
   context:launch.context,

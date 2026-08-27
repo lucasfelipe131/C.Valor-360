@@ -85,6 +85,7 @@ test('AGRO_HERO_005 — produtor, propriedade, talhão e análise permanecem no 
  assert.deepEqual(payload.agroContext.context_refs.map(item=>item.type),['producer','property','field','analysis'])
  assert.deepEqual(payload.context,{type:'analysis',id:'analysis-1',label:'Solo'})
  assert.equal(payload.persistenceMode,'NONE')
+ assert.equal(payload.autoSubmit,true)
 })
 
 test('AGRO_HERO_006 — erros de permissão e ausência de microfone são tratáveis',()=>{

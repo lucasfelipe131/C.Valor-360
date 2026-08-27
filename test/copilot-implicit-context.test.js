@@ -5,7 +5,8 @@ import {
  buildAgroCopilotContext,
  buildOpportunityCopilotContext,
  buildVisitCopilotContext,
- resolveCopilotLaunch
+ resolveCopilotLaunch,
+ shouldAutoSubmitCopilotSeed
 } from '../src/lib/copilot-context.js'
 
 const read=path=>readFileSync(new URL(`../${path}`,import.meta.url),'utf8')
@@ -20,6 +21,24 @@ test('contexto implícito usa apenas produtor presente na carteira autenticada',
  assert.match(launch.prompt,/Fertilizante safra 26\/27/)
  assert.match(launch.prompt,/não registrar como fato/)
  assert.equal(launch.persistenceMode,'NONE')
+})
+
+test('hero agronômico autoenvia texto uma única vez sem promover persistência',()=>{
+ const clients=[{id:'producer-a',name:'Produtor A'}]
+ const launch=resolveCopilotLaunch({input:{clientId:'producer-a',prompt:'Abra o mapeamento.',autoSubmit:true,persistenceMode:'NONE'},page:'agro',storageScope:'scope',clients})
+ assert.equal(launch.autoSubmit,true)
+ assert.equal(launch.prompt,'Abra o mapeamento.')
+ assert.equal(launch.persistenceMode,'NONE')
+ const seedText={nonce:1,prompt:launch.prompt,clientId:launch.clientId,context:launch.context}
+ assert.equal(shouldAutoSubmitCopilotSeed({open:true,seedText,selectedId:'producer-a',activeContext:null}),true)
+ assert.equal(shouldAutoSubmitCopilotSeed({open:false,seedText,selectedId:'producer-a',activeContext:null}),false)
+ assert.equal(shouldAutoSubmitCopilotSeed({open:true,seedText,selectedId:'producer-b',activeContext:null}),false)
+ assert.equal(shouldAutoSubmitCopilotSeed({open:true,seedText,selectedId:'producer-a',activeContext:null,busy:true}),false)
+ const copilot=read('src/components/GlobalValCopilot.jsx')
+ assert.match(copilot,/setSeedText\(autoSubmit\?/)
+ assert.match(copilot,/const pending=seedText;setSeedText\(null\)/)
+ assert.match(copilot,/ask\(pending\.prompt,pending\.intent\)/)
+ assert.match(copilot,/if\(!open\)\{if\(seedText\)setSeedText\(null\);return\}/)
 })
 
 test('troca de tenant/owner invalida prompt, produtor e objeto do contexto anterior',()=>{

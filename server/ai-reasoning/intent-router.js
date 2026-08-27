@@ -50,6 +50,14 @@ function semanticToolHint(source='',hasImage=false){
  return null
 }
 
+function semanticToolIntent(toolHint){
+ if(toolHint==='CALCULATOR')return 'CALCULATE'
+ if(toolHint==='SOIL_ANALYSIS')return 'ANALYZE_SOIL'
+ if(['NUTRISCAN','FITOSCAN','PHOTO_DIAGNOSIS'].includes(toolHint))return 'IMAGE_DIAGNOSIS'
+ if(toolHint==='AREA_MAPPING')return 'ASK_AGRONOMIC'
+ return ''
+}
+
 export function normalizeValIntent(value){
  const normalized=clean(value).toUpperCase()
  const canonical=legacyIntentAliases[normalized]||normalized
@@ -62,12 +70,14 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
  const hasImage=attachmentTypes.some(type=>String(type).startsWith('image/'))
  const sessionCommand=routeSessionCommand(source,sessionCommandHint)
  const toolHint=semanticToolHint(source,hasImage)
+ const toolIntent=semanticToolIntent(toolHint)
  const semanticCurrent=semanticCurrentDataIntent(source)
  const semanticCommand=semanticCommandIntent(source)
  // Hints may come from an older client. They cannot downgrade an explicit
  // current-data request or a new explicit task into stale continuation.
  // Persistence remains fail-closed and can only be requested explicitly.
- let intent=sessionCommand?.command==='REGISTER_LAST'?'REGISTER_INFORMATION':persistenceIntents.has(hinted)?hinted:semanticCurrent||semanticCommand||hinted
+ const genericAgroToolOverride=hinted==='ASK_AGRONOMIC'?toolIntent:''
+ let intent=sessionCommand?.command==='REGISTER_LAST'?'REGISTER_INFORMATION':persistenceIntents.has(hinted)?hinted:semanticCurrent||semanticCommand||genericAgroToolOverride||hinted
  if(!intent){
   if(/\b(?:mercado|commodity|commodities|not[ií]cia econ[oô]mica)\b/i.test(source))intent='ASK_MARKET'
   else if(toolHint==='SOIL_ANALYSIS'||/\b(?:an[aá]lise de solo|laudo de solo|solo|ph|v%|satura[cç][aã]o|ctc|f[oó]sforo|pot[aá]ssio)\b/i.test(source))intent='ANALYZE_SOIL'

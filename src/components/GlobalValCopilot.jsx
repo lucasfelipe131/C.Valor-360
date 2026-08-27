@@ -11,6 +11,7 @@ import {canonicalVoiceChange} from '../lib/copilot-view-model'
 import {readConsultantExperiencePreference,writeConsultantExperiencePreference} from '../lib/consultant-experience-preference'
 import {buildMarketContinuationMessage,buildRegisterPrefill,buildSessionReplyMessage,limitValChatMessage,normalizeValChatPayload,selectMarketContinuation,sessionRepliesForAsk} from '../lib/global-val-conversation'
 import {buildConversationHistory,contextStatusLabel,conversationScopeKey,conversationScopeLabel,readConversationWorkspace,writeConversationWorkspace} from '../lib/full-screen-conversation'
+import {shouldAutoSubmitCopilotSeed} from '../lib/copilot-context'
 import {createValProgressRequestId,initialValProgress,startValProgressPolling} from '../lib/val-progress-client'
 import {localNaturalCommandTurn,naturalCommandRequest,readValOutputMode,resolveValNaturalCommand,writeValOutputMode} from '../lib/val-natural-commands'
 import {cancelVoiceInteraction,createVoiceInteraction,processVoiceInteraction,uploadVoiceAudio} from '../lib/voice-interactions-client'
@@ -108,6 +109,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  const [pendingFiles,setPendingFiles]=useState([])
  const [seedFiles,setSeedFiles]=useState([])
  const [seedVoice,setSeedVoice]=useState(null)
+ const [seedText,setSeedText]=useState(null)
  const [seedAttachmentIntent,setSeedAttachmentIntent]=useState('')
  const [pendingLinkId,setPendingLinkId]=useState('')
  const [busy,setBusy]=useState(false)
@@ -135,6 +137,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  useEffect(()=>{if(contextClient?.id)setSelectedId(contextClient.id)},[contextClient?.id])
  useEffect(()=>{
   if(!seed?.nonce)return
+  const autoSubmit=Boolean(seed.autoSubmit&&seed.prompt)
   setSelectedId(seed.clientId||'')
   setActiveContext(seed.context||null)
   setMessage(seed.prompt||'')
@@ -142,6 +145,8 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   setPendingCapture(seed.capture||'')
   setSeedFiles(Array.isArray(seed.files)?seed.files.slice(0,3):[])
   setSeedVoice(seed.voiceFile?{file:seed.voiceFile,recording:seed.recording||null,intent:seed.intent||'ASK_AGRONOMIC'}:null)
+  setSeedText(autoSubmit?{nonce:seed.nonce,prompt:seed.prompt,intent:seed.intent||undefined,clientId:seed.clientId||'',context:seed.context||null}:null)
+  if(autoSubmit){setAttachments([]);setPendingFiles([]);setReplyingTo(null);setSessionReplyOffer(null);setError('')}
   setSeedAttachmentIntent(Array.isArray(seed.files)&&seed.files.length?seed.intent||'ASK_AGRONOMIC':'')
  },[seed?.nonce])
  useEffect(()=>{setDensity(readConsultantExperiencePreference(storageScope).toLowerCase())},[storageScope])
@@ -175,7 +180,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  const newConversation=({general=false}={})=>{
   const nextKey=general?'__global__':threadKey
   if(general){setSelectedId('');setActiveContext(null)}
-  setThreads(current=>({...current,[nextKey]:[]}));setSessionReplies(current=>({...current,[nextKey]:[]}));resetConversationId(nextKey,storageScope);setMessage('');setMode('ASK');setReplyingTo(null);setSessionReplyOffer(null);setAttachments([]);setPendingFiles([]);setSeedFiles([]);setError('');setHistoryOpen(false)
+  setThreads(current=>({...current,[nextKey]:[]}));setSessionReplies(current=>({...current,[nextKey]:[]}));resetConversationId(nextKey,storageScope);setMessage('');setMode('ASK');setReplyingTo(null);setSessionReplyOffer(null);setAttachments([]);setPendingFiles([]);setSeedFiles([]);setSeedText(null);setError('');setHistoryOpen(false)
   requestAnimationFrame(()=>messageInput.current?.focus())
  }
  const selectHistory=item=>{setSelectedId(item.clientId||'');setActiveContext(item.context||null);setHistoryOpen(false);setMode('ASK')}
@@ -267,6 +272,13 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
    if(activeReply){setSessionReplies(current=>({...current,[activeThreadKey]:currentSessionReplies.slice(-6)}));setSessionReplyOffer({question:activeReply.question,answer:prompt,intent:activeReply.intent||effectiveIntent||''})}
  }catch(requestError){setError(requestError.name==='TimeoutError'?'A análise ultrapassou o tempo. Tente novamente.':requestError.message)}finally{stopProgress();controller.abort();setProgress(null);setBusy(false)}
  }
+
+ useEffect(()=>{
+  if(!open){if(seedText)setSeedText(null);return}
+  if(!shouldAutoSubmitCopilotSeed({open,seedText,busy,uploading,selectedId,activeContext}))return
+  const pending=seedText;setSeedText(null)
+  ask(pending.prompt,pending.intent)
+ },[open,seedText?.nonce,selectedId,activeContext,busy,uploading])
 
  useEffect(()=>{
   if(!seedVoice?.file||busy||uploading)return

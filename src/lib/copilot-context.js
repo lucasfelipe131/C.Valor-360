@@ -82,9 +82,11 @@ export function resolveCopilotLaunch({input={},implicitContext=null,page='',stor
  })
  const attachedFile=requested.attachment?.file
  const voiceFile=String(attachedFile?.type||'').startsWith('audio/')?attachedFile:null
+ const prompt=rejectedClient?'':compact(requested.prompt,3000)
  return {
   clientId:portfolioClient?.id||'',
-  prompt:rejectedClient?'':compact(requested.prompt,3000),
+  prompt,
+  autoSubmit:Boolean(!rejectedClient&&requested.autoSubmit&&prompt),
   mode:requested.mode||'ASK',
   intent:rejectedClient?'':identifier(requested.intent),
   capture:rejectedClient?'':attachedFile?'':requested.capture||'',
@@ -95,4 +97,10 @@ export function resolveCopilotLaunch({input={},implicitContext=null,page='',stor
   recording:rejectedClient?null:requested.recording||null,
   persistenceMode:'NONE'
  }
+}
+
+export function shouldAutoSubmitCopilotSeed({open=false,seedText=null,busy=false,uploading=false,selectedId='',activeContext=null}={}){
+ if(!open||!seedText?.prompt||busy||uploading)return false
+ if(String(selectedId||'')!==String(seedText.clientId||''))return false
+ return JSON.stringify(activeContext||null)===JSON.stringify(seedText.context||null)
 }

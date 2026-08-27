@@ -53,6 +53,12 @@ test('vNext — linguagem natural seleciona ferramentas sem converter planned em
   ['Analisa essa foto.','PHOTO_DIAGNOSIS','IMAGE_DIAGNOSIS']
  ]
  for(const [message,tool,intent] of routes){const routed=routeValIntent({message,hasClient:true});assert.equal(routed.tool_hint,tool,message);assert.equal(routed.intent,intent,message)}
+ for(const [message,tool,intent] of routes){
+  const routed=routeValIntent({message,intentHint:'ASK_AGRONOMIC',hasClient:true})
+  assert.equal(routed.tool_hint,tool,`${message} com hint do hero`)
+  assert.equal(routed.intent,intent,`${message} com hint do hero`)
+  assert.equal(routeSystemCapability({message,intentHint:'ASK_AGRONOMIC',hasClient:true}).path,'TOOL',`${message} com hint do hero`)
+ }
 
  const route=routeSystemCapability({message:'Calcule custo/ha.',hasClient:true})
  const execution=await executeCapabilityPlan({route,message:'Calcule custo/ha.',clientId:'client-a',context:{client:{id:'client-a'}}})
