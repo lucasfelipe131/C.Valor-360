@@ -33,7 +33,7 @@ Os CTAs compartilham estados, erro acessível, sucesso, loading e telemetria mí
 
 Produtor, propriedade, talhão e análise podem entrar por props explícitas ou contexto da página. A ação usa `ASK` e `persistenceMode=NONE`; conversa não equivale a memória. O componente não pergunta novamente por entidades já presentes no contrato e não inventa produtor quando a página abre sem contexto.
 
-Arquivos recebidos da conversa podem aparecer como `initialFiles`, mas permanecem locais até confirmação explícita. Sem produtor, continuam sem vínculo. Vínculo, registro ou promoção de memória pertencem ao fluxo governado fora do hero.
+Arquivos recebidos da conversa podem aparecer como `initialFiles`, mas permanecem locais até confirmação explícita. Sem produtor, foto e PDF/imagem de solo podem atravessar o bridge efêmero one-shot `valor360:session-media`, sempre `UNLINKED` e `persistenceMode=NONE`; o Manual prepara preview/staging, sem autoanalisar ou salvar. Word, Excel, CSV e TXT exigem vínculo explícito com produtor. Vínculo, registro ou promoção de memória pertencem ao fluxo governado fora do hero.
 
 ## Orquestração de ferramentas
 
@@ -64,7 +64,7 @@ O comando `valor360:navigate` v1 carrega somente IDs/nomes permitidos de produto
 
 O workspace preserva tela cheia, retorno ao hub, status de integração, carregamento e iframe técnico. Os cards atuais de solo, propriedades/talhões, diagnóstico, registros, calculadoras, bulas, mercado, clima, Manual e Biblioteca permanecem disponíveis.
 
-Esta rodada não altera `App.jsx`, Global Copilot, Voice Capture ou server. O contrato foi desenhado para esses adapters consumirem `onAsk`, `onCapture`, `initialTool` e `initialFiles` sem reconstruir motores.
+Esta rodada preserva Voice Capture e server, e evolui apenas os adapters de `App.jsx`, Global Copilot e Agro necessários para consumir `onAsk`, `onCapture`, `initialTool` e `initialFiles`. Nenhum motor foi reconstruído e nenhuma migration foi criada.
 
 ## Evidência e pendências
 

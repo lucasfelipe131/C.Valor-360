@@ -307,8 +307,10 @@ test('solo auditável + headless — vínculo muda refs sem perder identidade ou
 
  assert.ok(manual.includes('searchParams.get("page")'))
  assert.ok(manual.includes('event.origin !== window.location.origin'))
- assert.ok(manual.includes('message?.type !== "valor360:navigate"'))
+ assert.ok(manual.includes('message?.type === "valor360:navigate"'))
+ assert.ok(manual.includes('message?.type !== "valor360:session-media"'))
  assert.ok(agro.includes('/tecnico?embedded=1&page='))
- assert.ok(agro.includes('postMessage(createAgroWorkspaceMessage'))
+ assert.ok(agro.includes('createAgroWorkspaceMessage({context:agroContext,tool:activeTool})'))
+ assert.ok(agro.includes('postMessage(workspaceMessage,window.location.origin)'))
  assert.ok(agroActions.includes("type:'valor360:navigate'"))
 })

@@ -172,6 +172,7 @@ Evidence boundaries:
 
 - helper/unit tests can prove file policy, context normalization, session-only persistence, state transitions and permission-error mapping;
 - component/source tests can prove that handlers and inputs are connected;
+- the unlinked-media contract proves same-origin/source, one-shot correlation, bounded MIME/size/count, no persistent upload and explicit Manual acknowledgement;
 - controlled browser UAT must prove focus, picker/camera opening, dispatch and same-ecosystem response;
 - physical-device UAT must prove microphone/camera behavior;
 - tenant A/B fixtures must prove context isolation.

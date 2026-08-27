@@ -16,8 +16,25 @@ export const AGRO_HERO_FILE_POLICY=Object.freeze({
  ])
 })
 
+export const AGRO_SESSION_MEDIA_PROTOCOL_VERSION=1
+export const AGRO_SESSION_MEDIA_TYPES=Object.freeze(['IMAGE_DIAGNOSIS','ANALYZE_SOIL'])
+
+const extensionMimeTypes=Object.freeze({
+ jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',webp:'image/webp',pdf:'application/pdf',
+ doc:'application/msword',docx:'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+ xls:'application/vnd.ms-excel',xlsx:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+ csv:'text/csv',txt:'text/plain'
+})
+
 const clean=(value,max=240)=>String(value??'').replace(/[\r\n\t]+/g,' ').replace(/\s+/g,' ').trim().slice(0,max)
 const identifier=value=>clean(value,120)
+const fileExtension=file=>clean(file?.name,300).toLowerCase().match(/\.([a-z0-9]+)$/)?.[1]||''
+
+export function resolveAgroHeroFileMime(file){
+ const declared=clean(file?.type,160).toLowerCase()
+ if(declared&&declared!=='application/octet-stream')return declared
+ return extensionMimeTypes[fileExtension(file)]||''
+}
 const entity=(value,type)=>{
  if(!value||typeof value!=='object')return null
  const id=identifier(value.id??value.externalKey??value.external_key)
@@ -122,21 +139,22 @@ export function buildAgroCopilotLaunchContext(input={}){
 }
 
 export function inferAgroHeroIntent(action,file={}){
- if(action==='photo'||String(file.type||'').startsWith('image/'))return 'IMAGE_DIAGNOSIS'
+ if(action==='photo')return 'IMAGE_DIAGNOSIS'
  const name=clean(file.name,300).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
  if(/(?:^|[^a-z])(solo|fertilidade|laudo|laboratorio)(?:[^a-z]|$)/.test(name))return 'ANALYZE_SOIL'
+ if(resolveAgroHeroFileMime(file).startsWith('image/'))return 'IMAGE_DIAGNOSIS'
  return 'ASK_AGRONOMIC'
 }
 
 export function validateAgroHeroFile(file,action='file'){
  if(!file||typeof file!=='object')return {ok:false,code:'FILE_REQUIRED',message:'Selecione um arquivo para continuar.'}
- const mimeType=clean(file.type,160).toLowerCase()
- const extension=clean(file.name,300).toLowerCase().match(/\.([a-z0-9]+)$/)?.[1]||''
+ const mimeType=resolveAgroHeroFileMime(file)
+ const extension=fileExtension(file)
  const size=Number(file.size||0)
  const allowed=action==='photo'?AGRO_HERO_FILE_POLICY.photoTypes:AGRO_HERO_FILE_POLICY.fileTypes
  const extensionAllowed=(action==='photo'?['jpg','jpeg','png','webp']:['jpg','jpeg','png','webp','pdf','doc','docx','xls','xlsx','csv','txt']).includes(extension)
- const genericMime=!mimeType||mimeType==='application/octet-stream'
- if(!allowed.includes(mimeType)&&!(genericMime&&extensionAllowed))return {ok:false,code:action==='photo'?'PHOTO_TYPE_INVALID':'FILE_TYPE_INVALID',message:action==='photo'?'Use uma foto JPG, PNG ou WebP.':'Use foto, PDF, Word, Excel, CSV ou TXT.'}
+ const extensionMimeType=extensionMimeTypes[extension]||''
+ if(!allowed.includes(mimeType)||!extensionAllowed||!extensionMimeType||mimeType!==extensionMimeType)return {ok:false,code:action==='photo'?'PHOTO_TYPE_INVALID':'FILE_TYPE_INVALID',message:action==='photo'?'Use uma foto JPG, PNG ou WebP.':'Use foto, PDF, Word, Excel, CSV ou TXT.'}
  if(!Number.isFinite(size)||size<=0)return {ok:false,code:'FILE_EMPTY',message:'O arquivo está vazio ou não pôde ser lido.'}
  if(size>AGRO_HERO_FILE_POLICY.maxBytes)return {ok:false,code:'FILE_TOO_LARGE',message:'O arquivo pode ter no máximo 6 MB.'}
  return {ok:true,code:'VALID',message:'Arquivo pronto.',metadata:Object.freeze({name:clean(file.name,300)||'arquivo',mimeType,sizeBytes:size,intent:inferAgroHeroIntent(action,file)})}
@@ -146,7 +164,7 @@ export function createAgroHeroFileCandidate(value){
  const file=value?.file||value
  const validation=validateAgroHeroFile(file,'file')
  const name=clean(file?.name,300)||'arquivo'
- const mimeType=clean(file?.type,160)
+ const mimeType=resolveAgroHeroFileMime(file)
  const sizeBytes=Number(file?.size||0)
  const intent=validation.ok?validation.metadata.intent:inferAgroHeroIntent('file',file||{})
  return Object.freeze({
@@ -158,6 +176,29 @@ export function createAgroHeroFileCandidate(value){
   intent,
   intentLabel:intent==='ANALYZE_SOIL'?'Parece ser uma análise de solo.':intent==='IMAGE_DIAGNOSIS'?'Parece ser uma imagem de campo.':'Parece ser um documento técnico.',
   validation
+ })
+}
+
+export function createAgroSessionMediaMessage({files=[],intent='',navigationRequestId='',transferId=''}={}){
+ const selected=Array.isArray(files)?files.filter(Boolean):[]
+ const normalizedIntent=clean(intent,80).toUpperCase()
+ const requestId=identifier(navigationRequestId)
+ const resolvedTransferId=identifier(transferId)||`media-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,10)}`
+ if(!requestId)throw Object.assign(new TypeError('A ferramenta ainda não confirmou a navegação.'),{code:'NAVIGATION_REQUIRED'})
+ if(!AGRO_SESSION_MEDIA_TYPES.includes(normalizedIntent))throw Object.assign(new TypeError('Sem vínculo, use uma foto ou um PDF de análise de solo.'),{code:'UNSUPPORTED_MEDIA_TYPE'})
+ if(normalizedIntent==='IMAGE_DIAGNOSIS'&&(selected.length<1||selected.length>3))throw Object.assign(new TypeError('Use de uma a três fotos por diagnóstico.'),{code:'INVALID_FILE_COUNT'})
+ if(normalizedIntent==='ANALYZE_SOIL'&&selected.length!==1)throw Object.assign(new TypeError('Use um único PDF ou uma única imagem de análise de solo.'),{code:'INVALID_FILE_COUNT'})
+ const allowed=normalizedIntent==='IMAGE_DIAGNOSIS'?new Set(AGRO_HERO_FILE_POLICY.photoTypes):new Set([...AGRO_HERO_FILE_POLICY.photoTypes,'application/pdf'])
+ for(const file of selected){
+  const validation=validateAgroHeroFile(file,resolveAgroHeroFileMime(file).startsWith('image/')?'photo':'file')
+  if(!validation.ok)throw Object.assign(new TypeError(validation.message),{code:validation.code})
+  if(!allowed.has(resolveAgroHeroFileMime(file)))throw Object.assign(new TypeError('Este formato não pode ser interpretado sem vínculo. Use foto ou PDF.'),{code:'UNSUPPORTED_MEDIA_TYPE'})
+ }
+ return Object.freeze({
+  type:'valor360:session-media',version:AGRO_SESSION_MEDIA_PROTOCOL_VERSION,
+  transferId:resolvedTransferId,navigationRequestId:requestId,
+  persistenceMode:'NONE',association:'UNLINKED',intent:normalizedIntent,
+  files:Object.freeze(selected.slice())
  })
 }
 

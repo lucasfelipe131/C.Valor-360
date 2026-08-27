@@ -10,6 +10,7 @@ import {
  createAgroHeroFileCandidate,
  createAgroHeroStates,
  createAgroHeroTelemetry,
+ createAgroSessionMediaMessage,
  createAgroWorkspaceMessage,
  normalizeAgroToolDescriptor,
  transitionAgroHeroState,
@@ -51,7 +52,7 @@ const audioMimeType=()=>{
 
 const voiceFilename=mimeType=>`pergunta-val-${new Date().toISOString().replace(/[:.]/g,'-')}.${String(mimeType).includes('mp4')?'m4a':'webm'}`
 
-export default function Agro({onAsk,onCapture,onTelemetry,onContextChange,producer=null,client=null,property=null,field=null,talhao=null,analysis=null,context=emptyContext,initialTool=null,initialFiles=emptyFiles}){
+export default function Agro({onAsk,onCapture,onTelemetry,onContextChange,onInitialFileConsumed,producer=null,client=null,property=null,field=null,talhao=null,analysis=null,context=emptyContext,initialTool=null,initialFiles=emptyFiles}){
  const [integrationStatus,setIntegrationStatus]=useState({loading:true,configured:false})
  const [loaded,setLoaded]=useState(false)
  const [expanded,setExpanded]=useState(false)
@@ -62,6 +63,7 @@ export default function Agro({onAsk,onCapture,onTelemetry,onContextChange,produc
  const [textPrompt,setTextPrompt]=useState('')
  const [voiceSeconds,setVoiceSeconds]=useState(0)
  const [dismissedInitialFiles,setDismissedInitialFiles]=useState([])
+ const [navigationAck,setNavigationAck]=useState(null)
  const workspaceRef=useRef(null)
  const frameRef=useRef(null)
  const textInputRef=useRef(null)
@@ -73,6 +75,8 @@ export default function Agro({onAsk,onCapture,onTelemetry,onContextChange,produc
  const voiceTimerRef=useRef(null)
  const voiceStartedAtRef=useRef(0)
  const voiceCancelledRef=useRef(false)
+ const sessionMediaRef=useRef(null)
+ const sessionMediaTimeoutRef=useRef(null)
  const mountedRef=useRef(true)
  const initialToolDescriptor=useMemo(()=>normalizeAgroToolDescriptor(initialTool),[initialTool])
  const stagedInitialFiles=useMemo(()=>(Array.isArray(initialFiles)?initialFiles:[]).slice(0,3).map((value,index)=>{const candidate=createAgroHeroFileCandidate(value);return {...candidate,instanceKey:`${candidate.key}:${index}`}}),[initialFiles])
@@ -87,6 +91,7 @@ export default function Agro({onAsk,onCapture,onTelemetry,onContextChange,produc
   tool:activeTool
  }),[producer,client,property,field,talhao,analysis,context,activeTool])
  const copilotContext=useMemo(()=>buildAgroCopilotLaunchContext(agroContext),[agroContext])
+ const workspaceMessage=useMemo(()=>activeTool?createAgroWorkspaceMessage({context:agroContext,tool:activeTool}):null,[activeTool,agroContext])
 
  const emitTelemetry=(action,status,details={})=>{
   try{onTelemetry?.(createAgroHeroTelemetry({action,status,context:agroContext,...details}))}catch{}
@@ -110,10 +115,11 @@ export default function Agro({onAsk,onCapture,onTelemetry,onContextChange,produc
  }
  const stopVoiceTracks=()=>{voiceStreamRef.current?.getTracks?.().forEach(track=>track.stop());voiceStreamRef.current=null}
  const stopVoiceTimer=()=>{if(voiceTimerRef.current){window.clearInterval(voiceTimerRef.current);voiceTimerRef.current=null}}
+ const clearSessionMediaTimeout=()=>{if(sessionMediaTimeoutRef.current){window.clearTimeout(sessionMediaTimeoutRef.current);sessionMediaTimeoutRef.current=null}}
 
  useEffect(()=>{
   mountedRef.current=true
-  return()=>{mountedRef.current=false;voiceCancelledRef.current=true;stopVoiceTimer();try{if(voiceRecorderRef.current?.state!=='inactive')voiceRecorderRef.current?.stop()}catch{};stopVoiceTracks()}
+  return()=>{mountedRef.current=false;voiceCancelledRef.current=true;stopVoiceTimer();clearSessionMediaTimeout();sessionMediaRef.current=null;try{if(voiceRecorderRef.current?.state!=='inactive')voiceRecorderRef.current?.stop()}catch{};stopVoiceTracks()}
  },[])
 
  useEffect(()=>{
@@ -146,10 +152,35 @@ export default function Agro({onAsk,onCapture,onTelemetry,onContextChange,produc
  useEffect(()=>setDismissedInitialFiles([]),[initialFilesSignature])
 
  useEffect(()=>{
-  if(!loaded||!tool||!activeTool||!frameRef.current?.contentWindow)return
-  const targetOrigin=window.location.origin
-  frameRef.current.contentWindow.postMessage(createAgroWorkspaceMessage({context:agroContext,tool:activeTool}),targetOrigin)
- },[tool,loaded,activeTool,agroContext])
+  clearSessionMediaTimeout();sessionMediaRef.current=null;setNavigationAck(null)
+ },[workspaceMessage?.requestId])
+
+ useEffect(()=>{
+  const receiveWorkspaceResult=event=>{
+   if(event.origin!==window.location.origin||event.source!==frameRef.current?.contentWindow)return
+   const message=event.data&&typeof event.data==='object'?event.data:null
+   if(!message||Number(message.version)!==1)return
+   if(message.type==='valor360:navigation-result'&&message.requestId===workspaceMessage?.requestId){
+    setNavigationAck({requestId:message.requestId,status:String(message.status||''),issues:Array.isArray(message.issues)?message.issues:[]})
+    return
+   }
+   const pending=sessionMediaRef.current
+   if(message.type!=='valor360:session-media-result'||!pending||message.transferId!==pending.transferId||message.navigationRequestId!==workspaceMessage?.requestId)return
+   clearSessionMediaTimeout();sessionMediaRef.current=null
+   if(message.status==='APPLIED'){
+    dismissInitialFile(pending.instanceKey)
+    onInitialFileConsumed?.(pending.file)
+    finishAction('file','success',{phase:'session_ready',message:pending.intent==='IMAGE_DIAGNOSIS'?'Foto preparada no diagnóstico. Revise o tipo e o contexto antes de gerar o ranking.':'Arquivo preparado na análise de solo. Revise os dados antes de importar ou salvar.'})
+   }else finishAction('file','error',{phase:'session_media',message:'A ferramenta recusou o arquivo efêmero. Tente novamente; nada foi salvo.',errorCode:String(message.errorCode||'SESSION_MEDIA_REJECTED')})
+  }
+  window.addEventListener('message',receiveWorkspaceResult)
+  return()=>window.removeEventListener('message',receiveWorkspaceResult)
+ },[workspaceMessage?.requestId,onInitialFileConsumed])
+
+ useEffect(()=>{
+  if(!loaded||!tool||!workspaceMessage||!frameRef.current?.contentWindow)return
+  frameRef.current.contentWindow.postMessage(workspaceMessage,window.location.origin)
+ },[tool,loaded,workspaceMessage])
 
  useEffect(()=>{onContextChange?.(copilotContext);return()=>onContextChange?.(null)},[copilotContext,onContextChange])
 
@@ -182,9 +213,17 @@ export default function Agro({onAsk,onCapture,onTelemetry,onContextChange,produc
  }
  const confirmInitialFile=candidate=>{
   if(!candidate.validation.ok){updateAction('file','error',{phase:'validation',message:candidate.validation.message,errorCode:candidate.validation.code});return}
-  dispatchAction('file',createAgroHeroActionPayload({action:'file',prompt:'Interprete este arquivo mantido nesta conversa e confirme o tipo antes de qualquer vínculo.',context:agroContext,file:candidate.file}))
+  if(!['IMAGE_DIAGNOSIS','ANALYZE_SOIL'].includes(candidate.intent)){updateAction('file','error',{phase:'validation',message:'Sem vínculo, a interpretação local aceita foto ou PDF de análise de solo. Vincule Word, Excel, CSV ou TXT a um produtor para usar a VAL.',errorCode:'UNSUPPORTED_MEDIA_TYPE'});return}
+  if(!navigationAck||!workspaceMessage||navigationAck.requestId!==workspaceMessage.requestId||navigationAck.status!=='APPLIED'){updateAction('file','error',{phase:'navigation',message:'A ferramenta ainda está preparando o ambiente. Aguarde e tente novamente.',errorCode:'NAVIGATION_NOT_READY'});return}
+  if(sessionMediaRef.current)return
+  let message
+  try{message=createAgroSessionMediaMessage({files:[candidate.file],intent:candidate.intent,navigationRequestId:workspaceMessage.requestId})}catch(error){updateAction('file','error',{phase:'validation',message:error?.message||'Este arquivo não pode ser preparado sem vínculo.',errorCode:error?.code||'SESSION_MEDIA_INVALID'});return}
+  sessionMediaRef.current={transferId:message.transferId,instanceKey:candidate.instanceKey,file:candidate.file,intent:candidate.intent}
+  updateAction('file','loading',{phase:'session_media',message:'Preparando o arquivo somente nesta sessão…'})
+  frameRef.current?.contentWindow?.postMessage(message,window.location.origin)
+  clearSessionMediaTimeout();sessionMediaTimeoutRef.current=window.setTimeout(()=>{if(sessionMediaRef.current?.transferId!==message.transferId)return;sessionMediaRef.current=null;finishAction('file','error',{phase:'session_media',message:'A ferramenta não confirmou o recebimento. Tente novamente; nada foi salvo.',errorCode:'SESSION_MEDIA_TIMEOUT'})},15000)
  }
- const dismissInitialFile=key=>setDismissedInitialFiles(current=>current.includes(key)?current:[...current,key])
+ const dismissInitialFile=(key,file=null)=>{setDismissedInitialFiles(current=>current.includes(key)?current:[...current,key]);if(file)onInitialFileConsumed?.(file)}
  const startVoice=()=>{
   if(['requesting','recording','dispatching'].includes(actionStates.voice.phase))return
   updateAction('voice','loading',{phase:'requesting',message:'Solicitando acesso ao microfone…'})
@@ -256,7 +295,7 @@ export default function Agro({onAsk,onCapture,onTelemetry,onContextChange,produc
      <input ref={photoInputRef} className="agro-hero-native-input" type="file" accept={AGRO_HERO_FILE_POLICY.photoAccept} capture="environment" onCancel={()=>cancelCapture('photo')} onChange={event=>handleFileChange('photo',event)}/>
      <input ref={fileInputRef} className="agro-hero-native-input" type="file" accept={AGRO_HERO_FILE_POLICY.fileAccept} onCancel={()=>cancelCapture('file')} onChange={event=>handleFileChange('file',event)}/>
     </div>
-    {visibleInitialFiles.length>0&&<div className="agro-hero-session-files" aria-label="Arquivos mantidos nesta conversa">{visibleInitialFiles.map(candidate=><div key={candidate.instanceKey} data-valid={candidate.validation.ok?'true':'false'}><FileText/><span><b>{candidate.name}</b><small>{candidate.validation.ok?candidate.intentLabel:candidate.validation.message} {agroContext.clientId?`Contexto: ${agroContext.producer?.label||agroContext.clientId}.`:'Sem vínculo; uso somente nesta conversa.'}</small></span><button type="button" onClick={()=>candidate.validation.ok?confirmInitialFile(candidate):chooseCapture('file')}>{candidate.validation.ok?'Interpretar agora':'Escolher novamente'}</button><button type="button" aria-label={`Remover ${candidate.name} desta conversa`} onClick={()=>dismissInitialFile(candidate.instanceKey)}><X/></button></div>)}</div>}
+    {visibleInitialFiles.length>0&&<div className="agro-hero-session-files" aria-label="Arquivos mantidos nesta conversa">{visibleInitialFiles.map(candidate=>{const sessionCompatible=['IMAGE_DIAGNOSIS','ANALYZE_SOIL'].includes(candidate.intent);const navigationReady=Boolean(navigationAck&&workspaceMessage&&navigationAck.requestId===workspaceMessage.requestId&&navigationAck.status==='APPLIED');return <div key={candidate.instanceKey} data-valid={candidate.validation.ok?'true':'false'}><FileText/><span><b>{candidate.name}</b><small>{candidate.validation.ok?candidate.intentLabel:candidate.validation.message} {agroContext.clientId?`Contexto: ${agroContext.producer?.label||agroContext.clientId}.`:'Sem vínculo; uso somente nesta conversa.'}{candidate.validation.ok&&!sessionCompatible?' Para interpretar este formato, envie novamente e vincule a um produtor.':candidate.validation.ok&&sessionCompatible&&!navigationReady?' Preparando a ferramenta…':''}</small></span><button type="button" disabled={candidate.validation.ok&&sessionCompatible&&!navigationReady} onClick={()=>candidate.validation.ok?confirmInitialFile(candidate):chooseCapture('file')}>{!candidate.validation.ok?'Escolher novamente':!sessionCompatible?'Vincule para interpretar':'Interpretar agora'}</button><button type="button" aria-label={`Remover ${candidate.name} desta conversa`} onClick={()=>dismissInitialFile(candidate.instanceKey,candidate.file)}><X/></button></div>})}</div>}
     <form className="agro-hero-composer" hidden={!textOpen} onSubmit={submitText}><label><span className="sr-only">Pergunte à VAL</span><textarea ref={textInputRef} rows="3" maxLength="3000" value={textPrompt} onChange={event=>setTextPrompt(event.target.value)} placeholder="O que você precisa entender, comparar ou decidir?"/></label><button type="submit" aria-label="Enviar pergunta à VAL"><Send/>Enviar</button><button type="button" aria-label="Fechar campo de pergunta" onClick={closeTextComposer}><X/></button></form>
     {actionStates.voice.phase==='recording'&&<div className="agro-hero-recorder" role="status"><span><i/>Gravando • {String(Math.floor(voiceSeconds/60)).padStart(2,'0')}:{String(voiceSeconds%60).padStart(2,'0')}</span><button type="button" onClick={stopVoice}><Square/>Parar e enviar</button><button type="button" onClick={cancelVoice}>Cancelar</button></div>}
     {feedback&&feedback.status!=='idle'&&<div className={`agro-hero-feedback is-${feedback.status}`} role={feedback.status==='error'?'alert':'status'}>{feedback.status==='error'?<AlertTriangle/>:feedback.status==='success'?<CheckCircle2/>:<LoaderCircle className="agro-hero-spin"/>}<span><b>{feedbackTitle}</b><small>{feedback.message}</small></span></div>}

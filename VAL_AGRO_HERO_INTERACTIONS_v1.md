@@ -6,7 +6,7 @@ O head da Inteligência Agronômica deixa de ser decorativo e oferece quatro ent
 
 ## Contrato implementado
 
-`Agro` aceita os callbacks `onAsk`, `onCapture`, `onTelemetry` e `onContextChange`.
+`Agro` aceita os callbacks `onAsk`, `onCapture`, `onTelemetry`, `onContextChange` e `onInitialFileConsumed`.
 
 - Texto é entregue a `onAsk`.
 - Voz, foto e arquivo são entregues a `onCapture`; `onAsk` é fallback de compatibilidade.
@@ -37,6 +37,16 @@ O clique aciona diretamente um `input[type=file]` local com `capture=environment
 O clique aciona diretamente o seletor local. São aceitos foto, PDF, Word, Excel, CSV ou TXT, até 6 MB. Tipo inválido, arquivo vazio e excesso de tamanho falham antes do callback. Nome contendo solo, fertilidade ou laudo sugere `ANALYZE_SOIL`; os demais entram como documento agronômico a confirmar.
 
 `initialFiles` aceita até três anexos já mantidos na sessão. O hero mostra nome, validação, intenção provável e se existe contexto de produtor. Nada é enviado ou salvo automaticamente: o usuário precisa escolher `Interpretar agora`, remover o item ou selecionar novamente. Sem produtor, o texto declara `Sem vínculo; uso somente nesta conversa`.
+
+O fluxo sem produtor usa o protocolo efêmero `valor360:session-media` v1 somente depois de um `valor360:navigation-result` `APPLIED`. A mensagem é correlacionada por `navigationRequestId` + `transferId`, usa `persistenceMode=NONE` e `association=UNLINKED`, transporta o `File` por structured clone e recebe `valor360:session-media-result`. Pai e iframe exigem mesma origem e `event.source` esperado; o Manual deduplica o `transferId` e não devolve nome, bytes ou autoridade no ACK.
+
+- diagnóstico aceita de uma a três imagens JPEG/PNG/WebP e prepara apenas o preview;
+- solo aceita um PDF ou uma imagem e mantém o arquivo staged até a ação explícita de interpretação;
+- lote misto, múltiplos PDFs, GIF, arquivo vazio, excesso de 6 MB e documento sem consumidor local falham fechados;
+- Word, Excel, CSV e TXT precisam de produtor explícito para seguir pelo upload protegido da VAL;
+- o caminho desvinculado não chama `/api/val/attachments`, não cria memória, não analisa e não salva automaticamente;
+- remoção, consumo, logout, expiração e troca de usuário descartam as referências locais;
+- uploads vinculados usam geração + abort, alvo de produtor fixo e controles bloqueados durante o envio, impedindo que resposta tardia contamine outra conversa.
 
 ## Contexto
 
@@ -78,5 +88,5 @@ Os testes são de lógica, SSR e contrato estático compatíveis com o runner at
 - O adapter principal precisa consumir `attachment.file`, transcrever voz e apresentar a resposta continuável.
 - UAT físico deve validar permissões, cancelamento do seletor, câmera traseira, acústica e layout em aparelho.
 - O Orchestrator continua responsável por auth, permissionamento, tenancy, persistência, safety e confirmação de memória.
-- O receiver técnico pode responder `APPLIED`, `PARTIAL` ou `CONTEXT_REJECTED`; o contexto rejeitado nunca deve ser assumido como aplicado.
+- O receiver técnico pode responder `APPLIED`, `PARTIAL` ou `CONTEXT_REJECTED` para navegação e `APPLIED` ou `REJECTED` para mídia efêmera; o contexto ou arquivo rejeitado nunca deve ser assumido como aplicado.
 - Esta implementação não faz merge, deploy, migration, produção ou Passo 07.

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {
  buildAgroCopilotLaunchContext,
+ createAgroSessionMediaMessage,
  createAgroHeroActionPayload,
  createAgroHeroContext,
  createAgroHeroStates,
@@ -9,6 +10,7 @@ import {
  inferAgroHeroIntent,
  mostSpecificAgroContext,
  normalizeAgroToolDescriptor,
+ resolveAgroHeroFileMime,
  transitionAgroHeroState,
  validateAgroHeroFile
 } from '../src/lib/agro-hero-actions.js'
@@ -69,6 +71,20 @@ test('arquivo sem MIME só é aceito quando a extensão permitida é explícita'
  assert.equal(validateAgroHeroFile({name:'solo.csv',type:'',size:300},'file').ok,true)
  assert.equal(validateAgroHeroFile({name:'foto.webp',type:'',size:300},'photo').ok,true)
  assert.equal(validateAgroHeroFile({name:'arquivo.bin',type:'',size:300},'file').code,'FILE_TYPE_INVALID')
+ assert.equal(resolveAgroHeroFileMime({name:'laudo.pdf',type:'application/octet-stream'}),'application/pdf')
+ assert.equal(validateAgroHeroFile({name:'foto.jpg',type:'application/pdf',size:300},'file').code,'FILE_TYPE_INVALID')
+})
+
+test('handoff efêmero do host é one-shot, sem autoridade e correlacionado à navegação',()=>{
+ const file={name:'campo.png',type:'image/png',size:1024}
+ const message=createAgroSessionMediaMessage({files:[file],intent:'IMAGE_DIAGNOSIS',navigationRequestId:'navigation-1',transferId:'transfer-1'})
+ assert.deepEqual(message,{
+  type:'valor360:session-media',version:1,transferId:'transfer-1',navigationRequestId:'navigation-1',
+  persistenceMode:'NONE',association:'UNLINKED',intent:'IMAGE_DIAGNOSIS',files:[file]
+ })
+ assert.doesNotMatch(JSON.stringify({...message,files:[]}),/tenant|owner|clientId|producer/i)
+ assert.throws(()=>createAgroSessionMediaMessage({files:[{name:'dados.txt',type:'text/plain',size:10}],intent:'ASK_AGRONOMIC',navigationRequestId:'navigation-1'}),error=>error.code==='UNSUPPORTED_MEDIA_TYPE')
+ assert.throws(()=>createAgroSessionMediaMessage({files:[file],intent:'IMAGE_DIAGNOSIS'}),error=>error.code==='NAVIGATION_REQUIRED')
 })
 
 test('máquina de estados é imutável e rejeita transições fora do contrato',()=>{

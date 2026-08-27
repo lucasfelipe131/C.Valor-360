@@ -12,6 +12,7 @@ import {readConsultantExperiencePreference,writeConsultantExperiencePreference} 
 import {buildMarketContinuationMessage,buildRegisterPrefill,buildSessionReplyMessage,limitValChatMessage,normalizeValChatPayload,selectMarketContinuation,sessionRepliesForAsk} from '../lib/global-val-conversation'
 import {buildConversationHistory,contextStatusLabel,conversationScopeKey,conversationScopeLabel,readConversationWorkspace,writeConversationWorkspace} from '../lib/full-screen-conversation'
 import {shouldAutoSubmitCopilotSeed} from '../lib/copilot-context'
+import {resolveAgroHeroFileMime,validateAgroHeroFile} from '../lib/agro-hero-actions'
 import {createValProgressRequestId,initialValProgress,startValProgressPolling} from '../lib/val-progress-client'
 import {localNaturalCommandTurn,naturalCommandRequest,readValOutputMode,resolveValNaturalCommand,writeValOutputMode} from '../lib/val-natural-commands'
 import {cancelVoiceInteraction,createVoiceInteraction,processVoiceInteraction,uploadVoiceAudio} from '../lib/voice-interactions-client'
@@ -40,11 +41,11 @@ const formatSize=value=>Number(value||0)>=1_000_000?`${(Number(value)/1_000_000)
 const fileDataUrl=file=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result));reader.onerror=()=>reject(new Error('Não consegui abrir este arquivo.'));reader.readAsDataURL(file)})
 const probableAttachmentIntent=file=>{
  const name=String(file?.name||'').toLocaleLowerCase('pt-BR')
- const type=String(file?.type||'')
- if(type.startsWith('image/'))return {tool:'diagnosis',page:'diagnostico',label:'diagnóstico por imagem'}
- if(/solo|soil|fertilidade|laboratorio|laboratório/.test(name))return {tool:'soil',page:'solo',label:'análise de solo'}
- if(type==='application/pdf')return {tool:'technical_file',page:'solo',label:'documento técnico ou análise de solo'}
- return {tool:'technical_file',page:'manual',label:'arquivo técnico'}
+ const type=resolveAgroHeroFileMime(file)
+ if(/solo|soil|fertilidade|laboratorio|laboratório|laudo/.test(name))return {intent:'ANALYZE_SOIL',tool:'soil',page:'solo',label:'análise de solo'}
+ if(type.startsWith('image/'))return {intent:'IMAGE_DIAGNOSIS',tool:'diagnosis',page:'diagnostico',label:'diagnóstico por imagem'}
+ if(type==='application/pdf')return {intent:'ANALYZE_SOIL',tool:'soil',page:'solo',label:'documento técnico ou análise de solo'}
+ return {intent:'ASK_AGRONOMIC',tool:'',page:'inicio',label:'arquivo técnico'}
 }
 const voiceTranscriptOf=payload=>String(payload?.voice_interaction?.transcript?.transcript_text||payload?.interaction?.transcript?.transcript_text||payload?.transcript?.transcript_text||payload?.transcript_text||'').trim()
 const conversationKey=(threadKey,storageScope)=>`valor360:val-copilot-thread:v4:${encodeURIComponent(String(storageScope||'session'))}:${encodeURIComponent(String(threadKey||'global'))}`
@@ -52,9 +53,13 @@ const conversationId=(threadKey,storageScope)=>{const key=conversationKey(thread
 const resetConversationId=(threadKey,storageScope)=>{try{sessionStorage.removeItem(conversationKey(threadKey,storageScope))}catch{}}
 
 async function prepareFile(file){
- if(!ATTACHMENT_TYPES.has(file.type))throw new Error('Use foto, PDF, Word, Excel, CSV ou TXT.')
+ const validation=validateAgroHeroFile(file,'file')
+ if(!validation.ok)throw new Error(validation.message)
+ const mimeType=resolveAgroHeroFileMime(file)
+ if(!ATTACHMENT_TYPES.has(mimeType))throw new Error('Use foto, PDF, Word, Excel, CSV ou TXT.')
  if(file.size>MAX_ATTACHMENT_BYTES)throw new Error('Cada arquivo pode ter até 6 MB.')
- return file
+ if(String(file.type||'').toLowerCase()===mimeType)return file
+ return new File([file],file.name,{type:mimeType,lastModified:file.lastModified||Date.now()})
 }
 
 function ReasoningResponse({payload,density,outputMode,onReply,onRegister,onOpenModule,onOpenEvidence}){
@@ -125,6 +130,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  const messageInput=useRef(null)
  const clientSelectRef=useRef(null)
  const pageRef=useRef(null)
+ const uploadRunRef=useRef({generation:0,controller:null,targetClientId:''})
  const client=useMemo(()=>clients.find(item=>String(item.id)===String(selectedId))||null,[clients,selectedId])
  const threadKey=useMemo(()=>conversationScopeKey({clientId:selectedId,context:activeContext}),[selectedId,activeContext])
  const thread=threads[threadKey]||[]
@@ -134,23 +140,27 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  const history=useMemo(()=>buildConversationHistory({threads,metadata:threadMetadata,clients,query:historyQuery}),[threads,threadMetadata,clients,historyQuery])
  const visibleClients=useMemo(()=>{const query=historyQuery.trim().toLocaleLowerCase('pt-BR');return query?clients.filter(item=>String(item.name||'').toLocaleLowerCase('pt-BR').includes(query)).slice(0,8):clients.slice(0,6)},[clients,historyQuery])
 
- useEffect(()=>{if(contextClient?.id)setSelectedId(contextClient.id)},[contextClient?.id])
+ const cancelUploadRun=()=>{uploadRunRef.current.controller?.abort();uploadRunRef.current={generation:uploadRunRef.current.generation+1,controller:null,targetClientId:''};setUploading(false)}
+ useEffect(()=>{if(contextClient?.id&&!uploading)setSelectedId(contextClient.id)},[contextClient?.id,uploading])
  useEffect(()=>{
   if(!seed?.nonce)return
+  cancelUploadRun()
   const autoSubmit=Boolean(seed.autoSubmit&&seed.prompt)
+  const incomingFiles=Array.isArray(seed.files)?seed.files.slice(0,3):[]
   setSelectedId(seed.clientId||'')
   setActiveContext(seed.context||null)
   setMessage(seed.prompt||'')
   setMode(seed.mode||'ASK')
   setPendingCapture(seed.capture||'')
-  setSeedFiles(Array.isArray(seed.files)?seed.files.slice(0,3):[])
+  setSeedFiles(incomingFiles)
   setSeedVoice(seed.voiceFile?{file:seed.voiceFile,recording:seed.recording||null,intent:seed.intent||'ASK_AGRONOMIC'}:null)
   setSeedText(autoSubmit?{nonce:seed.nonce,prompt:seed.prompt,intent:seed.intent||undefined,clientId:seed.clientId||'',context:seed.context||null}:null)
-  if(autoSubmit){setAttachments([]);setPendingFiles([]);setReplyingTo(null);setSessionReplyOffer(null);setError('')}
-  setSeedAttachmentIntent(Array.isArray(seed.files)&&seed.files.length?seed.intent||'ASK_AGRONOMIC':'')
+  if(autoSubmit||incomingFiles.length){setAttachments([]);setPendingFiles([]);setReplyingTo(null);setSessionReplyOffer(null);setError('')}
+  setSeedAttachmentIntent(incomingFiles.length?seed.intent||'ASK_AGRONOMIC':'')
  },[seed?.nonce])
  useEffect(()=>{setDensity(readConsultantExperiencePreference(storageScope).toLowerCase())},[storageScope])
  useEffect(()=>{setOutputMode(readValOutputMode(storageScope))},[storageScope])
+ useEffect(()=>()=>uploadRunRef.current.controller?.abort(),[])
  useEffect(()=>{
   const now=new Date().toISOString()
   setThreadMetadata(current=>({...current,[threadKey]:{...(current[threadKey]||{}),clientId:selectedId||'',clientName:client?.name||'',context:activeContext||null,label:conversationScopeLabel({client,context:activeContext}),createdAt:current[threadKey]?.createdAt||now,updatedAt:now}}))
@@ -165,7 +175,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   return()=>window.clearTimeout(timer)
  },[open,pendingCapture])
  useEffect(()=>{
-  if(!open)return
+  if(!open){cancelUploadRun();setSeedFiles([]);setSeedAttachmentIntent('');return}
   document.body.classList.add('val-fullscreen-open');requestAnimationFrame(()=>pageRef.current?.focus())
   return()=>document.body.classList.remove('val-fullscreen-open')
  },[open])
@@ -176,54 +186,77 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   setThreads(current=>({...current,[key]:[...(current[key]||[]),{...item,at}].slice(-20)}))
   setThreadMetadata(current=>({...current,[key]:{...(current[key]||{}),updatedAt:at}}))
  }
- const chooseClient=id=>{setSelectedId(id);setActiveContext(null);setMode('ASK');setError('');setHistoryOpen(false)}
+ const chooseClient=id=>{if(busy||uploading)return;setSelectedId(id);setActiveContext(null);setMode('ASK');setError('');setHistoryOpen(false)}
  const newConversation=({general=false}={})=>{
+  if(busy||uploading)return
   const nextKey=general?'__global__':threadKey
   if(general){setSelectedId('');setActiveContext(null)}
-  setThreads(current=>({...current,[nextKey]:[]}));setSessionReplies(current=>({...current,[nextKey]:[]}));resetConversationId(nextKey,storageScope);setMessage('');setMode('ASK');setReplyingTo(null);setSessionReplyOffer(null);setAttachments([]);setPendingFiles([]);setSeedFiles([]);setSeedText(null);setError('');setHistoryOpen(false)
+  setThreads(current=>({...current,[nextKey]:[]}));setSessionReplies(current=>({...current,[nextKey]:[]}));resetConversationId(nextKey,storageScope);setMessage('');setMode('ASK');setReplyingTo(null);setSessionReplyOffer(null);setAttachments([]);setPendingFiles([]);setSeedFiles([]);setSeedText(null);setSeedAttachmentIntent('');setError('');setHistoryOpen(false)
   requestAnimationFrame(()=>messageInput.current?.focus())
  }
- const selectHistory=item=>{setSelectedId(item.clientId||'');setActiveContext(item.context||null);setHistoryOpen(false);setMode('ASK')}
+ const selectHistory=item=>{if(busy||uploading)return;setSelectedId(item.clientId||'');setActiveContext(item.context||null);setHistoryOpen(false);setMode('ASK')}
 
  const uploadFiles=async(files,targetClient)=>{
   const slots=Math.max(0,3-attachments.length);if(!slots){setError('Envie no máximo 3 arquivos por pergunta.');return false}
+  uploadRunRef.current.controller?.abort()
+  const generation=uploadRunRef.current.generation+1
+  const controller=new AbortController()
+  uploadRunRef.current={generation,controller,targetClientId:String(targetClient.id)}
+  const isCurrent=()=>uploadRunRef.current.generation===generation&&uploadRunRef.current.controller===controller
   setUploading(true);setError('')
   try{
    for(const original of files.slice(0,slots)){
     const file=await prepareFile(original);const dataUrl=await fileDataUrl(file)
-    const response=await fetch('/api/val/attachments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:targetClient.id,originalName:file.name,mimeType:file.type,sizeBytes:file.size,dataUrl}),signal:AbortSignal.timeout(60_000)})
+    if(!isCurrent())return false
+    const timeout=AbortSignal.timeout(60_000);const signal=typeof AbortSignal.any==='function'?AbortSignal.any([controller.signal,timeout]):controller.signal
+    const response=await fetch('/api/val/attachments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:targetClient.id,originalName:file.name,mimeType:file.type,sizeBytes:file.size,dataUrl}),signal})
     const payload=await response.json().catch(()=>({}));if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error(payload.error||'Não consegui enviar este arquivo.')
+    if(!isCurrent())return false
     setAttachments(current=>current.some(item=>item.id===payload.attachment.id)?current:[...current,payload.attachment].slice(0,3))
    }
-   return true
-  }catch(uploadError){setError(uploadError.message);return false}finally{setUploading(false)}
+    return true
+  }catch(uploadError){if(isCurrent()&&uploadError?.name!=='AbortError'){setSeedAttachmentIntent('');setError(uploadError.message)}return false}finally{if(isCurrent()){uploadRunRef.current={generation,controller:null,targetClientId:''};setUploading(false)}}
  }
  useEffect(()=>{
   if(!seedFiles.length||uploading)return
-  const files=seedFiles.slice(0,3);setSeedFiles([])
-  if(!client){setPendingFiles(files);setPendingLinkId('');return}
-  uploadFiles(files,client)
- },[seedFiles,client?.id])
+  let cancelled=false
+  const files=seedFiles.slice(0,3)
+  Promise.all(files.map(prepareFile)).then(prepared=>{
+   if(cancelled)return
+   setSeedFiles([])
+   if(!client){setPendingFiles(prepared);setPendingLinkId('');return}
+   uploadFiles(prepared,client)
+  }).catch(uploadError=>{if(!cancelled){setSeedFiles([]);setSeedAttachmentIntent('');setError(uploadError.message)}})
+  return()=>{cancelled=true}
+ },[seedFiles,client?.id,uploading])
  const upload=async event=>{
   const files=Array.from(event.target.files||[]);event.target.value=''
   if(!files.length||uploading)return
-  try{for(const file of files.slice(0,3))await prepareFile(file)}catch(uploadError){setError(uploadError.message);return}
-  if(!client){setPendingFiles(files.slice(0,3));setPendingLinkId('');setError('');return}
-  await uploadFiles(files,client)
+  let prepared
+  try{prepared=await Promise.all(files.slice(0,3).map(prepareFile))}catch(uploadError){setSeedAttachmentIntent('');setError(uploadError.message);return}
+  if(!client){setPendingFiles(prepared);setPendingLinkId('');setError('');return}
+  await uploadFiles(prepared,client)
  }
  const linkPendingFiles=async()=>{
+  if(uploading||uploadRunRef.current.controller)return
   const target=clients.find(item=>String(item.id)===String(pendingLinkId));if(!target){setError('Escolha o produtor para vincular e analisar o arquivo.');return}
-  setSelectedId(target.id);setActiveContext({type:'attachment_batch',id:`attachment-${Date.now()}`,label:pendingFiles.length===1?pendingFiles[0].name:`${pendingFiles.length} arquivos`})
+  setSelectedId(target.id);setActiveContext(null)
   if(await uploadFiles(pendingFiles,target))setPendingFiles([])
  }
  const openUnlinkedWorkspace=()=>{
-  const probable=probableAttachmentIntent(pendingFiles[0])
+  if(uploading||uploadRunRef.current.controller)return
+  const probableFiles=pendingFiles.map(probableAttachmentIntent)
+  const imageBatch=pendingFiles.length>=1&&pendingFiles.length<=3&&pendingFiles.every((file,index)=>probableFiles[index].intent==='IMAGE_DIAGNOSIS'&&['image/jpeg','image/png','image/webp'].includes(resolveAgroHeroFileMime(file)))
+  const soilFile=pendingFiles.length===1&&probableFiles[0]?.intent==='ANALYZE_SOIL'&&['image/jpeg','image/png','image/webp','application/pdf'].includes(resolveAgroHeroFileMime(pendingFiles[0]))
+  if(!imageBatch&&!soilFile){setError('Sem vínculo, envie de uma a três fotos do mesmo diagnóstico ou um único PDF/imagem de análise de solo. Para Word, Excel, CSV ou TXT, escolha um produtor.');return}
+  const probable=probableFiles[0]
   const context={type:'unlinked_attachment',id:`session-${Date.now()}`,label:pendingFiles.length===1?pendingFiles[0].name:`${pendingFiles.length} arquivos`,tool:probable.tool,page:probable.page,unlinked:true}
-  setActiveContext(context)
-  append({role:'system',text:`O arquivo permanece sem vínculo e somente nesta sessão. Parece ser ${probable.label}. Quer interpretar agora? Nada foi incorporado à memória.`})
+  setSeedAttachmentIntent('')
+  setSeedFiles([])
+  setAttachments([])
   setPendingFiles([])
-  setMessage(`Interprete este ${probable.label} sem vinculá-lo a um produtor e deixe claras as limitações.`)
-  onNavigate?.({page:'agro',tool:probable.tool,manualPage:probable.page,context,files:pendingFiles.slice(0,3)})
+  setMessage('')
+  onNavigate?.({page:'agro',tool:probable.tool||probable.page,manualPage:probable.page,label:probable.label,intent:probable.intent,context,files:pendingFiles.slice(0,3)})
  }
 
  const ask=async(rawMessage,intent)=>{
@@ -343,15 +376,15 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  return <section ref={pageRef} className={`val-fullscreen-page ${contextPanelOpen?'has-context-panel':''}`} aria-labelledby="global-val-title" tabIndex="-1">
   {historyOpen&&<><button type="button" className="val-history-backdrop" aria-label="Fechar histórico" onClick={()=>setHistoryOpen(false)}/><aside className="val-history-drawer" aria-label="Histórico de conversas"><header><div><small>VAL</small><h2>Conversas</h2></div><button type="button" aria-label="Fechar histórico" onClick={()=>setHistoryOpen(false)}><X/></button></header><button type="button" className="val-new-thread" onClick={()=>newConversation({general:true})}><Plus/>Nova conversa geral</button><label className="val-history-search"><Search/><input value={historyQuery} onChange={event=>setHistoryQuery(event.target.value)} placeholder="Buscar produtor ou conversa"/></label>{[...historyGroups].map(([group,items])=><section key={group}><h3>{group}</h3>{items.map(item=><button type="button" key={item.key} onClick={()=>selectHistory(item)}><Clock3/><span><b>{item.label}</b><small>{item.preview}</small></span></button>)}</section>)}{visibleClients.length>0&&<section><h3>Produtores</h3>{visibleClients.map(item=><button type="button" key={item.id} onClick={()=>chooseClient(item.id)}><UserRound/><span><b>{item.name}</b><small>Abrir conversa por produtor</small></span></button>)}</section>}</aside></>}
   <header className="val-fs-header">
-   <button type="button" className="val-fs-back" aria-label="Voltar" onClick={onClose}><ArrowLeft/></button>
+   <button type="button" className="val-fs-back" aria-label="Voltar" onClick={onClose} disabled={uploading}><ArrowLeft/></button>
    <div className="val-fs-brand"><span><Logo variant="icon-only" surface="dark" decorative/></span><div><small>VAL • COPILOTO DE DECISÃO</small><h1 id="global-val-title">VAL</h1>{client&&<b>{client.name}</b>}</div></div>
    <div className="val-fs-status"><span>{activeContext?.label||latestReasoning.intent?.replaceAll('_',' ')||'Conversa de decisão'}</span><em>{contextStatusLabel({client,context:activeContext})}</em>{latestReasoning.run?.path&&<i className={`is-${String(latestReasoning.run.path).toLowerCase()}`}>{latestReasoning.run.path}</i>}</div>
-   <div className="val-fs-header-actions"><button type="button" onClick={()=>setHistoryOpen(true)}><History/><span>Histórico</span></button><button type="button" onClick={()=>newConversation()}><Plus/><span>Nova conversa</span></button><button type="button" className={contextPanelOpen?'active':''} aria-pressed={contextPanelOpen} onClick={()=>setContextPanelOpen(value=>!value)}><PanelRightOpen/><span>Contexto</span></button></div>
+   <div className="val-fs-header-actions"><button type="button" onClick={()=>setHistoryOpen(true)} disabled={uploading}><History/><span>Histórico</span></button><button type="button" onClick={()=>newConversation()} disabled={busy||uploading}><Plus/><span>Nova conversa</span></button><button type="button" className={contextPanelOpen?'active':''} aria-pressed={contextPanelOpen} onClick={()=>setContextPanelOpen(value=>!value)}><PanelRightOpen/><span>Contexto</span></button></div>
   </header>
   <div className="val-fs-workspace">
    <section className="val-fs-conversation" aria-label="Conversa com a VAL">
     <div className="val-fs-toolbar">
-     <label className="val-fs-client"><UserRound/><span>Produtor atual</span><select ref={clientSelectRef} value={selectedId} onChange={event=>chooseClient(event.target.value)} disabled={busy}><option value="">Sem produtor • pergunta geral</option>{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+     <label className="val-fs-client"><UserRound/><span>Produtor atual</span><select ref={clientSelectRef} value={selectedId} onChange={event=>chooseClient(event.target.value)} disabled={busy||uploading}><option value="">Sem produtor • pergunta geral</option>{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
      {activeContext&&<div className="val-fs-active-context"><span><b>{activeContext.type?.replaceAll('_',' ')||'contexto'}</b>{activeContext.label}</span><button type="button" aria-label="Remover objeto ativo" onClick={()=>setActiveContext(null)}><X/></button></div>}
      {client&&<button type="button" className="val-fs-open-client" onClick={()=>onOpenClient?.(client)}>Abrir Produtor 360</button>}
      <div className="global-val-mode" role="tablist" aria-label="Ação da VAL"><button type="button" className={mode==='ASK'?'active':''} onClick={()=>setMode('ASK')}><MessageSquareText/>Perguntar</button><button type="button" className={mode==='REGISTER'?'active':''} onClick={()=>setMode('REGISTER')}><CheckCircle2/>Registrar</button></div>
@@ -366,14 +399,14 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
     {mode==='ASK'&&<div className="global-val-composer-wrap">
      {sessionReplyOffer&&<div className="global-val-session-offer"><ShieldCheck/><span><b>Usada somente nesta conversa</b><small>Essa resposta já recalculou a leitura, mas ainda não alterou a memória confirmada.</small></span><button type="button" onClick={()=>setMode('REGISTER')}>Revisar e registrar</button><button type="button" className="is-dismiss" aria-label="Manter apenas nesta conversa" onClick={()=>setSessionReplyOffer(null)}><X/></button></div>}
      {replyingTo&&<div className="global-val-replying"><MessageSquareText/><span><b>Respondendo à pergunta material</b><small>{replyingTo.question}</small></span><button type="button" aria-label="Cancelar resposta" onClick={()=>setReplyingTo(null)}><X/></button></div>}
-     {pendingFiles.length>0&&<div className="val-unlinked-file"><FileText/><span><b>{pendingFiles.length===1?pendingFiles[0].name:`${pendingFiles.length} arquivos selecionados`}</b><small>Quer vincular esta análise a algum produtor?</small></span><select aria-label="Produtor para vincular o arquivo" value={pendingLinkId} onChange={event=>setPendingLinkId(event.target.value)}><option value="">Selecione</option>{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select><button type="button" onClick={linkPendingFiles}>Vincular e continuar</button><button type="button" className="is-unlinked" onClick={openUnlinkedWorkspace}>Deixar sem vínculo</button><button type="button" className="is-remove" aria-label="Remover arquivo local" onClick={()=>setPendingFiles([])}><X/></button></div>}
+     {pendingFiles.length>0&&<div className="val-unlinked-file"><FileText/><span><b>{pendingFiles.length===1?pendingFiles[0].name:`${pendingFiles.length} arquivos selecionados`}</b><small>Quer vincular esta análise a algum produtor?</small></span><select aria-label="Produtor para vincular o arquivo" value={pendingLinkId} disabled={uploading} onChange={event=>setPendingLinkId(event.target.value)}><option value="">Selecione</option>{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select><button type="button" onClick={linkPendingFiles} disabled={uploading}>Vincular e continuar</button><button type="button" className="is-unlinked" onClick={openUnlinkedWorkspace} disabled={uploading}>Deixar sem vínculo</button><button type="button" className="is-remove" aria-label="Remover arquivo local" disabled={uploading} onClick={()=>{if(uploadRunRef.current.controller)return;setPendingFiles([]);setSeedFiles([]);setSeedAttachmentIntent('')}}><X/></button></div>}
      {attachments.length>0&&<div className="global-val-attachments">{attachments.map(item=><span key={item.id}>{item.mimeType?.startsWith('image/')?<ImagePlus/>:<FileText/>}<b>{item.originalName}</b><small>{formatSize(item.sizeBytes)}</small><button type="button" aria-label={`Remover ${item.originalName}`} onClick={()=>setAttachments(current=>current.filter(entry=>entry.id!==item.id))}><X/></button></span>)}</div>}
      <form className="global-val-composer" onSubmit={event=>{event.preventDefault();ask(message)}}>
       <div className="val-fs-voice-action">{client?<VoiceCapture transient clientId={client.id} interactionType="GENERAL_CONTEXT" label="Perguntar por voz" description="A fala não será salva como memória" sourceContext={{page:'GLOBAL_VAL_COPILOT',persistence_mode:'NONE',active_context:activeContext||null}} autoOpenKey={pendingCapture==='voice'?seed?.nonce:''} onOpenChange={isOpen=>{if(isOpen)setPendingCapture('')}} onTranscribed={transcript=>{setPendingCapture('');ask(transcript)}}/>:<EphemeralSpeechButton disabled={busy} autoStartKey={pendingCapture==='voice'?seed?.nonce:''} onListeningChange={isListening=>{if(isListening)setPendingCapture('')}} onTranscript={transcript=>{setPendingCapture('');ask(transcript)}} onError={message=>{setPendingCapture('');setError(message)}}/>}</div>
       <button type="button" onClick={()=>photoInput.current?.click()} disabled={busy||uploading} aria-label="Tirar ou escolher foto"><Camera/></button><button type="button" onClick={()=>fileInput.current?.click()} disabled={busy||uploading} aria-label="Anexar arquivo"><Paperclip/></button>
       <label><span className="sr-only">Pergunte à VAL</span><textarea ref={messageInput} rows="2" value={message} maxLength="3000" disabled={busy} onChange={event=>setMessage(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ask(message)}}} placeholder={replyingTo?'Digite a resposta do consultor…':client?`Pergunte ou peça algo sobre ${firstName(client.name)}…`:'Pergunte ou peça algo à VAL…'}/></label>
       <button type="submit" className="is-send" aria-label="Enviar" disabled={busy||uploading||(!message.trim()&&!attachments.length)}>{busy?<LoaderCircle/>:<Send/>}</button>
-      <input ref={fileInput} className="sr-only" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,text/csv,text/plain" onChange={upload}/><input ref={photoInput} className="sr-only" type="file" multiple accept="image/jpeg,image/png,image/webp,image/gif" capture="environment" onChange={upload}/>
+      <input ref={fileInput} className="sr-only" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,text/csv,text/plain" onChange={upload}/><input ref={photoInput} className="sr-only" type="file" multiple accept="image/jpeg,image/png,image/webp" capture="environment" onChange={upload}/>
      </form>
      <div className="val-fs-composer-policy"><ShieldCheck/>Perguntar não atualiza fatos. REGISTER exige confirmação humana.{uploading&&<span><LoaderCircle/>Enviando arquivo…</span>}</div>{error&&<p className="global-val-error" role="alert">{error}</p>}
     </div>}

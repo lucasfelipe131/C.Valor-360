@@ -2,6 +2,7 @@
 
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { saveRecord } from "./records";
+import type { ManualSessionMediaCommand, ManualSessionMediaStatus } from "./valor360-session-media";
 
 export type DiagnosisMode = "nutrition" | "disease" | "insect" | "weed";
 type DiagnosisStatus = "idle" | "preparing" | "analyzing" | "ready" | "error";
@@ -245,10 +246,18 @@ export default function PhotoDiagnosis({
   initialMode = "nutrition",
   context = {},
   navigationRequestId = "",
+  sessionMedia = null,
+  onSessionMediaResult,
 }: {
   initialMode?: DiagnosisMode;
   context?: PhotoDiagnosisContext;
   navigationRequestId?: string;
+  sessionMedia?: ManualSessionMediaCommand | null;
+  onSessionMediaResult?: (
+    command: ManualSessionMediaCommand,
+    status: ManualSessionMediaStatus,
+    errorCode?: string,
+  ) => void;
 }) {
   const [mode, setMode] = useState<DiagnosisMode>(initialMode);
   const initialMethodology = methodologies[initialMode];
@@ -267,6 +276,7 @@ export default function PhotoDiagnosis({
   const inputRef = useRef<HTMLInputElement>(null);
   const photosRef = useRef<PreparedPhoto[]>([]);
   const diagnosisRecordId = useRef("");
+  const sessionTransferTasks = useRef(new Map<string, Promise<boolean>>());
 
   useEffect(() => {
     photosRef.current = photos;
@@ -318,14 +328,12 @@ export default function PhotoDiagnosis({
     diagnosisRecordId.current = "";
   }
 
-  async function addPhotos(event: ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(event.target.files ?? []);
-    event.target.value = "";
-    if (!files.length) return;
+  async function ingestPhotos(files: File[]) {
+    if (!files.length) return false;
     if (photos.length + files.length > 3) {
       setMessage("Use no máximo três fotos por análise.");
       setStatus("error");
-      return;
+      return false;
     }
     setStatus("preparing");
     setMessage("Otimizando as imagens para análise…");
@@ -346,11 +354,37 @@ export default function PhotoDiagnosis({
       setSaveStatus("idle");
       setSaveMessage("");
       diagnosisRecordId.current = "";
+      return true;
     } catch (error) {
       setStatus("error");
       setMessage(error instanceof Error ? error.message : "Não foi possível preparar as fotos.");
+      return false;
     }
   }
+
+  async function addPhotos(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
+    event.target.value = "";
+    await ingestPhotos(files);
+  }
+
+  useEffect(() => {
+    if (!sessionMedia || sessionMedia.intent !== "IMAGE_DIAGNOSIS") return;
+    let disposed = false;
+    let task = sessionTransferTasks.current.get(sessionMedia.transferId);
+    if (!task) {
+      task = ingestPhotos(sessionMedia.files);
+      sessionTransferTasks.current.set(sessionMedia.transferId, task);
+    }
+    void task.then((accepted) => {
+      if (!disposed) onSessionMediaResult?.(
+        sessionMedia,
+        accepted ? "APPLIED" : "REJECTED",
+        accepted ? undefined : "MEDIA_PREPARE_FAILED",
+      );
+    });
+    return () => { disposed = true; };
+  }, [sessionMedia?.transferId]);
 
   function removePhoto(id: string) {
     setPhotos((current) => {

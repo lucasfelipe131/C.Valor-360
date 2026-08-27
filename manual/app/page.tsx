@@ -33,6 +33,13 @@ import {
   type ManualNavigationCommand,
 } from "./valor360-navigation";
 import {
+  createManualSessionMediaResult,
+  manualSessionMediaIdentity,
+  validateManualSessionMedia,
+  type ManualSessionMediaCommand,
+  type ManualSessionMediaStatus,
+} from "./valor360-session-media";
+import {
   BRAZIL_UFS,
   estimateRegionalHarvest,
   recommendPlantPopulation,
@@ -2270,7 +2277,12 @@ export default function Home() {
   const [accessUser, setAccessUser] = useState<AccessSessionUser | null>(null);
   const [activePage, setActivePage] = useState<PageKey>("inicio");
   const [navigationCommand, setNavigationCommand] = useState<ManualNavigationCommand | null>(null);
+  const navigationCommandRef = useRef<ManualNavigationCommand | null>(null);
   const navigationAcks = useRef(new Set<string>());
+  const pendingSessionMedia = useRef(new Set<string>());
+  const sessionMediaResults = useRef(new Map<string, ReturnType<typeof createManualSessionMediaResult>>());
+  const [photoSessionMedia, setPhotoSessionMedia] = useState<ManualSessionMediaCommand | null>(null);
+  const [soilSessionMedia, setSoilSessionMedia] = useState<ManualSessionMediaCommand | null>(null);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [calc, setCalc] = useState<CalcKey>("semeadora");
   const [crop, setCrop] = useState<Crop>("Todas");
@@ -2349,6 +2361,13 @@ export default function Home() {
   }, [accessUser]);
 
   useEffect(() => {
+    setPhotoSessionMedia(null);
+    setSoilSessionMedia(null);
+    pendingSessionMedia.current.clear();
+    sessionMediaResults.current.clear();
+  }, [accessUser?.id]);
+
+  useEffect(() => {
     document.documentElement.classList.toggle("valor360-embedded", embeddedInValor360);
     return () => document.documentElement.classList.remove("valor360-embedded");
   }, []);
@@ -2357,16 +2376,64 @@ export default function Home() {
     const initialUrl = new URL(window.location.href);
     const requestedPage = initialUrl.searchParams.get("page");
     const initialNavigation = manualNavigationFromUrl(initialUrl);
-    if (initialNavigation) setNavigationCommand(initialNavigation);
+    if (initialNavigation) {
+      navigationCommandRef.current = initialNavigation;
+      setNavigationCommand(initialNavigation);
+    }
     else if (isPageKey(requestedPage)) setActivePage(requestedPage);
 
     const receiveNavigation = (event: MessageEvent) => {
       if (!embeddedInValor360 || event.origin !== window.location.origin || event.source !== window.parent) return;
       const message = event.data as { type?: unknown } | null;
-      if (message?.type !== "valor360:navigate") return;
-      const command = normalizeManualNavigation(message);
-      if (!command) return;
-      setNavigationCommand(command);
+      if (message?.type === "valor360:navigate") {
+        const command = normalizeManualNavigation(message);
+        if (!command) return;
+        navigationCommandRef.current = command;
+        setNavigationCommand(command);
+        return;
+      }
+      if (message?.type !== "valor360:session-media") return;
+      const identity = manualSessionMediaIdentity(message);
+      const priorResult = identity.transferId
+        ? sessionMediaResults.current.get(identity.transferId)
+        : null;
+      if (priorResult) {
+        window.parent.postMessage(priorResult, window.location.origin);
+        return;
+      }
+      if (identity.transferId && pendingSessionMedia.current.has(identity.transferId)) return;
+      const validation = validateManualSessionMedia(message);
+      const command = validation.command;
+      const activeNavigation = navigationCommandRef.current;
+      const expectedPage = command?.intent === "IMAGE_DIAGNOSIS" ? "diagnostico" : "solo";
+      if (!command || !activeNavigation || command.navigationRequestId !== activeNavigation.requestId || activeNavigation.page !== expectedPage) {
+        if (!identity.transferId || !identity.navigationRequestId) return;
+        const rejected = createManualSessionMediaResult({
+          ...identity,
+          status: "REJECTED",
+          intent: command?.intent ?? null,
+          errorCode: command ? "NAVIGATION_MISMATCH" : validation.errorCode || "INVALID_ENVELOPE",
+        });
+        sessionMediaResults.current.set(identity.transferId, rejected);
+        window.parent.postMessage(rejected, window.location.origin);
+        return;
+      }
+      pendingSessionMedia.current.add(command.transferId);
+      if (command.intent === "IMAGE_DIAGNOSIS") {
+        setPhotoSessionMedia(command);
+        return;
+      }
+      setSoilSessionMedia(command);
+      const applied = createManualSessionMediaResult({
+        transferId: command.transferId,
+        navigationRequestId: command.navigationRequestId,
+        status: "APPLIED",
+        intent: command.intent,
+        acceptedCount: command.files.length,
+      });
+      pendingSessionMedia.current.delete(command.transferId);
+      sessionMediaResults.current.set(command.transferId, applied);
+      window.parent.postMessage(applied, window.location.origin);
     };
     window.addEventListener("message", receiveNavigation);
     return () => window.removeEventListener("message", receiveNavigation);
@@ -2428,6 +2495,28 @@ export default function Home() {
       }).catch(() => undefined);
     }
   }, [accessUser, accountReady, navigationCommand, navigationResolution, soilAnalyses]);
+
+  function acknowledgePhotoSessionMedia(
+    command: ManualSessionMediaCommand,
+    status: ManualSessionMediaStatus,
+    errorCode?: string,
+  ) {
+    if (sessionMediaResults.current.has(command.transferId)) return;
+    const result = createManualSessionMediaResult({
+      transferId: command.transferId,
+      navigationRequestId: command.navigationRequestId,
+      status,
+      intent: command.intent,
+      acceptedCount: status === "APPLIED" ? command.files.length : 0,
+      errorCode: errorCode ?? null,
+    });
+    pendingSessionMedia.current.delete(command.transferId);
+    sessionMediaResults.current.set(command.transferId, result);
+    setPhotoSessionMedia(null);
+    if (embeddedInValor360 && window.parent !== window) {
+      window.parent.postMessage(result, window.location.origin);
+    }
+  }
 
   useEffect(() => {
     if (!accessUser) {
@@ -3137,6 +3226,8 @@ export default function Home() {
             initialMode={navigationCommand?.diagnosisMode ?? "nutrition"}
             context={navigationResolution.context as PhotoDiagnosisContext}
             navigationRequestId={navigationCommand?.requestId ?? ""}
+            sessionMedia={photoSessionMedia}
+            onSessionMediaResult={acknowledgePhotoSessionMedia}
           />
         )}
         {activePage === "solo" && (
@@ -3150,6 +3241,8 @@ export default function Home() {
             profile={profile}
             analyses={soilAnalyses}
             linkActorId={accessUser?.id ?? ""}
+            sessionMedia={soilSessionMedia}
+            onClearSessionMedia={() => setSoilSessionMedia(null)}
             onSave={(analysis) => {
               const analysisProducer = producers.find(
                 (item) => item.id === analysis.producerId,
@@ -7146,6 +7239,8 @@ function SoilPage({
   profile,
   analyses,
   linkActorId,
+  sessionMedia,
+  onClearSessionMedia,
   onSave,
   onClear,
 }: {
@@ -7158,6 +7253,8 @@ function SoilPage({
   profile: ProfessionalProfile;
   analyses: SoilAnalysis[];
   linkActorId: string;
+  sessionMedia: ManualSessionMediaCommand | null;
+  onClearSessionMedia: () => void;
   onSave: (analysis: SoilAnalysis) => void;
   onClear: () => void;
 }) {
@@ -7525,6 +7622,29 @@ function SoilPage({
               <p>PDF digital, JPG, PNG ou foto tirada pelo celular.</p>
             </div>
           </div>
+          {sessionMedia?.intent === "ANALYZE_SOIL" && (
+            <div className="soil-import-status ready" role="status">
+              <Icon name="file" size={17} />
+              <div>
+                <strong>Arquivo recebido da VAL</strong>
+                <span>Sem vínculo e somente nesta sessão. Inicie a leitura quando estiver pronto.</span>
+              </div>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => {
+                  const [file] = sessionMedia.files;
+                  onClearSessionMedia();
+                  if (file) void onFile(file);
+                }}
+              >
+                Interpretar arquivo
+              </button>
+              <button type="button" className="button secondary" onClick={onClearSessionMedia}>
+                Remover
+              </button>
+            </div>
+          )}
           <label className="soil-file-drop">
             <input
               type="file"
