@@ -17,6 +17,7 @@ import {attachCommercialComposition} from './commercial/composition.js'
 import {attachExecutionComposition} from './execution/composition.js'
 import {aiReasoningResultVersion,attachAIReasoning,valResponseQualityVersion} from './ai-reasoning/index.js'
 import {observe} from './observability.js'
+import {normalizeConversationState} from './decision-copilot/conversation-state.js'
 
 const PATCHED=Symbol.for('valor360.conversion-core.patched')
 export const conversionCompositionVersion='conversion-bootstrap-v1'
@@ -120,10 +121,15 @@ export function installConversionComposition(){
   ValRepository.prototype.getClientContext=async function conversionAwareContext(input){
     const context=await originalGetClientContext.call(this,input)
     const conversationId=String(input?.contextRequest?.conversationId||'').trim().slice(0,180)
+    // Sem conversationId não existe autorização para agregar históricos de
+    // threads diferentes. A visão stateless recebe zero turnos conversacionais.
     const priorRecommendations=conversationId
       ?list(context.priorRecommendations).filter(item=>String(item?.conversation_id||'')===conversationId)
-      :context.priorRecommendations
-    return {...context,priorRecommendations,conversationSession:conversationId?{id:conversationId,scope:'client_session',clientId:String(input?.clientId||context.client?.id||'')}:{id:'',scope:'stateless',clientId:String(input?.clientId||context.client?.id||'')},conversionFoundation:buildConversionFoundation({...context,priorRecommendations})}
+      :[]
+    const conversationState=input?.contextRequest?.conversationState
+      ?normalizeConversationState(input.contextRequest.conversationState,{conversationId,clientId:input?.clientId||context.client?.id,client:context.client})
+      :null
+    return {...context,priorRecommendations,conversationState,conversationSession:conversationId?{id:conversationId,scope:'client_session',clientId:String(input?.clientId||context.client?.id||'')}:{id:'',scope:'stateless',clientId:String(input?.clientId||context.client?.id||'')},conversionFoundation:buildConversionFoundation({...context,priorRecommendations})}
   }
 
   const originalGetIntelligence=ValRepository.prototype.getIntelligence

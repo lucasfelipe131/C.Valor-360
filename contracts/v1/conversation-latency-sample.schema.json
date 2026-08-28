@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://valor360.local/contracts/v1/conversation-latency-sample.schema.json",
+  "title": "VAL Conversation Latency Sample v2",
+  "oneOf": [
+    {"$ref": "#/$defs/serverProcessing"},
+    {"$ref": "#/$defs/browserVoiceTurn"}
+  ],
+  "$defs": {
+    "duration": {"type": ["number", "null"], "minimum": 0},
+    "outcome": {"enum": ["SUCCESS", "ERROR", "CANCELLED", "FALLBACK"]},
+    "serverProcessing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "contractVersion", "serviceClass", "outcome", "metrics"],
+      "properties": {
+        "source": {"const": "SERVER_PROCESSING"},
+        "contractVersion": {"const": "val.conversation_latency.server_processing.v1"},
+        "serviceClass": {"enum": ["FAST", "CONTEXT", "DEEP", "TOOL", "LIVE_DATA", "VOICE"]},
+        "outcome": {"$ref": "#/$defs/outcome"},
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "server_processing_total_latency": {"$ref": "#/$defs/duration"},
+            "total_turn_latency": {"$ref": "#/$defs/duration", "deprecated": true}
+          }
+        }
+      }
+    },
+    "browserVoiceTurn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source", "contractVersion", "serviceClass", "outcome", "metrics"],
+      "properties": {
+        "source": {"const": "BROWSER_VOICE_TURN"},
+        "contractVersion": {"const": "val.conversation_latency.browser_voice_turn.v1"},
+        "serviceClass": {"const": "VOICE"},
+        "outcome": {"$ref": "#/$defs/outcome"},
+        "metrics": {
+          "type": "object",
+          "additionalProperties": false,
+          "minProperties": 1,
+          "properties": {
+            "speech_end_to_transcript": {"$ref": "#/$defs/duration"},
+            "transcript_to_first_reasoning": {"$ref": "#/$defs/duration"},
+            "reasoning_to_first_text": {"$ref": "#/$defs/duration"},
+            "reasoning_to_first_audio": {"$ref": "#/$defs/duration"},
+            "browser_voice_turn_total_latency": {"$ref": "#/$defs/duration"},
+            "total_turn_latency": {"$ref": "#/$defs/duration", "deprecated": true}
+          }
+        }
+      }
+    }
+  }
+}

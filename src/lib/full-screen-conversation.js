@@ -7,10 +7,27 @@ export const fullScreenTurnLimit=20
 
 export function conversationScopeKey({clientId='',context=null}={}){
  const client=clean(clientId,180)
- const type=clean(context?.type,80)
- const id=clean(context?.id,180)
- if(type||id)return `context:${type||'object'}:${id||clean(context?.label,120)||'active'}:${client||'global'}`
+ // O objeto ativo evolui dentro da conversa; ele não cria uma nova thread.
+ // Assim texto, voz, visita, talhão, foto, PDF e ferramentas mantêm o mesmo
+ // conversationId enquanto o consultor conversa sobre o mesmo produtor.
  return client?`client:${client}`:'__global__'
+}
+
+export function createConversationThreadKey({clientId='',threadId=''}={}){
+ const id=clean(threadId,180)||globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(36).slice(2)}`
+ return `${conversationScopeKey({clientId})}:conversation:${safePart(id)}`
+}
+
+export function createScopedRegistrationDraft({text='',clientId='',threadKey=''}={}){
+ const candidate=clean(text,3000)
+ const client=clean(clientId,180)
+ const thread=clean(threadKey,500)
+ return candidate&&client&&thread?{text:candidate,clientId:client,threadKey:thread}:null
+}
+
+export function registrationDraftTextForScope(draft,{clientId='',threadKey=''}={}){
+ if(!draft||String(draft.clientId)!==String(clientId)||String(draft.threadKey)!==String(threadKey))return ''
+ return clean(draft.text,3000)
 }
 
 export function conversationScopeLabel({client=null,context=null}={}){

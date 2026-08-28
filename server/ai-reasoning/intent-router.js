@@ -95,7 +95,7 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
   else if(toolHint==='AREA_MAPPING')intent='ASK_AGRONOMIC'
   else if(/\b(?:agron[oô]mic|praga|doen[cç]a|daninha|manejo|talh[aã]o|safra|cultiv)/i.test(source))intent='ASK_AGRONOMIC'
   else if(/\b(?:prepar|roteiro|antes da)\w*\b.*\bvisit\w*\b|\bvisit\w*\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))intent='PREPARE_VISIT'
-  else if(/\b(?:registr|salv|grave|anote|memorize)\b.*\b(?:informa[cç][aã]o|nota|hist[oó]rico|mem[oó]ria|fato)\b/i.test(source))intent='REGISTER_INFORMATION'
+  else if(/^(?:val[, ]+)?(?:registra|registre|anota|anote)\s+que\b/i.test(source)||/\b(?:registr|salv|grave|anote|memorize)\b.*\b(?:informa[cç][aã]o|nota|hist[oó]rico|mem[oó]ria|fato)\b/i.test(source))intent='REGISTER_INFORMATION'
   else if(/\b(?:p[oó]s[- ]?visita|depois da visita|resultado da visita)\b/i.test(source))intent='POST_VISIT'
   else if(/\b(?:obje[cç][aã]o|resist[eê]ncia|discord|recus|n[aã]o quer)\b/i.test(source))intent='OBJECTION_HELP'
   else if(/\b(?:oportunidades?|pipeline|neg[oó]cios?|propostas?)\b/i.test(source))intent='CHECK_OPPORTUNITY'

@@ -21,6 +21,7 @@ Os contratos desta pasta são aditivos e versionados. Eles não substituem os pa
 - `learning-candidate.schema.json`: hipótese de aprendizado em estado governado; a Fase 6 cria somente `CANDIDATE`.
 - `voice-candidate.schema.json`: item extraído de transcript não confiável; separa categoria de estado epistêmico e exige confirmação humana em todos os casos.
 - `voice-interaction.schema.json`: captura transversal tenant-safe para pré-visita, campo, pós-visita, Cliente 360 e contexto geral, com estados granulares de transcrição, extração, retry, revisão e confirmação.
+- `conversation-latency-sample.schema.json`: amostra `content_free` com contratos e relógios separados para processamento do servidor e turno de voz no navegador; proíbe tratar as duas durações totais como uma distribuição.
 - `knowledge-item.schema.json`: item externo estruturado com lifecycle, autoridade, risco, geografia, fontes e policy de uso; nunca representa fato do produtor.
 - `knowledge-source.schema.json`: registro curado e versionado das fontes que sustentam KnowledgeItems.
 - `knowledge-selection.schema.json`: seleção determinística de no máximo três itens, com motivos, caveats e provenance; não contém dump do catálogo.

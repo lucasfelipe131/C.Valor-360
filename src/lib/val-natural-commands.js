@@ -18,9 +18,11 @@ const exact=(value,...commands)=>commands.includes(value)
 export function resolveValNaturalCommand(input){
  const normalized=fold(input)
  if(!normalized)return null
+ const registration=clean(input).match(/^(?:registra|registre|anota|anote)\s+que\s+(.+?)[.!?]*$/i)
+ if(registration)return {action:'OPEN_REGISTER',local:true,persistence:'CONFIRM_REQUIRED',candidate:clean(registration[1])}
  if(exact(normalized,'resume','resuma'))return {action:'SUMMARIZE',local:true,persistence:'NONE'}
  if(exact(normalized,'repete','repita'))return {action:'REPEAT',local:true,persistence:'NONE'}
- if(exact(normalized,'so as perguntas de ouro','somente as perguntas de ouro','so me manda as perguntas de ouro'))return {action:'GOLDEN_QUESTIONS_ONLY',local:true,persistence:'NONE'}
+ if(exact(normalized,'so as perguntas de ouro','somente as perguntas de ouro','so me manda as perguntas de ouro','agora me manda so as tres perguntas de ouro'))return {action:'GOLDEN_QUESTIONS_ONLY',local:true,persistence:'NONE'}
  if(exact(normalized,'agora por escrito','responda por escrito'))return {action:'OUTPUT_TEXT',local:true,outputMode:'text',persistence:'NONE'}
  if(exact(normalized,'agora fala comigo','agora fala elas pra mim','agora fala isso pra mim','fale comigo','responda em audio'))return {action:'OUTPUT_AUDIO',local:true,outputMode:'audio',persistence:'NONE'}
  if(exact(normalized,'texto e audio','agora texto e audio'))return {action:'OUTPUT_BOTH',local:true,outputMode:'both',persistence:'NONE'}
@@ -55,7 +57,7 @@ export function localNaturalCommandTurn(command,payload){
   OUTPUT_TEXT:'Certo. A partir de agora respondo por escrito.',
   OUTPUT_AUDIO:'Certo. A partir de agora respondo por áudio.',
   OUTPUT_BOTH:'Certo. A partir de agora respondo em texto e áudio.',
-  OPEN_REGISTER:'Vou abrir a revisão. Nada será registrado sem sua confirmação.',
+  OPEN_REGISTER:command.candidate?`Tenho esta informação para revisar: “${clean(command.candidate)}”. Nada será registrado sem sua confirmação.`:'Vou abrir a revisão. Nada será registrado sem sua confirmação.',
   KEEP_SESSION_ONLY:'Certo. Esta informação fica somente nesta conversa.',
   SET_SIMPLE:'Certo. Vou manter só o essencial.'
  }
@@ -79,6 +81,9 @@ export function normalizeValOutputMode(value){
 }
 
 const outputKey=scope=>`val.voice_decision.output.v1:${encodeURIComponent(String(scope||'session'))}`
+export function hasValOutputModePreference(scope,storage=globalThis.localStorage){
+ try{return storage?.getItem(outputKey(scope))!=null}catch{return false}
+}
 export function readValOutputMode(scope,storage=globalThis.localStorage){
  try{return normalizeValOutputMode(storage?.getItem(outputKey(scope)))}catch{return 'text'}
 }

@@ -1,10 +1,11 @@
-export const sessionContextCacheVersion='val.session_context_cache.v1'
+export const sessionContextCacheVersion='val.session_context_cache.v2'
 
 const clean=value=>String(value??'').trim().slice(0,240)
 const required=(value,label)=>{const normalized=clean(value);if(!normalized)throw Object.assign(new Error(`${label} é obrigatório para escopar o cache.`),{code:'val_cache_scope_required'});return normalized}
 
-export function sessionContextCacheKey({tenantId,ownerId,clientId}={}){
- return `${required(tenantId,'tenantId')}\u001f${required(ownerId,'ownerId')}\u001f${required(clientId,'clientId')}`
+export function sessionContextCacheKey({tenantId,ownerId,clientId,conversationId=''}={}){
+ const conversation=clean(conversationId)||'__stateless__'
+ return `${required(tenantId,'tenantId')}\u001f${required(ownerId,'ownerId')}\u001f${required(clientId,'clientId')}\u001f${conversation}`
 }
 
 export function createSessionContextCache({ttlMs=30_000,maxEntries=250,clock=()=>Date.now()}={}){
@@ -22,17 +23,18 @@ export function createSessionContextCache({ttlMs=30_000,maxEntries=250,clock=()=
    if(current)entries.delete(key)
    misses++;loads++
    const promise=Promise.resolve().then(loader).catch(error=>{if(entries.get(key)?.promise===promise)entries.delete(key);throw error})
-   entries.set(key,{promise,expiresAt:now+ttl,tenantId:clean(scope.tenantId),ownerId:clean(scope.ownerId),clientId:clean(scope.clientId)})
+   entries.set(key,{promise,expiresAt:now+ttl,tenantId:clean(scope.tenantId),ownerId:clean(scope.ownerId),clientId:clean(scope.clientId),conversationId:clean(scope.conversationId)})
    evict()
    return promise
   },
   invalidate(scope={}){
-   const tenantId=clean(scope.tenantId);const ownerId=clean(scope.ownerId);const clientId=clean(scope.clientId)
+   const tenantId=clean(scope.tenantId);const ownerId=clean(scope.ownerId);const clientId=clean(scope.clientId);const conversationId=clean(scope.conversationId)
    let removed=0
    for(const [key,item] of entries){
     if(tenantId&&item.tenantId!==tenantId)continue
     if(ownerId&&item.ownerId!==ownerId)continue
     if(clientId&&item.clientId!==clientId)continue
+    if(conversationId&&item.conversationId!==conversationId)continue
     entries.delete(key);removed++
    }
    if(removed)invalidations+=removed

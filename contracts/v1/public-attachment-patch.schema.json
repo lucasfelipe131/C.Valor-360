@@ -1,0 +1,34 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://val.local/contracts/v1/public-attachment-patch.schema.json",
+  "title": "VAL Public Attachment Patch v1",
+  "description": "Contrato browser-facing. Metadados de análise e proveniência são gerenciados exclusivamente pelo servidor.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id"],
+  "anyOf": [
+    {"required": ["status"]},
+    {"required": ["fieldPhoto"]}
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["confirmed", "stored", "rejected"]
+    },
+    "fieldPhoto": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "category", "observedAt", "notes"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1, "maxLength": 120},
+        "category": {"enum": ["Visão geral", "Emergência e estande", "Plantas daninhas", "Doenças", "Insetos e pragas", "Nutrição", "Solo", "Dano climático", "Manejo e aplicação", "Outro"]},
+        "observedAt": {"type": "string", "format": "date"},
+        "notes": {"type": "string", "maxLength": 1000}
+      }
+    }
+  }
+}

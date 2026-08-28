@@ -35,11 +35,16 @@ import {buildClientMarketResponse,buildFastClientResponse,buildFastMarketRespons
 import {buildCapabilityExecutionResponse,buildGeneralNoClientResponse,executeCapabilityPlan,validateActiveContext} from './server/decision-copilot/capability-executor.js'
 import {attachLatencyPerformance,createLatencyTrace,valLatencyMetrics} from './server/decision-copilot/latency-observability.js'
 import {createSessionContextCache} from './server/decision-copilot/session-context-cache.js'
+import {createConversationSessionStore} from './server/decision-copilot/conversation-session-store.js'
+import {conversationStateContext} from './server/decision-copilot/conversation-state.js'
+import {extractNaturalClientReference} from './server/decision-copilot/client-reference-resolver.js'
+import {valConversationLatency} from './server/decision-copilot/conversation-latency.js'
 import {normalizeSessionCommand} from './server/decision-copilot/session-command-router.js'
 import {probeVoiceAudioDuration,validateVoiceAudio} from './server/voice-capture/storage.js'
 import {readReleaseMetadata} from './server/release-metadata.js'
 import {createReadinessReport} from './server/readiness.js'
 import {technicalBootstrapFromValClients} from './server/agronomic-geometry-bridge.js'
+import {normalizePublicAttachmentPatch} from './server/attachment-public-patch.js'
 
 const port=Number(process.env.PORT||3000)
 const appRoot=dirname(fileURLToPath(import.meta.url))
@@ -62,9 +67,46 @@ function rawBody(request){return new Promise((resolve,reject)=>{let raw='';let s
 async function body(request){const raw=await rawBody(request);try{return raw?JSON.parse(raw):{}}catch{throw new Error('Conteúdo inválido.')}}
 async function limitedResponseText(upstream,limit){const reader=upstream.body?.getReader();if(!reader)return upstream.text();const chunks=[];let size=0;while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>limit){await reader.cancel();throw Object.assign(new Error('A planilha excede o limite seguro de importação.'),{statusCode:413})}chunks.push(value)}return new TextDecoder().decode(Buffer.concat(chunks.map(chunk=>Buffer.from(chunk))))}
 const clean=value=>String(value||'').trim().slice(0,240)
+const conversationIdValue=value=>{
+ const id=String(value??'').trim()
+ if(!id)return randomUUID()
+ if(!/^[a-zA-Z0-9][a-zA-Z0-9._:@/-]{0,179}$/.test(id))throw Object.assign(new Error('Identificador de conversa inválido.'),{statusCode:400,code:'val_conversation_id_invalid'})
+ return id
+}
+function conversationPreferences(payload={},attachmentTypes=[]){
+ const source=payload.sessionContext&&typeof payload.sessionContext==='object'&&!Array.isArray(payload.sessionContext)?payload.sessionContext:{}
+ const requestedInput=clean(source.input_modality||payload.inputModality).toLowerCase()
+ const requestedOutput=clean(source.response_mode||payload.responseMode).toLowerCase()
+ return {
+  inputModality:['text','voice','photo','file'].includes(requestedInput)?requestedInput:attachmentTypes.some(item=>String(item).startsWith('image/'))?'photo':attachmentTypes.length?'file':'text',
+  responseMode:['text','audio','both'].includes(requestedOutput)?requestedOutput:'text',
+  conversationMode:source.conversation_mode===true||payload.conversationMode===true,
+  objective:String(source.objective||'').replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,900)||null
+ }
+}
+function attachConversationState(payloadResult,state){
+ const session=conversationStateContext(state)
+ const advice=payloadResult?.advice
+ const reasoning=advice?.ai_reasoning
+ if(!reasoning)return {...payloadResult,conversationState:session}
+ return {
+  ...payloadResult,
+  conversationState:session,
+  advice:{...advice,ai_reasoning:{...reasoning,premises:{...(reasoning.premises||{}),session_context:session}}}
+ }
+}
 const attachmentMaxBytes=6_000_000
 const attachmentMimeTypes=new Set(['image/jpeg','image/png','image/webp','image/gif','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','text/plain','audio/mpeg','audio/mp3','audio/mp4','audio/x-m4a','audio/wav','audio/x-wav','audio/webm','audio/ogg'])
 const attachmentId=value=>/^[0-9a-f-]{36}$/i.test(String(value||''))?String(value):''
+function browserAttachmentScope(url){
+ const clientId=clean(url.searchParams.get('clientId'))
+ const declared=clean(url.searchParams.get('association')).toUpperCase()
+ const association=declared||(clientId?'LINKED_CLIENT':'')
+ if(!['LINKED_CLIENT','UNLINKED'].includes(association))throw Object.assign(new Error('Informe explicitamente o produtor ou association=UNLINKED.'),{statusCode:400,code:'attachment_browser_scope_required'})
+ if(association==='LINKED_CLIENT'&&!clientId)throw Object.assign(new Error('Informe o produtor deste arquivo.'),{statusCode:400,code:'attachment_client_scope_required'})
+ if(association==='UNLINKED'&&clientId)throw Object.assign(new Error('Um arquivo UNLINKED não pode declarar produtor.'),{statusCode:400,code:'attachment_unlinked_client_scope_conflict'})
+ return {clientId:clientId||null,association}
+}
 function normalizedAttachment(payload={}){
  const match=String(payload.dataUrl||'').match(/^data:([^;,]+);base64,([A-Za-z0-9+/=\s]+)$/)
  if(!match)throw Object.assign(new Error('O arquivo enviado não está em um formato válido.'),{statusCode:400})
@@ -97,6 +139,7 @@ const voiceExtractor=createVoiceCandidateExtractor({client:voiceOpenAI,model:con
 const voiceCapture=createVoiceCaptureService({repository,storageProvider:voiceStorage,transcriptionProvider:voiceTranscriptionProvider,extractor:voiceExtractor,visitLoop,prepareVisit:prepareVisitExecution,maxDurationSeconds:config.voiceMaxDurationSeconds})
 const valProgress=createValProgressTracker()
 const valSessionContextCache=createSessionContextCache()
+const valConversationSessions=createConversationSessionStore()
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
 function consumeRateLimit(scope,key,limit){const now=Date.now();const bucketKey=`${scope}:${key}`;const current=rateBuckets.get(bucketKey);if(!current||current.resetAt<=now){rateBuckets.set(bucketKey,{count:1,resetAt:now+600_000});return true}if(current.count>=limit)return false;current.count+=1;return true}
@@ -155,7 +198,11 @@ async function handleApi(request,response,url){
   if(!identity)return json(response,401,{error:'E-mail ou senha inválidos, acesso bloqueado ou expirado.'})
   const token=auth.issue(identity);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{authenticated:true,required:true,demo:false,user:userPayload(identity)})
  }
- if(url.pathname==='/api/auth/logout'&&request.method==='POST'){response.setHeader('Set-Cookie',auth.clearCookie(request));return json(response,200,{authenticated:false})}
+ if(url.pathname==='/api/auth/logout'&&request.method==='POST'){
+  const current=await sessionIdentity(request)
+  if(current)valConversationSessions.invalidate({tenantId:current.tenantId||config.defaultTenantId,ownerId:current.id||current.email})
+  response.setHeader('Set-Cookie',auth.clearCookie(request));return json(response,200,{authenticated:false})
+ }
  if(url.pathname==='/api/auth/password'&&request.method==='PUT'){
   const identity=await sessionIdentity(request);if(!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
   const payload=await body(request);const updated=await accessRepository.changePassword(identity,payload.currentPassword,payload.newPassword)
@@ -175,7 +222,13 @@ async function handleApi(request,response,url){
  if(valRecommendationPath&&config.openaiApiKey&&!auth.configured)return json(response,503,{error:'Configure VAL_ADMIN_EMAIL, VAL_ADMIN_PASSWORD e VAL_SESSION_SECRET antes de ativar a IA em produção.'})
  if(valRecommendationPath&&config.openaiApiKey&&!database.configured)return json(response,503,{error:'Configure DATABASE_URL antes de ativar a IA com dados reais.'})
  if(url.pathname==='/api/admin/metrics'&&request.method==='GET')return json(response,200,await accessRepository.getAdminMetrics(identity,Number(url.searchParams.get('days')||30)))
- if(url.pathname==='/api/val/latency-metrics'&&request.method==='GET')return json(response,200,{...valLatencyMetrics.snapshot(),cache:valSessionContextCache.stats()})
+ if(url.pathname==='/api/val/latency-metrics'&&request.method==='GET')return json(response,200,{...valLatencyMetrics.snapshot(),conversation:valConversationLatency.snapshot(),cache:valSessionContextCache.stats(),sessions:valConversationSessions.stats()})
+ if(url.pathname==='/api/val/latency-metrics'&&request.method==='POST'){
+  const payload=await body(request)
+  if(payload.source&&String(payload.source).toUpperCase()!=='BROWSER_VOICE_TURN')return json(response,400,{error:'A rota do navegador aceita somente métricas do turno de voz no browser.',code:'val_conversation_metric_source_invalid'})
+  try{const recorded=valConversationLatency.record({source:'BROWSER_VOICE_TURN',contractVersion:payload.contractVersion,serviceClass:payload.serviceClass,metrics:payload.metrics,outcome:payload.outcome});return json(response,recorded?202:400,{accepted:recorded,content_free:true,source:'BROWSER_VOICE_TURN'})}
+  catch{return json(response,400,{error:'Métrica conversacional inválida.',code:'val_conversation_metric_invalid'})}
+ }
  if(url.pathname==='/api/portfolio-admin/users'&&request.method==='GET')return json(response,200,{users:await accessRepository.listUsers(identity)})
  if(url.pathname==='/api/portfolio-admin/users'&&request.method==='POST')return json(response,201,await accessRepository.createUser(identity,await body(request)))
  if(url.pathname==='/api/portfolio-admin/users'&&request.method==='PATCH')return json(response,200,{saved:true,user:await accessRepository.updateUser(identity,await body(request))})
@@ -296,17 +349,27 @@ async function handleApi(request,response,url){
   return json(response,201,{attachment})
  }
  if(url.pathname==='/api/val/attachments'&&request.method==='PATCH'){
-  const payload=await body(request);const id=attachmentId(payload.id);if(!id)return json(response,400,{error:'Arquivo inválido.'})
-  const status=clean(payload.status);const analysis=payload.analysis&&typeof payload.analysis==='object'?payload.analysis:undefined
-  const attachment=await repository.updateAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id,status,analysis})
+  const scope=browserAttachmentScope(url)
+  const {id,status,fieldPhoto}=normalizePublicAttachmentPatch(await body(request))
+  const current=await repository.getAttachmentInScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id,...scope})
+  if(!current)return json(response,404,{error:'Arquivo não encontrado neste escopo.',code:'attachment_scope_not_found'})
+  let analysis
+  if(fieldPhoto){
+   if(!String(current.mimeType||'').startsWith('image/'))return json(response,422,{error:'Somente imagens podem receber metadados de foto de campo.',code:'attachment_field_photo_image_required'})
+   analysis={...((current.analysis&&typeof current.analysis==='object')?current.analysis:{}),fieldPhoto}
+  }
+  const effectiveStatus=status||(current.status==='received'?'stored':current.status)
+  const statusTransitioned=Boolean(status)||current.status==='received'
+  const attachment=await repository.updateAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id,status:effectiveStatus,analysis,...scope,preserveConfirmedAt:!statusTransitioned})
   if(attachment.clientId)valSessionContextCache.invalidate({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:attachment.clientId})
-  await accessRepository.recordUsage(identity,{eventType:'val_attachment_'+status,page:'val',entityType:attachment.clientId?'client':'attachment',entityId:attachment.clientId||attachment.id,metadata:{attachmentId:id,association:attachment.association}})
+  if(statusTransitioned)await accessRepository.recordUsage(identity,{eventType:'val_attachment_'+effectiveStatus,page:'val',entityType:attachment.clientId?'client':'attachment',entityId:attachment.clientId||attachment.id,metadata:{attachmentId:id,association:attachment.association}})
   return json(response,200,{attachment})
  }
  const attachmentContentMatch=url.pathname.match(/^\/api\/val\/attachments\/([0-9a-f-]{36})$/i)
  if(attachmentContentMatch&&request.method==='GET'){
-  const attachment=await repository.getAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id:attachmentContentMatch[1]})
-  if(!attachment)return json(response,404,{error:'Arquivo não encontrado.'})
+  const scope=browserAttachmentScope(url)
+  const attachment=await repository.getAttachmentInScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id:attachmentContentMatch[1],...scope})
+  if(!attachment)return json(response,404,{error:'Arquivo não encontrado neste escopo.',code:'attachment_scope_not_found'})
   const binary=Buffer.from(attachment.dataBase64||'','base64')
   response.writeHead(200,{...securityHeaders,'Content-Type':attachment.mimeType,'Content-Length':binary.length,'Content-Disposition':"inline; filename*=UTF-8''"+encodeURIComponent(attachment.originalName),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'})
   response.end(binary);return true
@@ -316,11 +379,34 @@ async function handleApi(request,response,url){
   const rateIdentity=identity?.id||identity?.email||requestIdentity(request)
   if(!consumeRateLimit('val',rateIdentity,config.aiRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de análises atingido. Aguarde alguns minutos.'})
   const payload=await body(request);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const message=String(payload.message||payload.question||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).trim().slice(0,3000)
-  const clientId=clean(payload.clientId||payload.client?.id)
+  const tenantId=identity?.tenantId||config.defaultTenantId;const scopedOwnerId=identity?.id||identity?.email
+  const conversationId=conversationIdValue(payload.conversationId)
+  let clientId=clean(payload.clientId||payload.client?.id)
+  const storedConversation=valConversationSessions.get({tenantId,ownerId:scopedOwnerId,conversationId})
+  const storedClientId=clean(storedConversation?.current_client?.id)
+  if(!clientId&&storedClientId)clientId=storedClientId
+  let conversationResolution=null
+  const naturalClientReference=extractNaturalClientReference(message)
+  if(naturalClientReference.kind==='CURRENT_CLIENT'&&!clientId)return json(response,422,{error:'Ainda não há um produtor ativo nesta conversa. Diga o nome para eu localizar a carteira correta.',code:'val_client_reference_context_required',conversationId,clarification:{question:'De qual produtor você está falando?'}})
+  if(['EXPLICIT_NAME','AUTHORIZED_NAME_CANDIDATE'].includes(naturalClientReference.kind)){
+   conversationResolution=await repository.resolveAuthorizedClientReference({tenantId,ownerId:scopedOwnerId,message,currentClientId:clientId||storedClientId||null})
+   if(conversationResolution.status==='AMBIGUOUS'&&clientId){
+    const selected=conversationResolution.options.find(option=>String(option.id)===String(clientId))
+    if(selected)conversationResolution={...conversationResolution,status:'RESOLVED',client:selected,options:[],reason_code:'AMBIGUITY_CONFIRMED_BY_AUTHORIZED_SELECTION',changed_client:Boolean(storedClientId&&storedClientId!==selected.id)}
+   }
+   if(conversationResolution.status==='AMBIGUOUS')return json(response,409,{error:`Encontrei mais de um produtor para “${conversationResolution.reference}”. Qual deles você quer?`,code:'val_client_reference_ambiguous',conversationId,clarification:{question:'Qual produtor você quer usar nesta conversa?',options:conversationResolution.options}})
+   if(conversationResolution.status==='NOT_FOUND')return json(response,422,{error:`Não encontrei “${conversationResolution.reference}” na sua carteira autorizada. Confirme o nome do produtor.`,code:'val_client_reference_not_found',conversationId,clarification:{question:'Qual é o nome do produtor na sua carteira?'}})
+   if(conversationResolution.status==='RESOLVED'){
+    if(storedClientId&&storedClientId!==conversationResolution.client.id)valConversationSessions.switchClient({tenantId,ownerId:scopedOwnerId,conversationId},conversationResolution.client)
+    clientId=conversationResolution.client.id
+   }
+  }
+  if(clientId&&storedClientId&&clientId!==storedClientId&&conversationResolution?.status!=='RESOLVED')return json(response,409,{error:'Esta conversa já está vinculada a outro produtor. Confirme a troca ou inicie uma nova conversa.',code:'val_conversation_client_mismatch',conversationId,currentClient:storedConversation.current_client})
   const requestedIntent=payload.intent==null?'':String(payload.intent)
   const requestedSessionCommand=payload.sessionCommand==null?'':String(payload.sessionCommand)
   if(requestedSessionCommand&&!normalizeSessionCommand(requestedSessionCommand))return json(response,400,{error:'O comando de conversa informado não é reconhecido.',code:'val_session_command_invalid'})
-  const activeContext=payload.context&&typeof payload.context==='object'&&!Array.isArray(payload.context)?{type:clean(payload.context.type).toLowerCase(),id:clean(payload.context.id),label:clean(payload.context.label)}:null
+  let activeContext=payload.context&&typeof payload.context==='object'&&!Array.isArray(payload.context)?{type:clean(payload.context.type).toLowerCase(),id:clean(payload.context.id),label:clean(payload.context.label)}:null
+  if(conversationResolution?.changed_client)activeContext=null
   if(requestedIntent&&!normalizeValIntent(requestedIntent))return json(response,400,{error:'A intenção informada não é reconhecida pela VAL.',code:'val_intent_invalid'})
   if(attachmentIds.length&&!clientId)return json(response,422,{error:'Escolha o produtor antes de anexar uma evidência à conta.',code:'val_attachment_client_required'})
   const requestedAttachments=attachmentIds.length?await repository.getAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,ids:attachmentIds}):[]
@@ -333,12 +419,25 @@ async function handleApi(request,response,url){
    if(clientId)valSessionContextCache.invalidate({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId})
    return json(response,409,{error:'Use Registrar informação para revisar e confirmar qualquer atualização de memória.',code:'val_confirmation_required'})
   }
-  const conversationId=clean(payload.conversationId)
   const requestId=normalizeValProgressRequestId(payload.requestId)||randomUUID()
+  const preferences=conversationPreferences(payload,requestedAttachmentTypes)
+  // Um objeto ativo declarado pelo browser só entra no overlay depois de ser
+  // reconciliado com o contexto autorizado do produtor.
+  const sessionScope={tenantId,ownerId:scopedOwnerId,conversationId,clientId,client:conversationResolution?.client||(clientId?{id:clientId}:null),activeContext:null}
+  let sessionState=valConversationSessions.ensure(sessionScope)
+  sessionState=valConversationSessions.advance(sessionScope,{inputModality:preferences.inputModality,responseMode:preferences.responseMode,conversationMode:preferences.conversationMode,objective:preferences.objective,client:sessionScope.client,activeContext:null})
+  const completeSession=(payloadResult,{client=null,active=null,intent=routedIntent.intent}={})=>{
+   const performance=payloadResult?.responseMetadata?.performance
+   const totalLatency=Number(performance?.latency?.TOTAL)
+   if(Number.isFinite(totalLatency))try{valConversationLatency.record({source:'SERVER_PROCESSING',contractVersion:'val.conversation_latency.server_processing.v1',serviceClass:preferences.inputModality==='voice'?'VOICE':performance.path,metrics:{server_processing_total_latency:totalLatency},outcome:'SUCCESS'})}catch{}
+   sessionState=valConversationSessions.advance({...sessionScope,client:client||sessionScope.client,activeContext:active},{message,response:payloadResult,inputModality:preferences.inputModality,responseMode:preferences.responseMode,conversationMode:preferences.conversationMode,objective:preferences.objective,intent,client:client||sessionScope.client,activeContext:active})
+   const completed=attachConversationState(payloadResult,sessionState)
+   return conversationResolution?.status==='RESOLVED'?{...completed,conversationResolution}:completed
+  }
   if(!clientId){
    const capability=routeSystemCapability({message,intentHint:routedIntent.intent,sessionCommandHint:requestedSessionCommand,hasClient:false,activeContext})
    const latency=createLatencyTrace({path:capability.path,intent:routedIntent.intent,startAt:requestStartedAt});latency.set('AUTH',authLatencyMs);latency.set('INTENT',performance.now()-intentStartedAt)
-   const complete=(payloadResult,execution=null)=>{latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(payloadResult,{latency:values,path:capability.path,intent:routedIntent.intent,toolExecution:execution});const measuredLatency=enriched?.responseMetadata?.performance?.latency||values;valLatencyMetrics.record({path:capability.path,intent:routedIntent.intent,latency:measuredLatency});observe('val.answer.completed',{mode:'direct',engineMode:'rules',intent:routedIntent.intent,reasoningPath:capability.path,capability:execution?.tool_result?.capability||capability.capabilities[0],capabilityStatus:execution?.tool_result?.status,ttfrMs:measuredLatency.TTFR,outcome:'ok'});return enriched}
+   const complete=(payloadResult,execution=null)=>{latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(payloadResult,{latency:values,path:capability.path,intent:routedIntent.intent,toolExecution:execution});const measuredLatency=enriched?.responseMetadata?.performance?.latency||values;valLatencyMetrics.record({path:capability.path,intent:routedIntent.intent,latency:measuredLatency});observe('val.answer.completed',{mode:'direct',engineMode:'rules',intent:routedIntent.intent,reasoningPath:capability.path,capability:execution?.tool_result?.capability||capability.capabilities[0],capabilityStatus:execution?.tool_result?.status,ttfrMs:measuredLatency.TTFR,outcome:'ok'});return completeSession(enriched)}
    if(activeContext)validateActiveContext({activeContext,context:{},clientId:''})
    if(capability.current_data_required&&capability.capabilities.some(item=>['WEATHER','LABELS'].includes(item)))return json(response,422,{error:'A fonte atual autorizada não está conectada neste ambiente. A VAL não usará memória ou conteúdo antigo como dado atual.',code:'val_current_source_unavailable',intent:routedIntent.intent,reasoningPath:capability.path,capabilitiesPlanned:capability.capabilities})
    if(capability.capabilities.includes('MARKET_COMMODITY')){
@@ -358,16 +457,20 @@ async function handleApi(request,response,url){
   }
   const clientCapability=routeSystemCapability({message,intentHint:routedIntent.intent,sessionCommandHint:requestedSessionCommand,hasClient:true,attachmentTypes:requestedAttachmentTypes,activeContext})
   const latency=createLatencyTrace({path:clientCapability.path,intent:routedIntent.intent,startAt:requestStartedAt});latency.set('AUTH',authLatencyMs);latency.set('INTENT',performance.now()-intentStartedAt)
-  const tenantId=identity?.tenantId||config.defaultTenantId;const scopedOwnerId=identity?.id||identity?.email
   let authorizedContext=null;let activeContextRef=null;let toolExecution=null
   const loadAuthorizedContext=async()=>{
    if(authorizedContext)return authorizedContext
    latency.start('CONTEXT')
-   authorizedContext=await valSessionContextCache.getOrLoad({tenantId,ownerId:scopedOwnerId,clientId},()=>repository.getClientContext({tenantId,ownerId:identity?.id,clientId,client:payload.client||{},contextRequest:{requestId,objective:`copilot_${clientCapability.path.toLowerCase()}`,actorRole:identity?.role||'consultant',conversationId}}))
+   const confirmed=await valSessionContextCache.getOrLoad({tenantId,ownerId:scopedOwnerId,clientId,conversationId},()=>repository.getClientContext({tenantId,ownerId:identity?.id,clientId,client:{...(payload.client||{}),id:clientId},contextRequest:{requestId,objective:`copilot_${clientCapability.path.toLowerCase()}`,actorRole:identity?.role||'consultant',conversationId}}))
+   authorizedContext={...confirmed,conversationState:conversationStateContext(sessionState)}
    latency.end('CONTEXT');return authorizedContext
   }
-  const completeClient=(payloadResult,execution=toolExecution)=>{latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(payloadResult,{latency:values,path:clientCapability.path,intent:routedIntent.intent,toolExecution:execution});const measuredLatency=enriched?.responseMetadata?.performance?.latency||values;valLatencyMetrics.record({path:clientCapability.path,intent:routedIntent.intent,latency:measuredLatency});observe('val.answer.completed',{mode:clientCapability.path.toLowerCase(),engineMode:payloadResult?.engineMode||'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,capability:execution?.tool_result?.capability||clientCapability.capabilities[0],capabilityStatus:execution?.tool_result?.status,materialityScore:clientCapability.materiality.score,engineRequired:clientCapability.materiality.engine_required,ttfrMs:measuredLatency.TTFR,outcome:'ok'});return enriched}
-  if(activeContext){const scoped=await loadAuthorizedContext();activeContextRef=validateActiveContext({activeContext,context:scoped,clientId})}
+  const completeClient=(payloadResult,execution=toolExecution)=>{latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(payloadResult,{latency:values,path:clientCapability.path,intent:routedIntent.intent,toolExecution:execution});const measuredLatency=enriched?.responseMetadata?.performance?.latency||values;valLatencyMetrics.record({path:clientCapability.path,intent:routedIntent.intent,latency:measuredLatency});observe('val.answer.completed',{mode:clientCapability.path.toLowerCase(),engineMode:payloadResult?.engineMode||'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,capability:execution?.tool_result?.capability||clientCapability.capabilities[0],capabilityStatus:execution?.tool_result?.status,materialityScore:clientCapability.materiality.score,engineRequired:clientCapability.materiality.engine_required,ttfrMs:measuredLatency.TTFR,outcome:'ok'});const responseClient=authorizedContext?.client||enriched?.advice?.ai_reasoning?.client||{id:clientId};return completeSession(enriched,{client:{id:clientId,name:responseClient?.name||responseClient?.label},active:activeContextRef})}
+  if(activeContext){
+   const scoped=await loadAuthorizedContext();activeContextRef=validateActiveContext({activeContext,context:scoped,clientId})
+   sessionState=valConversationSessions.advance({...sessionScope,activeContext:activeContextRef},{activeContext:activeContextRef})
+   authorizedContext={...authorizedContext,conversationState:conversationStateContext(sessionState)}
+  }
   if(clientCapability.current_data_required&&clientCapability.capabilities.some(capability=>['WEATHER','LABELS'].includes(capability))){
    const missingSource=clientCapability.capabilities.includes('WEATHER')?'clima':'bula/rótulo oficial'
    return json(response,422,{error:`A fonte atual autorizada de ${missingSource} não está conectada neste ambiente. A VAL não usará memória ou conteúdo antigo como dado atual.`,code:'val_current_source_unavailable',intent:routedIntent.intent,reasoningPath:clientCapability.path,capabilitiesPlanned:clientCapability.capabilities})
@@ -435,7 +538,10 @@ async function handleApi(request,response,url){
    })
    const finalizeRecommendation=attachmentIds.length?draft=>finalizeAttachmentRecommendation({draft,attachmentIds,attachmentTypes:requestedAttachmentTypes,marketResponse:marketAttachmentBase}):undefined
    latency.start('MODEL')
-   const coreResponse=await valCore.execute(requestEnvelope,{engineInput:{tenantId:organizationId,ownerId:identity?.id,clientId,client:payload.client||{},message,attachmentIds,mode:requestMode,requestedStage:clean(payload.requestedStage),intent:routedIntent.intent,conversationId,finalizeRecommendation,signal:controller.signal,onProgress:stage=>valProgress.update({requestId,ownerId:ownerKey,stage})}})
+   const coreResponse=await valCore.execute(requestEnvelope,{engineInput:{tenantId:organizationId,ownerId:identity?.id,clientId,client:authorizedContext?.client||{...(payload.client||{}),id:clientId},message,attachmentIds,mode:requestMode,requestedStage:clean(payload.requestedStage),intent:routedIntent.intent,conversationId,sessionState:conversationStateContext(sessionState),finalizeRecommendation,signal:controller.signal,onProgress:stage=>valProgress.update({requestId,ownerId:ownerKey,stage})}})
+   // A recomendação acabou de registrar um novo turno. Remover somente esta
+   // thread evita resposta stale e impede que outra conversa herde o snapshot.
+   valSessionContextCache.invalidate({tenantId,ownerId:scopedOwnerId,clientId,conversationId})
    latency.end('MODEL')
    let result=coreResponse.recommendation
    latency.start('VALIDATION')

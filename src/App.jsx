@@ -8,6 +8,7 @@ import PasswordChange from './pages/PasswordChange'
 import {normalizeText,reconcileOpportunityProjection} from './lib/profile'
 import {opportunityCacheKey} from './lib/opportunity-pipeline'
 import {resolveCopilotLaunch} from './lib/copilot-context'
+import {clearCopilotSessionStorage} from './lib/copilot-session-storage'
 
 const GlobalValCopilot=lazy(()=>import('./components/GlobalValCopilot'))
 const Dashboard=lazy(()=>import('./pages/Dashboard'))
@@ -34,6 +35,7 @@ const clearSessionPortfolioCache=storageScope=>{
  clearLegacyPortfolioCache()
  const effectiveScope=storageScope||sessionStorage.getItem(activeStorageScopeKey)
  const scopedOpportunityKey=opportunityCacheKey(effectiveScope);if(scopedOpportunityKey)localStorage.removeItem(scopedOpportunityKey)
+ clearCopilotSessionStorage(sessionStorage)
  Object.keys(sessionStorage).filter(key=>key.startsWith('valor360-tech-')).forEach(key=>sessionStorage.removeItem(key))
  sessionStorage.removeItem(activeStorageScopeKey)
 }

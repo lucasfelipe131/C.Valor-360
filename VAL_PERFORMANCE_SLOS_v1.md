@@ -34,6 +34,15 @@ TTFUR e Total são iguais neste contrato não-progressivo. Os limites foram arre
 
 Esses budgets cobrem somente processamento local do contrato. Em `LIVE_DATA`, não incluem latência do provider. Em `VOICE`, não incluem captura, upload, transcrição externa, playback/TTS ou interrupção.
 
+O budget `VOICE` desta tabela pertence exclusivamente ao runner Golden Performance local; ele não é calculado a partir do endpoint conversacional. No endpoint `/api/val/latency-metrics`, o registry v2 preserva duas séries sem agregação cruzada:
+
+| Fonte | Contrato | Métrica total | Limite da medição |
+|---|---|---|---|
+| `SERVER_PROCESSING` | `val.conversation_latency.server_processing.v1` | `server_processing_total_latency` | relógio monotônico do backend até construir a resposta |
+| `BROWSER_VOICE_TURN` | `val.conversation_latency.browser_voice_turn.v1` | `browser_voice_turn_total_latency` | fim da fala observável no browser até fim/supressão/cancelamento do TTS |
+
+Nenhum SLO, percentil ou dashboard pode combinar essas duas métricas. Uma futura aprovação E2E precisa nomear fonte, versão do contrato, campo e ambiente de medição; valores de relógios ou limites diferentes não entram na mesma distribuição.
+
 ## Error Rate
 
 `Error Rate = FAILED / (SUCCESS + FAILED)`; `SKIPPED` não entra no denominador. Falha segura esperada (`NO_DATA`, `SOURCE_UNAVAILABLE`, `INPUT_REQUIRED` ou `422` governado) não é erro de integridade quando o contrato do caso exige fail-closed, mas continua registrada no resultado funcional. Timeout, 5xx, path divergente, target não executado, resposta genérica FAST, cross-tenant leakage ou safety violation contam como erro.

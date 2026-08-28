@@ -15,11 +15,18 @@ function strings(value,depth=0){
 }
 
 function conversationTurns(context={}){
- return list(context.priorRecommendations).slice(0,8).map(item=>({
+ const persisted=list(context.priorRecommendations).slice(0,8).map(item=>({
   source:'USER_TURN',
   text:clean(item?.user_question||item?.userQuestion||item?.question,1200),
   created_at:item?.created_at||item?.createdAt||null
  })).filter(item=>item.text)
+ const ephemeral=list(context.conversationState?.conversation_turns).slice(-12).map(item=>({
+  source:item?.role==='assistant'?'ASSISTANT_TURN':'USER_TURN',
+  text:clean(item?.text,1200),
+  created_at:item?.created_at||null
+ })).filter(item=>item.text)
+ const seen=new Set()
+ return [...ephemeral,...persisted].filter(item=>{const key=`${item.source}:${normalized(item.text)}`;if(seen.has(key))return false;seen.add(key);return true}).slice(0,12)
 }
 
 function confirmedMemories(context={}){
@@ -35,7 +42,7 @@ function activeItems(value=[]){
 }
 
 function evidenceCorpus(context={},message='',intent=''){
- const common={client:context.client||{},profile:context.profile||{},memories:confirmedMemories(context)}
+ const common={client:context.client||{},profile:context.profile||{},memories:confirmedMemories(context),conversationState:context.conversationState||null}
  const scoped=intent==='PREPARE_VISIT'
   ?{opportunities:activeItems(context.opportunities),commitments:activeItems(context.commitments)}
   :intent==='ANALYZE_SOIL'

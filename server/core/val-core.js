@@ -102,7 +102,8 @@ export class ValCore{
       actorRole:requestEnvelope.actor.role,
       scope:requestEnvelope.policy_context.scope,
       contextRefs:requestEnvelope.context_refs,
-      ...(engineInput?.conversationId?{conversationId:String(engineInput.conversationId).slice(0,180)}:{})
+      ...(engineInput?.conversationId?{conversationId:String(engineInput.conversationId).slice(0,180)}:{}),
+      ...(engineInput?.sessionState?{conversationState:engineInput.sessionState}:{})
     }}
     const execution=await executeModulePlan({
       plan:route.execution_plan,

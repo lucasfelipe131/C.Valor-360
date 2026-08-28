@@ -146,7 +146,8 @@ test('perguntar por voz cancela a interação sem confirmação e sem memória',
 })
 
 test('conversa curta é escopada por sessão e produtor no backend',()=>{
- assert.match(server,/conversationId=clean\(payload\.conversationId\)/)
+ assert.match(server,/conversationId=conversationIdValue\(payload\.conversationId\)/)
+ assert.match(server,/\^\[a-zA-Z0-9\]\[a-zA-Z0-9\._:@\/-\]\{0,179\}\$/)
  assert.match(server,/persistence_mode!=='NONE'/)
  assert.match(bootstrap,/filter\(item=>String\(item\?\.conversation_id\|\|''\)===conversationId\)/)
  assert.match(bootstrap,/scope:'client_session'/)

@@ -4,6 +4,7 @@ import {
  VAL_NATURAL_COMMAND_POLICY,
  localNaturalCommandTurn,
  naturalCommandRequest,
+ hasValOutputModePreference,
  readValOutputMode,
  resolveValNaturalCommand,
  writeValOutputMode
@@ -13,13 +14,21 @@ const payload={advice:{answer:'Leitura curta.',ai_reasoning:{recommended_strateg
 
 test('comandos naturais reconhecem as formas autorizadas sem reiniciar contexto',()=>{
  const expected=new Map([
-  ['Resume.','SUMMARIZE'],['Repete.','REPEAT'],['Explica melhor.','EXPLAIN'],['Só as Perguntas de Ouro.','GOLDEN_QUESTIONS_ONLY'],['Só me manda as Perguntas de Ouro.','GOLDEN_QUESTIONS_ONLY'],
+  ['Resume.','SUMMARIZE'],['Repete.','REPEAT'],['Explica melhor.','EXPLAIN'],['Só as Perguntas de Ouro.','GOLDEN_QUESTIONS_ONLY'],['Só me manda as Perguntas de Ouro.','GOLDEN_QUESTIONS_ONLY'],['Agora me manda só as três perguntas de ouro.','GOLDEN_QUESTIONS_ONLY'],
   ['Agora por escrito.','OUTPUT_TEXT'],['Agora fala comigo.','OUTPUT_AUDIO'],['Agora fala elas pra mim.','OUTPUT_AUDIO'],['Me mostra os números.','SHOW_NUMBERS'],
   ['Por que você acha isso?','EXPLAIN_WHY'],['Registra.','OPEN_REGISTER'],['Não registra.','KEEP_SESSION_ONLY'],
   ['Aprofunda.','DEEPEN'],['Só o essencial.','SET_SIMPLE']
  ])
  for(const [phrase,action] of expected)assert.equal(resolveValNaturalCommand(phrase)?.action,action,phrase)
  assert.deepEqual(VAL_NATURAL_COMMAND_POLICY,{version:'val.natural_commands.v1',persistence:'NONE',keeps_thread:true,changes_confirmed_memory:false})
+})
+
+test('registro natural com conteúdo abre revisão e nunca confirma sozinho',()=>{
+ const command=resolveValNaturalCommand('Registra que o filho dele participa da decisão.')
+ assert.equal(command.action,'OPEN_REGISTER')
+ assert.equal(command.persistence,'CONFIRM_REQUIRED')
+ assert.equal(command.candidate,'o filho dele participa da decisão')
+ assert.match(localNaturalCommandTurn(command,null).text,/Nada será registrado sem sua confirmação/)
 })
 
 test('comandos locais reutilizam a resposta atual e limitam Perguntas de Ouro a três',()=>{
@@ -44,7 +53,9 @@ test('preferência texto/áudio/ambos é escopada e persiste sem contaminar outr
  const values=new Map()
  const storage={getItem:key=>values.get(key)||null,setItem:(key,value)=>values.set(key,value)}
  assert.equal(writeValOutputMode('tenant-a:owner-a','both',storage),'both')
+ assert.equal(hasValOutputModePreference('tenant-a:owner-a',storage),true)
  assert.equal(readValOutputMode('tenant-a:owner-a',storage),'both')
+ assert.equal(hasValOutputModePreference('tenant-b:owner-b',storage),false)
  assert.equal(readValOutputMode('tenant-b:owner-b',storage),'text')
  assert.equal(writeValOutputMode('tenant-a:owner-a','inválido',storage),'text')
 })

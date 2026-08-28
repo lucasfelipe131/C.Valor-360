@@ -7,7 +7,10 @@ import {
  conversationGroupLabel,
  conversationScopeKey,
  conversationWorkspaceStorageKey,
+ createConversationThreadKey,
+ createScopedRegistrationDraft,
  readConversationWorkspace,
+ registrationDraftTextForScope,
  writeConversationWorkspace
 } from '../src/lib/full-screen-conversation.js'
 
@@ -66,12 +69,36 @@ test('App possui página própria e atalhos encaminham para o mesmo Full-Screen 
  assert.match(mobile,/mobile-val-button/)
 })
 
-test('thread é separada por objeto sem duplicar a memória do produtor',()=>{
+test('objeto ativo evolui sem fragmentar a thread do produtor',()=>{
  assert.equal(conversationScopeKey({}),'__global__')
  assert.equal(conversationScopeKey({clientId:'producer-a'}),'client:producer-a')
- assert.equal(conversationScopeKey({clientId:'producer-a',context:{type:'opportunity',id:'opp-1'}}),'context:opportunity:opp-1:producer-a')
- assert.notEqual(conversationScopeKey({clientId:'producer-a',context:{type:'visit',id:'visit-1'}}),conversationScopeKey({clientId:'producer-a',context:{type:'opportunity',id:'opp-1'}}))
+ assert.equal(conversationScopeKey({clientId:'producer-a',context:{type:'opportunity',id:'opp-1'}}),'client:producer-a')
+ assert.equal(conversationScopeKey({clientId:'producer-a',context:{type:'visit',id:'visit-1'}}),conversationScopeKey({clientId:'producer-a',context:{type:'opportunity',id:'opp-1'}}))
  assert.equal(contextStatusLabel({client:{id:'a'},context:{type:'opportunity'}}),'Oportunidade ativa')
+})
+
+test('nova conversa cria thread distinta e rascunho de registro não atravessa cliente ou thread',()=>{
+ const first=createConversationThreadKey({clientId:'producer-a',threadId:'first'})
+ const second=createConversationThreadKey({clientId:'producer-a',threadId:'second'})
+ const general=createConversationThreadKey({threadId:'general'})
+ assert.equal(first,'client:producer-a:conversation:first')
+ assert.notEqual(first,second)
+ assert.notEqual(first,conversationScopeKey({clientId:'producer-a'}))
+ assert.equal(general,'__global__:conversation:general')
+ assert.notEqual(general,conversationScopeKey({}))
+ const draft=createScopedRegistrationDraft({text:'  O filho participa da decisão.  ',clientId:'producer-a',threadKey:first})
+ assert.deepEqual(draft,{text:'O filho participa da decisão.',clientId:'producer-a',threadKey:first})
+ assert.equal(registrationDraftTextForScope(draft,{clientId:'producer-a',threadKey:first}),'O filho participa da decisão.')
+ assert.equal(registrationDraftTextForScope(draft,{clientId:'producer-b',threadKey:first}),'')
+ assert.equal(registrationDraftTextForScope(draft,{clientId:'producer-a',threadKey:second}),'')
+ assert.equal(createScopedRegistrationDraft({text:'sem cliente',threadKey:first}),null)
+ assert.match(copilot,/const nextKey=createConversationThreadKey\(\{clientId:nextClientId\}\)/)
+ assert.match(copilot,/setThreadOverride\(nextKey\)/)
+ assert.match(copilot,/if\(!id\)\{newConversation\(\{general:true\}\);return\}/)
+ assert.doesNotMatch(copilot,/const nextKey=general\?'__global__':threadKey/)
+ assert.match(copilot,/registrationDraftTextForScope\(registrationDraft,\{clientId:selectedId,threadKey\}\)/)
+ assert.match(copilot,/payloadClientId&&payloadClientId!==expectedClientId/)
+ assert.match(copilot,/key=\{`register:\$\{client\?\.id\|\|'none'\}:\$\{threadKey\}`\}/)
 })
 
 test('histórico é escopado, limitado, pesquisável e agrupado por data',()=>{
@@ -128,6 +155,16 @@ test('composer multimodal diferencia ASK, REGISTER, voz efêmera e arquivo sem v
  assert.match(speech,/onTranscript/)
  assert.match(copilot,/DecisionInterviewCard/)
  assert.match(interviewCard,/useId\(\)/)
+ assert.match(copilot,/onFallbackPushToTalk=\{requestPushToTalk\}/)
+ assert.match(copilot,/autoOpenKey=\{pendingCapture==='voice'\?voiceAutoOpenKey:''\}/)
+ assert.match(copilot,/autoStartKey=\{pendingCapture==='voice'\?voiceAutoOpenKey:''\}/)
+})
+
+test('cards antigos falham fechados ao trocar de produtor e download leva escopo explícito',()=>{
+ assert.match(copilot,/attachmentMatchesBrowserScope\(sourceAttachment,\{clientId:requestClientId,allowUnlinked\}\)/)
+ assert.match(copilot,/Este card pertence a outro produtor/)
+ assert.match(copilot,/attachmentContentUrl\(sourceAttachment,\{clientId:requestClientId,allowUnlinked\}\)/)
+ assert.match(copilot,/onNavigate\?\.\(\{\.\.\.descriptor,files,clientId:requestClientId/)
 })
 
 test('FAST/DEEP, qualidade, current data e governança continuam no mesmo pipeline',()=>{

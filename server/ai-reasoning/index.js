@@ -5,12 +5,14 @@ import {ComposedAdviceReasoningProvider} from './provider.js'
 import {evaluateValResponseQuality,questionSimilarity} from './quality.js'
 import {buildDecisionInterview,buildReasoningConfidence,decisionInterviewVersion,reasoningConfidenceVersion} from './decision-interview.js'
 import {routeSystemCapability} from '../decision-copilot/capability-router.js'
+import {evaluateConversationalNaturalness} from './conversational-naturalness.js'
 
 export {aiReasoningResultVersion,goldenQuestionQualityVersion,valResponseQualityVersion} from './contracts.js'
 export {routeValIntent,valIntents,valIntentRouterVersion} from './intent-router.js'
 export {evaluateGoldenQuestions,evaluateValResponseQuality,questionSimilarity,runContextRemovalTest,runNameSwapTest} from './quality.js'
 export {ComposedAdviceReasoningProvider,ReasoningProvider,reasoningProviderVersion} from './provider.js'
 export {buildDecisionInterview,buildReasoningConfidence,decisionInterviewVersion,reasoningConfidenceVersion} from './decision-interview.js'
+export {conversationalNaturalnessDimensions,conversationalNaturalnessLabels,conversationalNaturalnessVersion,evaluateConversationalNaturalness} from './conversational-naturalness.js'
 
 const list=value=>Array.isArray(value)?value:[]
 const clean=(value,max=2000)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,max)
@@ -225,7 +227,22 @@ export function composeAIReasoning({advice={},context={},message='',run={},conve
  result.reasoning_confidence=buildReasoningConfidence({context,result})
  result.decision_interview=buildDecisionInterview({intent:result.intent,message,context,result})
  const spokenQuestions=list(result.decision_interview?.questions).map((item,index)=>`Pergunta ${index+1}: ${clean(item?.question,500)}`).filter(Boolean)
- result.voice_output={version:'val.voice_output.v1',speakable_text:clean([result.recommended_strategy?.reading,result.recommended_strategy?.action,spokenQuestions.length?'Para melhorar esta leitura: '+spokenQuestions.join(' '):''].filter(Boolean).join(' '),3800),persistence:'NONE',automatic_memory_effect:false}
+ const conversationalVoice=context.conversationState?.conversation_mode===true||['audio','both'].includes(context.conversationState?.response_mode)
+ const spokenParts=conversationalVoice
+  ?[result.recommended_strategy?.reading,result.recommended_strategy?.action,spokenQuestions[0]]
+  :[result.recommended_strategy?.reading,result.recommended_strategy?.action,spokenQuestions.length?'Para melhorar esta leitura: '+spokenQuestions.join(' '):'']
+ result.voice_output={version:'val.voice_output.v1',speakable_text:clean(spokenParts.filter(Boolean).join(' '),conversationalVoice?700:3800),persistence:'NONE',automatic_memory_effect:false,delivery:conversationalVoice?'CONVERSATIONAL_BRIEF':'FULL'}
+ const naturalnessText=clean([result.recommended_strategy?.reading,result.recommended_strategy?.action,spokenQuestions[0]].filter(Boolean).join(' '),4000)
+ result.conversational_naturalness=evaluateConversationalNaturalness({
+  user_message:message,
+  assistant_response:naturalnessText,
+  prior_turns:list(context.conversationState?.conversation_turns).map(item=>({role:item?.role,content:item?.text})),
+  active_context:context.conversationState||{},
+  context:{references:[context.client?.name,context.conversationState?.current_property?.label,context.conversationState?.current_field?.label].filter(Boolean),references_resolved:true,expected_tenant_id:context.contextSnapshot?.organization_id,used_tenant_id:result.organization?.id,follow_up_needed:result.decision_interview?.status==='NEEDS_INPUT'},
+  interaction:{response_mode:context.conversationState?.response_mode||'text',follow_up_needed:result.decision_interview?.status==='NEEDS_INPUT'},
+  persistence:{performed:Boolean(result.persistence_mode&&result.persistence_mode!=='NONE'),confirmed:false},
+  safety:{}
+ })
  return {result,quality,intent:routeValIntent({message,intentHint,hasClient:Boolean(context.client?.id),attachmentTypes:list(context.currentAttachments).map(item=>item.mimeType||item.mime_type)})}
 }
 
