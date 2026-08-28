@@ -99,10 +99,29 @@ function clientKeyFor(producer: JsonRecord) {
   return valor360ExternalKey(
     producer.valor360ExternalKey ||
       producer.externalKey ||
-      producerName(producer) ||
       producer.crmCode ||
-      producer.id,
+      producer.id ||
+      producerName(producer),
   );
+}
+
+function producerIdentityFor(producer: JsonRecord, clientExternalKey: string) {
+  const explicitExternalKey = text(
+    producer.valor360ExternalKey || producer.externalKey,
+    180,
+  );
+  const declaredAliases = Array.isArray(producer.valor360LegacyExternalKeys)
+    ? producer.valor360LegacyExternalKeys
+    : [];
+  const legacyExternalKeys = Array.from(new Set([
+    ...declaredAliases.map((value) => valor360ExternalKey(value)),
+    valor360ExternalKey(producerName(producer)),
+  ].filter((value) => value && value !== clientExternalKey))).slice(0, 20);
+  return {
+    producerId: text(producer.id, 180),
+    allowLegacyKeyMigration: !explicitExternalKey,
+    legacyExternalKeys,
+  };
 }
 
 function fingerprint(value: unknown) {
@@ -124,7 +143,7 @@ export function valor360Configured() {
   return Boolean(endpoint() && secret());
 }
 
-async function publish(event: JsonRecord): Promise<ValorPublishResult> {
+async function publish(event: JsonRecord, requestId = ""): Promise<ValorPublishResult> {
   const eventType = text(event.type, 80);
   const externalId = text(event.externalId, 180);
   const url = endpoint();
@@ -137,11 +156,13 @@ async function publish(event: JsonRecord): Promise<ValorPublishResult> {
     .update(raw)
     .digest("hex");
   try {
+    const safeRequestId = /^[0-9a-f-]{36}$/i.test(requestId) ? requestId : "";
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-valor-signature": `sha256=${signature}`,
+        ...(safeRequestId ? { "x-request-id": safeRequestId } : {}),
       },
       body: raw,
       cache: "no-store",
@@ -232,7 +253,12 @@ function soilMeasurements(payload: JsonRecord) {
 function recordProducerKey(record: ManualRecordForValor) {
   const payload = object(record.payload);
   return valor360ExternalKey(
-    record.producerName ||
+    payload.valor360ExternalKey ||
+      payload.clientExternalKey ||
+      payload.externalKey ||
+      payload.crmCode ||
+      payload.producerId ||
+      record.producerName ||
       payload.producerName ||
       payload.producer ||
       payload.clientName,
@@ -244,33 +270,155 @@ function propertyKey(clientKey: string, value: unknown) {
   return name ? `${clientKey}:${name}`.slice(0, 180) : "";
 }
 
+function propertyScopedFieldKey(propertyExternalKey: string, value: unknown) {
+  const fieldIdentity = valor360ExternalKey(value);
+  if (!propertyExternalKey || !fieldIdentity) return "";
+  const propertyScope = createHash("sha256")
+    .update(propertyExternalKey)
+    .digest("hex")
+    .slice(0, 20);
+  const fieldScope = createHash("sha256")
+    .update(fieldIdentity)
+    .digest("hex")
+    .slice(0, 20);
+  return `manual-field:${propertyScope}:${fieldScope}:${fieldIdentity}`.slice(0, 180);
+}
+
+const soilLinkStates = new Set([
+  "UNLINKED",
+  "LINKED_TO_CLIENT",
+  "LINKED_TO_PROPERTY",
+  "LINKED_TO_FIELD",
+]);
+
+function soilLinkVersion(value: unknown) {
+  const parsed = Number(value);
+  return Number.isInteger(parsed) && parsed >= 0 ? Math.min(parsed, 1_000_000_000) : 0;
+}
+
+function soilLogicalId(record: ManualRecordForValor, payload: JsonRecord) {
+  return text(payload.id || payload.analysisId || record.id, 72) || fingerprint(payload);
+}
+
 function specializedRecordEvent(record: ManualRecordForValor, ownerUserId = "") {
   const payload = object(record.payload);
   const clientExternalKey = recordProducerKey(record);
   const occurredAt = record.updatedAt || payload.savedAt || record.createdAt;
-  if (!clientExternalKey) return null;
 
   if (record.type === "soil_analysis") {
+    const declaredState = text(payload.linkState, 40).toUpperCase();
+    const inferredState = clientExternalKey
+      ? text(payload.fieldId)
+        ? "LINKED_TO_FIELD"
+        : text(payload.property)
+          ? "LINKED_TO_PROPERTY"
+          : "LINKED_TO_CLIENT"
+      : "UNLINKED";
+    const requestedState = soilLinkStates.has(declaredState) ? declaredState : inferredState;
+    const linkState = requestedState !== "UNLINKED" && !clientExternalKey
+      ? "UNLINKED"
+      : requestedState;
+    const linkVersion = soilLinkVersion(payload.linkVersion);
+    const logicalId = soilLogicalId(record, payload);
+    const analysisExternalId = `manual-soil:${text(ownerUserId, 36) || "workspace"}:${logicalId}`.slice(0, 180);
+    const linkedClientKey = linkState === "UNLINKED" ? "" : clientExternalKey;
+    const linkedPropertyValue = payload.property || (linkState === "LINKED_TO_FIELD" ? "Propriedade principal" : "");
+    const linkedPropertyKey = ["LINKED_TO_PROPERTY", "LINKED_TO_FIELD"].includes(linkState)
+      ? propertyKey(linkedClientKey, linkedPropertyValue)
+      : "";
+    const linkedFieldKey = linkState === "LINKED_TO_FIELD"
+      ? propertyScopedFieldKey(linkedPropertyKey, payload.fieldId || payload.fieldName)
+      : "";
     const specializedPayload = {
-      analysisId: record.id,
+      analysisId: logicalId,
+      analysisExternalId,
+      propertyName: text(linkedPropertyValue, 180),
+      fieldId: text(payload.fieldId, 180),
+      fieldName: text(payload.fieldName, 180),
       laboratory: text(payload.laboratory, 180),
       method: text(payload.method || payload.phMethod || payload.phosphorusMethod, 180),
       sampledAt: date(payload.sampleDate || payload.sampledAt, date(occurredAt)),
       ...depthRange(payload.depth),
       measurements: soilMeasurements(payload),
-      validation: { status: "pending" },
+      linkState,
+      linkVersion,
+      linkHistory: Array.isArray(payload.linkHistory) ? payload.linkHistory : [],
+      linkProvenance: object(payload.linkProvenance),
+      validation: {
+        status: "pending",
+        linkage: {
+          state: linkState,
+          version: linkVersion,
+          history: Array.isArray(payload.linkHistory) ? payload.linkHistory : [],
+          provenance: object(payload.linkProvenance),
+        },
+      },
     };
     return event({
       type: "soil_analysis.completed",
-      externalId: `manual-soil:${record.id}:${fingerprint(specializedPayload)}`,
+      externalId: `manual-soil-event:${text(ownerUserId, 36) || "workspace"}:${logicalId}:v${linkVersion}:${fingerprint(specializedPayload)}`,
       occurredAt,
-      clientExternalKey,
+      clientExternalKey: linkedClientKey,
       ownerUserId,
-      propertyExternalKey: propertyKey(clientExternalKey, payload.property),
-      fieldExternalKey: propertyKey(clientExternalKey, payload.fieldId),
+      propertyExternalKey: linkedPropertyKey,
+      fieldExternalKey: linkedFieldKey,
       payload: specializedPayload,
     });
   }
+
+  if (record.type === "photo_diagnosis") {
+    const context = object(payload.context);
+    const sources = (Array.isArray(payload.sourceAttachments) ? payload.sourceAttachments : [])
+      .map((value) => object(value))
+      .filter((value) => /^[0-9a-f-]{36}$/i.test(text(value.attachmentId, 72)))
+      .slice(0, 3)
+      .map((value) => ({
+        attachmentId: text(value.attachmentId, 72),
+        association: text(value.association, 40).toUpperCase() === "LINKED_CLIENT" ? "LINKED_CLIENT" : "UNLINKED",
+        organizationId: text(value.organizationId, 180),
+        clientId: text(value.clientId, 180),
+        propertyId: text(value.propertyId, 180),
+        fieldId: text(value.fieldId, 180),
+        createdAt: date(value.createdAt, ""),
+        sha256: /^[0-9a-f]{64}$/i.test(text(value.sha256, 64)) ? text(value.sha256, 64).toLowerCase() : "",
+      }));
+    if (!sources.length) return null;
+    const association = sources.every((item) => item.association === "LINKED_CLIENT") ? "LINKED_CLIENT" : "UNLINKED";
+    const linkedClientKey = association === "LINKED_CLIENT"
+      ? text(sources[0].clientId || context.clientId || clientExternalKey, 180)
+      : "";
+    const resultReference = text(payload.resultReference, 240) || `manual-photo-diagnosis:${record.id}`;
+    const specializedPayload = {
+      provenanceContractVersion: "AgronomicScanProvenance.v1",
+      recordId: record.id,
+      resultReference,
+      resultCreatedAt: date(object(payload.provenance).savedAt || occurredAt),
+      analysisType: text(payload.analysisType, 40),
+      association,
+      context: {
+        clientId: linkedClientKey,
+        propertyId: association === "LINKED_CLIENT" ? text(sources[0].propertyId || context.propertyId, 180) : "",
+        fieldId: association === "LINKED_CLIENT" ? text(sources[0].fieldId || context.fieldId, 180) : "",
+      },
+      sourceAttachments: sources,
+      result: object(payload.result),
+      safety: object(payload.safety),
+      provenance: object(payload.provenance),
+      validation: { status: "pending", humanReviewRequired: true },
+    };
+    return event({
+      type: "agronomic.scan.completed",
+      externalId: `manual-scan:${record.id}:${fingerprint(specializedPayload)}`,
+      occurredAt,
+      clientExternalKey: linkedClientKey,
+      ownerUserId,
+      propertyExternalKey: association === "LINKED_CLIENT" ? text(specializedPayload.context.propertyId, 180) : "",
+      fieldExternalKey: association === "LINKED_CLIENT" ? text(specializedPayload.context.fieldId, 180) : "",
+      payload: specializedPayload,
+    });
+  }
+
+  if (!clientExternalKey) return null;
 
   if (record.type === "field_analysis") {
     const scene = object(payload.scene);
@@ -322,7 +470,7 @@ function specializedRecordEvent(record: ManualRecordForValor, ownerUserId = "") 
   return null;
 }
 
-export async function publishManualRecordToValor(record: ManualRecordForValor, ownerUserId = "") {
+export async function publishManualRecordToValor(record: ManualRecordForValor, ownerUserId = "", requestId = "") {
   const clientExternalKey = recordProducerKey(record);
   const safePayload = cleanForStrategy(record.payload) as JsonRecord;
   const genericPayload = {
@@ -342,8 +490,8 @@ export async function publishManualRecordToValor(record: ManualRecordForValor, o
     payload: genericPayload,
   });
   const specialized = specializedRecordEvent(record, ownerUserId);
-  const results = [await publish(generic)];
-  if (specialized) results.push(await publish(specialized));
+  const results = [await publish(generic, requestId)];
+  if (specialized) results.push(await publish(specialized, requestId));
   return results;
 }
 
@@ -351,6 +499,7 @@ export async function publishProducerToValor(
   input: unknown,
   soilAnalyses: unknown[] = [],
   ownerUserId = "",
+  requestId = "",
 ) {
   const producer = object(input);
   const clientExternalKey = clientKeyFor(producer);
@@ -364,10 +513,12 @@ export async function publishProducerToValor(
     } satisfies ValorPublishResult];
   }
   const safeProducer = cleanForStrategy(producer) as JsonRecord;
+  const identity = producerIdentityFor(producer, clientExternalKey);
   const producerId = text(producer.id);
   const producerNameValue = producerName(producer);
   const relatedSoil = soilAnalyses.filter((analysis) => {
     const item = object(analysis);
+    if (text(item.linkState, 40).toUpperCase() === "UNLINKED") return false;
     return (
       (producerId && text(item.producerId) === producerId) ||
       (producerNameValue &&
@@ -376,6 +527,7 @@ export async function publishProducerToValor(
   });
   const payload = {
     producer: safeProducer,
+    identity,
     soilAnalyses: cleanForStrategy(relatedSoil),
     synchronization: {
       source: "workspace-postgresql",
@@ -389,23 +541,62 @@ export async function publishProducerToValor(
     ownerUserId,
     payload,
   });
-  return [await publish(producerEvent)];
+  return [await publish(producerEvent, requestId)];
 }
 
 export async function publishWorkspaceToValor(
   producers: unknown[],
   soilAnalyses: unknown[],
   ownerUserId = "",
+  requestId = "",
 ) {
   const queue = producers.slice(0, 1000);
+  const soilQueue = soilAnalyses.slice(0, 2500);
   const results: ValorPublishResult[] = [];
   const concurrency = 6;
   for (let index = 0; index < queue.length; index += concurrency) {
     const batch = queue.slice(index, index + concurrency);
     const published = await Promise.all(
-      batch.map((producer) => publishProducerToValor(producer, soilAnalyses, ownerUserId)),
+      batch.map((producer) => publishProducerToValor(producer, soilAnalyses, ownerUserId, requestId)),
     );
     results.push(...published.flat());
+  }
+  const producersById = new Map(
+    producers.map((producer) => {
+      const item = object(producer);
+      return [text(item.id), item] as const;
+    }),
+  );
+  for (let index = 0; index < soilQueue.length; index += concurrency) {
+    const batch = soilQueue.slice(index, index + concurrency);
+    const published = await Promise.all(batch.map(async (analysis) => {
+      const item = object(analysis);
+      const producer = producersById.get(text(item.producerId));
+      const producerFields = producer && Array.isArray(producer.fields) ? producer.fields : [];
+      const linkedField = producerFields
+        .map((field) => object(field))
+        .find((field) => text(field.id) === text(item.fieldId));
+      const record: ManualRecordForValor = {
+        id: text(item.recordId || item.id, 180) || fingerprint(item),
+        type: "soil_analysis",
+        title: text(item.sampleCode || item.fileName || "Análise de solo", 220),
+        producerName: producer ? producerName(producer) : "",
+        payload: producer
+          ? {
+              ...item,
+              producerId: text(producer.id) || text(item.producerId),
+              valor360ExternalKey: clientKeyFor(producer),
+              fieldName: text(linkedField?.name),
+              ...(!text(item.property) ? { property: text(producer.properties) } : {}),
+            }
+          : item,
+        createdAt: text(item.importedAt),
+        updatedAt: text(item.savedAt || item.importedAt),
+      };
+      const specialized = specializedRecordEvent(record, ownerUserId);
+      return specialized ? publish(specialized, requestId) : null;
+    }));
+    results.push(...published.filter((item): item is ValorPublishResult => Boolean(item)));
   }
   return {
     configured: valor360Configured(),
@@ -413,6 +604,15 @@ export async function publishWorkspaceToValor(
     delivered: results.filter((item) => item.ok).length,
     failed: results.filter((item) => !item.ok && !item.skipped).length,
     skipped: results.filter((item) => item.skipped).length,
-    truncated: producers.length > queue.length,
+    truncated: producers.length > queue.length || soilAnalyses.length > soilQueue.length,
+    errors: results
+      .filter((item) => !item.ok && !item.skipped)
+      .slice(0, 5)
+      .map((item) => ({
+        eventType: item.eventType,
+        externalId: item.externalId,
+        status: item.status ?? null,
+        error: text(item.error, 500) || "Falha de integração não detalhada.",
+      })),
   };
 }

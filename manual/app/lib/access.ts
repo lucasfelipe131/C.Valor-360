@@ -9,6 +9,7 @@ import {
 import { promisify } from "node:util";
 import type { NextRequest, NextResponse } from "next/server";
 import { getPool } from "./db";
+import { manualTenantId } from "./tenant";
 
 const scrypt = promisify(scryptCallback);
 const SESSION_COOKIE = "mp_access_session";
@@ -51,6 +52,7 @@ type EmbeddedIdentity = {
   email: string;
   displayName: string;
   role: AccessRole;
+  tenantId: string;
   exp: number;
 };
 
@@ -70,6 +72,7 @@ function embeddedIdentityFromRequest(request: NextRequest) {
     if (
       !/^[0-9a-f-]{36}$/i.test(identity.id) ||
       !isValidEmail(identity.email) ||
+      identity.tenantId !== manualTenantId() ||
       identity.exp <= Math.floor(Date.now() / 1000)
     ) return null;
     return {
@@ -138,7 +141,7 @@ async function embeddedSession(request: NextRequest) {
     );
     row = refreshed.rows[0];
   }
-  return { user: rowToUser(row), sessionId: null, valor360OwnerId: identity.id };
+  return { user: rowToUser(row), sessionId: null, valor360OwnerId: identity.id, tenantId: identity.tenantId };
 }
 
 export function normalizeEmail(value: string) {
@@ -240,6 +243,7 @@ export async function ensureAccessSchema() {
           ON app_users (LOWER(email)) WHERE email IS NOT NULL;
         CREATE TABLE IF NOT EXISTS app_sessions (
           id UUID PRIMARY KEY,
+          tenant_id UUID NOT NULL DEFAULT '${manualTenantId()}'::uuid,
           user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
           token_hash TEXT NOT NULL UNIQUE,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -247,10 +251,12 @@ export async function ensureAccessSchema() {
           last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           user_agent TEXT NOT NULL DEFAULT ''
         );
+        ALTER TABLE app_sessions ADD COLUMN IF NOT EXISTS tenant_id UUID DEFAULT '${manualTenantId()}'::uuid;
         CREATE INDEX IF NOT EXISTS app_sessions_user_expires
           ON app_sessions (user_id, expires_at DESC);
         CREATE TABLE IF NOT EXISTS app_usage_events (
           id BIGSERIAL PRIMARY KEY,
+          tenant_id UUID NOT NULL DEFAULT '${manualTenantId()}'::uuid,
           user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
           session_id UUID REFERENCES app_sessions(id) ON DELETE SET NULL,
           event_type TEXT NOT NULL,
@@ -258,6 +264,7 @@ export async function ensureAccessSchema() {
           detail JSONB NOT NULL DEFAULT '{}'::jsonb,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        ALTER TABLE app_usage_events ADD COLUMN IF NOT EXISTS tenant_id UUID DEFAULT '${manualTenantId()}'::uuid;
         CREATE INDEX IF NOT EXISTS app_usage_user_created
           ON app_usage_events (user_id, created_at DESC);
         INSERT INTO app_users
@@ -289,6 +296,7 @@ export async function ensureFeedbackSchema() {
       .query(`
         CREATE TABLE IF NOT EXISTS app_feedback (
           id UUID PRIMARY KEY,
+          tenant_id UUID NOT NULL DEFAULT '${manualTenantId()}'::uuid,
           user_id UUID NOT NULL REFERENCES app_users(id) ON DELETE CASCADE,
           category TEXT NOT NULL CHECK (category IN ('suggestion', 'problem')),
           module_key TEXT NOT NULL DEFAULT '',
@@ -300,6 +308,7 @@ export async function ensureFeedbackSchema() {
           updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
           resolved_at TIMESTAMPTZ
         );
+        ALTER TABLE app_feedback ADD COLUMN IF NOT EXISTS tenant_id UUID DEFAULT '${manualTenantId()}'::uuid;
         CREATE INDEX IF NOT EXISTS app_feedback_status_created
           ON app_feedback (status, created_at DESC);
         CREATE INDEX IF NOT EXISTS app_feedback_user_created
@@ -366,9 +375,9 @@ export async function createSession(
   );
   await pool.query(
     `INSERT INTO app_sessions
-      (id, user_id, token_hash, expires_at, user_agent)
-     VALUES ($1, $2, $3, $4, $5)`,
-    [sessionId, userId, tokenHash(token), expiresAt, userAgent.slice(0, 400)],
+      (id, tenant_id, user_id, token_hash, expires_at, user_agent)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [sessionId, manualTenantId(), userId, tokenHash(token), expiresAt, userAgent.slice(0, 400)],
   );
   return { token, sessionId, expiresAt };
 }
@@ -405,7 +414,7 @@ export async function sessionFromRequest(request: NextRequest) {
   if (!token) return null;
   const pool = await ensureAccessSchema();
   const result = await pool.query(
-    `SELECT s.id AS "sessionId", u.id, u.username, u.email,
+    `SELECT s.id AS "sessionId", s.tenant_id AS "tenantId", u.id, u.username, u.email,
             u.display_name AS "displayName", u.role, u.status,
             u.expires_at AS "expiresAt",
             u.email_verified_at AS "emailVerifiedAt",
@@ -416,23 +425,25 @@ export async function sessionFromRequest(request: NextRequest) {
      FROM app_sessions s
      JOIN app_users u ON u.id = s.user_id
      WHERE s.token_hash = $1
+       AND s.tenant_id = $2
        AND s.expires_at > NOW()
        AND u.status = 'active'
        AND (u.role = 'admin' OR u.email IS NULL OR u.email_verified_at IS NOT NULL)
        AND (u.expires_at IS NULL OR u.expires_at > NOW())
      LIMIT 1`,
-    [tokenHash(token)],
+    [tokenHash(token), manualTenantId()],
   );
   const row = result.rows[0];
   if (!row) return null;
   await pool.query(
-    `UPDATE app_sessions SET last_seen_at = NOW() WHERE id = $1`,
-    [row.sessionId],
+    `UPDATE app_sessions SET last_seen_at = NOW() WHERE id = $1 AND tenant_id = $2`,
+    [row.sessionId, row.tenantId],
   );
   return {
     user: rowToUser(row),
     sessionId: String(row.sessionId),
     valor360OwnerId: undefined as string | undefined,
+    tenantId: String(row.tenantId),
   };
 }
 
@@ -447,13 +458,15 @@ export async function recordUsage(
   eventType: string,
   pageKey = "",
   detail: Record<string, unknown> = {},
+  tenantId = manualTenantId(),
 ) {
   const pool = await ensureAccessSchema();
   await pool.query(
     `INSERT INTO app_usage_events
-      (user_id, session_id, event_type, page_key, detail)
-     VALUES ($1, $2, $3, $4, $5::jsonb)`,
+      (tenant_id, user_id, session_id, event_type, page_key, detail)
+     VALUES ($1, $2, $3, $4, $5, $6::jsonb)`,
     [
+      manualTenantId(tenantId),
       userId,
       sessionId,
       eventType.slice(0, 60),

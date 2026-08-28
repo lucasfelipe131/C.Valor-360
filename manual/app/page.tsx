@@ -7,7 +7,7 @@ import commercialAgrochemicalsData from "./commercial-agrochemicals.json";
 import cultivarsData from "./cultivars.json";
 import fertilizerFormulasData from "./fertilizer-formulas.json";
 import foliarProductsData from "./foliar-products.json";
-import FieldMap, { MapPoint } from "./FieldMap";
+import FieldMap, { MapPoint, type BoundarySelection } from "./FieldMap";
 import FieldInsights, {
   spectralPreviewUrl,
   spectralTileUrl,
@@ -22,14 +22,36 @@ import AccessPortal, { type AccessSessionUser } from "./AccessPortal";
 import AdminAccessPanel from "./AdminAccessPanel";
 import ProducerCrmImport from "./ProducerCrmImport";
 import NutrientRemovalCalculator from "./NutrientRemovalCalculator";
-import PhotoDiagnosis from "./PhotoDiagnosis";
+import PhotoDiagnosis, { type PhotoDiagnosisContext } from "./PhotoDiagnosis";
 import ProducerLandRegistry, { type LandRegistration } from "./ProducerLandRegistry";
+import {
+  manualNavigationFromUrl,
+  manualNavigationProtocolVersion,
+  normalizeManualNavigation,
+  resolveManualNavigationContext,
+  type ManualNavigationContext,
+  type ManualNavigationCommand,
+} from "./valor360-navigation";
+import {
+  createManualSessionMediaResult,
+  manualSessionMediaIdentity,
+  validateManualSessionMedia,
+  type ManualSessionMediaCommand,
+  type ManualSessionMediaStatus,
+} from "./valor360-session-media";
 import {
   BRAZIL_UFS,
   estimateRegionalHarvest,
   recommendPlantPopulation,
   type ProductionEnvironment,
 } from "./agronomy-planning";
+import {
+  calculateFertilizer,
+  calculatePlanter,
+  calculateQuote,
+  calculateSeedDemand,
+  calculateSpraying,
+} from "../../src/lib/agronomic-calculators.js";
 
 const embeddedInValor360 = process.env.NEXT_PUBLIC_VALOR360_EMBEDDED === "1";
 
@@ -92,6 +114,11 @@ const nav: { key: PageKey; label: string; icon: IconName }[] = [
   { key: "perfil", label: "Meu perfil", icon: "users" },
 ];
 
+function isPageKey(value: unknown): value is PageKey {
+  return typeof value === "string" &&
+    (value === "empresa" || nav.some((item) => item.key === value));
+}
+
 type NdviScene = {
   id: string;
   date: string;
@@ -102,11 +129,21 @@ type NdviScene = {
 
 type FieldPlot = {
   id: string;
+  canonicalFieldId?: string;
+  propertyId?: string;
+  propertyName?: string;
   name: string;
   crop: string;
   season: string;
   area: number;
   points: MapPoint[];
+  polygons?: MapPoint[][][];
+  geometry?: { type: "Polygon" | "MultiPolygon"; coordinates: unknown } | null;
+  geometryAdapterVersion?: string | null;
+  geometryVersion?: string | null;
+  geometryStatus?: "NOT_MAPPED" | "LEGACY_REFERENCE" | "CANONICAL" | "REJECTED";
+  geometryAction?: "UNCHANGED" | "UPSERT" | "CLEAR";
+  geometryProvenance?: Record<string, unknown> | null;
   ndviScenes: NdviScene[];
   registrationId?: string;
 };
@@ -115,6 +152,7 @@ type Producer = {
   id: string;
   name: string;
   crmCode?: string;
+  valor360LegacyExternalKeys?: string[];
   document: string;
   phone: string;
   email: string;
@@ -182,8 +220,41 @@ type SoilInterpretationItem = {
   action: string;
 };
 
+type SoilLinkState =
+  | "UNLINKED"
+  | "LINKED_TO_CLIENT"
+  | "LINKED_TO_PROPERTY"
+  | "LINKED_TO_FIELD";
+
+type SoilLinkTarget = {
+  producerId: string;
+  property: string;
+  fieldId: string;
+};
+
+type SoilLinkHistoryEntry = {
+  version: number;
+  action: "LINK" | "CHANGE" | "UNLINK" | "MIGRATE";
+  fromState: SoilLinkState;
+  toState: SoilLinkState;
+  from: SoilLinkTarget;
+  to: SoilLinkTarget;
+  changedAt: string;
+  actorId: string;
+  source: "manual-do-agronomo" | "legacy-workspace";
+};
+
+type SoilLinkProvenance = {
+  source: "document-import" | "manual-do-agronomo" | "legacy-workspace";
+  actorId: string;
+  changedAt: string;
+  reason: "CREATED_UNLINKED" | "USER_CONFIRMED" | "LEGACY_MIGRATION";
+  target: SoilLinkTarget;
+};
+
 type SoilDraft = {
   id: string;
+  recordId: string;
   fileName: string;
   sourceType: "PDF" | "Imagem" | "Câmera";
   importedAt: string;
@@ -207,11 +278,110 @@ type SoilDraft = {
   targetCrop?: string;
   yieldTarget?: string;
   productionSystem?: string;
+  linkState: SoilLinkState;
+  linkVersion: number;
+  linkHistory: SoilLinkHistoryEntry[];
+  linkProvenance: SoilLinkProvenance;
 };
 
 type SoilAnalysis = SoilDraft & {
   savedAt: string;
 };
+
+const soilLinkStates = new Set<SoilLinkState>([
+  "UNLINKED",
+  "LINKED_TO_CLIENT",
+  "LINKED_TO_PROPERTY",
+  "LINKED_TO_FIELD",
+]);
+
+const soilLinkStateLabels: Record<SoilLinkState, string> = {
+  UNLINKED: "Não vinculada",
+  LINKED_TO_CLIENT: "Vinculada ao produtor",
+  LINKED_TO_PROPERTY: "Vinculada à propriedade",
+  LINKED_TO_FIELD: "Vinculada ao talhão",
+};
+
+function soilLinkTarget(value: Pick<SoilDraft, "producerId" | "property" | "fieldId">): SoilLinkTarget {
+  return {
+    producerId: String(value.producerId ?? ""),
+    property: String(value.property ?? ""),
+    fieldId: String(value.fieldId ?? ""),
+  };
+}
+
+function soilLinkStateFor(target: SoilLinkTarget): SoilLinkState {
+  if (!target.producerId) return "UNLINKED";
+  if (target.fieldId) return "LINKED_TO_FIELD";
+  if (target.property.trim()) return "LINKED_TO_PROPERTY";
+  return "LINKED_TO_CLIENT";
+}
+
+function sameSoilLink(
+  currentState: SoilLinkState,
+  current: SoilLinkTarget,
+  nextState: SoilLinkState,
+  next: SoilLinkTarget,
+) {
+  if (currentState !== nextState) return false;
+  if (currentState === "UNLINKED") return true;
+  return current.producerId === next.producerId &&
+    current.property === next.property &&
+    current.fieldId === next.fieldId;
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+function normalizeSoilAnalysis(value: SoilAnalysis): SoilAnalysis {
+  const target = soilLinkTarget(value);
+  const explicitState = soilLinkStates.has(value.linkState)
+    ? value.linkState
+    : soilLinkStateFor(target);
+  const changedAt = value.linkProvenance?.changedAt || value.savedAt || value.importedAt || new Date().toISOString();
+  const actorId = value.linkProvenance?.actorId || "";
+  const hasGovernedLink = Boolean(
+    soilLinkStates.has(value.linkState) &&
+    Number.isInteger(value.linkVersion) &&
+    Array.isArray(value.linkHistory) &&
+    value.linkProvenance?.target,
+  );
+  if (hasGovernedLink && isUuid(value.recordId)) return value;
+
+  const version = hasGovernedLink
+    ? Math.max(0, Number(value.linkVersion))
+    : explicitState === "UNLINKED" ? 0 : 1;
+  const history = hasGovernedLink
+    ? value.linkHistory
+    : [{
+        version,
+        action: "MIGRATE" as const,
+        fromState: explicitState,
+        toState: explicitState,
+        from: target,
+        to: target,
+        changedAt,
+        actorId,
+        source: "legacy-workspace" as const,
+      }];
+  return {
+    ...value,
+    recordId: isUuid(value.recordId) ? value.recordId : isUuid(value.id) ? value.id : crypto.randomUUID(),
+    linkState: explicitState,
+    linkVersion: version,
+    linkHistory: history,
+    linkProvenance: hasGovernedLink
+      ? value.linkProvenance
+      : {
+          source: "legacy-workspace",
+          actorId,
+          changedAt,
+          reason: "LEGACY_MIGRATION",
+          target,
+        },
+  };
+}
 
 type SoilImportState = {
   status: "idle" | "processing" | "ready" | "error";
@@ -251,6 +421,16 @@ const GATE_ONE_COMPANY = {
 
 function accountStorageKey(base: string, userId: string) {
   return `${base}:${userId}`;
+}
+
+function valor360LegacyExternalKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase("pt-BR")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-|-$)/g, "")
+    .slice(0, 180);
 }
 
 function isLegacyExampleProducer(producer: Producer) {
@@ -1188,12 +1368,20 @@ function buildSoilDraft(
   });
   const firstTechSoloSample = techSoloSamples[0];
   const isTechSolo = techSoloSamples.length > 0;
+  const analysisId = crypto.randomUUID();
+  const importedAt = new Date().toISOString();
+  const initialTarget = {
+    producerId: "",
+    property: metadata.property,
+    fieldId: "",
+  } satisfies SoilLinkTarget;
 
   return {
-    id: `soil-${Date.now()}`,
+    id: analysisId,
+    recordId: analysisId,
     fileName,
     sourceType,
-    importedAt: new Date().toISOString(),
+    importedAt,
     sampleDate: metadata.sampleDate,
     laboratory: metadata.laboratory || (isTechSolo ? "TechSolo · Agricultura de Precisão" : ""),
     sampleCode: firstTechSoloSample?.code || metadata.sampleCode || metadata.field,
@@ -1220,6 +1408,16 @@ function buildSoilDraft(
     targetCrop: "Soja",
     yieldTarget: "",
     productionSystem: "Plantio direto",
+    linkState: "UNLINKED",
+    linkVersion: 0,
+    linkHistory: [],
+    linkProvenance: {
+      source: "document-import",
+      actorId: "",
+      changedAt: importedAt,
+      reason: "CREATED_UNLINKED",
+      target: initialTarget,
+    },
   };
 }
 
@@ -1478,6 +1676,26 @@ function linkSoilDraftToProducer(draft: SoilDraft, producers: Producer[]) {
     ...draft,
     producerId: producer.id,
     property: draft.property || producer.properties,
+    fieldId: field?.id ?? "",
+  };
+}
+
+function prefillSoilDraftFromNavigation(
+  draft: SoilDraft,
+  producers: Producer[],
+  context: ManualNavigationContext,
+) {
+  const ocrLinkedDraft = linkSoilDraftToProducer(draft, producers);
+  if (!context.clientId) return ocrLinkedDraft;
+  const producer = producers.find((item) => item.id === context.clientId);
+  if (!producer) return ocrLinkedDraft;
+  const field = context.fieldId
+    ? producer.fields.find((item) => item.id === context.fieldId)
+    : undefined;
+  return {
+    ...ocrLinkedDraft,
+    producerId: producer.id,
+    property: context.propertyName || ocrLinkedDraft.property || producer.properties,
     fieldId: field?.id ?? "",
   };
 }
@@ -2012,11 +2230,13 @@ type QuoteItem = {
 };
 
 function quoteUnitPrice(item: QuoteItem) {
-  return item.systemPrice * (1 - Math.min(Math.max(item.discount, 0), 100) / 100);
+  const result = calculateQuote({ items: [item] });
+  return Number(result.items[0]?.finalUnitPrice ?? 0);
 }
 
 function quoteItemTotal(item: QuoteItem) {
-  return item.quantity * quoteUnitPrice(item);
+  const result = calculateQuote({ items: [item] });
+  return Number(result.items[0]?.finalTotal ?? 0);
 }
 
 function currency(value: number) {
@@ -2027,17 +2247,14 @@ function currency(value: number) {
 }
 
 function doseTotal(item: SprayItem, area: number) {
-  const total = item.dose * area;
-  if (item.unit === "L/ha") return `${formatDecimal(total)} L`;
-  if (item.unit === "mL/ha") {
-    return total >= 1000
-      ? `${formatDecimal(total / 1000)} L`
-      : `${formatNumber(total)} mL`;
-  }
-  if (item.unit === "kg/ha") return `${formatDecimal(total)} kg`;
-  return total >= 1000
-    ? `${formatDecimal(total / 1000)} kg`
-    : `${formatNumber(total)} g`;
+  const result = calculateSpraying({
+    areaHa: area,
+    sprayVolumeLHa: 1,
+    tankVolumeL: 1,
+    items: [item],
+  });
+  const total = result.items[0]?.total as { value?: number; unit?: string } | undefined;
+  return `${formatDecimal(Number(total?.value ?? 0))} ${total?.unit ?? "L"}`;
 }
 
 function recommendationText(
@@ -2075,6 +2292,13 @@ function recommendationText(
 export default function Home() {
   const [accessUser, setAccessUser] = useState<AccessSessionUser | null>(null);
   const [activePage, setActivePage] = useState<PageKey>("inicio");
+  const [navigationCommand, setNavigationCommand] = useState<ManualNavigationCommand | null>(null);
+  const navigationCommandRef = useRef<ManualNavigationCommand | null>(null);
+  const navigationAcks = useRef(new Set<string>());
+  const pendingSessionMedia = useRef(new Set<string>());
+  const sessionMediaResults = useRef(new Map<string, ReturnType<typeof createManualSessionMediaResult>>());
+  const [photoSessionMedia, setPhotoSessionMedia] = useState<ManualSessionMediaCommand | null>(null);
+  const [soilSessionMedia, setSoilSessionMedia] = useState<ManualSessionMediaCommand | null>(null);
   const [mobileMenu, setMobileMenu] = useState(false);
   const [calc, setCalc] = useState<CalcKey>("semeadora");
   const [crop, setCrop] = useState<Crop>("Todas");
@@ -2100,8 +2324,15 @@ export default function Home() {
   });
   const [accountReady, setAccountReady] = useState(false);
   const [workspaceSync, setWorkspaceSync] = useState<
-    "loading" | "saving" | "saved" | "offline"
+    "loading" | "saving" | "saved" | "attention" | "offline"
   >("loading");
+
+  const navigationResolution = useMemo(
+    () => navigationCommand
+      ? resolveManualNavigationContext(navigationCommand, producers, soilAnalyses)
+      : { context: {}, issues: [] },
+    [navigationCommand, producers, soilAnalyses],
+  );
 
   const [population, setPopulation] = useState(70000);
   const [spacing, setSpacing] = useState(45);
@@ -2146,9 +2377,162 @@ export default function Home() {
   }, [accessUser]);
 
   useEffect(() => {
+    setPhotoSessionMedia(null);
+    setSoilSessionMedia(null);
+    pendingSessionMedia.current.clear();
+    sessionMediaResults.current.clear();
+  }, [accessUser?.id]);
+
+  useEffect(() => {
     document.documentElement.classList.toggle("valor360-embedded", embeddedInValor360);
     return () => document.documentElement.classList.remove("valor360-embedded");
   }, []);
+
+  useEffect(() => {
+    const initialUrl = new URL(window.location.href);
+    const requestedPage = initialUrl.searchParams.get("page");
+    const initialNavigation = manualNavigationFromUrl(initialUrl);
+    if (initialNavigation) {
+      navigationCommandRef.current = initialNavigation;
+      setNavigationCommand(initialNavigation);
+    }
+    else if (isPageKey(requestedPage)) setActivePage(requestedPage);
+
+    const receiveNavigation = (event: MessageEvent) => {
+      if (!embeddedInValor360 || event.origin !== window.location.origin || event.source !== window.parent) return;
+      const message = event.data as { type?: unknown } | null;
+      if (message?.type === "valor360:navigate") {
+        const command = normalizeManualNavigation(message);
+        if (!command) return;
+        navigationCommandRef.current = command;
+        setNavigationCommand(command);
+        return;
+      }
+      if (message?.type !== "valor360:session-media") return;
+      const identity = manualSessionMediaIdentity(message);
+      const priorResult = identity.transferId
+        ? sessionMediaResults.current.get(identity.transferId)
+        : null;
+      if (priorResult) {
+        window.parent.postMessage(priorResult, window.location.origin);
+        return;
+      }
+      if (identity.transferId && pendingSessionMedia.current.has(identity.transferId)) return;
+      const validation = validateManualSessionMedia(message);
+      const command = validation.command;
+      const activeNavigation = navigationCommandRef.current;
+      const expectedPage = command?.intent === "IMAGE_DIAGNOSIS" ? "diagnostico" : "solo";
+      if (!command || !activeNavigation || command.navigationRequestId !== activeNavigation.requestId || activeNavigation.page !== expectedPage) {
+        if (!identity.transferId || !identity.navigationRequestId) return;
+        const rejected = createManualSessionMediaResult({
+          ...identity,
+          status: "REJECTED",
+          intent: command?.intent ?? null,
+          errorCode: command ? "NAVIGATION_MISMATCH" : validation.errorCode || "INVALID_ENVELOPE",
+        });
+        sessionMediaResults.current.set(identity.transferId, rejected);
+        window.parent.postMessage(rejected, window.location.origin);
+        return;
+      }
+      pendingSessionMedia.current.add(command.transferId);
+      if (command.intent === "IMAGE_DIAGNOSIS") {
+        setPhotoSessionMedia(command);
+        return;
+      }
+      setSoilSessionMedia(command);
+      const applied = createManualSessionMediaResult({
+        transferId: command.transferId,
+        navigationRequestId: command.navigationRequestId,
+        status: "APPLIED",
+        intent: command.intent,
+        acceptedCount: command.files.length,
+      });
+      pendingSessionMedia.current.delete(command.transferId);
+      sessionMediaResults.current.set(command.transferId, applied);
+      window.parent.postMessage(applied, window.location.origin);
+    };
+    window.addEventListener("message", receiveNavigation);
+    return () => window.removeEventListener("message", receiveNavigation);
+  }, []);
+
+  useEffect(() => {
+    if (!navigationCommand) return;
+    setActivePage(navigationCommand.page as PageKey);
+    if (navigationCommand.calculator) setCalc(navigationCommand.calculator as CalcKey);
+    setMobileMenu(false);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }, [navigationCommand]);
+
+  useEffect(() => {
+    if (!navigationCommand || !accountReady) return;
+    const analysisId = navigationResolution.context.analysisId;
+    if (navigationCommand.page === "solo" && analysisId) {
+      const analysis = soilAnalyses.find((item) => item.id === analysisId || item.recordId === analysisId);
+      if (analysis) setSoilDraft(normalizeSoilAnalysis({ ...analysis }));
+    }
+
+    if (navigationAcks.current.has(navigationCommand.requestId)) return;
+    navigationAcks.current.add(navigationCommand.requestId);
+    const requestedContextCount = Object.values(navigationCommand.context).filter(Boolean).length;
+    const resolvedContextCount = Object.values(navigationResolution.context).filter(Boolean).length;
+    const status = !navigationResolution.issues.length
+      ? "APPLIED"
+      : requestedContextCount > 0 && resolvedContextCount === 0
+        ? "CONTEXT_REJECTED"
+        : "PARTIAL";
+    if (embeddedInValor360 && window.parent !== window) {
+      window.parent.postMessage({
+        type: "valor360:navigation-result",
+        version: manualNavigationProtocolVersion,
+        requestId: navigationCommand.requestId,
+        status,
+        page: navigationCommand.page,
+        tool: navigationCommand.tool || null,
+        calculator: navigationCommand.calculator || null,
+        diagnosisMode: navigationCommand.diagnosisMode || null,
+        context: navigationResolution.context,
+        issues: navigationResolution.issues,
+      }, window.location.origin);
+    }
+    if (accessUser) {
+      void fetch("/api/access/activity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventType: "valor360_deep_link",
+          pageKey: navigationCommand.page,
+          detail: {
+            requestId: navigationCommand.requestId,
+            tool: navigationCommand.tool || null,
+            status,
+            issues: navigationResolution.issues,
+          },
+        }),
+      }).catch(() => undefined);
+    }
+  }, [accessUser, accountReady, navigationCommand, navigationResolution, soilAnalyses]);
+
+  function acknowledgePhotoSessionMedia(
+    command: ManualSessionMediaCommand,
+    status: ManualSessionMediaStatus,
+    errorCode?: string,
+  ) {
+    if (sessionMediaResults.current.has(command.transferId)) return;
+    const result = createManualSessionMediaResult({
+      transferId: command.transferId,
+      navigationRequestId: command.navigationRequestId,
+      status,
+      intent: command.intent,
+      acceptedCount: status === "APPLIED" ? command.files.length : 0,
+      errorCode: errorCode ?? null,
+    });
+    pendingSessionMedia.current.delete(command.transferId);
+    sessionMediaResults.current.set(command.transferId, result);
+    setPhotoSessionMedia(null);
+    if (embeddedInValor360 && window.parent !== window) {
+      window.parent.postMessage(result, window.location.origin);
+    }
+  }
 
   useEffect(() => {
     if (!accessUser) {
@@ -2172,30 +2556,41 @@ export default function Home() {
 
       const normalizeProducerItems = (items: Producer[]) => items
         .filter((producer) => !isLegacyExampleProducer(producer))
-        .map((producer) => ({
-          ...producer,
-          cultures: Array.isArray(producer.cultures) ? producer.cultures : [],
-          registrations: Array.isArray(producer.registrations) ? producer.registrations : [],
-          fields: Array.isArray(producer.fields)
-            ? producer.fields.map((field) => ({
-                ...field,
-                points: Array.isArray(field.points) ? field.points : [],
-                ndviScenes: Array.isArray(field.ndviScenes) ? field.ndviScenes : [],
-                season: /^2026\/27$/i.test(field.season ?? "") ? "" : field.season,
-              }))
-            : [],
-        }));
+        .map((producer) => {
+          const legacyExternalKeys = Array.from(new Set([
+            ...(Array.isArray(producer.valor360LegacyExternalKeys)
+              ? producer.valor360LegacyExternalKeys
+              : []),
+            valor360LegacyExternalKey(producer.name),
+          ].filter(Boolean))).slice(0, 20);
+          return {
+            ...producer,
+            valor360LegacyExternalKeys: legacyExternalKeys,
+            cultures: Array.isArray(producer.cultures) ? producer.cultures : [],
+            registrations: Array.isArray(producer.registrations) ? producer.registrations : [],
+            fields: Array.isArray(producer.fields)
+              ? producer.fields.map((field) => ({
+                  ...field,
+                  points: Array.isArray(field.points) ? field.points : [],
+                  ndviScenes: Array.isArray(field.ndviScenes) ? field.ndviScenes : [],
+                  season: /^2026\/27$/i.test(field.season ?? "") ? "" : field.season,
+                }))
+              : [],
+          };
+        });
 
       let nextProducers: Producer[] = [];
       let nextSoilAnalyses: SoilAnalysis[] = [];
       let localProfile: Partial<ProfessionalProfile> = {};
+      let integrationNeedsAttention = false;
       try {
         if (savedProducers) {
           nextProducers = normalizeProducerItems(JSON.parse(savedProducers) as Producer[]);
         }
         if (savedProfile) localProfile = JSON.parse(savedProfile) as Partial<ProfessionalProfile>;
         if (savedSoilAnalyses) {
-          nextSoilAnalyses = JSON.parse(savedSoilAnalyses) as SoilAnalysis[];
+          nextSoilAnalyses = (JSON.parse(savedSoilAnalyses) as SoilAnalysis[])
+            .map(normalizeSoilAnalysis);
         }
       } catch (error) {
         console.warn("Não foi possível recuperar todos os dados locais desta conta.", error);
@@ -2212,9 +2607,8 @@ export default function Home() {
         };
         if (remote.hasData) {
           nextProducers = normalizeProducerItems(Array.isArray(remote.producers) ? remote.producers : []);
-          const validProducerIds = new Set(nextProducers.map((producer) => producer.id));
           nextSoilAnalyses = (Array.isArray(remote.soilAnalyses) ? remote.soilAnalyses : [])
-            .filter((analysis) => !analysis.producerId || validProducerIds.has(analysis.producerId));
+            .map(normalizeSoilAnalysis);
           if (remote.professionalProfile && typeof remote.professionalProfile === "object" && Object.keys(remote.professionalProfile).length) {
             localProfile = { ...localProfile, ...remote.professionalProfile };
           }
@@ -2224,9 +2618,17 @@ export default function Home() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ producers: nextProducers, soilAnalyses: nextSoilAnalyses, professionalProfile: localProfile }),
           });
+          const migrationResult = (await migration.json().catch(() => ({}))) as {
+            error?: string;
+            integration?: { configured?: boolean; failed?: number; skipped?: number; truncated?: boolean };
+          };
           if (!migration.ok) throw new Error("Falha ao criar backup inicial");
+          integrationNeedsAttention = migrationResult.integration?.configured === false ||
+            Number(migrationResult.integration?.failed ?? 0) > 0 ||
+            Number(migrationResult.integration?.skipped ?? 0) > 0 ||
+            migrationResult.integration?.truncated === true;
         }
-        setWorkspaceSync("saved");
+        setWorkspaceSync(integrationNeedsAttention ? "attention" : "saved");
       } catch (error) {
         console.warn("A nuvem não respondeu; usando o cache deste aparelho.", error);
         setWorkspaceSync("offline");
@@ -2268,17 +2670,12 @@ export default function Home() {
             }),
             ...nextProducers.filter((producer) => !incomingIds.has(producer.id)),
           ];
-          setWorkspaceSync("saved");
         } catch (error) {
           console.warn("A carteira comercial não pôde ser conciliada agora.", error);
         }
       }
 
       if (cancelled) return;
-      const validProducerIds = new Set(nextProducers.map((producer) => producer.id));
-      nextSoilAnalyses = nextSoilAnalyses.filter(
-        (analysis) => !analysis.producerId || validProducerIds.has(analysis.producerId),
-      );
       const nextProfile: ProfessionalProfile = {
         ...initialProfile,
         ...localProfile,
@@ -2323,9 +2720,16 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ producers, soilAnalyses, professionalProfile: profile }),
       })
-        .then((response) => {
+        .then(async (response) => {
+          const result = (await response.json().catch(() => ({}))) as {
+            integration?: { configured?: boolean; failed?: number; skipped?: number; truncated?: boolean };
+          };
           if (!response.ok) throw new Error("Falha na sincronização");
-          setWorkspaceSync("saved");
+          const integrationNeedsAttention = result.integration?.configured === false ||
+            Number(result.integration?.failed ?? 0) > 0 ||
+            Number(result.integration?.skipped ?? 0) > 0 ||
+            result.integration?.truncated === true;
+          setWorkspaceSync(integrationNeedsAttention ? "attention" : "saved");
         })
         .catch(() => setWorkspaceSync("offline"));
     }, 700);
@@ -2354,27 +2758,17 @@ export default function Home() {
     });
   }, [accessUser, activePage, calc]);
 
-  const planter = useMemo(() => {
-    const rowSpacing = Math.max(spacing, 0.1) / 100;
-    const targetPlantsMeter = (population * rowSpacing) / 10000;
-    const establishment = Math.max(
-      (germination / 100) * (fieldSurvival / 100),
-      0.01,
-    );
-    const rawSeedsMeter = targetPlantsMeter / establishment;
-    const seedsMeter = rawSeedsMeter * (1 + slippage / 100);
-    const seedsHa = (seedsMeter * 10000) / rowSpacing;
-    return {
-      targetPlantsMeter,
-      seedsMeter,
-      seedsHa,
-      distance: seedsMeter > 0 ? 100 / seedsMeter : 0,
-      bagsHa: bagSeeds > 0 ? seedsHa / bagSeeds : 0,
-      expectedTest: seedsMeter * testDistance * testRows,
-      wheelTurns:
-        wheelCircumference > 0 ? testDistance / wheelCircumference : 0,
-    };
-  }, [
+  const planter = useMemo(() => calculatePlanter({
+    populationPlantsHa: population,
+    spacingCm: spacing,
+    germinationPercent: germination,
+    fieldSurvivalPercent: fieldSurvival,
+    slippagePercent: slippage,
+    bagSeeds,
+    testDistanceM: testDistance,
+    testRows,
+    wheelCircumferenceM: wheelCircumference,
+  }), [
     spacing,
     population,
     germination,
@@ -2516,7 +2910,11 @@ export default function Home() {
               : "A leitura inteligente não respondeu; a extração local foi mantida.",
           ];
         }
-        setSoilDraft(linkSoilDraftToProducer(nextDraft, producers));
+        setSoilDraft(prefillSoilDraftFromNavigation(
+          nextDraft,
+          producers,
+          navigationCommand?.page === "solo" ? navigationResolution.context : {},
+        ));
         setSoilImport({
           status: "ready",
           progress: 100,
@@ -2611,7 +3009,11 @@ export default function Home() {
         ];
       }
       const detected = Object.values(nextDraft.values).filter(Boolean).length;
-      setSoilDraft(linkSoilDraftToProducer(nextDraft, producers));
+      setSoilDraft(prefillSoilDraftFromNavigation(
+        nextDraft,
+        producers,
+        navigationCommand?.page === "solo" ? navigationResolution.context : {},
+      ));
       setSoilImport({
         status: "ready",
         progress: 100,
@@ -2825,7 +3227,15 @@ export default function Home() {
           />
         )}
         {activePage === "mercado" && <AgroMarketPage />}
-        {activePage === "diagnostico" && <PhotoDiagnosis />}
+        {activePage === "diagnostico" && (
+          <PhotoDiagnosis
+            initialMode={navigationCommand?.diagnosisMode ?? "nutrition"}
+            context={navigationResolution.context as PhotoDiagnosisContext}
+            navigationRequestId={navigationCommand?.requestId ?? ""}
+            sessionMedia={photoSessionMedia}
+            onSessionMediaResult={acknowledgePhotoSessionMedia}
+          />
+        )}
         {activePage === "solo" && (
           <SoilPage
             onCamera={() => openCamera("solo")}
@@ -2836,6 +3246,9 @@ export default function Home() {
             producers={producers}
             profile={profile}
             analyses={soilAnalyses}
+            linkActorId={accessUser?.id ?? ""}
+            sessionMedia={soilSessionMedia}
+            onClearSessionMedia={() => setSoilSessionMedia(null)}
             onSave={(analysis) => {
               const analysisProducer = producers.find(
                 (item) => item.id === analysis.producerId,
@@ -2853,6 +3266,7 @@ export default function Home() {
                 message: "Salvando a análise conferida…",
               });
               void saveRecord({
+                id: analysis.recordId,
                 type: "soil_analysis",
                 title: `${analysisProducer?.name || "Análise de solo"} · ${
                   analysisField?.name || analysis.property || "Área não informada"
@@ -2889,6 +3303,14 @@ export default function Home() {
             producers={producers}
             setProducers={setProducers}
             syncStatus={workspaceSync}
+            onSyncAttention={() => setWorkspaceSync("attention")}
+            deepLink={navigationCommand?.tool === "mapping"
+              ? {
+                  requestId: navigationCommand.requestId,
+                  clientId: navigationResolution.context.clientId,
+                  fieldId: navigationResolution.context.fieldId,
+                }
+              : undefined}
             onUse={(producer) => {
               setSprayProducer(producer.name);
               setSprayPhone(producer.phone);
@@ -4070,10 +4492,26 @@ function Calculators({
       : fertPriceUnit === "R$/kg"
         ? fertPrice
         : fertPrice / Math.max(values.fertBag, 1);
-  const pointsPerHa =
-    (activeFertNutrients.N + activeFertNutrients.P2O5 + activeFertNutrients.K2O) *
-    fertRateKgHa / 100;
-  const effectivePoints = pointsPerHa * fertEfficiency / 100;
+  const seedCalculation = calculateSeedDemand({
+    areaHa: seedAreaHa,
+    populationSeedsHa: values.seedPopulation,
+    marginPercent: values.seedMargin,
+    bagSeeds: values.seedBag,
+  });
+  const sprayCalculation = calculateSpraying({
+    areaHa: sprayAreaHa,
+    sprayVolumeLHa: values.sprayVolume,
+    tankVolumeL: values.tankVolume,
+    items: recommendation.items,
+  });
+  const fertilizerCalculation = calculateFertilizer({
+    areaHa: fertAreaHa,
+    rateKgHa: fertRateKgHa,
+    bagKg: values.fertBag,
+    pricePerKg: fertPricePerKg,
+    efficiencyPercent: fertEfficiency,
+    guarantees: activeFertNutrients,
+  });
   const activeCultivars =
     harvestCrop === "Soja"
       ? cultivarCatalog.soybean
@@ -4264,12 +4702,18 @@ function Calculators({
           ? (comparisonTarget * 100) / formula.nutrients[comparisonNutrient]
           : 0
         : fertRateKgHa;
-    const nutrientKg = (key: NutrientKey) =>
-      (formula.nutrients[key] * rateKgHa) / 100;
-    const pointsNpk =
-      nutrientKg("N") + nutrientKg("P2O5") + nutrientKg("K2O");
     const pricePerTon = comparisonPricesPerTon[formula.id] ?? 0;
-    const costHa = (rateKgHa * pricePerTon) / 1000;
+    const calculation = calculateFertilizer({
+      areaHa: 1,
+      rateKgHa,
+      bagKg: values.fertBag,
+      pricePerKg: pricePerTon / 1000,
+      efficiencyPercent: 100,
+      guarantees: formula.nutrients,
+    });
+    const nutrientKg = (key: NutrientKey) => calculation.suppliedKgHa[key] ?? 0;
+    const pointsNpk = calculation.pointsNpkHa;
+    const costHa = calculation.costPerHa;
     const costPerPoint = pointsNpk > 0 ? costHa / pointsNpk : 0;
     return {
       rateKgHa,
@@ -4281,15 +4725,10 @@ function Calculators({
     };
   }
 
-  const quoteSubtotal = quoteItems.reduce(
-    (total, item) => total + item.quantity * item.systemPrice,
-    0,
-  );
-  const quoteTotal = quoteItems.reduce(
-    (total, item) => total + quoteItemTotal(item),
-    0,
-  );
-  const quoteDiscount = quoteSubtotal - quoteTotal;
+  const quoteCalculation = calculateQuote({ items: quoteItems });
+  const quoteSubtotal = quoteCalculation.subtotal;
+  const quoteTotal = quoteCalculation.total;
+  const quoteDiscount = quoteCalculation.discount;
 
   function updateQuoteItem(id: number, patch: Partial<QuoteItem>) {
     setQuoteItems((current) =>
@@ -5205,8 +5644,8 @@ function Calculators({
           </div>
           <aside className="result-card">
             <span className="eyebrow">RESULTADO</span>
-            <Metric label="Sementes necessárias" value={formatNumber(seedAreaHa * values.seedPopulation * (1 + values.seedMargin / 100))} emphasis />
-            <Metric label="Embalagens" value={`${Math.ceil((seedAreaHa * values.seedPopulation * (1 + values.seedMargin / 100)) / Math.max(values.seedBag, 1))} un.`} />
+            <Metric label="Sementes necessárias" value={formatNumber(seedCalculation.seedsRequired)} emphasis />
+            <Metric label="Embalagens" value={`${seedCalculation.bagsRequired} un.`} />
             <Metric label="Margem incluída" value={`${values.seedMargin.toFixed(1)}%`} />
           </aside>
         </section>
@@ -5668,10 +6107,10 @@ function Calculators({
             </div>
             <aside className="result-card spray-result-card">
               <span className="eyebrow">RESUMO DA OPERAÇÃO</span>
-              <Metric label="Calda total" value={`${formatNumber(sprayAreaHa * values.sprayVolume)} L`} emphasis />
+              <Metric label="Calda total" value={`${formatNumber(sprayCalculation.totalSprayL)} L`} emphasis />
               <div className="result-grid">
-                <Metric label="Tanques" value={`${Math.ceil((sprayAreaHa * values.sprayVolume) / Math.max(values.tankVolume, 1))}`} />
-                <Metric label="Área/tanque" value={`${(values.tankVolume / Math.max(values.sprayVolume, 1)).toFixed(1)} ha`} />
+                <Metric label="Tanques" value={`${sprayCalculation.tankCount}`} />
+                <Metric label="Área/tanque" value={`${sprayCalculation.areaPerTankHa.toFixed(1)} ha`} />
               </div>
               <div className="recommendation-preview">
                 <span>Mensagem pronta</span>
@@ -5815,12 +6254,12 @@ function Calculators({
             <aside className="result-card fertilizer-results">
               <span className="eyebrow">FORNECIMENTO POR HECTARE</span>
               <h3>{activeFertName}</h3>
-              <Metric label="Pontos NPK/ha" value={`${pointsPerHa.toFixed(1)} pontos`} emphasis />
+              <Metric label="Pontos NPK/ha" value={`${fertilizerCalculation.pointsNpkHa.toFixed(1)} pontos`} emphasis />
               <div className="nutrient-results">
                 {suppliedNutrientKeys.map((key) => (
                   <div key={key} className={activeFertNutrients[key] > 0 ? "supplied" : ""}>
                     <span>{nutrientLabel[key]}</span>
-                    <strong>{formatDecimal(activeFertNutrients[key] * fertRateKgHa / 100)}</strong>
+                    <strong>{formatDecimal(fertilizerCalculation.suppliedKgHa[key] ?? 0)}</strong>
                     <small>kg/ha</small>
                   </div>
                 ))}
@@ -5831,10 +6270,10 @@ function Calculators({
                 )}
               </div>
               <div className="result-grid">
-                <Metric label="Pontos ajustados" value={effectivePoints.toFixed(1)} />
-                <Metric label="Custo/ha" value={fertPrice > 0 ? currency(fertPricePerKg * fertRateKgHa) : "Informe o preço"} />
-                <Metric label="Quantidade total" value={`${formatNumber(fertAreaHa * fertRateKgHa)} kg`} />
-                <Metric label="Embalagens" value={`${Math.ceil(fertAreaHa * fertRateKgHa / Math.max(values.fertBag, 1))} un.`} />
+                <Metric label="Pontos ajustados" value={fertilizerCalculation.effectivePointsNpkHa.toFixed(1)} />
+                <Metric label="Custo/ha" value={fertPrice > 0 ? currency(fertilizerCalculation.costPerHa) : "Informe o preço"} />
+                <Metric label="Quantidade total" value={`${formatNumber(fertilizerCalculation.totalKg)} kg`} />
+                <Metric label="Embalagens" value={`${fertilizerCalculation.bagsRequired} un.`} />
               </div>
               <small className="legal-note">“Pontos” = kg/ha de N + P₂O₅ + K₂O. Eficiência ajustada é um cenário do usuário, não uma garantia de resposta ou produtividade.</small>
             </aside>
@@ -6822,6 +7261,9 @@ function SoilPage({
   producers,
   profile,
   analyses,
+  linkActorId,
+  sessionMedia,
+  onClearSessionMedia,
   onSave,
   onClear,
 }: {
@@ -6833,6 +7275,9 @@ function SoilPage({
   producers: Producer[];
   profile: ProfessionalProfile;
   analyses: SoilAnalysis[];
+  linkActorId: string;
+  sessionMedia: ManualSessionMediaCommand | null;
+  onClearSessionMedia: () => void;
   onSave: (analysis: SoilAnalysis) => void;
   onClear: () => void;
 }) {
@@ -6853,6 +7298,20 @@ function SoilPage({
   const highIndicators = interpretation.filter((item) => item.status === "high");
   const priorityIndicators = interpretation.filter((item) =>
     ["critical", "low"].includes(item.status),
+  );
+  const selectedLinkTarget = draft ? soilLinkTarget(draft) : null;
+  const selectedLinkState = selectedLinkTarget
+    ? soilLinkStateFor(selectedLinkTarget)
+    : "UNLINKED";
+  const committedLinkTarget = draft?.linkProvenance?.target ?? selectedLinkTarget;
+  const hasPendingLinkChange = Boolean(
+    draft && selectedLinkTarget && committedLinkTarget &&
+    !sameSoilLink(
+      draft.linkState,
+      committedLinkTarget,
+      selectedLinkState,
+      selectedLinkTarget,
+    ),
   );
 
   function updateDraft(patch: Partial<SoilDraft>) {
@@ -6900,8 +7359,81 @@ function SoilPage({
     });
   }
 
-  function saveAnalysis() {
+  function confirmLink() {
     if (!draft) return;
+    const next = soilLinkTarget(draft);
+    const nextState = soilLinkStateFor(next);
+    if (nextState === "UNLINKED") return;
+    const previous = draft.linkProvenance?.target ?? soilLinkTarget(draft);
+    const previousState = draft.linkState;
+    const changedAt = new Date().toISOString();
+    const version = Math.max(0, Number(draft.linkVersion) || 0) + 1;
+    const entry: SoilLinkHistoryEntry = {
+      version,
+      action: previousState === "UNLINKED" ? "LINK" : "CHANGE",
+      fromState: previousState,
+      toState: nextState,
+      from: previous,
+      to: next,
+      changedAt,
+      actorId: linkActorId,
+      source: "manual-do-agronomo",
+    };
+    setDraft({
+      ...draft,
+      linkState: nextState,
+      linkVersion: version,
+      linkHistory: [...draft.linkHistory, entry],
+      linkProvenance: {
+        source: "manual-do-agronomo",
+        actorId: linkActorId,
+        changedAt,
+        reason: "USER_CONFIRMED",
+        target: next,
+      },
+    });
+  }
+
+  function unlinkAnalysis() {
+    if (!draft || draft.linkState === "UNLINKED") return;
+    const previous = draft.linkProvenance?.target ?? soilLinkTarget(draft);
+    const next = {
+      producerId: "",
+      property: draft.property,
+      fieldId: "",
+    } satisfies SoilLinkTarget;
+    const changedAt = new Date().toISOString();
+    const version = Math.max(0, Number(draft.linkVersion) || 0) + 1;
+    const entry: SoilLinkHistoryEntry = {
+      version,
+      action: "UNLINK",
+      fromState: draft.linkState,
+      toState: "UNLINKED",
+      from: previous,
+      to: next,
+      changedAt,
+      actorId: linkActorId,
+      source: "manual-do-agronomo",
+    };
+    setDraft({
+      ...draft,
+      producerId: "",
+      fieldId: "",
+      linkState: "UNLINKED",
+      linkVersion: version,
+      linkHistory: [...draft.linkHistory, entry],
+      linkProvenance: {
+        source: "manual-do-agronomo",
+        actorId: linkActorId,
+        changedAt,
+        reason: "USER_CONFIRMED",
+        target: next,
+      },
+    });
+  }
+
+  function saveAnalysis() {
+    if (!draft || hasPendingLinkChange) return;
     onSave({
       ...draft,
       savedAt: new Date().toISOString(),
@@ -7113,6 +7645,29 @@ function SoilPage({
               <p>PDF digital, JPG, PNG ou foto tirada pelo celular.</p>
             </div>
           </div>
+          {sessionMedia?.intent === "ANALYZE_SOIL" && (
+            <div className="soil-import-status ready" role="status">
+              <Icon name="file" size={17} />
+              <div>
+                <strong>Arquivo recebido da VAL</strong>
+                <span>Sem vínculo e somente nesta sessão. Inicie a leitura quando estiver pronto.</span>
+              </div>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => {
+                  const [file] = sessionMedia.files;
+                  onClearSessionMedia();
+                  if (file) void onFile(file);
+                }}
+              >
+                Interpretar arquivo
+              </button>
+              <button type="button" className="button secondary" onClick={onClearSessionMedia}>
+                Remover
+              </button>
+            </div>
+          )}
           <label className="soil-file-drop">
             <input
               type="file"
@@ -7322,6 +7877,54 @@ function SoilPage({
             )}
           </div>
 
+          <section className={`soil-link-governance ${draft.linkState.toLocaleLowerCase("pt-BR")}`}>
+            <div className="soil-link-summary">
+              <span>Vínculo auditável</span>
+              <strong>{soilLinkStateLabels[draft.linkState]}</strong>
+              <small>
+                Versão {draft.linkVersion} · as medições e o laudo original não são alterados pelo vínculo.
+              </small>
+              {hasPendingLinkChange && (
+                <p>
+                  Há uma seleção pendente para {soilLinkStateLabels[selectedLinkState].toLocaleLowerCase("pt-BR")}. Confirme o vínculo antes de salvar.
+                </p>
+              )}
+            </div>
+            <div className="soil-link-actions">
+              <button
+                type="button"
+                className="button secondary"
+                onClick={confirmLink}
+                disabled={selectedLinkState === "UNLINKED" || !hasPendingLinkChange}
+              >
+                {draft.linkState === "UNLINKED" ? "Vincular análise" : "Alterar vínculo"}
+              </button>
+              {draft.linkState !== "UNLINKED" && (
+                <button
+                  type="button"
+                  className="button secondary danger"
+                  onClick={unlinkAnalysis}
+                >
+                  Desvincular
+                </button>
+              )}
+            </div>
+            {draft.linkHistory.length > 0 && (
+              <details className="soil-link-history">
+                <summary>Ver histórico do vínculo ({draft.linkHistory.length})</summary>
+                <ol>
+                  {[...draft.linkHistory].reverse().map((entry) => (
+                    <li key={`${entry.version}-${entry.changedAt}-${entry.action}`}>
+                      <b>v{entry.version} · {entry.action}</b>
+                      <span>{soilLinkStateLabels[entry.fromState]} → {soilLinkStateLabels[entry.toState]}</span>
+                      <time>{new Date(entry.changedAt).toLocaleString("pt-BR")}</time>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            )}
+          </section>
+
           <section className="soil-context-panel">
             <div>
               <span className="eyebrow">CONTEXTO PARA O MANEJO</span>
@@ -7512,16 +8115,18 @@ function SoilPage({
             <button
               className="button primary"
               onClick={saveAnalysis}
-              disabled={recognizedCount === 0}
+              disabled={recognizedCount === 0 || hasPendingLinkChange}
             >
               <Icon name="check" size={18} />
               Conferir e salvar análise
             </button>
           </div>
           <small className="legal-note soil-legal-note">
+            {hasPendingLinkChange
+              ? "Confirme Vincular análise, Alterar vínculo ou Desvincular antes de salvar. "
+              : ""}
             Compare cada campo com o documento original. Métodos de extração,
-            unidades e classes de interpretação variam entre laboratórios e
-            regiões.
+            unidades e classes de interpretação variam entre laboratórios e regiões.
           </small>
         </section>
       )}
@@ -7567,7 +8172,7 @@ function SoilPage({
               <button
                 className="soil-row"
                 key={analysis.id}
-                onClick={() => setDraft({ ...analysis })}
+                onClick={() => setDraft(normalizeSoilAnalysis({ ...analysis }))}
               >
                 <span className="soil-icon"><Icon name="layers" /></span>
                 <div>
@@ -7578,6 +8183,9 @@ function SoilPage({
                     {producer?.name || "Produtor não vinculado"} ·{" "}
                     {analysis.laboratory || analysis.fileName} · {analysis.depth}
                   </small>
+                  <span className={`soil-link-state ${analysis.linkState.toLocaleLowerCase("pt-BR")}`}>
+                    {soilLinkStateLabels[analysis.linkState]} · v{analysis.linkVersion}
+                  </span>
                 </div>
                 <time>
                   {new Date(`${analysis.sampleDate}T12:00:00`).toLocaleDateString(
@@ -7604,12 +8212,16 @@ function ProducersPage({
   producers,
   setProducers,
   syncStatus,
+  onSyncAttention,
   onUse,
+  deepLink,
 }: {
   producers: Producer[];
   setProducers: (items: Producer[]) => void;
-  syncStatus: "loading" | "saving" | "saved" | "offline";
+  syncStatus: "loading" | "saving" | "saved" | "attention" | "offline";
+  onSyncAttention: () => void;
   onUse: (producer: Producer) => void;
+  deepLink?: { requestId: string; clientId?: string; fieldId?: string };
 }) {
   const empty: Producer = {
     id: "",
@@ -7633,6 +8245,12 @@ function ProducersPage({
   const visible = producers;
   const selectedProducer =
     visible.find((producer) => producer.id === selectedProducerId) ?? visible[0] ?? null;
+
+  useEffect(() => {
+    if (!deepLink?.clientId || !visible.some((producer) => producer.id === deepLink.clientId)) return;
+    setSelectedProducerId(deepLink.clientId);
+    setOpenProducerId(deepLink.clientId);
+  }, [deepLink?.requestId, deepLink?.clientId, deepLink?.fieldId, visible]);
 
   function save() {
     if (!draft.name.trim()) return;
@@ -7659,7 +8277,7 @@ function ProducersPage({
         areaHa: item.area,
         savedAt: new Date().toISOString(),
       },
-    }).catch(() => undefined);
+    }).catch(onSyncAttention);
     setDraft(empty);
     setEditing(false);
   }
@@ -7679,7 +8297,7 @@ function ProducersPage({
 
       <section className="producer-toolbar producer-cloud-toolbar">
         <span>{producers.length} clientes cadastrados</span>
-        <span className={"cloud-sync-badge " + syncStatus}><Icon name="cloud" size={17} />{{ loading: "Carregando dados da nuvem…", saving: "Salvando na nuvem…", saved: "Backup na nuvem atualizado", offline: "Sem nuvem: usando cache local" }[syncStatus]}</span>
+        <span className={"cloud-sync-badge " + syncStatus}><Icon name="cloud" size={17} />{{ loading: "Carregando dados da nuvem…", saving: "Salvando na nuvem…", saved: "Backup e integração VAL atualizados", attention: "Backup salvo; integração VAL requer atenção", offline: "Sem nuvem: usando cache local" }[syncStatus]}</span>
       </section>
 
       <ProducerCrmImport
@@ -7759,6 +8377,7 @@ function ProducersPage({
       {openProducerId && (
         <ProducerFieldsPanel
           producer={producers.find((producer) => producer.id === openProducerId) ?? producers[0]}
+          initialFieldId={deepLink?.clientId === openProducerId ? deepLink.fieldId : undefined}
           onClose={() => setOpenProducerId("")}
           onChange={(nextProducer) =>
             setProducers(
@@ -7812,13 +8431,17 @@ function ProducerFieldsPanel({
   producer,
   onChange,
   onClose,
+  initialFieldId,
 }: {
   producer: Producer;
   onChange: (producer: Producer) => void;
   onClose: () => void;
+  initialFieldId?: string;
 }) {
   const fields = producer.fields ?? [];
-  const [activeFieldId, setActiveFieldId] = useState(fields[0]?.id ?? "");
+  const [activeFieldId, setActiveFieldId] = useState(
+    fields.some((field) => field.id === initialFieldId) ? initialFieldId! : fields[0]?.id ?? "",
+  );
   const [manualLat, setManualLat] = useState(-28.41);
   const [manualLng, setManualLng] = useState(-54.96);
   const [ndviStart, setNdviStart] = useState(() => {
@@ -7838,6 +8461,12 @@ function ProducerFieldsPanel({
     activeField?.ndviScenes.find((scene) => scene.id === selectedSceneId) ??
     activeField?.ndviScenes[0];
 
+  useEffect(() => {
+    if (initialFieldId && fields.some((field) => field.id === initialFieldId)) {
+      setActiveFieldId(initialFieldId);
+    }
+  }, [initialFieldId, fields]);
+
   function updateField(patch: Partial<FieldPlot>) {
     if (!activeField) return;
     onChange({
@@ -7848,10 +8477,41 @@ function ProducerFieldsPanel({
     });
   }
 
-  function updatePoints(points: MapPoint[]) {
+  function updatePoints(points: MapPoint[], boundary?: BoundarySelection) {
+    const observedAt = new Date().toISOString();
+    const priorProvenance = activeField?.geometryProvenance && typeof activeField.geometryProvenance === "object"
+      ? activeField.geometryProvenance
+      : {};
+    const geometryProvenance = boundary
+      ? {
+          source: "manual-do-agronomo",
+          method: boundary.sourceKind,
+          observedAt: boundary.queriedAt || observedAt,
+          details: {
+            sourceLabel: boundary.sourceLabel,
+            registry: boundary.registry || "",
+            propertyName: boundary.propertyName || "",
+            parcelCode: boundary.parcelCode || "",
+            propertyCode: boundary.propertyCode || "",
+            status: boundary.status || "",
+            ownerStatus: boundary.ownerStatus,
+          },
+        }
+      : {
+          ...priorProvenance,
+          source: "manual-do-agronomo",
+          method: Object.keys(priorProvenance).length ? "manual-edit" : "manual-draw",
+          observedAt,
+        };
     updateField({
       points,
       area: points.length >= 3 ? Number(calculatePolygonArea(points).toFixed(2)) : activeField?.area ?? 0,
+      polygons: points.length >= 3 ? [[points]] : [],
+      geometry: null,
+      geometryVersion: null,
+      geometryStatus: points.length >= 3 ? "CANONICAL" : "NOT_MAPPED",
+      geometryAction: points.length >= 3 ? "UPSERT" : "CLEAR",
+      geometryProvenance,
       ndviScenes: [],
     });
     setSelectedSceneId("");
@@ -8130,6 +8790,8 @@ function ProducerFieldsPanel({
           <FieldMap
             points={activeField.points}
             onChange={updatePoints}
+            contextMunicipality={producer.city}
+            onBoundaryUse={(selection) => updatePoints(selection.points, selection)}
             referencePolygons={(producer.registrations ?? [])
               .filter((registration) => registration.id === activeField.registrationId)
               .map((registration) => ({

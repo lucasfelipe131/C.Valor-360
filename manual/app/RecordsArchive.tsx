@@ -18,6 +18,7 @@ const filters: Array<{ key: "all" | RecordType; label: string }> = [
   { key: "spray_recommendation", label: "Pulverizações" },
   { key: "fertilizer_comparison", label: "Fertilizantes" },
   { key: "field_analysis", label: "Talhões" },
+  { key: "photo_diagnosis", label: "Diagnósticos" },
   { key: "season_report", label: "Safras" },
   { key: "calculator", label: "Calculadoras" },
   { key: "crm_import", label: "CRM" },

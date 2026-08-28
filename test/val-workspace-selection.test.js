@@ -32,12 +32,13 @@ test('grain environment opens the operational SOG without mixing the inputs jour
  assert.match(sog,/A SOG não busca nem inventa cotações/)
 })
 
-test('direct producer preparation keeps using inputs while VAL navigation opens the selector',()=>{
+test('direct producer preparation opens the focused visit journey while VAL navigation opens the selector',()=>{
  const app=read('src/App.jsx')
  assert.match(app,/const \[valMode,setValMode\]=useState\(null\)/)
- assert.match(app,/const prepareClient=c=>\{setSelected\(c\);setValMode\('insumos'\);setPage\('val'\)/)
+ assert.match(app,/const prepareClient=c=>\{if\(!c\?\.id\)return;setSelected\(c\);setPrepareVisitClientId\(c\.id\);setPage\('visits'\)/)
  assert.match(app,/if\(next==='val'\)setValMode\(null\)/)
- assert.match(app,/<ValWorkspace mode=\{valMode\} onModeChange=\{setValMode\}/)
+ assert.match(app,/<ValWorkspace mode=\{valMode\} onModeChange=\{setValMode\}[^>]*onPrepareVisit=\{prepareClient\}/)
+ assert.match(app,/<Visits[^>]*initialClientId=\{prepareVisitClientId\}/)
  assert.match(app,/valMode==='graos'\?\['VAL Grãos'/)
 })
 

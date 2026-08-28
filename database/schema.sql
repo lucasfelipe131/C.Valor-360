@@ -392,6 +392,11 @@ CREATE TABLE IF NOT EXISTS soil_analyses (
   validation_evidence JSONB NOT NULL DEFAULT '{}'::jsonb,
   validated_by UUID REFERENCES users(id),
   validated_at TIMESTAMPTZ,
+  accepted_event_occurred_at TIMESTAMPTZ,
+  accepted_event_source_event_id UUID,
+  measurement_set_occurred_at TIMESTAMPTZ,
+  measurement_set_source_event_id UUID,
+  measurement_set_link_version BIGINT NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (tenant_id,source,external_id)
 );
@@ -400,6 +405,11 @@ ALTER TABLE soil_analyses ADD COLUMN IF NOT EXISTS client_external_key VARCHAR(1
 ALTER TABLE soil_analyses ADD COLUMN IF NOT EXISTS property_external_key VARCHAR(180);
 ALTER TABLE soil_analyses ADD COLUMN IF NOT EXISTS field_external_key VARCHAR(180);
 ALTER TABLE soil_analyses ADD COLUMN IF NOT EXISTS validation_evidence JSONB NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE soil_analyses ADD COLUMN IF NOT EXISTS accepted_event_occurred_at TIMESTAMPTZ;
+ALTER TABLE soil_analyses ADD COLUMN IF NOT EXISTS accepted_event_source_event_id UUID;
+ALTER TABLE soil_analyses ADD COLUMN IF NOT EXISTS measurement_set_occurred_at TIMESTAMPTZ;
+ALTER TABLE soil_analyses ADD COLUMN IF NOT EXISTS measurement_set_source_event_id UUID;
+ALTER TABLE soil_analyses ADD COLUMN IF NOT EXISTS measurement_set_link_version BIGINT NOT NULL DEFAULT 0;
 
 CREATE TABLE IF NOT EXISTS soil_measurements (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -414,8 +424,38 @@ CREATE TABLE IF NOT EXISTS soil_measurements (
   method VARCHAR(180),
   interpretation VARCHAR(240),
   confidence INTEGER CHECK (confidence BETWEEN 0 AND 100),
+  link_version BIGINT NOT NULL DEFAULT 0,
+  source_event_id UUID,
+  superseded_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE soil_measurements ADD COLUMN IF NOT EXISTS link_version BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE soil_measurements ADD COLUMN IF NOT EXISTS source_event_id UUID;
+ALTER TABLE soil_measurements ADD COLUMN IF NOT EXISTS superseded_at TIMESTAMPTZ;
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname='soil_measurements_link_version_nonnegative'
+      AND conrelid='soil_measurements'::regclass
+  ) THEN
+    ALTER TABLE soil_measurements
+      ADD CONSTRAINT soil_measurements_link_version_nonnegative
+      CHECK (link_version>=0) NOT VALID;
+  END IF;
+END $$;
+
+ALTER TABLE soil_measurements
+  VALIDATE CONSTRAINT soil_measurements_link_version_nonnegative;
+
+CREATE INDEX IF NOT EXISTS idx_soil_measurements_analysis_history
+  ON soil_measurements(tenant_id,analysis_id,link_version DESC,created_at DESC);
+
+CREATE INDEX IF NOT EXISTS idx_soil_measurements_source_event
+  ON soil_measurements(tenant_id,source_event_id)
+  WHERE source_event_id IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS ndvi_observations (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -470,6 +510,58 @@ CREATE TABLE IF NOT EXISTS integration_events (
 ALTER TABLE integration_events ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE;
 ALTER TABLE integration_events DROP CONSTRAINT IF EXISTS integration_events_tenant_id_source_external_id_key;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_integration_events_owner_external ON integration_events(tenant_id,owner_user_id,source,external_id);
+
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname='soil_measurements_source_event_fkey'
+      AND conrelid='soil_measurements'::regclass
+  ) THEN
+    ALTER TABLE soil_measurements
+      ADD CONSTRAINT soil_measurements_source_event_fkey
+      FOREIGN KEY (source_event_id) REFERENCES integration_events(id)
+      ON DELETE SET NULL NOT VALID;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname='soil_analyses_measurement_set_source_event_fkey'
+      AND conrelid='soil_analyses'::regclass
+  ) THEN
+    ALTER TABLE soil_analyses
+      ADD CONSTRAINT soil_analyses_measurement_set_source_event_fkey
+      FOREIGN KEY (measurement_set_source_event_id) REFERENCES integration_events(id)
+      ON DELETE SET NULL NOT VALID;
+  END IF;
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint
+    WHERE conname='soil_analyses_accepted_event_source_fkey'
+      AND conrelid='soil_analyses'::regclass
+  ) THEN
+    ALTER TABLE soil_analyses
+      ADD CONSTRAINT soil_analyses_accepted_event_source_fkey
+      FOREIGN KEY (accepted_event_source_event_id) REFERENCES integration_events(id)
+      ON DELETE SET NULL NOT VALID;
+  END IF;
+END $$;
+
+ALTER TABLE soil_measurements
+  VALIDATE CONSTRAINT soil_measurements_source_event_fkey;
+ALTER TABLE soil_analyses
+  VALIDATE CONSTRAINT soil_analyses_measurement_set_source_event_fkey;
+ALTER TABLE soil_analyses
+  VALIDATE CONSTRAINT soil_analyses_accepted_event_source_fkey;
+
+CREATE INDEX IF NOT EXISTS idx_soil_analyses_measurement_set_event
+  ON soil_analyses(tenant_id,measurement_set_occurred_at DESC)
+  WHERE measurement_set_occurred_at IS NOT NULL;
+
+COMMENT ON COLUMN soil_measurements.superseded_at IS
+  'NULL identifica o conjunto corrente; linhas substituídas permanecem como histórico auditável.';
+COMMENT ON COLUMN soil_measurements.source_event_id IS
+  'Evento de integração que materializou esta versão da medição.';
+COMMENT ON COLUMN soil_analyses.measurement_set_occurred_at IS
+  'Relógio monotônico do último conjunto de medições aceito para bloquear stale writes.';
 
 CREATE TABLE IF NOT EXISTS agronomic_signals (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

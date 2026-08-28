@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto'
 import {generateTemporaryPassword,hashPassword,normalizeEmail,validEmail,validPassword,verifyPassword} from './auth.js'
 
 const roles=new Set(['admin','manager','consultant','technical_reviewer'])
-const usageTypes=new Set(['login','page_view','client_updated','memory_saved','visit_saved','opportunity_saved','val_analysis','val_feedback','val_attachment_uploaded','val_attachment_interpreted','val_attachment_confirmed','val_attachment_stored','val_attachment_rejected','manual_sync','survey_created','survey_integrated','commercial_import'])
+const usageTypes=new Set(['login','page_view','client_updated','memory_saved','visit_saved','visit_report_created','visit_report_confirmed','visit_outcome_recorded','opportunity_saved','val_analysis','val_feedback','val_attachment_uploaded','val_attachment_interpreted','val_attachment_confirmed','val_attachment_stored','val_attachment_rejected','voice_interaction_created','voice_audio_uploaded','voice_interaction_processed','voice_interaction_confirmed','voice_interaction_cancelled','manual_sync','survey_created','survey_integrated','commercial_import'])
 const domainError=(message,statusCode=400)=>Object.assign(new Error(message),{statusCode})
 const safeName=value=>String(value||'').trim().replace(/\s+/g,' ').slice(0,120)
 const accountFromRow=(row,tenantId)=>({

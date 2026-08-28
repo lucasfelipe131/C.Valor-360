@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://val.local/contracts/v1/visit-transcript.schema.json",
+  "title": "VisitTranscript v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["contract_version", "version", "transcript_id", "organization_id", "visit_id", "client_id", "created_by", "provider", "status", "metadata", "created_at", "updated_at"],
+  "properties": {
+    "contract_version": {"const": "val.visit_transcript.v1"},
+    "version": {"const": "val.visit_transcript.v1"},
+    "transcript_id": {"type": "string", "format": "uuid"},
+    "organization_id": {"type": "string", "minLength": 1},
+    "visit_id": {"type": "string", "minLength": 1},
+    "client_id": {"type": "string", "minLength": 1},
+    "created_by": {"type": "string", "minLength": 1},
+    "interaction_id": {"type": ["string", "null"]},
+    "source_attachment_id": {"type": ["string", "null"]},
+    "provider": {"type": "string", "minLength": 1, "maxLength": 100},
+    "provider_reference": {"type": ["string", "null"], "maxLength": 240},
+    "language": {"type": ["string", "null"], "maxLength": 30},
+    "status": {"enum": ["PENDING", "COMPLETED", "FAILED"]},
+    "transcript_text": {"type": ["string", "null"], "maxLength": 20000},
+    "error_code": {"type": ["string", "null"], "maxLength": 100},
+    "metadata": {"type": "object"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"},
+    "completed_at": {"type": ["string", "null"], "format": "date-time"}
+  }
+}

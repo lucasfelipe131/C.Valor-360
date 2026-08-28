@@ -123,6 +123,11 @@ export function recognizeQuestionnaire(source){
  return {...first,records,recordCount:records.length,format:source.format}
 }
 
+export function looksLikeQuestionnaire(report){
+ const records=Array.isArray(report?.records)?report.records:[]
+ return records.some(record=>record.recognized.length>=10&&record.recognized.some(item=>item.id>=7&&item.id<=26))
+}
+
 export function tableToObjects(rows){
  if(!rows?.length)return []
  const headers=rows[0].map((value,index)=>String(value||`coluna_${index+1}`).trim())

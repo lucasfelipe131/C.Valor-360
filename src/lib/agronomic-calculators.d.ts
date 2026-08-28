@@ -1,0 +1,12 @@
+export const agronomicCalculatorContractVersion: "AgronomicCalculatorAdapter.v1";
+export const AGRONOMIC_CALCULATORS: readonly Readonly<{ key: string; title: string; group: string; implementation: string; mode: string }>[];
+export const NUTRIENT_PROFILES: Readonly<Record<string, { bagKg: number; extraction: Record<string, number>; export: Record<string, number>; source: string; note: string }>>;
+export function calculatePlanter(input: Record<string, unknown>): { targetPlantsMeter: number; seedsMeter: number; seedsHa: number; distance: number; bagsHa: number; expectedTest: number; wheelTurns: number; establishmentPercent: number };
+export function calculateSeedDemand(input: Record<string, unknown>): { areaHa: number; populationSeedsHa: number; marginPercent: number; seedsRequired: number; bagsRequired: number; bagSeeds: number };
+export function calculateSpraying(input: Record<string, unknown>): { areaHa: number; sprayVolumeLHa: number; tankVolumeL: number; totalSprayL: number; tankCount: number; areaPerTankHa: number; items: readonly Record<string, unknown>[] };
+export function calculateFertilizer(input: Record<string, unknown>): { areaHa: number; rateKgHa: number; bagKg: number; pricePerKg: number; efficiencyPercent: number; guarantees: Record<string, number>; suppliedKgHa: Record<string, number>; pointsNpkHa: number; effectivePointsNpkHa: number; costPerHa: number; totalKg: number; bagsRequired: number };
+export function calculateNutrientRemoval(input: Record<string, unknown>): { crop: string; yieldValue: number; yieldUnit: string; yieldTon: number; basis: "extraction" | "export"; profile: { bagKg: number; extraction: Record<string, number>; export: Record<string, number>; source: string; note: string }; demand: Record<string, number>; credits: Record<string, number>; soilAdjustments: Record<string, number>; efficiencies: Record<string, number>; fertilizerTargets: Record<string, number> };
+export function calculateQuote(input: Record<string, unknown>): { currency: "BRL"; items: readonly Record<string, unknown>[]; subtotal: number; discount: number; total: number };
+export function requiredCalculatorInputs(key: string, input?: Record<string, unknown>): string[];
+export function executeAgronomicCalculator(key: string, input?: Record<string, unknown>, options?: { zarcProvider?: (input: Record<string, unknown>) => Promise<unknown> | unknown }): Promise<Record<string, unknown>>;
+export { estimateRegionalHarvest, recommendPlantPopulation } from "./agronomic-planning.js";

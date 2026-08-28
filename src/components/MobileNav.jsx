@@ -5,8 +5,8 @@ import {
   CalendarDays,
   ClipboardList,
   DatabaseZap,
-  LayoutDashboard,
   MoreHorizontal,
+  Search,
   Settings,
   ShieldCheck,
   Sprout,
@@ -16,22 +16,21 @@ import {
 } from 'lucide-react'
 
 const primary=[
- ['dashboard','Hoje',LayoutDashboard],
- ['clients','Clientes',Users],
- ['val','VAL',BrainCircuit]
+ ['dashboard','Hoje',CalendarDays],
+ ['clients','Clientes',Users]
 ]
 
 const secondary=[
- ['visits','Agenda',CalendarDays],
  ['opportunities','Oportunidades',Target],
- ['agro','Inteligência Agronômica',Sprout],
- ['questionnaire','Produtor 360',ClipboardList],
+ ['val','Análise avançada',Search],
  ['datahub','Base Inteligente',DatabaseZap],
+ ['questionnaire','Coletar preferências',ClipboardList],
+ ['agro','Ferramentas agronômicas',Sprout],
  ['reports','Relatórios',BarChart3],
  ['settings','Configurações',Settings]
 ]
 
-export default function MobileNav({page,setPage,currentUser}){
+export default function MobileNav({page,setPage,currentUser,onOpenVal}){
  const [open,setOpen]=useState(false)
  useEffect(()=>setOpen(false),[page])
  const navigate=id=>{setPage(id);setOpen(false)}
@@ -44,8 +43,8 @@ export default function MobileNav({page,setPage,currentUser}){
    <div>{visibleSecondary.map(([id,label,Icon])=><button type="button" key={id} className={page===id?'active':''} aria-current={page===id?'page':undefined} onClick={()=>navigate(id)}><span><Icon/></span><b>{label}</b></button>)}</div>
   </section></>}
   <nav className="mobile-nav" aria-label="Navegação principal">
-   {primary.slice(0,2).map(([id,label,Icon])=><button type="button" key={id} className={page===id?'active':''} aria-current={page===id?'page':undefined} onClick={()=>navigate(id)}><Icon/><span>{label}</span></button>)}
-   <button type="button" className={`mobile-val-button ${page==='val'?'active':''}`} onClick={()=>navigate('val')} aria-label="Abrir a VAL" aria-current={page==='val'?'page':undefined}><span><BrainCircuit/></span><b>VAL</b></button>
+   {primary.map(([id,label,Icon])=><button type="button" key={id} className={page===id?'active':''} aria-current={page===id?'page':undefined} onClick={()=>navigate(id)}><Icon/><span>{label}</span></button>)}
+   <button type="button" className="mobile-val-button" onClick={onOpenVal} aria-label="Abrir a VAL"><span><BrainCircuit/></span><b>VAL</b></button>
    <button type="button" className={secondaryActive||open?'active':''} onClick={()=>setOpen(value=>!value)} aria-expanded={open} aria-label="Abrir ações e módulos"><MoreHorizontal/><span>Mais</span></button>
   </nav>
  </>

@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://val.local/contracts/v1/response-envelope.schema.json",
+  "title": "VAL ResponseEnvelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "request_id",
+    "organization_id",
+    "status",
+    "recommendation",
+    "evidence_refs",
+    "assumptions",
+    "confidence",
+    "next_actions",
+    "audit"
+  ],
+  "properties": {
+    "contract_version": {"const": "val.response.v1"},
+    "request_id": {"type": "string", "format": "uuid"},
+    "organization_id": {"type": "string", "minLength": 1, "maxLength": 180},
+    "status": {"enum": ["completed", "degraded", "denied", "failed"]},
+    "recommendation": {"type": ["object", "null"]},
+    "evidence_refs": {
+      "type": "array",
+      "maxItems": 50,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id"],
+        "properties": {
+          "id": {"type": "string", "minLength": 1, "maxLength": 180},
+          "type": {"type": "string", "minLength": 1, "maxLength": 80}
+        }
+      }
+    },
+    "assumptions": {"type": "array", "maxItems": 20, "items": {"type": "string", "minLength": 1, "maxLength": 2000}},
+    "confidence": {"enum": ["VERIFICADO", "PROVÁVEL", "HIPÓTESE", "INSUFICIENTE"]},
+    "next_actions": {
+      "type": "array",
+      "maxItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["description"],
+        "properties": {"description": {"type": "string", "minLength": 1, "maxLength": 2000}}
+      }
+    },
+    "audit": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "contract_version",
+        "request_id",
+        "organization_id",
+        "actor_ref",
+        "route_id",
+        "objective",
+        "planned_modules",
+        "module_runs",
+        "policy_decision",
+        "started_at",
+        "completed_at"
+      ],
+      "properties": {
+        "contract_version": {"const": "val.core.audit.v1"},
+        "request_id": {"type": "string", "format": "uuid"},
+        "organization_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "actor_ref": {"type": "string", "pattern": "^[0-9a-f]{16}$"},
+        "route_id": {"type": "string", "minLength": 1, "maxLength": 120},
+        "objective": {"type": "string", "minLength": 1, "maxLength": 120},
+        "planned_modules": {"type": "array", "items": {"type": "string"}},
+        "module_runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["module_id", "status", "required", "duration_ms"],
+            "properties": {
+              "module_id": {"type": "string"},
+              "status": {"enum": ["completed", "unavailable", "failed"]},
+              "required": {"type": "boolean"},
+              "duration_ms": {"type": "integer", "minimum": 0},
+              "error_code": {"type": "string", "maxLength": 80}
+            }
+          }
+        },
+        "commercial_modules": {
+          "type": "array",
+          "items": {"enum": ["MIC", "MDI", "MVV"]},
+          "uniqueItems": true
+        },
+        "execution_modules": {
+          "type": "array",
+          "items": {"enum": ["MEX", "VIS"]},
+          "uniqueItems": true
+        },
+        "behavioral_profile_version": {"type": ["string", "null"], "maxLength": 180},
+        "decision_thesis_version": {"type": ["string", "null"], "maxLength": 180},
+        "value_plan_version": {"type": ["string", "null"], "maxLength": 180},
+        "action_plan_id": {"type": ["string", "null"], "maxLength": 180},
+        "action_plan_version": {"type": ["string", "null"], "maxLength": 180},
+        "context_snapshot_id": {"type": ["string", "null"], "maxLength": 180},
+        "policy_decision": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["allowed", "policy_version", "scope"],
+          "properties": {
+            "allowed": {"const": true},
+            "policy_version": {"const": "val.core.policy.v1"},
+            "scope": {"const": "own_portfolio"}
+          }
+        },
+        "started_at": {"type": "string", "format": "date-time"},
+        "completed_at": {"type": "string", "format": "date-time"}
+      }
+    }
+  }
+}

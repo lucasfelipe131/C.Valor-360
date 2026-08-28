@@ -50,6 +50,22 @@ test('perfil assistido envia answers, evidence e snapshot como strings JSONB',as
   assert.ok(calls.find(call=>call.sql.includes('pg_advisory_xact_lock')))
 })
 
+test('perfil importado atualiza o produtor existente pelo nome sem criar uma segunda chave externa',async()=>{
+  const calls=[]
+  const query=async(sql,params=[])=>{
+    calls.push({sql,params})
+    if(sql.startsWith('SELECT external_key FROM clients'))return {rowCount:1,rows:[{external_key:'crm-produtor-42'}]}
+    if(sql.includes('INSERT INTO clients'))return {rowCount:1,rows:[{id:'client-db-id'}]}
+    return {rowCount:1,rows:[]}
+  }
+  const repository=repositoryWith({configured:true,transaction:work=>work({query})})
+  const saved=await repository.saveSurveyProfile({answers:{11:'Visitas presenciais frequentes.'},result:{id:'produtor-teste',name:' Produtor Teste ',servicePreference:'Visitas presenciais frequentes.',commercial:{}}},'owner-id')
+  const clientCall=calls.find(call=>call.sql.includes('INSERT INTO clients'))
+  assert.equal(saved.id,'crm-produtor-42')
+  assert.equal(clientCall.params[2],'crm-produtor-42')
+  assert.match(calls.find(call=>call.sql.startsWith('SELECT external_key FROM clients')).sql,/consultant_id=\$2/)
+})
+
 test('perfil 360 mantém Q27 no snapshot e não sobrescreve oportunidade comercial canônica',async()=>{
   const run=async currentCommercial=>{
     const calls=[]
@@ -142,12 +158,12 @@ test('idempotência rejeita o mesmo externalId quando o payload_hash diverge',as
   await assert.rejects(makeRepository('hash-antigo').ingestEvent({event,signals:[]}),error=>error.statusCode===409&&/conteúdo diferente/.test(error.message))
 })
 
-test('sincronização do Manual enriquece cliente existente sem criar carteira comercial',async()=>{
+test('sincronização do Manual faz upsert do produtor na carteira do mesmo consultor',async()=>{
   const calls=[]
   const query=async(sql,params=[])=>{
     calls.push({sql,params})
     if(sql.includes('INSERT INTO integration_events'))return {rowCount:1,rows:[{id:'event-db-id'}]}
-    if(sql.startsWith('SELECT id FROM clients'))return {rowCount:0,rows:[]}
+    if(sql.startsWith('SELECT id FROM clients'))return {rowCount:1,rows:[{id:'00000000-0000-4000-8000-000000000020'}]}
     return {rowCount:1,rows:[]}
   }
   const repository=repositoryWith({configured:true,transaction:work=>work({query})})
@@ -156,8 +172,10 @@ test('sincronização do Manual enriquece cliente existente sem criar carteira c
     event:{externalId:'producer-001',type:'manual.producer.updated',schemaVersion:1,source:'manual-do-agronomo',occurredAt:'2026-08-10T12:00:00.000Z',payloadHash:'hash',clientExternalKey:'producer-1',payload:{producer:{name:'Produtor 1',areaHa:120}}},
     signals:[]
   })
-  assert.ok(calls.some(call=>call.sql.startsWith('UPDATE clients SET name=')))
-  assert.equal(calls.some(call=>call.sql.includes('INSERT INTO clients')),false)
+  const clientUpsert=calls.find(call=>call.sql.includes('INSERT INTO clients'))
+  assert.ok(clientUpsert)
+  assert.match(clientUpsert.sql,/ON CONFLICT \(tenant_id,consultant_id,external_key\)/)
+  assert.deepEqual(clientUpsert.params.slice(0,3),['00000000-0000-4000-8000-000000000001','00000000-0000-4000-8000-000000000010','producer-1'])
 })
 
 test('visão global calcula o potencial e cruza somente o workspace do mesmo login',async()=>{
@@ -182,8 +200,8 @@ test('visão global calcula o potencial e cruza somente o workspace do mesmo log
   const workspaceCheck=calls.find(call=>call.sql.includes('FROM app_workspace_data'))
   const recordsCheck=calls.find(call=>call.sql.includes('FROM app_records'))
   assert.deepEqual(ownerCheck.params,[tenantId,ownerId,'produtor-teste'])
-  assert.deepEqual(workspaceCheck.params,[ownerId])
-  assert.deepEqual(recordsCheck.params,[ownerId])
+  assert.deepEqual(workspaceCheck.params,[tenantId,ownerId])
+  assert.deepEqual(recordsCheck.params,[tenantId,ownerId])
   assert.equal(overview.business.openPotential,150_000)
   assert.equal(overview.business.weightedPipeline,15_000)
   assert.equal(overview.business.forecast,115_000)
@@ -217,7 +235,7 @@ test('feedback atualizado retorna o id persistido pelo UPSERT',async()=>{
   assert.equal(id,'feedback-existente')
 })
 
-test('contexto técnico expira a versão ativa e insere uma nova memória append-only',async()=>{
+test('contexto técnico supera a versão ativa e insere uma nova memória append-only',async()=>{
   const calls=[]
   const query=async(sql,params=[])=>{
     calls.push({sql,params})
@@ -235,19 +253,46 @@ test('contexto técnico expira a versão ativa e insere uma nova memória append
   assert.match(expiration.sql,/status='expired'/)
   assert.match(expiration.sql,/valid_until=NOW\(\)/)
   assert.doesNotMatch(expiration.sql,/SET value=/)
-  assert.deepEqual(JSON.parse(insertion.params[2]),{property:'Fazenda Sul',crops:'',area:'',weeds:'',diseases:'',insects:'',soil:'Argiloso',goal:'Produtividade',competitors:'',notes:''})
-  assert.deepEqual(JSON.parse(insertion.params[3])[0].supersedes,['memory-1','memory-2'])
+  assert.match(insertion.sql,/'HYPOTHESIS','AGRONOMIC'/)
+  assert.match(insertion.sql,/observed_at,source_updated_at,freshness_policy_version,freshness_metadata/)
+  assert.deepEqual(JSON.parse(insertion.params[3]),{property:'Fazenda Sul',crops:'',area:'',weeds:'',diseases:'',insects:'',soil:'Argiloso',goal:'Produtividade',competitors:'',notes:''})
+  assert.deepEqual(JSON.parse(insertion.params[4])[0].supersedes,['memory-1','memory-2'])
+})
+
+test('saveTechnicalContext mantém o parâmetro do produtor como UUID ao derivar subject_id textual',async()=>{
+  const calls=[]
+  const clientDatabaseId='00000000-0000-4000-8000-000000000501'
+  const query=async(sql,params=[])=>{
+    calls.push({sql,params})
+    if(sql.startsWith('SELECT id FROM clients'))return {rowCount:1,rows:[{id:clientDatabaseId}]}
+    if(sql.startsWith('SELECT id FROM val_memories'))return {rowCount:0,rows:[]}
+    if(sql.startsWith('UPDATE val_memories'))return {rowCount:0,rows:[]}
+    return {rowCount:1,rows:[]}
+  }
+  const repository=repositoryWith({configured:true,transaction:work=>work({query})})
+  await repository.saveTechnicalContext('client-ext',{area:'620 ha'},'00000000-0000-4000-8000-000000000101')
+
+  const insertion=calls.find(call=>call.sql.includes('INSERT INTO val_memories'))
+  assert.ok(insertion)
+  assert.match(insertion.sql,/client_id,subject_type,subject_id[\s\S]*\$3,'client',\(\$3::uuid\)::text/)
+  assert.doesNotMatch(insertion.sql,/\$3,'client',\$3::text/)
+  assert.equal(insertion.params[2],clientDatabaseId)
+  assert.equal(insertion.params.length,11)
 })
 
 test('fallback demonstrativo também mantém histórico do contexto técnico',async()=>{
   let store={surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[],technicalContexts:{}}}
   const repository=new ValRepository({db:{configured:false},tenantId:'tenant',readStore:()=>store,saveStore:next=>{store=next}})
-  await repository.saveTechnicalContext('client-ext',{property:'Versão 1'})
-  await repository.saveTechnicalContext('client-ext',{property:'Versão 2'})
-  assert.equal(store.val.technicalContexts['client-ext'].property,'Versão 2')
+  await repository.saveTechnicalContext('client-ext',{property:'Versão 1'},'owner-1')
+  await repository.saveTechnicalContext('client-ext',{property:'Versão 2'},'owner-1')
+  const [scopedTechnicalContext]=Object.values(store.val.technicalContexts)
+  assert.equal(scopedTechnicalContext.property,'Versão 2')
+  assert.equal(scopedTechnicalContext.tenantId,'tenant')
+  assert.equal(scopedTechnicalContext.ownerId,'owner-1')
   assert.equal(store.val.technicalContextHistory.length,1)
   assert.equal(store.val.technicalContextHistory[0].property,'Versão 1')
   assert.equal(store.val.technicalContextHistory[0].status,'expired')
+  assert.equal(scopedTechnicalContext.supersedesId,store.val.technicalContextHistory[0].id)
 })
 
 test('importação não fabrica data ou desfecho e serializa o registro aceito',async()=>{

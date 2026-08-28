@@ -1,4 +1,5 @@
 import {extractProductMentions} from './conversation-orchestrator-runtime.js'
+import {conversationStatePromptContext,messageNeedsSessionReference} from './decision-copilot/conversation-state.js'
 
 const array=value=>Array.isArray(value)?value:[]
 const clean=(value,max=3000)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,max)
@@ -15,25 +16,30 @@ function activeAnchor(history=[]){
 
 export function prepareConversationThread(context={},message=''){
   const history=array(context.priorRecommendations)
-  if(!history.length||reset.test(String(message||'')))return {context,message:String(message||''),anchor:null,continued:false}
+  const originalMessage=String(message||'')
+  if(reset.test(originalMessage))return {context,message:originalMessage,anchor:null,continued:false}
+  const statePrompt=context.conversationState?conversationStatePromptContext(context.conversationState):''
+  const stateContinuation=Boolean(statePrompt&&messageNeedsSessionReference(originalMessage))
+  const stateMessage=stateContinuation?`${clean(originalMessage)}\nContexto temporário desta conversa (não é memória confirmada): ${statePrompt}`:originalMessage
+  if(!history.length)return {context,message:stateMessage,originalMessage,anchor:stateContinuation?{type:'conversation_state',context:statePrompt}:null,continued:stateContinuation}
   const anchor=activeAnchor(history)
-  if(!anchor)return {context,message:String(message||''),anchor:null,continued:false}
+  if(!anchor)return {context,message:stateMessage,originalMessage,anchor:stateContinuation?{type:'conversation_state',context:statePrompt}:null,continued:stateContinuation}
   const latest=history[0]
   const latestQuestion=questionOf(latest)
   const anchorQuestion=questionOf(anchor)
   const latestHasProducts=extractProductMentions(latestQuestion).length>0
-  const needsContinuation=continuation.test(clean(message))||(!extractProductMentions(message).length&&clean(message).length<=180)
+  const needsContinuation=stateContinuation||continuation.test(clean(message))||(!extractProductMentions(message).length&&clean(message).length<=180)
   const combinedLatest=latestHasProducts||latest===anchor
     ?latest
     :{...latest,user_question:`${latestQuestion}\nContexto técnico-comercial ativo das conversas anteriores: ${anchorQuestion}`}
   const priorRecommendations=[combinedLatest,...history.slice(1)]
   const effectiveMessage=needsContinuation
-    ?`${clean(message)}\nContinue a sequência técnica e comercial já iniciada. Contexto ativo: ${anchorQuestion}`
-    :String(message||'')
+    ?`${clean(stateMessage)}\nContinue a sequência técnica e comercial já iniciada. Contexto ativo: ${anchorQuestion}`
+    :stateMessage
   return {
     context:{...context,priorRecommendations},
     message:effectiveMessage,
-    originalMessage:String(message||''),
+    originalMessage,
     anchor:{id:anchor.id||null,question:anchorQuestion,products:extractProductMentions(anchorQuestion).map(item=>item.name),createdAt:anchor.created_at||anchor.createdAt||null},
     continued:needsContinuation
   }

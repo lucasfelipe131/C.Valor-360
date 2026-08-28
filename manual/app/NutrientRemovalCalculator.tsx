@@ -2,6 +2,10 @@
 
 import { useMemo, useState } from "react";
 import fertilizerData from "./fertilizer-formulas.json";
+import {
+  calculateNutrientRemoval,
+  NUTRIENT_PROFILES,
+} from "../../src/lib/agronomic-calculators.js";
 
 type Nutrient = "N" | "P2O5" | "K2O" | "S";
 type Crop = "Soja" | "Milho" | "Trigo" | "Canola";
@@ -27,48 +31,7 @@ type SoilAnalysisInput = {
 
 type ProducerInput = { id: string; name: string };
 
-type CropProfile = {
-  bagKg: number;
-  extraction: Record<Nutrient, number>;
-  export: Record<Nutrient, number>;
-  source: string;
-  note: string;
-};
-
 const nutrientLabels: Record<Nutrient, string> = { N: "N", P2O5: "P₂O₅", K2O: "K₂O", S: "S" };
-
-// Coeficientes em kg de nutriente por tonelada de grãos. São referências de
-// planejamento e permanecem visíveis/editáveis pelo usuário.
-const profiles: Record<Crop, CropProfile> = {
-  Soja: {
-    bagKg: 60,
-    extraction: { N: 83, P2O5: 15.4, K2O: 38, S: 15 },
-    export: { N: 56, P2O5: 11, K2O: 18, S: 5.4 },
-    source: "Embrapa Soja · Indicações Técnicas para a Região Sul (2025)",
-    note: "Na soja, a demanda de N é atendida predominantemente pela fixação biológica quando a inoculação e a nodulação são adequadas.",
-  },
-  Milho: {
-    bagKg: 60,
-    extraction: { N: 24.3, P2O5: 10, K2O: 23.9, S: 3 },
-    export: { N: 16.1, P2O5: 7.5, K2O: 5.6, S: 1.2 },
-    source: "Embrapa Milho e Sorgo · Circular Técnica 181",
-    note: "A reposição apenas da exportação pode reduzir estoques de N e K em sistemas de alta produtividade; confira solo, palhada e histórico.",
-  },
-  Trigo: {
-    bagKg: 60,
-    extraction: { N: 30, P2O5: 15, K2O: 20, S: 4 },
-    export: { N: 23, P2O5: 10, K2O: 6, S: 2.5 },
-    source: "Embrapa Trigo · Informações Técnicas Trigo e Triticale",
-    note: "P₂O₅ e K₂O seguem a referência regional de 15/20 kg/t absorvidos e 10/6 kg/t exportados; N e S devem ser ajustados à análise e ao sistema.",
-  },
-  Canola: {
-    bagKg: 60,
-    extraction: { N: 47.6, P2O5: 18, K2O: 58.6, S: 17.2 },
-    export: { N: 33.6, P2O5: 13.4, K2O: 7, S: 3.8 },
-    source: "Canola Council of Canada · Uptake and removal guidelines (2023)",
-    note: "Valores convertidos de lb/bu considerando 50 lb por bushel. Ajuste à análise de solo e às indicações regionais brasileiras.",
-  },
-};
 
 function format(value: number, digits = 1) {
   return new Intl.NumberFormat("pt-BR", { minimumFractionDigits: digits, maximumFractionDigits: digits }).format(Number.isFinite(value) ? value : 0);
@@ -103,13 +66,19 @@ export default function NutrientRemovalCalculator({
   const [analysisMessage, setAnalysisMessage] = useState("");
   const [soilAdjustments, setSoilAdjustments] = useState<Record<Nutrient, number>>({ N: 0, P2O5: 0, K2O: 0, S: 0 });
 
-  const profile = profiles[crop];
-  const yieldTon = yieldUnit === "t/ha" ? yieldValue : yieldUnit === "kg/ha" ? yieldValue / 1000 : (yieldValue * profile.bagKg) / 1000;
-  const demand = useMemo(() => {
-    const coefficients = profile[basis];
-    return Object.fromEntries((Object.keys(coefficients) as Nutrient[]).map((key) => [key, coefficients[key] * Math.max(0, yieldTon)])) as Record<Nutrient, number>;
-  }, [basis, profile, yieldTon]);
-  const fertilizerTargets = useMemo(() => Object.fromEntries((Object.keys(demand) as Nutrient[]).map((key) => [key, Math.max(0, demand[key] + soilAdjustments[key] - credits[key]) / Math.max(0.01, efficiencies[key] / 100)])) as Record<Nutrient, number>, [credits, demand, efficiencies, soilAdjustments]);
+  const nutrientCalculation = useMemo(() => calculateNutrientRemoval({
+    crop,
+    yieldValue,
+    yieldUnit,
+    basis,
+    credits,
+    efficiencies,
+    soilAdjustments,
+  }), [basis, credits, crop, efficiencies, soilAdjustments, yieldUnit, yieldValue]);
+  const profile = nutrientCalculation.profile;
+  const yieldTon = nutrientCalculation.yieldTon;
+  const demand = nutrientCalculation.demand as Record<Nutrient, number>;
+  const fertilizerTargets = nutrientCalculation.fertilizerTargets as Record<Nutrient, number>;
 
   const selected = selectedIds.map((id) => formulas.find((item) => item.id === id)).filter(Boolean) as Formula[];
   const options = formulas.filter((item) => !selectedIds.includes(item.id) && `${item.name} ${item.maker}`.toLowerCase().includes(search.toLowerCase())).slice(0, 8);
@@ -204,7 +173,7 @@ export default function NutrientRemovalCalculator({
         </div>
         {analysisMessage && <p className="soil-analysis-message">{analysisMessage}</p>}
         <div className="nutrient-main-fields">
-          <label className="field"><span>Cultura</span><div className="input-wrap"><select value={crop} onChange={(event) => setCrop(event.target.value as Crop)}>{Object.keys(profiles).map((item) => <option key={item}>{item}</option>)}</select></div></label>
+          <label className="field"><span>Cultura</span><div className="input-wrap"><select value={crop} onChange={(event) => setCrop(event.target.value as Crop)}>{Object.keys(NUTRIENT_PROFILES).map((item) => <option key={item}>{item}</option>)}</select></div></label>
           <label className="field"><span>Produtividade esperada</span><div className="input-wrap"><input type="number" min={0} step={0.1} value={yieldValue} onChange={(event) => setYieldValue(Number(event.target.value) || 0)} /><select value={yieldUnit} onChange={(event) => setYieldUnit(event.target.value as typeof yieldUnit)}><option>sc/ha</option><option>kg/ha</option><option>t/ha</option></select></div></label>
           <label className="field"><span>Base do planejamento</span><div className="input-wrap"><select value={basis} onChange={(event) => setBasis(event.target.value as Basis)}><option value="export">Reposição da exportação</option><option value="extraction">Demanda pela extração</option></select></div></label>
           <label className="field"><span>Nutriente-alvo da fórmula</span><div className="input-wrap"><select value={targetNutrient} onChange={(event) => setTargetNutrient(event.target.value as Nutrient)}>{(["N", "P2O5", "K2O", "S"] as Nutrient[]).map((item) => <option value={item} key={item}>{nutrientLabels[item]}</option>)}</select></div></label>

@@ -6,16 +6,19 @@ const agro=readFileSync(new URL('../src/pages/Agro.jsx',import.meta.url),'utf8')
 const css=readFileSync(new URL('../src/agro-workspace.css',import.meta.url),'utf8')
 const main=readFileSync(new URL('../src/main.jsx',import.meta.url),'utf8')
 
-test('Inteligência Agronômica usa toda a área útil e mantém somente um cabeçalho básico',()=>{
- assert.match(agro,/agro-full-page/)
+test('Inteligência Agronômica combina hub nativo e ferramenta técnica em área útil ampla',()=>{
+ assert.match(agro,/agro-decision-page/)
+ assert.match(agro,/agro-capability-groups/)
+ assert.match(agro,/agro-tool-workspace/)
  assert.match(agro,/agro-minimal-header/)
- assert.doesNotMatch(agro,/agro-native-hero|agro-capability-strip|agro-native-footnote/)
- assert.match(css,/width:calc\(100% \+ 56px\)/)
- assert.match(css,/min-height:calc\(100dvh - 92px\)/)
- assert.match(css,/grid-template-rows:58px minmax\(0,1fr\)/)
- assert.match(css,/height:calc\(100dvh - 150px\)/)
+ assert.match(agro,/CAMPO E SOLO/)
+ assert.match(agro,/DECISÃO TÉCNICA/)
+ assert.match(agro,/CONHECIMENTO/)
+ assert.match(css,/\.agro-decision-page\{/)
+ assert.match(css,/\.agro-tool-workspace\{[\s\S]*min-height:calc\(100dvh - 150px\)/)
+ assert.match(css,/\.agro-tool-workspace iframe\{[\s\S]*height:calc\(100dvh - 215px\)/)
  assert.match(css,/@media\(max-width:760px\)/)
- assert.match(css,/\.agro-full-page\{[\s\S]*width:100%/)
+ assert.match(css,/@media\(max-width:700px\)\{\.agro-decision-page/)
 })
 
 test('ambiente técnico oferece expansão real e saída acessível',()=>{

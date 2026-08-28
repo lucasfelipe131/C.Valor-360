@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none" role="img" aria-labelledby="title">
+  <title id="title">VAL</title>
+  <rect width="64" height="64" fill="#071B19"/>
+  <circle cx="51" cy="11" r="19" fill="#00C896" fill-opacity=".09"/>
+  <circle cx="9" cy="55" r="20" fill="#2D8CFF" fill-opacity=".08"/>
+  <g transform="translate(8.5 8.5) scale(.73)">
+    <defs>
+      <linearGradient id="blue" x1="10" y1="7" x2="36" y2="53" gradientUnits="userSpaceOnUse"><stop stop-color="#72B8FF"/><stop offset=".48" stop-color="#2D8CFF"/><stop offset="1" stop-color="#167FE8"/></linearGradient>
+      <linearGradient id="green" x1="32" y1="55" x2="56" y2="24" gradientUnits="userSpaceOnUse"><stop stop-color="#009F78"/><stop offset=".54" stop-color="#00C896"/><stop offset="1" stop-color="#C8F25E"/></linearGradient>
+      <linearGradient id="leaf" x1="41" y1="29" x2="58" y2="6" gradientUnits="userSpaceOnUse"><stop stop-color="#00C896"/><stop offset=".55" stop-color="#72E6C5"/><stop offset="1" stop-color="#D9FF80"/></linearGradient>
+    </defs>
+    <path d="M12.5 10.1c2.6-2.1 6.5-1.6 8.4 1.2l21.2 31.6-8.6 13.6L9.4 18.7c-1.8-2.8-1.2-6.4 1.4-8.4l1.7-.2Z" fill="url(#blue)"/>
+    <path d="M33.5 56.5 49.8 29c1.8-3 5.7-4 8.8-2.3 3.1 1.8 4.1 5.8 2.1 8.8L42.4 59.1c-2.3 3.3-7.3 3.1-8.9-.4v-2.2Z" fill="url(#green)"/>
+    <path d="M40.8 28.8C41.8 17.4 48.5 8.9 58.2 6.2c.5 10.7-4.6 19.9-15.8 23.4-.9.3-1.7-.1-1.6-.8Z" fill="url(#leaf)"/>
+  </g>
+</svg>

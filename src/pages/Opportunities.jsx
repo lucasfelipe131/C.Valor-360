@@ -1,6 +1,7 @@
 import React,{useEffect,useMemo,useState} from 'react'
-import {ArrowRight,BarChart3,Calculator,CheckCircle2,ChevronRight,FileText,Handshake,Search,Sparkles,Target,TrendingUp} from 'lucide-react'
+import {ArrowRight,BarChart3,BrainCircuit,Calculator,CheckCircle2,ChevronRight,FileText,Handshake,Search,Sparkles,Target,TrendingUp} from 'lucide-react'
 import {advancePipelineItem,opportunityCacheKey,parseOpportunityCache,reconcilePipeline} from '../lib/opportunity-pipeline'
+import {buildOpportunityCopilotContext} from '../lib/copilot-context'
 
 const stageConfig=[
  {name:'Diagnóstico',label:'Entender',hint:'Dor e impacto',progress:25,icon:Search},
@@ -12,7 +13,7 @@ const stages=stageConfig.map(stage=>stage.name)
 const money=value=>Number(value||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0})
 const initials=name=>String(name||'Produtor').split(' ').filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase()
 
-export default function Opportunities({clients,storageScope,persistedItems=[],onPersist,onClient,onSaved}){
+export default function Opportunities({clients,storageScope,persistedItems=[],onPersist,onClient,onAsk,onContextChange,onSaved}){
  const cacheKey=opportunityCacheKey(storageScope)
  const [items,setItems]=useState(()=>reconcilePipeline(clients,[...(cacheKey?parseOpportunityCache(localStorage.getItem(cacheKey)):[]),...persistedItems]))
  const [activeStage,setActiveStage]=useState(stages[0])
@@ -35,6 +36,10 @@ export default function Opportunities({clients,storageScope,persistedItems=[],on
  const result=Math.max(0,(Number(roi.returnPerHa)-Number(roi.investment))*Number(roi.area))
  const ratio=Number(roi.investment)>0?(Number(roi.returnPerHa)/Number(roi.investment)).toFixed(1):'0.0'
  const clientOf=id=>clients.find(client=>client.id===id)
+ const focusClient=focus?clientOf(focus.clientId):null
+ const focusContext=useMemo(()=>focus&&focusClient?buildOpportunityCopilotContext({opportunity:focus,client:focusClient}):{source:'opportunities',clientId:'',prompt:'',context:null,persistenceMode:'NONE'},[focus,focusClient])
+ useEffect(()=>{onContextChange?.(focusContext);return()=>onContextChange?.(null)},[focusContext,onContextChange])
+ const askOpportunity=item=>{const client=clientOf(item?.clientId);if(client)onAsk?.(buildOpportunityCopilotContext({opportunity:item,client}))}
  const advance=async item=>{
   const updated=advancePipelineItem(items,item.id)
   const next=updated.find(opportunity=>opportunity.id===item.id);if(!next)return
@@ -60,7 +65,8 @@ export default function Opportunities({clients,storageScope,persistedItems=[],on
      <div className="pipeline-focus-client"><span>{initials(clientOf(focus.clientId)?.name)}</span><div><small>{focus.stage}</small><h3>{clientOf(focus.clientId)?.name||'Produtor'}</h3></div></div>
      <p>{focus.title}</p>
      <div className="pipeline-focus-value"><span>Potencial da oportunidade</span><b>{money(focus.value)}</b></div>
-     <button type="button" onClick={()=>{const client=clientOf(focus.clientId);if(client)onClient(client)}}>Abrir visão 360 <ChevronRight/></button>
+     <button type="button" className="pipeline-focus-ask" disabled={!focusClient} onClick={()=>askOpportunity(focus)}><BrainCircuit/>Perguntar à VAL</button>
+     <button type="button" onClick={()=>focusClient&&onClient(focusClient)}>Abrir visão 360 <ChevronRight/></button>
     </>:<div className="pipeline-focus-empty"><CheckCircle2/><b>Carteira em dia</b><span>Não há oportunidades abertas.</span></div>}
    </div>
   </section>
@@ -104,6 +110,7 @@ export default function Opportunities({clients,storageScope,persistedItems=[],on
          <h3>{item.title}</h3>
          <div className="pipeline-card-value"><span><small>VALOR INFORMADO</small><b>{money(item.value)}</b></span><strong>Etapa {index+1} de 4</strong></div>
          <div className="pipeline-stage-progress" aria-label={`Etapa ${index+1} de 4 no pipeline`}>{stageConfig.map((segment,segmentIndex)=><i className={segmentIndex<=index?'reached':''} key={segment.name}/>)}</div>
+         <button type="button" className="pipeline-ask-context" disabled={!client} onClick={()=>askOpportunity(item)}><BrainCircuit/>Perguntar à VAL</button>
          {stage.name!=='Fechado'?<button type="button" className="pipeline-advance" disabled={savingId===item.id} onClick={()=>advance(item)}>{savingId===item.id?'Salvando…':`Avançar para ${stageConfig[index+1].name}`}<ArrowRight/></button>:<div className="pipeline-won"><CheckCircle2/> Marcado como fechado</div>}
         </article>
        })}

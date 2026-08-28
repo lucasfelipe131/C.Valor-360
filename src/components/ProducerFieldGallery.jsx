@@ -1,5 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react'
 import {Camera,CalendarDays,Check,Eye,ImagePlus,Images,LoaderCircle,Pencil,Save,Tag,Trash2,X} from 'lucide-react'
+import {attachmentContentUrl} from '../lib/attachment-browser-scope'
 
 const PHOTO_TYPES=new Set(['image/jpeg','image/png','image/webp'])
 const MAX_PHOTO_BYTES=6_000_000
@@ -46,8 +47,8 @@ export default function ProducerFieldGallery({clientId,clientName,onSaved}){
   return()=>controller.abort()
  },[clientId])
 
- const patchPhoto=async(item,metadata,status=item.status==='received'?'stored':item.status)=>{
-  const response=await fetch('/api/val/attachments',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:item.id,status,analysis:{...(item.analysis||{}),fieldPhoto:{...metadata,source:'client360',updatedAt:new Date().toISOString()}}}),signal:AbortSignal.timeout(15000)})
+ const patchPhoto=async(item,metadata,status=item.status==='received'?'stored':undefined)=>{
+  const response=await fetch(`/api/val/attachments?clientId=${encodeURIComponent(clientId)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:item.id,...(status?{status}:{}),fieldPhoto:metadata}),signal:AbortSignal.timeout(15000)})
   const payload=await response.json().catch(()=>({}));if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error(payload.error||'Não foi possível salvar a identificação da foto.');return payload.attachment
  }
 
@@ -76,7 +77,7 @@ export default function ProducerFieldGallery({clientId,clientName,onSaved}){
  const remove=async item=>{
   if(!window.confirm(`Remover “${fieldPhoto(item).label}” da galeria deste produtor?`))return
   setState(current=>({...current,saving:true,error:''}))
-  try{const response=await fetch('/api/val/attachments',{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:item.id,status:'rejected'}),signal:AbortSignal.timeout(15000)});const payload=await response.json().catch(()=>({}));if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error(payload.error||'Não foi possível remover a foto.');setPhotos(current=>current.filter(photo=>photo.id!==item.id));onSaved?.('Foto removida da galeria do produtor.')}catch(error){setState(current=>({...current,error:error.message}))}finally{setState(current=>({...current,saving:false}))}
+  try{const response=await fetch(`/api/val/attachments?clientId=${encodeURIComponent(clientId)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:item.id,status:'rejected'}),signal:AbortSignal.timeout(15000)});const payload=await response.json().catch(()=>({}));if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error(payload.error||'Não foi possível remover a foto.');setPhotos(current=>current.filter(photo=>photo.id!==item.id));onSaved?.('Foto removida da galeria do produtor.')}catch(error){setState(current=>({...current,error:error.message}))}finally{setState(current=>({...current,saving:false}))}
  }
 
  return <section className="producer-field-gallery" aria-labelledby="producer-field-gallery-title">
@@ -86,8 +87,8 @@ export default function ProducerFieldGallery({clientId,clientName,onSaved}){
    <div className="field-photo-actions"><input ref={cameraInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={upload}/><input ref={galleryInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={upload}/><button type="button" onClick={()=>cameraInput.current?.click()} disabled={state.uploading}><Camera/>{state.uploading?'Enviando…':'Tirar foto'}</button><button type="button" onClick={()=>galleryInput.current?.click()} disabled={state.uploading}><ImagePlus/>Escolher da galeria</button><small>JPEG, PNG ou WebP • até 6 MB por foto • até 6 por envio</small></div>
   </div>
   {state.error&&<div className="form-error" role="alert">{state.error}</div>}
-  {state.loading?<div className="field-gallery-loading" role="status"><LoaderCircle className="val-spinner"/><span>Carregando fotos deste produtor…</span></div>:photos.length?<div className="field-photo-grid">{photos.map(item=>{const metadata=fieldPhoto(item);return <article key={item.id} className={editing===item.id?'is-editing':''}>
-   <a className="field-photo-preview" href={`/api/val/attachments/${item.id}`} target="_blank" rel="noreferrer" aria-label={`Abrir ${metadata.label}`}><img src={`/api/val/attachments/${item.id}`} alt={metadata.label} loading="lazy"/><span><Eye/>Ampliar</span></a>
+  {state.loading?<div className="field-gallery-loading" role="status"><LoaderCircle className="val-spinner"/><span>Carregando fotos deste produtor…</span></div>:photos.length?<div className="field-photo-grid">{photos.map(item=>{const metadata=fieldPhoto(item);const contentUrl=attachmentContentUrl(item,{clientId});return <article key={item.id} className={editing===item.id?'is-editing':''}>
+   <a className="field-photo-preview" href={contentUrl} target="_blank" rel="noreferrer" aria-label={`Abrir ${metadata.label}`}><img src={contentUrl} alt={metadata.label} loading="lazy"/><span><Eye/>Ampliar</span></a>
    <div className="field-photo-copy"><div className="field-photo-tags"><span><Tag/>{metadata.category}</span><span><CalendarDays/>{formatDate(metadata.observedAt)}</span></div><h4>{metadata.label}</h4><p>{metadata.notes||'Sem observação complementar.'}</p><small>{formatSize(item.sizeBytes)} • {statusLabels[item.status]||item.status}</small></div>
    {editing===item.id?<form className="field-photo-edit" onSubmit={saveEdit}><label>Rótulo<input required value={editMeta.label} maxLength="120" onChange={event=>setEditMeta(current=>({...current,label:event.target.value}))}/></label><label>Categoria<select value={editMeta.category} onChange={event=>setEditMeta(current=>({...current,category:event.target.value}))}>{categories.map(category=><option key={category}>{category}</option>)}</select></label><label>Data<input type="date" value={editMeta.observedAt} onChange={event=>setEditMeta(current=>({...current,observedAt:event.target.value}))}/></label><label className="wide">Notas<textarea rows="3" value={editMeta.notes} maxLength="1000" onChange={event=>setEditMeta(current=>({...current,notes:event.target.value}))}/></label><div><button type="button" onClick={()=>setEditing('')}><X/>Cancelar</button><button className="save" disabled={state.saving}><Save/>{state.saving?'Salvando…':'Salvar'}</button></div></form>:<div className="field-photo-card-actions"><button type="button" onClick={()=>startEdit(item)}><Pencil/>Editar dados</button><button type="button" className="danger" disabled={state.saving} onClick={()=>remove(item)}><Trash2/>Remover</button></div>}
   </article>})}</div>:<div className="field-gallery-empty"><ImagePlus/><div><b>Nenhuma foto registrada</b><span>Use a câmera ou escolha imagens para começar o histórico visual.</span></div></div>}

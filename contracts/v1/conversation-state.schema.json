@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://valor360.local/contracts/v1/conversation-state.schema.json",
+  "title": "VAL Conversation State v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract_version",
+    "conversation_id",
+    "persistence_mode",
+    "persistent_memory_unchanged",
+    "recent_entities",
+    "recent_tool_results",
+    "recent_questions",
+    "session_facts",
+    "session_hypotheses",
+    "conversation_turns",
+    "input_modality",
+    "response_mode",
+    "conversation_mode"
+  ],
+  "properties": {
+    "contract_version": {"const": "val.conversation_state.v1"},
+    "conversation_id": {"type": "string", "minLength": 1, "maxLength": 180},
+    "persistence_mode": {"const": "NONE"},
+    "persistent_memory_unchanged": {"const": true},
+    "current_client": {"$ref": "#/$defs/entityOrNull"},
+    "current_property": {"$ref": "#/$defs/entityOrNull"},
+    "current_field": {"$ref": "#/$defs/entityOrNull"},
+    "current_crop": {"type": ["string", "null"], "maxLength": 80},
+    "current_season": {"type": ["string", "null"], "maxLength": 40},
+    "current_opportunity": {"$ref": "#/$defs/entityOrNull"},
+    "current_visit": {"$ref": "#/$defs/entityOrNull"},
+    "current_objective": {"type": ["string", "null"], "maxLength": 900},
+    "current_topic": {"type": ["string", "null"], "maxLength": 180},
+    "current_decision_thesis": {"type": ["object", "null"]},
+    "recent_entities": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/entity"}},
+    "recent_tool_results": {"type": "array", "maxItems": 12, "items": {"type": "object"}},
+    "recent_questions": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 700}},
+    "session_facts": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/sessionKnowledge"}},
+    "session_hypotheses": {"type": "array", "maxItems": 12, "items": {"$ref": "#/$defs/sessionKnowledge"}},
+    "conversation_turns": {"type": "array", "maxItems": 20, "items": {"type": "object"}},
+    "input_modality": {"enum": ["text", "voice", "photo", "file"]},
+    "response_mode": {"enum": ["text", "audio", "both"]},
+    "conversation_mode": {"type": "boolean"},
+    "active_object": {"$ref": "#/$defs/entityOrNull"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "entity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "label"],
+      "properties": {
+        "type": {"type": "string", "maxLength": 80},
+        "id": {"type": ["string", "null"], "maxLength": 180},
+        "label": {"type": ["string", "null"], "maxLength": 180}
+      }
+    },
+    "entityOrNull": {"anyOf": [{"$ref": "#/$defs/entity"}, {"type": "null"}]},
+    "sessionKnowledge": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["statement", "epistemic_status", "persistence", "source_ref"],
+      "properties": {
+        "statement": {"type": "string", "maxLength": 700},
+        "epistemic_status": {"enum": ["SESSION_FACT", "SESSION_HYPOTHESIS"]},
+        "persistence": {"const": "SESSION_ONLY"},
+        "source_ref": {"type": ["string", "null"], "maxLength": 180}
+      }
+    }
+  }
+}

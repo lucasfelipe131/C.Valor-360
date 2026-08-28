@@ -1,0 +1,250 @@
+{
+  "schema_version": "val.golden_performance.v1",
+  "suite": "VAL Golden Performance Set v1",
+  "fixture_class": "SYNTHETIC_ONLY",
+  "contains_real_data": false,
+  "measurement_contract": {
+    "percentile_method": "nearest-rank",
+    "percentiles": [50, 75, 90, 95],
+    "p95_sufficient_sample_min": 20,
+    "time_to_first_useful_response": "TTFR is accepted only when the application reports the first useful answer or useful structured card. Transport first-byte time is recorded separately and must not be relabeled as TTFR.",
+    "canonical_stages": [
+      "AUTH",
+      "INTENT",
+      "CONTEXT",
+      "MEMORY",
+      "MCA",
+      "MIA",
+      "TOOL",
+      "MODEL",
+      "VALIDATION",
+      "TTS",
+      "TOTAL"
+    ],
+    "evidence_boundary": "This suite declares performance targets and safe probes. It does not prove browser, microphone, camera, upload, tenancy or agronomic safety E2E behavior."
+  },
+  "allowed_paths": ["FAST", "CONTEXT", "DEEP", "TOOL", "LIVE_DATA"],
+  "allowed_service_classes": ["FAST", "CONTEXT", "DEEP", "TOOL", "LIVE_DATA", "VOICE"],
+  "cases": [
+    {
+      "id": "GP-001",
+      "label": "Última visita",
+      "path": "FAST",
+      "service_class": "FAST",
+      "target": "VISIT_HISTORY",
+      "intent": "ASK_CLIENT",
+      "staging_probe": {
+        "enabled": false,
+        "kind": "SEEDED_SYNTHETIC_CONTEXT_REQUIRED",
+        "reason": "A meaningful probe requires a tenant-scoped synthetic producer with visit history."
+      }
+    },
+    {
+      "id": "GP-002",
+      "label": "Compromisso aberto",
+      "path": "FAST",
+      "service_class": "FAST",
+      "target": "COMMITMENTS",
+      "intent": "ASK_CLIENT",
+      "staging_probe": {
+        "enabled": false,
+        "kind": "SEEDED_SYNTHETIC_CONTEXT_REQUIRED",
+        "reason": "A meaningful probe requires a tenant-scoped synthetic producer with a commitment."
+      }
+    },
+    {
+      "id": "GP-003",
+      "label": "Perguntas de Ouro",
+      "path": "FAST",
+      "service_class": "FAST",
+      "target": "GOLDEN_QUESTIONS",
+      "intent": "FOLLOW_UP",
+      "staging_probe": {
+        "enabled": false,
+        "kind": "SEEDED_SYNTHETIC_SESSION_REQUIRED",
+        "reason": "A valid Golden Questions timing needs a prior synthetic decision turn in the same scoped conversation."
+      }
+    },
+    {
+      "id": "GP-004",
+      "label": "Preparar visita",
+      "path": "DEEP",
+      "service_class": "DEEP",
+      "target": "PREPARE_VISIT",
+      "intent": "PREPARE_VISIT",
+      "staging_probe": {
+        "enabled": false,
+        "kind": "SEEDED_SYNTHETIC_CONTEXT_REQUIRED",
+        "reason": "Specificity and name-swap checks require a tenant-scoped synthetic producer fixture."
+      }
+    },
+    {
+      "id": "GP-005",
+      "label": "Análise de solo",
+      "path": "TOOL",
+      "service_class": "TOOL",
+      "target": "SOIL_ANALYSIS",
+      "intent": "ANALYZE_SOIL",
+      "staging_probe": {
+        "enabled": false,
+        "kind": "CONTROLLED_SYNTHETIC_FILE_REQUIRED",
+        "reason": "The tool must receive a controlled synthetic soil-analysis artifact; a text-only call is not equivalent."
+      }
+    },
+    {
+      "id": "GP-006",
+      "label": "NutriScan",
+      "path": "TOOL",
+      "service_class": "TOOL",
+      "target": "NUTRISCAN",
+      "intent": "IMAGE_DIAGNOSIS",
+      "staging_probe": {
+        "enabled": false,
+        "kind": "CONTROLLED_SYNTHETIC_IMAGE_REQUIRED",
+        "reason": "NutriScan requires a licensed synthetic image fixture and human safety review."
+      }
+    },
+    {
+      "id": "GP-007",
+      "label": "FitoScan (alias de solicitação: FitScan)",
+      "path": "TOOL",
+      "service_class": "TOOL",
+      "target": "FITOSCAN",
+      "intent": "IMAGE_DIAGNOSIS",
+      "canonical_name": "FitoScan",
+      "accepted_aliases": ["FitScan"],
+      "staging_probe": {
+        "enabled": false,
+        "kind": "CONTROLLED_SYNTHETIC_IMAGE_REQUIRED",
+        "reason": "FitoScan requires a licensed synthetic image fixture and human safety review."
+      }
+    },
+    {
+      "id": "GP-008",
+      "label": "Mapeamento de área",
+      "path": "TOOL",
+      "service_class": "TOOL",
+      "target": "AREA_MAPPING",
+      "intent": "OPEN_TOOL",
+      "staging_probe": {
+        "enabled": false,
+        "kind": "BROWSER_GEOSPATIAL_UAT_REQUIRED",
+        "reason": "Drawing, editing and geometry persistence require controlled browser UAT."
+      }
+    },
+    {
+      "id": "GP-009",
+      "label": "Calculadora",
+      "path": "TOOL",
+      "service_class": "TOOL",
+      "target": "CALCULATORS",
+      "intent": "CALCULATE",
+      "staging_probe": {
+        "enabled": false,
+        "kind": "SEEDED_SYNTHETIC_CONTEXT_REQUIRED",
+        "reason": "The current authenticated tool flow needs a tenant-scoped synthetic producer; a no-client general answer is not calculator execution."
+      }
+    },
+    {
+      "id": "GP-010",
+      "label": "Mercado atual",
+      "path": "LIVE_DATA",
+      "service_class": "LIVE_DATA",
+      "target": "MARKET_COMMODITY",
+      "intent": "ASK_MARKET",
+      "staging_probe": {
+        "enabled": true,
+        "kind": "SYNTHETIC_CONTRACT_PROBE",
+        "endpoint": "/api/val/chat",
+        "body": {
+          "clientId": "",
+          "message": "Qual é a cotação atual da soja? Mostre fonte e data; falhe fechado se não houver fonte autorizada.",
+          "mode": "daily",
+          "conversationId": "golden-performance-gp-010",
+          "sessionContext": {
+            "persistence_mode": "NONE",
+            "objective": "Teste sintético de dado atual"
+          }
+        }
+      }
+    },
+    {
+      "id": "GP-011",
+      "label": "Deep Reasoning",
+      "path": "DEEP",
+      "service_class": "DEEP",
+      "target": "DECISION_REASONING",
+      "intent": "ASK",
+      "staging_probe": {
+        "enabled": false,
+        "kind": "SEEDED_SYNTHETIC_CONTEXT_REQUIRED",
+        "reason": "A true deep-path sample needs authorized synthetic agronomic, commercial and market context; a general no-client answer is not equivalent."
+      }
+    },
+    {
+      "id": "GP-012",
+      "label": "Voice follow-up",
+      "path": "CONTEXT",
+      "service_class": "VOICE",
+      "target": "VOICE_DECISION_FOLLOW_UP",
+      "intent": "FOLLOW_UP",
+      "staging_probe": {
+        "enabled": false,
+        "kind": "PHYSICAL_VOICE_UAT_REQUIRED",
+        "reason": "Audio capture, transcription, TTS and conversational continuity require physical-device UAT."
+      }
+    },
+    {
+      "id": "GP-013",
+      "label": "Agro Hero Voice",
+      "path": "TOOL",
+      "service_class": "VOICE",
+      "target": "AGRO_HERO_VOICE",
+      "intent": "ASK_AGRONOMIC",
+      "staging_probe": {
+        "enabled": false,
+        "kind": "BROWSER_MICROPHONE_UAT_REQUIRED",
+        "reason": "A backend text request cannot prove permission, recording, cancellation, transcription or follow-up."
+      }
+    },
+    {
+      "id": "GP-014",
+      "label": "Agro Hero Text",
+      "path": "CONTEXT",
+      "service_class": "CONTEXT",
+      "target": "AGRO_HERO_TEXT",
+      "intent": "ASK_AGRONOMIC",
+      "staging_probe": {
+        "enabled": false,
+        "kind": "BROWSER_CONTEXT_UAT_REQUIRED",
+        "reason": "The composer, same-page ecosystem and inherited producer/field context require browser UAT."
+      }
+    },
+    {
+      "id": "GP-015",
+      "label": "Agro Hero Photo",
+      "path": "TOOL",
+      "service_class": "TOOL",
+      "target": "AGRO_HERO_PHOTO",
+      "intent": "IMAGE_DIAGNOSIS",
+      "staging_probe": {
+        "enabled": false,
+        "kind": "BROWSER_CAMERA_UAT_REQUIRED",
+        "reason": "Camera/gallery selection, upload and diagnosis require a controlled licensed image fixture."
+      }
+    },
+    {
+      "id": "GP-016",
+      "label": "Agro Hero File",
+      "path": "TOOL",
+      "service_class": "TOOL",
+      "target": "AGRO_HERO_FILE",
+      "intent": "ASK_AGRONOMIC",
+      "staging_probe": {
+        "enabled": false,
+        "kind": "BROWSER_FILE_UAT_REQUIRED",
+        "reason": "File picker, validation, upload and likely-intent confirmation require controlled browser UAT."
+      }
+    }
+  ]
+}

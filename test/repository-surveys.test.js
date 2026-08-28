@@ -5,8 +5,9 @@ import {ValRepository} from '../server/repository.js'
 test('questionário demonstrativo é individual, expira e só aceita uma resposta',async()=>{
   let store={surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[]}}
   const repository=new ValRepository({db:{configured:false},readStore:()=>structuredClone(store),saveStore:next=>{store=structuredClone(next)},tenantId:'tenant'})
-  const created=await repository.createSurvey({token:'token-seguro-com-192-bits-simulado',producerName:'Produtor',consultantName:'Consultor',createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+60_000).toISOString()})
-  assert.equal((await repository.listSurveys()).length,1)
+  const ownerId='owner-1'
+  const created=await repository.createSurvey({token:'token-seguro-com-192-bits-simulado',producerName:'Produtor',consultantName:'Consultor',createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+60_000).toISOString()},ownerId)
+  assert.equal((await repository.listSurveys(ownerId)).length,1)
   assert.equal((await repository.getSurvey(created.token)).producerName,'Produtor')
   await repository.submitSurvey({token:created.token,answers:{1:'a',27:'Não.'},result:{name:'Produtor',additionalNeed:'Não.',commercial:{opportunity:'Não.'}}})
   const stored=await repository.getSurvey(created.token)
@@ -14,7 +15,26 @@ test('questionário demonstrativo é individual, expira e só aceita uma respost
   assert.equal(stored.result.additionalNeedStatus,'none_declared')
   assert.equal(stored.result.commercial.opportunity,'')
   await assert.rejects(()=>repository.submitSurvey({token:created.token,answers:{1:'b'},result:{name:'Outro'}}),error=>error.statusCode===409)
-  assert.equal((await repository.integrateSurvey(created.token)).status,'integrado')
+  assert.equal((await repository.integrateSurvey(created.token,ownerId)).status,'integrado')
+})
+
+test('questionários fallback respeitam tenant e owner sem expor metadados de escopo',async()=>{
+  let store={surveys:[],imports:[],val:{}}
+  const save=next=>{store=structuredClone(next)}
+  const repoA=new ValRepository({db:{configured:false},readStore:()=>structuredClone(store),saveStore:save,tenantId:'tenant-a'})
+  const repoB=new ValRepository({db:{configured:false},readStore:()=>structuredClone(store),saveStore:save,tenantId:'tenant-b'})
+  const dates={createdAt:new Date().toISOString(),expiresAt:new Date(Date.now()+60_000).toISOString()}
+  await repoA.createSurvey({token:'token-a',producerName:'A',consultantName:'Consultor A',...dates},'owner-a')
+  await repoA.createSurvey({token:'token-a2',producerName:'A2',consultantName:'Consultor B',...dates},'owner-b')
+  await repoB.createSurvey({token:'token-b',producerName:'B',consultantName:'Consultor B',...dates},'owner-b')
+  assert.deepEqual((await repoA.listSurveys('owner-a')).map(item=>item.token),['token-a'])
+  assert.deepEqual((await repoA.listSurveys('owner-b')).map(item=>item.token),['token-a2'])
+  assert.equal(await repoA.getSurvey('token-b'),null)
+  assert.equal('tenantId' in (await repoA.getSurvey('token-a')),false)
+  await assert.rejects(
+    repoA.integrateSurvey('token-a','owner-b'),
+    error=>error?.statusCode===404,
+  )
 })
 
 test('integração PostgreSQL separa Q27 da oportunidade canônica sob o mesmo lock',async()=>{

@@ -1,0 +1,727 @@
+openapi: 3.1.0
+info:
+  title: VAL Core API
+  version: 1.0.0
+  description: API aditiva da camada de contratos do VAL Core. As rotas legadas permanecem compatíveis. Áudio e transcrições de VoiceInteraction são dados privados do tenant, retornados somente ao ator autorizado e nunca incluídos em logs, telemetria ou payloads de erro.
+paths:
+  /api/val/status:
+    get:
+      summary: Informa a saúde da engine e a versão dos contratos do Core
+      responses:
+        '200':
+          description: Estado público da engine
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/val/chat:
+    post:
+      summary: Executa a recomendação preservando a resposta legada
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        $ref: '#/components/requestBodies/RecommendationInput'
+      responses:
+        '200':
+          description: Payload legado, acrescido do requestId de acompanhamento já existente
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /api/val/recommendations:
+    post:
+      summary: Alias legado compatível de recomendação
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        $ref: '#/components/requestBodies/RecommendationInput'
+      responses:
+        '200':
+          description: Payload legado
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /api/v1/val/recommendations:
+    post:
+      summary: Executa a mesma ValEngine e devolve ResponseEnvelope v1
+      description: O servidor deriva organization_id, actor e policy_context da sessão; esses campos não são aceitos do cliente. A recomendação inclui, de forma aditiva, contextSnapshotId/contextSnapshotVersion e os artefatos opcionais behavioral_profile, decision_thesis e value_plan. As APIs legadas e seus campos permanecem compatíveis.
+      security:
+        - sessionCookie: []
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        $ref: '#/components/requestBodies/RecommendationInput'
+      responses:
+        '200':
+          description: Resposta canônica, auditável e versionada
+          content:
+            application/json:
+              schema:
+                $ref: '../contracts/v1/response-envelope.schema.json'
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /api/v1/voice-interactions:
+    post:
+      operationId: createVoiceInteraction
+      summary: Cria uma captura de voz ou um fallback manual tenant-safe
+      description: Cria VoiceInteraction v1 sem consolidar memória. O servidor deriva organization_id e actor_id da sessão. Quando manual_text é informado, o texto segue como transcript não confiável e continua sujeito a extração e confirmação humana.
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoiceInteractionCreateInput'
+      responses:
+        '201':
+          description: VoiceInteraction criada em CREATED ou TRANSCRIBED no fallback manual
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VoiceInteractionResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/voice-interactions/{voiceInteractionId}/audio:
+    parameters:
+      - $ref: '#/components/parameters/VoiceInteractionId'
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      operationId: uploadVoiceInteractionAudio
+      summary: Anexa áudio conscientemente gravado à VoiceInteraction
+      description: Valida escopo, MIME canônico, assinatura binária, tamanho máximo de 6 MB e duração de até 900 segundos. O áudio é preservado por referência opaca; nunca é copiado para logs ou respostas de erro.
+      security: [{sessionCookie: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoiceAudioUploadInput'
+      responses:
+        '200':
+          description: Áudio armazenado e interação em AUDIO_STORED
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VoiceInteractionResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '413': {$ref: '#/components/responses/Error'}
+        '415': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/voice-interactions/{voiceInteractionId}/process:
+    parameters:
+      - $ref: '#/components/parameters/VoiceInteractionId'
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      operationId: processVoiceInteraction
+      summary: Transcreve e extrai candidatos estruturados para revisão
+      description: Trata o transcript como dado não confiável. Nenhum candidato atualiza memória, perfil, oportunidade, compromisso ou Visit Report confirmado nesta operação. Falhas preservam áudio/transcript quando seguro e permitem retry na mesma interação.
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: VoiceInteraction processada ou estado idempotente atual
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VoiceInteractionResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '413': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/voice-interactions/{voiceInteractionId}:
+    parameters:
+      - $ref: '#/components/parameters/VoiceInteractionId'
+      - $ref: '#/components/parameters/RequestId'
+    get:
+      operationId: getVoiceInteraction
+      summary: Recupera a VoiceInteraction no escopo da sessão
+      description: Retorna a interação e, quando autorizada, sua transcrição para revisão. Empresas, usuários e produtores de outro escopo recebem resposta sem revelar a existência ou o conteúdo do recurso.
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: VoiceInteraction v1 e candidatos ainda não consolidados
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VoiceInteractionResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/voice-interactions/{voiceInteractionId}/confirm:
+    parameters:
+      - $ref: '#/components/parameters/VoiceInteractionId'
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      operationId: confirmVoiceInteraction
+      summary: Confirma, edita ou rejeita candidatos antes de qualquer persistência material
+      description: Somente candidatos confirmados pelo consultor podem alimentar MMI/MCTX/MIC/MEX e os módulos existentes. Relato agronômico permanece observação e não vira prescrição. Áudio nunca promove KnowledgeItem automaticamente.
+      security: [{sessionCookie: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoiceConfirmationInput'
+      responses:
+        '200':
+          description: Confirmação aplicada de forma rastreável
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VoiceConfirmationResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '413': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/voice-interactions/{voiceInteractionId}/cancel:
+    parameters:
+      - $ref: '#/components/parameters/VoiceInteractionId'
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      operationId: cancelVoiceInteraction
+      summary: Cancela uma captura ainda não confirmada
+      description: Não remove silenciosamente fatos já confirmados e não permite cancelar uma interação terminal CONFIRMED.
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: VoiceInteraction em CANCELLED ou cancelamento idempotente
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/VoiceInteractionResponse'}
+        '400': {$ref: '#/components/responses/Error'}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/visits/{visitId}/start:
+    parameters:
+      - name: visitId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - $ref: '#/components/parameters/RequestId'
+    post:
+      operationId: startVisit
+      summary: Inicia conscientemente o trabalho de campo da visita
+      description: Transiciona uma visita PLANNED ou PREPARED para IN_PROGRESS; chamadas repetidas em IN_PROGRESS são idempotentes.
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: Lifecycle da visita iniciado no escopo autorizado
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contract_version, visit, idempotent]
+                properties:
+                  contract_version: {const: val.visit_lifecycle.response.v1}
+                  visit: {$ref: '#/components/schemas/VisitLifecycleProjection'}
+                  idempotent: {type: boolean}
+        '401': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/visits/{visitId}/preparation:
+    parameters:
+      - name: visitId
+        in: path
+        required: true
+        schema: {type: string, format: uuid}
+      - $ref: '#/components/parameters/RequestId'
+    get:
+      summary: Recupera a preparação mais recente da visita no escopo autorizado
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: PrepareVisit v1 e ActionPlan v1 persistidos
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contract_version, preparation, action_plan]
+                properties:
+                  contract_version: {const: val.prepare_visit.response.v1}
+                  preparation: {$ref: '../contracts/v1/prepare-visit.schema.json'}
+                  action_plan: {$ref: '../contracts/v1/action-plan.schema.json'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+    post:
+      summary: Gera e persiste preparação tenant-safe a partir dos artefatos aprovados
+      security: [{sessionCookie: []}]
+      responses:
+        '201':
+          description: Preparação criada sem registrar a visita pós-campo
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [contract_version, preparation, action_plan]
+                properties:
+                  contract_version: {const: val.prepare_visit.response.v1}
+                  preparation: {$ref: '../contracts/v1/prepare-visit.schema.json'}
+                  action_plan: {$ref: '../contracts/v1/action-plan.schema.json'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/v1/visits/{visitId}/report:
+    parameters:
+      - {name: visitId, in: path, required: true, schema: {type: string, format: uuid}}
+      - $ref: '#/components/parameters/RequestId'
+    get:
+      summary: Recupera o VisitReport mais recente no escopo autorizado
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: VisitReport v1 candidato ou confirmado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_version: {const: val.visit_report.response.v1}
+                  visit_report: {$ref: '../contracts/v1/visit-report.schema.json'}
+        '404': {$ref: '#/components/responses/Error'}
+    post:
+      summary: Organiza texto ou áudio transcrito como report candidato, sem consolidar fatos
+      security: [{sessionCookie: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [source_type]
+              properties:
+                source_type: {enum: [TEXT, AUDIO]}
+                text: {type: string, maxLength: 20000}
+                attachment_id: {type: string, format: uuid}
+                idempotency_key: {type: string, maxLength: 180}
+      responses:
+        '201':
+          description: VisitReport v1 em PENDING_REVIEW
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_version: {const: val.visit_report.response.v1}
+                  visit_report: {$ref: '../contracts/v1/visit-report.schema.json'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
+  /api/v1/visits/{visitId}/confirm:
+    post:
+      summary: Confirma o report revisado e consolida somente itens aprovados pelo consultor
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: visitId, in: path, required: true, schema: {type: string, format: uuid}}
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visit_report_id, outcome_type]
+              properties:
+                visit_report_id: {type: string, format: uuid}
+                fields: {type: object}
+                remove_item_ids: {type: array, items: {type: string}}
+                additions: {type: object}
+                confirm_commitment_ids: {type: array, items: {type: string}}
+                commitments_confirmed: {type: array, items: {type: object}}
+                next_steps: {type: array, items: {type: object}}
+                outcome_type: {enum: [WON, LOST, PARTIAL, NO_DECISION, FOLLOW_UP, TECHNICAL_RESULT, RELATIONSHIP_PROGRESS, NO_CHANGE]}
+                result: {type: object}
+                evidence_refs: {type: array, items: {type: object}}
+      responses:
+        '200':
+          description: Visita confirmada, Commitment/Outcome/LearningCandidate rastreáveis
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_version: {const: val.visit_confirmation.response.v1}
+                  visit_report: {$ref: '../contracts/v1/visit-report.schema.json'}
+                  commitments: {type: array, items: {$ref: '../contracts/v1/commitment.schema.json'}}
+                  outcome: {$ref: '../contracts/v1/outcome.schema.json'}
+                  learning_candidate: {$ref: '../contracts/v1/learning-candidate.schema.json'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/v1/visits/{visitId}/learning-context:
+    get:
+      summary: Recupera a cadeia autorizada preparação → report → outcome → aprendizado
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: visitId, in: path, required: true, schema: {type: string, format: uuid}}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Contexto operacional da visita sem conteúdo de transcript
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: true}
+        '404': {$ref: '#/components/responses/Error'}
+  /api/v1/outcomes:
+    post:
+      summary: Registra Outcome v1 adicional para uma visita autorizada
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [visit_id, outcome_type, result]
+              properties:
+                visit_id: {type: string, format: uuid}
+                outcome_type: {enum: [WON, LOST, PARTIAL, NO_DECISION, FOLLOW_UP, TECHNICAL_RESULT, RELATIONSHIP_PROGRESS, NO_CHANGE]}
+                result: {type: object}
+                evidence_refs: {type: array, items: {type: object}}
+                measured_at: {type: string, format: date-time}
+                confidence: {type: number, minimum: 0, maximum: 1}
+                notes: {type: string, maxLength: 4000}
+      responses:
+        '201':
+          description: Outcome v1 persistido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_version: {const: val.outcome.response.v1}
+                  outcome: {$ref: '../contracts/v1/outcome.schema.json'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/v1/action-plans:
+    post:
+      summary: Persiste ActionPlan v1 já validado e seu vínculo rastreável
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      responses:
+        '201':
+          description: ActionPlan persistido
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_version: {const: val.action_plan.response.v1}
+                  action_plan: {$ref: '../contracts/v1/action-plan.schema.json'}
+        '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
+  /api/v1/commitments:
+    get:
+      summary: Lista compromissos da carteira autorizada
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: clientId, in: query, required: false, schema: {type: string}}
+        - {name: status, in: query, required: false, schema: {type: string}}
+      responses:
+        '200':
+          description: Coleção de Commitment v1
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_version: {const: val.commitment.collection.v1}
+                  commitments: {type: array, items: {$ref: '../contracts/v1/commitment.schema.json'}}
+    post:
+      summary: Cria compromisso somente com owner, prazo e critério
+      security: [{sessionCookie: []}]
+      parameters: [{$ref: '#/components/parameters/RequestId'}]
+      responses:
+        '201':
+          description: Commitment v1 criado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_version: {const: val.commitment.response.v1}
+                  commitment: {$ref: '../contracts/v1/commitment.schema.json'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/v1/commitments/{commitmentId}:
+    patch:
+      summary: Transiciona compromisso; DONE exige evidência
+      security: [{sessionCookie: []}]
+      parameters:
+        - {name: commitmentId, in: path, required: true, schema: {type: string, format: uuid}}
+        - $ref: '#/components/parameters/RequestId'
+      responses:
+        '200':
+          description: Commitment v1 atualizado
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_version: {const: val.commitment.response.v1}
+                  commitment: {$ref: '../contracts/v1/commitment.schema.json'}
+        '404': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+  /api/v1/insights:
+    get:
+      summary: Responde o que merece atenção agora no escopo autorizado
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: Feed com no máximo cinco InsightCard v1 não expirados
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  contract_version: {const: val.insight_feed.v1}
+                  items: {type: array, maxItems: 5, items: {$ref: '../contracts/v1/insight-card.schema.json'}}
+components:
+  securitySchemes:
+    sessionCookie:
+      type: apiKey
+      in: cookie
+      name: valor360_session
+  parameters:
+    RequestId:
+      name: X-Request-ID
+      in: header
+      required: false
+      schema:
+        type: string
+        format: uuid
+      description: UUID aceito como correlation_id; valores inválidos são substituídos pelo servidor.
+    VoiceInteractionId:
+      name: voiceInteractionId
+      in: path
+      required: true
+      schema: {type: string, format: uuid}
+      description: Identificador opaco da VoiceInteraction no tenant e ator derivados da sessão.
+  requestBodies:
+    RecommendationInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [clientId]
+            properties:
+              clientId: {type: string, minLength: 1, maxLength: 180}
+              client: {type: object, additionalProperties: true}
+              message: {type: string, maxLength: 3000}
+              question: {type: string, maxLength: 3000}
+              attachmentIds:
+                type: array
+                maxItems: 3
+                items: {type: string, format: uuid}
+              mode: {type: string, maxLength: 240}
+              requestedStage: {type: string, maxLength: 240}
+              requestId: {type: string, format: uuid}
+  responses:
+    Error:
+      description: Falha validada sem exposição de contexto interno, áudio, transcript ou secrets
+      content:
+        application/json:
+          schema:
+            type: object
+            additionalProperties: false
+            required: [error]
+            properties:
+              error: {type: string}
+              code: {type: string, maxLength: 100}
+              safe_to_retry: {type: boolean}
+  schemas:
+    VoiceInteractionCreateInput:
+      type: object
+      additionalProperties: false
+      required: [client_id, interaction_type]
+      properties:
+        client_id: {type: string, minLength: 1, maxLength: 180}
+        visit_id: {type: string, format: uuid}
+        interaction_type: {enum: [PRE_VISIT, FIELD_NOTE, POST_VISIT, CLIENT_NOTE, GENERAL_CONTEXT]}
+        source_context:
+          type: object
+          description: Contexto funcional mínimo; secrets, áudio, transcript, prompts e instruções são descartados pelo servidor.
+          additionalProperties: true
+        manual_text:
+          type: string
+          minLength: 1
+          maxLength: 20000
+          description: Fallback digitado, tratado com as mesmas regras de conteúdo não confiável e confirmação humana.
+        language: {type: string, maxLength: 30, default: pt-BR}
+      allOf:
+        - if:
+            properties:
+              interaction_type: {enum: [PRE_VISIT, POST_VISIT]}
+          then:
+            required: [visit_id]
+    VoiceAudioUploadInput:
+      type: object
+      additionalProperties: false
+      required: [original_name, mime_type, data_url, duration_seconds]
+      properties:
+        original_name: {type: string, minLength: 1, maxLength: 240}
+        mime_type:
+          type: string
+          pattern: '^audio\/(mpeg|mp3|mp4|x-m4a|wav|x-wav|webm|ogg)(;.*)?$'
+          description: MIME declarado; parâmetros como codecs=opus são normalizados antes da validação.
+        data_url:
+          type: string
+          minLength: 1
+          maxLength: 8100000
+          description: Data URL base64 temporária. O binário decodificado deve ter no máximo 6 MB e assinatura compatível com o MIME.
+        duration_seconds: {type: number, exclusiveMinimum: 0, maximum: 900}
+    VoiceConfirmationInput:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            required: [candidate_id, decision]
+            properties:
+              candidate_id: {type: string, format: uuid}
+              decision: {enum: [CONFIRMED, REJECTED]}
+              statement: {type: string, minLength: 1, maxLength: 2000}
+              due_at:
+                oneOf:
+                  - {type: string, format: date}
+                  - {type: string, format: date-time}
+                  - {type: 'null'}
+        additions:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            additionalProperties: false
+            required: [category, statement]
+            properties:
+              candidate_id: {type: string, format: uuid}
+              category: {enum: [FACT_CANDIDATE, COMMITMENT_CANDIDATE, OBJECTION, OPPORTUNITY_CANDIDATE, BEHAVIORAL_SIGNAL, AGRONOMIC_OBSERVATION, EXPECTATION, NEXT_STEP, MISSING_INFORMATION, HYPOTHESIS]}
+              epistemic_status: {enum: [FACT_CANDIDATE, INFERENCE, HYPOTHESIS]}
+              statement: {type: string, minLength: 1, maxLength: 2000}
+              due_at:
+                oneOf:
+                  - {type: string, format: date}
+                  - {type: string, format: date-time}
+                  - {type: 'null'}
+        outcome_type: {enum: [WON, LOST, PARTIAL, NO_DECISION, FOLLOW_UP, TECHNICAL_RESULT, RELATIONSHIP_PROGRESS, NO_CHANGE]}
+        next_step: {type: string, maxLength: 2000}
+        next_step_at:
+          oneOf:
+            - {type: string, format: date}
+            - {type: string, format: date-time}
+            - {type: 'null'}
+        no_action: {type: boolean}
+    VoiceInteractionResponse:
+      type: object
+      additionalProperties: false
+      required: [contract_version, voice_interaction]
+      properties:
+        contract_version: {const: val.voice_interaction.response.v1}
+        voice_interaction: {$ref: '../contracts/v1/voice-interaction.schema.json'}
+    VoiceConfirmationResponse:
+      type: object
+      additionalProperties: false
+      required: [contract_version, voice_interaction]
+      properties:
+        contract_version: {const: val.voice_confirmation.response.v1}
+        voice_interaction: {$ref: '../contracts/v1/voice-interaction.schema.json'}
+        result: {type: object, additionalProperties: true}
+        message: {type: string}
+        idempotent: {type: boolean}
+    VoiceCandidate:
+      $ref: '../contracts/v1/voice-candidate.schema.json'
+    VoiceInteraction:
+      $ref: '../contracts/v1/voice-interaction.schema.json'
+    RequestEnvelope:
+      $ref: '../contracts/v1/request-envelope.schema.json'
+    ResponseEnvelope:
+      $ref: '../contracts/v1/response-envelope.schema.json'
+    MemoryRecord:
+      $ref: '../contracts/v1/memory-record.schema.json'
+    ContextSnapshot:
+      $ref: '../contracts/v1/context-snapshot.schema.json'
+    BehavioralProfile:
+      $ref: '../contracts/v1/behavioral-profile.schema.json'
+    QuestionnaireDefinition:
+      $ref: '../contracts/v1/questionnaire-definition.schema.json'
+    DecisionThesis:
+      $ref: '../contracts/v1/decision-thesis.schema.json'
+    ValuePlan:
+      $ref: '../contracts/v1/value-plan.schema.json'
+    ActionPlan:
+      $ref: '../contracts/v1/action-plan.schema.json'
+    Commitment:
+      $ref: '../contracts/v1/commitment.schema.json'
+    InsightCard:
+      $ref: '../contracts/v1/insight-card.schema.json'
+    PrepareVisit:
+      $ref: '../contracts/v1/prepare-visit.schema.json'
+    VisitLifecycleProjection:
+      type: object
+      additionalProperties: true
+      required: [id, clientId, lifecycleStatus]
+      properties:
+        id: {type: string, format: uuid}
+        clientId: {type: string}
+        status: {type: string}
+        lifecycleStatus: {const: IN_PROGRESS}
+        lifecycleVersion: {const: val.visit_lifecycle.v1}
+        lifecycleRevision: {type: integer, minimum: 1}
+        occurredAt: {type: string, format: date-time}
+        lifecycleUpdatedAt: {type: string, format: date-time}
+    VisitLifecycle:
+      $ref: '../contracts/v1/visit-lifecycle.schema.json'
+    VisitTranscript:
+      $ref: '../contracts/v1/visit-transcript.schema.json'
+    VisitReport:
+      $ref: '../contracts/v1/visit-report.schema.json'
+    Outcome:
+      $ref: '../contracts/v1/outcome.schema.json'
+    LearningCandidate:
+      $ref: '../contracts/v1/learning-candidate.schema.json'
