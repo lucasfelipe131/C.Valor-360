@@ -56,6 +56,7 @@ test('serviço emite client secret efêmero com WebRTC, semantic VAD, barge-in e
  assert.equal(session.transport,'WEBRTC')
  assert.equal(request.body.session.model,'gpt-realtime-2.1-mini')
  assert.equal(request.body.session.audio.input.turn_detection.type,'semantic_vad')
+ assert.equal(request.body.session.audio.input.turn_detection.eagerness,'low')
  assert.equal(request.body.session.audio.input.turn_detection.interrupt_response,true)
  assert.equal(request.body.session.audio.input.turn_detection.create_response,true)
  assert.equal(request.body.session.audio.input.transcription.model,'gpt-transcribe')
@@ -103,4 +104,5 @@ test('contrato de implantação mantém flag default-off, CSP e fallback',()=>{
  const hook=readFileSync(new URL('../src/hooks/useNaturalRealtimeVoice.js',import.meta.url),'utf8')
  assert.match(hook,/CONTEXT_SCOPE_CHANGED/)
  assert.match(hook,/scopeReconnectPending/)
+ assert.ok(hook.indexOf('navigator.mediaDevices.getUserMedia')<hook.indexOf("fetch('/api/v1/realtime-voice/sessions'"),'microfone deve ser validado antes da reserva/sessão paga')
 })

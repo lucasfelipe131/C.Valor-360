@@ -10,6 +10,7 @@ import {additionalNeedState,hasIndependentOpportunity,isQ27Opportunity,normalize
 import {encodeCanonicalGeometryRef,manualToCanonicalValGeometry} from '../src/lib/agronomic-geometry-adapter.js'
 import {buildAgronomicScanProvenance} from './agronomic-scan-provenance.js'
 import {resolveAuthorizedClientReference as reconcileAuthorizedClientReference} from './decision-copilot/client-reference-resolver.js'
+import {createProducerEntityIndexCache} from './decision-copilot/producer-entity-index-cache.js'
 
 export function jsonbParameter(value){
   if(value===undefined)return null
@@ -334,7 +335,7 @@ function attachContextSnapshot(context,{tenantId,clientId,subjectId,ownerId,cont
 }
 
 export class ValRepository{
-  constructor({db,readStore,saveStore,tenantId}){this.db=db;this.readStore=readStore;this.saveStore=saveStore;this.tenantId=tenantId}
+  constructor({db,readStore,saveStore,tenantId}){this.db=db;this.readStore=readStore;this.saveStore=saveStore;this.tenantId=tenantId;this.producerEntityIndex=createProducerEntityIndexCache()}
 
   fallback(){
     const store=this.readStore();store.val||={};for(const key of ['recommendations','feedback','integrationEvents','signals','conversations','modelRuns','memories','attachments','contextSnapshots','actionPlans','commitments','visitPreparations','visitTranscripts','visitReports','voiceInteractions','voiceTranscripts','outcomes','learningCandidates','visitLifecycleEvents'])store.val[key]||=[];store.val.technicalContexts||={};store.interactions||=[];store.opportunities||=[];store.visits||=[];return store
@@ -417,6 +418,7 @@ export class ValRepository{
   async listAuthorizedClientReferences({tenantId=this.tenantId,ownerId}={}){
     tenantId=assertTenantScope(this.tenantId,tenantId)
     if(!ownerId)throw domainError('O proprietário da carteira é obrigatório para resolver referências de clientes.',403,'owner_scope_required')
+    return this.producerEntityIndex.getOrLoad({tenantId,ownerId},async()=>{
     if(!this.db.configured){
       const clients=new Map()
       for(const record of this.readStore().imports||[]){
@@ -426,21 +428,29 @@ export class ValRepository{
           const id=String(value?.id??value?.external_key??value?.externalKey??'').trim().slice(0,180)
           const name=String(value?.name??'').replace(/\s+/g,' ').trim().slice(0,180)
           if(!id||!name||clients.has(id))continue
-          clients.set(id,{id,name,municipality:String(value?.municipality??'').replace(/\s+/g,' ').trim().slice(0,140)||null})
+          const aliases=Array.isArray(value?.aliases)?value.aliases:Array.isArray(value?.commercial?.aliases)?value.commercial.aliases:[]
+          const properties=Array.isArray(value?.properties)?value.properties:String(value?.properties??value?.property??'').split(/[,;|]+/)
+          clients.set(id,{id,name,municipality:String(value?.municipality??'').replace(/\s+/g,' ').trim().slice(0,140)||null,aliases:aliases.slice(0,20),properties:properties.slice(0,50),organizationId:tenantId})
         }
       }
       return [...clients.values()].sort((left,right)=>left.name.localeCompare(right.name,'pt-BR'))
     }
     try{
-      const selected=await this.db.query(`SELECT external_key,name,municipality FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND status='active' ORDER BY name,external_key LIMIT 5000`,[tenantId,ownerId])
-      return selected.rows.map(row=>({id:String(row.external_key),name:String(row.name),municipality:String(row.municipality||'').trim()||null}))
+      const selected=await this.db.query(`SELECT c.external_key,c.name,c.municipality,
+        CASE WHEN jsonb_typeof(c.commercial_profile->'aliases')='array' THEN c.commercial_profile->'aliases' ELSE '[]'::jsonb END aliases,
+        COALESCE((SELECT jsonb_agg(jsonb_build_object('id',COALESCE(property.external_key,property.id::text),'name',property.name) ORDER BY property.updated_at DESC) FROM properties property WHERE property.tenant_id=c.tenant_id AND property.client_id=c.id),'[]'::jsonb) properties
+        FROM clients c WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' ORDER BY c.name,c.external_key LIMIT 5000`,[tenantId,ownerId])
+      return selected.rows.map(row=>({id:String(row.external_key),name:String(row.name),municipality:String(row.municipality||'').trim()||null,aliases:Array.isArray(row.aliases)?row.aliases:[],properties:Array.isArray(row.properties)?row.properties:[],organizationId:tenantId}))
     }catch{throw serviceError('As referências autorizadas de clientes não puderam ser lidas no PostgreSQL configurado.')}
+    })
   }
 
-  async resolveAuthorizedClientReference({tenantId=this.tenantId,ownerId,message='',reference='',currentClientId=null}={}){
+  invalidateAuthorizedClientReferences({tenantId=this.tenantId,ownerId}={}){tenantId=assertTenantScope(this.tenantId,tenantId);return this.producerEntityIndex.invalidate({tenantId,ownerId})}
+
+  async resolveAuthorizedClientReference({tenantId=this.tenantId,ownerId,message='',reference='',currentClientId=null,recentClientIds=[]}={}){
     tenantId=assertTenantScope(this.tenantId,tenantId)
     const authorizedClients=await this.listAuthorizedClientReferences({tenantId,ownerId})
-    return reconcileAuthorizedClientReference({message,reference,authorizedClients,currentClientId})
+    return reconcileAuthorizedClientReference({message,reference,authorizedClients,currentClientId,recentClientIds})
   }
 
   async getTechnicalBootstrap(ownerId){

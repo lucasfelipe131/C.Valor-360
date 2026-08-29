@@ -98,6 +98,9 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',a
   update({status:STATES.CONNECTING,microphoneActive:false,microphonePermission:permissionState,error:'',fallbackReason:''})
   const audio=document.createElement('audio');audio.autoplay=true;audio.playsInline=true;audio.setAttribute('aria-hidden','true');audio.style.display='none';document.body.appendChild(audio);resources.current.audio=audio;audio.play().catch(()=>null)
   try{
+   // Permission comes first: do not reserve budget or create a paid provider
+   // session when the device cannot supply a microphone stream.
+   const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});resources.current.stream=stream;update({microphonePermission:'GRANTED'})
    const sessionResponse=await fetch('/api/v1/realtime-voice/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId,conversationId,activeContext})})
    const session=await sessionResponse.json().catch(()=>null)
    if(!sessionResponse.ok)throw Object.assign(new Error(session?.error||'O modo realtime não está disponível neste ambiente.'),{code:session?.code||'realtime_voice_session_unavailable'})
@@ -105,7 +108,7 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',a
    const pc=new RTCPeerConnection();resources.current.pc=pc
    pc.onconnectionstatechange=()=>{if(['failed','disconnected','closed'].includes(pc.connectionState)&&resources.current.pc===pc)fail(Object.assign(new Error('A conexão realtime foi interrompida. Use apertar para falar.'),{code:`WEBRTC_${pc.connectionState.toUpperCase()}`}))}
    pc.ontrack=event=>{audio.srcObject=event.streams?.[0]||new MediaStream([event.track]);audio.play().catch(()=>null)}
-   const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});resources.current.stream=stream;update({microphonePermission:'GRANTED'});for(const track of stream.getAudioTracks())pc.addTrack(track,stream)
+   for(const track of stream.getAudioTracks())pc.addTrack(track,stream)
    const dc=pc.createDataChannel('oai-events');resources.current.dc=dc;dc.onmessage=event=>handleEvent(event.data);dc.onerror=()=>fail(Object.assign(new Error('O canal de eventos realtime falhou.'),{code:'WEBRTC_DATA_CHANNEL_ERROR'}));dc.onopen=()=>update({status:STATES.LISTENING,microphoneActive:true})
    const offer=await pc.createOffer();await pc.setLocalDescription(offer)
    const answerResponse=await fetch(session.callUrl,{method:'POST',body:offer.sdp,headers:{Authorization:`Bearer ${session.clientSecret}`,'Content-Type':'application/sdp'}})

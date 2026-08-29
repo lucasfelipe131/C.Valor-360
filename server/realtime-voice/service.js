@@ -15,6 +15,7 @@ export function createRealtimeVoiceService({runtimeConfig,client,repository,conv
  const budgetUsd=Math.min(25,Math.max(1,Number(runtimeConfig?.realtimeVoiceBudgetUsd)||25))
  const reservationUsd=Math.min(2,Math.max(.25,Number(runtimeConfig?.realtimeVoiceReservationUsd)||1))
  const maxSessionSeconds=Math.min(600,Math.max(60,Number(runtimeConfig?.realtimeVoiceMaxSessionSeconds)||600))
+ const vadEagerness=['low','medium','high','auto'].includes(String(runtimeConfig?.realtimeVoiceVadEagerness))?String(runtimeConfig.realtimeVoiceVadEagerness):'low'
  const enabled=Boolean(runtimeConfig?.realtimeVoiceEnabled&&client&&costStore)
  const sessions=new Map()
  const activeSession=(identity,sessionId)=>{const session=sessions.get(String(sessionId));if(!session||session.expiresAt<=Date.now()){sessions.delete(String(sessionId));throw voiceError('A sessão realtime expirou.','realtime_voice_session_expired',410)}if(session.tenantId!==String(identity?.tenantId)||session.ownerId!==String(identity?.id))throw voiceError('A sessão realtime não pertence ao usuário autenticado.','realtime_voice_session_scope_denied',404);return session}
@@ -26,7 +27,7 @@ export function createRealtimeVoiceService({runtimeConfig,client,repository,conv
   if(!allowedIdentity(identity,runtimeConfig?.realtimeVoiceTesters))throw voiceError('Este usuário não está autorizado para o UAT realtime.','realtime_voice_tester_not_allowed',403)
  }
  return Object.freeze({
-  status:()=>({enabled,model,budgetUsd,maxSessionSeconds,transport:'WEBRTC',fallback:'PUSH_TO_TALK',testersConfigured:Boolean(runtimeConfig?.realtimeVoiceTesters?.length)}),
+  status:()=>({enabled,model,budgetUsd,maxSessionSeconds,transport:'WEBRTC',fallback:'PUSH_TO_TALK',vad:{type:'SEMANTIC_VAD',eagerness:vadEagerness},testersConfigured:Boolean(runtimeConfig?.realtimeVoiceTesters?.length)}),
   async createSession({identity,input={},requestId}={}){
    assertAccess(identity)
    const sessionId=randomUUID();const tenantId=String(identity.tenantId);const ownerId=String(identity.id);const clientId=clean(input.clientId);const conversationId=clean(input.conversationId)||randomUUID();const activeContext=input.activeContext&&typeof input.activeContext==='object'?input.activeContext:null
@@ -39,11 +40,11 @@ export function createRealtimeVoiceService({runtimeConfig,client,repository,conv
    const safetyIdentifier=createHash('sha256').update(`${tenantId}:${ownerId}`).digest('hex')
    let secret
    try{
-    secret=await client.realtime.clientSecrets.create({expires_after:{anchor:'created_at',seconds:30},session:{type:'realtime',model,output_modalities:['audio'],instructions:buildRealtimeValInstructions({context:realtimeContext,model}),max_output_tokens:512,tool_choice:'auto',tools:realtimeValTools,tracing:null,audio:{input:{noise_reduction:{type:'near_field'},transcription:{model:runtimeConfig.voiceTranscriptionModel||'gpt-transcribe',language:'pt'},turn_detection:{type:'semantic_vad',eagerness:'auto',create_response:true,interrupt_response:true}},output:{voice:'marin',speed:1.05}}}},{headers:{'OpenAI-Safety-Identifier':safetyIdentifier}})
+    secret=await client.realtime.clientSecrets.create({expires_after:{anchor:'created_at',seconds:30},session:{type:'realtime',model,output_modalities:['audio'],instructions:buildRealtimeValInstructions({context:realtimeContext,model}),max_output_tokens:512,tool_choice:'auto',tools:realtimeValTools,tracing:null,audio:{input:{noise_reduction:{type:'near_field'},transcription:{model:runtimeConfig.voiceTranscriptionModel||'gpt-transcribe',language:'pt'},turn_detection:{type:'semantic_vad',eagerness:vadEagerness,create_response:true,interrupt_response:true}},output:{voice:'marin',speed:1.05}}}},{headers:{'OpenAI-Safety-Identifier':safetyIdentifier}})
    }catch(error){await costStore.record({sessionId,userId:ownerId,responseId:`failed:${sessionId}`,costUsd:0,final:true,budgetUsd,model,usage:{}}).catch(()=>null);throw voiceError('Não foi possível abrir a sessão realtime. Use apertar para falar.','realtime_voice_session_failed',502)}
    sessions.set(sessionId,{tenantId,ownerId,clientId,conversationId,client:context.client||null,activeContext,expiresAt:Date.now()+maxSessionSeconds*1000+60_000})
    logger({event:'val.realtime_voice.session_created',sessionId,tenantId,ownerId,model,requestId,clientScoped:Boolean(clientId)})
-   return {contractVersion:'val.realtime_voice.session.v1',sessionId,clientSecret:secret.value,expiresAt:secret.expires_at,providerSessionId:secret.session?.id||null,model,transport:'WEBRTC',callUrl:'https://api.openai.com/v1/realtime/calls',maxSessionSeconds,budget:{limitUsd:budgetUsd,remainingUsd:budget.remainingUsd,reservationUsd},context:{conversationId,clientId:clientId||null,persistenceMode:'NONE'},capabilities:{vad:'SEMANTIC_VAD',bargeIn:true,streamingAudio:true,tools:'GOVERNED',memory:'CONFIRM_REQUIRED'}}
+   return {contractVersion:'val.realtime_voice.session.v1',sessionId,clientSecret:secret.value,expiresAt:secret.expires_at,providerSessionId:secret.session?.id||null,model,transport:'WEBRTC',callUrl:'https://api.openai.com/v1/realtime/calls',maxSessionSeconds,budget:{limitUsd:budgetUsd,remainingUsd:budget.remainingUsd,reservationUsd},context:{conversationId,clientId:clientId||null,persistenceMode:'NONE'},capabilities:{vad:'SEMANTIC_VAD',vadEagerness,bargeIn:true,streamingAudio:true,tools:'GOVERNED',memory:'CONFIRM_REQUIRED'}}
   },
   async recordUsage({identity,sessionId,input={}}={}){
    assertAccess(identity);if(!/^[0-9a-f-]{36}$/i.test(String(sessionId||'')))throw voiceError('Sessão realtime inválida.','realtime_voice_session_invalid',400);activeSession(identity,sessionId)

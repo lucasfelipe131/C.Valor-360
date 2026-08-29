@@ -1,0 +1,14 @@
+{
+  "contract_version": "val.turn_detection_uat.v1",
+  "provider_mode": "semantic_vad",
+  "default_eagerness": "low",
+  "cases": [
+    {"id":"TD-001","name":"pausa_curta","utterance":"Eu tô indo no João... amanhã.","expected_turns":1},
+    {"id":"TD-002","name":"fala_hesitante","utterance":"Eu tô indo no João... ah... amanhã... e quero falar de milho.","expected_turns":1},
+    {"id":"TD-003","name":"nome_proprio","utterance":"Antônio Carlos Costa Beber.","expected_turns":1},
+    {"id":"TD-004","name":"frase_longa","utterance":"Vou revisar a última visita, a análise de solo e a oportunidade antes de definir as perguntas.","expected_turns":1},
+    {"id":"TD-005","name":"interrupcao","utterance":"Espera. Volta no milho.","expected_barge_in":true},
+    {"id":"TD-006","name":"mudanca_de_ideia","utterance":"Quero falar de preço... não, deixa preço de lado e foca nutrição.","expected_turns":1},
+    {"id":"TD-007","name":"ruido_de_campo","utterance":"Abre o Antônio.","environment":"moderate_field_noise","expected_turns":1}
+  ]
+}
