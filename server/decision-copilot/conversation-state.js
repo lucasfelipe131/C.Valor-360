@@ -3,6 +3,7 @@ export const conversationStateVersion='val.conversation_state.v1'
 export const conversationStateLimits=Object.freeze({
  turns:20,
  entities:16,
+ clients:6,
  toolResults:12,
  questions:12,
  facts:16,
@@ -93,6 +94,7 @@ export function normalizeConversationState(value={},scope={}){
   persistence_mode:'NONE',
   persistent_memory_unchanged:true,
   current_client:client,
+  recent_clients:uniqueBy(list(value.recent_clients).map(item=>entityRef(item,'client')).filter(Boolean),item=>item.id||item.label,conversationStateLimits.clients),
   current_property:entityRef(value.current_property,'property'),
   current_field:entityRef(value.current_field,'field'),
   current_crop:clean(value.current_crop,80)||null,
@@ -138,6 +140,7 @@ export function switchConversationClient(current={},client,scope={}){
  return normalizeConversationState({
   ...previous,
   current_client:nextClient,
+  recent_clients:uniqueBy([nextClient,previous.current_client,...previous.recent_clients].filter(Boolean),item=>item.id||item.label,conversationStateLimits.clients),
   current_property:null,
   current_field:null,
   current_crop:null,
@@ -211,6 +214,7 @@ export function conversationStateContext(state={}){
   persistence_mode:'NONE',
   persistent_memory_unchanged:true,
   current_client:current.current_client,
+  recent_clients:current.recent_clients,
   current_property:current.current_property,
   current_field:current.current_field,
   current_crop:current.current_crop,

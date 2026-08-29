@@ -20,11 +20,11 @@ export function resolveValNaturalCommand(input){
  if(!normalized)return null
  const registration=clean(input).match(/^(?:registra|registre|anota|anote)\s+que\s+(.+?)[.!?]*$/i)
  if(registration)return {action:'OPEN_REGISTER',local:true,persistence:'CONFIRM_REQUIRED',candidate:clean(registration[1])}
- if(exact(normalized,'resume','resuma'))return {action:'SUMMARIZE',local:true,persistence:'NONE'}
- if(exact(normalized,'repete','repita'))return {action:'REPEAT',local:true,persistence:'NONE'}
- if(exact(normalized,'so as perguntas de ouro','somente as perguntas de ouro','so me manda as perguntas de ouro','agora me manda so as tres perguntas de ouro'))return {action:'GOLDEN_QUESTIONS_ONLY',local:true,persistence:'NONE'}
- if(exact(normalized,'agora por escrito','responda por escrito'))return {action:'OUTPUT_TEXT',local:true,outputMode:'text',persistence:'NONE'}
- if(exact(normalized,'agora fala comigo','agora fala elas pra mim','agora fala isso pra mim','fale comigo','responda em audio'))return {action:'OUTPUT_AUDIO',local:true,outputMode:'audio',persistence:'NONE'}
+ if(exact(normalized,'resume','resuma')||/^(?:agora\s+)?(?:resume|resuma)(?:\s+(?:isso|a resposta))?(?:\s+em uma linha)?(?:,?\s+mantendo\s+(?:o\s+)?mesmo\s+produtor)?$/.test(normalized))return {action:'SUMMARIZE',local:true,persistence:'NONE'}
+ if(exact(normalized,'repete','repita')||/^(?:repete|repita)(?:\s+isso)?$/.test(normalized))return {action:'REPEAT',local:true,persistence:'NONE'}
+ if(exact(normalized,'so as perguntas','agora so as perguntas','so as perguntas de ouro','somente as perguntas de ouro','so me manda as perguntas de ouro','agora me manda so as tres perguntas de ouro'))return {action:'GOLDEN_QUESTIONS_ONLY',local:true,persistence:'NONE'}
+ if(exact(normalized,'agora por escrito','responda por escrito','me manda isso escrito','agora me manda isso por escrito'))return {action:'OUTPUT_TEXT',local:true,outputMode:'text',persistence:'NONE'}
+ if(exact(normalized,'agora fala comigo','agora fala elas pra mim','agora fala isso pra mim','fale comigo','responda em audio','fala de novo'))return {action:'OUTPUT_AUDIO',local:true,outputMode:'audio',persistence:'NONE'}
  if(exact(normalized,'texto e audio','agora texto e audio'))return {action:'OUTPUT_BOTH',local:true,outputMode:'both',persistence:'NONE'}
  if(exact(normalized,'registra','registre'))return {action:'OPEN_REGISTER',local:true,persistence:'CONFIRM_REQUIRED'}
  if(exact(normalized,'nao registra','nao registre'))return {action:'KEEP_SESSION_ONLY',local:true,persistence:'NONE'}

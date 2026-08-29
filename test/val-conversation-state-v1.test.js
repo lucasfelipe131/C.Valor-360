@@ -69,6 +69,7 @@ test('troca explícita e autorizada limpa todas as dependências e turnos do pro
  assert.deepEqual(switched.recent_tool_results,[])
  assert.deepEqual(switched.session_facts,[])
  assert.deepEqual(switched.conversation_turns,[])
+ assert.deepEqual(switched.recent_clients.map(item=>item.id),['client-b','client-a'])
  assert.equal(store.get({...scope,clientId:'client-b'}).current_client.id,'client-b')
  assert.throws(()=>store.get(scope),error=>error.code==='conversation_client_scope_mismatch')
 })

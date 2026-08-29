@@ -1,4 +1,4 @@
-import React,{lazy,Suspense,useCallback,useEffect,useState} from 'react'
+import React,{lazy,Suspense,useCallback,useEffect,useMemo,useState} from 'react'
 import {BrainCircuit} from 'lucide-react'
 import Sidebar from './components/Sidebar'
 import MobileNav from './components/MobileNav'
@@ -9,6 +9,7 @@ import {normalizeText,reconcileOpportunityProjection} from './lib/profile'
 import {opportunityCacheKey} from './lib/opportunity-pipeline'
 import {resolveCopilotLaunch} from './lib/copilot-context'
 import {clearCopilotSessionStorage} from './lib/copilot-session-storage'
+import {createValWorkspaceContext,validateValWorkspaceAction} from './lib/val-workspace-context'
 
 const GlobalValCopilot=lazy(()=>import('./components/GlobalValCopilot'))
 const Dashboard=lazy(()=>import('./pages/Dashboard'))
@@ -128,6 +129,27 @@ export default function App(){
   if(next!=='copilot')setCopilotOpen(false)
   setPage(next);if(next===page)window.requestAnimationFrame(resetPageViewport)
  }
+ const workspaceContext=useMemo(()=>createValWorkspaceContext({
+  module:page,
+  client:selected,
+  property:page==='agro'?agroLaunch.property:null,
+  field:page==='agro'?agroLaunch.field:null,
+  analysis:page==='agro'?agroLaunch.analysis:null,
+  conversation:copilotSeed?.nonce?{id:String(copilotSeed.nonce),label:'Conversa VAL ativa'}:null
+ }),[page,selected?.id,selected?.name,agroLaunch.property,agroLaunch.field,agroLaunch.analysis,copilotSeed?.nonce])
+ const executeValWorkspaceAction=value=>{
+  const action=validateValWorkspaceAction(value)
+  if(!action){notify('A ação solicitada não pertence ao contrato operacional autorizado da VAL.');return {status:'DENIED'}}
+  if(action.requiresConfirmation){notify('Revise e confirme a alteração no módulo canônico antes de persistir.');return {status:'CONFIRM_REQUIRED'}}
+  const targetClient=action.clientId?clientList.find(item=>String(item.id)===String(action.clientId))||null:null
+  if(action.clientId&&!targetClient){notify('O produtor solicitado não está disponível na carteira autorizada desta sessão.');return {status:'CLIENT_SCOPE_DENIED'}}
+  setCopilotOpen(false)
+  if(action.type==='OPEN_CLIENT'){openClient(targetClient);return {status:'COMPLETED'}}
+  if(action.type==='PREPARE_VISIT'){prepareClient(targetClient);return {status:'COMPLETED'}}
+  if(action.type==='NAVIGATE'&&action.page==='visits'&&targetClient){setSelected(targetClient);setPrepareVisitClientId(targetClient.id);setPage('visits');return {status:'COMPLETED'}}
+  navigate({page:action.page,clientId:targetClient?.id||'',tool:action.tool,manualPage:action.manualPage,diagnosisMode:action.diagnosisMode,label:action.label,context:{clientId:targetClient?.id||'',tool:action.tool,page:action.manualPage,diagnosisMode:action.diagnosisMode,label:action.label}})
+  return {status:'COMPLETED'}
+ }
  const recordAgroHeroTelemetry=useCallback(event=>{
   try{window.dispatchEvent(new CustomEvent('valor360:agro-hero-telemetry',{detail:event}))}catch{}
   fetch('/api/usage/events',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({eventType:'agro_hero_interaction',page:'agro',entityType:event?.clientContext?'client':'',entityId:event?.clientContext?agroLaunch.client?.id||'':'',metadata:{action:event?.action,status:event?.status,phase:event?.phase,errorCode:event?.errorCode,contextTypes:event?.contextTypes}}),signal:AbortSignal.timeout(5000)}).catch(()=>null)
@@ -204,7 +226,12 @@ export default function App(){
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
     {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
     {page==='admin'&&currentUser?.role==='admin'&&<Admin currentUser={currentUser} onNotify={notify}/>}
-    {copilotLoaded&&<GlobalValCopilot key={copilotOwnerScope||'session'} open={page==='copilot'&&copilotOpen} onClose={closeCopilot} clients={clientList} seed={copilotSeed} storageScope={currentUser?.storageScope} visits={visits} opportunities={opportunities} onRefreshPortfolio={refreshPortfolio} onOpenClient={openClient} onPrepareVisit={prepareClient} onNavigate={navigate}/>}
+    {copilotLoaded&&<GlobalValCopilot key={copilotOwnerScope||'session'}
+     open={page==='copilot'&&copilotOpen} onClose={closeCopilot}
+     clients={clientList} seed={copilotSeed} workspaceContext={workspaceContext} storageScope={currentUser?.storageScope}
+     visits={visits} opportunities={opportunities} onRefreshPortfolio={refreshPortfolio}
+     onOpenClient={openClient} onPrepareVisit={prepareClient} onNavigate={navigate} onWorkspaceAction={executeValWorkspaceAction}
+    />}
     </Suspense>
    </div>
   </main>

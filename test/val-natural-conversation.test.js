@@ -20,6 +20,9 @@ test('comandos naturais reconhecem as formas autorizadas sem reiniciar contexto'
   ['Aprofunda.','DEEPEN'],['Só o essencial.','SET_SIMPLE']
  ])
  for(const [phrase,action] of expected)assert.equal(resolveValNaturalCommand(phrase)?.action,action,phrase)
+ assert.equal(resolveValNaturalCommand('Resume isso em uma linha, mantendo o mesmo produtor.')?.action,'SUMMARIZE')
+ assert.equal(resolveValNaturalCommand('Me manda isso escrito.')?.action,'OUTPUT_TEXT')
+ assert.equal(resolveValNaturalCommand('Fala de novo.')?.action,'OUTPUT_AUDIO')
  assert.deepEqual(VAL_NATURAL_COMMAND_POLICY,{version:'val.natural_commands.v1',persistence:'NONE',keeps_thread:true,changes_confirmed_memory:false})
 })
 

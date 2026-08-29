@@ -12,6 +12,7 @@
     "bundle:audit": "node scripts/bundle-audit.mjs",
     "performance:golden:local": "node scripts/val-golden-performance-local.mjs",
     "performance:slo:check": "node scripts/val-performance-slo-check.mjs",
+    "performance:conversational-os:local": "node scripts/val-conversational-os-performance-local.mjs",
     "voice:golden": "node scripts/val-voice-golden.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "start": "node server/start.js",

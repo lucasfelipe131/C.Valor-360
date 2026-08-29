@@ -1,5 +1,6 @@
 const readBoolean=(value,fallback=false)=>value===undefined?fallback:/^(1|true|yes|on)$/i.test(String(value))
 const boundedNumber=(value,fallback,min,max)=>{const parsed=Number(value);return Math.max(min,Math.min(max,Number.isFinite(parsed)?parsed:fallback))}
+const choice=(value,allowed,fallback)=>allowed.includes(String(value||'').toLowerCase())?String(value).toLowerCase():fallback
 
 export const DEFAULT_TENANT_ID='00000000-0000-4000-8000-000000000001'
 
@@ -33,6 +34,7 @@ export const config=Object.freeze({
   realtimeVoiceBudgetUsd:boundedNumber(process.env.VAL_REALTIME_VOICE_BUDGET_USD,25,1,25),
   realtimeVoiceReservationUsd:boundedNumber(process.env.VAL_REALTIME_VOICE_RESERVATION_USD,1,.25,2),
   realtimeVoiceMaxSessionSeconds:boundedNumber(process.env.VAL_REALTIME_VOICE_MAX_SESSION_SECONDS,600,60,600),
+  realtimeVoiceVadEagerness:choice(process.env.VAL_REALTIME_VOICE_VAD_EAGERNESS,['low','medium','high','auto'],'low'),
   realtimeVoiceRequestsPerTenMinutes:boundedNumber(process.env.VAL_REALTIME_VOICE_REQUESTS_PER_10_MINUTES,6,1,20),
   realtimeVoiceTesters:String(process.env.VAL_REALTIME_VOICE_TESTERS||'').split(',').map(value=>value.trim().toLowerCase()).filter(Boolean).slice(0,50),
   knowledgeVectorStoreId:String(process.env.VAL_KNOWLEDGE_VECTOR_STORE_ID||''),
@@ -60,7 +62,7 @@ export function getPublicEngineConfig(){
     knowledgeBaseConfigured:Boolean(config.knowledgeVectorStoreId),
     responseStorage:config.openaiStoreResponses?'openai-enabled':'application-only',
     voiceCapture:{enabled:true,transcriptionConfigured:Boolean(config.openaiApiKey),maxDurationSeconds:config.voiceMaxDurationSeconds,maxAudioBytes:config.voiceMaxAudioBytes},
-    realtimeVoice:{enabled:config.realtimeVoiceEnabled,model:config.realtimeVoiceModel,transport:'WEBRTC',budgetUsd:config.realtimeVoiceBudgetUsd,fallback:'PUSH_TO_TALK'},
+    realtimeVoice:{enabled:config.realtimeVoiceEnabled,model:config.realtimeVoiceModel,transport:'WEBRTC',budgetUsd:config.realtimeVoiceBudgetUsd,fallback:'PUSH_TO_TALK',vad:{type:'SEMANTIC_VAD',eagerness:config.realtimeVoiceVadEagerness}},
     models:{daily:config.modelDaily,strategic:config.modelStrategic,fast:config.modelFast,voiceTranscription:config.voiceTranscriptionModel,voiceExtraction:config.voiceExtractionModel,realtimeVoice:config.realtimeVoiceModel}
   }
 }

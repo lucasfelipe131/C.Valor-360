@@ -100,7 +100,7 @@ function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onRe
  </article>
 }
 
-export default function GlobalValCopilot({open,onClose,clients=[],contextClient=null,seed,onRefreshPortfolio,onOpenClient,onPrepareVisit,onNavigate,visits=[],opportunities=[],storageScope='session'}){
+export default function GlobalValCopilot({open,onClose,clients=[],contextClient=null,seed,workspaceContext=null,onRefreshPortfolio,onOpenClient,onPrepareVisit,onNavigate,onWorkspaceAction,visits=[],opportunities=[],storageScope='session'}){
  const storedWorkspace=useMemo(()=>readConversationWorkspace(typeof sessionStorage==='undefined'?null:sessionStorage,storageScope),[storageScope])
  const [selectedId,setSelectedId]=useState(contextClient?.id||'')
  const [activeContext,setActiveContext]=useState(null)
@@ -314,7 +314,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
    if(naturalCommand.action==='KEEP_SESSION_ONLY'){setSessionReplyOffer(null);setMode('ASK')}
    const localTurn=localNaturalCommandTurn(naturalCommand,latestPayload);if(localTurn)append({...localTurn,at:new Date().toISOString()},activeThreadKey)
    const previousQuestions=[...activeThread].reverse().find(item=>item?.command==='GOLDEN_QUESTIONS_ONLY'&&item?.text)?.text
-   const speakable=naturalCommand.action==='OUTPUT_AUDIO'?(previousQuestions||latestReasoning.voice_output?.speakable_text||latestReasoning.recommended_strategy?.reading):localTurn?.text
+   const speakable=['OUTPUT_AUDIO','REPEAT'].includes(naturalCommand.action)?(previousQuestions||latestReasoning.voice_output?.speakable_text||latestReasoning.recommended_strategy?.reading):localTurn?.text
    const suppressSpeech=['OUTPUT_TEXT','GOLDEN_QUESTIONS_ONLY','KEEP_SESSION_ONLY'].includes(naturalCommand.action)
    setMessage('');setReplyingTo(null);return {responseText:speakable||'',suppressSpeech}
   }
@@ -338,11 +338,12 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   const controller=new AbortController();const requestId=createValProgressRequestId();const stopProgress=client?startValProgressPolling({requestId,onProgress:setProgress,signal:controller.signal}):()=>{}
   try{
    const timeout=AbortSignal.timeout(120_000);const signal=typeof AbortSignal.any==='function'?AbortSignal.any([controller.signal,timeout]):timeout
-   const response=await fetch('/api/val/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:client?.id||'',client:client||undefined,message:requestMessage,attachmentIds:attachments.map(item=>item.id),mode:'daily',intent:effectiveIntent,sessionCommand:naturalCommand?.action||undefined,conversationId:conversationId(activeThreadKey,storageScope),requestId,context:activeContext||undefined,sessionContext:{objective:sessionObjective,replies:currentSessionReplies.slice(-6),active_object:activeContext||null,persistence_mode:'NONE',input_modality:turnOptions.inputModality==='voice'?'voice':attachments.some(item=>item.mimeType?.startsWith('image/'))?'photo':attachments.length?'file':'text',response_mode:turnOptions.responseMode||outputMode,conversation_mode:turnOptions.conversationMode===true}}),signal})
+   const response=await fetch('/api/val/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:client?.id||'',client:client||undefined,message:requestMessage,attachmentIds:attachments.map(item=>item.id),mode:'daily',intent:effectiveIntent,sessionCommand:naturalCommand?.action||undefined,conversationId:conversationId(activeThreadKey,storageScope),requestId,context:activeContext||undefined,workspaceContext:workspaceContext||undefined,sessionContext:{objective:sessionObjective,replies:currentSessionReplies.slice(-6),active_object:activeContext||null,persistence_mode:'NONE',input_modality:turnOptions.inputModality==='voice'?'voice':attachments.some(item=>item.mimeType?.startsWith('image/'))?'photo':attachments.length?'file':'text',response_mode:turnOptions.responseMode||outputMode,conversation_mode:turnOptions.conversationMode===true}}),signal})
    const rawPayload=await response.json().catch(()=>null);if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok){const requestFailure=new Error(rawPayload?.error||'A VAL não respondeu agora.');requestFailure.payload=rawPayload;throw requestFailure}
    const payload=normalizeValChatPayload(rawPayload);if(!payload)throw new Error('A resposta chegou fora do contrato esperado. Tente novamente; nenhuma memória foi alterada.')
    const resolvedClient=payload.conversationResolution?.status==='RESOLVED'?payload.conversationResolution.client:null
    if(resolvedClient?.id){setSelectedId(resolvedClient.id);setThreadOverride(activeThreadKey);if(payload.conversationResolution?.changed_client)setActiveContext(null);setClarification(null)}
+   if(payload.workspaceAction)onWorkspaceAction?.(payload.workspaceAction)
    const sourceAttachments=(Array.isArray(payload.attachments)&&payload.attachments.length?payload.attachments:submittedAttachments).map(item=>{const association=item.association==='UNLINKED'?'UNLINKED':'LINKED_CLIENT';return {id:item.id,organizationId:item.organizationId||'',clientId:association==='UNLINKED'?'':item.clientId||resolvedClient?.id||client?.id||'',association,propertyId:activeContext?.type==='property'?activeContext.id:'',fieldId:activeContext?.type==='field'?activeContext.id:'',originalName:item.originalName||'',mimeType:item.mimeType||'',createdAt:item.createdAt||'',sha256:item.sha256||''}}).filter(item=>item.id)
    setThreads(current=>({...current,[activeThreadKey]:[...(current[activeThreadKey]||[]),{role:'assistant',payload,sourceAttachments,at:new Date().toISOString()}].slice(-20)}));setAttachments([])
    if(activeReply){setSessionReplies(current=>({...current,[activeThreadKey]:currentSessionReplies.slice(-6)}));setSessionReplyOffer({question:activeReply.question,answer:prompt,intent:activeReply.intent||effectiveIntent||''})}
@@ -353,6 +354,10 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   const clarificationTurn=pending?{...pending,prompt,intent:effectiveIntent||'',turnOptions:{...turnOptions},activeThreadKey}:null
   setClarification(clarificationTurn)
   if(pending&&turnOptions.conversationMode===true&&Array.isArray(pending.options)&&pending.options.length){
+   if(turnOptions.governedTool){
+    const choices=pending.options.slice(0,5).map(option=>[option.name,option.municipality].filter(Boolean).join(' de ')).join('; ')
+    return {responseText:`${pending.question||'Qual produtor você quer usar?'} ${choices}.`,suppressSpeech:false,clarification:pending}
+   }
    setError('');stopProgress();controller.abort();setProgress(null);setBusy(false)
    return await new Promise((resolve,reject)=>{
     const previous=realtimeClarificationRef.current
