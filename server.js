@@ -45,6 +45,8 @@ import {readReleaseMetadata} from './server/release-metadata.js'
 import {createReadinessReport} from './server/readiness.js'
 import {technicalBootstrapFromValClients} from './server/agronomic-geometry-bridge.js'
 import {normalizePublicAttachmentPatch} from './server/attachment-public-patch.js'
+import {createPostgresRealtimeCostStore} from './server/realtime-voice/cost-control.js'
+import {createRealtimeVoiceService} from './server/realtime-voice/service.js'
 
 const port=Number(process.env.PORT||3000)
 const appRoot=dirname(fileURLToPath(import.meta.url))
@@ -55,7 +57,7 @@ const storePath=join(dataRoot,'valor360-store.json')
 const profileMatrix=JSON.parse(readFileSync(join(appRoot,'src','data','profile-matrix.json'),'utf8'))
 const surveyOptions=buildSurveyOptions(profileMatrix)
 const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp','.woff2':'font/woff2'}
-const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(self), microphone=(self), geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; worker-src 'self' blob:; media-src 'self' blob: data:; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"}
+const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(self), microphone=(self), geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.openai.com wss://api.openai.com; font-src 'self'; worker-src 'self' blob:; media-src 'self' blob: data:; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"}
 
 mkdirSync(dataRoot,{recursive:true})
 if(!existsSync(storePath))writeFileSync(storePath,JSON.stringify({surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[]}},null,2))
@@ -140,6 +142,8 @@ const voiceCapture=createVoiceCaptureService({repository,storageProvider:voiceSt
 const valProgress=createValProgressTracker()
 const valSessionContextCache=createSessionContextCache()
 const valConversationSessions=createConversationSessionStore()
+const realtimeVoiceCostStore=createPostgresRealtimeCostStore({database,tenantId:config.defaultTenantId})
+const realtimeVoice=createRealtimeVoiceService({runtimeConfig:config,client:voiceOpenAI,repository,conversationSessions:valConversationSessions,costStore:realtimeVoiceCostStore,logger:event=>observe('val.realtime_voice',{sessionId:event.sessionId,model:event.model,costUsd:event.costUsd,outcome:event.event})})
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
 function consumeRateLimit(scope,key,limit){const now=Date.now();const bucketKey=`${scope}:${key}`;const current=rateBuckets.get(bucketKey);if(!current||current.resetAt<=now){rateBuckets.set(bucketKey,{count:1,resetAt:now+600_000});return true}if(current.count>=limit)return false;current.count+=1;return true}
@@ -209,7 +213,7 @@ async function handleApi(request,response,url){
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
- const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const requestStartedAt=performance.now();const authStartedAt=performance.now()
  const identity=protectedPath?await sessionIdentity(request):null
@@ -229,6 +233,21 @@ async function handleApi(request,response,url){
   try{const recorded=valConversationLatency.record({source:'BROWSER_VOICE_TURN',contractVersion:payload.contractVersion,serviceClass:payload.serviceClass,metrics:payload.metrics,outcome:payload.outcome});return json(response,recorded?202:400,{accepted:recorded,content_free:true,source:'BROWSER_VOICE_TURN'})}
   catch{return json(response,400,{error:'Métrica conversacional inválida.',code:'val_conversation_metric_invalid'})}
  }
+ if(url.pathname==='/api/v1/realtime-voice/sessions'&&request.method==='POST'){
+  const actorId=String(identity?.id||identity?.email||'')
+  if(!consumeRateLimit('realtime-voice-session',actorId,config.realtimeVoiceRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de sessões realtime atingido. Aguarde alguns minutos.',code:'realtime_voice_rate_limit'})
+  const result=await realtimeVoice.createSession({identity,input:await body(request),requestId:currentRequestContext()?.requestId})
+  await accessRepository.recordUsage(identity,{eventType:'realtime_voice_session_created',page:'val',entityType:'realtime_voice_session',entityId:result.sessionId,metadata:{model:result.model,transport:result.transport,clientScoped:Boolean(result.context.clientId),contentFree:true}}).catch(()=>null)
+  return json(response,201,result)
+ }
+ if(url.pathname==='/api/v1/realtime-voice/budget'&&request.method==='GET')return json(response,200,await realtimeVoice.budget({identity}))
+ const realtimeUsageMatch=url.pathname.match(/^\/api\/v1\/realtime-voice\/sessions\/([0-9a-f-]{36})\/usage$/i)
+ if(realtimeUsageMatch&&request.method==='POST'){
+  const result=await realtimeVoice.recordUsage({identity,sessionId:realtimeUsageMatch[1],input:await body(request)})
+  return json(response,result.exhausted?402:202,result)
+ }
+ const realtimeTurnMatch=url.pathname.match(/^\/api\/v1\/realtime-voice\/sessions\/([0-9a-f-]{36})\/turns$/i)
+ if(realtimeTurnMatch&&request.method==='POST')return json(response,202,await realtimeVoice.recordTurn({identity,sessionId:realtimeTurnMatch[1],input:await body(request)}))
  if(url.pathname==='/api/portfolio-admin/users'&&request.method==='GET')return json(response,200,{users:await accessRepository.listUsers(identity)})
  if(url.pathname==='/api/portfolio-admin/users'&&request.method==='POST')return json(response,201,await accessRepository.createUser(identity,await body(request)))
  if(url.pathname==='/api/portfolio-admin/users'&&request.method==='PATCH')return json(response,200,{saved:true,user:await accessRepository.updateUser(identity,await body(request))})
