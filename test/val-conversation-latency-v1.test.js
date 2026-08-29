@@ -15,11 +15,12 @@ import {
 
 const read=path=>readFileSync(new URL(`../${path}`,import.meta.url),'utf8')
 
-test('trace de browser mede cinco marcos VOICE sem conteúdo e declara fonte/contrato',()=>{
+test('trace de browser mede cadeia VOICE e métricas realtime sem conteúdo',()=>{
  const registry=createConversationLatencyRegistry()
  let now=100
  const trace=createConversationLatencyTrace({serviceClass:'VOICE',registry,clock:()=>now,startAt:100})
  now=110;trace.speechEnded()
+ now=120;trace.turnDetected()
  now=145;trace.transcriptReady()
  now=160;trace.reasoningStarted()
  now=210;trace.firstText()
@@ -28,7 +29,10 @@ test('trace de browser mede cinco marcos VOICE sem conteúdo e declara fonte/con
  const result=trace.finish({outcome:'SUCCESS'})
 
  assert.deepEqual(result.metrics,{
+  speech_end_to_turn_detected:10,
   speech_end_to_transcript:35,
+  speech_end_to_first_useful_text:100,
+  speech_end_to_first_audio:145,
   transcript_to_first_reasoning:15,
   reasoning_to_first_text:50,
   reasoning_to_first_audio:95,

@@ -28,6 +28,13 @@ export const config=Object.freeze({
   voiceRequestsPerTenMinutes:boundedNumber(process.env.VAL_VOICE_REQUESTS_PER_10_MINUTES,20,1,200),
   voiceMaxDurationSeconds:boundedNumber(process.env.VAL_VOICE_MAX_DURATION_SECONDS,900,1,900),
   voiceMaxAudioBytes:boundedNumber(process.env.VAL_VOICE_MAX_AUDIO_BYTES,6_000_000,1_024,6_000_000),
+  realtimeVoiceEnabled:readBoolean(process.env.VAL_REALTIME_VOICE_ENABLED,false),
+  realtimeVoiceModel:'gpt-realtime-2.1-mini',
+  realtimeVoiceBudgetUsd:boundedNumber(process.env.VAL_REALTIME_VOICE_BUDGET_USD,25,1,25),
+  realtimeVoiceReservationUsd:boundedNumber(process.env.VAL_REALTIME_VOICE_RESERVATION_USD,1,.25,2),
+  realtimeVoiceMaxSessionSeconds:boundedNumber(process.env.VAL_REALTIME_VOICE_MAX_SESSION_SECONDS,600,60,600),
+  realtimeVoiceRequestsPerTenMinutes:boundedNumber(process.env.VAL_REALTIME_VOICE_REQUESTS_PER_10_MINUTES,6,1,20),
+  realtimeVoiceTesters:String(process.env.VAL_REALTIME_VOICE_TESTERS||'').split(',').map(value=>value.trim().toLowerCase()).filter(Boolean).slice(0,50),
   knowledgeVectorStoreId:String(process.env.VAL_KNOWLEDGE_VECTOR_STORE_ID||''),
   manualWebhookSecret:String(process.env.VAL_MANUAL_WEBHOOK_SECRET||''),
   integrationToken:String(process.env.VAL_INTEGRATION_TOKEN||''),
@@ -53,6 +60,7 @@ export function getPublicEngineConfig(){
     knowledgeBaseConfigured:Boolean(config.knowledgeVectorStoreId),
     responseStorage:config.openaiStoreResponses?'openai-enabled':'application-only',
     voiceCapture:{enabled:true,transcriptionConfigured:Boolean(config.openaiApiKey),maxDurationSeconds:config.voiceMaxDurationSeconds,maxAudioBytes:config.voiceMaxAudioBytes},
-    models:{daily:config.modelDaily,strategic:config.modelStrategic,fast:config.modelFast,voiceTranscription:config.voiceTranscriptionModel,voiceExtraction:config.voiceExtractionModel}
+    realtimeVoice:{enabled:config.realtimeVoiceEnabled,model:config.realtimeVoiceModel,transport:'WEBRTC',budgetUsd:config.realtimeVoiceBudgetUsd,fallback:'PUSH_TO_TALK'},
+    models:{daily:config.modelDaily,strategic:config.modelStrategic,fast:config.modelFast,voiceTranscription:config.voiceTranscriptionModel,voiceExtraction:config.voiceExtractionModel,realtimeVoice:config.realtimeVoiceModel}
   }
 }

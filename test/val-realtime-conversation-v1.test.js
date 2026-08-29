@@ -158,5 +158,6 @@ test('ValRealtimeConversation — SSR mantém entrada opt-in e não ativa microf
 
 test('ValRealtimeConversation — opt-in expõe callback para preparar saída de áudio antes de iniciar',()=>{
  const component=readFileSync(new URL('../src/components/copilot/ValRealtimeConversation.jsx',import.meta.url),'utf8')
- assert.match(component,/onClick=\{\(\)=>\{onStart\?\.\(\);conversation\.start\(\)\}\}/)
+ assert.match(component,/const start=async\(\)=>\{\s*onStart\?\.\(\);setTransport\('natural'\)\s*const result=await natural\.start\(\)/)
+ assert.match(component,/onClick=\{start\}/)
 })

@@ -301,7 +301,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   const activeThreadKey=threadKey
   const activeThread=threads[activeThreadKey]||[]
   const activeReply=replyingTo
-  const naturalCommand=!activeReply&&!attachments.length?resolveValNaturalCommand(prompt):null
+  const naturalCommand=!turnOptions.governedTool&&!activeReply&&!attachments.length?resolveValNaturalCommand(prompt):null
   if(naturalCommand?.local){
    const userItem={role:'user',text:prompt,intent:'SESSION_COMMAND',command:naturalCommand.action,persistence:'NONE',at:new Date().toISOString()}
    append(userItem,activeThreadKey)
@@ -334,7 +334,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   const submittedAttachments=attachments.slice(0,3)
   const userItem={role:'user',text:prompt||'Analisar os arquivos enviados.',objective:continuation?requestMessage:prompt,intent:effectiveIntent||'',at:new Date().toISOString()}
   if(!activeReply){setSessionReplies(current=>({...current,[activeThreadKey]:[]}));setSessionReplyOffer(null)}
-  if(!turnOptions.retry)append(userItem,activeThreadKey);setBusy(true);setError('');setMessage('');setReplyingTo(null);setProgress(client?initialValProgress():{stage:'current_data',label:'Consultando a fonte autorizada mais recente',done:false})
+  if(!turnOptions.retry&&!turnOptions.skipUserAppend)append(userItem,activeThreadKey);setBusy(true);setError('');setMessage('');setReplyingTo(null);setProgress(client?initialValProgress():{stage:'current_data',label:'Consultando a fonte autorizada mais recente',done:false})
   const controller=new AbortController();const requestId=createValProgressRequestId();const stopProgress=client?startValProgressPolling({requestId,onProgress:setProgress,signal:controller.signal}):()=>{}
   try{
    const timeout=AbortSignal.timeout(120_000);const signal=typeof AbortSignal.any==='function'?AbortSignal.any([controller.signal,timeout]):timeout
@@ -488,10 +488,27 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
      <div className="global-val-mode" role="tablist" aria-label="Ação da VAL"><button type="button" className={mode==='ASK'?'active':''} onClick={()=>{setRegistrationAutoOpenKey('');setMode('ASK')}}><MessageSquareText/>Perguntar</button><button type="button" className={mode==='REGISTER'?'active':''} onClick={()=>{setRegistrationDraft(null);setRegistrationAutoOpenKey('');setMode('REGISTER')}}><CheckCircle2/>Registrar</button></div>
      <details className="val-fs-preferences"><summary aria-label="Preferências da resposta"><Settings2/></summary><div><div className="global-val-density"><span>Resposta</span>{[['simple','Simples'],['balanced','Equilibrada'],['analytical','Analítica']].map(([id,label])=><button type="button" key={id} className={density===id?'active':''} onClick={()=>setDensity(writeConsultantExperiencePreference(storageScope,id.toUpperCase()).toLowerCase())}>{label}</button>)}</div><div className="global-val-output"><span><Volume2/>Saída</span>{[['text','Texto'],['audio','Áudio'],['both','Texto + áudio']].map(([id,label])=><button type="button" key={id} className={outputMode===id?'active':''} onClick={()=>setOutputMode(writeValOutputMode(storageScope,id))}>{label}</button>)}</div></div></details>
     </div>
-    {mode==='ASK'&&<ValRealtimeConversation disabled={busy||uploading} processing={busy} responseText={realtimeResponseText} responseKey={realtimeResponseKey} onStart={()=>{if(!hasValOutputModePreference(storageScope))setOutputMode(writeValOutputMode(storageScope,'audio'))}} onTranscript={(transcript)=>ask(transcript,undefined,{inputModality:'voice',responseMode:outputMode,conversationMode:true})} onError={message=>setError(message)} onMetrics={recordConversationMetrics} onExit={cancelRealtimeClarification} onFallbackPushToTalk={requestPushToTalk} onFallbackText={()=>messageInput.current?.focus()}/>}
+    {mode==='ASK'&&<ValRealtimeConversation
+     disabled={busy||uploading}
+     processing={busy}
+     responseText={realtimeResponseText}
+     responseKey={realtimeResponseKey}
+     realtimeContext={{clientId:client?.id||'',conversationId:conversationId(threadKey,storageScope),activeContext}}
+     onStart={()=>{if(!hasValOutputModePreference(storageScope))setOutputMode(writeValOutputMode(storageScope,'audio'))}}
+     onTranscript={transcript=>ask(transcript,undefined,{inputModality:'voice',responseMode:outputMode,conversationMode:true})}
+     onRealtimeUserTranscript={transcript=>append({role:'user',text:transcript,intent:'REALTIME_CONVERSATION',persistence:'NONE'},threadKey)}
+     onRealtimeAssistantTranscript={transcript=>append({role:'assistant_text',text:transcript,intent:'REALTIME_CONVERSATION',persistence:'NONE'},threadKey)}
+     onRealtimeToolCall={async({request,reason})=>{const result=await ask(request,undefined,{inputModality:'voice',responseMode:'text',conversationMode:true,governedTool:true,skipUserAppend:true});return {status:result?.responseText?'COMPLETED':'UNAVAILABLE',reason,result:result?.responseText||'A capacidade governada não devolveu resultado.'}}}
+     onRealtimeMemoryReview={({candidate})=>{if(!client)return {status:'CLIENT_REQUIRED',message:'Escolha o produtor antes de revisar uma informação.'};setRegistrationDraft(createScopedRegistrationDraft({text:candidate,clientId:client.id,threadKey}));setRegistrationAutoOpenKey(`realtime-register-${Date.now()}-${threadKey}`);setMode('REGISTER');return {status:'REVIEW_REQUIRED',message:'A revisão humana foi aberta. Nada foi registrado ainda.'}}}
+     onError={message=>setError(message)}
+     onMetrics={recordConversationMetrics}
+     onExit={cancelRealtimeClarification}
+     onFallbackPushToTalk={requestPushToTalk}
+     onFallbackText={()=>messageInput.current?.focus()}
+    />}
     <div className="global-val-thread" aria-live="polite">
      {!thread.length&&mode==='ASK'&&<section className="global-val-empty"><span><BrainCircuit/></span><small>VAL • AMBIENTE DE TRABALHO</small><h2>{client?`Estou com ${firstName(client.name)} aberto.`:'Pode falar comigo.'}</h2><p>{client?'Quer preparar uma conversa, revisar o que ficou pendente ou ver o que merece atenção agora?':'Se for sobre um produtor específico, eu localizo o contexto para você.'}</p><div>{(client?clientQuickPrompts:globalQuickPrompts).map(([intent,label,prompt])=><button type="button" key={`${intent}-${label}`} disabled={busy} onClick={()=>runQuickAction(intent,prompt)}><b>{label}</b>{!client&&prompt&&<small>{prompt}</small>}</button>)}</div></section>}
-     {thread.map((item,index)=>item.role==='assistant'?<ReasoningResponse key={`${item.at||index}-${index}`} payload={item.payload} sourceAttachments={item.sourceAttachments} density={density} outputMode={outputMode} onReply={question=>{setReplyingTo(question);setMessage('');setMode('ASK');requestAnimationFrame(()=>messageInput.current?.focus())}} onRegister={()=>setMode('REGISTER')} onOpenModule={openModule} onOpenEvidence={openEvidence}/>:<p key={`${item.at||index}-${index}`} className={`global-val-message is-${item.role}`}>{item.text}</p>)}
+     {thread.map((item,index)=>item.role==='assistant'&&item.payload?<ReasoningResponse key={`${item.at||index}-${index}`} payload={item.payload} sourceAttachments={item.sourceAttachments} density={density} outputMode={outputMode} onReply={question=>{setReplyingTo(question);setMessage('');setMode('ASK');requestAnimationFrame(()=>messageInput.current?.focus())}} onRegister={()=>setMode('REGISTER')} onOpenModule={openModule} onOpenEvidence={openEvidence}/>:<p key={`${item.at||index}-${index}`} className={`global-val-message is-${item.role==='assistant_text'?'assistant':item.role}`}>{item.text}</p>)}
      {mode==='REGISTER'&&<section className="global-val-register"><ShieldCheck/><h3>Atualize as premissas com confirmação.</h3><p>{client?'Fale ou digite o que mudou. A VAL separa fatos, hipóteses e compromissos para você revisar antes de incorporar à memória.':'Escolha um produtor acima. Uma informação só pode entrar na memória quando sabemos a qual conta ela pertence.'}</p><VoiceCapture key={`register:${client?.id||'none'}:${threadKey}`} clientId={client?.id||''} interactionType="CLIENT_NOTE" label="Falar ou digitar" description="Revisar antes de salvar" initialText={registerInitialText} autoOpenKey={registrationAutoOpenKey} onOpenChange={isOpen=>{if(isOpen)setRegistrationAutoOpenKey('')}} sourceContext={{page:'GLOBAL_VAL_COPILOT',persistence_mode:'CONFIRM_REQUIRED',conversation_thread:threadKey}} onConfirmed={payload=>registered(payload,{clientId:client?.id||'',threadKey})}/></section>}
      {busy&&<div className="global-val-thinking" role="status"><LoaderCircle/><span><b>{progress?.label||'Analisando a solicitação…'}</b><small>{client?'Etapa real do processamento. Se faltar algo material, a VAL perguntará.':'A VAL não usa memória antiga como dado atual.'}</small></span></div>}
     </div>

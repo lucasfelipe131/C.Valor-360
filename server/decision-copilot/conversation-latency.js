@@ -13,7 +13,10 @@ const serverProcessingMetrics=Object.freeze([
 ])
 
 const browserVoiceTurnMetrics=Object.freeze([
+ 'speech_end_to_turn_detected',
  'speech_end_to_transcript',
+ 'speech_end_to_first_useful_text',
+ 'speech_end_to_first_audio',
  'transcript_to_first_reasoning',
  'reasoning_to_first_text',
  'reasoning_to_first_audio',
@@ -48,7 +51,7 @@ export const conversationLatencyPercentilePolicy=Object.freeze({
 })
 
 const traceEvents=Object.freeze([
- 'speech_end','transcript','first_reasoning','first_text','first_audio','turn_end'
+ 'speech_end','turn_detected','transcript','first_reasoning','first_text','first_audio','turn_end'
 ])
 const outcomes=Object.freeze(['SUCCESS','ERROR','CANCELLED','FALLBACK'])
 const now=()=>globalThis.performance?.now?.()??Date.now()
@@ -271,7 +274,10 @@ export function createConversationLatencyTrace({
   return duration(marks.get(to)-marks.get(from))
  }
  const currentMetrics=()=>Object.freeze({
+  speech_end_to_turn_detected:interval('speech_end','turn_detected'),
   speech_end_to_transcript:interval('speech_end','transcript'),
+  speech_end_to_first_useful_text:interval('speech_end','first_text'),
+  speech_end_to_first_audio:interval('speech_end','first_audio'),
   transcript_to_first_reasoning:interval('transcript','first_reasoning'),
   reasoning_to_first_text:interval('first_reasoning','first_text'),
   reasoning_to_first_audio:interval('first_reasoning','first_audio'),
@@ -281,6 +287,7 @@ export function createConversationLatencyTrace({
  const api={
   mark,
   speechEnded(at=null){return mark('speech_end',at)},
+  turnDetected(at=null){return mark('turn_detected',at)},
   transcriptReady(at=null){return mark('transcript',at)},
   reasoningStarted(at=null){return mark('first_reasoning',at)},
   firstText(at=null){return mark('first_text',at)},
