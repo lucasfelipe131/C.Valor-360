@@ -4,7 +4,7 @@ import {attachLatencyPerformance,createLatencyMetricsRegistry,createLatencyTrace
 import {observe,runWithRequestContext} from '../server/observability.js'
 
 test('latência cobre todos os estágios e preserva latency_breakdown legado',()=>{
- assert.deepEqual(latencyStages,['AUTH','ENTITY','INTENT','CONTEXT','MEMORY','MCA','MIA','TOOL','MODEL','VALIDATION','TTS','TOTAL','TTFR'])
+ assert.deepEqual(latencyStages,['AUTH','ENTITY','INTENT','DATABASE','CONTEXT','MEMORY','MCA','MIA','TOOL','MODEL','VALIDATION','TTS','TOTAL','TTFR'])
  let now=0;const registry=createLatencyMetricsRegistry();const trace=createLatencyTrace({clock:()=>now,path:'TOOL',intent:'CALCULATE',registry})
  trace.start('INTENT');now=4;trace.end('INTENT').start('TOOL');now=14;trace.end('TOOL').firstUseful();now=20
  const latency=trace.finish()

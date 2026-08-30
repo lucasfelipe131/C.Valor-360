@@ -2,6 +2,28 @@ const readBoolean=(value,fallback=false)=>value===undefined?fallback:/^(1|true|y
 const boundedNumber=(value,fallback,min,max)=>{const parsed=Number(value);return Math.max(min,Math.min(max,Number.isFinite(parsed)?parsed:fallback))}
 const choice=(value,allowed,fallback)=>allowed.includes(String(value||'').toLowerCase())?String(value).toLowerCase():fallback
 
+export const infrastructureTimeoutDefaults=Object.freeze({
+  databaseQueryTimeoutMs:3_000,
+  toolRequestTimeoutMs:8_000,
+  coreRequestTimeoutMs:15_000,
+  conversationalModelTimeoutMs:12_000,
+  valChatRequestTimeoutMs:28_000
+})
+
+const boundedTimeout=(value,fallback,min,max)=>Math.round(boundedNumber(value,fallback,min,max))
+
+export function resolveInfrastructureTimeouts(env=process.env){
+  const sharedToolCoreTimeout=env.VAL_TOOL_CORE_REQUEST_TIMEOUT_MS
+  const coreRequestTimeoutMs=boundedTimeout(env.VAL_CORE_REQUEST_TIMEOUT_MS??sharedToolCoreTimeout,infrastructureTimeoutDefaults.coreRequestTimeoutMs,1_000,30_000)
+  return Object.freeze({
+    databaseQueryTimeoutMs:boundedTimeout(env.VAL_DATABASE_QUERY_TIMEOUT_MS??env.VAL_DB_QUERY_TIMEOUT_MS,infrastructureTimeoutDefaults.databaseQueryTimeoutMs,250,10_000),
+    toolRequestTimeoutMs:Math.min(coreRequestTimeoutMs,boundedTimeout(env.VAL_TOOL_REQUEST_TIMEOUT_MS??sharedToolCoreTimeout,infrastructureTimeoutDefaults.toolRequestTimeoutMs,500,15_000)),
+    coreRequestTimeoutMs,
+    conversationalModelTimeoutMs:Math.min(coreRequestTimeoutMs,boundedTimeout(env.VAL_CONVERSATIONAL_MODEL_TIMEOUT_MS,infrastructureTimeoutDefaults.conversationalModelTimeoutMs,1_000,25_000)),
+    valChatRequestTimeoutMs:boundedTimeout(env.VAL_CHAT_REQUEST_TIMEOUT_MS,infrastructureTimeoutDefaults.valChatRequestTimeoutMs,coreRequestTimeoutMs,30_000)
+  })
+}
+
 export const DEFAULT_TENANT_ID='00000000-0000-4000-8000-000000000001'
 
 export function validateDefaultTenantId(value){
@@ -9,6 +31,8 @@ export function validateDefaultTenantId(value){
   if(tenantId!==DEFAULT_TENANT_ID)throw new Error(`VAL_DEFAULT_TENANT_ID ainda deve ser ${DEFAULT_TENANT_ID} no piloto; o tenant informado não é provisionado por esta migração.`)
   return tenantId
 }
+
+const infrastructureTimeouts=resolveInfrastructureTimeouts()
 
 export const config=Object.freeze({
   databaseUrl:String(process.env.DATABASE_URL||''),
@@ -21,6 +45,7 @@ export const config=Object.freeze({
   openaiStoreResponses:readBoolean(process.env.OPENAI_STORE_RESPONSES,false),
   openaiTimeoutMs:Number(process.env.OPENAI_TIMEOUT_MS||100_000),
   openaiMaxRetries:Number(process.env.OPENAI_MAX_RETRIES||1),
+  ...infrastructureTimeouts,
   modelDaily:String(process.env.VAL_MODEL_DAILY||process.env.OPENAI_MODEL||'gpt-5.6-terra'),
   modelStrategic:String(process.env.VAL_MODEL_STRATEGIC||'gpt-5.6-sol'),
   modelFast:String(process.env.VAL_MODEL_FAST||'gpt-5.6-luna'),

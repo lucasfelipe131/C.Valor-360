@@ -274,7 +274,10 @@ test('resposta incompleta da OpenAI cai em fallback e preserva metadados de audi
   assert.equal(modelRun.responseId,'resp-incomplete')
   assert.equal(modelRun.errorCode,'incomplete_response')
   assert.deepEqual(modelRun.errorDetails,{reason:'max_output_tokens'})
-  assert.deepEqual(providerOptions,{maxRetries:0,timeout:1000})
+  assert.equal(providerOptions.maxRetries,0)
+  assert.equal(providerOptions.timeout,1000)
+  assert.ok(providerOptions.signal instanceof AbortSignal)
+  assert.equal(providerOptions.signal.aborted,false)
 })
 
 test('relatório de safra estruturado entra como evidência específica da VAL',()=>{

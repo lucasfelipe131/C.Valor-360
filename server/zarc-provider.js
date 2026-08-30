@@ -34,12 +34,47 @@ export function* parseZarcCsv(text,delimiter){
 
 const relevantCrop=name=>{const value=normalizeZarcText(name);return value.includes('soja')||value.includes('trigo')||value.includes('milho')}
 
-async function loadSource(url,{fetchImpl=globalThis.fetch,nowMs=Date.now(),cacheStore=processCache}={}){
+function cancellationReason(signal){
+ if(signal?.reason instanceof Error)return signal.reason
+ return Object.assign(new Error('Consulta ZARC cancelada.'),{name:'AbortError',code:'val_request_cancelled'})
+}
+
+function waitForSource(entry,{cacheStore,signal,url}){
+ signal?.throwIfAborted?.()
+ entry.waiters+=1
+ return new Promise((resolve,reject)=>{
+  let finished=false
+  const release=({cancelled=false}={})=>{
+   entry.waiters=Math.max(0,entry.waiters-1)
+   if(cancelled&&entry.waiters===0&&!entry.settled){
+    if(cacheStore?.get(url)===entry)cacheStore.delete(url)
+    entry.controller.abort(cancellationReason(signal))
+   }
+  }
+  const finish=(callback,value,options)=>{
+   if(finished)return
+   finished=true
+   signal?.removeEventListener?.('abort',onAbort)
+   release(options)
+   callback(value)
+  }
+  const onAbort=()=>finish(reject,cancellationReason(signal),{cancelled:true})
+  signal?.addEventListener?.('abort',onAbort,{once:true})
+  entry.promise.then(value=>finish(resolve,value),error=>finish(reject,error))
+ })
+}
+
+async function loadSource(url,{fetchImpl=globalThis.fetch,nowMs=Date.now(),cacheStore=processCache,signal}={}){
+ signal?.throwIfAborted?.()
  const existing=cacheStore?.get(url)
- if(existing&&existing.expiresAt>nowMs)return existing.promise
+ if(existing&&existing.expiresAt>nowMs)return waitForSource(existing,{cacheStore,signal,url})
  if(typeof fetchImpl!=='function')throw new Error('Cliente HTTP indisponível para consultar o MAPA.')
- const promise=(async()=>{
-  const response=await fetchImpl(url,{cache:'no-store',signal:AbortSignal.timeout(55000)})
+ const controller=new AbortController()
+ const entry={controller,expiresAt:nowMs+zarcCacheTtlMs,promise:null,settled:false,waiters:0}
+ entry.promise=(async()=>{
+  const timeoutSignal=AbortSignal.timeout(55000)
+  const effectiveSignal=typeof AbortSignal.any==='function'?AbortSignal.any([controller.signal,timeoutSignal]):controller.signal
+  const response=await fetchImpl(url,{cache:'no-store',signal:effectiveSignal})
   if(!response.ok)throw new Error(`MAPA respondeu ${response.status}`)
   const sourceText=await response.text()
   const firstLine=sourceText.slice(0,sourceText.indexOf('\n')>0?sourceText.indexOf('\n'):1000)
@@ -72,10 +107,13 @@ async function loadSource(url,{fetchImpl=globalThis.fetch,nowMs=Date.now(),cache
   return rows
  })()
  if(cacheStore){
-  cacheStore.set(url,{expiresAt:nowMs+zarcCacheTtlMs,promise})
-  promise.catch(()=>cacheStore.delete(url))
+  cacheStore.set(url,entry)
  }
- return promise
+ entry.promise.then(
+  ()=>{entry.settled=true},
+  ()=>{entry.settled=true;if(cacheStore?.get(url)===entry)cacheStore.delete(url)},
+ )
+ return waitForSource(entry,{cacheStore,signal,url})
 }
 
 function cropMatches(name,target){
@@ -116,6 +154,7 @@ function providerError(message,statusCode,code,details={}){
 }
 
 export async function consultZarc(input={},options={}){
+ options.signal?.throwIfAborted?.()
  const uf=String(input.uf??'').toUpperCase()
  const municipality=String(input.municipality??'').trim()
  const crop=String(input.crop??'')
@@ -127,13 +166,14 @@ export async function consultZarc(input={},options={}){
  const now=options.now instanceof Date?options.now:new Date(options.now??Date.now())
  const nowMs=now.getTime()
  for(const source of zarcSources){
+  options.signal?.throwIfAborted?.()
   try{
-   const rows=await loadSource(source.url,{fetchImpl:options.fetchImpl,nowMs,cacheStore:options.cacheStore===undefined?processCache:options.cacheStore})
+   const rows=await loadSource(source.url,{fetchImpl:options.fetchImpl,nowMs,cacheStore:options.cacheStore===undefined?processCache:options.cacheStore,signal:options.signal})
    const baseRows=rows.filter(row=>row.uf.toUpperCase()===uf&&normalizeZarcText(row.municipality)===normalizeZarcText(municipality)&&cropMatches(row.crop,crop)&&(!row.managementCode||numeric(row.managementCode)===1||normalizeZarcText(row.management).includes('sequeiro')))
    baseRows.forEach(row=>{availableSoils.add(String(numeric(row.soil)));availableCycles.add(String(numeric(row.cycle)))})
    matched=baseRows.filter(row=>String(numeric(row.soil))===soil&&String(numeric(row.cycle))===cycle)
    if(matched.length){usedSafra=source.safra;usedSource=source;break}
-  }catch(error){failures.push(error instanceof Error?error.message:'Falha na fonte oficial')}
+  }catch(error){if(options.signal?.aborted)throw options.signal.reason instanceof Error?options.signal.reason:error;failures.push(error instanceof Error?error.message:'Falha na fonte oficial')}
  }
  if(!matched.length){
   const soilOptions=[...availableSoils].map(value=>zarcSoilLabels[value]||value).join(', ')

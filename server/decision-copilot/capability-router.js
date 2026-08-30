@@ -122,9 +122,35 @@ export function assessEngineMateriality(input={}){
  return Object.freeze({...materiality,question:'Isso pode mudar materialmente a resposta?'})
 }
 
+export function classifyStructuredClientFact(message=''){
+ const source=normalize(message).replace(/[?!.,;:]+$/g,'').trim()
+ if(!source)return null
+ // Fact First is a positive allowlist of complete literal questions. A mixed,
+ // advisory, aggregate or prospective request must remain contextual/deep even
+ // when it contains one of the same nouns.
+ if(/^(?:agora\s+)?(?:compara|compare)\s+(?:os dois|ambos|essas duas contas|esses dois produtores)$/.test(source))return 'CLIENT_COMPARISON'
+ if(/\s+e\s+(?:o\s+que|como|por\s+que|qual|quais|quando|onde|se|devo|deveria|posso|poderia|abra|mostre|prepare|calcule|analise|registre)\b/.test(source))return null
+ const owner='(?:\\s+(?:dele|dela)|\\s+(?:do|da)\\s+[a-z][a-z0-9 \'-]{0,120})?'
+ if(new RegExp(`^(?:e\\s+)?(?:qual\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?)?objecao\\s+(?:da|na)\\s+(?:ultima|mais recente)\\s+visita${owner}$`).test(source))return 'LATEST_VISIT_CONFIRMED_OBJECTION'
+ if(new RegExp(`^(?:e\\s+)?(?:qual\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?)?(?:(?:ultima|mais recente)\\s+objecao\\s+confirmada|objecao\\s+confirmada\\s+(?:mais recente|ultima))${owner}$`).test(source))return 'LATEST_CONFIRMED_OBJECTION'
+ const patterns=[
+  ['LATEST_CONFIRMED_OBJECTION',new RegExp(`^(?:e\\s+)?(?:(?:qual\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?(?:(?:principal|ultima|mais recente)\\s+)?objecao)|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:a\\s+)?(?:(?:principal|ultima|mais recente)\\s+)?objecao)|(?:(?:a\\s+)?(?:principal|ultima|mais recente)\\s+objecao))${owner}$`)],
+  ['LATEST_VISIT',new RegExp(`^(?:e\\s+)?(?:(?:(?:qual|quando)\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?(?:(?:ultima|mais recente)\\s+visita|visita\\s+mais recente))|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:a\\s+)?(?:(?:ultima|mais recente)\\s+visita|visita\\s+mais recente))|(?:(?:a\\s+)?(?:ultima|mais recente)\\s+visita))${owner}$`)],
+  ['LATEST_COMMITMENT',new RegExp(`^(?:e\\s+)?(?:(?:qual\\s+(?:(?:foi|e)\\s+)?(?:o\\s+)?(?:(?:ultimo|mais recente)\\s+)?compromisso)|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:o\\s+)?(?:ultimo|mais recente)\\s+compromisso)|(?:(?:o\\s+)?(?:ultimo|mais recente)\\s+compromisso))${owner}$`)],
+  ['LATEST_PURCHASE',new RegExp(`^(?:e\\s+)?(?:(?:(?:qual|quanto)\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?(?:ultima|mais recente)\\s+compra)|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:a\\s+)?(?:ultima|mais recente)\\s+compra)|(?:(?:a\\s+)?(?:ultima|mais recente)\\s+compra)|(?:quanto\\s+(?:ele|ela|o produtor|a produtora)\\s+comprou))${owner}$`)],
+  ['REGISTERED_CROPS',/^(?:e\s+)?(?:(?:qual|quais)\s+culturas?\s+(?:(?:ele|ela)\s+(?:esta\s+plantando|planta)|(?:estao?|ficam?)\s+cadastradas?|(?:do|da)\s+[a-z][a-z0-9 '-]{0,120}\s+(?:esta\s+plantando|planta|(?:tem|estao?)\s+cadastradas?))|(?:mostre|mostra|me\s+mostre)\s+(?:as?\s+)?(?:culturas?|safra)\s+(?:dele|dela|(?:do|da)\s+[a-z][a-z0-9 '-]{0,120}))$/],
+  ['REGISTERED_AREA',/^(?:e\s+)?(?:(?:qual|quanto)\s+(?:e\s+)?(?:a\s+)?area(?:\s+(?:dele|dela)|\s+(?:do|da)\s+[a-z][a-z0-9 '-]{0,120})?\s+(?:esta\s+)?cadastrada|qual\s+(?:e\s+)?(?:a\s+)?area\s+(?:cadastrada|registrada)(?:\s+(?:dele|dela)|\s+(?:do|da)\s+[a-z][a-z0-9 '-]{0,120})?|(?:mostre|mostra|me\s+mostre)\s+(?:a\s+)?area\s+(?:dele|dela|(?:do|da)\s+[a-z][a-z0-9 '-]{0,120}))$/],
+ ]
+ for(const [dataPath,pattern] of patterns)if(pattern.test(source))return dataPath
+ return null
+}
+
 export function routeSystemCapability({message='',intentHint='',sessionCommandHint='',hasClient=false,attachmentTypes=[],activeContext=null}={}){
  const intentRoute=routeValIntent({message,intentHint,sessionCommandHint,hasClient,attachmentTypes})
  const source=normalize(message)
+ const structuredFactCandidate=attachmentTypes.length===0?classifyStructuredClientFact(message):null
+ const structuredFactEligible=['ASK_CLIENT','OBJECTION_HELP'].includes(intentRoute.intent)||structuredFactCandidate==='REGISTERED_CROPS'
+ const structuredFact=intentRoute.session_command||!hasClient||!structuredFactEligible?null:structuredFactCandidate
  const capabilities=[]
  let path='DEEP'
  let direct=false
@@ -134,13 +160,20 @@ export function routeSystemCapability({message='',intentHint='',sessionCommandHi
   capabilities.push('SESSION_COMMAND')
   if(intentRoute.session_command.command==='DEEPEN'){
    capabilities.push('CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY','AGRONOMIC_WORKSPACE','KNOWLEDGE_LIBRARY');path='DEEP';direct=false
-  }else if(['EXPLAIN','SHOW_NUMBERS'].includes(intentRoute.session_command.command)){
-   capabilities.push('CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY');path='CONTEXT';direct=false
+  }else if(intentRoute.session_command.deterministic_follow_up){
+   path='FAST';direct=true
   }else path='FAST',direct=true
+ }else if(structuredFact){
+  const selected=structuredFact==='CLIENT_COMPARISON'
+   ?['CLIENT_CONTEXT','VISIT_HISTORY','COMMERCIAL_HISTORY']
+   :[structuredFact==='LATEST_VISIT'||structuredFact==='LATEST_CONFIRMED_OBJECTION'||structuredFact==='LATEST_VISIT_CONFIRMED_OBJECTION'
+    ?'VISIT_HISTORY'
+    :structuredFact==='LATEST_PURCHASE'||structuredFact==='LATEST_COMMITMENT'
+     ?'COMMERCIAL_HISTORY'
+     :'CLIENT_CONTEXT']
+  capabilities.push(...selected);path='FAST';direct=true;dataPath=structuredFact
  }else if(intentRoute.intent==='ASK_CLIENT'&&isCurrentClientIdentityRequest(source)){
   capabilities.push('CLIENT_CONTEXT');path='FAST';direct=true
- }else if(intentRoute.intent==='ASK_CLIENT'&&(/\b(?:ultima|ultimo|mais recente)\b.*\bvisita\b|\bvisita\b.*\b(?:ultima|ultimo|mais recente)\b/.test(source))){
-  capabilities.push('VISIT_HISTORY');path='FAST';direct=true
  }else if(intentRoute.intent==='ASK_CLIENT'&&/\b(?:quem decide|decisor|compromisso (?:esta )?aberto|qual compromisso|resume (?:a )?conta)\b/.test(source)){
   capabilities.push('CLIENT_CONTEXT',/compromisso/.test(source)?'COMMERCIAL_HISTORY':'CONFIRMED_MEMORY');path='FAST';direct=true
  }else if(['ASK_MARKET','ASK_COMMODITY','CHECK_MARKET'].includes(intentRoute.intent)){
@@ -179,9 +212,12 @@ export function routeSystemCapability({message='',intentHint='',sessionCommandHi
   capabilities.push('KNOWLEDGE_LIBRARY');path='CONTEXT';direct=false
  }
 
- if(activeContext?.type==='opportunity'&&!capabilities.includes('OPPORTUNITY_PIPELINE'))capabilities.push('OPPORTUNITY_PIPELINE')
- if(['visit','visit_draft'].includes(activeContext?.type)&&!capabilities.includes('VISIT_HISTORY'))capabilities.push('VISIT_HISTORY')
- if(activeContext?.type==='agronomic_tool'&&!capabilities.includes('AGRONOMIC_WORKSPACE'))capabilities.push('AGRONOMIC_WORKSPACE')
+ // Uma rota direta responde ao pedido atual sem herdar ferramentas de um
+ // objeto ativo antigo. Contexto ativo so amplia rotas que realmente vao
+ // compor raciocinio contextual ou profundo.
+ if(!direct&&activeContext?.type==='opportunity'&&!capabilities.includes('OPPORTUNITY_PIPELINE'))capabilities.push('OPPORTUNITY_PIPELINE')
+ if(!direct&&['visit','visit_draft'].includes(activeContext?.type)&&!capabilities.includes('VISIT_HISTORY'))capabilities.push('VISIT_HISTORY')
+ if(!direct&&activeContext?.type==='agronomic_tool'&&!capabilities.includes('AGRONOMIC_WORKSPACE'))capabilities.push('AGRONOMIC_WORKSPACE')
  const planned=[...new Set(capabilities)]
  const materiality=assessEngineMateriality({path,intent:intentRoute.intent,source,capabilities:planned,attachmentTypes})
  return Object.freeze({
@@ -304,23 +340,28 @@ export function answerCurrentMarket({workspace={},message='',intentHint='',now=n
  }
 }
 
-export function buildFastMarketResponse({workspace={},message='',intentHint='',organizationId='unknown',ownerId='unknown',conversationId='',now=new Date(),latencyMs=0}={}){
+export function buildFastMarketResponse({workspace={},message='',intentHint='',organizationId='unknown',ownerId='unknown',conversationId='',now=new Date(),latencyMs=0,executionCounts={}}={}){
  const market=answerCurrentMarket({workspace,message,intentHint,now})
  const createdAt=now.toISOString()
  const contextHash=createHash('sha256').update(JSON.stringify({message,source:market.source?.id||null,createdAt:createdAt.slice(0,13)})).digest('hex')
+ const entityResolutions=Math.max(0,Number(executionCounts.entityResolutions)||0)
+ const dataLookups=Math.max(0,Number(executionCounts.dataLookups??1)||0)
+ const toolCalls=Math.max(0,Number(executionCounts.toolCalls??1)||0)
+ const hops=Math.max(0,Number(executionCounts.hops??(entityResolutions+dataLookups))||0)
+ const executionBudget=Object.freeze({entityResolutions,dataLookups,modelCalls:0,toolCalls,hops,estimatedInputTokens:0,estimatedOutputTokens:0,estimatedCostUsd:0})
  const reasoning={
   contract_version:'val.ai_reasoning_result.v1',reasoning_id:randomUUID(),organization:{id:String(organizationId)},client:{id:'portfolio',name:'Carteira'},
   context_snapshot:{id:`market-${contextHash.slice(0,16)}`,version:'val.current_data_snapshot.v1',confidence:market.confidence,hash:contextHash},conversation_id:clean(conversationId,180)||'global',
   intent:market.route.intent,persistence_mode:'NONE',objective:clean(message,1200)||'Consultar mercado.',situation_summary:market.answer,key_signals:[],facts_used:market.facts,hypotheses:[],missing_information:market.status==='UNAVAILABLE'?['Cotação autorizada com fonte, praça e horário']:[],
   decision_thesis:{CURRENT_SITUATION:market.answer,WHAT_MATTERS:'Atualidade, praça, unidade e fonte precisam acompanhar qualquer número de mercado.',KEY_UNCERTAINTY:market.status==='CURRENT'?'O efeito específico sobre a conta ainda depende da janela e do preço-alvo do produtor.':'A referência ainda representa o mercado atual?',THESIS:market.action,WHY:market.confidence.rationale,WHAT_TO_VALIDATE:'Praça, frete, janela, preço-alvo e horário da referência.',WHAT_WOULD_CHANGE_MY_VIEW:'Uma referência autorizada mais recente ou de praça mais aderente.'},
   golden_questions:[],recommended_strategy:{reading:market.answer,action:market.action,do_not_do:'Não apresentar cotação sem fonte e data como preço atual.'},evidence_to_use:market.facts,agronomic_context:{status:'not_applicable',human_review_required:false,sources:{},safety_note:'Nenhuma recomendação agronômica foi produzida.'},commercial_context:{status:'current_market_reference'},next_commitment:market.action,risks:market.status==='CURRENT'?[]:['Referência não classificada como atual.'],confidence:market.confidence,reasoning_confidence:{context:market.confidence.score,thesis:market.confidence.score,question:.8,agronomy:null,knowledge:.9},knowledge_refs:market.source?[{id:market.source.id,title:market.source.name,source_refs:[market.source.url||market.source.id],status:market.status,requires_human_review:false}]:[],memory_refs:[],created_at:createdAt,model:'rules-market-v1',prompt_version:'val-decision-copilot-v3',
-  run:{provider:'system-capability-router',model:'rules-market-v1',prompt_version:'val-decision-copilot-v3',context_hash:contextHash,latency_ms:Number(latencyMs)||0,status:'completed',fallback:false,path:'LIVE_DATA',capabilities_planned:market.route.capabilities,capabilities_used:market.status==='UNAVAILABLE'?[]:['MARKET_COMMODITY'],capability_results:[{capability:'MARKET_COMMODITY',status:market.status==='UNAVAILABLE'?'NO_DATA':'EXECUTED',source_ref:market.source?.id||null}],latency_breakdown:{AUTH:null,CONTEXT_RETRIEVAL:null,MEMORY:null,DATABASE:null,MCA:null,MIA:null,EXTERNAL_DATA:null,MODEL_INPUT:null,MODEL_INFERENCE:null,VALIDATION:null,RESPONSE:null}},
+  run:{provider:'system-capability-router',model:'rules-market-v1',prompt_version:'val-decision-copilot-v3',context_hash:contextHash,latency_ms:Number(latencyMs)||0,status:'completed',fallback:false,path:'LIVE_DATA',model_call_count:0,tool_call_count:toolCalls,hop_count:hops,estimated_input_tokens:0,estimated_output_tokens:0,estimated_cost_usd:0,capabilities_planned:market.route.capabilities,capabilities_used:market.status==='UNAVAILABLE'?[]:['MARKET_COMMODITY'],capability_results:[{capability:'MARKET_COMMODITY',status:market.status==='UNAVAILABLE'?'NO_DATA':'EXECUTED',source_ref:market.source?.id||null}],latency_breakdown:{AUTH:null,CONTEXT_RETRIEVAL:null,MEMORY:null,DATABASE:null,MCA:null,MIA:null,EXTERNAL_DATA:null,MODEL_INPUT:null,MODEL_INFERENCE:null,VALIDATION:null,RESPONSE:null}},
   premises:{recomputed_for_request:true,source:'authorized_current_data',profile_specific:false,conversation_is_not_confirmed_memory:true,current_data:{required:true,status:market.status,source:market.source}},
   voice_output:{version:'val.voice_output.v1',speakable_text:market.answer,persistence:'NONE',automatic_memory_effect:false},
   decision_interview:{version:'val.decision_interview.v1',status:'NOT_NEEDED',questions:[],material_missing_information:[],non_material_missing_information:[],session_context:{conversation_id:clean(conversationId,180)||'global',persistence_mode:'NONE'},explanation:'A capacidade de mercado respondeu com fonte e data; o cruzamento com um produtor pode exigir novas perguntas.'},
   quality:{status:'NOT_EVALUATED',dimensions:{},automatic_tests:{name_swap:{passed:null,evaluated:false,reason:'Não aplicável a uma cotação de carteira sem produtor.'},context_removal:{passed:null,evaluated:false,reason:'Não executado no FAST PATH determinístico.'}}}
  }
- return {recommendationId:null,engineMode:'rules',engineArchitecture:'live-data-system-capability',route:'LIVE_DATA',model:'rules-market-v1',warning:'',globalCopilot:true,responseMetadata:{intent:market.route.intent,reasoningPath:'LIVE_DATA',capabilities:market.route.capabilities,currentDataStatus:market.status},advice:{answer:market.answer,ai_reasoning:reasoning,val_response_quality:reasoning.quality}}
+ return {recommendationId:null,engineMode:'rules',engineArchitecture:'live-data-system-capability',route:'LIVE_DATA',model:'rules-market-v1',warning:'',globalCopilot:true,responseMetadata:{intent:market.route.intent,reasoningPath:'LIVE_DATA',capabilities:market.route.capabilities,currentDataStatus:market.status,executionBudget},advice:{answer:market.answer,ai_reasoning:reasoning,val_response_quality:reasoning.quality}}
 }
 
 function canonicalSeason(value=''){
@@ -610,34 +651,242 @@ export function finalizeAttachmentRecommendation({draft={},attachmentIds=[],atta
  return marketResponse?composeMarketAttachmentResponse({marketResponse,attachmentResponse:draft,attachmentTypes}):undefined
 }
 
-export function buildFastClientResponse({facts={},message='',organizationId='unknown',conversationId='',now=new Date(),latencyMs=0}={}){
+function fastDate(value){
+ const civil=clean(value,40).match(/^(\d{4})-(\d{2})-(\d{2})$/)
+ if(civil)return `${civil[3]}/${civil[2]}/${civil[1]}`
+ const parsed=new Date(value||'')
+ return Number.isNaN(parsed.getTime())?'data não informada':parsed.toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})
+}
+
+function fastCurrency(value,currency='BRL'){
+ if(value==null||String(value).trim()==='')return null
+ const number=Number(value)
+ if(!Number.isFinite(number))return null
+ const code=/^[A-Z]{3}$/.test(String(currency||'').toUpperCase())?String(currency).toUpperCase():'BRL'
+ try{return new Intl.NumberFormat('pt-BR',{style:'currency',currency:code,minimumFractionDigits:2,maximumFractionDigits:2}).format(number)}catch{return `${number.toLocaleString('pt-BR',{maximumFractionDigits:2})} ${code}`}
+}
+
+function confirmedObjectionSelection(report,maxLength=700){
+ const objections=list(report?.objections).map(item=>({
+  statement:typeof item==='string'?clean(item,maxLength):clean(item?.statement||item?.reported_text||item?.text,maxLength),
+  primary:typeof item==='object'&&[item?.primary,item?.is_primary,item?.isPrimary].some(value=>value===true||String(value).toLowerCase()==='true'),
+ })).filter(item=>item.statement)
+ const marked=objections.find(item=>item.primary)||null
+ const principal=marked?.statement||(objections.length===1?objections[0].statement:'')
+ const ambiguous=objections.length>1&&!marked
+ return {objections,principal,ambiguous}
+}
+
+export function buildFastClientComparisonResponse({entries=[],message='',organizationId='unknown',conversationId='',now=new Date(),latencyMs=0,executionCounts={}}={}){
+ now=now instanceof Date&&!Number.isNaN(now.getTime())?now:new Date()
+ const scoped=list(entries).filter(item=>item?.client?.id&&item?.client?.name).slice(0,2)
+ if(scoped.length!==2)throw Object.assign(new Error('A comparação exige exatamente dois produtores autorizados na conversa.'),{statusCode:422,code:'val_comparison_pair_required'})
+ const statementFor=facts=>{
+  const client=facts.client
+  const visit=facts.latestCompletedVisit&&legacyVisitLifecycle(facts.latestCompletedVisit)==='COMPLETED'?facts.latestCompletedVisit:null
+  const purchaseCandidate=facts.latestPurchase||null
+  const purchaseRef=clean(purchaseCandidate?.id||purchaseCandidate?.external_id||purchaseCandidate?.externalId,180)
+  const purchase=purchaseRef?purchaseCandidate:null
+  const reportCandidate=facts.latestConfirmedObjection||null
+  const reportRef=clean(reportCandidate?.visit_report_id||reportCandidate?.id,180)
+  const report=reportRef?reportCandidate:null
+  const objectionSelection=confirmedObjectionSelection(report,500)
+  const objection=objectionSelection.ambiguous
+   ?`${objectionSelection.objections.length} registradas, sem principal definida (${objectionSelection.objections.map(item=>item.statement).join('; ')})`
+   :objectionSelection.principal
+  const commitmentRef=clean(facts.latestCommitment?.commitment_id||facts.latestCommitment?.id,180)
+  const commitment=commitmentRef?clean(facts.latestCommitment?.description,500):''
+  const rawArea=client.totalAreaHa??client.total_area_ha??client.area
+  const numericArea=Number(rawArea)
+  const hasNumericArea=rawArea!=null&&String(rawArea).trim()!==''&&Number.isFinite(numericArea)
+  const area=hasNumericArea?`${numericArea.toLocaleString('pt-BR',{maximumFractionDigits:2})} ha`:clean(client.areaBand??client.area_band,120)||'sem área total cadastrada'
+  const cultures=clean(client.cultures,500)||'sem cultura cadastrada'
+  const visitAt=visit?.occurred_at||visit?.occurredAt||visit?.completed_at||visit?.completedAt||visit?.scheduled_at||visit?.scheduledAt||null
+  const purchaseValue=fastCurrency(purchase?.value,purchase?.currency)
+  return `${clean(client.name,180)}: área ${area}; culturas ${cultures}; última visita ${visit?fastDate(visitAt):'não registrada'}; última compra ${purchase?`${purchaseValue||'valor não informado'} em ${fastDate(purchase.occurred_at||purchase.occurredAt)}`:'não registrada'}; objeção confirmada ${objection||'não registrada'}; compromisso ${commitment||'não registrado'}.`
+ }
+ const statements=scoped.map(statementFor)
+ const answer=`Comparação factual dos dois produtores autorizados nesta conversa. ${statements.join(' ')} Diga qual dimensão quer aprofundar; esta leitura não escolhe uma estratégia automaticamente.`
+ const evidenceFor=facts=>{
+  const client=facts.client
+  const visit=facts.latestCompletedVisit&&legacyVisitLifecycle(facts.latestCompletedVisit)==='COMPLETED'?facts.latestCompletedVisit:null
+  const visitAt=visit?.occurred_at||visit?.occurredAt||visit?.completed_at||visit?.completedAt||visit?.scheduled_at||visit?.scheduledAt||null
+  const purchase=facts.latestPurchase||null
+  const purchaseRef=clean(purchase?.id||purchase?.external_id||purchase?.externalId,180)
+  const purchaseAt=purchase?.occurred_at||purchase?.occurredAt||purchase?.created_at||purchase?.createdAt||null
+  const report=facts.latestConfirmedObjection||null
+  const reportAt=report?.confirmed_at||report?.confirmedAt||report?.created_at||report?.createdAt||null
+  const objections=confirmedObjectionSelection(report,500).objections.map(item=>item.statement)
+  const commitment=facts.latestCommitment||null
+  const commitmentText=clean(commitment?.description||commitment?.action,500)
+  const rawArea=client.totalAreaHa??client.total_area_ha??client.area
+  const numericArea=Number(rawArea)
+  const hasArea=rawArea!=null&&String(rawArea).trim()!==''&&Number.isFinite(numericArea)
+  const registration=[hasArea?`área ${numericArea.toLocaleString('pt-BR',{maximumFractionDigits:2})} ha`:'',clean(client.cultures,500)?`culturas ${clean(client.cultures,500)}`:''].filter(Boolean).join('; ')
+  return [
+   registration?{id:`client:${clean(client.id,180)}`,source_type:'client_registration',statement:`${clean(client.name,180)}: ${registration}.`,observed_at:null,confidence:1}:null,
+   visit?.id?{id:clean(visit.id,180),source_type:'visit',statement:`Última visita concluída de ${clean(client.name,180)} em ${fastDate(visitAt)}.`,observed_at:visitAt,confidence:1}:null,
+   purchaseRef?{id:purchaseRef,source_type:'business_event',statement:`Última compra concluída de ${clean(client.name,180)}: ${fastCurrency(purchase.value,purchase.currency)||'valor não informado'} em ${fastDate(purchaseAt)}.`,observed_at:purchaseAt,confidence:1}:null,
+   objections.length&&(report?.visit_report_id||report?.id)?{id:clean(report.visit_report_id||report.id,180),source_type:'confirmed_visit_report',statement:`Objeções confirmadas de ${clean(client.name,180)}: ${objections.join('; ')}`,observed_at:reportAt,confidence:1}:null,
+   commitmentText&&(commitment?.commitment_id||commitment?.id)?{id:clean(commitment.commitment_id||commitment.id,180),source_type:'commitment',statement:`Compromisso de ${clean(client.name,180)}: ${commitmentText}.`,observed_at:commitment?.updated_at||commitment?.updatedAt||commitment?.created_at||commitment?.createdAt||null,confidence:1}:null,
+  ].filter(Boolean)
+ }
+ const factsUsed=scoped.flatMap(evidenceFor).filter(item=>clean(item?.id,180))
+ const ambiguousObjectionClients=scoped.filter(facts=>(facts.latestConfirmedObjection?.visit_report_id||facts.latestConfirmedObjection?.id)&&confirmedObjectionSelection(facts.latestConfirmedObjection).ambiguous).map(facts=>clean(facts.client.name,180))
+ const hasEvidence=factsUsed.length>0
+ const route=routeSystemCapability({message,intentHint:'ASK_CLIENT',hasClient:true})
+ const createdAt=now.toISOString()
+ const contextHash=createHash('sha256').update(JSON.stringify({clients:scoped.map(item=>item.client.id),message})).digest('hex')
+ const entityResolutions=Math.max(0,Number(executionCounts.entityResolutions??1)||0)
+ const dataLookups=Math.max(0,Number(executionCounts.dataLookups??2)||0)
+ const hops=Math.max(0,Number(executionCounts.hops??2)||0)
+ const executionBudget=Object.freeze({entityResolutions,dataLookups,modelCalls:0,toolCalls:2,hops,estimatedInputTokens:0,estimatedOutputTokens:0,estimatedCostUsd:0})
+ const sourceFor=capability=>factsUsed.find(item=>capability==='VISIT_HISTORY'?['visit','confirmed_visit_report'].includes(item.source_type):capability==='COMMERCIAL_HISTORY'?['business_event','commitment'].includes(item.source_type):item.source_type==='client_registration')?.id||null
+ const capabilityResults=route.capabilities.map(capability=>({capability,status:sourceFor(capability)?'EXECUTED':'NO_DATA',source_ref:sourceFor(capability)}))
+ const reasoning={
+  contract_version:'val.ai_reasoning_result.v1',reasoning_id:randomUUID(),organization:{id:String(organizationId)},client:{id:String(scoped[0].client.id),name:clean(scoped[0].client.name,180)},context_snapshot:{id:`compare-${contextHash.slice(0,16)}`,version:'val.fast_data_snapshot.v1',confidence:{level:'VERIFICADO'},hash:contextHash},conversation_id:clean(conversationId,180)||'stateless',intent:'ASK_CLIENT',persistence_mode:'NONE',objective:clean(message,1200),situation_summary:answer,key_signals:[],facts_used:factsUsed,hypotheses:[],missing_information:['Dimensão da comparação a aprofundar'],decision_thesis:{CURRENT_SITUATION:answer,WHAT_MATTERS:'Os dois produtores foram resolvidos pela thread e consultados separadamente no mesmo tenant e owner.',KEY_UNCERTAINTY:'O usuário ainda não escolheu a dimensão decisória da comparação.',THESIS:answer,WHY:'A resposta apresenta somente campos estruturados equivalentes.',WHAT_TO_VALIDATE:'Qual dimensão deve orientar a próxima comparação.',WHAT_WOULD_CHANGE_MY_VIEW:'Registros mais recentes ou outro critério explicitamente solicitado.'},golden_questions:[],recommended_strategy:{reading:answer,action:'Escolha a dimensão material que deseja aprofundar.',do_not_do:'Não inferir superioridade comercial ou agronômica a partir de campos ausentes.'},evidence_to_use:factsUsed,agronomic_context:{status:'registered_fact',human_review_required:false,sources:{},safety_note:'Nenhuma prescrição agronômica foi produzida.'},commercial_context:{status:'structured_comparison',client_ids:scoped.map(item=>String(item.client.id))},next_commitment:'Escolher a dimensão material da comparação.',risks:[],confidence:{level:'VERIFICADO',score:.96,rationale:'Os dois clientes e seus fatos foram lidos em lookups autorizados independentes.'},reasoning_confidence:{version:'val.reasoning_confidence.v1',context:.96,thesis:.82,question:.9,agronomy:null,knowledge:1,threshold:{ask_below:.72,answer_at_or_above:.72}},knowledge_refs:[],memory_refs:[],created_at:createdAt,model:'rules-fast-client-comparison-v1',prompt_version:'val-decision-copilot-v3',run:{provider:'system-capability-router',model:'rules-fast-client-comparison-v1',prompt_version:'val-decision-copilot-v3',context_hash:contextHash,latency_ms:Number(latencyMs)||0,status:'completed',fallback:false,path:'FAST',model_call_count:0,tool_call_count:2,hop_count:hops,estimated_input_tokens:0,estimated_output_tokens:0,estimated_cost_usd:0,capabilities_planned:route.capabilities,capabilities_used:capabilityResults.filter(item=>item.status==='EXECUTED').map(item=>item.capability),capability_results:capabilityResults,latency_breakdown:{AUTH:null,CONTEXT_RETRIEVAL:null,MEMORY:null,DATABASE:null,MCA:null,MIA:null,EXTERNAL_DATA:null,MODEL_INPUT:null,MODEL_INFERENCE:null,VALIDATION:null,RESPONSE:null}},premises:{recomputed_for_request:true,source:'authorized_fast_data_pair',profile_specific:true,conversation_is_not_confirmed_memory:true,data_path:'CLIENT_COMPARISON'},voice_output:{version:'val.voice_output.v1',speakable_text:answer,persistence:'NONE',automatic_memory_effect:false},decision_interview:{version:'val.decision_interview.v1',status:'NEEDS_INPUT',questions:[{question:'Qual dimensão você quer comparar: histórico, compra, área/culturas ou compromissos?',why_it_matters:'O critério muda a leitura e evita uma comparação genérica.',priority:1}],material_missing_information:['Dimensão da comparação'],non_material_missing_information:[],session_context:{conversation_id:clean(conversationId,180)||'stateless',persistence_mode:'NONE'},explanation:'As duas entidades estão claras; falta somente o critério material.'},quality:{status:'NOT_EVALUATED',dimensions:{},automatic_tests:{}}
+ }
+ if(!hasEvidence){
+  reasoning.context_snapshot.confidence={level:'INSUFICIENTE',score:.2}
+  reasoning.confidence={level:'INSUFICIENTE',score:.2,rationale:'Os dois clientes foram resolvidos, mas nenhum campo factual com proveniência foi encontrado para sustentar a comparação.'}
+ reasoning.reasoning_confidence={...reasoning.reasoning_confidence,context:.2,thesis:.2}
+ reasoning.decision_thesis={...reasoning.decision_thesis,KEY_UNCERTAINTY:'Não há registros factuais com proveniência para comparar.',WHY:'Os lookups autorizados não retornaram evidência factual para nenhum dos dois produtores.',WHAT_TO_VALIDATE:'Cadastre ou confirme ao menos uma dimensão factual equivalente antes de comparar.'}
+ reasoning.missing_information=[...reasoning.missing_information,'Registros factuais comparáveis com proveniência']
+  reasoning.agronomic_context={...reasoning.agronomic_context,status:'not_applicable'}
+  reasoning.commercial_context={...reasoning.commercial_context,status:'no_data'}
+ reasoning.run.capabilities_used=[]
+ }
+ if(ambiguousObjectionClients.length){
+  const missing=`Marcação da objeção principal para ${ambiguousObjectionClients.join(' e ')}`
+  reasoning.missing_information=[...new Set([...reasoning.missing_information,missing])]
+  reasoning.decision_thesis={...reasoning.decision_thesis,KEY_UNCERTAINTY:`${reasoning.decision_thesis.KEY_UNCERTAINTY} ${missing}.`}
+  reasoning.decision_interview={...reasoning.decision_interview,questions:[...reasoning.decision_interview.questions,{question:`Qual objeção confirmada deve ser tratada como principal para ${ambiguousObjectionClients.join(' e ')}?`,why_it_matters:'A VAL não escolhe silenciosamente entre múltiplas objeções confirmadas.',priority:2}],material_missing_information:[...reasoning.decision_interview.material_missing_information,missing],explanation:'As entidades estão claras; faltam a dimensão da comparação e a marcação explícita de qualquer objeção principal ambígua.'}
+ }
+ return {recommendationId:null,engineMode:'rules',engineArchitecture:'fast-system-capability',route:'FAST',model:'rules-fast-client-comparison-v1',warning:'',globalCopilot:true,responseMetadata:{intent:'COMPARE',reasoningPath:'FAST',dataPath:'CLIENT_COMPARISON',capabilities:route.capabilities,executionBudget,comparedClients:scoped.map(item=>({id:String(item.client.id),name:clean(item.client.name,180)}))},advice:{answer,ai_reasoning:reasoning,val_response_quality:reasoning.quality}}
+}
+
+function fastFactPresentation({facts,route,now}){
+ const client=facts.client||{id:'unknown',name:'Produtor'}
+ const clientName=clean(client.name,180)||'Produtor'
+ const dataPath=route.data_path||'LATEST_VISIT'
+ if(dataPath==='LATEST_VISIT'){
+  const candidate=facts.latestCompletedVisit||facts.latestVisit||null
+  const visit=candidate&&legacyVisitLifecycle(candidate)==='COMPLETED'?candidate:null
+  const scheduled=facts.nextScheduledVisit||null
+  const scheduledAt=scheduled?.scheduled_at||scheduled?.scheduledAt||null
+  const scheduledTime=new Date(scheduledAt||'').getTime()
+  const nextVisit=scheduled&&['PLANNED','PREPARED'].includes(legacyVisitLifecycle(scheduled))&&Number.isFinite(scheduledTime)&&scheduledTime>=now.getTime()?scheduled:null
+  const occurredAt=visit?.occurred_at||visit?.occurredAt||visit?.completed_at||visit?.completedAt||visit?.scheduled_at||visit?.scheduledAt||null
+  const status=[clean(visit?.status,80),clean(visit?.lifecycle_status||visit?.lifecycleStatus,40)].filter(Boolean).join(' / ')||'concluída'
+  const summary=clean(visit?.summary||visit?.objective||'',1200)
+  const completedAnswer=visit?`A última visita concluída de ${clientName} foi em ${fastDate(occurredAt)}, com status ${status}. ${summary||'O registro não traz resumo ou objetivo.'}`:`Ainda não há visita concluída registrada para ${clientName} na carteira autorizada.`
+  const nextStatus=[clean(nextVisit?.status,80),clean(nextVisit?.lifecycle_status||nextVisit?.lifecycleStatus,40)].filter(Boolean).join(' / ')||'agendada'
+  const nextAnswer=nextVisit?` A próxima visita está agendada para ${fastDate(scheduledAt)}, com status ${nextStatus}.`:''
+  const factsUsed=[]
+  if(visit)factsUsed.push({id:clean(visit.id,180),source_type:'visit',statement:completedAnswer,observed_at:occurredAt,status:clean(visit.status,80)||null,lifecycle_status:clean(visit.lifecycle_status||visit.lifecycleStatus,40)||null,confidence:1})
+  if(nextVisit)factsUsed.push({id:clean(nextVisit.id,180),source_type:'scheduled_visit',statement:nextAnswer.trim(),observed_at:scheduledAt,status:clean(nextVisit.status,80)||null,lifecycle_status:clean(nextVisit.lifecycle_status||nextVisit.lifecycleStatus,40)||null,confidence:1})
+  return {dataPath,answer:`${completedAnswer}${nextAnswer}`,primaryFound:Boolean(visit),sourceRef:visit?.id||null,factsUsed,action:clean(visit?.next_commitment||visit?.nextCommitment||visit?.next_action||visit?.nextAction||facts.latestCommitment?.description||(nextVisit?`Prepare a visita agendada para ${fastDate(scheduledAt)}.`:'Confirme se houve uma visita ainda não registrada.'),1200),missing:'Visita concluída registrada',doNotDo:'Não apresentar visita planejada como contato realizado.',latestCompletedVisit:visit?{id:visit.id,status:visit.status||null,lifecycleStatus:visit.lifecycle_status||visit.lifecycleStatus||null,occurredAt}:null,nextScheduledVisit:nextVisit?{id:nextVisit.id,status:nextVisit.status||null,lifecycleStatus:nextVisit.lifecycle_status||nextVisit.lifecycleStatus||null,scheduledAt}:null}
+ }
+ if(['LATEST_CONFIRMED_OBJECTION','LATEST_VISIT_CONFIRMED_OBJECTION'].includes(dataPath)){
+  const latestVisitSpecific=dataPath==='LATEST_VISIT_CONFIRMED_OBJECTION'
+  const report=latestVisitSpecific?facts.latestVisitConfirmedObjection||null:facts.latestConfirmedObjection||null
+  const {objections,principal,ambiguous}=confirmedObjectionSelection(report)
+  const observedAt=report?.confirmed_at||report?.confirmedAt||report?.created_at||report?.createdAt||null
+  const scopeLabel=latestVisitSpecific?'na última visita concluída':'mais recente'
+  const sourceRef=clean(report?.visit_report_id||report?.id,180)||null
+  const hasAuditableEvidence=Boolean(sourceRef)
+  const hasUnverifiableLegacyContent=objections.length>0&&!hasAuditableEvidence
+  const answer=hasUnverifiableLegacyContent
+   ?`Não há objeção confirmada com referência auditável ${latestVisitSpecific?'para a última visita concluída ':''}de ${clientName}; conteúdo legado sem identificador não pode ser tratado como evidência.`
+   :ambiguous?`Há ${objections.length} objeções confirmadas ${scopeLabel} de ${clientName}, mas nenhuma está marcada como principal: ${objections.map(item=>item.statement).join('; ')}.`:principal?`A objeção confirmada ${scopeLabel} de ${clientName} foi: ${principal}.`:`Ainda não há objeção confirmada ${latestVisitSpecific?'na última visita concluída ':''}registrada para ${clientName}.`
+  const completedVisit=facts.latestCompletedVisit&&legacyVisitLifecycle(facts.latestCompletedVisit)==='COMPLETED'?facts.latestCompletedVisit:null
+  const reportVisitId=clean(report?.visit_id||report?.visitId,180)
+  const completedVisitId=clean(completedVisit?.id,180)
+  const correlatedVisit=latestVisitSpecific&&completedVisit&&(!reportVisitId||reportVisitId===completedVisitId)?completedVisit:null
+  const visitId=latestVisitSpecific?(reportVisitId||completedVisitId):''
+  const visitAt=latestVisitSpecific?(report?.visit_occurred_at||report?.visitOccurredAt||report?.visit_completed_at||report?.visitCompletedAt||report?.visit_scheduled_at||report?.visitScheduledAt||correlatedVisit?.occurred_at||correlatedVisit?.occurredAt||correlatedVisit?.completed_at||correlatedVisit?.completedAt||correlatedVisit?.scheduled_at||correlatedVisit?.scheduledAt||null):null
+  const factsUsed=[]
+  if(objections.length&&sourceRef)factsUsed.push({id:clean(sourceRef,180),source_type:'confirmed_visit_report',statement:objections.map(item=>item.statement).join('; '),observed_at:observedAt,visit_id:visitId||null,visit_observed_at:visitAt,confidence:1})
+  if(objections.length&&sourceRef&&latestVisitSpecific&&visitId)factsUsed.push({id:visitId,source_type:'visit',statement:`Visita concluída correlacionada ao relatório ${sourceRef}${visitAt?` em ${fastDate(visitAt)}`:''}.`,observed_at:visitAt,status:clean(report?.visit_status||report?.visitStatus||correlatedVisit?.status,80)||null,lifecycle_status:clean(report?.visit_lifecycle_status||report?.visitLifecycleStatus||correlatedVisit?.lifecycle_status||correlatedVisit?.lifecycleStatus,40)||'COMPLETED',confidence:1})
+  const latestCompletedVisit=latestVisitSpecific&&sourceRef&&visitId?{id:visitId,status:report?.visit_status||report?.visitStatus||correlatedVisit?.status||null,lifecycleStatus:report?.visit_lifecycle_status||report?.visitLifecycleStatus||correlatedVisit?.lifecycle_status||correlatedVisit?.lifecycleStatus||'COMPLETED',occurredAt:visitAt}:null
+  const primaryFound=Boolean(principal&&hasAuditableEvidence)
+  const capabilityStatus=ambiguous&&hasAuditableEvidence?'INPUT_REQUIRED':primaryFound?undefined:'NO_DATA'
+  return {dataPath,answer,primaryFound,capabilityStatus,sourceRef,factsUsed,action:ambiguous&&hasAuditableEvidence?'Defina qual objeção é principal antes de usá-la como eixo da abordagem.':primaryFound?'Use a objeção confirmada como contexto; valide se ela continua atual antes de decidir.':'Confirme a objeção em um registro canônico com identificador auditável.',missing:ambiguous&&hasAuditableEvidence?'Marcação da objeção principal':'Objeção confirmada com referência auditável',doNotDo:'Não promover relatório pendente, hipótese, texto legado sem identificador ou motivo de perda a objeção confirmada.',latestCompletedVisit}
+ }
+ if(dataPath==='LATEST_COMMITMENT'){
+  const commitment=facts.latestCommitment||null
+  const description=clean(commitment?.description||commitment?.action,700)
+  const due=commitment?.due_at||commitment?.dueAt||null
+  const status=clean(commitment?.status,80)
+  const sourceRef=clean(commitment?.commitment_id||commitment?.id,180)||null
+  const primaryFound=Boolean(description&&sourceRef)
+  const answer=primaryFound?`O último compromisso registrado de ${clientName} é: ${description}${status?` — status ${status}`:''}${due?` — prazo ${fastDate(due)}`:''}.`:description?`Não há compromisso com referência auditável registrado para ${clientName}; conteúdo legado sem identificador não pode ser tratado como evidência.`:`Ainda não há compromisso registrado para ${clientName}.`
+  const factsUsed=primaryFound?[{id:sourceRef,source_type:'commitment',statement:answer,observed_at:commitment?.updated_at||commitment?.updatedAt||commitment?.created_at||commitment?.createdAt||null,status:status||null,confidence:1}]:[]
+  return {dataPath,answer,primaryFound,capabilityStatus:primaryFound?undefined:'NO_DATA',sourceRef,factsUsed,action:primaryFound?'Valide o status do compromisso antes de criar outro.':'Confirme o compromisso em um registro canônico com identificador auditável.',missing:'Compromisso com referência auditável',doNotDo:'Não confundir compromisso proposto ou texto legado sem identificador com o registro canônico.'}
+ }
+ if(dataPath==='LATEST_PURCHASE'){
+  const purchase=facts.latestPurchase||null
+  const value=fastCurrency(purchase?.value,purchase?.currency)
+  const product=clean(purchase?.product||purchase?.category,240)
+  const rawQuantity=purchase?.quantity
+  const quantity=rawQuantity!=null&&String(rawQuantity).trim()!==''&&Number.isFinite(Number(rawQuantity))?Number(rawQuantity).toLocaleString('pt-BR',{maximumFractionDigits:3}):''
+  const occurredAt=purchase?.occurred_at||purchase?.occurredAt||purchase?.created_at||purchase?.createdAt||null
+  const hasPurchaseContent=Boolean(purchase&&(value||product||quantity||occurredAt))
+  const quantityUnit=clean(purchase?.unit||purchase?.quantity_unit||purchase?.quantityUnit,60)
+  const details=[value,product?`produto/categoria ${product}`:'',quantity?`quantidade ${quantity}${quantityUnit?` ${quantityUnit}`:' (unidade não informada)'}`:''].filter(Boolean).join(', ')
+  const sourceRef=clean(purchase?.id||purchase?.external_id||purchase?.externalId,180)||null
+  const primaryFound=Boolean(hasPurchaseContent&&sourceRef)
+  const answer=primaryFound?`A última compra registrada de ${clientName} foi em ${fastDate(occurredAt)}${details?`: ${details}`:''}.`:hasPurchaseContent?`Não há compra concluída com referência auditável registrada para ${clientName}; conteúdo legado sem identificador não pode ser tratado como evidência.`:`Ainda não há compra concluída registrada para ${clientName}.`
+  const factsUsed=primaryFound?[{id:sourceRef,source_type:'business_event',statement:answer,observed_at:occurredAt,confidence:1}]:[]
+  return {dataPath,answer,primaryFound,capabilityStatus:primaryFound?undefined:'NO_DATA',sourceRef,factsUsed,action:primaryFound?'Use o evento ganho mais recente como referência e informe um período se quiser o total comprado.':'Confirme a compra em um evento canônico com identificador auditável.',missing:'Compra concluída com referência auditável',doNotDo:'Não tratar oportunidade aberta, evento perdido, texto legado sem identificador ou total agregado como a última compra.'}
+ }
+ if(dataPath==='REGISTERED_CROPS'){
+  const season=facts.latestCropSeason||null
+  const crop=clean(season?.crop,120)
+  const seasonLabel=clean(season?.season,60)
+  const registered=clean(client.cultures,700)
+  const rawSeasonArea=season?.area_ha??season?.areaHa
+  const area=rawSeasonArea!=null&&String(rawSeasonArea).trim()!==''&&Number.isFinite(Number(rawSeasonArea))?`${Number(rawSeasonArea).toLocaleString('pt-BR',{maximumFractionDigits:2})} ha`:''
+  const plantedAt=season?.planted_at||season?.plantedAt||null
+  const answer=crop?`A última safra registrada de ${clientName} é ${crop}${seasonLabel?` — safra ${seasonLabel}`:''}${area?` — área ${area}`:''}${plantedAt?` — plantio em ${fastDate(plantedAt)}`:''}. Isso não confirma que a cultura ainda está em campo.`:registered?`Culturas cadastradas para ${clientName}: ${registered}. O cadastro resumido não confirma plantio atual.`:`Ainda não há cultura ou safra registrada para ${clientName}.`
+  const sourceRef=season?.id||season?.field_id||season?.fieldId||(registered?`client:${client.id}`:null)
+  const found=Boolean(crop||registered)
+  const factsUsed=found?[{id:clean(sourceRef,180),source_type:crop?'crop_season':'client_registration',statement:answer,observed_at:season?.created_at||season?.createdAt||null,confidence:1}]:[]
+  return {dataPath,answer,primaryFound:found,sourceRef,factsUsed,action:'Confirme a situação atual da lavoura se a decisão depender de cultura em campo.',missing:'Cultura ou safra registrada',doNotDo:'Não afirmar plantio atual sem evidência temporal suficiente.'}
+ }
+ const totalArea=client.totalAreaHa??client.total_area_ha??client.area
+ const numericArea=Number(totalArea)
+ const areaBand=clean(client.areaBand??client.area_band,120)
+ const hasNumericArea=totalArea!=null&&String(totalArea).trim()!==''&&Number.isFinite(numericArea)
+ const found=hasNumericArea||Boolean(areaBand)
+ const value=hasNumericArea?`${numericArea.toLocaleString('pt-BR',{maximumFractionDigits:2})} ha`:areaBand
+ const answer=found?`A área total cadastrada de ${clientName} é ${value}. Esse valor é do cadastro do produtor; não é uma soma automática de propriedades, talhões ou safras.`:`Ainda não há área total cadastrada para ${clientName}.`
+ const sourceRef=found?`client:${client.id}`:null
+ const factsUsed=found?[{id:sourceRef,source_type:'client_registration',statement:answer,observed_at:null,confidence:1}]:[]
+ return {dataPath:'REGISTERED_AREA',answer,primaryFound:found,sourceRef,factsUsed,action:'Use o nível de área cadastrado e confirme divergências antes de calcular.',missing:'Área total cadastrada',doNotDo:'Não somar níveis de área potencialmente sobrepostos.'}
+}
+
+export function buildFastClientResponse({facts={},message='',organizationId='unknown',conversationId='',now=new Date(),latencyMs=0,executionCounts={}}={}){
+ now=now instanceof Date&&!Number.isNaN(now.getTime())?now:new Date()
  const route=routeSystemCapability({message,intentHint:'ASK_CLIENT',hasClient:true})
  const client=facts.client||{id:'unknown',name:'Produtor'}
- const completedCandidate=facts.latestCompletedVisit||facts.latestVisit||null
- const visit=completedCandidate&&legacyVisitLifecycle(completedCandidate)==='COMPLETED'?completedCandidate:null
- const scheduledCandidate=facts.nextScheduledVisit||null
- const scheduledAt=scheduledCandidate?.scheduled_at||scheduledCandidate?.scheduledAt||null
- const scheduledTime=new Date(scheduledAt||'').getTime()
- const nextVisit=scheduledCandidate&&['PLANNED','PREPARED'].includes(legacyVisitLifecycle(scheduledCandidate))&&Number.isFinite(scheduledTime)&&scheduledTime>=now.getTime()?scheduledCandidate:null
- const occurredAt=visit?.occurred_at||visit?.occurredAt||visit?.completed_at||visit?.completedAt||visit?.scheduled_at||visit?.scheduledAt||null
- const dateText=occurredAt&&!Number.isNaN(new Date(occurredAt).getTime())?new Date(occurredAt).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}):'data não informada'
- const nextDateText=nextVisit?new Date(scheduledAt).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'}):''
- const visitSummary=clean(visit?.summary||visit?.objective||'',1200)
- const visitStatus=[clean(visit?.status,80),clean(visit?.lifecycle_status||visit?.lifecycleStatus,40)].filter(Boolean).join(' / ')||'concluída'
- const nextStatus=[clean(nextVisit?.status,80),clean(nextVisit?.lifecycle_status||nextVisit?.lifecycleStatus,40)].filter(Boolean).join(' / ')||'agendada'
- const completedAnswer=visit
-  ?`A última visita concluída de ${clean(client.name,180)} foi em ${dateText}, com status ${visitStatus}. ${visitSummary||'O registro não traz resumo ou objetivo.'}`
-  :`Não encontrei visita concluída para ${clean(client.name,180)} na carteira autorizada.`
- const nextAnswer=nextVisit?` A próxima visita está agendada para ${nextDateText}, com status ${nextStatus}.`:''
- const answer=`${completedAnswer}${nextAnswer}`
- const action=visit?.next_commitment||visit?.nextCommitment||visit?.next_action||visit?.nextAction||facts.latestCommitment?.description||(nextVisit?`Prepare a visita agendada para ${nextDateText}.`:'Confirme o próximo compromisso antes de registrar uma nova ação.')
- const factList=[]
- if(visit)factList.push({id:clean(visit.id,180),source_type:'visit',statement:completedAnswer,observed_at:occurredAt,status:clean(visit.status,80)||null,lifecycle_status:clean(visit.lifecycle_status||visit.lifecycleStatus,40)||null,confidence:1})
- if(nextVisit)factList.push({id:clean(nextVisit.id,180),source_type:'scheduled_visit',statement:nextAnswer.trim(),observed_at:scheduledAt,status:clean(nextVisit.status,80)||null,lifecycle_status:clean(nextVisit.lifecycle_status||nextVisit.lifecycleStatus,40)||null,confidence:1})
- const hasFact=Boolean(visit||nextVisit)
- const createdAt=now.toISOString();const contextHash=createHash('sha256').update(JSON.stringify({client:client.id,latestCompletedVisit:visit?.id||null,nextScheduledVisit:nextVisit?.id||null,message})).digest('hex')
+ const presentation=fastFactPresentation({facts,route,now})
+ const capability=route.capabilities[0]||'CLIENT_CONTEXT'
+ const auditedSourceRef=clean(presentation.sourceRef,180)||null
+ const auditedFactsUsed=list(presentation.factsUsed).filter(item=>clean(item?.id,180))
+ const hasAuditableEvidence=Boolean(auditedSourceRef&&auditedFactsUsed.some(item=>clean(item.id,180)===auditedSourceRef))
+ const evidenceVerified=Boolean(presentation.primaryFound&&hasAuditableEvidence)
+ const capabilityStatus=presentation.capabilityStatus==='INPUT_REQUIRED'?'INPUT_REQUIRED':presentation.capabilityStatus==='NO_DATA'?'NO_DATA':evidenceVerified?'EXECUTED':'NO_DATA'
+ const createdAt=now.toISOString()
+ const contextHash=createHash('sha256').update(JSON.stringify({client:client.id,dataPath:presentation.dataPath,sourceRef:auditedSourceRef,message})).digest('hex')
+ const entityResolutions=Math.max(0,Number(executionCounts.entityResolutions??1)||0)
+ const dataLookups=Math.max(0,Number(executionCounts.dataLookups??1)||0)
+ const hops=Math.max(0,Number(executionCounts.hops??(entityResolutions+dataLookups))||0)
+ const executionBudget=Object.freeze({entityResolutions,dataLookups,modelCalls:0,toolCalls:1,hops,estimatedInputTokens:0,estimatedOutputTokens:0,estimatedCostUsd:0})
  const reasoning={
-  contract_version:'val.ai_reasoning_result.v1',reasoning_id:randomUUID(),organization:{id:String(organizationId)},client:{id:String(client.id),name:clean(client.name,180)},context_snapshot:{id:`fast-${contextHash.slice(0,16)}`,version:'val.fast_data_snapshot.v1',confidence:{level:hasFact?'VERIFICADO':'INSUFICIENTE'},hash:contextHash},conversation_id:clean(conversationId,180)||'stateless',intent:'ASK_CLIENT',persistence_mode:'NONE',objective:clean(message,1200),situation_summary:answer,key_signals:[],facts_used:factList,hypotheses:[],missing_information:visit?[]:['Visita concluída registrada'],decision_thesis:{CURRENT_SITUATION:answer,WHAT_MATTERS:'Visitas concluídas são ordenadas pela ocorrência ou conclusão; agenda futura é apresentada separadamente.',KEY_UNCERTAINTY:visit?'O registro reflete a última visita concluída salva, não contatos ainda não registrados.':'Nenhuma visita concluída foi localizada; uma agenda futura não comprova contato realizado.',THESIS:answer,WHY:hasFact?'O histórico autorizado contém lifecycle, status e data do registro apresentado.':'Nenhum registro concluído ou futuro foi encontrado.',WHAT_TO_VALIDATE:'Confirme se houve contato posterior ainda não registrado.',WHAT_WOULD_CHANGE_MY_VIEW:'Uma visita concluída ou interação mais recente confirmada.'},golden_questions:[],recommended_strategy:{reading:answer,action:clean(action,1200),do_not_do:'Não apresentar visita planejada como contato realizado.'},evidence_to_use:factList,agronomic_context:{status:'not_applicable',human_review_required:false,sources:{},safety_note:'Nenhuma orientação técnica foi produzida.'},commercial_context:{status:'history_lookup'},next_commitment:clean(action,1200),risks:[],confidence:{level:hasFact?'VERIFICADO':'INSUFICIENTE',score:hasFact?0.98:0.2,rationale:hasFact?'Leitura direta de registros autorizados com lifecycle e data próprios.':'Não há registro suficiente.'},reasoning_confidence:{version:'val.reasoning_confidence.v1',context:hasFact?0.98:0.2,thesis:hasFact?0.98:0.2,question:.9,agronomy:null,knowledge:1,threshold:{ask_below:.72,answer_at_or_above:.72}},knowledge_refs:[],memory_refs:[],created_at:createdAt,model:'rules-fast-client-v1',prompt_version:'val-decision-copilot-v3',run:{provider:'system-capability-router',model:'rules-fast-client-v1',prompt_version:'val-decision-copilot-v3',context_hash:contextHash,latency_ms:Number(latencyMs)||0,status:'completed',fallback:false,path:'FAST',capabilities_planned:route.capabilities,capabilities_used:hasFact?['VISIT_HISTORY']:[],capability_results:[{capability:'VISIT_HISTORY',status:hasFact?'EXECUTED':'NO_DATA',source_ref:visit?.id||nextVisit?.id||null}],latency_breakdown:{AUTH:null,CONTEXT_RETRIEVAL:null,MEMORY:null,DATABASE:null,MCA:null,MIA:null,EXTERNAL_DATA:null,MODEL_INPUT:null,MODEL_INFERENCE:null,VALIDATION:null,RESPONSE:null}},premises:{recomputed_for_request:true,source:'authorized_fast_data',profile_specific:true,conversation_is_not_confirmed_memory:true},voice_output:{version:'val.voice_output.v1',speakable_text:answer,persistence:'NONE',automatic_memory_effect:false},decision_interview:{version:'val.decision_interview.v1',status:'NOT_NEEDED',questions:[],material_missing_information:[],non_material_missing_information:[],session_context:{conversation_id:clean(conversationId,180)||'stateless',persistence_mode:'NONE'},explanation:'A pergunta foi respondida diretamente pelo histórico, separando realizado de agendado.'},quality:{status:'NOT_EVALUATED',dimensions:{},automatic_tests:{name_swap:{passed:null,evaluated:false,reason:'Não aplicável a uma consulta literal de visita.'},context_removal:{passed:null,evaluated:false,reason:'Não executado no FAST PATH determinístico.'}}}
+  contract_version:'val.ai_reasoning_result.v1',reasoning_id:randomUUID(),organization:{id:String(organizationId)},client:{id:String(client.id),name:clean(client.name,180)},context_snapshot:{id:`fast-${contextHash.slice(0,16)}`,version:'val.fast_data_snapshot.v1',confidence:{level:evidenceVerified?'VERIFICADO':'INSUFICIENTE'},hash:contextHash},conversation_id:clean(conversationId,180)||'stateless',intent:route.intent,persistence_mode:'NONE',objective:clean(message,1200),situation_summary:presentation.answer,key_signals:[],facts_used:auditedFactsUsed,hypotheses:[],missing_information:evidenceVerified?[]:[presentation.missing],decision_thesis:{CURRENT_SITUATION:presentation.answer,WHAT_MATTERS:'A resposta usa primeiro o registro estruturado mínimo e autorizado.',KEY_UNCERTAINTY:evidenceVerified?'O registro pode não refletir um fato ainda não salvo.':presentation.missing,THESIS:presentation.answer,WHY:evidenceVerified?'O lookup retornou um fato estruturado no escopo do produtor.':'O lookup não retornou evidência auditável suficiente.',WHAT_TO_VALIDATE:evidenceVerified?'Confirme se houve atualização posterior ainda não registrada.':presentation.missing,WHAT_WOULD_CHANGE_MY_VIEW:'Um registro estruturado mais recente e autorizado.'},golden_questions:[],recommended_strategy:{reading:presentation.answer,action:clean(presentation.action,1200),do_not_do:presentation.doNotDo},evidence_to_use:auditedFactsUsed,agronomic_context:{status:evidenceVerified&&presentation.dataPath==='REGISTERED_CROPS'?'registered_fact':'not_applicable',human_review_required:false,sources:{},safety_note:'Nenhuma prescrição ou recomendação agronômica foi produzida.'},commercial_context:{status:evidenceVerified?'structured_fact_lookup':'no_data',data_path:presentation.dataPath},next_commitment:clean(presentation.action,1200),risks:[],confidence:{level:evidenceVerified?'VERIFICADO':'INSUFICIENTE',score:evidenceVerified?0.98:0.2,rationale:evidenceVerified?'Leitura direta de registro estruturado autorizado com referência auditável.':'Não há registro com referência auditável suficiente para afirmar o fato.'},reasoning_confidence:{version:'val.reasoning_confidence.v1',context:evidenceVerified?0.98:0.2,thesis:evidenceVerified?0.98:0.2,question:.9,agronomy:null,knowledge:1,threshold:{ask_below:.72,answer_at_or_above:.72}},knowledge_refs:[],memory_refs:[],created_at:createdAt,model:'rules-fast-client-v1',prompt_version:'val-decision-copilot-v3',run:{provider:'system-capability-router',model:'rules-fast-client-v1',prompt_version:'val-decision-copilot-v3',context_hash:contextHash,latency_ms:Number(latencyMs)||0,status:'completed',fallback:false,path:'FAST',model_call_count:0,tool_call_count:1,hop_count:hops,estimated_input_tokens:0,estimated_output_tokens:0,estimated_cost_usd:0,capabilities_planned:route.capabilities,capabilities_used:capabilityStatus==='EXECUTED'?[capability]:[],capability_results:[{capability,status:capabilityStatus,source_ref:auditedSourceRef}],latency_breakdown:{AUTH:null,CONTEXT_RETRIEVAL:null,MEMORY:null,DATABASE:null,MCA:null,MIA:null,EXTERNAL_DATA:null,MODEL_INPUT:null,MODEL_INFERENCE:null,VALIDATION:null,RESPONSE:null}},premises:{recomputed_for_request:true,source:'authorized_fast_data',profile_specific:true,conversation_is_not_confirmed_memory:true,data_path:presentation.dataPath},voice_output:{version:'val.voice_output.v1',speakable_text:presentation.answer,persistence:'NONE',automatic_memory_effect:false},decision_interview:{version:'val.decision_interview.v1',status:'NOT_NEEDED',questions:[],material_missing_information:[],non_material_missing_information:[],session_context:{conversation_id:clean(conversationId,180)||'stateless',persistence_mode:'NONE'},explanation:'A pergunta foi respondida diretamente por um lookup factual mínimo; nenhum modelo foi chamado.'},quality:{status:'NOT_EVALUATED',dimensions:{},automatic_tests:{name_swap:{passed:null,evaluated:false,reason:'Não aplicável a uma consulta literal de fato.'},context_removal:{passed:null,evaluated:false,reason:'Não executado no FAST PATH determinístico.'}}}
  }
- return {recommendationId:null,engineMode:'rules',engineArchitecture:'fast-system-capability',route:'FAST',model:'rules-fast-client-v1',warning:'',globalCopilot:true,responseMetadata:{intent:'ASK_CLIENT',reasoningPath:'FAST',capabilities:route.capabilities,latestCompletedVisit:visit?{id:visit.id,status:visit.status||null,lifecycleStatus:visit.lifecycle_status||visit.lifecycleStatus||null,occurredAt}:null,nextScheduledVisit:nextVisit?{id:nextVisit.id,status:nextVisit.status||null,lifecycleStatus:nextVisit.lifecycle_status||nextVisit.lifecycleStatus||null,scheduledAt}:null},advice:{answer,ai_reasoning:reasoning,val_response_quality:reasoning.quality}}
+ if(capabilityStatus!=='EXECUTED')reasoning.run.capabilities_used=[]
+ if(capabilityStatus==='INPUT_REQUIRED')reasoning.decision_interview={...reasoning.decision_interview,status:'NEEDS_INPUT',questions:[{question:'Qual das objeções confirmadas deve ser tratada como principal?',why_it_matters:'A escolha muda o eixo da abordagem e evita selecionar um item arbitrariamente.',priority:1}],material_missing_information:[presentation.missing],explanation:'Há mais de uma objeção confirmada e nenhuma está marcada como principal; a VAL não escolhe silenciosamente.'}
+ return {recommendationId:null,engineMode:'rules',engineArchitecture:'fast-system-capability',route:'FAST',model:'rules-fast-client-v1',warning:'',globalCopilot:true,responseMetadata:{intent:route.intent,reasoningPath:'FAST',dataPath:presentation.dataPath,capabilities:route.capabilities,executionBudget,latestCompletedVisit:presentation.latestCompletedVisit??null,nextScheduledVisit:presentation.nextScheduledVisit??null},advice:{answer:presentation.answer,ai_reasoning:reasoning,val_response_quality:reasoning.quality}}
 }

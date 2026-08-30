@@ -77,11 +77,11 @@ function confirmedVisitItems(snapshot,key){
  return [...list(snapshot?.facts),...list(snapshot?.inferences),...list(snapshot?.hypotheses)].filter(item=>item?.key===key&&/confirmed_(?:visit_report|voice_interaction)/i.test(text(item?.source_type)))
 }
 
-function whyNow(visit,context){
+function whyNow(visit,context,now=new Date()){
  const scheduled=iso(visit?.scheduled_at??visit?.scheduledAt)
  const commitments=list(context?.commitments)
  const overdue=commitments.find(item=>{
-  const due=iso(item?.due_at??item?.dueAt);return due&&new Date(due)<new Date()&&!['DONE','CANCELLED'].includes(text(item.status).toUpperCase())
+  const due=iso(item?.due_at??item?.dueAt);return due&&new Date(due)<now&&!['DONE','CANCELLED'].includes(text(item.status).toUpperCase())
  })
  if(overdue)return `Há um compromisso vencido que precisa ser confirmado antes de criar um novo próximo passo.`
  const active=commitments.find(item=>!['DONE','CANCELLED'].includes(text(item?.status).toUpperCase()))
@@ -148,7 +148,7 @@ export function buildPrepareVisit(input={}){
  const preparedThesis=text(thesis.recommended_action||decisionModel.thesis||'Confirmar os dados materiais antes de recomendar.',1000)
  const profileProjection=profileApproach(profile)
  if(decisionModel.profile_strategy){profileProjection.guidance=decisionModel.profile_strategy.guidance;profileProjection.proof_preference=decisionModel.profile_strategy.proof_preference;profileProjection.decision_pace=decisionModel.profile_strategy.decision_pace}
- const lifecycleWhyNow=whyNow(visit,input.context)
+ const lifecycleWhyNow=whyNow(visit,input.context,now)
  const semanticWhyNow=text(thesis.why_now||decisionModel.why_now,700)
  const inheritedLearningMoment=/sem decis[aã]o|compromisso (?:confirmado|vencido|de retorno|ativo)/i.test(lifecycleWhyNow)
  const preparedWhyNow=text(inheritedLearningMoment?`${lifecycleWhyNow}${semanticWhyNow&&semanticWhyNow!==lifecycleWhyNow?` ${semanticWhyNow}`:''}`:semanticWhyNow||lifecycleWhyNow,900)

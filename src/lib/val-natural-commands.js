@@ -1,4 +1,4 @@
-const clean=value=>String(value??'').replace(/[\r\n\t]+/g,' ').replace(/\s+/g,' ').trim().slice(0,3000)
+const clean=(value,max=3000)=>String(value??'').replace(/[\r\n\t]+/g,' ').replace(/\s+/g,' ').trim().slice(0,Math.max(0,Number.isFinite(Number(max))?Number(max):3000))
 const fold=value=>clean(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR').replace(/[.!?]+$/g,'').trim()
 
 export const VAL_NATURAL_COMMAND_POLICY=Object.freeze({
@@ -20,7 +20,8 @@ export function resolveValNaturalCommand(input){
  if(!normalized)return null
  const registration=clean(input).match(/^(?:registra|registre|anota|anote)\s+que\s+(.+?)[.!?]*$/i)
  if(registration)return {action:'OPEN_REGISTER',local:true,persistence:'CONFIRM_REQUIRED',candidate:clean(registration[1])}
- if(exact(normalized,'resume','resuma')||/^(?:agora\s+)?(?:resume|resuma)(?:\s+(?:isso|a resposta))?(?:\s+em uma linha)?(?:,?\s+mantendo\s+(?:o\s+)?mesmo\s+produtor)?$/.test(normalized))return {action:'SUMMARIZE',local:true,persistence:'NONE'}
+ const summary=normalized.match(/^(?:agora\s+)?(?:resume|resuma)(?:\s+(?:isso|a resposta|sua resposta anterior|a resposta anterior))?(?:\s+em uma linha)?(?:,?\s+mantendo\s+(?:(?<same_client>(?:o\s+)?mesmo\s+produtor)|(?<expected_client>[a-z0-9][a-z0-9 '-]{0,119}?)\s+como\s+produtor\s+atual))?(?:\s+e\s+sem\s+executar\s+nova\s+busca)?$/)
+ if(exact(normalized,'resume','resuma')||summary)return {action:'SUMMARIZE',local:true,persistence:'NONE',expectedClientReference:clean(summary?.groups?.expected_client,120)||null,requiresCurrentClient:Boolean(summary?.groups?.same_client||summary?.groups?.expected_client)}
  if(exact(normalized,'repete','repita')||/^(?:repete|repita)(?:\s+isso)?$/.test(normalized))return {action:'REPEAT',local:true,persistence:'NONE'}
  if(exact(normalized,'so as perguntas','agora so as perguntas','so as perguntas de ouro','somente as perguntas de ouro','so me manda as perguntas de ouro','agora me manda so as tres perguntas de ouro'))return {action:'GOLDEN_QUESTIONS_ONLY',local:true,persistence:'NONE'}
  if(exact(normalized,'agora por escrito','responda por escrito','me manda isso escrito','agora me manda isso por escrito'))return {action:'OUTPUT_TEXT',local:true,outputMode:'text',persistence:'NONE'}
@@ -36,6 +37,18 @@ export function resolveValNaturalCommand(input){
  return null
 }
 
+export function naturalCommandMatchesClient(command,client){
+ if(!command?.requiresCurrentClient)return true
+ const current=fold(client?.name)
+ const expected=fold(command.expectedClientReference)
+ if(!current)return false
+ if(!expected)return true
+ return current===expected||current.startsWith(`${expected} `)||expected.startsWith(`${current} `)
+}
+
+const settledResponseActions=new Set(['SUMMARIZE','REPEAT','GOLDEN_QUESTIONS_ONLY','OUTPUT_AUDIO'])
+export const naturalCommandNeedsSettledResponse=command=>Boolean(command?.local&&settledResponseActions.has(command.action))
+
 const reasoningOf=payload=>payload?.advice?.ai_reasoning||{}
 const answerOf=payload=>{
  const reasoning=reasoningOf(payload)
@@ -48,8 +61,8 @@ export function localNaturalCommandTurn(command,payload){
  const questions=Array.isArray(reasoning.golden_questions)?reasoning.golden_questions.slice(0,3):[]
  if(command.action==='SUMMARIZE'){
   const reading=answerOf(payload)
-  const action=clean(reasoning.recommended_strategy?.action||reasoning.next_commitment||'')
-  return {role:'system',command:command.action,text:reading?`${reading}${action?` Próximo passo: ${action}`:''}`:'Ainda não há uma resposta da VAL para resumir.',persistence:'NONE'}
+  const firstSentence=reading.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim()||reading
+  return {role:'system',command:command.action,text:clean(firstSentence,500)||'Ainda não há uma resposta da VAL para resumir.',persistence:'NONE'}
  }
  if(command.action==='GOLDEN_QUESTIONS_ONLY')return {role:'system',command:command.action,text:questions.length?questions.map((item,index)=>`${index+1}. ${clean(item?.question||item)}`).join('\n'):'A leitura atual não gerou Perguntas de Ouro.',persistence:'NONE'}
  if(command.action==='REPEAT')return payload?{role:'assistant',command:command.action,payload,persistence:'NONE'}:{role:'system',command:command.action,text:'Ainda não há uma resposta da VAL para repetir.',persistence:'NONE'}

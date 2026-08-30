@@ -62,29 +62,100 @@ function topicFrom(text=''){
  return topics.find(([,pattern])=>pattern.test(source))?.[0]||''
 }
 
-function sessionItem(value,epistemicStatus){
+const explicitSubjectClientId=value=>identifier(value?.subject_client_id??value?.subjectClientId??value?.client_id??value?.clientId??(String(value?.subject?.type||'').toLowerCase()==='client'?value?.subject?.id:null))
+const explicitOwnerId=value=>identifier(value?.owner_id??value?.ownerId??value?.subject_owner_id??value?.subjectOwnerId??value?.owner?.id??(typeof value?.owner==='string'?value.owner:null))
+const clientIds=value=>uniqueBy(list(value).map(item=>identifier(item)).filter(Boolean),item=>item,conversationStateLimits.clients)
+
+function comparisonSubject(value,comparedClients=[]){
+ const candidates=list(comparedClients).map(item=>entityRef(item,'client')).filter(item=>item?.id)
+ if(!candidates.length)return {subjectClientId:null,subjectClientIds:[]}
+ const source=normalize(value?.statement??value?.claim??value?.label??value)
+ const matches=candidates.filter(item=>item.label&&source.includes(normalize(item.label)))
+ if(matches.length===1)return {subjectClientId:matches[0].id,subjectClientIds:[matches[0].id]}
+ return {subjectClientId:null,subjectClientIds:candidates.map(item=>item.id)}
+}
+
+function sessionItem(value,epistemicStatus,{fallbackClientId=null,comparedClients=[]}={}){
  const statement=clean(value?.statement??value?.claim??value?.label??value,700)
  if(!statement)return null
+ const explicitClientId=explicitSubjectClientId(value)
+ const explicitClientIds=clientIds(value?.subject_client_ids??value?.subjectClientIds)
+ const comparison=explicitClientId||explicitClientIds.length?{subjectClientId:explicitClientId||(explicitClientIds.length===1?explicitClientIds[0]:null),subjectClientIds:explicitClientIds}:{...comparisonSubject(value,comparedClients)}
+ const subjectClientId=comparison.subjectClientId||(!comparison.subjectClientIds.length?identifier(fallbackClientId):null)
+ const subjectClientIds=uniqueBy([subjectClientId,...comparison.subjectClientIds].filter(Boolean),item=>item,conversationStateLimits.clients)
+ const ownerId=explicitOwnerId(value)
  return {
   statement,
   epistemic_status:epistemicStatus,
   persistence:'SESSION_ONLY',
-  source_ref:clean(value?.id??value?.source_ref??value?.source_id,180)||null
+  source_ref:clean(value?.id??value?.source_ref??value?.source_id,180)||null,
+  ...(subjectClientId?{subject_client_id:subjectClientId}:{}),
+  ...(subjectClientIds.length>1?{subject_client_ids:subjectClientIds}:{}),
+  ...(ownerId?{owner_id:ownerId}:{})
  }
 }
 
-function turn(value){
+const sessionItemKey=item=>`${item?.subject_client_id||clientIds(item?.subject_client_ids).join(',')||'unscoped'}:${normalize(item?.statement)}`
+
+function scopedFields(value,{fallbackClientId=null,subjectClientIds=[]}={}){
+ const explicitClientId=explicitSubjectClientId(value)
+ const explicitClientIds=clientIds(value?.subject_client_ids??value?.subjectClientIds)
+ const subjects=uniqueBy([...explicitClientIds,...clientIds(subjectClientIds)].filter(Boolean),item=>item,conversationStateLimits.clients)
+ const subjectClientId=explicitClientId||(!subjects.length?identifier(fallbackClientId):subjects.length===1?subjects[0]:null)
+ return {
+  ...(subjectClientId?{subject_client_id:subjectClientId}:{}),
+  ...(subjects.length>1?{subject_client_ids:subjects}:{})
+ }
+}
+
+function toolResult(value,scope={}){
+ if(!value||typeof value!=='object')return null
+ const capability=clean(value.capability,80)
+ if(!capability)return null
+ return {
+  capability,
+  status:clean(value.status,80),
+  source_ref:clean(value.source_ref,180)||null,
+  summary:clean(value.summary,500)||null,
+  ...scopedFields(value,scope)
+ }
+}
+
+const toolResultKey=item=>`${item?.subject_client_id||clientIds(item?.subject_client_ids).join(',')||'unscoped'}:${item?.capability}:${item?.source_ref||item?.status}`
+
+function questionItem(value,{comparedClients=[]}={}){
+ const question=clean(value?.question??value,700)
+ if(!question)return null
+ const explicitClientId=explicitSubjectClientId(value)
+ const explicitClientIds=clientIds(value?.subject_client_ids??value?.subjectClientIds)
+ const comparison=explicitClientId||explicitClientIds.length
+  ?{subjectClientId:explicitClientId||(explicitClientIds.length===1?explicitClientIds[0]:null),subjectClientIds:explicitClientIds}
+  :comparisonSubject({statement:question},comparedClients)
+ const subjectClientIds=uniqueBy([comparison.subjectClientId,...comparison.subjectClientIds].filter(Boolean),item=>item,conversationStateLimits.clients)
+ // Mantém string[] para perguntas legadas/single-client. Apenas itens que
+ // precisam de isolamento carregam metadados aditivos de sujeito.
+ if(!subjectClientIds.length)return question
+ return {
+  question,
+  ...(subjectClientIds.length===1?{subject_client_id:subjectClientIds[0]}:{subject_client_ids:subjectClientIds})
+ }
+}
+
+const questionItemKey=item=>`${item?.subject_client_id||clientIds(item?.subject_client_ids).join(',')||'unscoped'}:${normalize(item?.question??item)}`
+
+function turn(value,scope={}){
  if(!value||typeof value!=='object')return null
  const role=['user','assistant','system'].includes(String(value.role))?String(value.role):'user'
  const text=clean(value.text??value.message??value.summary,1200)
  if(!text)return null
- return {role,text,modality:['text','voice','photo','file','tool'].includes(String(value.modality))?String(value.modality):'text',intent:clean(value.intent,80)||null,created_at:iso(value.created_at??value.at)}
+ return {role,text,modality:['text','voice','photo','file','tool'].includes(String(value.modality))?String(value.modality):'text',intent:clean(value.intent,80)||null,created_at:iso(value.created_at??value.at),...scopedFields(value,scope)}
 }
 
 export function normalizeConversationState(value={},scope={}){
  const now=iso(value.updated_at??scope.now)
  const client=entityRef(value.current_client??scope.client,'client')
  const scopedClientId=identifier(scope.clientId??scope.client?.id)
+ const fallbackClientId=scopedClientId||client?.id||null
  if(client?.id&&scopedClientId&&client.id!==scopedClientId)throw Object.assign(new Error('O cliente do estado conversacional não pertence ao escopo solicitado.'),{code:'conversation_state_client_mismatch'})
  const active=value.active_object??scope.activeContext
  const activeRef=entityRef(active,active?.type||'entity')
@@ -106,14 +177,15 @@ export function normalizeConversationState(value={},scope={}){
   current_decision_thesis:value.current_decision_thesis&&typeof value.current_decision_thesis==='object'?{
    thesis:clean(value.current_decision_thesis.thesis,1000)||null,
    uncertainty:clean(value.current_decision_thesis.uncertainty,700)||null,
-   next_action:clean(value.current_decision_thesis.next_action,700)||null
+   next_action:clean(value.current_decision_thesis.next_action,700)||null,
+   ...scopedFields(value.current_decision_thesis,{fallbackClientId})
   }:null,
   recent_entities:uniqueBy(list(value.recent_entities).map(item=>entityRef(item)).filter(Boolean),item=>`${item.type}:${item.id||item.label}`,conversationStateLimits.entities),
-  recent_tool_results:uniqueBy(list(value.recent_tool_results).map(item=>({capability:clean(item?.capability,80),status:clean(item?.status,80),source_ref:clean(item?.source_ref,180)||null,summary:clean(item?.summary,500)||null})).filter(item=>item.capability),item=>`${item.capability}:${item.source_ref||item.status}`,conversationStateLimits.toolResults),
-  recent_questions:uniqueBy(list(value.recent_questions).map(item=>clean(item?.question??item,700)).filter(Boolean),item=>normalize(item),conversationStateLimits.questions),
-  session_facts:uniqueBy(list(value.session_facts).map(item=>sessionItem(item,'SESSION_FACT')).filter(Boolean),item=>normalize(item.statement),conversationStateLimits.facts),
-  session_hypotheses:uniqueBy(list(value.session_hypotheses).map(item=>sessionItem(item,'SESSION_HYPOTHESIS')).filter(Boolean),item=>normalize(item.statement),conversationStateLimits.hypotheses),
-  conversation_turns:list(value.conversation_turns).map(turn).filter(Boolean).slice(-conversationStateLimits.turns),
+  recent_tool_results:uniqueBy(list(value.recent_tool_results).map(item=>toolResult(item)).filter(Boolean),toolResultKey,conversationStateLimits.toolResults),
+  recent_questions:uniqueBy(list(value.recent_questions).map(item=>questionItem(item)).filter(Boolean),questionItemKey,conversationStateLimits.questions),
+  session_facts:uniqueBy(list(value.session_facts).map(item=>sessionItem(item,'SESSION_FACT',{fallbackClientId})).filter(Boolean),sessionItemKey,conversationStateLimits.facts),
+  session_hypotheses:uniqueBy(list(value.session_hypotheses).map(item=>sessionItem(item,'SESSION_HYPOTHESIS',{fallbackClientId})).filter(Boolean),sessionItemKey,conversationStateLimits.hypotheses),
+  conversation_turns:list(value.conversation_turns).map(item=>turn(item,{fallbackClientId})).filter(Boolean).slice(-conversationStateLimits.turns),
   input_modality:['text','voice','photo','file'].includes(String(value.input_modality))?String(value.input_modality):'text',
   response_mode:['text','audio','both'].includes(String(value.response_mode))?String(value.response_mode):'text',
   conversation_mode:Boolean(value.conversation_mode),
@@ -169,15 +241,18 @@ export function advanceConversationState(current={},event={}){
  const reasoning=responseReasoning(event.response)
  const client=entityRef(event.client??previous.current_client,'client')
  const active=entityRef(event.activeContext??previous.active_object,event.activeContext?.type||previous.active_object?.type||'entity')
- const userTurn=message?turn({role:'user',text:message,modality:event.inputModality||previous.input_modality,intent:event.intent,created_at:event.now}):null
+ const comparedClients=list(event.response?.responseMetadata?.comparedClients??event.response?.comparisonResolution?.clients)
+ const comparedClientIds=comparedClients.map(item=>entityRef(item,'client')?.id).filter(Boolean)
+ const turnScope=comparedClientIds.length>1?{subjectClientIds:comparedClientIds}:{fallbackClientId:client?.id}
+ const userTurn=message?turn({role:'user',text:message,modality:event.inputModality||previous.input_modality,intent:event.intent,created_at:event.now},turnScope):null
  const reading=clean(reasoning.recommended_strategy?.reading??event.response?.advice?.answer,1200)
- const assistantTurn=reading?turn({role:'assistant',text:reading,modality:event.responseMode==='audio'?'voice':'text',intent:reasoning.intent??event.intent,created_at:event.now}):null
- const capabilityResults=list(reasoning.run?.capability_results).map(item=>({capability:item?.capability,status:item?.status,source_ref:item?.source_ref,summary:item?.summary}))
+ const assistantTurn=reading?turn({role:'assistant',text:reading,modality:event.responseMode==='audio'?'voice':'text',intent:reasoning.intent??event.intent,created_at:event.now},turnScope):null
+ const capabilityResults=list(reasoning.run?.capability_results).map(item=>toolResult(item,turnScope)).filter(Boolean)
  const tool=reasoning.run?.tool_result
- if(tool?.capability)capabilityResults.unshift({capability:tool.capability,status:tool.status,source_ref:tool.source_ref,summary:tool.summary})
- const newQuestions=[...list(reasoning.decision_interview?.questions).map(item=>item?.question),...list(reasoning.golden_questions).map(item=>item?.question)]
- const facts=list(reasoning.facts_used).map(item=>sessionItem(item,'SESSION_FACT')).filter(Boolean)
- const hypotheses=list(reasoning.hypotheses).map(item=>sessionItem(item,'SESSION_HYPOTHESIS')).filter(Boolean)
+ if(tool?.capability)capabilityResults.unshift(toolResult(tool,turnScope))
+ const newQuestions=[...list(reasoning.decision_interview?.questions),...list(reasoning.golden_questions)].map(item=>questionItem(item,{comparedClients})).filter(Boolean)
+ const facts=list(reasoning.facts_used).map(item=>sessionItem(item,'SESSION_FACT',{fallbackClientId:client?.id,comparedClients})).filter(Boolean)
+ const hypotheses=list(reasoning.hypotheses).map(item=>sessionItem(item,'SESSION_HYPOTHESIS',{fallbackClientId:client?.id,comparedClients})).filter(Boolean)
  const mentionedEntities=[client,active].filter(Boolean)
  const next={
   ...previous,
@@ -190,13 +265,14 @@ export function advanceConversationState(current={},event={}){
   current_decision_thesis:reasoning.decision_thesis?{
    thesis:clean(reasoning.decision_thesis.THESIS,1000)||null,
    uncertainty:clean(reasoning.decision_thesis.KEY_UNCERTAINTY,700)||null,
-   next_action:clean(reasoning.recommended_strategy?.action??reasoning.next_commitment,700)||null
+   next_action:clean(reasoning.recommended_strategy?.action??reasoning.next_commitment,700)||null,
+   ...scopedFields(reasoning.decision_thesis,turnScope)
   }:previous.current_decision_thesis,
   recent_entities:uniqueBy([...mentionedEntities,...previous.recent_entities],item=>`${item.type}:${item.id||item.label}`,conversationStateLimits.entities),
-  recent_tool_results:uniqueBy([...capabilityResults,...previous.recent_tool_results].filter(item=>item.capability),item=>`${item.capability}:${item.source_ref||item.status}`,conversationStateLimits.toolResults),
-  recent_questions:uniqueBy([...newQuestions,...previous.recent_questions].filter(Boolean).map(item=>clean(item,700)),item=>normalize(item),conversationStateLimits.questions),
-  session_facts:uniqueBy([...facts,...previous.session_facts],item=>normalize(item.statement),conversationStateLimits.facts),
-  session_hypotheses:uniqueBy([...hypotheses,...previous.session_hypotheses],item=>normalize(item.statement),conversationStateLimits.hypotheses),
+  recent_tool_results:uniqueBy([...capabilityResults,...previous.recent_tool_results].filter(item=>item?.capability),toolResultKey,conversationStateLimits.toolResults),
+  recent_questions:uniqueBy([...newQuestions,...previous.recent_questions].filter(Boolean),questionItemKey,conversationStateLimits.questions),
+  session_facts:uniqueBy([...facts,...previous.session_facts],sessionItemKey,conversationStateLimits.facts),
+  session_hypotheses:uniqueBy([...hypotheses,...previous.session_hypotheses],sessionItemKey,conversationStateLimits.hypotheses),
   conversation_turns:[...previous.conversation_turns,userTurn,assistantTurn].filter(Boolean).slice(-conversationStateLimits.turns),
   input_modality:['text','voice','photo','file'].includes(String(event.inputModality))?String(event.inputModality):previous.input_modality,
   response_mode:['text','audio','both'].includes(String(event.responseMode))?String(event.responseMode):previous.response_mode,
@@ -206,8 +282,23 @@ export function advanceConversationState(current={},event={}){
  return normalizeConversationState(next,{...(event.scope||{}),client,activeContext:active,now:event.now})
 }
 
-export function conversationStateContext(state={}){
+function itemMatchesClient(item,clientId,includeCrossClient){
+ if(includeCrossClient)return true
+ const expected=identifier(clientId)
+ if(!expected)return !item?.subject_client_id&&!clientIds(item?.subject_client_ids).length
+ const explicit=identifier(item?.subject_client_id)
+ if(explicit)return explicit===expected
+ const subjects=clientIds(item?.subject_client_ids)
+ // Um agregado que mistura dois produtores só é disponibilizado quando o
+ // chamador declara explicitamente que está construindo contexto comparativo.
+ if(subjects.length)return subjects.length===1&&subjects[0]===expected
+ return true
+}
+
+export function conversationStateContext(state={},options={}){
  const current=normalizeConversationState(state)
+ const clientId=identifier(options.clientId??current.current_client?.id)
+ const includeCrossClient=options.includeCrossClient===true||options.scope==='comparison'
  return Object.freeze({
   contract_version:current.contract_version,
   conversation_id:current.conversation_id,
@@ -223,17 +314,28 @@ export function conversationStateContext(state={}){
   current_visit:current.current_visit,
   current_objective:current.current_objective,
   current_topic:current.current_topic,
-  current_decision_thesis:current.current_decision_thesis,
+  current_decision_thesis:itemMatchesClient(current.current_decision_thesis,clientId,includeCrossClient)?current.current_decision_thesis:null,
   recent_entities:current.recent_entities,
-  recent_tool_results:current.recent_tool_results,
-  recent_questions:current.recent_questions,
-  session_facts:current.session_facts,
-  session_hypotheses:current.session_hypotheses,
-  conversation_turns:current.conversation_turns,
+  recent_tool_results:current.recent_tool_results.filter(item=>itemMatchesClient(item,clientId,includeCrossClient)),
+  recent_questions:current.recent_questions.filter(item=>itemMatchesClient(item,clientId,includeCrossClient)),
+  session_facts:current.session_facts.filter(item=>itemMatchesClient(item,clientId,includeCrossClient)),
+  session_hypotheses:current.session_hypotheses.filter(item=>itemMatchesClient(item,clientId,includeCrossClient)),
+  conversation_turns:current.conversation_turns.filter(item=>itemMatchesClient(item,clientId,includeCrossClient)),
   input_modality:current.input_modality,
   response_mode:current.response_mode,
   conversation_mode:current.conversation_mode
  })
+}
+
+// A comparison is reusable only while it is the immediately preceding
+// assistant turn. This keeps deterministic follow-ups on the compared pair
+// without reopening older cross-client material after an unrelated turn.
+export function activeComparisonClientIds(state={}){
+ const current=normalizeConversationState(state)
+ const latest=current.conversation_turns.at(-1)
+ if(latest?.role!=='assistant')return Object.freeze([])
+ const subjects=clientIds(latest.subject_client_ids)
+ return Object.freeze(subjects.length>1?subjects:[])
 }
 
 export function conversationStatePromptContext(state={}){

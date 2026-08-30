@@ -31,15 +31,16 @@ import {createRepositoryAttachmentVoiceStorage} from './server/voice-capture/sto
 import {createVoiceCandidateExtractor} from './server/voice-capture/extraction.js'
 import {createVoiceCaptureService} from './server/voice-capture/service.js'
 import {normalizeValIntent,routeValIntent} from './server/ai-reasoning/intent-router.js'
-import {buildClientMarketResponse,buildFastClientResponse,buildFastMarketResponse,finalizeAttachmentRecommendation,routeSystemCapability} from './server/decision-copilot/capability-router.js'
+import {buildClientMarketResponse,buildFastClientComparisonResponse,buildFastClientResponse,buildFastMarketResponse,finalizeAttachmentRecommendation,routeSystemCapability} from './server/decision-copilot/capability-router.js'
 import {buildCapabilityExecutionResponse,buildGeneralNoClientResponse,executeCapabilityPlan,validateActiveContext} from './server/decision-copilot/capability-executor.js'
 import {attachLatencyPerformance,createLatencyTrace,valLatencyMetrics} from './server/decision-copilot/latency-observability.js'
 import {createSessionContextCache} from './server/decision-copilot/session-context-cache.js'
 import {createConversationSessionStore} from './server/decision-copilot/conversation-session-store.js'
-import {conversationStateContext} from './server/decision-copilot/conversation-state.js'
-import {extractNaturalClientReference} from './server/decision-copilot/client-reference-resolver.js'
-import {valConversationLatency} from './server/decision-copilot/conversation-latency.js'
-import {normalizeSessionCommand} from './server/decision-copilot/session-command-router.js'
+import {activeComparisonClientIds,advanceConversationState,conversationStateContext,createConversationState,switchConversationClient} from './server/decision-copilot/conversation-state.js'
+import {createConversationRequestCoordinator} from './server/decision-copilot/conversation-request-coordinator.js'
+import {extractNaturalClientReference,resolveAuthorizedClientComparison} from './server/decision-copilot/client-reference-resolver.js'
+import {classifyConversationResponseOutcome,valConversationLatency} from './server/decision-copilot/conversation-latency.js'
+import {normalizeSessionCommand,routeSessionCommand} from './server/decision-copilot/session-command-router.js'
 import {probeVoiceAudioDuration,validateVoiceAudio} from './server/voice-capture/storage.js'
 import {readReleaseMetadata} from './server/release-metadata.js'
 import {createReadinessReport} from './server/readiness.js'
@@ -68,6 +69,23 @@ function saveStore(store){const temporary=`${storePath}.tmp`;writeFileSync(tempo
 function json(response,status,payload){response.writeHead(status,{...securityHeaders,'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify(payload))}
 function rawBody(request){return new Promise((resolve,reject)=>{let raw='';let size=0;let settled=false;const tooLarge=()=>Object.assign(new Error('Arquivo ou requisição muito grande.'),{statusCode:413,code:'request_too_large'});const fail=error=>{if(settled)return;settled=true;raw='';reject(error)};const drain=()=>{request.off('data',onData);request.resume()};const onData=chunk=>{size+=chunk.length;if(size>config.maxBodyBytes){drain();fail(tooLarge());return}raw+=chunk};const declared=Number(request.headers['content-length']);request.on('end',()=>{if(settled)return;settled=true;resolve(raw)});request.on('error',fail);if(Number.isFinite(declared)&&declared>config.maxBodyBytes){drain();fail(tooLarge());return}request.on('data',onData)})}
 async function body(request){const raw=await rawBody(request);try{return raw?JSON.parse(raw):{}}catch{throw new Error('Conteúdo inválido.')}}
+const requestCancellationError=signal=>signal?.reason instanceof Error?signal.reason:Object.assign(new Error('A requisição foi cancelada.'),{name:'AbortError',statusCode:499,code:'val_request_cancelled',safeToRetry:true})
+const throwIfRequestAborted=signal=>{if(signal?.aborted)throw requestCancellationError(signal)}
+async function withOperationTimeout(operation,{timeoutMs,code='val_operation_timeout',message='A operação excedeu o tempo seguro.',signal}={}){
+ const bounded=Math.max(1,Number(timeoutMs)||1)
+ throwIfRequestAborted(signal)
+ const controller=new AbortController()
+ const timeoutError=Object.assign(new Error(message),{statusCode:504,code,safeToRetry:true})
+ let timer;let onParentAbort
+ const timeout=new Promise((resolve,reject)=>{timer=setTimeout(()=>{controller.abort(timeoutError);reject(timeoutError)},bounded);timer.unref?.()})
+ const cancelled=new Promise((resolve,reject)=>{
+  if(!signal)return
+  onParentAbort=()=>{const error=requestCancellationError(signal);controller.abort(error);reject(error)}
+  signal.addEventListener('abort',onParentAbort,{once:true})
+ })
+ const work=Promise.resolve().then(()=>typeof operation==='function'?operation(controller.signal):operation)
+ try{return await Promise.race([work,timeout,cancelled])}finally{clearTimeout(timer);if(onParentAbort)signal.removeEventListener('abort',onParentAbort)}
+}
 async function limitedResponseText(upstream,limit){const reader=upstream.body?.getReader();if(!reader)return upstream.text();const chunks=[];let size=0;while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>limit){await reader.cancel();throw Object.assign(new Error('A planilha excede o limite seguro de importação.'),{statusCode:413})}chunks.push(value)}return new TextDecoder().decode(Buffer.concat(chunks.map(chunk=>Buffer.from(chunk))))}
 const clean=value=>String(value||'').trim().slice(0,240)
 const conversationIdValue=value=>{
@@ -87,15 +105,16 @@ function conversationPreferences(payload={},attachmentTypes=[]){
   objective:String(source.objective||'').replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,900)||null
  }
 }
-function attachConversationState(payloadResult,state){
+function attachConversationState(payloadResult,state,{reasoningState=state}={}){
  const session=conversationStateContext(state)
+ const reasoningSession=conversationStateContext(reasoningState)
  const advice=payloadResult?.advice
  const reasoning=advice?.ai_reasoning
  if(!reasoning)return {...payloadResult,conversationState:session}
  return {
   ...payloadResult,
   conversationState:session,
-  advice:{...advice,ai_reasoning:{...reasoning,premises:{...(reasoning.premises||{}),session_context:session}}}
+  advice:{...advice,ai_reasoning:{...reasoning,premises:{...(reasoning.premises||{}),session_context:reasoningSession}}}
  }
 }
 const attachmentMaxBytes=6_000_000
@@ -143,6 +162,7 @@ const voiceCapture=createVoiceCaptureService({repository,storageProvider:voiceSt
 const valProgress=createValProgressTracker()
 const valSessionContextCache=createSessionContextCache()
 const valConversationSessions=createConversationSessionStore()
+const valConversationRequests=createConversationRequestCoordinator()
 const realtimeVoiceCostStore=createPostgresRealtimeCostStore({database,tenantId:config.defaultTenantId})
 const realtimeVoice=createRealtimeVoiceService({runtimeConfig:config,client:voiceOpenAI,repository,conversationSessions:valConversationSessions,costStore:realtimeVoiceCostStore,logger:event=>observe('val.realtime_voice',{sessionId:event.sessionId,model:event.model,costUsd:event.costUsd,outcome:event.event})})
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
@@ -214,16 +234,41 @@ async function handleApi(request,response,url){
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
+ const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
  const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
- const requestStartedAt=performance.now();const authStartedAt=performance.now()
+ const requestStartedAt=performance.now()
+ let valRequestController=null
+ let valRequestClaim=null
+ let valRequestServiceClass='CONTEXT'
+ let recordValRequestLifecycle=()=>{}
+ if(valRecommendationPath&&request.method==='POST'){
+  valRequestController=new AbortController()
+  const timeoutError=Object.assign(new Error('A conversa excedeu o limite total de processamento.'),{name:'TimeoutError',statusCode:504,code:'val_chat_timeout',safeToRetry:true,timeoutMs:config.valChatRequestTimeoutMs})
+  const cancelRequest=()=>{if(!valRequestController.signal.aborted)valRequestController.abort(Object.assign(new Error('A requisição foi cancelada pelo cliente.'),{name:'AbortError',statusCode:499,code:'val_request_cancelled',safeToRetry:true}))}
+  const deadline=setTimeout(()=>{if(!valRequestController.signal.aborted)valRequestController.abort(timeoutError)},config.valChatRequestTimeoutMs)
+  deadline.unref?.()
+  let lifecycleRecorded=false
+  const recordLifecycle=(outcome,totalOverride=null)=>{
+   if(lifecycleRecorded)return
+   lifecycleRecorded=true
+   const measured=Number(totalOverride)
+   const total=Number.isFinite(measured)?Math.max(0,measured):Math.max(0,performance.now()-requestStartedAt)
+   try{valConversationLatency.record({source:'SERVER_PROCESSING',contractVersion:'val.conversation_latency.server_processing.v1',serviceClass:valRequestServiceClass,metrics:{server_processing_total_latency:total},outcome})}catch{}
+  }
+  recordValRequestLifecycle=recordLifecycle
+  const release=()=>{clearTimeout(deadline);if(valRequestClaim)valConversationRequests.release(valRequestClaim)}
+  request.once('aborted',cancelRequest)
+  response.once('finish',()=>{release();if(response.statusCode>=400)recordLifecycle(response.statusCode===499?'CANCELLED':'ERROR')})
+  response.once('close',()=>{if(!response.writableEnded){cancelRequest();recordLifecycle('CANCELLED')}release()})
+ }
+ const authStartedAt=performance.now()
  const identity=protectedPath?await sessionIdentity(request):null
  const authLatencyMs=performance.now()-authStartedAt
  if(protectedPath&&auth.configured&&!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
  if(protectedPath&&identity?.mustChangePassword)return json(response,403,{error:'Troque a senha temporária antes de acessar a carteira.'})
  if(protectedPath&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para operar dados fora do modo demonstrativo.'})}
  if(storageScope==='public-survey'&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para acessar questionários fora do modo demonstrativo.'})}
- const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
  if(valRecommendationPath&&config.openaiApiKey&&!auth.configured)return json(response,503,{error:'Configure VAL_ADMIN_EMAIL, VAL_ADMIN_PASSWORD e VAL_SESSION_SECRET antes de ativar a IA em produção.'})
  if(valRecommendationPath&&config.openaiApiKey&&!database.configured)return json(response,503,{error:'Configure DATABASE_URL antes de ativar a IA com dados reais.'})
  if(url.pathname==='/api/admin/metrics'&&request.method==='GET')return json(response,200,await accessRepository.getAdminMetrics(identity,Number(url.searchParams.get('days')||30)))
@@ -395,30 +440,57 @@ async function handleApi(request,response,url){
   response.end(binary);return true
  }
  if(valRecommendationPath&&request.method==='POST'){
+  const requestController=valRequestController
+  throwIfRequestAborted(requestController.signal)
   const rateIdentity=identity?.id||identity?.email||requestIdentity(request)
   if(!consumeRateLimit('val',rateIdentity,config.aiRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de análises atingido. Aguarde alguns minutos.'})
-  const payload=await body(request);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const message=String(payload.message||payload.question||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).trim().slice(0,3000)
+  const payload=await body(request);throwIfRequestAborted(requestController.signal);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const message=String(payload.message||payload.question||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).trim().slice(0,3000)
   const tenantId=identity?.tenantId||config.defaultTenantId;const scopedOwnerId=identity?.id||identity?.email
   const conversationId=conversationIdValue(payload.conversationId)
+  valRequestClaim=valConversationRequests.begin({tenantId,ownerId:scopedOwnerId,conversationId},requestController)
   let clientId=clean(payload.clientId||payload.client?.id)
   const storedConversation=valConversationSessions.get({tenantId,ownerId:scopedOwnerId,conversationId})
   const storedClientId=clean(storedConversation?.current_client?.id)
   if(!clientId&&storedClientId)clientId=storedClientId
   let conversationResolution=null
+  let comparisonResolution=null
+  let turnOnlyClientOverride=false
+  let entityLookupCount=0
   const entityResolutionStartedAt=performance.now()
-  const naturalClientReference=extractNaturalClientReference(message)
+  if(/\b(?:compara|compare)\b.*\b(?:os dois|ambos|essas duas contas|esses dois produtores)\b/i.test(message)){
+   entityLookupCount+=1
+   const authorizedClients=await repository.listAuthorizedClientReferences({tenantId,ownerId:scopedOwnerId,timeoutMs:config.databaseQueryTimeoutMs})
+   throwIfRequestAborted(requestController.signal)
+   // A thread e a fonte de verdade do produtor atual. Um clientId atrasado do
+   // browser nao pode reordenar a dupla nem trocar o contexto durante "os dois".
+   comparisonResolution=resolveAuthorizedClientComparison({message,authorizedClients,currentClientId:storedClientId||clientId||null,recentClientIds:(storedConversation?.recent_clients||[]).map(item=>item?.id).filter(Boolean)})
+   if(comparisonResolution.status!=='RESOLVED')return json(response,422,{error:'A comparação precisa de dois produtores claros na mesma conversa. Abra um produtor, depois o outro, e peça para comparar os dois.',code:'val_comparison_pair_required',conversationId,clarification:{question:'Quais dois produtores você quer comparar?'}})
+   clientId=storedClientId||comparisonResolution.clients[0].id
+  }
+  // Comandos de continuidade pertencem à thread já autorizada. Não tente
+  // interpretar “números”, “resposta” ou texto do comando como novo produtor.
+  const sessionCommandPreview=routeSessionCommand(message,payload.sessionCommand)
+  let sessionCommandClientResolution=null
+  if(sessionCommandPreview?.expected_client_reference){
+   if(!clientId)return json(response,422,{error:'Este comando precisa de um produtor ativo na conversa.',code:'val_session_command_client_required',conversationId,clarification:{question:'Qual produtor deve permanecer ativo?'}})
+   entityLookupCount+=1
+   sessionCommandClientResolution=await repository.resolveAuthorizedClientReference({tenantId,ownerId:scopedOwnerId,reference:sessionCommandPreview.expected_client_reference,currentClientId:clientId,recentClientIds:(storedConversation?.recent_clients||[]).map(item=>item?.id).filter(Boolean),timeoutMs:config.databaseQueryTimeoutMs})
+   throwIfRequestAborted(requestController.signal)
+   if(sessionCommandClientResolution.status==='AMBIGUOUS')return json(response,409,{error:`Encontrei mais de um produtor para “${sessionCommandClientResolution.reference}”. Use o nome completo.`,code:'val_client_reference_ambiguous',conversationId,clarification:{question:'Qual produtor deve permanecer ativo?',options:sessionCommandClientResolution.options}})
+   if(sessionCommandClientResolution.status==='NOT_FOUND')return json(response,422,{error:`Não encontrei “${sessionCommandClientResolution.reference}” na sua carteira autorizada.`,code:'val_client_reference_not_found',conversationId,clarification:{question:'Qual é o nome completo do produtor?'}})
+  }
+  const naturalClientReference=sessionCommandPreview?{kind:'NONE',reference:null}:extractNaturalClientReference(message)
   if(naturalClientReference.kind==='CURRENT_CLIENT'&&!clientId)return json(response,422,{error:'Ainda não há um produtor ativo nesta conversa. Diga o nome para eu localizar a carteira correta.',code:'val_client_reference_context_required',conversationId,clarification:{question:'De qual produtor você está falando?'}})
-  if(['EXPLICIT_NAME','AUTHORIZED_NAME_CANDIDATE','PREVIOUS_CLIENT'].includes(naturalClientReference.kind)){
-   conversationResolution=await repository.resolveAuthorizedClientReference({tenantId,ownerId:scopedOwnerId,message,currentClientId:clientId||storedClientId||null,recentClientIds:(storedConversation?.recent_clients||[]).map(item=>item?.id).filter(Boolean)})
-   if(conversationResolution.status==='AMBIGUOUS'&&clientId){
-    const selected=conversationResolution.options.find(option=>String(option.id)===String(clientId))
-    if(selected)conversationResolution={...conversationResolution,status:'RESOLVED',client:selected,options:[],reason_code:'AMBIGUITY_CONFIRMED_BY_AUTHORIZED_SELECTION',changed_client:Boolean(storedClientId&&storedClientId!==selected.id)}
-   }
+  if(['EXPLICIT_NAME','AUTHORIZED_NAME_CANDIDATE','FACT_OWNER','PREVIOUS_CLIENT'].includes(naturalClientReference.kind)){
+   entityLookupCount+=1
+   conversationResolution=await repository.resolveAuthorizedClientReference({tenantId,ownerId:scopedOwnerId,message,currentClientId:clientId||storedClientId||null,recentClientIds:(storedConversation?.recent_clients||[]).map(item=>item?.id).filter(Boolean),timeoutMs:config.databaseQueryTimeoutMs})
+   throwIfRequestAborted(requestController.signal)
    if(conversationResolution.status==='AMBIGUOUS')return json(response,409,{error:`Encontrei mais de um produtor para “${conversationResolution.reference}”. Qual deles você quer?`,code:'val_client_reference_ambiguous',conversationId,clarification:{question:'Qual produtor você quer usar nesta conversa?',options:conversationResolution.options}})
    if(conversationResolution.status==='NOT_FOUND')return json(response,422,{error:`Não encontrei “${conversationResolution.reference}” na sua carteira autorizada. Confirme o nome do produtor.`,code:'val_client_reference_not_found',conversationId,clarification:{question:'Qual é o nome do produtor na sua carteira?'}})
    if(conversationResolution.status==='RESOLVED'){
-    if(storedClientId&&storedClientId!==conversationResolution.client.id)valConversationSessions.switchClient({tenantId,ownerId:scopedOwnerId,conversationId},conversationResolution.client)
+    turnOnlyClientOverride=naturalClientReference.kind==='FACT_OWNER'&&Boolean(storedClientId)&&storedClientId!==conversationResolution.client.id
     clientId=conversationResolution.client.id
+    if(turnOnlyClientOverride)conversationResolution=Object.freeze({...conversationResolution,changed_client:false,request_override:true})
    }
   }
   const entityResolutionMs=performance.now()-entityResolutionStartedAt
@@ -427,10 +499,11 @@ async function handleApi(request,response,url){
   const requestedSessionCommand=payload.sessionCommand==null?'':String(payload.sessionCommand)
   if(requestedSessionCommand&&!normalizeSessionCommand(requestedSessionCommand))return json(response,400,{error:'O comando de conversa informado não é reconhecido.',code:'val_session_command_invalid'})
   let activeContext=payload.context&&typeof payload.context==='object'&&!Array.isArray(payload.context)?{type:clean(payload.context.type).toLowerCase(),id:clean(payload.context.id),label:clean(payload.context.label)}:null
-  if(conversationResolution?.changed_client)activeContext=null
+  if(conversationResolution?.changed_client||turnOnlyClientOverride)activeContext=null
   if(requestedIntent&&!normalizeValIntent(requestedIntent))return json(response,400,{error:'A intenção informada não é reconhecida pela VAL.',code:'val_intent_invalid'})
   if(attachmentIds.length&&!clientId)return json(response,422,{error:'Escolha o produtor antes de anexar uma evidência à conta.',code:'val_attachment_client_required'})
-  const requestedAttachments=attachmentIds.length?await repository.getAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,ids:attachmentIds}):[]
+  const requestedAttachments=attachmentIds.length?await repository.getAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,ids:attachmentIds,signal:requestController.signal,timeoutMs:config.databaseQueryTimeoutMs}):[]
+  throwIfRequestAborted(requestController.signal)
   const requestedAttachmentIds=new Set(requestedAttachments.map(item=>String(item.id)))
   if(attachmentIds.some(id=>!requestedAttachmentIds.has(String(id))))return json(response,404,{error:'Um ou mais arquivos não pertencem ao produtor selecionado ou não estão mais disponíveis.',code:'val_attachment_scope_invalid'})
   if(requestedAttachments.some(item=>!item.dataBase64))return json(response,422,{error:'Um ou mais arquivos persistidos não puderam ser carregados para análise.',code:'val_attachment_content_unavailable'})
@@ -445,65 +518,107 @@ async function handleApi(request,response,url){
   }
   const requestId=normalizeValProgressRequestId(payload.requestId)||randomUUID()
   const preferences=conversationPreferences(payload,requestedAttachmentTypes)
+  if(preferences.inputModality==='voice')valRequestServiceClass='VOICE'
   // Um objeto ativo declarado pelo browser só entra no overlay depois de ser
   // reconciliado com o contexto autorizado do produtor.
-  const sessionScope={tenantId,ownerId:scopedOwnerId,conversationId,clientId,client:conversationResolution?.client||(clientId?{id:clientId}:null),activeContext:null}
-  let sessionState=valConversationSessions.ensure(sessionScope)
-  sessionState=valConversationSessions.advance(sessionScope,{inputModality:preferences.inputModality,responseMode:preferences.responseMode,conversationMode:preferences.conversationMode,objective:preferences.objective,client:sessionScope.client,activeContext:null})
+  const storedSessionClient=storedConversation?.current_client?.id===clientId?storedConversation.current_client:null
+  const suppliedSessionClient=clientId?{id:clientId,name:clean(payload.client?.name)||null}:null
+  const sessionClient=turnOnlyClientOverride?storedConversation?.current_client:conversationResolution?.client||storedSessionClient||suppliedSessionClient
+  const sessionScope={tenantId,ownerId:scopedOwnerId,conversationId,clientId:turnOnlyClientOverride?storedClientId:clientId,client:sessionClient,activeContext:null}
+  let sessionState=storedConversation||createConversationState(sessionScope)
+  if(!turnOnlyClientOverride&&storedConversation&&conversationResolution?.changed_client&&clientId!==storedClientId)sessionState=switchConversationClient(storedConversation,sessionClient,{conversationId,clientId,client:sessionClient,activeContext:null})
+  // Um fato pedido explicitamente sobre outro produtor e apenas uma consulta
+  // deste turno. Nao deixe modalidade, objetivo, fatos ou turns contaminarem a
+  // sessao que continua vinculada ao produtor atual.
+  if(!turnOnlyClientOverride)sessionState=advanceConversationState(sessionState,{inputModality:preferences.inputModality,responseMode:preferences.responseMode,conversationMode:preferences.conversationMode,objective:preferences.objective,client:sessionScope.client,activeContext:null,scope:sessionScope})
+  if(clientId&&routedIntent.session_command?.requires_current_client){
+   const expected=routedIntent.session_command.expected_client_reference
+   const current=sessionState.current_client?.id
+   if(!current||expected&&sessionCommandClientResolution?.client?.id!==current)return json(response,409,{error:`O produtor citado${expected?` (${expected})`:''} não corresponde ao produtor atual desta conversa.`,code:'val_session_command_client_mismatch',conversationId,currentClient:sessionState.current_client,clarification:{question:'Abra o produtor citado antes de reutilizar a resposta anterior.'}})
+  }
+  const comparisonFollowUpClientIds=routedIntent.session_command?activeComparisonClientIds(sessionState):[]
   const completeSession=(payloadResult,{client=null,active=null,intent=routedIntent.intent}={})=>{
+   const persistenceCommitted=payloadResult?.responseMetadata?.persistenceCommitted===true
+   const assertResponseCanCommit=()=>{
+    const committedAtDeadline=persistenceCommitted&&requestController.signal.aborted&&requestController.signal.reason?.code==='val_chat_timeout'
+    if(!committedAtDeadline)throwIfRequestAborted(requestController.signal)
+    valConversationRequests.assertCurrent(valRequestClaim,committedAtDeadline?null:requestController.signal)
+   }
+   assertResponseCanCommit()
    const performance=payloadResult?.responseMetadata?.performance
    const totalLatency=Number(performance?.latency?.TOTAL)
-   if(Number.isFinite(totalLatency))try{valConversationLatency.record({source:'SERVER_PROCESSING',contractVersion:'val.conversation_latency.server_processing.v1',serviceClass:preferences.inputModality==='voice'?'VOICE':performance.path,metrics:{server_processing_total_latency:totalLatency},outcome:'SUCCESS'})}catch{}
-   sessionState=valConversationSessions.advance({...sessionScope,client:client||sessionScope.client,activeContext:active},{message,response:payloadResult,inputModality:preferences.inputModality,responseMode:preferences.responseMode,conversationMode:preferences.conversationMode,objective:preferences.objective,intent,client:client||sessionScope.client,activeContext:active})
-   const completed=attachConversationState(payloadResult,sessionState)
+   if(Number.isFinite(totalLatency)){
+    valRequestServiceClass=preferences.inputModality==='voice'?'VOICE':performance.path
+    recordValRequestLifecycle(classifyConversationResponseOutcome(payloadResult),totalLatency)
+   }
+   const persistedClient=turnOnlyClientOverride?sessionScope.client:client||sessionScope.client
+   if(!turnOnlyClientOverride){
+    const persistedScope={...sessionScope,client:persistedClient,activeContext:active}
+    const stateResponse=comparisonFollowUpClientIds.length>1?{...payloadResult,responseMetadata:{...(payloadResult?.responseMetadata||{}),comparedClients:comparisonFollowUpClientIds.map(id=>({id}))}}:payloadResult
+    const completedState=advanceConversationState(sessionState,{message,response:stateResponse,inputModality:preferences.inputModality,responseMode:preferences.responseMode,conversationMode:preferences.conversationMode,objective:preferences.objective,intent,client:persistedClient,activeContext:active,scope:persistedScope})
+    assertResponseCanCommit()
+    sessionState=valConversationSessions.set(persistedScope,completedState)
+   }
+   const completed=attachConversationState(payloadResult,sessionState,{reasoningState:turnOnlyClientOverride?requestConversationState:sessionState})
    const withResolution=conversationResolution?.status==='RESOLVED'?{...completed,conversationResolution}:completed
    return workspaceRoute.workspace_action?{...withResolution,workspaceAction:workspaceRoute.workspace_action,globalIntent:workspaceRoute}:withResolution
   }
   if(workspaceRoute.direct&&workspaceRoute.workspace_action){
+   if(preferences.inputModality!=='voice')valRequestServiceClass='FAST'
    const actionClient=conversationResolution?.client||storedConversation?.current_client||null
    const execution={path:'FAST',capabilities_planned:['WORKSPACE_NAVIGATION'],capabilities_used:['WORKSPACE_NAVIGATION'],capability_results:[{capability:'WORKSPACE_NAVIGATION',status:'EXECUTED',source_ref:`workspace:${workspaceRoute.workspace_action.page}`}],tool_result:{status:'EXECUTED',capability:'WORKSPACE_NAVIGATION',tool:'workspace_action',title:workspaceRoute.workspace_action.label,summary:workspaceRoute.summary,page:workspaceRoute.workspace_action.page,context:{client_id:actionClient?.id||null},source_ref:`workspace:${workspaceRoute.workspace_action.page}`},active_context:null}
    const actionRoute={path:'FAST',intent:workspaceRoute.intent,capabilities:['WORKSPACE_NAVIGATION']}
    const actionTrace=createLatencyTrace({path:'FAST',intent:workspaceRoute.intent,startAt:requestStartedAt});actionTrace.set('AUTH',authLatencyMs);actionTrace.set('ENTITY',entityResolutionMs);actionTrace.set('INTENT',intentResolutionMs);actionTrace.firstUseful()
-   const direct=attachLatencyPerformance(buildCapabilityExecutionResponse({execution,route:actionRoute,message,organizationId:tenantId,clientId:actionClient?.id||'',clientName:actionClient?.name||'',conversationId}),{latency:actionTrace.finish({record:false}),path:'FAST',intent:workspaceRoute.intent,toolExecution:execution})
+   const direct=attachLatencyPerformance(buildCapabilityExecutionResponse({execution,route:actionRoute,message,organizationId:tenantId,clientId:actionClient?.id||'',clientName:actionClient?.name||'',conversationId,executionCounts:{entityResolutions:entityLookupCount,dataLookups:0,toolCalls:1,hops:entityLookupCount+1}}),{latency:actionTrace.finish({record:false}),path:'FAST',intent:workspaceRoute.intent,toolExecution:execution})
    valLatencyMetrics.record({path:'FAST',intent:workspaceRoute.intent,latency:direct.responseMetadata.performance.latency})
    if(actionClient?.id)valSessionContextCache.getOrLoad({tenantId,ownerId:scopedOwnerId,clientId:actionClient.id,conversationId},()=>repository.getClientContext({tenantId,ownerId:scopedOwnerId,clientId:actionClient.id,client:actionClient,contextRequest:{requestId,objective:'background_preload_after_entity_resolution',actorRole:identity?.role||'consultant',conversationId}})).catch(error=>observe('val.context.preload',{clientScoped:true,outcome:'error',errorCode:error?.code||'context_preload_failed'}))
    return json(response,200,completeSession({...direct,workspaceAction:workspaceRoute.workspace_action,globalIntent:workspaceRoute},{client:actionClient,active:null,intent:workspaceRoute.intent}))
   }
   if(!clientId){
    const capability=routeSystemCapability({message,intentHint:routedIntent.intent,sessionCommandHint:requestedSessionCommand,hasClient:false,activeContext})
+   if(preferences.inputModality!=='voice')valRequestServiceClass=capability.path
    const latency=createLatencyTrace({path:capability.path,intent:routedIntent.intent,startAt:requestStartedAt});latency.set('AUTH',authLatencyMs);latency.set('ENTITY',entityResolutionMs);latency.set('INTENT',intentResolutionMs)
    const complete=(payloadResult,execution=null)=>{latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(payloadResult,{latency:values,path:capability.path,intent:routedIntent.intent,toolExecution:execution});const measuredLatency=enriched?.responseMetadata?.performance?.latency||values;valLatencyMetrics.record({path:capability.path,intent:routedIntent.intent,latency:measuredLatency});observe('val.answer.completed',{mode:'direct',engineMode:'rules',intent:routedIntent.intent,reasoningPath:capability.path,capability:execution?.tool_result?.capability||capability.capabilities[0],capabilityStatus:execution?.tool_result?.status,ttfrMs:measuredLatency.TTFR,outcome:'ok'});return completeSession(enriched)}
    if(activeContext)validateActiveContext({activeContext,context:{},clientId:''})
    if(capability.current_data_required&&capability.capabilities.some(item=>['WEATHER','LABELS'].includes(item)))return json(response,422,{error:'A fonte atual autorizada não está conectada neste ambiente. A VAL não usará memória ou conteúdo antigo como dado atual.',code:'val_current_source_unavailable',intent:routedIntent.intent,reasoningPath:capability.path,capabilitiesPlanned:capability.capabilities})
    if(capability.capabilities.includes('MARKET_COMMODITY')){
-    const startedAt=Date.now();latency.start('TOOL');const workspace=await grainRepository.getMarketReferences(identity?.id);latency.end('TOOL')
-    const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,latencyMs:Date.now()-startedAt})
+    const startedAt=Date.now();latency.start('TOOL');const workspace=await withOperationTimeout(()=>grainRepository.getMarketReferences(identity?.id),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
+    const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,latencyMs:Date.now()-startedAt,executionCounts:{entityResolutions:entityLookupCount,dataLookups:1,toolCalls:1,hops:entityLookupCount+1}})
     const final=complete(fast)
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'portfolio',entityId:null,metadata:{mode:capability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:capability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
     return json(response,200,final)
    }
    if(capability.session_command){
-    latency.start('TOOL');const execution=await executeCapabilityPlan({route:capability,message,context:{priorRecommendations:[]},clientId:'',activeContext});latency.end('TOOL')
-    const direct=buildCapabilityExecutionResponse({execution,route:capability,message,organizationId:identity?.tenantId||config.defaultTenantId,conversationId})
+    if(capability.session_command.requires_current_client)return json(response,422,{error:'Este comando precisa de um produtor ativo na conversa.',code:'val_session_command_client_required',conversationId,clarification:{question:'Qual produtor deve permanecer ativo?'}})
+    latency.start('TOOL');const execution=await withOperationTimeout(signal=>executeCapabilityPlan({route:capability,message,context:{conversationState:conversationStateContext(sessionState),priorRecommendations:[]},clientId:'',activeContext,signal}),{timeoutMs:config.toolRequestTimeoutMs,code:'val_tool_timeout',message:'A ferramenta excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
+    const direct=buildCapabilityExecutionResponse({execution,route:capability,message,organizationId:identity?.tenantId||config.defaultTenantId,conversationId,executionCounts:{entityResolutions:entityLookupCount,dataLookups:0,toolCalls:1,hops:entityLookupCount+1}})
     return json(response,200,complete(direct,execution))
    }
    const general=buildGeneralNoClientResponse({message,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,conversationId})
    return json(response,200,complete(general))
   }
   const clientCapability=routeSystemCapability({message,intentHint:routedIntent.intent,sessionCommandHint:requestedSessionCommand,hasClient:true,attachmentTypes:requestedAttachmentTypes,activeContext})
+  if(preferences.inputModality!=='voice')valRequestServiceClass=clientCapability.path
   const latency=createLatencyTrace({path:clientCapability.path,intent:routedIntent.intent,startAt:requestStartedAt});latency.set('AUTH',authLatencyMs);latency.set('ENTITY',entityResolutionMs);latency.set('INTENT',intentResolutionMs)
   let authorizedContext=null;let activeContextRef=null;let toolExecution=null
+  const requestConversationState=turnOnlyClientOverride
+   ?conversationStateContext(createConversationState({conversationId,clientId,client:conversationResolution?.client,activeContext:null}))
+   :conversationStateContext(sessionState,comparisonFollowUpClientIds.length>1?{scope:'comparison'}:{})
+  const sessionOnly=Boolean(clientCapability.session_command&&clientCapability.path==='FAST')
+  const directCalculator=Boolean(clientCapability.path==='TOOL'&&clientCapability.direct&&clientCapability.capabilities.includes('CALCULATORS'))
+  const ignoresActiveContext=Boolean(!attachmentIds.length&&clientCapability.direct&&(clientCapability.data_path||sessionOnly||directCalculator))
   const loadAuthorizedContext=async()=>{
    if(authorizedContext)return authorizedContext
    latency.start('CONTEXT')
-   const confirmed=await valSessionContextCache.getOrLoad({tenantId,ownerId:scopedOwnerId,clientId,conversationId},()=>repository.getClientContext({tenantId,ownerId:identity?.id,clientId,client:{...(payload.client||{}),id:clientId},contextRequest:{requestId,objective:`copilot_${clientCapability.path.toLowerCase()}`,actorRole:identity?.role||'consultant',conversationId}}))
-   authorizedContext={...confirmed,conversationState:conversationStateContext(sessionState)}
+   const confirmed=await valSessionContextCache.getOrLoad({tenantId,ownerId:scopedOwnerId,clientId,conversationId},()=>repository.getClientContext({tenantId,ownerId:identity?.id,clientId,client:{...(payload.client||{}),id:clientId},contextRequest:{requestId,objective:`copilot_${clientCapability.path.toLowerCase()}`,actorRole:identity?.role||'consultant',conversationId,databaseTimeoutMs:config.databaseQueryTimeoutMs}}))
+   throwIfRequestAborted(requestController.signal)
+   authorizedContext={...confirmed,conversationState:requestConversationState}
    latency.end('CONTEXT');return authorizedContext
   }
   const completeClient=(payloadResult,execution=toolExecution)=>{latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(payloadResult,{latency:values,path:clientCapability.path,intent:routedIntent.intent,toolExecution:execution});const measuredLatency=enriched?.responseMetadata?.performance?.latency||values;valLatencyMetrics.record({path:clientCapability.path,intent:routedIntent.intent,latency:measuredLatency});observe('val.answer.completed',{mode:clientCapability.path.toLowerCase(),engineMode:payloadResult?.engineMode||'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,capability:execution?.tool_result?.capability||clientCapability.capabilities[0],capabilityStatus:execution?.tool_result?.status,materialityScore:clientCapability.materiality.score,engineRequired:clientCapability.materiality.engine_required,ttfrMs:measuredLatency.TTFR,outcome:'ok'});const responseClient=authorizedContext?.client||enriched?.advice?.ai_reasoning?.client||{id:clientId};return completeSession(enriched,{client:{id:clientId,name:responseClient?.name||responseClient?.label},active:activeContextRef})}
-  if(activeContext){
+  if(activeContext&&!ignoresActiveContext){
    const scoped=await loadAuthorizedContext();activeContextRef=validateActiveContext({activeContext,context:scoped,clientId})
-   sessionState=valConversationSessions.advance({...sessionScope,activeContext:activeContextRef},{activeContext:activeContextRef})
+   sessionState=advanceConversationState(sessionState,{activeContext:activeContextRef,scope:{...sessionScope,activeContext:activeContextRef}})
    authorizedContext={...authorizedContext,conversationState:conversationStateContext(sessionState)}
   }
   if(clientCapability.current_data_required&&clientCapability.capabilities.some(capability=>['WEATHER','LABELS'].includes(capability))){
@@ -511,35 +626,38 @@ async function handleApi(request,response,url){
    return json(response,422,{error:`A fonte atual autorizada de ${missingSource} não está conectada neste ambiente. A VAL não usará memória ou conteúdo antigo como dado atual.`,code:'val_current_source_unavailable',intent:routedIntent.intent,reasoningPath:clientCapability.path,capabilitiesPlanned:clientCapability.capabilities})
   }
   if(clientCapability.path==='TOOL'||clientCapability.session_command){
-   const scoped=await loadAuthorizedContext();latency.start('TOOL')
-   toolExecution=await executeCapabilityPlan({route:clientCapability,message,context:scoped,attachments:requestedAttachments,clientId,activeContext})
+   const minimalContext=sessionOnly||directCalculator
+   const scoped=minimalContext?{client:{id:clientId,name:sessionState.current_client?.label||payload.client?.name||'Produtor'},conversationState:requestConversationState,priorRecommendations:[]}:await loadAuthorizedContext();latency.start('TOOL')
+   toolExecution=await withOperationTimeout(signal=>executeCapabilityPlan({route:clientCapability,message,context:scoped,attachments:requestedAttachments,clientId,activeContext:minimalContext?null:activeContext,signal}),{timeoutMs:config.toolRequestTimeoutMs,code:'val_tool_timeout',message:'A ferramenta excedeu o tempo seguro.',signal:requestController.signal})
    latency.end('TOOL');activeContextRef=toolExecution.active_context||activeContextRef
    if(clientCapability.direct||!toolExecution.reasoning_required){
-    const direct=buildCapabilityExecutionResponse({execution:toolExecution,route:clientCapability,message,organizationId:tenantId,clientId,clientName:scoped.client?.name||payload.client?.name,conversationId})
+    const direct=buildCapabilityExecutionResponse({execution:toolExecution,route:clientCapability,message,organizationId:tenantId,clientId,clientName:scoped.client?.name||payload.client?.name,conversationId,executionCounts:{entityResolutions:entityLookupCount,dataLookups:0,toolCalls:1,hops:entityLookupCount+1}})
     const final=completeClient(direct,toolExecution)
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:clientCapability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,toolStatus:toolExecution.tool_result?.status}})
     return json(response,200,final)
    }
   }
-  if(clientCapability.path==='FAST'&&clientCapability.direct&&!clientCapability.capabilities.some(item=>['MARKET_COMMODITY','VISIT_HISTORY'].includes(item))){
-   const scoped=await loadAuthorizedContext();latency.start('TOOL');toolExecution=await executeCapabilityPlan({route:clientCapability,message,context:scoped,clientId,activeContext});latency.end('TOOL')
-   const direct=buildCapabilityExecutionResponse({execution:toolExecution,route:clientCapability,message,organizationId:tenantId,clientId,clientName:scoped.client?.name||payload.client?.name,conversationId})
+  if(clientCapability.path==='FAST'&&clientCapability.direct&&!clientCapability.data_path&&!clientCapability.capabilities.some(item=>['MARKET_COMMODITY','VISIT_HISTORY'].includes(item))){
+   const scoped=await loadAuthorizedContext();latency.start('TOOL');toolExecution=await withOperationTimeout(signal=>executeCapabilityPlan({route:clientCapability,message,context:scoped,clientId,activeContext,signal}),{timeoutMs:config.toolRequestTimeoutMs,code:'val_tool_timeout',message:'A ferramenta excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
+   const direct=buildCapabilityExecutionResponse({execution:toolExecution,route:clientCapability,message,organizationId:tenantId,clientId,clientName:scoped.client?.name||payload.client?.name,conversationId,executionCounts:{entityResolutions:entityLookupCount,dataLookups:0,toolCalls:1,hops:entityLookupCount+1}})
    return json(response,200,completeClient(direct,toolExecution))
   }
   let marketAttachmentBase=null
   if(clientCapability.capabilities.includes('MARKET_COMMODITY')){
    const startedAt=Date.now()
-   const facts=await repository.getFastClientFacts({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId})
    if(!attachmentIds.length&&['FAST','LIVE_DATA'].includes(clientCapability.path)&&clientCapability.direct){
-    latency.start('TOOL');const workspace=await grainRepository.getMarketReferences(identity?.id);latency.end('TOOL')
-    const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,latencyMs:Date.now()-startedAt})
+    latency.start('TOOL');const workspace=await withOperationTimeout(()=>grainRepository.getMarketReferences(identity?.id),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
+    const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,latencyMs:Date.now()-startedAt,executionCounts:{entityResolutions:entityLookupCount,dataLookups:1,toolCalls:1,hops:entityLookupCount+1}})
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:clientCapability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
     return json(response,200,completeClient(fast,null))
    }
-   const [context,workspace]=await Promise.all([
+   latency.start('DATABASE')
+   const [context,workspace,facts]=await withOperationTimeout(()=>Promise.all([
     loadAuthorizedContext(),
-    grainRepository.getWorkspace(identity?.id)
-   ])
+    grainRepository.getWorkspace(identity?.id),
+    repository.getFastClientFacts({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,timeoutMs:config.databaseQueryTimeoutMs})
+   ]),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_context_timeout',message:'A composição de mercado excedeu o tempo seguro.',signal:requestController.signal})
+   latency.end('DATABASE')
    const deep=buildClientMarketResponse({workspace,context,facts,message,intentHint:routedIntent.intent,attachmentTypes:requestedAttachmentTypes,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,latencyMs:Date.now()-startedAt})
    if(!attachmentIds.length){
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:'deep',engineMode:'rules',intent:routedIntent.intent,reasoningPath:'DEEP',currentDataStatus:deep.responseMetadata.currentDataStatus}})
@@ -547,16 +665,28 @@ async function handleApi(request,response,url){
    }
    marketAttachmentBase=deep
   }
-  if(!attachmentIds.length&&clientCapability.direct&&clientCapability.path==='FAST'&&clientCapability.capabilities.includes('VISIT_HISTORY')){
-   const startedAt=Date.now();const facts=await repository.getFastClientFacts({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId})
-   const fast=buildFastClientResponse({facts,message,organizationId:identity?.tenantId||config.defaultTenantId,conversationId,latencyMs:Date.now()-startedAt})
-   await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:'fast',engineMode:'rules',intent:routedIntent.intent,reasoningPath:'FAST'}})
+  if(!attachmentIds.length&&clientCapability.direct&&clientCapability.path==='FAST'&&clientCapability.data_path==='CLIENT_COMPARISON'){
+   const startedAt=Date.now();latency.start('DATABASE')
+   const entries=await Promise.all(comparisonResolution.clients.map(item=>repository.getFastClientFacts({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:item.id,timeoutMs:config.databaseQueryTimeoutMs})))
+   throwIfRequestAborted(requestController.signal)
+   latency.end('DATABASE')
+   const executionCounts={entityResolutions:entityLookupCount,dataLookups:entries.length,hops:entityLookupCount+1}
+   const fast=buildFastClientComparisonResponse({entries,message,organizationId:identity?.tenantId||config.defaultTenantId,conversationId,latencyMs:Date.now()-startedAt,executionCounts})
+   await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:'fast',engineMode:'rules',intent:'COMPARE',reasoningPath:'FAST',dataPath:'CLIENT_COMPARISON',modelCalls:0,toolCalls:entries.length,hops:executionCounts.hops,entityResolutions:executionCounts.entityResolutions,dataLookups:executionCounts.dataLookups}})
+   return json(response,200,completeClient({...fast,comparisonResolution},null))
+  }
+  if(!attachmentIds.length&&clientCapability.direct&&clientCapability.path==='FAST'&&clientCapability.data_path){
+   const startedAt=Date.now();latency.start('DATABASE');const facts=await repository.getFastClientFacts({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,dataPath:clientCapability.data_path,timeoutMs:config.databaseQueryTimeoutMs});latency.end('DATABASE')
+   throwIfRequestAborted(requestController.signal)
+   const executionCounts={entityResolutions:entityLookupCount,dataLookups:1,hops:entityLookupCount+1}
+   const fast=buildFastClientResponse({facts,message,organizationId:identity?.tenantId||config.defaultTenantId,conversationId,latencyMs:Date.now()-startedAt,executionCounts})
+   await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:'fast',engineMode:'rules',intent:routedIntent.intent,reasoningPath:'FAST',dataPath:clientCapability.data_path,modelCalls:0,toolCalls:1,hops:executionCounts.hops,entityResolutions:executionCounts.entityResolutions,dataLookups:executionCounts.dataLookups}})
    return json(response,200,completeClient(fast,null))
   }
   const ownerKey=progressOwnerKey(identity,request)
   const requestMode=clean(payload.mode)||'daily'
   valProgress.start({requestId,ownerId:ownerKey,clientId,mode:requestMode})
-  const controller=new AbortController();request.once('aborted',()=>controller.abort());response.once('close',()=>{if(!response.writableEnded)controller.abort()})
+  const controller=requestController
   try{
    observe('val.answer.started',{mode:requestMode,attachmentCount:attachmentIds.length})
    const actorId=String(identity?.id||identity?.email||'demo@valor360.local')
@@ -572,8 +702,9 @@ async function handleApi(request,response,url){
     policy_context:{resource:'val_recommendation',operation:'execute',scope:'own_portfolio',scope_ref:actorId}
    })
    const finalizeRecommendation=attachmentIds.length?draft=>finalizeAttachmentRecommendation({draft,attachmentIds,attachmentTypes:requestedAttachmentTypes,marketResponse:marketAttachmentBase}):undefined
+   const deepContext=authorizedContext||await loadAuthorizedContext()
    latency.start('MODEL')
-   const coreResponse=await valCore.execute(requestEnvelope,{engineInput:{tenantId:organizationId,ownerId:identity?.id,clientId,client:authorizedContext?.client||{...(payload.client||{}),id:clientId},message,attachmentIds,mode:requestMode,requestedStage:clean(payload.requestedStage),intent:routedIntent.intent,conversationId,sessionState:conversationStateContext(sessionState),finalizeRecommendation,signal:controller.signal,onProgress:stage=>valProgress.update({requestId,ownerId:ownerKey,stage})}})
+   const coreResponse=await valCore.execute(requestEnvelope,{engineInput:{tenantId:organizationId,ownerId:scopedOwnerId,clientId,client:deepContext.client||{...(payload.client||{}),id:clientId},message,attachmentIds,mode:requestMode,requestedStage:clean(payload.requestedStage),intent:routedIntent.intent,conversationId,sessionState:requestConversationState,preloadedContext:{scope:{tenantId:organizationId,ownerId:scopedOwnerId,clientId},context:deepContext},finalizeRecommendation,signal:controller.signal,onProgress:stage=>valProgress.update({requestId,ownerId:ownerKey,stage})}})
    // A recomendação acabou de registrar um novo turno. Remover somente esta
    // thread evita resposta stale e impede que outra conversa herde o snapshot.
    valSessionContextCache.invalidate({tenantId,ownerId:scopedOwnerId,clientId,conversationId})
@@ -587,7 +718,7 @@ async function handleApi(request,response,url){
    }
    latency.end('VALIDATION')
    if(toolExecution&&attachmentIds.length){
-    const scoped=authorizedContext||await loadAuthorizedContext();toolExecution=await executeCapabilityPlan({route:clientCapability,message,context:scoped,attachments:result.attachments||requestedAttachments,clientId,activeContext})
+    const scoped=authorizedContext||await loadAuthorizedContext();toolExecution=await withOperationTimeout(signal=>executeCapabilityPlan({route:clientCapability,message,context:scoped,attachments:result.attachments||requestedAttachments,clientId,activeContext,signal}),{timeoutMs:config.toolRequestTimeoutMs,code:'val_tool_timeout',message:'A ferramenta excedeu o tempo seguro.',signal:requestController.signal})
    }
    valProgress.complete({requestId,ownerId:ownerKey})
    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:requestMode,engineMode:result.engineMode,attachments:attachmentIds.length,intent:routedIntent.intent,conversationScoped:Boolean(conversationId)}})

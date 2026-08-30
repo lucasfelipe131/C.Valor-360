@@ -91,6 +91,56 @@ test('ZARC usa o provider MAPA canônico, carrega fonte/data e falha fechado',as
  assert.equal(unavailable.output,undefined)
 })
 
+test('cancelamento do request atravessa capability executor e interrompe o provider ZARC',async()=>{
+ const message=matrix.find(([key])=>key==='zoneamento')[1]
+ const route=routeSystemCapability({message,hasClient:true})
+ const controller=new AbortController()
+ const reason=Object.assign(new Error('request encerrado'),{name:'AbortError',code:'val_request_cancelled'})
+ let providerSignal=null
+ const pending=executeCapabilityPlan({
+  route,message,clientId:'client-parity',context:{},signal:controller.signal,
+  calculatorOptions:{zarcOptions:{now:fixedNow,cacheStore:new Map(),fetchImpl:async(url,options)=>{
+   providerSignal=options.signal
+   return await new Promise((resolve,reject)=>options.signal.addEventListener('abort',()=>reject(options.signal.reason),{once:true}))
+  }}},
+ })
+ await new Promise(resolve=>setImmediate(resolve))
+ controller.abort(reason)
+ await assert.rejects(pending,error=>error===reason)
+ assert.ok(providerSignal instanceof AbortSignal)
+ assert.equal(providerSignal.aborted,true)
+})
+
+test('cancelamento de um waiter ZARC não contamina outro waiter do mesmo cache',async()=>{
+ const input={uf:'MS',municipality:'Dourados',crop:'soja',soil:'13',cycle:'21'}
+ const cacheStore=new Map()
+ const firstController=new AbortController()
+ const secondController=new AbortController()
+ const firstReason=Object.assign(new Error('primeiro request encerrado'),{name:'AbortError',code:'val_request_cancelled'})
+ let fetchCalls=0
+ let providerSignal=null
+ let releaseFetch
+ const responsePending=new Promise(resolve=>{releaseFetch=resolve})
+ const fetchImpl=async(url,options)=>{
+  fetchCalls+=1
+  providerSignal=options.signal
+  return responsePending
+ }
+ const first=consultZarc(input,{fetchImpl,now:fixedNow,cacheStore,signal:firstController.signal})
+ const second=consultZarc(input,{fetchImpl,now:fixedNow,cacheStore,signal:secondController.signal})
+ const firstRejected=assert.rejects(first,error=>error===firstReason)
+ await new Promise(resolve=>setImmediate(resolve))
+ assert.equal(fetchCalls,1)
+ firstController.abort(firstReason)
+ await firstRejected
+ assert.equal(providerSignal.aborted,false)
+ releaseFetch({ok:true,status:200,text:async()=>zarcCsv()})
+ const result=await second
+ assert.equal(result.safra,'2026/2027')
+ assert.equal(secondController.signal.aborted,false)
+ assert.equal(fetchCalls,1)
+})
+
 test('resultado do cálculo fica session-only e o modelo recebe fatos estruturados, não uma fórmula para recalcular',async()=>{
  const [key,message]=matrix.find(([calculator])=>calculator==='sementes')
  const route=routeSystemCapability({message,hasClient:true})

@@ -107,8 +107,9 @@ export class ValCore{
     }}
     const execution=await executeModulePlan({
       plan:route.execution_plan,
-      registry:{LEGACY_VAL_ENGINE:()=>this.engine.answer(contextualEngineInput)},
+      registry:{LEGACY_VAL_ENGINE:(_input,{signal})=>this.engine.answer({...contextualEngineInput,signal})},
       input:{requestEnvelope,engineInput:contextualEngineInput,route},
+      signal:engineInput?.signal,
       observeFn:this.observe
     })
     const recommendation=execution.results.LEGACY_VAL_ENGINE

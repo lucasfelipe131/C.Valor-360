@@ -289,7 +289,7 @@ test('dispatch HTTP — valida ownership/MIME antes do roteamento, não retorna 
  assert.match(source.slice(finalizeAt,executeAt),/finalizeAttachmentRecommendation/)
  assert.match(source.slice(finalizeAt,executeAt),/attachmentIds\.length/)
  assert.match(source.slice(executeAt),/val_attachment_analysis_unavailable/)
- const applyAt=engine.indexOf('applyRecommendationFinalizer(draft,finalizeRecommendation)')
+ const applyAt=engine.indexOf('applyRecommendationFinalizer(draft,finalizeRecommendation,{signal})')
  const persistAt=engine.indexOf('this.repository.recordRecommendation',applyAt)
  assert.ok(applyAt>=0&&persistAt>applyAt)
  assert.match(source,/requestedAttachmentTypes/)

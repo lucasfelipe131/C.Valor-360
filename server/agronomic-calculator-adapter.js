@@ -168,6 +168,7 @@ const summaryFor=(key,output)=>{
 }
 
 export async function executeCopilotCalculator(message='',options={}){
+ options.signal?.throwIfAborted?.()
  const calculator=identifyAgronomicCalculator(message)
  if(!calculator){
   const legacy=legacyCostPerHectare(message)
@@ -177,9 +178,11 @@ export async function executeCopilotCalculator(message='',options={}){
  }
  const input=parseAgronomicCalculatorRequest(message,calculator)
  try{
-  const execution=await executeAgronomicCalculator(calculator,input,{zarcProvider:payload=>consultZarc(payload,options.zarcOptions)})
+  const execution=await executeAgronomicCalculator(calculator,input,{zarcProvider:payload=>consultZarc(payload,{...(options.zarcOptions||{}),signal:options.signal})})
+  options.signal?.throwIfAborted?.()
   return {...execution,adapter_version:copilotCalculatorAdapterVersion,summary:execution.status==='EXECUTED'?summaryFor(calculator,execution.output):`Faltam entradas materiais para ${AGRONOMIC_CALCULATORS.find(item=>item.key===calculator)?.title||calculator}: ${(execution.required_inputs||[]).join(', ')}.`}
  }catch(error){
+  if(options.signal?.aborted)throw options.signal.reason instanceof Error?options.signal.reason:error
   return {adapter_version:copilotCalculatorAdapterVersion,contract_version:agronomicCalculatorContractVersion,calculator,status:error?.code==='zarc_not_found'?'NO_DATA':'SOURCE_UNAVAILABLE',required_inputs:[],error:clean(error?.message||'Falha ao executar a calculadora.',500),summary:clean(error?.message||'A fonte necessária não respondeu.',500)}
  }
 }

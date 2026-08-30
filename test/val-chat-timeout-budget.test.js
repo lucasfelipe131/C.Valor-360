@@ -25,10 +25,11 @@ test('as duas telas usam o mesmo orçamento de 120 segundos para o chat da VAL',
   assert.ok(panelTimeout>100_000,'o cliente precisa ter folga acima do teto do provedor no servidor')
 })
 
-test('a documentação explica a folga entre provedor, pós-processamento e navegador',()=>{
+test('a documentação distingue deadlines atuais do teto defensivo legado',()=>{
   assert.match(engineDocs,/Orçamento de tempo do cliente/)
-  assert.match(engineDocs,/chamada ao provedor no backend \| 100 s/)
-  assert.match(engineDocs,/reconciliação, anexos e persistência \| 15 s/)
-  assert.match(engineDocs,/transporte e entrega ao navegador \| 5 s/)
-  assert.match(engineDocs,/timeout total do cliente\*\* \| \*\*120 s/)
+  assert.match(engineDocs,/deadline total do modelo conversacional \| 12 s/)
+  assert.match(engineDocs,/deadline do módulo obrigatório no Core \| 15 s/)
+  assert.match(engineDocs,/timeout visível do Copilot full-screen \| 30 s/)
+  assert.match(engineDocs,/teto defensivo das duas interfaces legadas \| 120 s/)
+  assert.match(engineDocs,/query PostgreSQL já em voo não é revertida/)
 })

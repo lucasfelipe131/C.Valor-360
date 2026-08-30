@@ -274,16 +274,17 @@ Informa se OpenAI, PostgreSQL, webhook e base de conhecimento estão ativos, sem
 
 #### Orçamento de tempo do cliente
 
-As duas interfaces que chamam este endpoint (`ValPanel.jsx` e `ValDecisionWorkspace.jsx`) usam o mesmo timeout de **120 segundos**. Esse orçamento é deliberadamente maior que o pior caso permitido para o provedor no servidor:
+As duas interfaces legadas que chamam este endpoint (`ValPanel.jsx` e `ValDecisionWorkspace.jsx`) ainda usam o mesmo teto defensivo de **120 segundos**. Esse valor não representa o SLO nem o deadline do pipeline conversacional. O Copilot full-screen cancela a geração visível em **30 segundos**, enquanto o servidor aplica limites menores e cooperativos:
 
 | Etapa | Orçamento máximo |
 |---|---:|
-| chamada ao provedor no backend | 100 s |
-| reconciliação, anexos e persistência | 15 s |
-| transporte e entrega ao navegador | 5 s |
-| **timeout total do cliente** | **120 s** |
+| deadline total do modelo conversacional | 12 s |
+| deadline do módulo obrigatório no Core | 15 s |
+| deadline absoluto do POST conversacional no servidor | 28 s |
+| timeout visível do Copilot full-screen | 30 s |
+| teto defensivo das duas interfaces legadas | 120 s |
 
-O timeout do navegador não deve ser reduzido isoladamente em uma das telas. Se o limite do servidor mudar, atualize as duas interfaces, esta tabela e `test/val-chat-timeout-budget.test.js` na mesma PR. Cancelamentos manuais por troca de produtor, navegação ou nova pergunta continuam usando `AbortController` e não aguardam o orçamento completo.
+O teto legado do navegador não deve ser confundido com permissão para manter trabalho no servidor. O deadline total do modelo cobre também o consumo do stream após os headers; o Core encadeia o `AbortSignal`; e cancelamentos por troca de produtor, navegação ou nova pergunta interrompem o request sem aguardar o orçamento completo. O cancelamento é cooperativo: uma query PostgreSQL já em voo não é revertida, mas nenhum novo efeito ou registro deve começar depois que o cancelamento for observado.
 
 ```json
 {

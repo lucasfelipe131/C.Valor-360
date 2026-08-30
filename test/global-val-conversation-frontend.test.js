@@ -25,7 +25,7 @@ test('nova ASK normal zera respostas transitórias mesmo quando repete a intenç
  assert.deepEqual(sessionRepliesForAsk({replies,activeReply:{question:'Qual decisão?'},intent:'PREPARE_VISIT'}),[])
  assert.match(component,/if\(!activeReply\)\{setSessionReplies\(current=>\(\{\.\.\.current,\[activeThreadKey\]:\[\]\}\)\);setSessionReplyOffer\(null\)\}/)
  assert.match(component,/objective:reasoning\.objective/)
- assert.match(component,/sessionObjective=activeReply\?\.objective\|\|priorSessionReplies/)
+ assert.match(component,/sessionObjective=supersedesActiveChat\?prompt:activeReply\?\.objective\|\|priorSessionReplies/)
 })
 
 test('resposta HTTP direta ou envelopada é normalizada e contrato ausente falha fechado',()=>{

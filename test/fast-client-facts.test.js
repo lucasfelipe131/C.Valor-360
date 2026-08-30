@@ -119,7 +119,7 @@ test('FAST separa última concluída da próxima agendada e nunca usa updatedAt 
     facts:{client:{id:'producer-1',name:'Produtor Um'},latestVisit:{id:'legacy-wrong-alias',status:'Agendada',lifecycleStatus:'PLANNED',scheduledAt:'2026-08-27T12:00:00.000Z',updatedAt:'2026-08-25T14:00:00.000Z'},nextScheduledVisit:{id:'visit-planned',status:'Agendada',lifecycleStatus:'PLANNED',scheduledAt:'2026-08-26T12:00:00.000Z'}},
     message:'Qual foi a última visita?',organizationId:tenantId,conversationId:'thread-2',now,
   })
-  assert.match(plannedOnly.advice.answer,/não encontrei visita concluída/i)
+  assert.match(plannedOnly.advice.answer,/ainda não há visita concluída registrada/i)
   assert.match(plannedOnly.advice.answer,/próxima visita está agendada/i)
   assert.equal(plannedOnly.responseMetadata.latestCompletedVisit,null)
 })

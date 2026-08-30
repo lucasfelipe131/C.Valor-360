@@ -1,11 +1,11 @@
 export const latencyObservabilityVersion='val.latency_observability.v2'
 
 export const latencyStages=Object.freeze([
- 'AUTH','ENTITY','INTENT','CONTEXT','MEMORY','MCA','MIA','TOOL','MODEL','VALIDATION','TTS','TOTAL','TTFR'
+ 'AUTH','ENTITY','INTENT','DATABASE','CONTEXT','MEMORY','MCA','MIA','TOOL','MODEL','VALIDATION','TTS','TOTAL','TTFR'
 ])
 
 const legacyStages=Object.freeze({
- AUTH:'AUTH',CONTEXT:'CONTEXT_RETRIEVAL',MEMORY:'MEMORY',MCA:'MCA',MIA:'MIA',
+ AUTH:'AUTH',DATABASE:'DATABASE',CONTEXT:'CONTEXT_RETRIEVAL',MEMORY:'MEMORY',MCA:'MCA',MIA:'MIA',
  TOOL:'EXTERNAL_DATA',MODEL:'MODEL_INFERENCE',VALIDATION:'VALIDATION',TOTAL:'RESPONSE'
 })
 const measured=value=>{

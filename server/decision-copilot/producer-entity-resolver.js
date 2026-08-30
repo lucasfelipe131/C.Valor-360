@@ -6,11 +6,16 @@ export const normalizeClientReference=value=>clean(value).normalize('NFD').repla
 
 const currentClientReference=/^(?:ele|ela|dele|dela|nele|nela|esse|essa|este|esta|esse cliente|essa cliente|este cliente|esta cliente|esse produtor|essa produtora|este produtor|esta produtora)$/i
 const temporalOnly=/^(?:amanh[ãa]|hoje|agora|depois|mais tarde|segunda|ter[cç]a|quarta|quinta|sexta|s[áa]bado|domingo)$/i
-const trailingContext=/\s+(?:amanh[ãa]|hoje|depois|mais tarde|na pr[óo]xima semana|esta semana|para (?:uma|a|o)|pra (?:uma|a|o)|porque\b|pois\b|e (?:quero|preciso|vou|vamos)\b).*$/iu
+const contextualFactOwner=/^(?:(?:[úu]ltim[oa]|mais recente)\s+(?:visita|compra|obje[cç][ãa]o|compromisso|safra)|propriedade atual|cadastro atual)$/iu
+const trailingContext=/\s+(?:amanh[ãa]|hoje|depois|mais tarde|na pr[óo]xima semana|esta semana|para (?:uma|a|o)|pra (?:uma|a|o)|porque\b|pois\b|e (?:quero|preciso|vou|vamos|quanto|qual|quais|como|o que|por que)\b).*$/iu
 
 const naturalReferencePatterns=Object.freeze([
  {kind:'EXPLICIT_NAME',pattern:/\bcomo\s+(?:est[aá]|t[aá]|anda)\s+(?:(?:o|a)\s+)?(?:cliente|produtor|produtora)\s+(?<reference>[^,.!?;]+)/iu},
  {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/\bcomo\s+(?:est[aá]|t[aá]|anda)\s+(?<reference>[^,.!?;]+)/iu},
+ // Fatos possessivos precisam ser avaliados antes do comando genérico
+ // "mostre/abra"; caso contrário, "Mostre a última visita do Antônio"
+ // tenta resolver toda a frase como se fosse o nome do produtor.
+ {kind:'FACT_OWNER',pattern:/(?:^|\s)(?:visita|compra|obje[cç][ãa]o|compromisso|culturas?|safra|[áa]rea)\s+(?:do|da)\s+(?:(?:o|a)\s+)?(?<reference>[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,5}?)(?=\s+(?:est(?:[aá]|[aã]o)|t[eê]m|foi|[ée]|registrad\p{L}*|cadastrad\p{L}*|mais\s+recente|no\s+sistema|na\s+carteira|e\s+(?:quanto|qual|quais|como|o\s+que|por\s+que))(?=\s|[,.!?;]|$)|[,.!?;]|$)/iu},
  {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/\b(?:abre|abra|abrir|mostra|mostre|mostrar|procura|procure|buscar?)\s+(?:(?:o|a)\s+)?(?:(?:cliente|produtor|produtora|fazenda|propriedade)\s+)?(?<reference>[^,.!?;]+)/iu},
  {kind:'EXPLICIT_NAME',pattern:/\b(?:prepara|prepare|preparar|monta|monte)\s+(?:(?:a|uma)\s+)?(?:visita|conversa)\s+(?:de|do|da|para|pro|pra|com)\s+(?<reference>[^,.!?;]+)/iu},
  {kind:'EXPLICIT_NAME',pattern:/\b(?:vou|vamos|iremos?|pretendo)\s+(?:visitar|ver|encontrar)\s+(?<reference>[^,.!?;]+)/iu},
@@ -35,8 +40,10 @@ export function extractNaturalClientReference(message){
  for(const {kind,pattern} of naturalReferencePatterns){
   const match=source.match(pattern)
   if(!match?.groups?.reference)continue
+  if(kind==='FACT_OWNER'&&/\b(?:prepara|prepare|preparar|monta|monte)\b[^,.!?;]*\b(?:visita|conversa)\b/iu.test(source))continue
   const reference=stripReference(match.groups.reference)
   if(!reference||temporalOnly.test(reference))return Object.freeze({kind:'NONE',reference:null})
+  if(kind==='FACT_OWNER'&&contextualFactOwner.test(reference))return Object.freeze({kind:'NONE',reference:null})
   if(currentClientReference.test(reference))return Object.freeze({kind:'CURRENT_CLIENT',reference})
   return Object.freeze({kind,reference})
  }
@@ -163,4 +170,28 @@ export function resolveAuthorizedClientReference({message='',reference='',author
  if(matched.matches.length===0)return result({status:'NOT_FOUND',kind:extracted.kind,reference:extracted.reference,reasonCode:matched.reasonCode,current})
  if(matched.matches.length>1)return result({status:'AMBIGUOUS',kind:extracted.kind,reference:extracted.reference,reasonCode:'AMBIGUOUS_CLIENT_REFERENCE',options:matched.matches,current,match:matched.match})
  return result({status:'RESOLVED',kind:extracted.kind,reference:extracted.reference,reasonCode:matched.reasonCode,client:matched.matches[0],current,match:matched.match})
+}
+
+/**
+ * Resolve "os dois" apenas para o produtor atual e o produtor anterior da
+ * mesma lista já autorizada. Não faz descoberta global nem escolhe uma dupla
+ * quando o contexto da thread não contém os dois ponteiros.
+ */
+export function resolveAuthorizedClientComparison({message='',authorizedClients=[],currentClientId=null,recentClientIds=[]}={}){
+ const source=normalizeClientReference(message)
+ if(!/\b(?:compara|compare)\b/.test(source))return Object.freeze({status:'NONE',clients:[],reason_code:'NOT_A_COMPARISON'})
+ const clients=uniqueAuthorizedClients(authorizedClients)
+ const byId=new Map(clients.map(item=>[String(item.safe.id),item.safe]))
+ const current=byId.get(String(currentClientId??''))||null
+ const recent=(Array.isArray(recentClientIds)?recentClientIds:[]).map(id=>byId.get(String(id))).filter(Boolean)
+ const pair=uniqueByClient([current,...recent]).slice(0,2)
+ if(!/\b(?:os dois|ambos|essas duas contas|esses dois produtores)\b/.test(source))return Object.freeze({status:'CONTEXT_REQUIRED',clients:pair,reason_code:'EXPLICIT_COMPARISON_PAIR_REQUIRED'})
+ if(pair.length!==2)return Object.freeze({status:'CONTEXT_REQUIRED',clients:pair,reason_code:'COMPARISON_PAIR_NOT_AVAILABLE'})
+ return Object.freeze({status:'RESOLVED',clients:Object.freeze(pair),reason_code:'CURRENT_AND_PREVIOUS_CLIENT_RESOLVED'})
+}
+
+function uniqueByClient(values=[]){
+ const seen=new Set();const output=[]
+ for(const value of values){if(!value?.id||seen.has(String(value.id)))continue;seen.add(String(value.id));output.push(value)}
+ return output
 }

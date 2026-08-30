@@ -8,6 +8,7 @@ import {
  conversationLatencyPercentilePolicy,
  conversationLatencySources,
  conversationServiceClasses,
+ classifyConversationResponseOutcome,
  createConversationLatencyRegistry,
  createConversationLatencyTrace,
  summarizeConversationLatency
@@ -131,7 +132,15 @@ test('benchmark agrega outcomes dentro da fonte sem cruzar distribuições ou re
  assert.equal(server.VOICE.sample_count,0)
  assert.equal(browser.VOICE.sample_count,1)
  assert.equal(browser.VOICE.outcomes.FALLBACK,1)
+ assert.equal(browser.VOICE.fallback_rate,1)
  assert.equal(JSON.stringify(benchmark).includes('privad'),false)
+})
+
+test('classificador separa resposta saudável de fallback 200 sem inspecionar conteúdo',()=>{
+ assert.equal(classifyConversationResponseOutcome({engineMode:'rules',responseMetadata:{},advice:{ai_reasoning:{run:{status:'completed',fallback:false}}}}),'SUCCESS')
+ assert.equal(classifyConversationResponseOutcome({engineMode:'fallback',responseMetadata:{errorCode:'provider_timeout'}}),'FALLBACK')
+ assert.equal(classifyConversationResponseOutcome({engineMode:'rules_fallback'}),'FALLBACK')
+ assert.equal(classifyConversationResponseOutcome({engineMode:'openai',advice:{ai_reasoning:{run:{status:'fallback'}}}}),'FALLBACK')
 })
 
 test('alias legado total_turn_latency é compatível, mas canonicalizado dentro da fonte explícita',()=>{
@@ -169,7 +178,8 @@ test('HTTP aceita apenas fonte browser; backend e hook usam contratos/campos dis
  assert.match(server,/payload\.source[\s\S]*BROWSER_VOICE_TURN[\s\S]*val_conversation_metric_source_invalid/)
  assert.match(server,/source:'BROWSER_VOICE_TURN',contractVersion:payload\.contractVersion/)
  assert.match(server,/source:'SERVER_PROCESSING',contractVersion:'val\.conversation_latency\.server_processing\.v1'/)
- assert.match(server,/metrics:\{server_processing_total_latency:totalLatency\}/)
+ assert.match(server,/metrics:\{server_processing_total_latency:total\}/)
+ assert.match(server,/classifyConversationResponseOutcome\(payloadResult\)/)
  assert.match(hook,/source:'BROWSER_VOICE_TURN'/)
  assert.match(hook,/contractVersion:'val\.conversation_latency\.browser_voice_turn\.v1'/)
  assert.match(hook,/browser_voice_turn_total_latency:elapsed\('speechEnd','turnEnd'\)/)
