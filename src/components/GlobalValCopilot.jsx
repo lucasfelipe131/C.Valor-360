@@ -15,7 +15,7 @@ import {buildConversationHistory,contextStatusLabel,conversationScopeKey,convers
 import {shouldAutoSubmitCopilotSeed} from '../lib/copilot-context'
 import {resolveAgroHeroFileMime,validateAgroHeroFile} from '../lib/agro-hero-actions'
 import {createValProgressRequestId,initialValProgress,startValProgressPolling} from '../lib/val-progress-client'
-import {hasValOutputModePreference,localNaturalCommandTurn,naturalCommandRequest,readValOutputMode,resolveValNaturalCommand,writeValOutputMode} from '../lib/val-natural-commands'
+import {hasValOutputModePreference,localNaturalCommandTurn,naturalCommandMatchesClient,naturalCommandNeedsSettledResponse,naturalCommandRequest,readValOutputMode,resolveValNaturalCommand,writeValOutputMode} from '../lib/val-natural-commands'
 import {cancelVoiceInteraction,createVoiceInteraction,processVoiceInteraction,uploadVoiceAudio} from '../lib/voice-interactions-client'
 import {attachmentContentUrl,attachmentMatchesBrowserScope} from '../lib/attachment-browser-scope'
 import '../global-val-copilot.css'
@@ -140,6 +140,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  const clientSelectRef=useRef(null)
  const pageRef=useRef(null)
  const uploadRunRef=useRef({generation:0,controller:null,targetClientId:''})
+ const chatRunRef=useRef({generation:0,controller:null,threadKey:''})
  const voiceActivationSequence=useRef(0)
  const registrationScopeRef=useRef({clientId:'',threadKey:''})
  const realtimeClarificationRef=useRef(null)
@@ -157,10 +158,19 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  const visibleClients=useMemo(()=>{const query=historyQuery.trim().toLocaleLowerCase('pt-BR');return query?clients.filter(item=>String(item.name||'').toLocaleLowerCase('pt-BR').includes(query)).slice(0,8):clients.slice(0,6)},[clients,historyQuery])
 
  const cancelUploadRun=()=>{uploadRunRef.current.controller?.abort();uploadRunRef.current={generation:uploadRunRef.current.generation+1,controller:null,targetClientId:''};setUploading(false)}
- useEffect(()=>{if(contextClient?.id&&!uploading)setSelectedId(contextClient.id)},[contextClient?.id,uploading])
+ const cancelChatRun=({clearUi=true}={})=>{chatRunRef.current.controller?.abort();chatRunRef.current={generation:chatRunRef.current.generation+1,controller:null,threadKey:''};if(clearUi){setBusy(false);setProgress(null)}}
+ const beginChatRun=activeThreadKey=>{
+  const previous=chatRunRef.current
+  previous.controller?.abort()
+  const generation=previous.generation+1
+  const controller=new AbortController()
+  chatRunRef.current={generation,controller,threadKey:activeThreadKey}
+  return {generation,controller}
+ }
+ useEffect(()=>{if(contextClient?.id&&!uploading&&String(contextClient.id)!==String(selectedId)){cancelChatRun();cancelRealtimeClarification();setSelectedId(contextClient.id)}},[contextClient?.id,uploading])
  useEffect(()=>{
   if(!seed?.nonce)return
-  cancelUploadRun()
+  cancelUploadRun();cancelChatRun();cancelRealtimeClarification()
   const autoSubmit=Boolean(seed.autoSubmit&&seed.prompt)
   const incomingFiles=Array.isArray(seed.files)?seed.files.slice(0,3):[]
   setThreadOverride('');setSelectedId(seed.clientId||'')
@@ -177,7 +187,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  },[seed?.nonce])
  useEffect(()=>{setDensity(readConsultantExperiencePreference(storageScope).toLowerCase())},[storageScope])
  useEffect(()=>{setOutputMode(readValOutputMode(storageScope))},[storageScope])
- useEffect(()=>()=>uploadRunRef.current.controller?.abort(),[])
+ useEffect(()=>()=>{uploadRunRef.current.controller?.abort();const current=chatRunRef.current;current.controller?.abort();chatRunRef.current={generation:current.generation+1,controller:null,threadKey:''}},[])
  useEffect(()=>{
   const now=new Date().toISOString()
   setThreadMetadata(current=>({...current,[threadKey]:{...(current[threadKey]||{}),clientId:selectedId||'',clientName:client?.name||'',context:activeContext||null,label:conversationScopeLabel({client,context:activeContext}),createdAt:current[threadKey]?.createdAt||now,updatedAt:now}}))
@@ -192,7 +202,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   return()=>window.clearTimeout(timer)
  },[open,pendingCapture])
  useEffect(()=>{
-  if(!open){cancelUploadRun();setSeedFiles([]);setSeedAttachmentIntent('');return}
+  if(!open){cancelUploadRun();cancelChatRun();cancelRealtimeClarification();setSeedFiles([]);setSeedAttachmentIntent('');return}
   document.body.classList.add('val-fullscreen-open');requestAnimationFrame(()=>pageRef.current?.focus())
   return()=>document.body.classList.remove('val-fullscreen-open')
  },[open])
@@ -208,22 +218,22 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   realtimeClarificationRef.current=null
   pending?.resolve({responseText:'',suppressSpeech:true,cancelled:true})
  }
- const chooseClient=id=>{if(busy||uploading)return;cancelRealtimeClarification();if(!id){newConversation({general:true});return}setThreadOverride('');setSelectedId(id);setActiveContext(null);setMode('ASK');setRegistrationDraft(null);setRegistrationAutoOpenKey('');setError('');setClarification(null);setHistoryOpen(false)}
+ const chooseClient=id=>{if(uploading)return;cancelChatRun();cancelRealtimeClarification();if(!id){newConversation({general:true});return}setThreadOverride('');setSelectedId(id);setActiveContext(null);setMode('ASK');setRegistrationDraft(null);setRegistrationAutoOpenKey('');setError('');setClarification(null);setHistoryOpen(false)}
  const requestPushToTalk=()=>{
   voiceActivationSequence.current+=1
   setVoiceAutoOpenKey(`push-to-talk-${Date.now()}-${voiceActivationSequence.current}`)
   setPendingCapture('voice')
  }
  const newConversation=({general=false}={})=>{
-  if(busy||uploading)return
-  cancelRealtimeClarification()
+  if(uploading)return
+  cancelChatRun();cancelRealtimeClarification()
   const nextClientId=general?'':selectedId
   const nextKey=createConversationThreadKey({clientId:nextClientId})
   setThreadOverride(nextKey);if(general){setSelectedId('');setActiveContext(null)}
   setThreads(current=>({...current,[nextKey]:[]}));setSessionReplies(current=>({...current,[nextKey]:[]}));resetConversationId(nextKey,storageScope);setMessage('');setMode('ASK');setRegistrationDraft(null);setRegistrationAutoOpenKey('');setReplyingTo(null);setSessionReplyOffer(null);setAttachments([]);setPendingFiles([]);setSeedFiles([]);setSeedText(null);setSeedAttachmentIntent('');setPendingCapture('');setVoiceAutoOpenKey('');setError('');setClarification(null);setHistoryOpen(false)
   requestAnimationFrame(()=>messageInput.current?.focus())
  }
- const selectHistory=item=>{if(busy||uploading)return;cancelRealtimeClarification();setSelectedId(item.clientId||'');setActiveContext(item.context||null);setThreadOverride(item.key||'');setRegistrationDraft(null);setRegistrationAutoOpenKey('');setHistoryOpen(false);setMode('ASK')}
+ const selectHistory=item=>{if(uploading)return;cancelChatRun();cancelRealtimeClarification();setSelectedId(item.clientId||'');setActiveContext(item.context||null);setThreadOverride(item.key||'');setRegistrationDraft(null);setRegistrationAutoOpenKey('');setHistoryOpen(false);setMode('ASK')}
 
  const uploadFiles=async(files,targetClient)=>{
   const slots=Math.max(0,3-attachments.length);if(!slots){setError('Envie no máximo 3 arquivos por pergunta.');return false}
@@ -269,7 +279,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  const linkPendingFiles=async()=>{
   if(uploading||uploadRunRef.current.controller)return
   const target=clients.find(item=>String(item.id)===String(pendingLinkId));if(!target){setError('Escolha o produtor para vincular e analisar o arquivo.');return}
-  setSelectedId(target.id);setActiveContext(null)
+  cancelChatRun();cancelRealtimeClarification();setSelectedId(target.id);setActiveContext(null)
   if(await uploadFiles(pendingFiles,target))setPendingFiles([])
  }
  const openUnlinkedWorkspace=async()=>{
@@ -295,14 +305,29 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  }
 
  const ask=async(rawMessage,intent,turnOptions={})=>{
-  const prompt=String(rawMessage||message||(attachments.length?'Leia estes arquivos e me diga o que importa.':'')).trim()
-  if(!client&&attachments.length){setError('Escolha o produtor antes de anexar uma evidência à conta.');return}
-  if((!prompt&&!attachments.length)||busy)return
+  const supersedesActiveChat=Boolean(chatRunRef.current.controller)
+  const turnAttachments=supersedesActiveChat?[]:attachments.slice(0,3)
+  const prompt=String(rawMessage||message||(turnAttachments.length?'Leia estes arquivos e me diga o que importa.':'')).trim()
+  if(!client&&turnAttachments.length){setError('Escolha o produtor antes de anexar uma evidência à conta.');return}
+  if(!prompt&&!turnAttachments.length)return
   const activeThreadKey=threadKey
   const activeThread=threads[activeThreadKey]||[]
-  const activeReply=replyingTo
-  const naturalCommand=!turnOptions.governedTool&&!activeReply&&!attachments.length?resolveValNaturalCommand(prompt):null
+  const activeReply=supersedesActiveChat?null:replyingTo
+  const requestedNaturalCommand=!turnOptions.governedTool&&!activeReply?resolveValNaturalCommand(prompt):null
+  if(supersedesActiveChat&&naturalCommandNeedsSettledResponse(requestedNaturalCommand)){
+   const blockedMessage='A VAL ainda está concluindo a pergunta atual. Este comando não foi executado; tente novamente quando a resposta terminar.'
+   setError(blockedMessage)
+   return {responseText:blockedMessage,suppressSpeech:false,blocked:true}
+  }
+  const naturalCommand=!turnAttachments.length?requestedNaturalCommand:null
+  if(naturalCommand?.local&&!naturalCommandMatchesClient(naturalCommand,client)){
+   cancelChatRun();cancelRealtimeClarification()
+   append({role:'user',text:prompt,intent:'SESSION_COMMAND',command:naturalCommand.action,persistence:'NONE',at:new Date().toISOString()},activeThreadKey)
+   append({role:'system',command:naturalCommand.action,text:`O produtor citado (${naturalCommand.expectedClientReference||'outro produtor'}) não é o produtor atual desta conversa. Abra esse produtor antes de resumir para eu não misturar contextos.`,persistence:'NONE',at:new Date().toISOString()},activeThreadKey)
+   setMessage('');setReplyingTo(null);return {responseText:'',suppressSpeech:true}
+  }
   if(naturalCommand?.local){
+   if(!supersedesActiveChat){cancelChatRun();cancelRealtimeClarification()}
    const userItem={role:'user',text:prompt,intent:'SESSION_COMMAND',command:naturalCommand.action,persistence:'NONE',at:new Date().toISOString()}
    append(userItem,activeThreadKey)
    if(naturalCommand.outputMode)setOutputMode(writeValOutputMode(storageScope,naturalCommand.outputMode))
@@ -319,11 +344,12 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
    setMessage('');setReplyingTo(null);return {responseText:speakable||'',suppressSpeech}
   }
   if(naturalCommand?.density)setDensity(writeConsultantExperiencePreference(storageScope,naturalCommand.density.toUpperCase()).toLowerCase())
-  const continuation=!intent&&!activeReply&&!attachments.length?selectMarketContinuation({prompt,localThread:activeThread,globalThread:threads.__global__||[],hasClient:Boolean(client)}):null
+  if(!turnOptions.retry)cancelRealtimeClarification()
+  const continuation=!supersedesActiveChat&&!intent&&!activeReply&&!turnAttachments.length?selectMarketContinuation({prompt,localThread:activeThread,globalThread:threads.__global__||[],hasClient:Boolean(client)}):null
   const effectiveIntent=intent||activeReply?.intent||continuation?.intent||undefined
   const priorSessionReplies=sessionRepliesForAsk({replies:sessionReplies[activeThreadKey]||[],activeReply,intent:effectiveIntent})
-  const latestUser=[...activeThread].reverse().find(item=>item.role==='user')
-  const sessionObjective=activeReply?.objective||priorSessionReplies[0]?.objective||latestUser?.objective||latestUser?.text||continuation?.objective||prompt
+  const latestUser=supersedesActiveChat?null:[...activeThread].reverse().find(item=>item.role==='user')
+  const sessionObjective=supersedesActiveChat?prompt:activeReply?.objective||priorSessionReplies[0]?.objective||latestUser?.objective||latestUser?.text||continuation?.objective||prompt
   const currentSessionReplies=activeReply?.question?[...priorSessionReplies,{field:activeReply.field||'',question:activeReply.question,answer:prompt,intent:effectiveIntent||'',objective:sessionObjective,commodity:activeReply.commodity||'',season:activeReply.season||''}]:priorSessionReplies
   const contextualRequest=activeReply?.question
    ?buildSessionReplyMessage({objective:sessionObjective,replies:currentSessionReplies})
@@ -331,18 +357,28 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
     ?buildMarketContinuationMessage({objective:continuation.objective,prompt})
     :limitValChatMessage(prompt)
   const requestMessage=naturalCommand?naturalCommandRequest(naturalCommand,contextualRequest):contextualRequest
-  const submittedAttachments=attachments.slice(0,3)
+  const submittedAttachments=turnAttachments
   const userItem={role:'user',text:prompt||'Analisar os arquivos enviados.',objective:continuation?requestMessage:prompt,intent:effectiveIntent||'',at:new Date().toISOString()}
   if(!activeReply){setSessionReplies(current=>({...current,[activeThreadKey]:[]}));setSessionReplyOffer(null)}
   if(!turnOptions.retry&&!turnOptions.skipUserAppend)append(userItem,activeThreadKey);setBusy(true);setError('');setMessage('');setReplyingTo(null);setProgress(client?initialValProgress():{stage:'current_data',label:'Consultando a fonte autorizada mais recente',done:false})
-  const controller=new AbortController();const requestId=createValProgressRequestId();const stopProgress=client?startValProgressPolling({requestId,onProgress:setProgress,signal:controller.signal}):()=>{}
+  const {generation,controller}=beginChatRun(activeThreadKey)
+  const isCurrent=()=>chatRunRef.current.generation===generation&&chatRunRef.current.controller===controller&&chatRunRef.current.threadKey===activeThreadKey
+  const requestId=createValProgressRequestId();const stopProgress=client?startValProgressPolling({requestId,onProgress:value=>{if(isCurrent())setProgress(value)},signal:controller.signal}):()=>{}
+  let timedOut=false
+  const timeoutId=window.setTimeout(()=>{timedOut=true;controller.abort()},30_000)
   try{
-   const timeout=AbortSignal.timeout(120_000);const signal=typeof AbortSignal.any==='function'?AbortSignal.any([controller.signal,timeout]):timeout
-   const response=await fetch('/api/val/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:client?.id||'',client:client||undefined,message:requestMessage,attachmentIds:attachments.map(item=>item.id),mode:'daily',intent:effectiveIntent,sessionCommand:naturalCommand?.action||undefined,conversationId:conversationId(activeThreadKey,storageScope),requestId,context:activeContext||undefined,workspaceContext:workspaceContext||undefined,sessionContext:{objective:sessionObjective,replies:currentSessionReplies.slice(-6),active_object:activeContext||null,persistence_mode:'NONE',input_modality:turnOptions.inputModality==='voice'?'voice':attachments.some(item=>item.mimeType?.startsWith('image/'))?'photo':attachments.length?'file':'text',response_mode:turnOptions.responseMode||outputMode,conversation_mode:turnOptions.conversationMode===true}}),signal})
-   const rawPayload=await response.json().catch(()=>null);if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok){const requestFailure=new Error(rawPayload?.error||'A VAL não respondeu agora.');requestFailure.payload=rawPayload;throw requestFailure}
+   const response=await fetch('/api/val/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:client?.id||'',client:client||undefined,message:requestMessage,attachmentIds:turnAttachments.map(item=>item.id),mode:'daily',intent:effectiveIntent,sessionCommand:naturalCommand?.action||undefined,conversationId:conversationId(activeThreadKey,storageScope),requestId,context:activeContext||undefined,workspaceContext:workspaceContext||undefined,sessionContext:{objective:sessionObjective,replies:currentSessionReplies.slice(-6),active_object:activeContext||null,persistence_mode:'NONE',input_modality:turnOptions.inputModality==='voice'?'voice':turnAttachments.some(item=>item.mimeType?.startsWith('image/'))?'photo':turnAttachments.length?'file':'text',response_mode:turnOptions.responseMode||outputMode,conversation_mode:turnOptions.conversationMode===true}}),signal:controller.signal})
+   const rawPayload=await response.json().catch(()=>null)
+   if(!isCurrent())return {responseText:'',suppressSpeech:true,cancelled:true}
+   if(timedOut){const timeoutError=new Error('A análise ultrapassou 30 segundos. Tente novamente.');timeoutError.name='TimeoutError';throw timeoutError}
+   if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok){const requestFailure=new Error(rawPayload?.error||'A VAL não respondeu agora.');requestFailure.payload=rawPayload;throw requestFailure}
    const payload=normalizeValChatPayload(rawPayload);if(!payload)throw new Error('A resposta chegou fora do contrato esperado. Tente novamente; nenhuma memória foi alterada.')
+   if(!isCurrent())return {responseText:'',suppressSpeech:true,cancelled:true}
+   setError('')
    const resolvedClient=payload.conversationResolution?.status==='RESOLVED'?payload.conversationResolution.client:null
-   if(resolvedClient?.id){setSelectedId(resolvedClient.id);setThreadOverride(activeThreadKey);if(payload.conversationResolution?.changed_client)setActiveContext(null);setClarification(null)}
+   const changesConversationScope=Boolean(resolvedClient?.id&&payload.conversationResolution?.request_override!==true)
+   if(changesConversationScope){setSelectedId(resolvedClient.id);setThreadOverride(activeThreadKey);if(payload.conversationResolution?.changed_client)setActiveContext(null);setClarification(null)}
+   else if(resolvedClient?.id)setClarification(null)
    if(payload.workspaceAction)onWorkspaceAction?.(payload.workspaceAction)
    const sourceAttachments=(Array.isArray(payload.attachments)&&payload.attachments.length?payload.attachments:submittedAttachments).map(item=>{const association=item.association==='UNLINKED'?'UNLINKED':'LINKED_CLIENT';return {id:item.id,organizationId:item.organizationId||'',clientId:association==='UNLINKED'?'':item.clientId||resolvedClient?.id||client?.id||'',association,propertyId:activeContext?.type==='property'?activeContext.id:'',fieldId:activeContext?.type==='field'?activeContext.id:'',originalName:item.originalName||'',mimeType:item.mimeType||'',createdAt:item.createdAt||'',sha256:item.sha256||''}}).filter(item=>item.id)
    setThreads(current=>({...current,[activeThreadKey]:[...(current[activeThreadKey]||[]),{role:'assistant',payload,sourceAttachments,at:new Date().toISOString()}].slice(-20)}));setAttachments([])
@@ -350,6 +386,8 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
    const reasoning=payload?.advice?.ai_reasoning||{}
    return {payload,responseText:reasoning.voice_output?.speakable_text||reasoning.recommended_strategy?.reading||payload?.advice?.answer||'',suppressSpeech:turnOptions.conversationMode===true&&turnOptions.responseMode==='text'}
  }catch(requestError){
+  if(!isCurrent()||(requestError?.name==='AbortError'&&!timedOut))return {responseText:'',suppressSpeech:true,cancelled:true}
+  if(timedOut&&requestError?.name!=='TimeoutError'){const timeoutError=new Error('A análise ultrapassou 30 segundos. Tente novamente.');timeoutError.name='TimeoutError';requestError=timeoutError}
   const pending=requestError.payload?.clarification
   const clarificationTurn=pending?{...pending,prompt,intent:effectiveIntent||'',turnOptions:{...turnOptions},activeThreadKey}:null
   setClarification(clarificationTurn)
@@ -358,17 +396,17 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
     const choices=pending.options.slice(0,5).map(option=>[option.name,option.municipality].filter(Boolean).join(' de ')).join('; ')
     return {responseText:`${pending.question||'Qual produtor você quer usar?'} ${choices}.`,suppressSpeech:false,clarification:pending}
    }
-   setError('');stopProgress();controller.abort();setProgress(null);setBusy(false)
+   setError('');stopProgress();window.clearTimeout(timeoutId);controller.abort();chatRunRef.current={generation,controller:null,threadKey:activeThreadKey};setProgress(null);setBusy(false)
    return await new Promise((resolve,reject)=>{
     const previous=realtimeClarificationRef.current
     realtimeClarificationRef.current={resolve,reject,activeThreadKey}
     previous?.resolve({responseText:'',suppressSpeech:true,cancelled:true})
    })
   }
-  setError(requestError.name==='TimeoutError'?'A análise ultrapassou o tempo. Tente novamente.':requestError.message)
+  setError(requestError.name==='TimeoutError'?'A análise ultrapassou 30 segundos. Tente novamente.':requestError.message)
   if(turnOptions.conversationMode===true)throw requestError
   return null
- }finally{stopProgress();controller.abort();setProgress(null);setBusy(false)}
+ }finally{stopProgress();window.clearTimeout(timeoutId);controller.abort();if(isCurrent()){chatRunRef.current={generation,controller:null,threadKey:activeThreadKey};setProgress(null);setBusy(false)}}
  }
 
  const selectClarification=option=>{
@@ -482,13 +520,13 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
    <button type="button" className="val-fs-back" aria-label="Voltar" onClick={onClose} disabled={uploading}><ArrowLeft/></button>
    <div className="val-fs-brand"><span><Logo variant="icon-only" surface="dark" decorative/></span><div><small>VAL • COPILOTO DE DECISÃO</small><h1 id="global-val-title">VAL</h1>{client&&<b>{client.name}</b>}</div></div>
    <div className="val-fs-status"><span>{activeContext?.label||latestReasoning.intent?.replaceAll('_',' ')||'Conversa de decisão'}</span><em>{contextStatusLabel({client,context:activeContext})}</em>{latestReasoning.run?.path&&<i className={`is-${String(latestReasoning.run.path).toLowerCase()}`}>{latestReasoning.run.path}</i>}</div>
-   <div className="val-fs-header-actions"><button type="button" onClick={()=>setHistoryOpen(true)} disabled={uploading}><History/><span>Histórico</span></button><button type="button" onClick={()=>newConversation()} disabled={busy||uploading}><Plus/><span>Nova conversa</span></button><button type="button" className={contextPanelOpen?'active':''} aria-pressed={contextPanelOpen} onClick={()=>setContextPanelOpen(value=>!value)}><PanelRightOpen/><span>Contexto</span></button></div>
+   <div className="val-fs-header-actions"><button type="button" onClick={()=>setHistoryOpen(true)} disabled={uploading}><History/><span>Histórico</span></button><button type="button" onClick={()=>newConversation()} disabled={uploading}><Plus/><span>Nova conversa</span></button><button type="button" className={contextPanelOpen?'active':''} aria-pressed={contextPanelOpen} onClick={()=>setContextPanelOpen(value=>!value)}><PanelRightOpen/><span>Contexto</span></button></div>
   </header>
   <div className="val-fs-workspace">
    <section className="val-fs-conversation" aria-label="Conversa com a VAL">
     <div className="val-fs-toolbar">
-     <label className="val-fs-client"><UserRound/><span>Produtor atual</span><select ref={clientSelectRef} value={selectedId} onChange={event=>chooseClient(event.target.value)} disabled={busy||uploading}><option value="">Sem produtor • pergunta geral</option>{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
-     {activeContext&&<div className="val-fs-active-context"><span><b>{activeContext.type?.replaceAll('_',' ')||'contexto'}</b>{activeContext.label}</span><button type="button" aria-label="Remover objeto ativo" onClick={()=>setActiveContext(null)}><X/></button></div>}
+     <label className="val-fs-client"><UserRound/><span>Produtor atual</span><select ref={clientSelectRef} value={selectedId} onChange={event=>chooseClient(event.target.value)} disabled={uploading}><option value="">Sem produtor • pergunta geral</option>{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+     {activeContext&&<div className="val-fs-active-context"><span><b>{activeContext.type?.replaceAll('_',' ')||'contexto'}</b>{activeContext.label}</span><button type="button" aria-label="Remover objeto ativo" onClick={()=>{cancelChatRun();cancelRealtimeClarification();setActiveContext(null)}}><X/></button></div>}
      {client&&<button type="button" className="val-fs-open-client" onClick={()=>onOpenClient?.(client)}>Abrir Produtor 360</button>}
      <div className="global-val-mode" role="tablist" aria-label="Ação da VAL"><button type="button" className={mode==='ASK'?'active':''} onClick={()=>{setRegistrationAutoOpenKey('');setMode('ASK')}}><MessageSquareText/>Perguntar</button><button type="button" className={mode==='REGISTER'?'active':''} onClick={()=>{setRegistrationDraft(null);setRegistrationAutoOpenKey('');setMode('REGISTER')}}><CheckCircle2/>Registrar</button></div>
      <details className="val-fs-preferences"><summary aria-label="Preferências da resposta"><Settings2/></summary><div><div className="global-val-density"><span>Resposta</span>{[['simple','Simples'],['balanced','Equilibrada'],['analytical','Analítica']].map(([id,label])=><button type="button" key={id} className={density===id?'active':''} onClick={()=>setDensity(writeConsultantExperiencePreference(storageScope,id.toUpperCase()).toLowerCase())}>{label}</button>)}</div><div className="global-val-output"><span><Volume2/>Saída</span>{[['text','Texto'],['audio','Áudio'],['both','Texto + áudio']].map(([id,label])=><button type="button" key={id} className={outputMode===id?'active':''} onClick={()=>setOutputMode(writeValOutputMode(storageScope,id))}>{label}</button>)}</div></div></details>
@@ -526,8 +564,8 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
      <form className="global-val-composer" onSubmit={event=>{event.preventDefault();ask(message)}}>
       <div className="val-fs-voice-action">{client?<VoiceCapture transient clientId={client.id} interactionType="GENERAL_CONTEXT" label="Perguntar por voz" description="A fala não será salva como memória" sourceContext={{page:'GLOBAL_VAL_COPILOT',persistence_mode:'NONE',active_context:activeContext||null}} autoOpenKey={pendingCapture==='voice'?voiceAutoOpenKey:''} onOpenChange={isOpen=>{if(isOpen){setPendingCapture('');setVoiceAutoOpenKey('')}}} onTranscribed={transcript=>{setPendingCapture('');setVoiceAutoOpenKey('');ask(transcript)}}/>:<EphemeralSpeechButton disabled={busy} autoStartKey={pendingCapture==='voice'?voiceAutoOpenKey:''} onListeningChange={isListening=>{if(isListening){setPendingCapture('');setVoiceAutoOpenKey('')}}} onTranscript={transcript=>{setPendingCapture('');setVoiceAutoOpenKey('');ask(transcript)}} onError={message=>{setPendingCapture('');setVoiceAutoOpenKey('');setError(message)}}/>}</div>
       <button type="button" onClick={()=>photoInput.current?.click()} disabled={busy||uploading} aria-label="Tirar ou escolher foto"><Camera/></button><button type="button" onClick={()=>fileInput.current?.click()} disabled={busy||uploading} aria-label="Anexar arquivo"><Paperclip/></button>
-      <label><span className="sr-only">Pergunte à VAL</span><textarea ref={messageInput} rows="2" value={message} maxLength="3000" disabled={busy} onChange={event=>setMessage(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ask(message)}}} placeholder={replyingTo?'Digite a resposta do consultor…':client?`Pergunte ou peça algo sobre ${firstName(client.name)}…`:'Pergunte ou peça algo à VAL…'}/></label>
-      <button type="submit" className="is-send" aria-label="Enviar" disabled={busy||uploading||(!message.trim()&&!attachments.length)}>{busy?<LoaderCircle/>:<Send/>}</button>
+      <label><span className="sr-only">Pergunte à VAL</span><textarea ref={messageInput} rows="2" value={message} maxLength="3000" disabled={uploading} onChange={event=>setMessage(event.target.value)} onKeyDown={event=>{if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();ask(message)}}} placeholder={replyingTo?'Digite a resposta do consultor…':client?`Pergunte ou peça algo sobre ${firstName(client.name)}…`:'Pergunte ou peça algo à VAL…'}/></label>
+      <button type="submit" className="is-send" aria-label="Enviar" disabled={uploading||(!message.trim()&&!attachments.length)}>{busy?<LoaderCircle/>:<Send/>}</button>
       <input ref={fileInput} className="sr-only" type="file" multiple accept=".pdf,.doc,.docx,.xls,.xlsx,.csv,.txt,application/pdf,text/csv,text/plain" onChange={upload}/><input ref={photoInput} className="sr-only" type="file" multiple accept="image/jpeg,image/png,image/webp" capture="environment" onChange={upload}/>
      </form>
      <div className="val-fs-composer-policy"><ShieldCheck/>Perguntar não atualiza fatos. REGISTER exige confirmação humana.{uploading&&<span><LoaderCircle/>Enviando arquivo…</span>}</div>{error&&<p className="global-val-error" role="alert">{error}</p>}

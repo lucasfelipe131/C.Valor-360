@@ -84,6 +84,15 @@ const outcome=value=>{
  return outcomes.includes(normalized)?normalized:'SUCCESS'
 }
 
+export function classifyConversationResponseOutcome(payload={}){
+ const engineMode=String(payload?.engineMode||'').trim().toLowerCase()
+ const metadata=payload?.responseMetadata&&typeof payload.responseMetadata==='object'?payload.responseMetadata:{}
+ const run=payload?.advice?.ai_reasoning?.run||payload?.recommendation?.advice?.ai_reasoning?.run||{}
+ const runStatus=String(run?.status||'').trim().toLowerCase()
+ const degraded=engineMode==='demonstration'||engineMode==='fallback'||engineMode.includes('fallback')||run?.fallback===true||runStatus==='fallback'||Boolean(metadata.errorCode||metadata.error_code)
+ return degraded?'FALLBACK':'SUCCESS'
+}
+
 const percentile=(ordered,ratio)=>{
  if(!ordered.length)return null
  const rank=Math.max(1,Math.ceil(ordered.length*ratio))
@@ -124,6 +133,7 @@ function emptyServiceClassSnapshot(metrics){
   sample_count:0,
   outcomes:Object.freeze(Object.fromEntries(outcomes.map(value=>[value,0]))),
   error_rate:0,
+  fallback_rate:0,
   metrics:Object.freeze(Object.fromEntries(metrics.map(metric=>[
    metric,summarizeConversationLatency()
   ])))
@@ -183,8 +193,9 @@ export function createConversationLatencyRegistry({limitPerServiceClass=500}={})
 
      serviceClasses[currentServiceClass]=Object.freeze({
       sample_count:current.length,
-      outcomes:Object.freeze(outcomeCounts),
-      error_rate:Number((outcomeCounts.ERROR/current.length).toFixed(6)),
+     outcomes:Object.freeze(outcomeCounts),
+     error_rate:Number((outcomeCounts.ERROR/current.length).toFixed(6)),
+     fallback_rate:Number((outcomeCounts.FALLBACK/current.length).toFixed(6)),
       metrics:Object.freeze(Object.fromEntries(contract.metrics.map(metric=>[
        metric,summarizeConversationLatency(metricValues[metric])
       ])))

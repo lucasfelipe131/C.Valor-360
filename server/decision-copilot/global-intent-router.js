@@ -1,3 +1,5 @@
+import {routeSessionCommand} from './session-command-router.js'
+
 export const globalIntentRouterVersion='val.global_intent_router.v1'
 
 export const globalIntents=Object.freeze([
@@ -41,24 +43,28 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
  const authorizedClient=clientRef(client)
  if(!source)return result()
  const openVerb=/\b(?:abre|abra|abrir|vai|va|navega|navegue|mostra|mostre|mostrar|leva|ir para|volta para|volte para)\b/.test(source)
- const searchVerb=/\b(?:procura|procure|buscar?|localiza|localize|encontra|encontre)\b/.test(source)
+ const searchVerb=/^(?:val\s+)?(?:agora\s+)?(?:procura|procure|busca|buscar|localiza|localize|encontra|encontre)\b/.test(source)
+ const factualImperative=/^(?:val\s+)?(?:agora\s+)?(?:mostre|mostra|me\s+mostre)\s+(?:as?\s+)?(?:culturas?|safra|area)\s+(?:dele|dela|(?:do|da)\s+[a-z][a-z0-9 '-]{0,120})[.!?]?$/.test(source)
+ const factualLookup=factualImperative||/\b(?:ultima|ultimo|mais recente|principal)\b.*\b(?:visita|compra|objecao|compromisso)\b|\b(?:visita|compra|objecao|compromisso)\b(?:\s+confirmad[oa])?\s+(?:ultima|ultimo|mais recente|principal)\b(?:\s+(?:dele|dela))?|\b(?:quanto|qual|quais)\b.*\b(?:comprou|cultura|safra|area)\b/.test(source)
+ const followUp=routeSessionCommand(message)||/\b(?:volta no que)\b/.test(source)
+ if(followUp)return result({intent:'FOLLOW_UP',reason:'CONVERSATION_FAST_PATH'})
  const prepareVisit=/\b(?:prepara|prepare|preparar|monta|monte)\b.*\b(?:visita|conversa)\b|\b(?:visita|conversa)\b.*\b(?:prepara|prepare|preparar|roteiro)\b/.test(source)
  if(prepareVisit&&authorizedClient){
   const workspaceAction=action({type:'PREPARE_VISIT',page:'visits',label:`Preparar visita de ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'PREPARE',reason:'PREPARE_AUTHORIZED_CLIENT',direct:true,workspaceAction,summary:`Abrindo a preparação de visita de ${authorizedClient.name||'produtor'}.`})
  }
- if(openVerb&&authorizedClient&&/\b(?:cliente|produtor|produtora)\b/.test(source)){
+ if(!factualLookup&&openVerb&&authorizedClient&&/\b(?:cliente|produtor|produtora)\b/.test(source)){
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'OPEN',reason:'OPEN_AUTHORIZED_CLIENT',direct:true,workspaceAction,summary:`Abrindo ${authorizedClient.name||'o produtor'} no Cliente 360.`})
  }
- if(openVerb){
+ if(!factualLookup&&openVerb){
   const module=modules.find(candidate=>candidate.pattern.test(source))
   if(module){
    const workspaceAction=action({type:'NAVIGATE',...module,client:['agro','visits','opportunities','client360'].includes(module.page)?authorizedClient:null})
    return result({intent:'NAVIGATE',reason:'NAVIGATE_CANONICAL_MODULE',direct:true,workspaceAction,summary:`Abrindo ${module.label}.`})
   }
  }
- if(openVerb&&authorizedClient&&!modules.some(module=>module.pattern.test(source))&&/^\s*(?:val\s+)?(?:abre|abra|abrir|mostra|mostre|mostrar)\b/.test(source)){
+ if(!factualLookup&&openVerb&&authorizedClient&&!modules.some(module=>module.pattern.test(source))&&/^\s*(?:val\s+)?(?:agora\s+)?(?:abre|abra|abrir|mostra|mostre|mostrar)\b/.test(source)){
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'OPEN',reason:'OPEN_RESOLVED_CLIENT',direct:true,workspaceAction,summary:`Abrindo ${authorizedClient.name||'o produtor'} no Cliente 360.`})
  }
@@ -74,7 +80,6 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
  if(/\b(?:analisa|analise|interpretar|interpreta)\b/.test(source))return result({intent:'ANALYZE',reason:'CANONICAL_ANALYSIS'})
  if(/\b(?:compara|compare)\b/.test(source))return result({intent:'COMPARE',reason:'CONTEXTUAL_REASONING'})
  if(/\b(?:explica|explique|por que)\b/.test(source))return result({intent:'EXPLAIN',reason:'CONVERSATION_FOLLOW_UP'})
- if(/\b(?:repete|repita|resume|resuma|volta no que)\b/.test(source))return result({intent:'FOLLOW_UP',reason:'CONVERSATION_FAST_PATH'})
  if(workspaceContext?.current_module&&/\b(?:aqui|nesta tela|nesse modulo)\b/.test(source))return result({intent:'SHOW',reason:'CURRENT_WORKSPACE_CONTEXT'})
  return result()
 }

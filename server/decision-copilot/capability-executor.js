@@ -168,16 +168,63 @@ function imageResult({capability,attachments,savedAttachments,message,clientId,a
  return result(capability,status,tool,interpreted?idOf(image):null)
 }
 
+const statement=value=>clean(value,700).replace(/[.!?]+$/,'')
+const sentence=value=>{const text=statement(value);return text?`${text}.`:''}
+const statementKey=value=>statement(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR')
+
+function uniqueStatements(values=[],limit=8){
+ const seen=new Set();const output=[]
+ for(const value of values){const text=statement(value);const key=statementKey(text);if(!key||seen.has(key))continue;seen.add(key);output.push(text);if(output.length>=limit)break}
+ return output
+}
+
+function deterministicExplanation({previousText='',thesis=null,facts=[],uncertainty=null,nextAction=null}={}){
+ const previousSentence=clean(previousText,600).match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim()||clean(previousText,600)
+ const anchor=thesis||previousSentence
+ const parts=[]
+ if(anchor)parts.push(`A leitura anterior foi: ${sentence(anchor)}`)
+ if(facts.length)parts.push(`Ela se apoia nos fatos já presentes na sessão: ${facts.slice(0,3).map(statement).join('; ')}.`)
+ if(uncertainty)parts.push(`A principal incerteza continua sendo: ${sentence(uncertainty)}`)
+ if(nextAction)parts.push(`O próximo passo sugerido foi: ${sentence(nextAction)}`)
+ if(!thesis&&!facts.length&&previousText)parts.push('A sessão não contém tese ou fatos estruturados adicionais; explicar além disso exigiria recomputar a resposta.')
+ return clean(parts.join(' '),1200)
+}
+
 function sessionCommandResult({route,context,clientId}){
  const command=route.session_command?.command
- const latest=list(context.priorRecommendations)[0]||null
- if(route.session_command?.requires_previous_turn&&!latest){
+ const state=context?.conversationState||{}
+ const turns=list(state.conversation_turns)
+ const previousAssistant=[...turns].reverse().find(item=>item?.role==='assistant'&&clean(item?.text,1200))||null
+ const latestRecommendation=list(context?.priorRecommendations)[0]||null
+ const latest=latestRecommendation||previousAssistant
+ const thesis=clean(state.current_decision_thesis?.thesis,1000)||null
+ const uncertainty=clean(state.current_decision_thesis?.uncertainty,700)||null
+ const nextAction=clean(state.current_decision_thesis?.next_action,700)||null
+ const recommendationFacts=list(latestRecommendation?.advice?.ai_reasoning?.facts_used).map(item=>item?.statement??item?.claim??item?.label??item)
+ const sessionFacts=uniqueStatements([...list(state.session_facts).map(item=>item?.statement??item),...recommendationFacts],16)
+ const deterministicFollowUp=route.session_command?.deterministic_follow_up===true||['EXPLAIN','SHOW_NUMBERS'].includes(command)
+ const hasDeterministicEvidence=deterministicFollowUp&&Boolean(thesis||uncertainty||nextAction||sessionFacts.length||previousAssistant)
+ if(route.session_command?.requires_previous_turn&&!latest&&!hasDeterministicEvidence){
   const tool=descriptor('SESSION_COMMAND',{status:'INPUT_REQUIRED',summary:'Este comando precisa de uma resposta anterior na mesma conversa.',context:{client_id:clientId||null,command}})
   return result('SESSION_COMMAND','INPUT_REQUIRED',tool,null)
  }
- const summaries={OUTPUT_TEXT:'Preferência desta conversa alterada para texto.',OUTPUT_AUDIO:'Preferência desta conversa alterada para áudio.',DO_NOT_REGISTER:'Nada será registrado na memória confirmada.',REGISTER_LAST:'A última informação precisa passar por revisão e confirmação humana.',REPEAT:'A resposta anterior foi localizada na conversa.',SUMMARIZE:'A resposta anterior foi localizada para resumo.',EXPLAIN:'A resposta anterior foi localizada para explicação.',GOLDEN_QUESTIONS:'As perguntas materiais da resposta anterior foram localizadas.',SHOW_NUMBERS:'Os dados numéricos da resposta anterior foram solicitados.',DEEPEN:'A próxima resposta pode usar raciocínio aprofundado.',BRIEF:'A próxima resposta deve trazer apenas o essencial.'}
- const tool=descriptor('SESSION_COMMAND',{summary:summaries[command]||'Comando da conversa reconhecido.',context:{client_id:clientId||null,command,conversation_only:true}})
- return result('SESSION_COMMAND','EXECUTED',tool,latest?idOf(latest):`session:${command}`)
+ const previousText=clean(previousAssistant?.text||latestRecommendation?.advice?.answer||latestRecommendation?.generated_content?.answer||'',1200)
+ const firstSentence=previousText.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim()||previousText
+ const comparisonSubjects=[...new Set(list(previousAssistant?.subject_client_ids).map(item=>clean(item,180)).filter(Boolean))]
+ const comparisonFacts=comparisonSubjects.map(subject=>list(state.session_facts).find(item=>clean(item?.subject_client_id,180)===subject)?.statement).filter(Boolean)
+ const summaryText=comparisonSubjects.length>1
+  ?clean(comparisonFacts.length===comparisonSubjects.length?comparisonFacts.join(' '):previousText,500)
+  :clean(firstSentence,500)
+ const questions=list(state.recent_questions).slice(0,3).map((item,index)=>`${index+1}. ${clean(item?.question||item,400)}`).filter(Boolean)
+ const numericFacts=sessionFacts.filter(item=>/\d/.test(item)).slice(0,8)
+ const explain=deterministicExplanation({previousText,thesis,facts:sessionFacts,uncertainty,nextAction})
+ const numbers=numericFacts.length?`Fatos numéricos já presentes na sessão: ${numericFacts.map((item,index)=>`${index+1}. ${sentence(item)}`).join(' ')}`:'Não há fatos numéricos estruturados na resposta anterior ou nesta sessão.'
+ const summaries={OUTPUT_TEXT:'Preferência desta conversa alterada para texto.',OUTPUT_AUDIO:'Preferência desta conversa alterada para áudio.',DO_NOT_REGISTER:'Nada será registrado na memória confirmada.',REGISTER_LAST:'A última informação precisa passar por revisão e confirmação humana.',REPEAT:previousText||'A resposta anterior foi localizada na conversa.',SUMMARIZE:summaryText||'A resposta anterior foi localizada para resumo.',EXPLAIN:explain||'A resposta anterior não contém tese, fatos ou texto suficientes para explicação.',GOLDEN_QUESTIONS:questions.join('\n')||'A resposta anterior não contém Perguntas de Ouro estruturadas.',SHOW_NUMBERS:numbers,DEEPEN:'A próxima resposta pode usar raciocínio aprofundado.',BRIEF:'A próxima resposta deve trazer apenas o essencial.'}
+ const status=command==='SHOW_NUMBERS'&&!numericFacts.length?'NO_DATA':'EXECUTED'
+ const toolContext={client_id:clientId||null,command,conversation_only:true,...(deterministicFollowUp?{deterministic_follow_up:true,full_context_required:false,model_required:false,reused_thesis:Boolean(thesis),reused_fact_count:sessionFacts.length,reused_previous_response:Boolean(previousText)}:{})}
+ const toolResult=command==='SHOW_NUMBERS'?{facts:{numeric_facts:numericFacts}}:{}
+ const tool=descriptor('SESSION_COMMAND',{status,summary:summaries[command]||'Comando da conversa reconhecido.',context:toolContext,toolResult})
+ return result('SESSION_COMMAND',status,tool,idOf(latest)||`session:${command}`)
 }
 
 function liveDataResult({capability,liveData}){
@@ -223,19 +270,25 @@ function fastContextResult({capability,message,context,clientId}){
  return result(capability,'PLANNED',null,null)
 }
 
-export async function executeCapabilityPlan({route={},message='',context={},attachments=[],clientId='',activeContext=null,liveData={},calculatorOptions={}}={}){
+const cancelled=value=>value?.reason instanceof Error?value.reason:Object.assign(new Error('A execução da ferramenta foi cancelada.'),{name:'AbortError',statusCode:499,code:'val_tool_cancelled',safeToRetry:true})
+const throwIfCancelled=signal=>{if(signal?.aborted)throw cancelled(signal)}
+
+export async function executeCapabilityPlan({route={},message='',context={},attachments=[],clientId='',activeContext=null,liveData={},calculatorOptions={},signal}={}){
+ throwIfCancelled(signal)
  const validatedContext=activeContext?validateActiveContext({activeContext,context,clientId}):null
  const results=[]
  for(const capability of list(route.capabilities)){
+  throwIfCancelled(signal)
   if(capability==='SESSION_COMMAND')results.push(sessionCommandResult({route,context,clientId}))
   else if(capability==='AGRONOMIC_WORKSPACE'&&route.tool_hint==='AGRONOMIC_TOOL_CATALOG')results.push(agronomicToolCatalogResult())
   else if(capability==='AREA_MAPPING')results.push(mappingResult({context,clientId,activeContext:validatedContext}))
-  else if(capability==='CALCULATORS')results.push(await calculatorResult({message,clientId,activeContext:validatedContext,calculatorOptions}))
+  else if(capability==='CALCULATORS')results.push(await calculatorResult({message,clientId,activeContext:validatedContext,calculatorOptions:{...calculatorOptions,signal}}))
   else if(capability==='SOIL_ANALYSIS')results.push(soilResult({context,clientId,activeContext:validatedContext}))
   else if(['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability))results.push(imageResult({capability,attachments,savedAttachments:context.attachments,message,clientId,activeContext:validatedContext}))
   else if(['MARKET_COMMODITY','WEATHER','LABELS'].includes(capability)&&route.path==='LIVE_DATA')results.push(liveDataResult({capability,liveData}))
   else if(route.path==='FAST'&&['CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY'].includes(capability))results.push(fastContextResult({capability,message,context,clientId}))
   else results.push(result(capability,'PLANNED',null,null))
+  throwIfCancelled(signal)
  }
  const used=results.filter(item=>item.status==='EXECUTED').map(item=>item.capability)
  const primary=results.find(item=>item.tool_result&&['EXECUTED','INPUT_REQUIRED','READY','NO_DATA','SOURCE_UNAVAILABLE'].includes(item.status))?.tool_result||null
@@ -271,7 +324,7 @@ function isGeneralConceptRequest(message=''){
  return definition||formula
 }
 
-export function buildCapabilityExecutionResponse({execution,route,message='',organizationId='unknown',clientId='',clientName='',conversationId='',now=new Date()}={}){
+export function buildCapabilityExecutionResponse({execution,route,message='',organizationId='unknown',clientId='',clientName='',conversationId='',now=new Date(),executionCounts={}}={}){
  const createdAt=(now instanceof Date?now:new Date(now)).toISOString()
  const tool=execution?.tool_result||null
  const contextRequired=tool?.status==='CONTEXT_REQUIRED'
@@ -279,6 +332,12 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  const sourceRefs=list(execution?.capability_results).filter(item=>item.status==='EXECUTED'&&item.source_ref).map(item=>({id:item.source_ref,source_type:'system_capability'}))
  const client={id:clientId||'portfolio',name:clean(clientName,180)||'Carteira'}
  const hash=createHash('sha256').update(JSON.stringify({organizationId,clientId,message,tool:tool?.tool||null,createdAt:createdAt.slice(0,13)})).digest('hex')
+ const count=(value,fallback=0)=>Math.max(0,Number.isFinite(Number(value))?Number(value):fallback)
+ const entityResolutions=count(executionCounts.entityResolutions)
+ const dataLookups=count(executionCounts.dataLookups)
+ const toolCalls=count(executionCounts.toolCalls,tool&&list(execution?.capabilities_used).length?1:0)
+ const hops=count(executionCounts.hops,entityResolutions+dataLookups+toolCalls)
+ const executionBudget=Object.freeze({entityResolutions,dataLookups,modelCalls:0,toolCalls,hops,estimatedInputTokens:0,estimatedOutputTokens:0,estimatedCostUsd:0})
  const reasoning={
   contract_version:'val.ai_reasoning_result.v1',reasoning_id:randomUUID(),organization:{id:String(organizationId)},client,
   context_snapshot:{id:`tool-${hash.slice(0,16)}`,version:'val.tool_context.v1',confidence:{level:execution?.capabilities_used?.length?'VERIFICADO':'INSUFICIENTE'},hash},
@@ -287,10 +346,10 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
   decision_thesis:{CURRENT_SITUATION:summary,WHAT_MATTERS:contextRequired?'A solicitação depende de um produtor autorizado selecionado.':'A ferramenta precisa produzir evidência própria antes de qualquer síntese.',KEY_UNCERTAINTY:contextRequired?'Nenhum produtor autorizado está ativo nesta conversa.':tool?.status==='INPUT_REQUIRED'?'Faltam entradas materiais para executar com segurança.':'O resultado ainda depende de validação humana quando houver decisão técnica.',THESIS:summary,WHY:'A resposta reflete somente o adapter e os dados autorizados desta requisição.',WHAT_TO_VALIDATE:contextRequired?'Selecione explicitamente um produtor da carteira autorizada.':'Confirme contexto, unidades, fonte e vínculo antes de usar o resultado.',WHAT_WOULD_CHANGE_MY_VIEW:contextRequired?'A seleção de um produtor autorizado.':'Novas entradas confirmadas ou uma execução técnica revisada.'},
   golden_questions:[],recommended_strategy:{reading:summary,action:contextRequired?'Selecione um produtor autorizado para continuar.':tool?.status==='INPUT_REQUIRED'?'Forneça apenas as entradas faltantes.':'Revise o resultado e abra a ferramenta para aprofundar.',do_not_do:'Não transformar disponibilidade da ferramenta em cálculo, diagnóstico ou prescrição.'},evidence_to_use:sourceRefs,
   agronomic_context:{status:['AREA_MAPPING','CALCULATORS','SOIL_ANALYSIS','IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(tool?.capability)?'tool_result':'not_applicable',human_review_required:Boolean(tool?.human_review_required),sources:{}},commercial_context:{status:'not_applicable'},next_commitment:contextRequired?'Selecionar o produtor autorizado.':tool?.status==='INPUT_REQUIRED'?'Completar as entradas materiais.':'Validar o resultado antes de decidir.',risks:[],confidence:{level:execution?.capabilities_used?.length?'VERIFICADO':'INSUFICIENTE',score:execution?.capabilities_used?.length?.9:.2,rationale:'Confiança limitada à execução factual da capability; nenhuma capability planejada é contada como usada.'},reasoning_confidence:{version:'val.reasoning_confidence.v1',context:execution?.active_context?.source_ref?.length?.9:.5,thesis:.8,question:.8,agronomy:tool?.human_review_required?.5:null,knowledge:1,threshold:{ask_below:.72,answer_at_or_above:.72}},knowledge_refs:[],memory_refs:[],created_at:createdAt,model:'rules-capability-executor-v1',prompt_version:'val-performance-architecture-v2',
-  run:{provider:'capability-executor',model:'rules-capability-executor-v1',prompt_version:'val-performance-architecture-v2',context_hash:hash,latency_ms:0,status:'completed',fallback:false,path:route?.path||execution?.path||'TOOL',capabilities_planned:execution?.capabilities_planned||[],capabilities_used:execution?.capabilities_used||[],capability_results:execution?.capability_results||[],tool_result:tool,latency_breakdown:{AUTH:null,CONTEXT_RETRIEVAL:null,MEMORY:null,DATABASE:null,MCA:null,MIA:null,EXTERNAL_DATA:null,MODEL_INPUT:null,MODEL_INFERENCE:null,VALIDATION:null,RESPONSE:null}},
+  run:{provider:'capability-executor',model:'rules-capability-executor-v1',prompt_version:'val-performance-architecture-v2',context_hash:hash,latency_ms:0,status:'completed',fallback:false,path:route?.path||execution?.path||'TOOL',model_call_count:0,tool_call_count:toolCalls,hop_count:hops,estimated_input_tokens:0,estimated_output_tokens:0,estimated_cost_usd:0,capabilities_planned:execution?.capabilities_planned||[],capabilities_used:execution?.capabilities_used||[],capability_results:execution?.capability_results||[],tool_result:tool,latency_breakdown:{AUTH:null,CONTEXT_RETRIEVAL:null,MEMORY:null,DATABASE:null,MCA:null,MIA:null,EXTERNAL_DATA:null,MODEL_INPUT:null,MODEL_INFERENCE:null,VALIDATION:null,RESPONSE:null}},
   premises:{recomputed_for_request:true,source:'authorized_capability_execution',profile_specific:Boolean(clientId)&&route?.tool_hint!=='AGRONOMIC_TOOL_CATALOG',conversation_is_not_confirmed_memory:true,confirmed_memory_refs:[]},voice_output:{version:'val.voice_output.v1',speakable_text:summary,persistence:'NONE',automatic_memory_effect:false},decision_interview:{version:'val.decision_interview.v1',status:tool?.status==='INPUT_REQUIRED'?'NEEDS_INPUT':'NOT_NEEDED',questions:[],material_missing_information:tool?.required_inputs||[],non_material_missing_information:[],session_context:{conversation_id:clean(conversationId,180)||'stateless',persistence_mode:'NONE'},explanation:tool?.status==='INPUT_REQUIRED'?'Faltam entradas materiais; nenhum valor foi inventado.':'A capability respondeu sem alterar memória.'},quality:{status:'NOT_EVALUATED',dimensions:{},automatic_tests:{}}
  }
- return {route:route?.path||execution?.path||'TOOL',engineMode:'rules',model:'rules-capability-executor-v1',warning:'',responseMetadata:{toolExecutionVersion:capabilityExecutorVersion},advice:{answer:summary,executive_brief:{headline:tool?.title||'Capacidade da VAL',reason:summary,action:reasoning.recommended_strategy.action},next_best_action:reasoning.recommended_strategy.action,ai_reasoning:reasoning}}
+ return {route:route?.path||execution?.path||'TOOL',engineMode:'rules',model:'rules-capability-executor-v1',warning:'',responseMetadata:{toolExecutionVersion:capabilityExecutorVersion,executionBudget},advice:{answer:summary,executive_brief:{headline:tool?.title||'Capacidade da VAL',reason:summary,action:reasoning.recommended_strategy.action},next_best_action:reasoning.recommended_strategy.action,ai_reasoning:reasoning}}
 }
 
 export function buildGeneralNoClientResponse({message='',route={},organizationId='unknown',conversationId='',now=new Date()}={}){
@@ -307,7 +366,7 @@ export function buildGeneralNoClientResponse({message='',route={},organizationId
   :contextRequired
    ?{path:route.path,capabilities_planned:[...list(route.capabilities)],capabilities_used:[],capability_results:[{capability:'CLIENT_CONTEXT',status:'CONTEXT_REQUIRED',source_ref:null,tool_result:null},...list(route.capabilities).filter(capability=>capability!=='CLIENT_CONTEXT').map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null}))],tool_result:{status:'CONTEXT_REQUIRED',capability:'CLIENT_CONTEXT',tool:'client_selector',title:'Produtor necessário',summary,page:'clients',manual_page:null,mode:'select_client',context:{client_id:null,private_memory_used:false},required_inputs:['client_id']},active_context:null}
   :{path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'EXECUTED',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:'Orientação geral',summary,page:'copilot',manual_page:null,mode:'general',context:{client_id:null,private_memory_used:false}},active_context:null}
- const response=buildCapabilityExecutionResponse({execution,route,message,organizationId,conversationId,now})
+ const response=buildCapabilityExecutionResponse({execution,route,message,organizationId,conversationId,now,executionCounts:{entityResolutions:0,dataLookups:0,toolCalls:catalog?1:0,hops:catalog?1:0}})
  response.advice.ai_reasoning.client={id:'portfolio',name:'Conversa geral'}
  response.advice.ai_reasoning.premises.profile_specific=false
  response.advice.ai_reasoning.premises.source=contextRequired?'client_context_required':'general_request_without_private_context'

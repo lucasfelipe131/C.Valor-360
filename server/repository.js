@@ -121,6 +121,11 @@ const parseDate=(value,fallback)=>parsedDate(value)||parsedDate(fallback)
 const outcome=value=>/perd|cancel|recus|desist/i.test(String(value||''))?'lost':/ganh|fech|conclu|fatur|vend|aprov/i.test(String(value||''))?'won':/abert|andament|negocia|propost|pendente|\bopen\b/i.test(String(value||''))?'open':null
 const serviceError=message=>Object.assign(new Error(message),{statusCode:503})
 const domainError=(message,statusCode,code)=>Object.assign(new Error(message),{statusCode,...(code?{code}:{})})
+const persistenceCancellationError=signal=>signal?.reason instanceof Error
+  ?signal.reason
+  :Object.assign(new Error('A persistência foi cancelada antes do commit.'),{name:'AbortError',statusCode:499,code:'val_persistence_cancelled',safeToRetry:true})
+const throwIfPersistenceCancelled=signal=>{if(signal?.aborted)throw persistenceCancellationError(signal)}
+const databaseTimeoutArgs=value=>{const timeoutMs=Number(value);return Number.isFinite(timeoutMs)&&timeoutMs>0?[{timeoutMs}]:[]}
 const iso=value=>value instanceof Date?value.toISOString():value
 const jsonObject=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{}
 const relationshipFields=['preferredName','birthday','family','spouse','children','favoriteTeam','likesFishing','fishingStyle','hobbies','leisure','favoriteFoods','favoriteDrinks','events','communicationNotes','personalValues','negotiationPreferences','importantDates','personalNotes']
@@ -232,6 +237,25 @@ const fallbackTechnicalContext=(contexts,tenantId,ownerId,clientId)=>{
   return exactScope(legacy,tenantId,ownerId)?legacy:null
 }
 const timestamp=value=>{const parsed=new Date(value||'').getTime();return Number.isFinite(parsed)?parsed:null}
+const compareLatestPurchase=(left,right)=>{
+  const leftOccurred=timestamp(left?.occurredAt??left?.occurred_at)
+  const rightOccurred=timestamp(right?.occurredAt??right?.occurred_at)
+  if(leftOccurred!==rightOccurred){
+    if(leftOccurred===null)return 1
+    if(rightOccurred===null)return -1
+    return rightOccurred-leftOccurred
+  }
+  const leftCreated=timestamp(left?.createdAt??left?.created_at)
+  const rightCreated=timestamp(right?.createdAt??right?.created_at)
+  if(leftCreated!==rightCreated){
+    if(leftCreated===null)return 1
+    if(rightCreated===null)return -1
+    return rightCreated-leftCreated
+  }
+  const leftId=String(left?.id??left?.externalId??left?.external_id??'')
+  const rightId=String(right?.id??right?.externalId??right?.external_id??'')
+  return leftId===rightId?0:leftId<rightId?1:-1
+}
 const completedVisitTimestamp=visit=>{
   if(legacyVisitLifecycle(visit)!=='COMPLETED')return null
   return timestamp(visit?.occurredAt??visit?.occurred_at)??timestamp(visit?.completedAt??visit?.completed_at)??timestamp(visit?.scheduledAt??visit?.scheduled_at)
@@ -415,7 +439,7 @@ export class ValRepository{
     }catch{throw serviceError('A carteira não pôde ser lida no PostgreSQL configurado.')}
   }
 
-  async listAuthorizedClientReferences({tenantId=this.tenantId,ownerId}={}){
+  async listAuthorizedClientReferences({tenantId=this.tenantId,ownerId,timeoutMs}={}){
     tenantId=assertTenantScope(this.tenantId,tenantId)
     if(!ownerId)throw domainError('O proprietário da carteira é obrigatório para resolver referências de clientes.',403,'owner_scope_required')
     return this.producerEntityIndex.getOrLoad({tenantId,ownerId},async()=>{
@@ -439,7 +463,7 @@ export class ValRepository{
       const selected=await this.db.query(`SELECT c.external_key,c.name,c.municipality,
         CASE WHEN jsonb_typeof(c.commercial_profile->'aliases')='array' THEN c.commercial_profile->'aliases' ELSE '[]'::jsonb END aliases,
         COALESCE((SELECT jsonb_agg(jsonb_build_object('id',COALESCE(property.external_key,property.id::text),'name',property.name) ORDER BY property.updated_at DESC) FROM properties property WHERE property.tenant_id=c.tenant_id AND property.client_id=c.id),'[]'::jsonb) properties
-        FROM clients c WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' ORDER BY c.name,c.external_key LIMIT 5000`,[tenantId,ownerId])
+        FROM clients c WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' ORDER BY c.name,c.external_key LIMIT 5000`,[tenantId,ownerId],...databaseTimeoutArgs(timeoutMs))
       return selected.rows.map(row=>({id:String(row.external_key),name:String(row.name),municipality:String(row.municipality||'').trim()||null,aliases:Array.isArray(row.aliases)?row.aliases:[],properties:Array.isArray(row.properties)?row.properties:[],organizationId:tenantId}))
     }catch{throw serviceError('As referências autorizadas de clientes não puderam ser lidas no PostgreSQL configurado.')}
     })
@@ -447,9 +471,9 @@ export class ValRepository{
 
   invalidateAuthorizedClientReferences({tenantId=this.tenantId,ownerId}={}){tenantId=assertTenantScope(this.tenantId,tenantId);return this.producerEntityIndex.invalidate({tenantId,ownerId})}
 
-  async resolveAuthorizedClientReference({tenantId=this.tenantId,ownerId,message='',reference='',currentClientId=null,recentClientIds=[]}={}){
+  async resolveAuthorizedClientReference({tenantId=this.tenantId,ownerId,message='',reference='',currentClientId=null,recentClientIds=[],timeoutMs}={}){
     tenantId=assertTenantScope(this.tenantId,tenantId)
-    const authorizedClients=await this.listAuthorizedClientReferences({tenantId,ownerId})
+    const authorizedClients=await this.listAuthorizedClientReferences({tenantId,ownerId,timeoutMs})
     return reconcileAuthorizedClientReference({message,reference,authorizedClients,currentClientId,recentClientIds})
   }
 
@@ -979,32 +1003,56 @@ export class ValRepository{
     try{const result=await this.db.query(`INSERT INTO opportunities (tenant_id,client_id,external_key,title,category,hypothesis,estimated_value,stage,next_action,next_action_at,evidence,created_at,updated_at) SELECT $1,client.id,$3,$4,$5,$6,$7,$8,$9,$10,$11,NOW(),NOW() FROM clients client WHERE client.tenant_id=$1 AND client.consultant_id=$12 AND (client.id::text=$2 OR client.external_key=$2) ON CONFLICT (tenant_id,client_id,external_key) WHERE external_key IS NOT NULL DO UPDATE SET title=EXCLUDED.title,category=EXCLUDED.category,hypothesis=EXCLUDED.hypothesis,estimated_value=EXCLUDED.estimated_value,stage=EXCLUDED.stage,next_action=EXCLUDED.next_action,next_action_at=EXCLUDED.next_action_at,evidence=EXCLUDED.evidence,updated_at=NOW() RETURNING opportunities.*,(SELECT external_key FROM clients WHERE id=opportunities.client_id) client_external_key`,[this.tenantId,String(input.clientId||''),externalKey,String(input.title||'Oportunidade').slice(0,220),String(input.category||'').slice(0,120)||null,String(input.hypothesis||'').slice(0,4000)||null,Number.isFinite(Number(input.value))?Math.max(0,Number(input.value)):null,String(input.stage||'Diagnóstico').slice(0,40),String(input.nextAction||'').slice(0,2000)||null,parsedDate(input.nextActionAt),jsonbParameter(evidence),ownerId]);if(!result.rowCount)throw domainError('Produtor não encontrado na sua carteira.',404);return opportunityRecord(result.rows[0])}catch(error){if(error.statusCode)throw error;throw serviceError('A oportunidade não pôde ser salva no PostgreSQL configurado.')}
   }
 
-  async getFastClientFacts({tenantId=this.tenantId,clientId,ownerId,now=new Date()}){
+  async getFastClientFacts({tenantId=this.tenantId,clientId,ownerId,now=new Date(),dataPath=null,timeoutMs}={}){
     tenantId=assertTenantScope(this.tenantId,tenantId)
     ownerId=String(ownerId??'').trim()
     if(!ownerId)throw domainError('O proprietário da carteira é obrigatório para consultar fatos rápidos.',403,'owner_scope_required')
     now=now instanceof Date&&!Number.isNaN(now.getTime())?now:new Date()
+    const allowedPaths=new Set(['LATEST_VISIT','LATEST_COMMITMENT','LATEST_PURCHASE','LATEST_CONFIRMED_OBJECTION','LATEST_VISIT_CONFIRMED_OBJECTION','REGISTERED_CROPS','REGISTERED_AREA','CLIENT_COMPARISON'])
+    const requestedPath=allowedPaths.has(String(dataPath||''))?String(dataPath):'ALL'
+    const needs=path=>requestedPath==='ALL'||requestedPath==='CLIENT_COMPARISON'||requestedPath===path
     if(!this.db.configured){
       const store=this.fallback()
       const clients=new Map();store.imports?.forEach(record=>{if(!exactScope(record,tenantId,ownerId))return;record.clients?.forEach(client=>{if(exactScope(client,tenantId,ownerId,record))clients.set(String(client.id),client)})})
       const client=clients.get(String(clientId));if(!client)throw domainError('Produtor não encontrado na carteira autorizada.',404)
-      const scopedVisits=(store.visits||[]).filter(item=>exactScope(item,tenantId,ownerId)&&String(item.clientId??item.client_id)===String(clientId))
+      const scopedVisits=needs('LATEST_VISIT')||needs('LATEST_VISIT_CONFIRMED_OBJECTION')?(store.visits||[]).filter(item=>exactScope(item,tenantId,ownerId)&&String(item.clientId??item.client_id)===String(clientId)):[]
       const latestCompletedVisit=scopedVisits.map(item=>({item,at:completedVisitTimestamp(item)})).filter(entry=>entry.at!==null).sort((left,right)=>right.at-left.at)[0]?.item||null
       const nextScheduledVisit=scopedVisits.map(item=>({item,at:scheduledVisitTimestamp(item,now)})).filter(entry=>entry.at!==null).sort((left,right)=>left.at-right.at)[0]?.item||null
-      const latestCommitment=(store.val.commitments||[]).filter(item=>exactScope(item,tenantId,ownerId)&&String(item.client_id??item.clientId)===String(clientId)).sort((left,right)=>(timestamp(right.updated_at??right.updatedAt??right.created_at??right.createdAt)||0)-(timestamp(left.updated_at??left.updatedAt??left.created_at??left.createdAt)||0))[0]||null
+      const latestCommitment=needs('LATEST_COMMITMENT')?(store.val.commitments||[]).filter(item=>exactScope(item,tenantId,ownerId)&&String(item.client_id??item.clientId)===String(clientId)).sort((left,right)=>(timestamp(right.updated_at??right.updatedAt??right.created_at??right.createdAt)||0)-(timestamp(left.updated_at??left.updatedAt??left.created_at??left.createdAt)||0))[0]||null:null
+      const latestPurchase=needs('LATEST_PURCHASE')?(store.businessEvents||store.business_events||[]).filter(item=>exactScope(item,tenantId,ownerId)&&String(item.clientId??item.client_id)===String(clientId)&&String(item.outcome||'').toLowerCase()==='won').sort(compareLatestPurchase)[0]||null:null
+      const latestConfirmedObjection=needs('LATEST_CONFIRMED_OBJECTION')?(store.val.visitReports||[]).filter(item=>exactScope(item,tenantId,ownerId)&&String(item.client_id??item.clientId)===String(clientId)&&String((item.confirmation_status??item.confirmationStatus)||'').toUpperCase()==='CONFIRMED'&&Array.isArray(item.objections)&&item.objections.length).sort((left,right)=>(timestamp(right.confirmed_at??right.confirmedAt??right.created_at??right.createdAt)||0)-(timestamp(left.confirmed_at??left.confirmedAt??left.created_at??left.createdAt)||0))[0]||null:null
+      const latestVisitConfirmedObjection=needs('LATEST_VISIT_CONFIRMED_OBJECTION')&&latestCompletedVisit?(store.val.visitReports||[]).filter(item=>exactScope(item,tenantId,ownerId)&&String(item.client_id??item.clientId)===String(clientId)&&String(item.visit_id??item.visitId)===String(latestCompletedVisit.id)&&String((item.confirmation_status??item.confirmationStatus)||'').toUpperCase()==='CONFIRMED'&&Array.isArray(item.objections)&&item.objections.length).sort((left,right)=>(timestamp(right.confirmed_at??right.confirmedAt??right.created_at??right.createdAt)||0)-(timestamp(left.confirmed_at??left.confirmedAt??left.created_at??left.createdAt)||0))[0]||null:null
+      const seasons=needs('REGISTERED_CROPS')?(Array.isArray(client.properties)?client.properties:[]).flatMap(property=>(Array.isArray(property?.fields)?property.fields:[]).flatMap(field=>Array.isArray(field?.seasons)?field.seasons:[])):[]
+      const latestCropSeason=seasons.sort((left,right)=>(timestamp(right.planted_at??right.plantedAt??right.created_at??right.createdAt)||0)-(timestamp(left.planted_at??left.plantedAt??left.created_at??left.createdAt)||0))[0]||null
       const completed=latestCompletedVisit?structuredClone(latestCompletedVisit):null
-      return {client:{id:client.id,name:client.name},latestVisit:completed,latestCompletedVisit:completed,nextScheduledVisit:nextScheduledVisit?structuredClone(nextScheduledVisit):null,latestCommitment:latestCommitment?structuredClone(latestCommitment):null}
+      const correlatedVisitReport=latestVisitConfirmedObjection?{
+        ...structuredClone(latestVisitConfirmedObjection),
+        visit_id:String(latestVisitConfirmedObjection.visit_id??latestVisitConfirmedObjection.visitId??completed?.id),
+        visit_occurred_at:latestVisitConfirmedObjection.visit_occurred_at??latestVisitConfirmedObjection.visitOccurredAt??completed?.occurred_at??completed?.occurredAt??null,
+        visit_completed_at:latestVisitConfirmedObjection.visit_completed_at??latestVisitConfirmedObjection.visitCompletedAt??completed?.completed_at??completed?.completedAt??null,
+        visit_scheduled_at:latestVisitConfirmedObjection.visit_scheduled_at??latestVisitConfirmedObjection.visitScheduledAt??completed?.scheduled_at??completed?.scheduledAt??null,
+        visit_status:latestVisitConfirmedObjection.visit_status??latestVisitConfirmedObjection.visitStatus??completed?.status??null,
+        visit_lifecycle_status:latestVisitConfirmedObjection.visit_lifecycle_status??latestVisitConfirmedObjection.visitLifecycleStatus??completed?.lifecycle_status??completed?.lifecycleStatus??null,
+      }:null
+      const totalArea=client.totalAreaHa??client.total_area_ha??client.area
+      const hasTotalArea=totalArea!=null&&String(totalArea).trim()!==''&&Number.isFinite(Number(totalArea))
+      return {client:{id:client.id,name:client.name,totalAreaHa:hasTotalArea?Number(totalArea):null,areaBand:client.areaBand??client.area_band??null,cultures:client.cultures??null},latestVisit:completed,latestCompletedVisit:completed,nextScheduledVisit:nextScheduledVisit?structuredClone(nextScheduledVisit):null,latestCommitment:latestCommitment?structuredClone(latestCommitment):null,latestPurchase:latestPurchase?structuredClone(latestPurchase):null,latestConfirmedObjection:latestConfirmedObjection?structuredClone(latestConfirmedObjection):null,latestVisitConfirmedObjection:correlatedVisitReport,latestCropSeason:latestCropSeason?structuredClone(latestCropSeason):null}
     }
     try{
-      const result=await this.db.query(`SELECT c.external_key client_external_key,c.name,
-        (SELECT row_to_json(v) FROM (SELECT visit.id,visit.scheduled_at,visit.occurred_at,visit.completed_at,visit.objective,visit.summary,visit.next_commitment,visit.next_action_at,visit.status,visit.lifecycle_status,visit.created_at,visit.updated_at FROM visits visit WHERE visit.tenant_id=c.tenant_id AND visit.client_id=c.id AND visit.consultant_id=c.consultant_id AND (visit.lifecycle_status='COMPLETED' OR (visit.lifecycle_status IS NULL AND (LOWER(COALESCE(visit.status,'')) LIKE 'realizad%' OR LOWER(COALESCE(visit.status,'')) LIKE 'conclu%'))) AND COALESCE(visit.occurred_at,visit.completed_at,visit.scheduled_at) IS NOT NULL ORDER BY COALESCE(visit.occurred_at,visit.completed_at,visit.scheduled_at) DESC,visit.id DESC LIMIT 1) v) latest_completed_visit,
-        (SELECT row_to_json(v) FROM (SELECT visit.id,visit.scheduled_at,visit.occurred_at,visit.completed_at,visit.objective,visit.summary,visit.next_commitment,visit.next_action_at,visit.status,visit.lifecycle_status,visit.created_at,visit.updated_at FROM visits visit WHERE visit.tenant_id=c.tenant_id AND visit.client_id=c.id AND visit.consultant_id=c.consultant_id AND (visit.lifecycle_status IN ('PLANNED','PREPARED') OR (visit.lifecycle_status IS NULL AND LOWER(COALESCE(visit.status,'')) NOT LIKE 'realizad%' AND LOWER(COALESCE(visit.status,'')) NOT LIKE 'conclu%' AND LOWER(COALESCE(visit.status,'')) NOT LIKE 'cancelad%')) AND visit.scheduled_at>=NOW() ORDER BY visit.scheduled_at,visit.id LIMIT 1) v) next_scheduled_visit,
-        (SELECT row_to_json(k) FROM (SELECT commitment.id commitment_id,commitment.description,commitment.due_at,commitment.status,commitment.success_criteria,commitment.created_at,commitment.updated_at FROM val_commitments commitment WHERE commitment.tenant_id=c.tenant_id AND commitment.client_id=c.id ORDER BY COALESCE(commitment.updated_at,commitment.created_at) DESC LIMIT 1) k) latest_commitment
-        FROM clients c WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' AND (c.id::text=$3 OR c.external_key=$3 OR COALESCE(c.commercial_profile->'manual_identity'->'external_key_aliases','[]'::jsonb) ? $3) ORDER BY CASE WHEN c.id::text=$3 OR c.external_key=$3 THEN 0 ELSE 1 END LIMIT 1`,[tenantId,ownerId,String(clientId)])
+      const select=['c.external_key client_external_key','c.name','c.total_area_ha','c.area_band','c.cultures']
+      if(needs('LATEST_VISIT')||needs('LATEST_VISIT_CONFIRMED_OBJECTION'))select.push(
+        `(SELECT row_to_json(v) FROM (SELECT visit.id,visit.scheduled_at,visit.occurred_at,visit.completed_at,visit.objective,visit.summary,visit.next_commitment,visit.next_action_at,visit.status,visit.lifecycle_status,visit.created_at,visit.updated_at FROM visits visit WHERE visit.tenant_id=c.tenant_id AND visit.client_id=c.id AND visit.consultant_id=c.consultant_id AND (visit.lifecycle_status='COMPLETED' OR (visit.lifecycle_status IS NULL AND (LOWER(COALESCE(visit.status,'')) LIKE 'realizad%' OR LOWER(COALESCE(visit.status,'')) LIKE 'conclu%'))) AND COALESCE(visit.occurred_at,visit.completed_at,visit.scheduled_at) IS NOT NULL ORDER BY COALESCE(visit.occurred_at,visit.completed_at,visit.scheduled_at) DESC,visit.id DESC LIMIT 1) v) latest_completed_visit`,
+        `(SELECT row_to_json(v) FROM (SELECT visit.id,visit.scheduled_at,visit.occurred_at,visit.completed_at,visit.objective,visit.summary,visit.next_commitment,visit.next_action_at,visit.status,visit.lifecycle_status,visit.created_at,visit.updated_at FROM visits visit WHERE visit.tenant_id=c.tenant_id AND visit.client_id=c.id AND visit.consultant_id=c.consultant_id AND (visit.lifecycle_status IN ('PLANNED','PREPARED') OR (visit.lifecycle_status IS NULL AND LOWER(COALESCE(visit.status,'')) NOT LIKE 'realizad%' AND LOWER(COALESCE(visit.status,'')) NOT LIKE 'conclu%' AND LOWER(COALESCE(visit.status,'')) NOT LIKE 'cancelad%')) AND visit.scheduled_at>=NOW() ORDER BY visit.scheduled_at,visit.id LIMIT 1) v) next_scheduled_visit`)
+      if(needs('LATEST_COMMITMENT'))select.push(`(SELECT row_to_json(k) FROM (SELECT commitment.id commitment_id,commitment.description,commitment.due_at,commitment.status,commitment.success_criteria,commitment.created_at,commitment.updated_at FROM val_commitments commitment WHERE commitment.tenant_id=c.tenant_id AND commitment.client_id=c.id ORDER BY COALESCE(commitment.updated_at,commitment.created_at) DESC,commitment.id DESC LIMIT 1) k) latest_commitment`)
+      if(needs('LATEST_PURCHASE'))select.push(`(SELECT row_to_json(purchase) FROM (SELECT business.id,business.occurred_at,business.created_at,business.category,business.product,business.quantity,business.value,business.margin,business.currency,business.source,business.external_id FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won' ORDER BY business.occurred_at DESC NULLS LAST,business.created_at DESC NULLS LAST,business.id DESC LIMIT 1) purchase) latest_purchase`)
+      if(needs('LATEST_CONFIRMED_OBJECTION'))select.push(`(SELECT row_to_json(report_record) FROM (SELECT report.id visit_report_id,report.visit_id,report.objections,report.confirmed_at,report.created_at FROM val_visit_reports report JOIN visits report_visit ON report_visit.tenant_id=report.tenant_id AND report_visit.id=report.visit_id AND report_visit.client_id=report.client_id WHERE report.tenant_id=c.tenant_id AND report.client_id=c.id AND report.created_by=c.consultant_id AND report_visit.consultant_id=c.consultant_id AND report.confirmation_status='CONFIRMED' AND jsonb_array_length(COALESCE(report.objections,'[]'::jsonb))>0 ORDER BY COALESCE(report.confirmed_at,report.created_at) DESC,report.id DESC LIMIT 1) report_record) latest_confirmed_objection`)
+      if(needs('LATEST_VISIT_CONFIRMED_OBJECTION'))select.push(`(SELECT row_to_json(report_record) FROM (SELECT report.id visit_report_id,report.visit_id,report.objections,report.confirmed_at,report.created_at,latest_visit.occurred_at visit_occurred_at,latest_visit.completed_at visit_completed_at,latest_visit.scheduled_at visit_scheduled_at,latest_visit.status visit_status,latest_visit.lifecycle_status visit_lifecycle_status FROM (SELECT visit.id,visit.occurred_at,visit.completed_at,visit.scheduled_at,visit.status,visit.lifecycle_status FROM visits visit WHERE visit.tenant_id=c.tenant_id AND visit.client_id=c.id AND visit.consultant_id=c.consultant_id AND (visit.lifecycle_status='COMPLETED' OR (visit.lifecycle_status IS NULL AND (LOWER(COALESCE(visit.status,'')) LIKE 'realizad%' OR LOWER(COALESCE(visit.status,'')) LIKE 'conclu%'))) AND COALESCE(visit.occurred_at,visit.completed_at,visit.scheduled_at) IS NOT NULL ORDER BY COALESCE(visit.occurred_at,visit.completed_at,visit.scheduled_at) DESC,visit.id DESC LIMIT 1) latest_visit JOIN val_visit_reports report ON report.tenant_id=c.tenant_id AND report.client_id=c.id AND report.visit_id=latest_visit.id WHERE report.created_by=c.consultant_id AND report.confirmation_status='CONFIRMED' AND jsonb_array_length(COALESCE(report.objections,'[]'::jsonb))>0 ORDER BY COALESCE(report.confirmed_at,report.created_at) DESC,report.id DESC LIMIT 1) report_record) latest_visit_confirmed_objection`)
+      if(needs('REGISTERED_CROPS'))select.push(`(SELECT row_to_json(latest_crop) FROM (SELECT season.season,season.crop,season.cultivar,season.area_ha,season.planted_at,season.harvested_at,season.created_at,field.id field_id,property.id property_id FROM crop_seasons season JOIN fields field ON field.tenant_id=season.tenant_id AND field.id=season.field_id JOIN properties property ON property.tenant_id=field.tenant_id AND property.id=field.property_id WHERE season.tenant_id=c.tenant_id AND property.client_id=c.id ORDER BY COALESCE(season.planted_at,season.created_at::date) DESC,season.id DESC LIMIT 1) latest_crop) latest_crop_season`)
+      const result=await this.db.query(`SELECT ${select.join(',\n')} FROM clients c WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' AND (c.id::text=$3 OR c.external_key=$3 OR COALESCE(c.commercial_profile->'manual_identity'->'external_key_aliases','[]'::jsonb) ? $3) ORDER BY CASE WHEN c.id::text=$3 OR c.external_key=$3 THEN 0 ELSE 1 END LIMIT 1`,[tenantId,ownerId,String(clientId)],...databaseTimeoutArgs(timeoutMs))
       if(!result.rowCount)throw domainError('Produtor não encontrado na carteira autorizada.',404)
       const row=result.rows[0]
       const completed=row.latest_completed_visit||null
-      return {client:{id:String(row.client_external_key),name:String(row.name||'Produtor')},latestVisit:completed,latestCompletedVisit:completed,nextScheduledVisit:row.next_scheduled_visit||null,latestCommitment:row.latest_commitment||null}
+      return {client:{id:String(row.client_external_key),name:String(row.name||'Produtor'),totalAreaHa:row.total_area_ha==null?null:Number(row.total_area_ha),areaBand:row.area_band||null,cultures:row.cultures||null},latestVisit:completed,latestCompletedVisit:completed,nextScheduledVisit:row.next_scheduled_visit||null,latestCommitment:row.latest_commitment||null,latestPurchase:row.latest_purchase||null,latestConfirmedObjection:row.latest_confirmed_objection||null,latestVisitConfirmedObjection:row.latest_visit_confirmed_objection||null,latestCropSeason:row.latest_crop_season||null}
     }catch(error){if(error.statusCode)throw error;throw serviceError('Os fatos rápidos do produtor não puderam ser lidos no PostgreSQL configurado.')}
   }
 
@@ -1048,12 +1096,23 @@ export class ValRepository{
         COALESCE((SELECT jsonb_agg(recommendation ORDER BY recommendation.created_at DESC) FROM (SELECT val_recommendation.id,val_recommendation.user_question,val_recommendation.mode,val_recommendation.model_version,val_recommendation.status,val_recommendation.context_snapshot_id,val_recommendation.context_snapshot_version,val_recommendation.generated_content->'ai_reasoning'->>'conversation_id' conversation_id,val_recommendation.generated_content->>'next_best_action' next_best_action,val_recommendation.generated_content->'methodology_state' methodology_state,val_recommendation.generated_content->'next_question' next_question,val_recommendation.generated_content->'decision_profile' decision_profile,val_recommendation.generated_content->'commercial_context' commercial_context,val_recommendation.created_at,(SELECT jsonb_build_object('rating',feedback.rating,'outcome',feedback.outcome,'notes',feedback.notes,'created_at',feedback.created_at) FROM val_feedback feedback WHERE feedback.tenant_id=$1 AND feedback.recommendation_id=val_recommendation.id LIMIT 1) feedback FROM val_recommendations val_recommendation WHERE val_recommendation.tenant_id=$1 AND val_recommendation.consultant_id=$3 AND (val_recommendation.client_id=c.id OR val_recommendation.client_external_key=c.external_key) ORDER BY val_recommendation.created_at DESC LIMIT 10) recommendation),'[]'::jsonb) prior_recommendations
         FROM clients c LEFT JOIN LATERAL (SELECT * FROM client_profiles WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY assessed_at DESC LIMIT 1) p ON true
         LEFT JOIN survey_invitations survey ON survey.tenant_id=c.tenant_id AND survey.id=p.source_survey_id
-        WHERE c.tenant_id=$1 AND c.consultant_id=$3 AND (c.id::text=$2 OR c.external_key=$2 OR COALESCE(c.commercial_profile->'manual_identity'->'external_key_aliases','[]'::jsonb) ? $2) ORDER BY CASE WHEN c.id::text=$2 OR c.external_key=$2 THEN 0 ELSE 1 END LIMIT 1`,[tenantId,clientId,ownerId])
+        WHERE c.tenant_id=$1 AND c.consultant_id=$3 AND (c.id::text=$2 OR c.external_key=$2 OR COALESCE(c.commercial_profile->'manual_identity'->'external_key_aliases','[]'::jsonb) ? $2) ORDER BY CASE WHEN c.id::text=$2 OR c.external_key=$2 THEN 0 ELSE 1 END LIMIT 1`,[tenantId,clientId,ownerId],...databaseTimeoutArgs(contextRequest?.databaseTimeoutMs))
       if(!result.rows[0])throw Object.assign(new Error('Cliente não encontrado na base autorizada.'),{statusCode:404})
       const row=result.rows[0]
       const profileEvidence=Array.isArray(row.profile_evidence)?row.profile_evidence:[]
-      const context={client:{...clientFromRow(row),profileSelfReported:profileEvidence.some(item=>item?.self_reported===true),profileEvidence},profile:{answers:jsonObject(row.answers),evidence:profileEvidence,assessedAt:iso(row.profile_assessed_at)||null,validUntil:iso(row.profile_valid_until)||null,sourceId:row.source_survey_id||null},signals:row.signals||[],learning:{...(row.learning||{}),recommendations:row.feedback_learning||{},visitOutcomes:row.visit_outcomes||[]},memories:row.memories||[],memoryHistory:row.memory_history||row.memories||[],businessHistory:row.business_history||[],visits:row.visits||[],interactions:row.interactions||[],commitments:row.commitments||[],opportunities:row.opportunities||[],properties:row.properties||[],fieldReports:row.field_reports||[],soilAnalyses:row.soil_analyses||[],ndviObservations:row.ndvi_observations||[],manualRecords:row.manual_records||[],attachments:(row.attachments||[]).map(attachmentMetadataRecord),priorRecommendations:row.prior_recommendations||[]}
-      return attachContextSnapshot(context,{tenantId,clientId,subjectId:row.id,ownerId,contextRequest})
+      const canonicalClientMemory=item=>{
+        const type=String(item?.subject_type||item?.subjectType||'client').toLowerCase()
+        if(type!=='client')return item
+        return {...item,client_id:clientId,subject_id:clientId}
+      }
+      const memories=(row.memories||[]).map(canonicalClientMemory)
+      const memoryHistory=(row.memory_history||row.memories||[]).map(canonicalClientMemory)
+      const context={client:{...clientFromRow(row),profileSelfReported:profileEvidence.some(item=>item?.self_reported===true),profileEvidence},profile:{answers:jsonObject(row.answers),evidence:profileEvidence,assessedAt:iso(row.profile_assessed_at)||null,validUntil:iso(row.profile_valid_until)||null,sourceId:row.source_survey_id||null},signals:row.signals||[],learning:{...(row.learning||{}),recommendations:row.feedback_learning||{},visitOutcomes:row.visit_outcomes||[]},memories,memoryHistory,businessHistory:row.business_history||[],visits:row.visits||[],interactions:row.interactions||[],commitments:row.commitments||[],opportunities:row.opportunities||[],properties:row.properties||[],fieldReports:row.field_reports||[],soilAnalyses:row.soil_analyses||[],ndviObservations:row.ndvi_observations||[],manualRecords:row.manual_records||[],attachments:(row.attachments||[]).map(attachmentMetadataRecord),priorRecommendations:row.prior_recommendations||[]}
+      // ContextSnapshot usa o identificador canônico exposto pelo contrato
+      // (external_key), igual a context.client.id e ao envelope do ValEngine.
+      // O UUID interno já foi validado pelo SELECT tenant+owner e não deve
+      // atravessar a fronteira de contexto pré-carregado.
+      return attachContextSnapshot(context,{tenantId,clientId,ownerId,contextRequest})
     }catch(error){if(error.statusCode===404)throw error;throw serviceError('O contexto do cliente não pôde ser lido no banco configurado.')}
   }
 
@@ -1099,18 +1158,20 @@ export class ValRepository{
     }catch(error){if(error.statusCode)throw error;throw serviceError('O arquivo não pôde ser salvo na nuvem.')}
   }
 
-  async listAttachments({tenantId=this.tenantId,ownerId,clientId,limit=20}){
+  async listAttachments({tenantId=this.tenantId,ownerId,clientId,limit=20,signal,timeoutMs}){
+    throwIfPersistenceCancelled(signal)
     tenantId=assertTenantScope(this.tenantId,tenantId)
     const normalizedClientId=clientId?String(clientId):null
-    if(!this.db.configured)return this.fallback().val.attachments.filter(item=>attachmentInTenant(item,tenantId)&&item.ownerId===ownerId&&(item.clientId||null)===(normalizedClientId||null)&&item.status!=='rejected').slice(-limit).reverse().map(attachmentMetadataRecord)
-    try{const result=await this.db.query("SELECT a.*,NULL::text content_base64,c.external_key client_external_key FROM val_attachments a LEFT JOIN clients c ON c.id=a.client_id AND c.tenant_id=a.tenant_id WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND (($3::text='' AND a.client_id IS NULL) OR ($3::text<>'' AND (c.id::text=$3 OR c.external_key=$3))) AND a.status<>'rejected' ORDER BY a.created_at DESC LIMIT $4",[tenantId,ownerId,normalizedClientId||'',Math.max(1,Math.min(100,Number(limit)||20))]);return result.rows.map(attachmentRecord)}catch{throw serviceError('Os arquivos deste escopo não puderam ser lidos.')}
+    if(!this.db.configured){const result=this.fallback().val.attachments.filter(item=>attachmentInTenant(item,tenantId)&&item.ownerId===ownerId&&(item.clientId||null)===(normalizedClientId||null)&&item.status!=='rejected').slice(-limit).reverse().map(attachmentMetadataRecord);throwIfPersistenceCancelled(signal);return result}
+    try{const result=await this.db.query("SELECT a.*,NULL::text content_base64,c.external_key client_external_key FROM val_attachments a LEFT JOIN clients c ON c.id=a.client_id AND c.tenant_id=a.tenant_id WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND (($3::text='' AND a.client_id IS NULL) OR ($3::text<>'' AND (c.id::text=$3 OR c.external_key=$3))) AND a.status<>'rejected' ORDER BY a.created_at DESC LIMIT $4",[tenantId,ownerId,normalizedClientId||'',Math.max(1,Math.min(100,Number(limit)||20))],{signal,timeoutMs});throwIfPersistenceCancelled(signal);return result.rows.map(attachmentRecord)}catch(error){if(signal?.aborted)throw persistenceCancellationError(signal);throw serviceError('Os arquivos deste escopo não puderam ser lidos.')}
   }
 
-  async getAttachments({tenantId=this.tenantId,ownerId,clientId,ids=[]}){
+  async getAttachments({tenantId=this.tenantId,ownerId,clientId,ids=[],signal,timeoutMs}){
+    throwIfPersistenceCancelled(signal)
     tenantId=assertTenantScope(this.tenantId,tenantId)
     const unique=[...new Set((ids||[]).map(String))].slice(0,3);if(!unique.length)return []
-    if(!this.db.configured)return this.fallback().val.attachments.filter(item=>attachmentInTenant(item,tenantId)&&item.ownerId===ownerId&&item.clientId===clientId&&item.status!=='rejected'&&unique.includes(String(item.id))).map(attachmentRecord)
-    try{const result=await this.db.query("SELECT a.*,c.external_key client_external_key FROM val_attachments a JOIN clients c ON c.id=a.client_id AND c.tenant_id=a.tenant_id WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND (c.id::text=$3 OR c.external_key=$3) AND a.id=ANY($4::uuid[]) AND a.status<>'rejected' ORDER BY a.created_at",[tenantId,ownerId,clientId,unique]);return result.rows.map(attachmentRecord)}catch{throw serviceError('Os anexos selecionados não puderam ser lidos.')}
+    if(!this.db.configured){const result=this.fallback().val.attachments.filter(item=>attachmentInTenant(item,tenantId)&&item.ownerId===ownerId&&item.clientId===clientId&&item.status!=='rejected'&&unique.includes(String(item.id))).map(attachmentRecord);throwIfPersistenceCancelled(signal);return result}
+    try{const result=await this.db.query("SELECT a.*,c.external_key client_external_key FROM val_attachments a JOIN clients c ON c.id=a.client_id AND c.tenant_id=a.tenant_id WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND (c.id::text=$3 OR c.external_key=$3) AND a.id=ANY($4::uuid[]) AND a.status<>'rejected' ORDER BY a.created_at",[tenantId,ownerId,clientId,unique],{signal,timeoutMs});throwIfPersistenceCancelled(signal);return result.rows.map(attachmentRecord)}catch(error){if(signal?.aborted)throw persistenceCancellationError(signal);throw serviceError('Os anexos selecionados não puderam ser lidos.')}
   }
 
   async getAttachment({tenantId=this.tenantId,ownerId,id}){
@@ -1136,7 +1197,8 @@ export class ValRepository{
     }catch(error){if(error.statusCode)throw error;throw serviceError('O arquivo não pôde ser aberto neste escopo.')}
   }
 
-  async updateAttachment({tenantId=this.tenantId,ownerId,id,status,analysis,clientId=undefined,association=undefined,preserveConfirmedAt=false}){
+  async updateAttachment({tenantId=this.tenantId,ownerId,id,status,analysis,clientId=undefined,association=undefined,preserveConfirmedAt=false,signal}){
+    throwIfPersistenceCancelled(signal)
     tenantId=assertTenantScope(this.tenantId,tenantId)
     const allowed=new Set(['interpreted','confirmed','stored','rejected']);if(!allowed.has(status))throw domainError('Estado de arquivo inválido.',400)
     const scopeProvided=association!==undefined||clientId!==undefined
@@ -1146,13 +1208,20 @@ export class ValRepository{
     if(scopeProvided&&normalizedAssociation==='LINKED_CLIENT'&&!normalizedClientId)throw domainError('Informe o produtor deste arquivo.',400,'attachment_client_scope_required')
     if(scopeProvided&&normalizedAssociation==='UNLINKED'&&normalizedClientId)throw domainError('Um arquivo UNLINKED não pode declarar produtor.',400,'attachment_unlinked_client_scope_conflict')
     const fallbackScopeMatches=entry=>!scopeProvided||(normalizedAssociation==='UNLINKED'?(entry.clientId||null)===null:String(entry.clientId||'')===normalizedClientId)
-    if(!this.db.configured){const store=this.fallback();const item=store.val.attachments.find(entry=>attachmentInTenant(entry,tenantId)&&entry.ownerId===ownerId&&String(entry.id)===String(id)&&fallbackScopeMatches(entry));if(!item)throw domainError('Arquivo não encontrado.',404);if(item.status==='rejected'&&status!=='rejected')throw domainError('O arquivo rejeitado está em estado terminal.',409,'attachment_rejected_terminal');item.status=status;item.analysis=analysis||item.analysis||{};item.updated_at=new Date().toISOString();if(status==='confirmed'&&!preserveConfirmedAt)item.confirmed_at=item.updated_at;this.saveStore(store);return attachmentRecord(item)}
+    if(!this.db.configured){const store=this.fallback();const item=store.val.attachments.find(entry=>attachmentInTenant(entry,tenantId)&&entry.ownerId===ownerId&&String(entry.id)===String(id)&&fallbackScopeMatches(entry));if(!item)throw domainError('Arquivo não encontrado.',404);if(item.status==='rejected'&&status!=='rejected')throw domainError('O arquivo rejeitado está em estado terminal.',409,'attachment_rejected_terminal');throwIfPersistenceCancelled(signal);item.status=status;item.analysis=analysis||item.analysis||{};item.updated_at=new Date().toISOString();if(status==='confirmed'&&!preserveConfirmedAt)item.confirmed_at=item.updated_at;throwIfPersistenceCancelled(signal);this.saveStore(store);return attachmentRecord(item)}
     const sqlScope="($6='' OR ($6='UNLINKED' AND a.client_id IS NULL) OR ($6='LINKED_CLIENT' AND EXISTS (SELECT 1 FROM clients scoped_client WHERE scoped_client.id=a.client_id AND scoped_client.tenant_id=a.tenant_id AND (scoped_client.id::text=$7 OR scoped_client.external_key=$7))))"
     const terminalSqlScope="($4='' OR ($4='UNLINKED' AND a.client_id IS NULL) OR ($4='LINKED_CLIENT' AND EXISTS (SELECT 1 FROM clients scoped_client WHERE scoped_client.id=a.client_id AND scoped_client.tenant_id=a.tenant_id AND (scoped_client.id::text=$5 OR scoped_client.external_key=$5))))"
-    try{const result=await this.db.query(`WITH updated AS (UPDATE val_attachments a SET status=$4,analysis=COALESCE($5,analysis),updated_at=NOW(),confirmed_at=CASE WHEN $4='confirmed' AND $8=FALSE THEN NOW() ELSE confirmed_at END WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND a.id=$3 AND (a.status<>'rejected' OR $4='rejected') AND ${sqlScope} RETURNING a.*) SELECT updated.*,c.external_key client_external_key FROM updated LEFT JOIN clients c ON c.id=updated.client_id AND c.tenant_id=updated.tenant_id`,[tenantId,ownerId,id,status,analysis===undefined?null:jsonbParameter(analysis),normalizedAssociation,normalizedClientId||'',Boolean(preserveConfirmedAt)]);if(!result.rows[0]){const terminal=await this.db.query(`SELECT 1 FROM val_attachments a WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND a.id=$3 AND a.status='rejected' AND ${terminalSqlScope} LIMIT 1`,[tenantId,ownerId,id,normalizedAssociation,normalizedClientId||'']);if(terminal.rowCount)throw domainError('O arquivo rejeitado está em estado terminal.',409,'attachment_rejected_terminal');throw domainError('Arquivo não encontrado.',404)}return attachmentRecord(result.rows[0])}catch(error){if(error.statusCode)throw error;throw serviceError('O arquivo não pôde ser atualizado.')}
+    try{return await this.db.transaction(async connection=>{
+      throwIfPersistenceCancelled(signal)
+      const result=await connection.query(`WITH updated AS (UPDATE val_attachments a SET status=$4,analysis=COALESCE($5,analysis),updated_at=NOW(),confirmed_at=CASE WHEN $4='confirmed' AND $8=FALSE THEN NOW() ELSE confirmed_at END WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND a.id=$3 AND (a.status<>'rejected' OR $4='rejected') AND ${sqlScope} RETURNING a.*) SELECT updated.*,c.external_key client_external_key FROM updated LEFT JOIN clients c ON c.id=updated.client_id AND c.tenant_id=updated.tenant_id`,[tenantId,ownerId,id,status,analysis===undefined?null:jsonbParameter(analysis),normalizedAssociation,normalizedClientId||'',Boolean(preserveConfirmedAt)])
+      throwIfPersistenceCancelled(signal)
+      if(!result.rows[0]){const terminal=await connection.query(`SELECT 1 FROM val_attachments a WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND a.id=$3 AND a.status='rejected' AND ${terminalSqlScope} LIMIT 1`,[tenantId,ownerId,id,normalizedAssociation,normalizedClientId||'']);throwIfPersistenceCancelled(signal);if(terminal.rowCount)throw domainError('O arquivo rejeitado está em estado terminal.',409,'attachment_rejected_terminal');throw domainError('Arquivo não encontrado.',404)}
+      return attachmentRecord(result.rows[0])
+    },{signal})}catch(error){if(error.statusCode||signal?.aborted)throw signal?.aborted?persistenceCancellationError(signal):error;throw serviceError('O arquivo não pôde ser atualizado.')}
   }
 
   async recordRecommendation(record){
+    throwIfPersistenceCancelled(record?.signal)
     const tenantId=assertTenantScope(this.tenantId,record.tenantId||this.tenantId)
     const id=record.id||randomUUID()
     const persistence=recommendationPersistencePayload(record)
@@ -1163,8 +1232,10 @@ export class ValRepository{
     if(this.db.configured){
       try{
         await this.db.transaction(async connection=>{
+          throwIfPersistenceCancelled(record.signal)
           let clientId=null;let clientExternalKey=record.clientId||null
           if(record.clientId){const resolved=await connection.query('SELECT id,external_key FROM clients WHERE tenant_id=$1 AND consultant_id=$3 AND (id::text=$2 OR external_key=$2) LIMIT 1',[tenantId,record.clientId,record.ownerId]);clientId=resolved.rows[0]?.id||null;clientExternalKey=resolved.rows[0]?.external_key||clientExternalKey}
+          throwIfPersistenceCancelled(record.signal)
           if(record.clientId&&!clientId)throw domainError('Produtor não encontrado na sua carteira.',404)
           const sourceIds=[...new Set([...(persistedAdvice?.evidence_used||[]).map(item=>item.source_id),...(snapshot?.evidence_refs||[]).map(item=>item.id)].filter(Boolean))].slice(0,200)
           const recommendationStatus=persistedAdvice?.human_review?.required?'pending_review':'generated'
@@ -1175,17 +1246,22 @@ export class ValRepository{
             await connection.query(`INSERT INTO val_context_snapshots (id,tenant_id,request_id,actor_id,subject_type,subject_id,objective,contract_version,selection_policy_version,freshness_policy_version,selected_refs,excluded_refs,exclusion_reason_codes,confidence_level,snapshot_payload,generated_at,created_at)
               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())
               ON CONFLICT (id) DO NOTHING`,[snapshot.context_snapshot_id,tenantId,snapshot.request_id||null,record.ownerId,snapshot.subject?.type,snapshot.subject?.id,snapshot.objective,snapshot.contract_version,snapshot.selection?.policy_version,snapshot.freshness?.policy_version,selectedRefs,excludedRefs,exclusionReasonCodes,snapshot.confidence?.level||null,jsonbParameter(snapshot),snapshot.freshness?.generated_at])
+            throwIfPersistenceCancelled(record.signal)
           }
           await connection.query(`INSERT INTO val_recommendations (id,tenant_id,consultant_id,client_id,client_external_key,user_question,mode,model_version,prompt_version,input_context,source_ids,generated_content,confidence,status,context_snapshot_id,context_snapshot_version,created_at)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())`,[id,tenantId,record.ownerId,clientId,clientExternalKey,record.question,record.mode,record.model,record.promptHash||null,jsonbParameter(persistedContext),jsonbParameter(sourceIds),jsonbParameter(persistedAdvice),persistedAdvice?.confidence?.score??null,recommendationStatus,snapshot?.context_snapshot_id||null,snapshot?.contract_version||null])
+          throwIfPersistenceCancelled(record.signal)
           if(record.modelRun){const run=record.modelRun;await connection.query(`INSERT INTO model_runs (id,tenant_id,recommendation_id,model,prompt_version,latency_ms,input_tokens,output_tokens,status,error_code,error_details,provider_response_id,provider_request_id,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,[randomUUID(),tenantId,id,run.model,run.promptVersion||null,run.latencyMs||null,run.inputTokens||null,run.outputTokens||null,run.status,run.errorCode||null,jsonbParameter(run.errorDetails),run.responseId||null,run.requestId||null])}
-        })
+          throwIfPersistenceCancelled(record.signal)
+        },{signal:record.signal})
         return id
-      }catch{throw serviceError('Não foi possível persistir a recomendação no banco configurado.')}
+      }catch(error){if(error?.statusCode||record.signal?.aborted)throw record.signal?.aborted?persistenceCancellationError(record.signal):error;throw serviceError('Não foi possível persistir a recomendação no banco configurado.')}
     }
+    throwIfPersistenceCancelled(record.signal)
     const store=this.fallback();const {modelRun,...recommendation}=record;recommendation.context=persistedContext;recommendation.advice=persistedAdvice
+    throwIfPersistenceCancelled(record.signal)
     if(snapshot&&!store.val.contextSnapshots.some(item=>item.id===snapshot.context_snapshot_id))store.val.contextSnapshots.push({id:snapshot.context_snapshot_id,tenantId,ownerId:record.ownerId,requestId:snapshot.request_id||null,subject:snapshot.subject,objective:snapshot.objective,contractVersion:snapshot.contract_version,selectionPolicyVersion:snapshot.selection?.policy_version,freshnessPolicyVersion:snapshot.freshness?.policy_version,selectedRefs:[...(snapshot.selection?.selected_refs||[])],excludedRefs:[...(snapshot.selection?.excluded_refs||[])],exclusionReasonCodes:[...new Set((snapshot.selection?.exclusion_reason_codes||[]).flatMap(item=>item?.reason_codes||[]))],snapshot:structuredClone(snapshot),createdAt:new Date().toISOString()})
-    store.val.contextSnapshots=store.val.contextSnapshots.slice(-1000);store.val.recommendations.push({...recommendation,id,contextSnapshotId:snapshot?.context_snapshot_id||null,contextSnapshotVersion:snapshot?.contract_version||null,createdAt:new Date().toISOString()});store.val.recommendations=store.val.recommendations.slice(-500);if(modelRun){store.val.modelRuns.push({...modelRun,recommendationId:id,id:randomUUID(),createdAt:new Date().toISOString()});store.val.modelRuns=store.val.modelRuns.slice(-1000)}this.saveStore(store);return id
+    store.val.contextSnapshots=store.val.contextSnapshots.slice(-1000);store.val.recommendations.push({...recommendation,id,contextSnapshotId:snapshot?.context_snapshot_id||null,contextSnapshotVersion:snapshot?.contract_version||null,createdAt:new Date().toISOString()});store.val.recommendations=store.val.recommendations.slice(-500);if(modelRun){store.val.modelRuns.push({...modelRun,recommendationId:id,id:randomUUID(),createdAt:new Date().toISOString()});store.val.modelRuns=store.val.modelRuns.slice(-1000)}throwIfPersistenceCancelled(record.signal);this.saveStore(store);return id
   }
 
   async getContextSnapshot({tenantId=this.tenantId,ownerId,id}){

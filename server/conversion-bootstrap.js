@@ -1,6 +1,6 @@
 import {AsyncLocalStorage} from 'node:async_hooks'
 import {createHash} from 'node:crypto'
-import {ValEngine,enforceValSafety,summarizeContextCoverage} from './val-engine.js'
+import {ValEngine,enforceValSafety,summarizeContextCoverage,validatePreloadedValContext} from './val-engine.js'
 import {ValRepository} from './repository.js'
 import {buildFallbackAdvice} from './sales-playbook.js'
 import {buildDecisionIntelligence} from './decision-intelligence.js'
@@ -31,6 +31,36 @@ const radarActive=item=>item&&!/^(?:fechado|ganho|conclu[ií]do|perdido|cancelad
 
 function emitProgress(input,stage){
   try{input?.onProgress?.(stage)}catch{}
+}
+
+function conversionCancellationError(signal){
+  if(signal?.reason instanceof Error)return signal.reason
+  return Object.assign(new Error('A solicitação foi cancelada antes de concluir a composição conversacional.'),{name:'AbortError',statusCode:499,code:'val_request_cancelled',safeToRetry:true})
+}
+
+function throwIfConversionCancelled(signal){
+  if(signal?.aborted)throw conversionCancellationError(signal)
+}
+
+async function raceConversionOperation(signal,operation){
+  if(!signal)return await operation()
+  throwIfConversionCancelled(signal)
+  let onAbort
+  const aborted=new Promise((_,reject)=>{
+    onAbort=()=>reject(conversionCancellationError(signal))
+    signal.addEventListener('abort',onAbort,{once:true})
+  })
+  try{
+    return await Promise.race([
+      Promise.resolve().then(()=>{
+        throwIfConversionCancelled(signal)
+        return operation()
+      }),
+      aborted
+    ])
+  }finally{
+    signal.removeEventListener('abort',onAbort)
+  }
 }
 
 function radarPartialContext(client,intelligence){
@@ -165,16 +195,23 @@ export function installConversionComposition(){
 
   const originalRecordRecommendation=ValRepository.prototype.recordRecommendation
   ValRepository.prototype.recordRecommendation=async function recordContextualRecommendation(input){
+    throwIfConversionCancelled(input?.signal)
     // A pre-persist finalizer already produced the exact response contract that
     // will be returned (for example current market + a processed attachment).
     // Re-enriching it here would make the stored recommendation diverge again.
-    if(input?.responseMetadata?.prePersistFinalized===true)return originalRecordRecommendation.call(this,{...input,question:String(originalQuestionContext.getStore()||input.question||'')})
+    if(input?.responseMetadata?.prePersistFinalized===true){
+      throwIfConversionCancelled(input?.signal)
+      const recommendationId=await originalRecordRecommendation.call(this,{...input,question:String(originalQuestionContext.getStore()||input.question||'')})
+      throwIfConversionCancelled(input?.signal)
+      return recommendationId
+    }
     const rawContext=input.context||{}
     const canonicalQuestion=String(originalQuestionContext.getStore()||input.question||'')
     const usedGenerativeAi=(input.modelRun?.status==='completed'&&input.modelRun?.generativeUsed!==false)||input.modelRun?.generativeUsed===true||/openai|gpt-/i.test(String(input.model||''))
     const resolved=finalAdvice(input.advice||{},rawContext,canonicalQuestion,usedGenerativeAi,{actorId:input.ownerId,intentHint:input.responseMetadata?.intent,modelRun:input.modelRun})
     const persistedAdvice=preserveEnhancedLanguage(resolved.advice,input.advice||{})
-    return originalRecordRecommendation.call(this,{
+    throwIfConversionCancelled(input?.signal)
+    const recommendationId=await originalRecordRecommendation.call(this,{
       ...input,
       question:canonicalQuestion,
       context:{
@@ -198,20 +235,25 @@ export function installConversionComposition(){
         decisionSignature:resolved.conversion.decisionSignature
       }
     })
+    throwIfConversionCancelled(input?.signal)
+    return recommendationId
   }
 
   const originalAnswer=ValEngine.prototype.answer
   ValEngine.prototype.answer=async function answerWithAutomaticOrchestration(input){
+    throwIfConversionCancelled(input.signal)
     emitProgress(input,'received')
     const originalMessage=String(input.message||'Prepare a próxima melhor ação.').trim()
     emitProgress(input,'context')
-    const rawContext=await this.repository.getClientContext({
+    throwIfConversionCancelled(input.signal)
+    const rawContext=validatePreloadedValContext(input.preloadedContext,{tenantId:input.tenantId,ownerId:input.ownerId,clientId:input.clientId})||await raceConversionOperation(input.signal,()=>this.repository.getClientContext({
       tenantId:input.tenantId,
       ownerId:input.ownerId,
       clientId:input.clientId,
       client:input.client,
       contextRequest:{...(input.contextRequest||{}),message:originalMessage}
-    })
+    }))
+    throwIfConversionCancelled(input.signal)
     const thread=prepareConversationThread(rawContext,originalMessage)
     const context=thread.context
     const effectiveMessage=thread.message
@@ -221,6 +263,7 @@ export function installConversionComposition(){
     orchestration={...orchestration,route:reasoning.route}
 
     if(attachmentCount===0&&reasoning.useGenerativeAi){
+      throwIfConversionCancelled(input.signal)
       emitProgress(input,'products')
       emitProgress(input,'language')
       const result=await originalQuestionContext.run(originalMessage,()=>originalAnswer.call(this,{
@@ -232,6 +275,7 @@ export function installConversionComposition(){
       emitProgress(input,'complete')
       const providerUsed=result.engineMode==='openai'
       const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed,{actorId:input.ownerId,intentHint:input.intent,modelRun:{model:result.model,promptVersion:'val-ai-copilot-v2',status:providerUsed?'completed':'fallback',generativeUsed:providerUsed}})
+      throwIfConversionCancelled(input.signal)
       return {
         ...result,
         engineMode:providerUsed?'structured_hybrid':'rules_fallback',
@@ -253,9 +297,15 @@ export function installConversionComposition(){
     }
 
     if(attachmentCount===0){
+      throwIfConversionCancelled(input.signal)
       const resolved=deterministicDecision(context,effectiveMessage,originalMessage,input)
+      throwIfConversionCancelled(input.signal)
       emitProgress(input,'persist')
       const model='rules-v7-specific'
+      // Último checkpoint síncrono antes do único efeito persistente deste
+      // branch. Um deadline disparado durante contexto/composição nunca chega
+      // a iniciar a escrita tardia.
+      throwIfConversionCancelled(input.signal)
       const recommendationId=await this.repository.recordRecommendation({
         tenantId:input.tenantId,
         ownerId:input.ownerId,
@@ -275,7 +325,8 @@ export function installConversionComposition(){
           structuredReasoning:false,
           automaticRoute:orchestration.route,
           conversationContinued:thread.continued
-        }
+        },
+        signal:input.signal
       })
       emitProgress(input,'complete')
       return {
@@ -296,6 +347,7 @@ export function installConversionComposition(){
         generativeRole:'not_used_or_fallback',
         automaticRouting:resolved.orchestration.route,
         conversationContinuity:resolved.orchestration.continuity,
+        responseMetadata:{automaticRoute:orchestration.route.mode,conversationContinued:thread.continued,structuredReasoning:'not_requested',intent:input.intent||null,conversationId:context.conversationSession?.id||null,persistenceCommitted:true},
         structuredReasoning:{requested:reasoning.requested,used:false,tier:reasoning.tier,status:reasoning.requested?'provider_unavailable':'not_needed'},
         languageEnhancement:{status:'not_requested',used:false,model:null,latencyMs:0,failureCode:null},
         conversionIntelligence:conversionEnvelope(resolved),
@@ -304,9 +356,11 @@ export function installConversionComposition(){
     }
 
     // Arquivos e imagens continuam no fluxo multimodal completo porque precisam ser lidos pelo provedor.
+    throwIfConversionCancelled(input.signal)
     emitProgress(input,'products')
     emitProgress(input,'language')
     const result=await originalQuestionContext.run(originalMessage,()=>originalAnswer.call(this,{...input,message:effectiveMessage,mode:reasoning.tier}))
+    throwIfConversionCancelled(input.signal)
     emitProgress(input,'complete')
     if(result?.responseMetadata?.prePersistFinalized===true){
       return {
@@ -324,6 +378,7 @@ export function installConversionComposition(){
     }
     const providerUsed=result.engineMode==='openai'
     const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed,{actorId:input.ownerId,intentHint:input.intent,modelRun:{model:result.model,promptVersion:'val-ai-copilot-v2',status:providerUsed?'completed':'fallback',generativeUsed:providerUsed}})
+    throwIfConversionCancelled(input.signal)
     const providerFallback=!providerUsed
     return {
       ...result,

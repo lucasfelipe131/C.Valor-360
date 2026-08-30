@@ -34,14 +34,85 @@ test('vNext — comandos naturais ficam na sessão e preservam confirmação hum
  }
  assert.equal(sessionCommands.length,11)
  for(const [message,command] of Object.entries(samples)){
-  assert.equal(routeSessionCommand(message)?.command,command,message)
+  const sessionCommand=routeSessionCommand(message)
+  assert.equal(sessionCommand?.command,command,message)
+  assert.equal(sessionCommand?.deterministic_follow_up,['EXPLAIN','SHOW_NUMBERS'].includes(command),message)
   const intent=routeValIntent({message,hasClient:true})
   assert.equal(intent.session_command.command,command)
   assert.equal(intent.persistence_mode,command==='REGISTER_LAST'?'CONFIRM_REQUIRED':'NONE')
  }
  assert.equal(routeSessionCommand('Prompt expandido sobre as premissas.','EXPLAIN_WHY').command,'EXPLAIN')
+ assert.equal(routeSessionCommand('Por quê?').command,'EXPLAIN')
  assert.equal(routeSystemCapability({message:'Prompt expandido.',sessionCommandHint:'DEEPEN',hasClient:true}).path,'DEEP')
- assert.equal(routeSystemCapability({message:'Prompt expandido.',sessionCommandHint:'SHOW_NUMBERS',hasClient:true}).path,'CONTEXT')
+ assert.equal(routeSystemCapability({message:'Prompt expandido.',sessionCommandHint:'SHOW_NUMBERS',hasClient:true}).path,'FAST')
+ assert.equal(routeSystemCapability({message:'Por quê?',hasClient:true}).path,'FAST')
+})
+
+test('vNext — EXPLAIN reutiliza tese, fatos e resposta da sessão sem contexto completo ou modelo',async()=>{
+ const message='Explica melhor.'
+ const sessionCommand=routeSessionCommand(message)
+ const route={path:'FAST',intent:'FOLLOW_UP',direct:true,capabilities:['SESSION_COMMAND'],session_command:sessionCommand,materiality:{engine_required:false}}
+ const context={
+  client:{id:'client-a',name:'João'},
+  conversationState:{
+   current_decision_thesis:{thesis:'Eu não começaria por preço',uncertainty:'O critério de valor ainda não foi confirmado',next_action:'Validar o foco em nutrição'},
+   session_facts:[
+    {statement:'João cultiva 420 ha',epistemic_status:'SESSION_FACT'},
+    {statement:'A objeção confirmada na última visita foi preço',epistemic_status:'SESSION_FACT'}
+   ],
+   conversation_turns:[{role:'assistant',text:'Eu não começaria por preço. Primeiro confirmaria o valor percebido.'}]
+  },
+  priorRecommendations:[]
+ }
+ const execution=await executeCapabilityPlan({route,message,context,clientId:'client-a'})
+ assert.deepEqual(execution.capabilities_used,['SESSION_COMMAND'])
+ assert.equal(execution.reasoning_required,false)
+ assert.equal(execution.tool_result.status,'EXECUTED')
+ assert.equal(execution.tool_result.context.deterministic_follow_up,true)
+ assert.equal(execution.tool_result.context.full_context_required,false)
+ assert.equal(execution.tool_result.context.model_required,false)
+ assert.equal(execution.tool_result.context.reused_thesis,true)
+ assert.equal(execution.tool_result.context.reused_fact_count,2)
+ assert.match(execution.tool_result.summary,/A leitura anterior foi: Eu não começaria por preço\./)
+ assert.match(execution.tool_result.summary,/João cultiva 420 ha/)
+ assert.match(execution.tool_result.summary,/objeção confirmada na última visita foi preço/)
+ assert.match(execution.tool_result.summary,/principal incerteza.*critério de valor/i)
+ assert.match(execution.tool_result.summary,/próximo passo.*foco em nutrição/i)
+
+ const response=buildCapabilityExecutionResponse({execution,route,message,organizationId:'tenant-a',clientId:'client-a',clientName:'João',conversationId:'thread-a'})
+ assert.equal(response.route,'FAST')
+ assert.equal(response.engineMode,'rules')
+ assert.equal(response.responseMetadata.executionBudget.modelCalls,0)
+ assert.equal(response.advice.ai_reasoning.run.model_call_count,0)
+ assert.equal(response.advice.answer,execution.tool_result.summary)
+})
+
+test('vNext — SHOW_NUMBERS devolve somente fatos numéricos já presentes na sessão',async()=>{
+ const message='Me mostra os números.'
+ const sessionCommand=routeSessionCommand(message)
+ const route={path:'FAST',intent:'FOLLOW_UP',direct:true,capabilities:['SESSION_COMMAND'],session_command:sessionCommand,materiality:{engine_required:false}}
+ const context={conversationState:{
+  session_facts:[
+   {statement:'João cultiva 420 ha'},
+   {statement:'A proposta anterior foi de R$ 175 por hectare'},
+   {statement:'O foco atual é nutrição'}
+  ],
+  conversation_turns:[{role:'assistant',text:'A leitura anterior combinou área, preço e nutrição.'}]
+ },priorRecommendations:[]}
+ const execution=await executeCapabilityPlan({route,message,context,clientId:'client-a'})
+ assert.deepEqual(execution.capabilities_used,['SESSION_COMMAND'])
+ assert.equal(execution.reasoning_required,false)
+ assert.equal(execution.tool_result.status,'EXECUTED')
+ assert.deepEqual(execution.tool_result.facts.numeric_facts,['João cultiva 420 ha','A proposta anterior foi de R$ 175 por hectare'])
+ assert.match(execution.tool_result.summary,/420 ha/)
+ assert.match(execution.tool_result.summary,/R\$ 175 por hectare/)
+ assert.doesNotMatch(execution.tool_result.summary,/O foco atual é nutrição/)
+
+ const noNumbers=await executeCapabilityPlan({route,message,clientId:'client-a',context:{conversationState:{session_facts:[{statement:'O foco atual é nutrição'}],conversation_turns:[{role:'assistant',text:'Primeiro eu validaria a necessidade.'}]},priorRecommendations:[]}})
+ assert.deepEqual(noNumbers.capabilities_used,[])
+ assert.equal(noNumbers.tool_result.status,'NO_DATA')
+ assert.deepEqual(noNumbers.tool_result.facts.numeric_facts,[])
+ assert.match(noNumbers.tool_result.summary,/Não há fatos numéricos estruturados/)
 })
 
 test('vNext — linguagem natural seleciona ferramentas sem converter planned em used',async()=>{

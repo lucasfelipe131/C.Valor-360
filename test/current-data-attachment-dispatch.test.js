@@ -5,7 +5,7 @@ import {routeSystemCapability} from '../server/decision-copilot/capability-route
 
 const serverSource=readFileSync(new URL('../server.js',import.meta.url),'utf8')
 const dispatchStart=serverSource.indexOf('const clientCapability=routeSystemCapability')
-const dispatchEnd=serverSource.indexOf("clientCapability.capabilities.includes('VISIT_HISTORY')",dispatchStart)
+const dispatchEnd=serverSource.indexOf('const ownerKey=progressOwnerKey',dispatchStart)
 const currentDataDispatch=serverSource.slice(dispatchStart,dispatchEnd)
 
 test('dispatch de dado atual — anexo não desativa mercado nem autoriza clima ou bula/rótulo',()=>{

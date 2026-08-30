@@ -34,6 +34,17 @@ test('VAL Core envolve a engine existente sem alterar a recomendação legada',a
   assert.ok(events.some(event=>event.stage==='core.response.completed'))
 })
 
+test('VAL Core entrega à engine o signal efetivo e encadeado do módulo',async()=>{
+  const parent=new AbortController()
+  let receivedSignal=null
+  const core=new ValCore({engine:{answer:async input=>{receivedSignal=input.signal;return {advice:{next_best_action:'Confirmar.'}}}},tenantId,observeFn:()=>{}})
+  const request=core.createRequest(requestInput)
+  await core.execute(request,{engineInput:{tenantId,ownerId:actorId,clientId:'cliente-1',signal:parent.signal}})
+  assert.ok(receivedSignal instanceof AbortSignal)
+  assert.notEqual(receivedSignal,parent.signal)
+  assert.equal(receivedSignal.aborted,false)
+})
+
 test('policy é executada antes da ValEngine em tentativa cross-tenant',async()=>{
   let calls=0
   const core=new ValCore({engine:{answer:async()=>{calls++;return {}}},tenantId,observeFn:()=>{}})

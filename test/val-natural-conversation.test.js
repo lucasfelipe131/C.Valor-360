@@ -3,6 +3,8 @@ import test from 'node:test'
 import {
  VAL_NATURAL_COMMAND_POLICY,
  localNaturalCommandTurn,
+ naturalCommandMatchesClient,
+ naturalCommandNeedsSettledResponse,
  naturalCommandRequest,
  hasValOutputModePreference,
  readValOutputMode,
@@ -41,6 +43,24 @@ test('comandos locais reutilizam a resposta atual e limitam Perguntas de Ouro a 
  assert.match(questions,/3\. Quem decide/)
  assert.doesNotMatch(questions,/Excedente/)
  assert.equal(localNaturalCommandTurn(resolveValNaturalCommand('Repete'),payload).payload,payload)
+ for(const phrase of ['Resume','Repete','Só as Perguntas de Ouro','Fala de novo'])assert.equal(naturalCommandNeedsSettledResponse(resolveValNaturalCommand(phrase)),true,phrase)
+ for(const phrase of ['Agora por escrito','Texto e áudio','Só o essencial'])assert.equal(naturalCommandNeedsSettledResponse(resolveValNaturalCommand(phrase)),false,phrase)
+})
+
+test('resumo local do browser devolve uma linha sem repetir a resposta ou anexar próximo passo',()=>{
+ const longPayload={advice:{ai_reasoning:{recommended_strategy:{reading:'Antônio prioriza nutrição nesta visita. O histórico também registra objeção de preço. A abertura deve validar o objetivo.',action:'Montar uma preparação completa.'}}}}
+ const command=resolveValNaturalCommand('Resume sua resposta anterior em uma linha, mantendo Antônio como produtor atual e sem executar nova busca.')
+ const turn=localNaturalCommandTurn(command,longPayload)
+ assert.equal(turn.text,'Antônio prioriza nutrição nesta visita.')
+ assert.doesNotMatch(turn.text,/objeção|Próximo passo|preparação completa/i)
+ assert.equal(naturalCommandMatchesClient(command,{name:'Antônio Carlos'}),true)
+ assert.equal(naturalCommandMatchesClient(command,{name:'Carlos Oliveira'}),false)
+})
+
+test('resumo local respeita o limite explícito de 500 caracteres',()=>{
+ const longPayload={advice:{ai_reasoning:{recommended_strategy:{reading:'x'.repeat(900)}}}}
+ const turn=localNaturalCommandTurn(resolveValNaturalCommand('Resume'),longPayload)
+ assert.equal(turn.text.length,500)
 })
 
 test('aprofundar, explicar, números e por quê geram follow-up explícito sem mudar memória',()=>{

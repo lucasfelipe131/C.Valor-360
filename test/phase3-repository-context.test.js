@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {buildContextSnapshot} from '../server/memory/context-snapshot.js'
 import {ValRepository} from '../server/repository.js'
+import {validatePreloadedValContext} from '../server/val-engine.js'
 
 const tenantA='00000000-0000-4000-8000-000000000001'
 const tenantB='00000000-0000-4000-8000-000000000002'
@@ -21,7 +22,8 @@ test('getClientContext preserva coleções legadas e acrescenta histórico/snaps
   assert.equal(context.memories.length,1)
   assert.equal(context.memoryHistory.length,2)
   assert.equal(context.contextSnapshot.facts[0].value,620)
-  assert.equal(context.contextSnapshot.subject.id,'client-db')
+  assert.equal(context.contextSnapshot.subject.id,'client-ext')
+  assert.equal(validatePreloadedValContext({scope:{tenantId:tenantA,ownerId:actor,clientId:'client-ext'},context},{tenantId:tenantA,ownerId:actor,clientId:'client-ext'}).client.id,'client-ext')
   assert.deepEqual(context.contextSnapshot.selection.considered_refs,['memory-own'])
   assert.equal(JSON.stringify(context.contextSnapshot).includes('foreign:secret'),false)
   assert.match(sql,/WHERE tenant_id=\$1 AND client_id=c\.id/)

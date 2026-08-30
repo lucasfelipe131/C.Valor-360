@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import {config} from '../server/config.js'
 import {createRequestEnvelope} from '../server/core/contracts.js'
 import {resolveCoreObjective,routeCoreRequest} from '../server/core/router.js'
 
@@ -17,7 +18,8 @@ test('mesmo envelope sempre produz a mesma rota e ordem de módulos',()=>{
   const request=envelope('prepare_visit')
   assert.deepEqual(routeCoreRequest(request),routeCoreRequest(request))
   assert.deepEqual(routeCoreRequest(request).modules,['MCTX','MMI','MIC','MDI','MVV','MEX','VIS'])
-  assert.deepEqual(routeCoreRequest(request).execution_plan,[{module_id:'LEGACY_VAL_ENGINE',required:true,timeout_ms:null}])
+  assert.deepEqual(routeCoreRequest(request).execution_plan,[{module_id:'LEGACY_VAL_ENGINE',required:true,timeout_ms:config.coreRequestTimeoutMs}])
+  assert.ok(Number.isFinite(config.coreRequestTimeoutMs)&&config.coreRequestTimeoutMs>0)
 })
 
 test('rota agronômica crítica inclui MGO e revisão humana obrigatória',()=>{

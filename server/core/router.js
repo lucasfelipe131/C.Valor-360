@@ -1,4 +1,5 @@
 import {assertRequestEnvelope} from './contracts.js'
+import {config} from '../config.js'
 
 export const coreRouterVersion='val.core.router.v1'
 
@@ -33,7 +34,7 @@ export function routeCoreRequest(envelope){
     route_id:definition.route_id,
     objective:envelope.objective,
     modules:Object.freeze([...definition.modules]),
-    execution_plan:Object.freeze([Object.freeze({module_id:'LEGACY_VAL_ENGINE',required:true,timeout_ms:null})]),
+    execution_plan:Object.freeze([Object.freeze({module_id:'LEGACY_VAL_ENGINE',required:true,timeout_ms:config.coreRequestTimeoutMs})]),
     human_review:definition.human_review,
     reason_code:definition.reason_code
   })
