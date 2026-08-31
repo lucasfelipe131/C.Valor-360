@@ -290,6 +290,23 @@ test('HTTP A-G e fast follow-up encerram antes do contexto completo e do modelo'
   assert.equal(exactProfile.payload.advice.ai_reasoning.run.model_call_count,0)
   assert.equal(exactProfile.payload.responseMetadata.performance.latency.CONTEXT,null)
 
+  const profileWhy=await turn('Por quê?','', 'thread-profile-matheus')
+  assertFast(profileWhy)
+  assert.equal(profileWhy.payload.advice.ai_reasoning.grounding.passed,true)
+  assert.equal(profileWhy.payload.advice.ai_reasoning.grounding.blocked??false,false)
+  assert.equal(profileWhy.payload.advice.ai_reasoning.run.tool_result.capability,'SESSION_COMMAND')
+  assert.equal(profileWhy.payload.advice.ai_reasoning.run.tool_result.context.deterministic_follow_up,true)
+  assert.equal(profileWhy.payload.advice.ai_reasoning.facts_used[0].source_type,'conversation_turn')
+  assert.match(profileWhy.payload.advice.answer,/Perfil principal: Analítico/i)
+  assert.doesNotMatch(profileWhy.payload.advice.answer,/fertiliz|CPF|contrato de grãos|travamento/i)
+
+  const profileSummary=await turn('Resume.','', 'thread-profile-matheus')
+  assertFast(profileSummary)
+  assert.equal(profileSummary.payload.advice.ai_reasoning.grounding.passed,true)
+  assert.equal(profileSummary.payload.advice.ai_reasoning.grounding.blocked??false,false)
+  assert.match(profileSummary.payload.advice.answer,/Perfil principal: Analítico/i)
+  assert.doesNotMatch(profileSummary.payload.advice.answer,/fertiliz|CPF|contrato de grãos|travamento/i)
+
   const hintedPoisonThread='thread-session-hint-cross-domain-poison'
   const grainsBase=await turn('Qual é o preço da soja hoje?','matheus',hintedPoisonThread)
   assert.equal(grainsBase.status,200,JSON.stringify(grainsBase.payload))

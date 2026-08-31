@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {ValRepository} from '../server/repository.js'
-import {buildFastClientResponse} from '../server/decision-copilot/capability-router.js'
+import {buildFastClientResponse,routeSystemCapability} from '../server/decision-copilot/capability-router.js'
+import {advanceConversationState,createConversationState,prepareConversationTurnState} from '../server/decision-copilot/conversation-state.js'
+import {buildCapabilityExecutionResponse,executeCapabilityPlan} from '../server/decision-copilot/capability-executor.js'
+import {routeSessionCommand} from '../server/decision-copilot/session-command-router.js'
 
 const tenantId='00000000-0000-4000-8000-000000000001'
 const ownerId='00000000-0000-4000-8000-000000000010'
@@ -95,6 +98,44 @@ test('PostgreSQL real sanitizado materializa profile_snapshot por campo sem cont
  assert.ok(response.advice.ai_reasoning.facts_used.every(item=>item.owner_id===ownerId))
  assert.doesNotMatch(response.advice.answer,/fertilizantes|CPF financeira|contrato de grãos|PRIORIDADE|OPORTUNIDADE|produto|preço|margem|negociação/i)
  assert.doesNotMatch(JSON.stringify(response.advice.ai_reasoning.facts_used),/fertilizantes|CPF financeira|contrato de grãos|PRIORIDADE|OPORTUNIDADE|produto|preço|margem|negociação/i)
+})
+
+test('PROFILE PostgreSQL mantém Por quê? no mesmo turno server-grounded sem falso OPPORTUNITY',async()=>{
+ const repository=new ValRepository({
+  db:{configured:true,query:async()=>({rowCount:1,rows:[sanitizedPostgresRow()]})},
+  tenantId,readStore:()=>({}),saveStore:()=>{},
+ })
+ const facts=await repository.getFastClientFacts({tenantId,ownerId,clientId:producerId,dataPath:'BEHAVIORAL_PROFILE',now})
+ const conversationId='thread-profile-postgres-follow-up'
+ const scope={tenantId,ownerId,conversationId,clientId:producerId,client:facts.client,now}
+ const initial=buildFastClientResponse({
+  facts,message:'qual o perfil dele?',organizationId:tenantId,ownerId,
+  conversationId,contextEpoch:0,now,
+ })
+ let state=createConversationState(scope)
+ state=advanceConversationState(state,{scope,message:'qual o perfil dele?',client:facts.client,response:initial,intent:'ASK_CLIENT',now})
+
+ const message='Por quê?'
+ const followUpNow=new Date(now.getTime()+1_000)
+ state=prepareConversationTurnState(state,{scope:{...scope,now:followUpNow},message,intent:'FOLLOW_UP',now:followUpNow})
+ const route={...routeSystemCapability({message,hasClient:true}),session_command:routeSessionCommand(message)}
+ const execution=await executeCapabilityPlan({
+  route,message,context:{client:facts.client,conversationState:state},clientId:producerId,
+  tenantId,ownerId,conversationId,contextEpoch:state.context_epoch,
+ })
+ const response=buildCapabilityExecutionResponse({
+  execution,route,message,organizationId:tenantId,ownerId,clientId:producerId,
+  clientName:facts.client.name,conversationId,contextEpoch:state.context_epoch,
+  contextDomain:state.current_domain,now:followUpNow,
+ })
+
+ assert.equal(execution.tool_result.context.deterministic_follow_up,true)
+ assert.equal(response.advice.ai_reasoning.grounding.passed,true,JSON.stringify(response.advice.ai_reasoning.grounding))
+ assert.equal(response.advice.ai_reasoning.grounding.blocked??false,false)
+ assert.equal(response.advice.ai_reasoning.facts_used.length,1)
+ assert.equal(response.advice.ai_reasoning.facts_used[0].source_type,'conversation_turn')
+ assert.match(response.advice.answer,/Perfil principal: Conservador/i)
+ assert.doesNotMatch(response.advice.answer,/fertilizantes|CPF financeira|contrato de grãos|PRIORIDADE|OPORTUNIDADE|produto|preço|margem|negociação/i)
 })
 
 test('PostgreSQL profile falha fechado antes da materialização quando tenant, owner ou client_profile divergem',async()=>{

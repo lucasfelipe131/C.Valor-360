@@ -433,7 +433,12 @@ function deterministicExplanation({previousText='',thesis=null,facts=[],uncertai
  if(anchor)parts.push(`A leitura anterior foi: ${sentence(anchor)}`)
  if(facts.length)parts.push(`Ela se apoia nos fatos já presentes na sessão: ${facts.slice(0,3).map(statement).join('; ')}.`)
  if(uncertainty)parts.push(`A principal incerteza continua sendo: ${sentence(uncertainty)}`)
- if(nextAction)parts.push(`O próximo passo sugerido foi: ${sentence(nextAction)}`)
+ // "Próximo passo" é um marcador semântico de OPPORTUNITY. Em um follow-up
+ // PROFILE ele reclassificava o próprio rótulo processual como conteúdo
+ // comercial, embora a ação reutilizada continuasse estritamente no turno.
+ // O rótulo neutro preserva a ação original; qualquer domínio estrangeiro no
+ // conteúdo da ação ainda é avaliado e bloqueado pelo grounding claim-by-claim.
+ if(nextAction)parts.push(`A ação indicada na resposta foi: ${sentence(nextAction)}`)
  if(!thesis&&!facts.length&&previousText)parts.push('A sessão não contém tese ou fatos estruturados adicionais; explicar além disso exigiria recomputar a resposta.')
  return clean(parts.join(' '),1200)
 }

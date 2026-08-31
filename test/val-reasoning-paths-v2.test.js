@@ -86,7 +86,7 @@ test('vNext — EXPLAIN reutiliza tese, fatos e resposta da sessão sem contexto
  assert.match(execution.tool_result.summary,/João cultiva 420 ha/)
  assert.match(execution.tool_result.summary,/objeção confirmada na última visita foi preço/)
  assert.match(execution.tool_result.summary,/principal incerteza.*critério de valor/i)
- assert.match(execution.tool_result.summary,/próximo passo.*foco em nutrição/i)
+ assert.match(execution.tool_result.summary,/ação indicada.*foco em nutrição/i)
 
  const response=buildCapabilityExecutionResponse({execution,route,message,organizationId:'tenant-a',ownerId:'owner-a',clientId:'client-a',clientName:'João',conversationId:'thread-a',contextEpoch:0})
  assert.equal(response.route,'FAST')
@@ -99,6 +99,30 @@ test('vNext — EXPLAIN reutiliza tese, fatos e resposta da sessão sem contexto
   {id:'session:thread-a:0:EXPLAIN',sourceType:'conversation_turn',evidenceType:'INFERENCE',producerId:'client-a',tenantId:'tenant-a',ownerId:'owner-a',observedAt:true}
  ])
  assert.deepEqual(response.advice.ai_reasoning.premises.context_scope,{tenant_id:'tenant-a',owner_id:'owner-a',producer_id:'client-a',conversation_id:'thread-a',context_epoch:0,domain:'GENERAL'})
+})
+
+test('vNext — rótulo neutro do EXPLAIN não libera ação cross-domain em PROFILE',async()=>{
+ const message='Por quê?'
+ const route={path:'FAST',intent:'FOLLOW_UP',direct:true,capabilities:['SESSION_COMMAND'],session_command:routeSessionCommand(message),materiality:{engine_required:false}}
+ const context={client:{id:'client-a',name:'João'},conversationState:completedConversation({
+  text:'Perfil principal: Conservador. Confiança: alta. Como abordar: confirme o critério de decisão com evidência.',
+  facts:[scopedFact('profile-evidence','João decide comparando evidências.')],
+  thesis:{
+   thesis:'Perfil principal: Conservador',
+   uncertainty:'Validar se a preferência continua atual',
+   next_action:'Trave o contrato de grãos hoje'
+  }
+ })}
+ const execution=await executeCapabilityPlan({route,message,context,clientId:'client-a'})
+ const response=buildCapabilityExecutionResponse({
+  execution,route,message,organizationId:'tenant-a',ownerId:'owner-a',clientId:'client-a',clientName:'João',
+  conversationId:'thread-a',contextEpoch:0,contextDomain:'PROFILE',now:new Date('2026-08-30T12:00:00.000Z')
+ })
+ assert.equal(response.advice.ai_reasoning.grounding.passed,false)
+ assert.equal(response.advice.ai_reasoning.grounding.blocked,true)
+ assert.ok(response.advice.ai_reasoning.grounding.unsupported_terms.includes('UNSUPPORTED_CROSS_DOMAIN_CLAIM'))
+ assert.equal(response.advice.answer,'Não há evidência verificável suficiente nesta execução para responder com segurança.')
+ assert.doesNotMatch(response.advice.answer,/contrato|grãos|trave/i)
 })
 
 test('vNext — SHOW_NUMBERS devolve somente fatos numéricos já presentes na sessão',async()=>{
