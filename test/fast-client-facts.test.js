@@ -152,7 +152,8 @@ test('PostgreSQL FAST materializa Q7/Q8 como evidence comportamental identificá
     db:{configured:true,query:async statement=>{
       sql=statement
       return {rowCount:1,rows:[{
-        client_external_key:'producer-profile',name:'Matheus Nascimento Jaeger',profile_id:'profile-db-1',
+        client_external_key:'producer-profile',client_internal_id:'client-db-profile',client_tenant_id:tenantId,client_consultant_id:ownerA,
+        name:'Matheus Nascimento Jaeger',profile_id:'profile-db-1',profile_tenant_id:tenantId,profile_client_id:'client-db-profile',
         primary_profile:'Analítico',secondary_profile:'Relacional',
         profile_snapshot:{
           decisionDriver:'Compara custo por hectare e retorno antes de decidir',
@@ -160,42 +161,45 @@ test('PostgreSQL FAST materializa Q7/Q8 como evidence comportamental identificá
         },
         profile_answers:{7:'Compara custo por hectare e retorno antes de decidir',8:'Prefere dados objetivos e comparáveis'},
         profile_evidence:[{source:'producer_360',survey_id:'survey-db-1',self_reported:true}],
+        source_survey_id:'survey-db-1',
         profile_assessed_at:'2026-08-01T12:00:00.000Z',profile_valid_until:'2027-02-01T12:00:00.000Z',
       }]}
     }},tenantId,readStore:()=>({}),saveStore:()=>{},
   })
   const facts=await repository.getFastClientFacts({tenantId,ownerId:ownerA,clientId:'producer-profile',dataPath:'BEHAVIORAL_PROFILE',now})
   assert.match(sql,/p\.answers profile_answers/)
-  assert.match(sql,/LEFT JOIN LATERAL \(SELECT id,primary_profile,secondary_profile,answers,evidence,profile_snapshot,valid_until,assessed_at FROM client_profiles/)
+  assert.match(sql,/LEFT JOIN LATERAL \(SELECT id,tenant_id,client_id,primary_profile,secondary_profile,answers,evidence,profile_snapshot,source_survey_id,valid_until,assessed_at FROM client_profiles/)
   assert.equal(facts.profileSourceRef,'client_profile:profile-db-1')
-  assert.equal(facts.profileEvidence.length,1)
-  const [source]=facts.profileEvidence
-  assert.equal(source.id,'survey-db-1')
-  assert.equal(source.source_type,'producer_360')
-  assert.equal(source.epistemic_type,'QUOTE')
-  assert.equal(source.producer_id,'producer-profile')
-  assert.equal(source.tenant_id,tenantId)
-  assert.equal(source.context_owner_id,ownerA)
-  assert.equal(source.profile_source_ref,'client_profile:profile-db-1')
-  assert.equal(source.assessed_at,'2026-08-01T12:00:00.000Z')
-  assert.deepEqual(source.answers,{
-    decisionDriver:'Compara custo por hectare e retorno antes de decidir',
-    technicalPresentation:'Prefere dados objetivos e comparáveis',
-  })
+  assert.equal(facts.profileEvidence.length,4)
+  const decision=facts.profileEvidence.find(item=>item.source_field==='decisionDriver')
+  const presentation=facts.profileEvidence.find(item=>item.source_field==='technicalPresentation')
+  const primary=facts.profileEvidence.find(item=>item.source_field==='primaryProfile')
+  assert.equal(decision.id,'client_profile:profile-db-1:answers.q7')
+  assert.equal(decision.source_id,'survey-db-1')
+  assert.equal(decision.source_type,'producer_questionnaire')
+  assert.equal(decision.epistemic_type,'QUOTE')
+  assert.equal(decision.source_locator,'answers.q7')
+  assert.equal(presentation.source_locator,'answers.q8')
+  assert.equal(primary.epistemic_type,'FACT')
+  assert.ok(facts.profileEvidence.every(item=>item.producer_id==='producer-profile'&&item.tenant_id===tenantId&&item.context_owner_id===ownerA))
+  assert.ok(facts.profileEvidence.every(item=>item.profile_source_ref==='client_profile:profile-db-1'&&item.assessed_at==='2026-08-01T12:00:00.000Z'))
 
   const response=buildFastClientResponse({facts,message:'qual o perfil dele?',organizationId:tenantId,ownerId:ownerA,conversationId:'thread-profile-db',now})
   assert.equal(response.advice.ai_reasoning.run.capability_results[0].status,'EXECUTED')
   assert.match(response.advice.answer,/Perfil principal: Analítico/i)
-  const observation=response.advice.ai_reasoning.facts_used.find(item=>item.id==='survey-db-1')
+  const observations=response.advice.ai_reasoning.facts_used.filter(item=>item.epistemic_type==='QUOTE')
   const inference=response.advice.ai_reasoning.facts_used.find(item=>item.epistemic_type==='INFERENCE')
-  assert.equal(observation.epistemic_type,'QUOTE')
-  assert.match(observation.statement,/Compara custo por hectare e retorno antes de decidir/i)
-  assert.match(observation.statement,/Prefere dados objetivos e comparáveis/i)
-  assert.deepEqual(observation.evidence_claims.map(item=>[item.field,item.question_id,item.source_locator]),[
-    ['decisionDriver','7','answers.decisionDriver'],
-    ['technicalPresentation','8','answers.technicalPresentation'],
+  assert.equal(observations.length,2)
+  assert.match(observations[0].statement,/Compara custo por hectare e retorno antes de decidir/i)
+  assert.match(observations[1].statement,/Prefere dados objetivos e comparáveis/i)
+  assert.deepEqual(observations.flatMap(item=>item.evidence_claims).map(item=>[item.field,item.question_id,item.source_locator]),[
+    ['decisionDriver','7','answers.q7'],
+    ['technicalPresentation','8','answers.q8'],
   ])
-  assert.equal(inference.source_ref,'survey-db-1')
+  assert.equal(inference.source_ref,'client_profile:profile-db-1:primary_profile')
   assert.notEqual(inference.id,inference.source_ref)
-  assert.deepEqual(inference.evidence_refs,['survey-db-1'])
+  assert.deepEqual(inference.evidence_refs,[
+    'client_profile:profile-db-1:primary_profile','client_profile:profile-db-1:secondary_profile',
+    'client_profile:profile-db-1:answers.q7','client_profile:profile-db-1:answers.q8',
+  ])
 })

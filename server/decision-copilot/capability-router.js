@@ -3,7 +3,7 @@ import {isCurrentClientIdentityRequest,routeValIntent} from '../ai-reasoning/int
 import {legacyVisitLifecycle} from '../visit-loop/lifecycle.js'
 import {evaluateSourceFreshness} from '../memory/freshness-policy.js'
 import {assertResponseGrounding,assertResponseQuestionRelevance} from './response-grounding.js'
-import {assertActiveProducerBoundary,classifyValContextDomain,matchedValContextDomains} from './context-selector.js'
+import {assertActiveProducerBoundary,classifyValContextDomain,contextTraceEntry,matchedValContextDomains} from './context-selector.js'
 
 export const systemCapabilityRouterVersion='val.system_capability_router.v1'
 export const reasoningPathVersion='val.fast_deep_reasoning.v1'
@@ -1148,7 +1148,7 @@ function profileApproach(label=''){
  const normalized=normalize(label)
  if(/analitic/.test(normalized))return 'abra com dados comparáveis e confirme o critério de decisão'
  if(/relacional/.test(normalized))return 'comece pelo histórico de confiança e valide a leitura antes de propor avanço'
- if(/conservador|seguranca/.test(normalized))return 'reduza risco, mostre prova comparável e proponha um próximo passo reversível'
+ if(/conservador|seguranca/.test(normalized))return 'confirme o critério de decisão com evidência'
  if(/inovador/.test(normalized))return 'proponha um teste pequeno, com critério de sucesso e revisão combinados'
  if(/digital|agil/.test(normalized))return 'envie a referência objetiva e confirme rapidamente o critério de decisão'
  return 'confirme como ele compara alternativas antes de adaptar a abordagem'
@@ -1158,9 +1158,11 @@ const profilePoisonDomains=new Set(['GRAINS','CREDIT','AGRONOMY','GEO'])
 const profileContextualDomains=new Set(['COMMERCIAL','OPPORTUNITY','VISIT'])
 const profileBehaviorCue=/\b(?:pediu|solicitou|compara\w*|prefere|valoriza|decide|criterio|dados?|roi|retorno|confianca|relacion\w*|analitic\w*|inova\w*|digital|conservador|seguranca|referencia|planeja|consulta)\b/i
 const profileContextLeak=/\b(?:proposta|negociacao|margem|oportunidade|pipeline|visita|compromisso|fechamento|venda|compra|contrato)\b/i
-function behavioralEvidenceValue(value=''){
+const profileExplicitPoison=/\b(?:prioridade|priority|oportunidade|opportunity|next\s*action|proposta|proposal|produto\w*|product\w*|fertiliz\w*|cpf\s+financeir\w*|contrato\s+de\s+graos?|preco\w*|price\w*|margem|margin|negociacao|negotiation)\b/i
+function behavioralEvidenceValue(value='',{canonicalField=false}={}){
  const candidate=clean(value,300)
  if(!candidate)return ''
+ if(canonicalField)return profileExplicitPoison.test(normalize(candidate))?'':candidate
  const foreign=matchedValContextDomains(candidate).filter(domain=>profilePoisonDomains.has(domain))
  if(foreign.length)return ''
  const contextual=matchedValContextDomains(candidate).filter(domain=>profileContextualDomains.has(domain))
@@ -1176,11 +1178,12 @@ const profileEvidenceLinks=item=>[
 ].map(value=>clean(value,180)).filter(Boolean)
 
 const profileFieldSpecs=Object.freeze([
- Object.freeze({key:'decisionDriver',label:'critério de decisão',question:'7',aliases:['decisiondriver','decision_driver','criterio_de_decisao','decision_criteria']}),
- Object.freeze({key:'technicalPresentation',label:'forma preferida de apresentação',question:'8',aliases:['technicalpresentation','technical_presentation','proof_preference','presentation_preference']}),
- Object.freeze({key:'planningStyle',label:'forma de planejamento',question:'9',aliases:['planningstyle','planning_style','time_horizon']}),
- Object.freeze({key:'servicePreference',label:'preferência de atendimento',question:'11',aliases:['servicepreference','service_preference','preferred_channel']}),
- Object.freeze({key:'trustDriver',label:'construção de confiança',question:'14',aliases:['trustdriver','trust_driver','trust_state']}),
+  Object.freeze({key:'decisionDriver',label:'critério de decisão',question:'7',aliases:['decisiondriver','decision_driver','criterio_de_decisao','decision_criteria']}),
+  Object.freeze({key:'technicalPresentation',label:'forma preferida de apresentação',question:'8',aliases:['technicalpresentation','technical_presentation','proof_preference','presentation_preference']}),
+  Object.freeze({key:'planningStyle',label:'forma de planejamento',question:'9',aliases:['planningstyle','planning_style','time_horizon']}),
+  Object.freeze({key:'innovationBehavior',label:'adoção de tecnologia',question:'10',aliases:['innovationbehavior','innovation_behavior','technology_adoption','adoption_behavior']}),
+  Object.freeze({key:'servicePreference',label:'preferência de atendimento',question:'11',aliases:['servicepreference','service_preference','preferred_channel']}),
+ Object.freeze({key:'trustDriver',label:'fator de confiança observado',question:'14',aliases:['trustdriver','trust_driver','trust_state']}),
  Object.freeze({key:'buyingBehavior',label:'comportamento de compra',question:'16',aliases:['buyingbehavior','buying_behavior','readiness']})
 ])
 const profileAllowedEpistemicTypes=new Set(['FACT','OBSERVATION','INFERENCE','INTENTION','QUOTE','STRATEGY','HYPOTHESIS'])
@@ -1202,13 +1205,13 @@ const profileToken=value=>{
 const profileTokens=value=>[...new Set(normalize(value).split(/[^a-z0-9]+/).filter(token=>token.length>=3&&!profileTokenStopWords.has(token)).map(profileToken))]
 const profileFieldMarkers=spec=>new Set([spec.key,...spec.aliases,spec.question,`q${spec.question}`,`question_${spec.question}`,`pergunta_${spec.question}`].map(normalize))
 const profileFieldMarker=node=>clean(node?.profile_field??node?.profileField??node?.field??node?.key??node?.dimension??node?.question_id??node?.questionId??node?.question,120)
-function profileObservedText(value){
- if(typeof value==='string'||typeof value==='number')return behavioralEvidenceValue(value)
+function profileObservedText(value,canonicalField=false){
+ if(typeof value==='string'||typeof value==='number')return behavioralEvidenceValue(value,{canonicalField})
  if(!value||typeof value!=='object'||Array.isArray(value))return ''
  return [value.statement,value.observation,value.text,value.answer,value.signal,value.summary,value.description,
   typeof value.value==='string'||typeof value.value==='number'?value.value:null,
   value.value?.statement,value.value?.observation,value.value?.text,value.content?.statement,value.content?.observation,value.content?.text
- ].map(behavioralEvidenceValue).find(Boolean)||''
+ ].map(item=>behavioralEvidenceValue(item,{canonicalField})).find(Boolean)||''
 }
 function profileStructuredMaps(item={}){
  return [
@@ -1220,7 +1223,7 @@ function profileStructuredMaps(item={}){
 function profileEvidenceCandidates(item={}){
  const candidates=[]
  const add=(value,marker='',explicit=false,locator='')=>{
-  const observed=profileObservedText(value)
+  const observed=profileObservedText(value,explicit)
   if(!observed)return
   const key=`${normalize(marker)}|${normalize(observed)}`
   if(candidates.some(candidate=>candidate.key===key))return
@@ -1228,15 +1231,16 @@ function profileEvidenceCandidates(item={}){
  }
  for(const [path,map] of profileStructuredMaps(item))for(const [marker,value] of Object.entries(map))add(value,marker,true,`${path}.${marker}`)
  const directMarker=profileFieldMarker(item)
- add(item,directMarker,Boolean(directMarker),directMarker?`field.${directMarker}`:'statement')
+ const directLocator=clean(item?.source_locator??item?.sourceLocator,180)|| (directMarker?`field.${directMarker}`:'statement')
+ add(item,directMarker,Boolean(directMarker),directLocator)
  for(const [path,collection] of [['signals',item.signals],['observations',item.observations],['behavioral_signals',item.behavioral_signals],['behavioralSignals',item.behavioralSignals]]){
   list(collection).forEach((entry,index)=>add(entry,profileFieldMarker(entry),Boolean(profileFieldMarker(entry)),`${path}.${index}`))
  }
  return candidates
 }
 function profileCandidateCorresponds(candidate,configured,spec){
- const observed=behavioralEvidenceValue(candidate?.observed)
- const expected=behavioralEvidenceValue(configured)
+ const observed=behavioralEvidenceValue(candidate?.observed,{canonicalField:candidate?.explicit===true})
+ const expected=behavioralEvidenceValue(configured,{canonicalField:true})
  if(!observed||!expected)return false
  const marker=normalize(candidate?.marker)
  if(candidate?.explicit&&!profileFieldMarkers(spec).has(marker))return false
@@ -1253,8 +1257,25 @@ function profileEpistemicType(item={}){
  if(item.self_reported===true||item.selfReported===true)return 'QUOTE'
  return 'OBSERVATION'
 }
+function registeredProfileFieldEvidence(value,field,linkedEvidence,validUntil,now){
+ const expected=normalize(value)
+ if(!expected)return null
+ const markers=field==='secondaryProfile'?new Set(['secondaryprofile','secondary_profile','secondary']):new Set(['primaryprofile','primary_profile','primary'])
+ for(const evidence of linkedEvidence){
+  const marker=normalize(profileFieldMarker(evidence))
+  if(!markers.has(marker))continue
+  if(profileEpistemicType(evidence)!=='FACT')continue
+  const effectiveValidUntil=evidence?.valid_until??evidence?.validUntil??validUntil
+  const freshness=evaluateSourceFreshness({domain:'BEHAVIORAL',sourceType:'behavioral_profile',source:evidence,observedAt:profileEvidenceTimestamp(evidence),validUntil:effectiveValidUntil,now})
+  if(freshness.status!=='CURRENT')continue
+  const observed=profileObservedText(evidence)
+  if(!observed||!normalize(observed).includes(expected))continue
+  return evidence
+ }
+ return null
+}
 function profileSupportedFields(client,linkedEvidence,validUntil,now){
- const configured=profileFieldSpecs.map(spec=>({spec,value:behavioralEvidenceValue(client[spec.key]??client[spec.aliases.find(alias=>client[alias]!=null)])})).filter(item=>item.value)
+ const configured=profileFieldSpecs.map(spec=>({spec,value:behavioralEvidenceValue(client[spec.key]??client[spec.aliases.find(alias=>client[alias]!=null)],{canonicalField:true})})).filter(item=>item.value)
  const support=[]
  const genericEvidenceUsed=new Set()
  for(const field of configured){
@@ -1276,6 +1297,20 @@ function profileSupportedFields(client,linkedEvidence,validUntil,now){
   if(selected)support.push(selected)
  }
  return support.slice(0,4)
+}
+
+function profileObservationForPresentation(item={}){
+ const raw=clean(item.observed,300)
+ if(!raw||item.explicit!==true)return raw
+ const sentence=raw.replace(/\bfinanceir\w*\b/giu,'').replace(/\bresultados\s+e\s+custos\b/giu,'resultados e o custo').replace(/\s+([,.;:])/g,'$1').replace(/,\s*,/g,',').replace(/\s{2,}/g,' ').replace(/[.!?]+$/,'').trim()
+ if(item.spec?.key==='decisionDriver')return /\bdecid\w*\b/i.test(sentence)?sentence:`Decide considerando ${sentence.charAt(0).toLocaleLowerCase('pt-BR')}${sentence.slice(1)}`
+ if(item.spec?.key==='innovationBehavior')return /^adoto\b/i.test(sentence)?sentence.replace(/^adoto\b/i,'Decide adotar'):/\bdecid\w*\b/i.test(sentence)?sentence:`Decide sobre a adoção de tecnologia considerando ${sentence.charAt(0).toLocaleLowerCase('pt-BR')}${sentence.slice(1)}`
+ if(item.spec?.key==='servicePreference'){
+  const preference=sentence.replace(/^visitas?\s+presenciais?\s+frequentes?/i,'atendimento presencial frequente').replace(/^visitas?\s+presenciais?/i,'atendimento presencial')
+  return /\bpref\w*\b/i.test(preference)?preference:`Prefere ${preference.charAt(0).toLocaleLowerCase('pt-BR')}${preference.slice(1)}`
+ }
+ if(item.spec?.key==='trustDriver')return /\b(?:valoriz\w*|confi\w*)\b/i.test(sentence)?sentence:`Valoriza ${sentence.charAt(0).toLocaleLowerCase('pt-BR')}${sentence.slice(1)}`
+ return sentence
 }
 
 function fastProfilePresentation(facts={},now=new Date(),scope={}){
@@ -1305,9 +1340,12 @@ function fastProfilePresentation(facts={},now=new Date(),scope={}){
  const validUntil=validityCandidates.length?new Date(Math.min(...validityCandidates.map(value=>value.getTime()))).toISOString():null
  const supportedFields=profileSupportedFields(client,linkedEvidence,validUntil,now)
  const supportingEvidence=[...new Map(supportedFields.map(item=>[item.evidenceId,item.evidence])).values()]
- const profileEvidenceRefs=supportingEvidence.map(profileEvidenceId).filter(Boolean)
+ const registeredPrimary=registeredProfileFieldEvidence(primary,'primaryProfile',linkedEvidence,validUntil,now)
+ const registeredSecondary=secondary?registeredProfileFieldEvidence(secondary,'secondaryProfile',linkedEvidence,validUntil,now):null
+ const profileEvidenceRefs=[...new Set([registeredPrimary,registeredSecondary,...supportingEvidence].map(profileEvidenceId).filter(Boolean))]
  const assessedAt=supportingEvidence.map(profileEvidenceTimestamp).find(Boolean)||null
- const primaryFound=Boolean(primary&&sourceRef&&supportedFields.length>=2&&profileEvidenceRefs.length)
+ const minimumBehavioralFields=registeredPrimary?1:2
+ const primaryFound=Boolean(primary&&sourceRef&&supportedFields.length>=minimumBehavioralFields&&profileEvidenceRefs.length)
  if(!primaryFound){
   return {dataPath:'BEHAVIORAL_PROFILE',answer:'Não há evidência comportamental atual e auditável suficiente para determinar o perfil. Confiança: baixa. O que ainda não sabemos: como compara alternativas e qual evidência considera suficiente.',primaryFound:false,capabilityStatus:'NO_DATA',sourceRef:null,factsUsed:[],action:'Valide duas ou três evidências comportamentais antes de personalizar a abordagem.',missing:'Perfil comportamental atual com fonte auditável',doNotDo:'Não inferir perfil por cultura, cidade, área ou conteúdo de outro domínio.'}
  }
@@ -1315,25 +1353,36 @@ function fastProfilePresentation(facts={},now=new Date(),scope={}){
  const reasons=supportedFields.map((item,index)=>{
   const type=profileEpistemicType(item.evidence)
   const prefix=index===0?'Por quê: ':''
-  if(type==='QUOTE')return `${prefix}declaração em ${item.spec.label}: “${clean(item.observed,300)}”`
-  if(type==='FACT')return `${prefix}registro factual em ${item.spec.label}: ${clean(item.observed,300)}`
-  return `${prefix}observou-se em ${item.spec.label}: ${clean(item.observed,300)}`
+  const observation=profileObservationForPresentation(item)
+  if(type==='QUOTE')return `${prefix}declaração em ${item.spec.label}: “${observation}”`
+  if(type==='FACT')return `${prefix}registro factual em ${item.spec.label}: ${observation}`
+  return `${prefix}observou-se em ${item.spec.label}: ${observation}`
  })
  const evidenceText=reasons.slice(0,4).join('. ')
  const unknown='validar se essas preferências continuam atuais'
- const answer=`Perfil principal: ${primary}${secondary?` (secundário: ${secondary})`:''}. Confiança: ${confidence}. ${evidenceText}. Como abordar: ${profileApproach(primary)}. O que ainda não sabemos: ${unknown}.`
- const primaryEvidenceRef=profileEvidenceRefs[0]
+ const answer=`Perfil principal: ${primary}${registeredSecondary?` (secundário: ${secondary})`:''}. Confiança: ${confidence}. ${evidenceText}. Como abordar: ${profileApproach(primary)}. O que ainda não sabemos: ${unknown}.`
+ const primaryEvidenceRef=profileEvidenceId(registeredPrimary)||profileEvidenceRefs[0]
  const inferenceId=`profile-inference:${createHash('sha256').update(JSON.stringify({sourceRef,primary,secondary,evidence:profileEvidenceRefs})).digest('hex').slice(0,20)}`
+ const registeredFact=(evidence,value,field,label)=>{
+  if(!evidence)return null
+  const evidenceId=profileEvidenceId(evidence)
+  const explicitSourceRef=clean(evidence?.source_ref??evidence?.sourceRef??evidence?.profile_source_ref??evidence?.profileSourceRef,180)
+  return {
+   id:evidenceId,source_type:profileEvidenceSource(evidence),...(explicitSourceRef&&explicitSourceRef!==evidenceId?{source_ref:explicitSourceRef}:{}),epistemic_type:'FACT',producer_id:expectedProducer,tenant_id:expectedTenant,owner_id:expectedOwner||null,
+   statement:`${label} registrado: ${value}.`,evidence_claims:[{field,source_locator:clean(evidence?.source_locator??evidence?.sourceLocator,180)||field,statement:value}],observed_at:profileEvidenceTimestamp(evidence),valid_until:evidence?.valid_until??evidence?.validUntil??validUntil,confidence:Number.isFinite(Number(evidence?.confidence))?Number(evidence.confidence):1
+  }
+ }
+ const profileFacts=[registeredFact(registeredPrimary,primary,'primaryProfile','Perfil principal'),registeredFact(registeredSecondary,secondary,'secondaryProfile','Perfil secundário')].filter(Boolean)
  const observationFacts=supportingEvidence.map(evidence=>{
   const evidenceId=profileEvidenceId(evidence)
   const fields=supportedFields.filter(item=>item.evidenceId===evidenceId)
   const explicitSourceRef=clean(evidence?.source_ref??evidence?.sourceRef??evidence?.profile_source_ref??evidence?.profileSourceRef,180)
   const epistemicType=profileEpistemicType(evidence)
   const statement=fields.map(item=>epistemicType==='QUOTE'
-   ?`Declaração em ${item.spec.label}: “${clean(item.observed,300)}”.`
+   ?`Declaração em ${item.spec.label}: “${profileObservationForPresentation(item)}”.`
    :epistemicType==='FACT'
-    ?`Registro factual em ${item.spec.label}: ${clean(item.observed,300)}.`
-    :`Observou-se em ${item.spec.label}: ${clean(item.observed,300)}.`).join(' ')
+    ?`Registro factual em ${item.spec.label}: ${profileObservationForPresentation(item)}.`
+    :`Observou-se em ${item.spec.label}: ${profileObservationForPresentation(item)}.`).join(' ')
   return {
    id:evidenceId,source_type:profileEvidenceSource(evidence),...(explicitSourceRef&&explicitSourceRef!==evidenceId?{source_ref:explicitSourceRef}:{}),epistemic_type:epistemicType,producer_id:expectedProducer,tenant_id:expectedTenant,owner_id:expectedOwner||null,
    statement,evidence_claims:fields.map(item=>({field:item.spec.key,question_id:item.spec.question,source_locator:item.locator,statement:clean(item.observed,300)})),observed_at:profileEvidenceTimestamp(evidence),valid_until:evidence?.valid_until??evidence?.validUntil??validUntil,confidence:Number.isFinite(Number(evidence?.confidence))?Number(evidence.confidence):1
@@ -1341,9 +1390,9 @@ function fastProfilePresentation(facts={},now=new Date(),scope={}){
  })
  const inferenceFact={
   id:inferenceId,source_type:'behavioral_profile',source_ref:primaryEvidenceRef,evidence_refs:profileEvidenceRefs,profile_record_ref:sourceRef,epistemic_type:'INFERENCE',producer_id:expectedProducer,tenant_id:expectedTenant,owner_id:expectedOwner||null,
-  statement:`Perfil comportamental inferido de ${name}: ${primary}${secondary?` / ${secondary}`:''}.`,observed_at:assessedAt,valid_until:validUntil,confidence:confidence==='alta'?.9:.75
+  statement:`Leitura comportamental de ${name}: ${primary}${registeredSecondary?` / ${secondary}`:''}.`,observed_at:profileEvidenceTimestamp(registeredPrimary)||assessedAt,valid_until:validUntil,confidence:confidence==='alta'?.9:.75
  }
- return {dataPath:'BEHAVIORAL_PROFILE',answer,primaryFound:true,sourceRef:primaryEvidenceRef,factsUsed:[...observationFacts,inferenceFact],action:`Para ${name}, ${profileApproach(primary)}.`,missing:unknown,doNotDo:'Não misturar contrato, crédito, grãos, produtos ou compromissos sem relação explícita com a pergunta de perfil.'}
+ return {dataPath:'BEHAVIORAL_PROFILE',answer,primaryFound:true,sourceRef:primaryEvidenceRef,factsUsed:[...profileFacts,...observationFacts,inferenceFact],action:`Para ${name}, ${profileApproach(primary)}.`,missing:unknown,doNotDo:'Não misturar contrato, crédito, grãos, produtos ou compromissos sem relação explícita com a pergunta de perfil.'}
 }
 
 function fastFactPresentation({facts,route,now,scope={}}){
@@ -1477,6 +1526,17 @@ export function buildFastClientResponse({facts={},message='',organizationId='unk
  }
  const grounding=assertResponseGrounding({question:message,answer:presentation.answer,domain:groundingDomain,evidence:auditedFactsUsed,activeProducerId:String(client.id),tenantId:String(organizationId),ownerId:clean(ownerId,180),now})
  reasoning.grounding=grounding
+ reasoning.context_trace={
+  safe:true,domain:groundingDomain,
+  selected:auditedFactsUsed.map(item=>contextTraceEntry({
+   sourceType:item.source_type,sourceId:item.id,producerId:verifiedScope.producerId,tenantId:verifiedScope.tenantId,ownerId:verifiedScope.ownerId,
+   timestamp:item.observed_at,relevanceScore:1,reasonSelected:presentation.dataPath==='BEHAVIORAL_PROFILE'?'BEHAVIORAL_EVIDENCE':`DOMAIN_${groundingDomain}_SEMANTIC_MATCH`
+  })),
+  rejected:list(facts.profileRejectedEvidence).map(item=>contextTraceEntry({
+   sourceType:item.source_type,sourceId:item.source_id,producerId:item.producer_id||verifiedScope.producerId,tenantId:item.tenant_id||verifiedScope.tenantId,ownerId:item.context_owner_id||verifiedScope.ownerId,
+   timestamp:item.observed_at,relevanceScore:0,reasonSelected:item.reason||'PROFILE_EVIDENCE_REJECTED',status:'REJECTED'
+  }))
+ }
  reasoning.quality.automatic_tests.source_grounding={passed:grounding.passed,evaluated:true,unsupported_terms:grounding.unsupported_terms}
  reasoning.quality.automatic_tests.question_relevance={passed:grounding.question_relevance==='PASS',evaluated:true}
  if(capabilityStatus!=='EXECUTED')reasoning.run.capabilities_used=[]

@@ -364,6 +364,7 @@ const profileBehavioralAnswerFields=Object.freeze([
   Object.freeze({field:'decisionDriver',question:'7'}),
   Object.freeze({field:'technicalPresentation',question:'8'}),
   Object.freeze({field:'planningStyle',question:'9'}),
+  Object.freeze({field:'innovationBehavior',question:'10'}),
   Object.freeze({field:'servicePreference',question:'11'}),
   Object.freeze({field:'trustDriver',question:'14'}),
   Object.freeze({field:'buyingBehavior',question:'16'}),
@@ -376,7 +377,7 @@ function profileBehavioralAnswers(answers={}){
     return [field,value]
   }).filter(([,value])=>value))
 }
-function materializeProfileEvidence(rawEvidence=[],scope={},profileSourceRef,{answers={},assessedAt=null,validUntil=null}={}){
+function materializeLegacyProfileEvidence(rawEvidence=[],scope={},profileSourceRef,{answers={},assessedAt=null,validUntil=null}={}){
   const scoped=(Array.isArray(rawEvidence)?rawEvidence:[]).map(item=>profileEvidenceRecord(item,{...scope,validUntil},profileSourceRef))
   const behavioralAnswers=profileBehavioralAnswers(answers)
   if(!Object.keys(behavioralAnswers).length)return scoped
@@ -396,6 +397,224 @@ function materializeProfileEvidence(rawEvidence=[],scope={},profileSourceRef,{an
   return [...scoped,materialized]
 }
 
+const canonicalProfileFields=Object.freeze([
+  Object.freeze({field:'primaryProfile',question:null,aliases:['primaryProfile','primary_profile'],profileColumn:'primaryProfile',epistemicType:'FACT'}),
+  Object.freeze({field:'secondaryProfile',question:null,aliases:['secondaryProfile','secondary_profile'],profileColumn:'secondaryProfile',epistemicType:'FACT'}),
+  ...profileBehavioralAnswerFields.map(({field,question})=>Object.freeze({
+    field,question,aliases:[field,field.replace(/[A-Z]/g,match=>`_${match.toLowerCase()}`),question,`Q${question}`,`q${question}`],
+    epistemicType:'OBSERVATION',
+  })),
+])
+const canonicalProfilePoison=/\b(?:prioridade|priority|oportunidade|opportunity|next\s*action|produto\w*|product\w*|fertiliz\w*|cpf\s+financeir\w*|contrato\s+de\s+graos?|preco\w*|price\w*|margem|margin|negociacao|negotiation)\b/i
+const canonicalProfileText=value=>{
+  const candidate=profileAnswerText(value)
+  return candidate&&!canonicalProfilePoison.test(normalize(candidate))?candidate:''
+}
+const profileContextClientValue=(field,value)=>{
+  const candidate=profileAnswerText(value)
+  if(field!=='servicePreference'||!candidate)return candidate||null
+  return candidate.replace(/^visitas?\s+presenciais?\s+frequentes?/i,'Prefere atendimento presencial frequente').replace(/^visitas?\s+presenciais?/i,'Prefere atendimento presencial')
+}
+const objectAt=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{}
+const profileAliasState=(source,aliases,normalizeValue=value=>String(value??'').trim())=>{
+  const record=objectAt(source)
+  const entries=aliases.filter(alias=>Object.hasOwn(record,alias)).map(alias=>{
+    const value=record[alias]
+    return {alias:String(alias),value,normalized:normalizeValue(value)}
+  }).filter(item=>item.normalized)
+  const distinct=[...new Set(entries.map(item=>item.normalized))]
+  return {entries,value:entries[0]?.value,normalized:distinct[0]||'',conflict:distinct.length>1}
+}
+const canonicalProfileDate=value=>{
+  const parsed=value instanceof Date?value:new Date(String(value??''))
+  return Number.isNaN(parsed.getTime())?'':parsed.toISOString()
+}
+const canonicalProfileFieldName=value=>{
+  const marker=normalize(String(value??'').trim())
+  if(!marker)return ''
+  return canonicalProfileFields.find(spec=>spec.aliases.some(alias=>normalize(String(alias))===marker))?.field||`invalid:${marker}`
+}
+const profileFieldValue=(source,spec)=>{
+  const state=profileAliasState(source,spec.aliases,value=>normalize(profileAnswerText(value)))
+  if(!state.entries.length)return null
+  if(state.conflict)return {conflict:true,aliases:state.entries.map(item=>item.alias)}
+  return {value:profileAnswerText(state.value),alias:state.entries[0].alias,conflict:false}
+}
+const canonicalEvidenceField=item=>String(item?.source_field??item?.sourceField??item?.profile_field??item?.profileField??item?.field??item?.key??item?.question_id??item?.questionId??'').trim()
+const canonicalEvidenceText=item=>profileAnswerText(item?.statement??item?.observation??item?.answer??item?.text??item?.value)
+const canonicalEvidenceSourceType=item=>String(item?.source_type??item?.sourceType??item?.source??'').trim().toLowerCase()
+const canonicalEvidenceTimestamp=item=>iso(item?.assessed_at??item?.assessedAt??item?.observed_at??item?.observedAt??item?.created_at??item?.createdAt)
+const canonicalEvidenceParent=item=>String(item?.profile_source_ref??item?.profileSourceRef??item?.parent_source_ref??item?.parentSourceRef??'').trim()
+const canonicalProfileSourceId=value=>{
+  const candidate=String(value??'').trim().slice(0,180)
+  return /^[A-Za-z0-9][A-Za-z0-9:._/-]{0,179}$/.test(candidate)&&!canonicalProfilePoison.test(normalize(candidate))?candidate:''
+}
+const allowedCanonicalEvidenceSourceTypes=new Set(['behavioral_profile_evidence','producer_questionnaire','producer_360','survey'])
+
+function assertVerifiedProfileRowScope(row,{tenantId,ownerId,producerId}={}){
+  if(!row?.profile_id)return null
+  const clientInternalId=String(row.client_internal_id??'').trim()
+  const clientTenantId=String(row.client_tenant_id??'').trim()
+  const clientOwnerId=String(row.client_consultant_id??'').trim()
+  const profileTenantId=String(row.profile_tenant_id??'').trim()
+  const profileClientId=String(row.profile_client_id??'').trim()
+  const externalKey=String(row.client_external_key??'').trim()
+  if(!clientInternalId||!clientTenantId||!clientOwnerId||!profileTenantId||!profileClientId||!externalKey)throw Object.assign(new Error('O perfil recuperado não comprova o escopo PostgreSQL completo.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'MISSING_PROFILE_SOURCE_SCOPE'})
+  if(clientTenantId!==String(tenantId)||profileTenantId!==String(tenantId))throw Object.assign(new Error('O perfil recuperado pertence a outro tenant.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'TENANT_MISMATCH'})
+  if(clientOwnerId!==String(ownerId))throw Object.assign(new Error('O perfil recuperado pertence a outro owner.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'OWNER_MISMATCH'})
+  if(externalKey!==String(producerId)||profileClientId!==clientInternalId)throw Object.assign(new Error('O perfil recuperado pertence a outro produtor.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'PRODUCER_MISMATCH'})
+  return {tenantId:clientTenantId,ownerId:clientOwnerId,producerId:externalKey,repositoryClientId:clientInternalId}
+}
+
+/**
+ * Converte as formas PostgreSQL (evidence, answers e profile_snapshot) em uma
+ * única lista canônica, por campo. O escopo é aceito somente depois de o JOIN
+ * comprovar tenant, owner, cliente interno e chave externa.
+ */
+function materializeCanonicalBehavioralProfileEvidence({
+  profileId,primaryProfile=null,secondaryProfile=null,answers={},evidence=[],profileSnapshot={},
+  sourceSurveyId=null,assessedAt=null,validUntil=null,scope={},
+}={}){
+  const parentRef=String(profileId?`client_profile:${profileId}`:'').trim()
+  const observedAt=canonicalProfileDate(assessedAt)
+  const expiresAt=canonicalProfileDate(validUntil)
+  if(!parentRef||!observedAt||!expiresAt||!scope?.tenantId||!scope?.ownerId||!scope?.producerId)return {selected:[],rejected:[]}
+
+  const candidates=[]
+  const rejected=[]
+  const reject=(item,reason)=>rejected.push({
+    source_type:canonicalEvidenceSourceType(item)||'behavioral_profile_evidence',
+    source_id:canonicalProfileSourceId(profileEvidenceIdentifier(item))||parentRef,reason,
+    producer_id:String(scope.producerId),tenant_id:String(scope.tenantId),context_owner_id:String(scope.ownerId),
+    observed_at:canonicalProfileDate(canonicalEvidenceTimestamp(item))||observedAt,
+  })
+  const add=({spec,value,locator,priority,sourceType,epistemicType,sourceId,evidenceRefs=[],candidateObservedAt=observedAt,candidateValidUntil=expiresAt})=>{
+    const safeValue=canonicalProfileText(value)
+    if(!safeValue){if(profileAnswerText(value))reject({source_type:sourceType,source_id:sourceId},'PROFILE_FIELD_POISON');return}
+    candidates.push({spec,value:safeValue,locator,priority,sourceType,epistemicType,sourceId,evidenceRefs,observedAt:candidateObservedAt,validUntil:candidateValidUntil})
+  }
+
+  for(const item of Array.isArray(evidence)?evidence:[]){
+    if(!item||typeof item!=='object'||Array.isArray(item))continue
+    const idState=profileAliasState(item,['id','source_id','sourceId','survey_id','surveyId'],value=>canonicalProfileSourceId(value))
+    const typeState=profileAliasState(item,['source_type','sourceType','source'],value=>String(value??'').trim().toLowerCase())
+    const timestampState=profileAliasState(item,['assessed_at','assessedAt','observed_at','observedAt','created_at','createdAt'],canonicalProfileDate)
+    const validityState=profileAliasState(item,['valid_until','validUntil'],canonicalProfileDate)
+    const parentState=profileAliasState(item,['profile_source_ref','profileSourceRef','parent_source_ref','parentSourceRef'],value=>String(value??'').trim())
+    const fieldState=profileAliasState(item,['source_field','sourceField','profile_field','profileField','field','key','question_id','questionId'],canonicalProfileFieldName)
+    const producerState=profileAliasState(item,['producer_id','producerId','client_external_key','clientExternalKey'],value=>String(value??'').trim())
+    const clientState=profileAliasState(item,['client_id','clientId'],value=>String(value??'').trim())
+    const tenantState=profileAliasState(item,['tenant_id','tenantId','organization_id','organizationId'],value=>String(value??'').trim())
+    const ownerState=profileAliasState(item,['context_owner_id','contextOwnerId','consultant_id','consultantId','owner_id','ownerId'],value=>String(value??'').trim())
+    const epistemicState=profileAliasState(item,['epistemic_type','epistemicType','evidence_type','evidenceType'],value=>String(value??'').trim().toUpperCase())
+    const selfReportedState=profileAliasState(item,['self_reported','selfReported'],value=>typeof value==='boolean'?String(value):'')
+    const textState=profileAliasState(item,['statement','observation','answer','text','value'],value=>normalize(profileAnswerText(value)))
+    if([idState,typeState,timestampState,validityState,parentState,fieldState,producerState,clientState,tenantState,ownerState,epistemicState,selfReportedState,textState].some(state=>state.conflict)){
+      reject(item,'PROFILE_EVIDENCE_ALIAS_CONFLICT');continue
+    }
+    const rawId=canonicalProfileSourceId(idState.value)
+    const sourceType=typeState.normalized
+    const timestamp=timestampState.normalized
+    const evidenceValidUntil=validityState.normalized
+    const parent=parentState.normalized
+    const explicitProducer=producerState.normalized||(clientState.normalized===String(scope.producerId)?clientState.normalized:'')
+    if(!explicitProducer){reject(item,'MISSING_PRODUCER_SCOPE');continue}
+    if(!tenantState.normalized){reject(item,'MISSING_TENANT_SCOPE');continue}
+    if(!ownerState.normalized){reject(item,'MISSING_OWNER_SCOPE');continue}
+    if(explicitProducer!==String(scope.producerId)){reject(item,'PRODUCER_MISMATCH');continue}
+    if(clientState.normalized&&clientState.normalized!==String(scope.producerId)&&clientState.normalized!==String(scope.repositoryClientId||'')){reject(item,'PRODUCER_MISMATCH');continue}
+    if(tenantState.normalized!==String(scope.tenantId)){reject(item,'TENANT_MISMATCH');continue}
+    if(ownerState.normalized!==String(scope.ownerId)){reject(item,'OWNER_MISMATCH');continue}
+    if(!parent){reject(item,'MISSING_PROFILE_SOURCE_REF');continue}
+    if(parent!==parentRef){reject(item,'PROFILE_SOURCE_REF_MISMATCH');continue}
+    if(!rawId){reject(item,'MISSING_PROFILE_EVIDENCE_ID');continue}
+    if(!sourceType||!allowedCanonicalEvidenceSourceTypes.has(sourceType)){reject(item,'INVALID_PROFILE_EVIDENCE_SOURCE_TYPE');continue}
+    if(!timestamp){reject(item,'MISSING_PROFILE_EVIDENCE_TIMESTAMP');continue}
+    if(!evidenceValidUntil){reject(item,'MISSING_PROFILE_EVIDENCE_VALID_UNTIL');continue}
+    if(new Date(evidenceValidUntil).getTime()<=new Date(timestamp).getTime()){
+      reject(item,'INVALID_PROFILE_EVIDENCE_WINDOW');continue
+    }
+    const explicitEpistemic=epistemicState.normalized||(selfReportedState.normalized==='true'?'QUOTE':'')
+    if(explicitEpistemic&&!['FACT','OBSERVATION','QUOTE'].includes(explicitEpistemic)){
+      reject(item,'INVALID_PROFILE_EVIDENCE_EPISTEMIC_TYPE');continue
+    }
+    const maps=[['answers',objectAt(item.answers)],['fields',objectAt(item.fields)],['values',objectAt(item.values)]]
+    for(const spec of canonicalProfileFields){
+      const found=[]
+      let aliasConflict=false
+      for(const [path,map] of maps){
+        const entry=profileFieldValue(map,spec)
+        if(entry?.conflict){aliasConflict=true;break}
+        if(entry)found.push({...entry,path})
+      }
+      if(aliasConflict){reject(item,'PROFILE_FIELD_ALIAS_CONFLICT');continue}
+      const marker=fieldState.normalized
+      if(marker===spec.field&&textState.entries.length)found.push({value:profileAnswerText(textState.value),alias:canonicalEvidenceField(item),path:'field'})
+      if(!found.length)continue
+      if(new Set(found.map(entry=>normalize(entry.value))).size>1){reject(item,'PROFILE_FIELD_ALIAS_CONFLICT');continue}
+      const selectedField=found[0]
+      add({
+        spec,value:selectedField.value,locator:`evidence.${selectedField.path}.${selectedField.alias}`,priority:1,
+        sourceType,epistemicType:explicitEpistemic||spec.epistemicType,sourceId:rawId,evidenceRefs:[rawId],
+        candidateObservedAt:timestamp,candidateValidUntil:evidenceValidUntil,
+      })
+    }
+  }
+
+  for(const spec of canonicalProfileFields.filter(item=>item.question)){
+    const direct=profileFieldValue(answers,spec)
+    if(direct?.conflict){reject({source_type:sourceSurveyId?'producer_questionnaire':'behavioral_profile_evidence',source_id:String(sourceSurveyId||profileId)},'PROFILE_FIELD_ALIAS_CONFLICT');continue}
+    if(direct)add({spec,value:direct.value,locator:`answers.q${spec.question}`,priority:2,sourceType:sourceSurveyId?'producer_questionnaire':'behavioral_profile_evidence',epistemicType:sourceSurveyId?'QUOTE':'OBSERVATION',sourceId:String(sourceSurveyId||profileId),evidenceRefs:sourceSurveyId?[String(sourceSurveyId)]:[]})
+  }
+  const snapshot=objectAt(profileSnapshot)
+  const snapshotAnswers=objectAt(snapshot.answers)
+  for(const spec of canonicalProfileFields.filter(item=>item.question)){
+    const options=[profileFieldValue(snapshot,spec),profileFieldValue(snapshotAnswers,spec)].filter(Boolean)
+    if(options.some(item=>item.conflict)||new Set(options.map(item=>normalize(item.value)).filter(Boolean)).size>1){
+      reject({source_type:'behavioral_profile_evidence',source_id:String(profileId)},'PROFILE_FIELD_ALIAS_CONFLICT');continue
+    }
+    const direct=options[0]||null
+    if(direct)add({spec,value:direct.value,locator:`profile_snapshot.${direct.alias}`,priority:4,sourceType:'behavioral_profile_evidence',epistemicType:'OBSERVATION',sourceId:String(profileId),evidenceRefs:[]})
+  }
+  for(const spec of canonicalProfileFields.filter(item=>!item.question)){
+    const value=spec.field==='primaryProfile'?primaryProfile:secondaryProfile
+    if(value)add({spec,value,locator:spec.field==='primaryProfile'?'primary_profile':'secondary_profile',priority:5,sourceType:'behavioral_profile_evidence',epistemicType:'FACT',sourceId:String(profileId),evidenceRefs:[]})
+  }
+
+  const selected=[]
+  const seenFields=new Set()
+  for(const candidate of candidates.sort((left,right)=>left.priority-right.priority)){
+    if(seenFields.has(candidate.spec.field))continue
+    seenFields.add(candidate.spec.field)
+    const fieldCandidates=candidates.filter(item=>item.spec.field===candidate.spec.field)
+    const distinctValues=new Set(fieldCandidates.map(item=>normalize(item.value)).filter(Boolean))
+    if(distinctValues.size>1){
+      rejected.push({
+        source_type:candidate.sourceType||'behavioral_profile_evidence',source_id:candidate.sourceId||parentRef,
+        reason:'PROFILE_FIELD_CONFLICT',producer_id:String(scope.producerId),tenant_id:String(scope.tenantId),context_owner_id:String(scope.ownerId),observed_at:observedAt,
+      })
+      continue
+    }
+    const id=`${parentRef}:${candidate.locator}`
+    const statement=candidate.spec.field==='primaryProfile'
+      ?`Perfil principal registrado: ${candidate.value}.`
+      :candidate.spec.field==='secondaryProfile'
+        ?`Perfil secundário registrado: ${candidate.value}.`
+        :candidate.value
+    selected.push(Object.freeze({
+      id,source_id:candidate.sourceId||String(profileId),source_ref:parentRef,profile_source_ref:parentRef,
+      source_type:candidate.sourceType,source_field:candidate.spec.field,source_locator:candidate.locator,
+      field:candidate.spec.field,...(candidate.spec.question?{question_id:candidate.spec.question}:{}),
+      materialized_value:candidate.value,
+      producer_id:String(scope.producerId),tenant_id:String(scope.tenantId),context_owner_id:String(scope.ownerId),
+      observed_at:candidate.observedAt,assessed_at:candidate.observedAt,valid_until:candidate.validUntil,
+      epistemic_type:['FACT','OBSERVATION','QUOTE'].includes(candidate.epistemicType)?candidate.epistemicType:candidate.spec.epistemicType,
+      statement,relevance_score:1,reason_selected:'BEHAVIORAL_EVIDENCE',evidence_refs:candidate.evidenceRefs,
+    }))
+  }
+  return {selected,rejected}
+}
+
 function scopeRepositoryContext(context,{tenantId,clientId,ownerId,repositoryClientId='',contextRequest={}}={}){
   const producerId=String(context?.client?.id||clientId||'')
   const scope={tenantId:String(tenantId),producerId,ownerId:String(ownerId),repositoryClientId:String(repositoryClientId||'')}
@@ -403,7 +622,10 @@ function scopeRepositoryContext(context,{tenantId,clientId,ownerId,repositoryCli
   const rawProfileEvidence=[...(Array.isArray(context?.profile?.evidence)?context.profile.evidence:[]),...(Array.isArray(context?.client?.profileEvidence)?context.client.profileEvidence:[])]
   const firstEvidenceId=rawProfileEvidence.map(profileEvidenceIdentifier).find(Boolean)||''
   const profileSourceRef=String(context?.profile?.sourceId??context?.client?.profileSourceRef??context?.client?.profileSource??firstEvidenceId).trim()
-  const profileEvidence=materializeProfileEvidence(rawProfileEvidence,scope,profileSourceRef,{answers:context?.profile?.answers,assessedAt:context?.profile?.assessedAt??context?.client?.profileUpdatedAt,validUntil:profileValidUntil})
+  const alreadyCanonical=rawProfileEvidence.length>0&&rawProfileEvidence.every(item=>profileEvidenceIdentifier(item)&&String(item?.source_field??item?.sourceField??'').trim()&&String(item?.source_locator??item?.sourceLocator??'').trim())
+  const profileEvidence=alreadyCanonical
+    ?rawProfileEvidence.map(item=>profileEvidenceRecord(item,{...scope,validUntil:profileValidUntil},profileSourceRef))
+    :materializeLegacyProfileEvidence(rawProfileEvidence,scope,profileSourceRef,{answers:context?.profile?.answers,assessedAt:context?.profile?.assessedAt??context?.client?.profileUpdatedAt,validUntil:profileValidUntil})
   const evidenceById=new Map(profileEvidence.map(item=>[profileEvidenceIdentifier(item),item]).filter(([id])=>id))
   const scopedProfileEvidence=[...evidenceById.values()]
   const map=items=>(Array.isArray(items)?items:[]).map(item=>repositoryScopedRecord(item,scope))
@@ -1149,7 +1371,7 @@ export class ValRepository{
       const rawProfileEvidence=needs('BEHAVIORAL_PROFILE')?(Array.isArray(client.profileEvidence)?structuredClone(client.profileEvidence):[]):[]
       const profileEvidenceId=rawProfileEvidence.map(profileEvidenceIdentifier).find(Boolean)||''
       const profileSourceRef=needs('BEHAVIORAL_PROFILE')?String(client.profileSourceRef||client.profileSource||profileEvidenceId||'').trim()||null:null
-      const profileEvidence=materializeProfileEvidence(rawProfileEvidence,fastScope,profileSourceRef,{answers:client.profileAnswers,assessedAt:client.profileUpdatedAt,validUntil:client.profileValidUntil??null})
+      const profileEvidence=materializeLegacyProfileEvidence(rawProfileEvidence,fastScope,profileSourceRef,{answers:client.profileAnswers,assessedAt:client.profileUpdatedAt,validUntil:client.profileValidUntil??null})
       const scopedFast=item=>item?repositoryScopedRecord(structuredClone(item),fastScope):null
       return {client:repositoryScopedRecord({id:client.id,name:client.name,totalAreaHa:hasTotalArea?Number(totalArea):null,areaBand:client.areaBand??client.area_band??null,cultures:client.cultures??null,...(needs('BEHAVIORAL_PROFILE')?{primaryProfile:client.primaryProfile??client.primary_profile??null,secondaryProfile:client.secondaryProfile??client.secondary_profile??null,decisionDriver:client.decisionDriver??null,technicalPresentation:client.technicalPresentation??null,planningStyle:client.planningStyle??null,buyingBehavior:client.buyingBehavior??null,trustDriver:client.trustDriver??null,servicePreference:client.servicePreference??null,profileEvidence,profileUpdatedAt:client.profileUpdatedAt??null,profileValidUntil:client.profileValidUntil??null}: {})},fastScope),profileEvidence,profileSourceRef,profileAssessedAt:client.profileUpdatedAt??null,profileValidUntil:client.profileValidUntil??null,latestVisit:scopedFast(completed),latestCompletedVisit:scopedFast(completed),nextScheduledVisit:scopedFast(nextScheduledVisit),latestCommitment:scopedFast(latestCommitment),latestPurchase:scopedFast(latestPurchase),latestConfirmedObjection:scopedFast(latestConfirmedObjection),latestVisitConfirmedObjection:scopedFast(correlatedVisitReport),latestCropSeason:scopedFast(latestCropSeason)}
     }
@@ -1163,19 +1385,35 @@ export class ValRepository{
       if(needs('LATEST_CONFIRMED_OBJECTION'))select.push(`(SELECT row_to_json(report_record) FROM (SELECT report.id visit_report_id,report.visit_id,report.objections,report.confirmed_at,report.created_at FROM val_visit_reports report JOIN visits report_visit ON report_visit.tenant_id=report.tenant_id AND report_visit.id=report.visit_id AND report_visit.client_id=report.client_id WHERE report.tenant_id=c.tenant_id AND report.client_id=c.id AND report.created_by=c.consultant_id AND report_visit.consultant_id=c.consultant_id AND report.confirmation_status='CONFIRMED' AND jsonb_array_length(COALESCE(report.objections,'[]'::jsonb))>0 ORDER BY COALESCE(report.confirmed_at,report.created_at) DESC,report.id DESC LIMIT 1) report_record) latest_confirmed_objection`)
       if(needs('LATEST_VISIT_CONFIRMED_OBJECTION'))select.push(`(SELECT row_to_json(report_record) FROM (SELECT report.id visit_report_id,report.visit_id,report.objections,report.confirmed_at,report.created_at,latest_visit.occurred_at visit_occurred_at,latest_visit.completed_at visit_completed_at,latest_visit.scheduled_at visit_scheduled_at,latest_visit.status visit_status,latest_visit.lifecycle_status visit_lifecycle_status FROM (SELECT visit.id,visit.occurred_at,visit.completed_at,visit.scheduled_at,visit.status,visit.lifecycle_status FROM visits visit WHERE visit.tenant_id=c.tenant_id AND visit.client_id=c.id AND visit.consultant_id=c.consultant_id AND (visit.lifecycle_status='COMPLETED' OR (visit.lifecycle_status IS NULL AND (LOWER(COALESCE(visit.status,'')) LIKE 'realizad%' OR LOWER(COALESCE(visit.status,'')) LIKE 'conclu%'))) AND COALESCE(visit.occurred_at,visit.completed_at,visit.scheduled_at) IS NOT NULL ORDER BY COALESCE(visit.occurred_at,visit.completed_at,visit.scheduled_at) DESC,visit.id DESC LIMIT 1) latest_visit JOIN val_visit_reports report ON report.tenant_id=c.tenant_id AND report.client_id=c.id AND report.visit_id=latest_visit.id WHERE report.created_by=c.consultant_id AND report.confirmation_status='CONFIRMED' AND jsonb_array_length(COALESCE(report.objections,'[]'::jsonb))>0 ORDER BY COALESCE(report.confirmed_at,report.created_at) DESC,report.id DESC LIMIT 1) report_record) latest_visit_confirmed_objection`)
       if(needs('REGISTERED_CROPS'))select.push(`(SELECT row_to_json(latest_crop) FROM (SELECT season.id,season.season,season.crop,season.cultivar,season.area_ha,season.planted_at,season.harvested_at,season.created_at,field.id field_id,property.id property_id FROM crop_seasons season JOIN fields field ON field.tenant_id=season.tenant_id AND field.id=season.field_id JOIN properties property ON property.tenant_id=field.tenant_id AND property.id=field.property_id WHERE season.tenant_id=c.tenant_id AND property.client_id=c.id ORDER BY COALESCE(season.planted_at,season.created_at::date) DESC,season.id DESC LIMIT 1) latest_crop) latest_crop_season`)
-      if(needs('BEHAVIORAL_PROFILE'))select.push('p.id profile_id','p.primary_profile','p.secondary_profile','p.answers profile_answers','p.evidence profile_evidence','p.profile_snapshot','p.valid_until profile_valid_until','p.assessed_at profile_assessed_at')
-      const profileJoin=needs('BEHAVIORAL_PROFILE')?' LEFT JOIN LATERAL (SELECT id,primary_profile,secondary_profile,answers,evidence,profile_snapshot,valid_until,assessed_at FROM client_profiles WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY assessed_at DESC LIMIT 1) p ON true':''
+      if(needs('BEHAVIORAL_PROFILE'))select.push(
+        'c.id client_internal_id','c.tenant_id client_tenant_id','c.consultant_id client_consultant_id',
+        'p.id profile_id','p.tenant_id profile_tenant_id','p.client_id profile_client_id',
+        'p.primary_profile','p.secondary_profile','p.answers profile_answers','p.evidence profile_evidence',
+        'p.profile_snapshot','p.source_survey_id','p.valid_until profile_valid_until','p.assessed_at profile_assessed_at'
+      )
+      const profileJoin=needs('BEHAVIORAL_PROFILE')?' LEFT JOIN LATERAL (SELECT id,tenant_id,client_id,primary_profile,secondary_profile,answers,evidence,profile_snapshot,source_survey_id,valid_until,assessed_at FROM client_profiles WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY assessed_at DESC LIMIT 1) p ON true':''
       const result=await this.db.query(`SELECT ${select.join(',\n')} FROM clients c${profileJoin} WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' AND (c.id::text=$3 OR c.external_key=$3 OR COALESCE(c.commercial_profile->'manual_identity'->'external_key_aliases','[]'::jsonb) ? $3) ORDER BY CASE WHEN c.id::text=$3 OR c.external_key=$3 THEN 0 ELSE 1 END LIMIT 1`,[tenantId,ownerId,String(clientId)],...databaseTimeoutArgs(timeoutMs))
       if(!result.rowCount)throw domainError('Produtor não encontrado na carteira autorizada.',404)
       const row=result.rows[0]
       const completed=row.latest_completed_visit||null
-      const profileClient=needs('BEHAVIORAL_PROFILE')?clientFromRow({...row,external_key:row.client_external_key}):{}
-      const fastScope={tenantId,producerId:String(row.client_external_key),ownerId}
+      const requestedFastScope={tenantId,producerId:String(row.client_external_key),ownerId}
+      const fastScope=row.profile_id?assertVerifiedProfileRowScope(row,requestedFastScope):requestedFastScope
       const profileValidUntil=iso(row.profile_valid_until)
       const profileSourceRef=row.profile_id?`client_profile:${row.profile_id}`:null
-      const profileEvidence=materializeProfileEvidence(row.profile_evidence,fastScope,profileSourceRef,{answers:row.profile_answers,assessedAt:iso(row.profile_assessed_at),validUntil:profileValidUntil})
+      const canonicalProfile=needs('BEHAVIORAL_PROFILE')&&row.profile_id?materializeCanonicalBehavioralProfileEvidence({
+        profileId:row.profile_id,primaryProfile:row.primary_profile,secondaryProfile:row.secondary_profile,
+        answers:row.profile_answers,evidence:row.profile_evidence,profileSnapshot:row.profile_snapshot,
+        sourceSurveyId:row.source_survey_id,assessedAt:row.profile_assessed_at,validUntil:row.profile_valid_until,scope:fastScope,
+      }):{selected:[],rejected:[]}
+      const profileEvidence=canonicalProfile.selected
+      const canonicalProfileValues=Object.fromEntries(profileEvidence.map(item=>[item.source_field,item.materialized_value]).filter(([field,value])=>field&&value))
+      const fastProfileClient=needs('BEHAVIORAL_PROFILE')?{
+        primaryProfile:canonicalProfileValues.primaryProfile??null,secondaryProfile:canonicalProfileValues.secondaryProfile??null,
+        ...Object.fromEntries(profileBehavioralAnswerFields.map(({field})=>[field,canonicalProfileValues[field]??null])),
+        profileEvidence,profileUpdatedAt:iso(row.profile_assessed_at),profileValidUntil,
+      }:{}
       const scopedFast=item=>item?repositoryScopedRecord(item,fastScope):null
-      return {client:repositoryScopedRecord({id:String(row.client_external_key),name:String(row.name||'Produtor'),totalAreaHa:row.total_area_ha==null?null:Number(row.total_area_ha),areaBand:row.area_band||null,cultures:row.cultures||null,...(needs('BEHAVIORAL_PROFILE')?{...profileClient,id:String(row.client_external_key),name:String(row.name||'Produtor'),profileEvidence}: {})},fastScope),profileEvidence,profileSourceRef,profileAssessedAt:iso(row.profile_assessed_at),profileValidUntil,latestVisit:scopedFast(completed),latestCompletedVisit:scopedFast(completed),nextScheduledVisit:scopedFast(row.next_scheduled_visit),latestCommitment:scopedFast(row.latest_commitment),latestPurchase:scopedFast(row.latest_purchase),latestConfirmedObjection:scopedFast(row.latest_confirmed_objection),latestVisitConfirmedObjection:scopedFast(row.latest_visit_confirmed_objection),latestCropSeason:scopedFast(row.latest_crop_season)}
+      return {client:repositoryScopedRecord({id:String(row.client_external_key),name:String(row.name||'Produtor'),totalAreaHa:row.total_area_ha==null?null:Number(row.total_area_ha),areaBand:row.area_band||null,cultures:row.cultures||null,...fastProfileClient},fastScope),profileEvidence,profileRejectedEvidence:canonicalProfile.rejected,profileSourceRef,profileAssessedAt:iso(row.profile_assessed_at),profileValidUntil,latestVisit:scopedFast(completed),latestCompletedVisit:scopedFast(completed),nextScheduledVisit:scopedFast(row.next_scheduled_visit),latestCommitment:scopedFast(row.latest_commitment),latestPurchase:scopedFast(row.latest_purchase),latestConfirmedObjection:scopedFast(row.latest_confirmed_objection),latestVisitConfirmedObjection:scopedFast(row.latest_visit_confirmed_objection),latestCropSeason:scopedFast(row.latest_crop_season)}
     }catch(error){if(error.statusCode)throw error;throw serviceError('Os fatos rápidos do produtor não puderam ser lidos no PostgreSQL configurado.')}
   }
 
@@ -1193,7 +1431,7 @@ export class ValRepository{
       return attachContextSnapshot(context,{tenantId,clientId,ownerId,repositoryClientId:client.id||clientId,contextRequest})
     }
     try{
-      const result=await this.db.query(`SELECT c.*,p.id profile_id,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.answers,p.evidence profile_evidence,p.source_survey_id,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,
+      const result=await this.db.query(`SELECT c.*,p.id profile_id,p.tenant_id profile_tenant_id,p.client_id profile_client_id,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.answers,p.evidence profile_evidence,p.source_survey_id,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,
         COALESCE(NULLIF(p.profile_snapshot,'{}'::jsonb),survey.result,'{}'::jsonb) profile_snapshot,
         COALESCE((SELECT SUM(value) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won'),0) purchase_total,
         COALESCE((SELECT COUNT(*) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won'),0) purchase_count,
@@ -1222,22 +1460,43 @@ export class ValRepository{
         WHERE c.tenant_id=$1 AND c.consultant_id=$3 AND (c.id::text=$2 OR c.external_key=$2 OR COALESCE(c.commercial_profile->'manual_identity'->'external_key_aliases','[]'::jsonb) ? $2) ORDER BY CASE WHEN c.id::text=$2 OR c.external_key=$2 THEN 0 ELSE 1 END LIMIT 1`,[tenantId,clientId,ownerId],...databaseTimeoutArgs(contextRequest?.databaseTimeoutMs))
       if(!result.rows[0])throw Object.assign(new Error('Cliente não encontrado na base autorizada.'),{statusCode:404})
       const row=result.rows[0]
+      const publicClientId=String(row.external_key||clientId)
       const rawProfileEvidence=Array.isArray(row.profile_evidence)?row.profile_evidence:[]
       const canonicalClientMemory=item=>{
         const type=String(item?.subject_type||item?.subjectType||'client').toLowerCase()
         if(type!=='client')return item
-        return {...item,client_id:clientId,subject_id:clientId}
+        return {...item,client_id:publicClientId,subject_id:publicClientId}
       }
       const memories=(row.memories||[]).map(canonicalClientMemory)
       const memoryHistory=(row.memory_history||row.memories||[]).map(canonicalClientMemory)
       const profileSourceRef=row.profile_id?`client_profile:${row.profile_id}`:row.source_survey_id||rawProfileEvidence.map(profileEvidenceIdentifier).find(Boolean)||null
-      const profileEvidence=materializeProfileEvidence(rawProfileEvidence,{tenantId,producerId:String(clientId),ownerId},profileSourceRef,{answers:row.answers,assessedAt:iso(row.profile_assessed_at),validUntil:iso(row.profile_valid_until)})
-      const context={client:{...clientFromRow(row),profileSelfReported:profileEvidence.some(item=>item?.self_reported===true),profileEvidence},profile:{answers:jsonObject(row.answers),evidence:profileEvidence,assessedAt:iso(row.profile_assessed_at)||null,validUntil:iso(row.profile_valid_until)||null,sourceId:profileSourceRef},signals:row.signals||[],learning:{...(row.learning||{}),recommendations:row.feedback_learning||{},visitOutcomes:row.visit_outcomes||[]},memories,memoryHistory,businessHistory:row.business_history||[],visits:row.visits||[],interactions:row.interactions||[],commitments:row.commitments||[],opportunities:row.opportunities||[],properties:row.properties||[],fieldReports:row.field_reports||[],soilAnalyses:row.soil_analyses||[],ndviObservations:row.ndvi_observations||[],manualRecords:row.manual_records||[],attachments:(row.attachments||[]).map(attachmentMetadataRecord),priorRecommendations:row.prior_recommendations||[]}
+      const verifiedProfileScope=row.profile_id?assertVerifiedProfileRowScope({
+        ...row,client_internal_id:row.id,client_tenant_id:row.tenant_id,client_consultant_id:row.consultant_id,client_external_key:publicClientId,
+      },{tenantId,ownerId,producerId:publicClientId}):{tenantId,ownerId,producerId:publicClientId,repositoryClientId:String(row.id||'')}
+      const canonicalProfile=row.profile_id?materializeCanonicalBehavioralProfileEvidence({
+        profileId:row.profile_id,primaryProfile:row.primary_profile,secondaryProfile:row.secondary_profile,
+        answers:row.answers,evidence:rawProfileEvidence,profileSnapshot:row.profile_snapshot,
+        sourceSurveyId:row.source_survey_id,assessedAt:row.profile_assessed_at,validUntil:row.profile_valid_until,scope:verifiedProfileScope,
+      }):{selected:[],rejected:[]}
+      const profileEvidence=row.profile_id
+        ?canonicalProfile.selected
+        :materializeLegacyProfileEvidence(rawProfileEvidence,verifiedProfileScope,profileSourceRef,{answers:row.answers,assessedAt:iso(row.profile_assessed_at),validUntil:iso(row.profile_valid_until)})
+      const canonicalProfileValues=Object.fromEntries(profileEvidence.map(item=>[item.source_field,item.materialized_value]).filter(([field,value])=>field&&value))
+      const canonicalAnswers=row.profile_id
+        ?Object.fromEntries(profileBehavioralAnswerFields.map(({field,question})=>[question,canonicalProfileValues[field]]).filter(([,value])=>value))
+        :jsonObject(row.answers)
+      const baseClient=clientFromRow(row)
+      const contextClient=row.profile_id?{
+        ...baseClient,primaryProfile:canonicalProfileValues.primaryProfile??null,secondaryProfile:canonicalProfileValues.secondaryProfile??null,
+        ...Object.fromEntries(profileBehavioralAnswerFields.map(({field})=>[field,profileContextClientValue(field,canonicalProfileValues[field])])),
+        profileSelfReported:profileEvidence.some(item=>item.epistemic_type==='QUOTE'),profileEvidence,
+      }:{...baseClient,profileSelfReported:profileEvidence.some(item=>item?.self_reported===true),profileEvidence}
+      const context={client:contextClient,profile:{answers:canonicalAnswers,evidence:profileEvidence,rejectedEvidence:canonicalProfile.rejected,assessedAt:iso(row.profile_assessed_at)||null,validUntil:iso(row.profile_valid_until)||null,sourceId:profileSourceRef},signals:row.signals||[],learning:{...(row.learning||{}),recommendations:row.feedback_learning||{},visitOutcomes:row.visit_outcomes||[]},memories,memoryHistory,businessHistory:row.business_history||[],visits:row.visits||[],interactions:row.interactions||[],commitments:row.commitments||[],opportunities:row.opportunities||[],properties:row.properties||[],fieldReports:row.field_reports||[],soilAnalyses:row.soil_analyses||[],ndviObservations:row.ndvi_observations||[],manualRecords:row.manual_records||[],attachments:(row.attachments||[]).map(attachmentMetadataRecord),priorRecommendations:row.prior_recommendations||[]}
       // ContextSnapshot usa o identificador canônico exposto pelo contrato
       // (external_key), igual a context.client.id e ao envelope do ValEngine.
       // O UUID interno já foi validado pelo SELECT tenant+owner e não deve
       // atravessar a fronteira de contexto pré-carregado.
-      return attachContextSnapshot(context,{tenantId,clientId,ownerId,repositoryClientId:row.id,contextRequest})
+      return attachContextSnapshot(context,{tenantId,clientId:publicClientId,ownerId,repositoryClientId:row.id,contextRequest})
     }catch(error){if(error.statusCode===404)throw error;throw serviceError('O contexto do cliente não pôde ser lido no banco configurado.')}
   }
 
