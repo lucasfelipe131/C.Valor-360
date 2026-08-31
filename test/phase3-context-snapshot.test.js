@@ -44,6 +44,19 @@ test('duas fontes materiais divergentes geram conflito e reduzem confiança',()=
   assert.equal(result.confidence.level,'HIPÓTESE')
 })
 
+test('gate agronômico explícito preserva stale auditável e conflito estrutural relevante',()=>{
+  const context=baseContext()
+  context.memoryHistory=[
+    memory('memory-expired-soil',{memory_domain:'AGRONOMIC',key:'soil_summary',value:'Amostra sintética antiga',valid_until:'2021-01-01T12:00:00.000Z'}),
+    memory('memory-area-a',{value:500,source_type:'consultant_input'}),
+    memory('memory-area-b',{value:620,source_type:'laboratory',source_ref:'laboratory:analysis-1'})
+  ]
+  const result=snapshot(context,{objective:'agronomic_question',message:'Considere o histórico da área plantada estrutural e os conflitos materiais.',contextDomain:'AGRONOMY'})
+  assert.ok(result.selection.exclusion_reason_codes.some(item=>item.ref==='memory-expired-soil'&&item.reason_codes.includes('EXPIRED')))
+  assert.ok(result.stale_information.some(item=>item.memory_ref==='memory-expired-soil'))
+  assert.ok(result.conflicts.some(item=>item.memory_refs.includes('memory-area-a')&&item.memory_refs.includes('memory-area-b')))
+})
+
 test('ausência de histórico permanece lacuna e não fabrica fato',()=>{
   const result=snapshot(baseContext(),{objective:'agronomic_question'})
   assert.equal(result.facts.length,0)
