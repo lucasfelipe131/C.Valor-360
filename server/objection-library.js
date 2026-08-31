@@ -2,6 +2,8 @@ const DAY=86_400_000
 const CACHE_TTL=5*60*1000
 const CACHE_LIMIT=500
 const portfolioCache=new Map()
+const portfolioCacheGenerations=new Map()
+let portfolioCacheEpoch=0
 
 const array=value=>Array.isArray(value)?value:[]
 const object=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{}
@@ -23,6 +25,13 @@ const recommendationDate=item=>item?.created_at||item?.createdAt||null
 const recommendationOutcome=item=>lower(item?.feedback?.outcome||item?.feedback?.status)
 const usedRecommendation=item=>/accepted|edited|adapted|used|scheduled|executed|won|aceit|edit|adapt|usad|agend|execut|ganh|fechad/.test(recommendationOutcome(item))
 const recommendationAction=item=>text(item?.advice?.executive_brief?.action||item?.advice?.next_best_action||item?.next_best_action||item?.advice?.approach_plan?.objective||item?.advice?.approach_plan?.prioritize||item?.user_question,280)
+const scopeValues=(item,keys)=>[...new Set(keys.map(key=>text(item?.[key],180)).filter(Boolean))]
+const tenantScopeKeys=['tenant_id','tenantId','organization_id','organizationId']
+const ownerScopeKeys=['context_owner_id','contextOwnerId','consultant_id','consultantId','owner_id','ownerId','created_by','createdBy']
+const exactPortfolioScope=(item,tenantId,ownerId)=>{
+ const tenants=scopeValues(item,tenantScopeKeys),owners=scopeValues(item,ownerScopeKeys)
+ return tenants.length===1&&owners.length===1&&tenants[0]===String(tenantId)&&owners[0]===String(ownerId)
+}
 
 const STOP_WORDS=new Set(['para','com','sem','uma','um','de','da','do','das','dos','e','ou','em','no','na','nos','nas','por','que','esta','este','sobre','produto','oportunidade','negocio','cliente','produtor'])
 const tokens=value=>unique(lower(value).replace(/[^a-z0-9]+/g,' ').split(/\s+/).filter(token=>token.length>=3&&!STOP_WORDS.has(token)))
@@ -193,9 +202,14 @@ const cacheKey=(repository,ownerId)=>`${repository?.tenantId||'tenant'}:${ownerI
 export async function loadPortfolioBusinessHistory(repository,ownerId,options={}){
  const now=Number(options.now||Date.now())
  const ttlMs=Math.max(1000,Number(options.ttlMs)||CACHE_TTL)
+ const tenantId=text(repository?.tenantId,180)
+ const scopedOwnerId=text(ownerId,180)
+ if(!tenantId||!scopedOwnerId)throw Object.assign(new Error('tenantId e ownerId são obrigatórios para consultar a biblioteca de objeções.'),{code:'objection_history_scope_required'})
  const key=cacheKey(repository,ownerId)
  const cached=portfolioCache.get(key)
  if(cached&&cached.expiresAt>now)return cached.events
+ const loadEpoch=portfolioCacheEpoch
+ const loadGeneration=portfolioCacheGenerations.get(key)||0
  let events=[]
  if(repository?.db?.configured&&ownerId!=null){
   const result=await repository.db.query(`SELECT business.id,business.source,business.external_id,business.occurred_at,business.outcome,business.category,business.product,business.value,business.loss_reason,business.payload,client.external_key client_external_key,client.name client_name
@@ -206,14 +220,26 @@ export async function loadPortfolioBusinessHistory(repository,ownerId,options={}
   events=result.rows.map(row=>({
    id:row.id,source:row.source,externalId:row.external_id,occurredAt:iso(row.occurred_at),outcome:row.outcome,
    category:row.category,product:row.product,value:row.value==null?null:Number(row.value),lossReason:row.loss_reason,
-   payload:object(row.payload),clientExternalKey:row.client_external_key,clientName:row.client_name
+   payload:object(row.payload),clientExternalKey:row.client_external_key,clientName:row.client_name,
+   tenantId,contextOwnerId:scopedOwnerId
   }))
  }else{
   const store=repository?.readStore?.()||{}
-  events=array(store.businessEvents||store.val?.businessEvents).filter(item=>isLoss(item)||isWin(item)).slice(-CACHE_LIMIT)
+  events=array(store.businessEvents||store.val?.businessEvents).filter(item=>exactPortfolioScope(item,tenantId,scopedOwnerId)&&(isLoss(item)||isWin(item))).slice(-CACHE_LIMIT)
  }
- portfolioCache.set(key,{expiresAt:now+ttlMs,events})
+ // Uma invalidação pode ocorrer enquanto a consulta está em voo. Nesse
+ // caso o chamador original ainda recebe seu resultado, mas a geração antiga
+ // nunca volta a popular o cache depois do clear.
+ if(loadEpoch===portfolioCacheEpoch&&loadGeneration===(portfolioCacheGenerations.get(key)||0))portfolioCache.set(key,{expiresAt:now+ttlMs,events})
  return events
 }
 
-export function clearObjectionLibraryCache(){portfolioCache.clear()}
+export function clearObjectionLibraryCache({tenantId,ownerId}={}){
+ const tenant=String(tenantId??'').trim()
+ const owner=String(ownerId??'').trim()
+ if(!tenant&&!owner){const removed=portfolioCache.size;portfolioCacheEpoch+=1;portfolioCache.clear();portfolioCacheGenerations.clear();return removed}
+ if(!tenant||!owner)throw Object.assign(new Error('tenantId e ownerId são obrigatórios para invalidar a biblioteca de objeções.'),{code:'objection_cache_scope_required'})
+ const key=`${tenant}:${owner}`
+ portfolioCacheGenerations.set(key,(portfolioCacheGenerations.get(key)||0)+1)
+ return portfolioCache.delete(key)?1:0
+}

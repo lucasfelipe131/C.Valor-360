@@ -12,6 +12,8 @@ const progressClient=readFileSync(new URL('../src/lib/val-progress-client.js',im
 test('backend expõe progresso protegido e vinculado ao usuário autenticado',()=>{
   assert.ok(server.includes("url.pathname==='/api/val/progress'"))
   assert.ok(server.includes('progressOwnerKey(identity,request)'))
+  assert.match(server,/valProgress\.get\(\{requestId,tenantId:/)
+  assert.match(server,/valProgress\.start\(\{requestId,tenantId,ownerId:/)
   assert.ok(server.includes('onProgress:stage=>valProgress.update'))
   assert.ok(server.includes('valProgress.fail'))
 })

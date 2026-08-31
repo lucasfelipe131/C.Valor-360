@@ -139,8 +139,8 @@ test('Capability Router — FAST é direto e DEEP cruza contexto sem conceder pe
 test('current data — fonte e data são obrigatórias; referência antiga nunca vira preço de hoje',()=>{
  const now=new Date('2026-08-25T15:00:00.000Z')
  const workspace={marketSnapshots:[
-  {id:'soja-current',commodity:'soja',marketKind:'spot',region:'Cascavel/PR',price:151.5,priceUnit:'BRL/sc_60kg',sourceName:'Boletim identificado',sourceUrl:'https://example.test/boletim',observedAt:'2026-08-25T13:00:00.000Z',confidence:95,status:'active'},
-  {id:'soja-before',commodity:'soja',marketKind:'spot',region:'Cascavel/PR',price:149,priceUnit:'BRL/sc_60kg',sourceName:'Boletim identificado',observedAt:'2026-08-24T13:00:00.000Z',confidence:95,status:'active'}
+  {id:'soja-current',commodity:'soja',marketKind:'spot',region:'Cascavel/PR',price:151.5,priceUnit:'BRL/sc_60kg',sourceName:'Boletim identificado',sourceUrl:'https://example.test/boletim',observedAt:'2026-08-25T13:00:00.000Z',confidence:95,status:'active',scope:'MARKET',tenantId:'tenant-a',contextOwnerId:'owner-a'},
+  {id:'soja-before',commodity:'soja',marketKind:'spot',region:'Cascavel/PR',price:149,priceUnit:'BRL/sc_60kg',sourceName:'Boletim identificado',observedAt:'2026-08-24T13:00:00.000Z',confidence:95,status:'active',scope:'MARKET',tenantId:'tenant-a',contextOwnerId:'owner-a'}
  ]}
  const current=answerCurrentMarket({workspace,message:'Preço da soja hoje',now})
  assert.equal(current.status,'CURRENT')
@@ -162,8 +162,8 @@ test('current data — fonte e data são obrigatórias; referência antiga nunca
 test('FAST envelopes — respostas diretas preservam AIReasoningResult, provenance e zero memória',()=>{
  const now=new Date('2026-08-25T15:00:00.000Z')
  const clientResponse=buildFastClientResponse({
-  facts:{client:{id:'joao',name:'João Pereira'},latestCompletedVisit:{id:'visit-1',objective:'Revisar proposta',status:'Concluída',lifecycleStatus:'COMPLETED',occurredAt:'2026-08-24T14:00:00.000Z',updatedAt:'2026-08-25T14:30:00.000Z',nextCommitment:'Enviar comparativo'}},
-  message:'Qual foi a última visita?',organizationId:'tenant-a',conversationId:'thread-joao',now,latencyMs:12
+  facts:{client:{id:'joao',name:'João Pereira',producer_id:'joao',tenant_id:'tenant-a',context_owner_id:'owner-a'},latestCompletedVisit:{id:'visit-1',objective:'Revisar proposta',status:'Concluída',lifecycleStatus:'COMPLETED',occurredAt:'2026-08-24T14:00:00.000Z',updatedAt:'2026-08-25T14:30:00.000Z',nextCommitment:'Enviar comparativo',producer_id:'joao',tenant_id:'tenant-a',context_owner_id:'owner-a'}},
+  message:'Qual foi a última visita?',organizationId:'tenant-a',ownerId:'owner-a',conversationId:'thread-joao',now,latencyMs:12
  })
  const clientReasoning=clientResponse.advice.ai_reasoning
  assert.deepEqual(validateAIReasoningResult(clientReasoning),[])

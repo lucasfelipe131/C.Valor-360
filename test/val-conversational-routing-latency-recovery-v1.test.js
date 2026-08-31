@@ -16,6 +16,17 @@ const now=new Date('2026-08-29T15:00:00.000Z')
 const antonio={id:'antonio',name:'Antônio Carlos'}
 const carlos={id:'carlos',name:'Carlos Oliveira'}
 const portfolio=[antonio,carlos]
+const fastRecordKeys=['latestVisit','latestCompletedVisit','nextScheduledVisit','latestCommitment','latestPurchase','latestConfirmedObjection','latestVisitConfirmedObjection','latestCropSeason']
+const scopedFastFacts=facts=>{
+ const producerId=String(facts.client.id)
+ const scope={producer_id:producerId,tenant_id:tenantId,context_owner_id:ownerId}
+ return {
+  ...facts,
+  client:{...facts.client,...scope},
+  ...Object.fromEntries(fastRecordKeys.filter(key=>facts[key]).map(key=>[key,{...facts[key],...scope}])),
+  ...(Array.isArray(facts.profileEvidence)?{profileEvidence:facts.profileEvidence.map(item=>({...item,...scope}))}:{})
+ }
+}
 
 const route=message=>routeSystemCapability({message,hasClient:true})
 
@@ -113,9 +124,9 @@ test('formatter factual é determinístico, honesto e declara orçamento zero-mo
   client:{id:antonio.id,name:antonio.name,totalAreaHa:428.5,areaBand:null,cultures:'Soja, Milho'},
   latestCompletedVisit:{id:'visit-1',status:'Realizada',lifecycleStatus:'COMPLETED',occurredAt:'2026-08-24T12:00:00.000Z',summary:'Revisão de nutrição.'},
   latestConfirmedObjection:{visit_report_id:'report-1',confirmed_at:'2026-08-24T13:00:00.000Z',objections:[{item_id:'obj-1',statement:'Preço acima do orçamento.',category:'PRICE'}]},
-  latestCommitment:{commitment_id:'commitment-1',description:'Enviar proposta revisada.',status:'OPEN',due_at:'2026-09-02T12:00:00.000Z'},
+  latestCommitment:{commitment_id:'commitment-1',description:'Enviar proposta revisada.',status:'OPEN',due_at:'2026-09-02T12:00:00.000Z',updated_at:'2026-08-24T13:00:00.000Z'},
   latestPurchase:{id:'purchase-1',occurred_at:'2026-08-20T12:00:00.000Z',product:'Fertilizante X',quantity:12,value:185000,currency:'BRL'},
-  latestCropSeason:{season:'2026/27',crop:'Milho',area_ha:180,planted_at:'2026-08-10'},
+  latestCropSeason:{id:'season-1',season:'2026/27',crop:'Milho',area_ha:180,planted_at:'2026-08-10'},
  }
  const expectations=[
   ['Qual foi a última visita dele?',/24\/08\/2026/],
@@ -126,7 +137,7 @@ test('formatter factual é determinístico, honesto e declara orçamento zero-mo
   ['Qual área dele está cadastrada?',/428,5 ha/],
  ]
  for(const [message,pattern] of expectations){
-  const response=buildFastClientResponse({facts,message,organizationId:tenantId,conversationId:'thread-a',now})
+  const response=buildFastClientResponse({facts:scopedFastFacts(facts),message,organizationId:tenantId,ownerId,conversationId:'thread-a',now})
   assert.match(response.advice.answer,pattern,message)
   assert.equal(response.route,'FAST',message)
   assert.equal(response.responseMetadata.executionBudget.modelCalls,0,message)
@@ -136,17 +147,35 @@ test('formatter factual é determinístico, honesto e declara orçamento zero-mo
   assert.equal(response.advice.ai_reasoning.run.model_call_count,0,message)
  }
 
- const noData=buildFastClientResponse({facts:{client:{id:antonio.id,name:antonio.name}},message:'Qual foi a última visita dele?',organizationId:tenantId,conversationId:'thread-a',now})
+ const noData=buildFastClientResponse({facts:scopedFastFacts({client:{id:antonio.id,name:antonio.name}}),message:'Qual foi a última visita dele?',organizationId:tenantId,ownerId,conversationId:'thread-a',now})
  assert.match(noData.advice.answer,/Ainda não há visita (?:concluída )?registrada/i)
  assert.equal(noData.advice.ai_reasoning.facts_used.length,0)
 
- const noArea=buildFastClientResponse({facts:{client:{id:antonio.id,name:antonio.name,totalAreaHa:null}},message:'Qual área dele está cadastrada?',organizationId:tenantId,conversationId:'thread-a',now})
+ const noArea=buildFastClientResponse({facts:scopedFastFacts({client:{id:antonio.id,name:antonio.name,totalAreaHa:null}}),message:'Qual área dele está cadastrada?',organizationId:tenantId,ownerId,conversationId:'thread-a',now})
  assert.match(noArea.advice.answer,/Ainda não há área total cadastrada/i)
  assert.doesNotMatch(noArea.advice.answer,/0 ha/)
 })
 
+test('safra sem identidade auditável não é relabelada como cadastro do produtor',()=>{
+ const response=buildFastClientResponse({
+  facts:scopedFastFacts({
+   client:{id:antonio.id,name:antonio.name,cultures:'Soja'},
+   latestCropSeason:{season:'2026/27',crop:'Milho secreto',area_ha:180,planted_at:'2026-08-10'},
+  }),
+  message:'Quais culturas estão cadastradas?',organizationId:tenantId,ownerId,conversationId:'thread-season-no-source',now,
+ })
+ assert.match(response.advice.answer,/Culturas cadastradas.*Soja/i)
+ assert.doesNotMatch(response.advice.answer,/Milho secreto|2026\/27|180/)
+ assert.deepEqual(response.advice.ai_reasoning.facts_used.map(item=>({id:item.id,source_type:item.source_type})),[{id:'client:antonio',source_type:'client_registration'}])
+})
+
 test('fatos legados sem source_ref falham fechados e nunca viram evidência verificada',()=>{
  const cases=[
+  {
+   message:'Qual foi a última visita?',
+   facts:{client:antonio,latestCompletedVisit:{status:'Realizada',lifecycleStatus:'COMPLETED',occurredAt:'2026-08-24T12:00:00.000Z',summary:'Resumo legado secreto.'}},
+   forbidden:/Resumo legado secreto/,
+  },
   {
    message:'Qual foi o último compromisso?',
    facts:{client:antonio,latestCommitment:{description:'Enviar desconto secreto.',status:'OPEN',updated_at:'2026-08-25T12:00:00.000Z'}},
@@ -169,7 +198,7 @@ test('fatos legados sem source_ref falham fechados e nunca viram evidência veri
   },
  ]
  for(const {message,facts,forbidden} of cases){
-  const response=buildFastClientResponse({facts,message,organizationId:tenantId,conversationId:'thread-legacy-no-source',now})
+  const response=buildFastClientResponse({facts:scopedFastFacts(facts),message,organizationId:tenantId,ownerId,conversationId:'thread-legacy-no-source',now})
   const reasoning=response.advice.ai_reasoning
   assert.match(response.advice.answer,/referência auditável|referencia auditavel/i,message)
   assert.doesNotMatch(response.advice.answer,forbidden,message)
@@ -185,13 +214,14 @@ test('fatos legados sem source_ref falham fechados e nunca viram evidência veri
 
 test('comparação omite compromisso, compra e objeção legados sem identificador auditável',()=>{
  const response=buildFastClientComparisonResponse({
-  entries:[
-   {client:{...antonio,totalAreaHa:428.5},latestCommitment:{description:'Compromisso legado secreto.'},latestPurchase:{product:'Compra legada secreta',value:185000},latestConfirmedObjection:{objections:[{statement:'Objeção legada secreta.'}]}},
+ entries:[
+   {client:{...antonio,totalAreaHa:428.5},latestCompletedVisit:{status:'Realizada',lifecycleStatus:'COMPLETED',occurredAt:'1999-01-02T12:00:00.000Z'},latestCommitment:{description:'Compromisso legado secreto.'},latestPurchase:{product:'Compra legada secreta',value:185000},latestConfirmedObjection:{objections:[{statement:'Objeção legada secreta.'}]}},
    {client:{...carlos,totalAreaHa:310}},
-  ],
-  message:'Compare os dois.',organizationId:tenantId,conversationId:'thread-comparison-legacy-no-source',now,
+  ].map(scopedFastFacts),
+  authorizedProducerIds:[antonio.id,carlos.id],
+  message:'Compare os dois.',organizationId:tenantId,ownerId,conversationId:'thread-comparison-legacy-no-source',now,
  })
- assert.doesNotMatch(response.advice.answer,/Compromisso legado secreto|Compra legada secreta|Objeção legada secreta|185\.000/)
+ assert.doesNotMatch(response.advice.answer,/Compromisso legado secreto|Compra legada secreta|Objeção legada secreta|185\.000|02\/01\/1999/)
  assert.ok(response.advice.ai_reasoning.facts_used.every(item=>Boolean(item.id)))
  const commercial=response.advice.ai_reasoning.run.capability_results.find(item=>item.capability==='COMMERCIAL_HISTORY')
  assert.deepEqual(commercial,{capability:'COMMERCIAL_HISTORY',status:'NO_DATA',source_ref:null})
@@ -203,7 +233,7 @@ test('objeção da última visita preserva proveniência do relatório e da visi
   latestCompletedVisit:{id:'visit-correlated',status:'Realizada',lifecycleStatus:'COMPLETED',occurredAt:'2026-08-24T12:00:00.000Z'},
   latestVisitConfirmedObjection:{visit_report_id:'report-correlated',visit_id:'visit-correlated',confirmed_at:'2026-08-24T13:00:00.000Z',visit_occurred_at:'2026-08-24T12:00:00.000Z',visit_lifecycle_status:'COMPLETED',objections:[{statement:'Preço acima do orçamento.',primary:true}]},
  }
- const response=buildFastClientResponse({facts,message:'Qual foi a objeção da última visita?',organizationId:tenantId,conversationId:'thread-visit-provenance',now})
+ const response=buildFastClientResponse({facts:scopedFastFacts(facts),message:'Qual foi a objeção da última visita?',organizationId:tenantId,ownerId,conversationId:'thread-visit-provenance',now})
  const reasoning=response.advice.ai_reasoning
  assert.equal(response.responseMetadata.dataPath,'LATEST_VISIT_CONFIRMED_OBJECTION')
  assert.deepEqual(response.responseMetadata.latestCompletedVisit,{id:'visit-correlated',status:'Realizada',lifecycleStatus:'COMPLETED',occurredAt:'2026-08-24T12:00:00.000Z'})
@@ -222,21 +252,25 @@ test('comparação não escolhe primeira objeção sem primary e não verifica r
   entries:[
    {client:{id:antonio.id,name:antonio.name},latestConfirmedObjection:{visit_report_id:'report-a',confirmed_at:'2026-08-24T13:00:00.000Z',objections:[{statement:'Preço acima do orçamento.'},{statement:'Prazo de entrega.'}]}},
    {client:{id:carlos.id,name:carlos.name,totalAreaHa:300}},
-  ],
-  message:'Compare os dois.',organizationId:tenantId,conversationId:'thread-comparison-ambiguous',now,
+  ].map(scopedFastFacts),
+  authorizedProducerIds:[antonio.id,carlos.id],
+  message:'Compare os dois.',organizationId:tenantId,ownerId,conversationId:'thread-comparison-ambiguous',now,
  })
- assert.match(ambiguous.advice.answer,/2 registradas, sem principal definida/i)
+ assert.match(ambiguous.advice.answer,/Objeções confirmadas de Antônio Carlos/i)
+ assert.match(ambiguous.advice.answer,/O que ainda não sabemos: qual delas é a principal/i)
  assert.match(ambiguous.advice.answer,/Preço acima do orçamento.*Prazo de entrega/i)
  assert.doesNotMatch(ambiguous.advice.answer,/objeção confirmada Preço acima do orçamento/i)
  assert.ok(ambiguous.advice.ai_reasoning.missing_information.some(item=>/Marcação da objeção principal.*Antônio Carlos/i.test(item)))
  assert.ok(ambiguous.advice.ai_reasoning.decision_interview.questions.some(item=>/Qual objeção confirmada.*Antônio Carlos/i.test(item.question)))
- assert.equal(ambiguous.advice.ai_reasoning.facts_used.find(item=>item.id==='report-a').statement,'Objeções confirmadas de Antônio Carlos: Preço acima do orçamento.; Prazo de entrega.')
+ assert.equal(ambiguous.advice.ai_reasoning.facts_used.find(item=>item.id==='report-a').statement,'Objeções confirmadas de Antônio Carlos: Preço acima do orçamento; Prazo de entrega')
 
  const empty=buildFastClientComparisonResponse({
-  entries:[{client:{id:antonio.id,name:antonio.name}},{client:{id:carlos.id,name:carlos.name}}],
-  message:'Compare os dois.',organizationId:tenantId,conversationId:'thread-comparison-empty',now,
+  entries:[{client:{id:antonio.id,name:antonio.name}},{client:{id:carlos.id,name:carlos.name}}].map(scopedFastFacts),
+  authorizedProducerIds:[antonio.id,carlos.id],
+  message:'Compare os dois.',organizationId:tenantId,ownerId,conversationId:'thread-comparison-empty',now,
  })
- assert.deepEqual(empty.advice.ai_reasoning.facts_used,[])
+ assert.equal(empty.advice.ai_reasoning.facts_used.length,2)
+ assert.ok(empty.advice.ai_reasoning.facts_used.every(item=>item.comparison_dimension==='identity'&&item.source_type==='client_registration'))
  assert.equal(empty.advice.ai_reasoning.context_snapshot.confidence.level,'INSUFICIENTE')
  assert.equal(empty.advice.ai_reasoning.confidence.level,'INSUFICIENTE')
  assert.deepEqual(empty.advice.ai_reasoning.run.capabilities_used,[])

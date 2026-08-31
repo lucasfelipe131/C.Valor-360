@@ -38,7 +38,7 @@ function memory(index,key,statement,{domain='COMMERCIAL',state='FACT'}={}){
  const at=now.toISOString()
  return {
   id:`00000000-0000-4000-8000-${String(810+index).padStart(12,'0')}`,
-  organization_id:organizationId,client_id:clientId,subject_type:'client',subject_id:clientId,
+  organization_id:organizationId,client_id:clientId,subject_type:'client',subject_id:clientId,owner_id:actorId,
   memory_type:state==='FACT'?'fact':'hypothesis',memory_state:state,memory_domain:domain,key,value:{statement},
   evidence:[{id:`synthetic-evidence-${index}`,source_ref:`synthetic:${index}`,confirmation_status:'CONFIRMED'}],
   confidence:state==='FACT'?90:60,status:state==='FACT'?'verified':'proposed',source_ref:`synthetic:${index}`,
@@ -56,7 +56,7 @@ function geometryFixture(){
 
 function scanAttachment(analysisType,index){
  const id=`00000000-0000-4000-8000-${String(850+index).padStart(12,'0')}`
- const attachment={id,tenantId:organizationId,ownerId:actorId,clientId,client_id:'00000000-0000-4000-8000-000000000803',createdAt:now.toISOString(),sha256:'a'.repeat(64)}
+ const attachment={id,tenantId:organizationId,ownerId:actorId,clientId,client_id:clientId,createdAt:now.toISOString(),sha256:'a'.repeat(64)}
  const provenance=buildAgronomicScanProvenance({
   sourceAttachment:{attachmentId:id,association:'LINKED_CLIENT',organizationId,clientId,createdAt:now.toISOString(),sha256:'a'.repeat(64)},
   attachment,tenantId:organizationId,ownerId:actorId,analysisType,createdAt:now.toISOString(),resultReference:`synthetic-result:${analysisType.toLowerCase()}`,propertyId:'synthetic-property',fieldId:'synthetic-field'
@@ -64,29 +64,39 @@ function scanAttachment(analysisType,index){
  return {...attachment,mimeType:'image/jpeg',analysis:{latestScanResult:{...provenance,result:{summary:`Resultado sintético ${analysisType}; triagem, não prescrição.`}}}}
 }
 
-function syntheticContext(){
+function syntheticContext({message='Preparar decisão sintética',contextDomain='',conversationId=null,contextEpoch=0,activeEntity=null,groundedFixture=false}={}){
+ const scoped={organizationId,clientId,ownerId:actorId}
+ const fieldReportSummary=groundedFixture?'O relatório observou no Talhão Norte um risco agronômico ainda sem causa diagnosticada.':'Milho emergido; causa de qualquer sintoma ainda não diagnosticada.'
  const context={
   organizationId,
-  client:{id:clientId,name:'Produtor Sintético GP',municipality:'Município Sintético',cultures:'Milho',primaryProfile:'Analítico',decisionDriver:'comparativo com números da própria área',commercial:{currentPurchases:150000,potential:260000}},
-  profile:{answers:{6:'Produtor e sócio',7:'Resultados técnicos, números e retorno financeiro.',8:'Comparativos e custo por hectare.'},assessedAt:'2026-08-20T10:00:00.000Z',evidence:[{id:'synthetic-survey',source_type:'producer_questionnaire'}]},
-  memoryHistory:[
+  client:{id:clientId,name:'Produtor Sintético GP',municipality:'Município Sintético',cultures:'Milho',primaryProfile:groundedFixture?'Perfil principal: Analítico':'Analítico',decisionDriver:'comparativo com números da própria área',commercial:{currentPurchases:150000,potential:260000},...scoped},
+  profile:{sourceId:'synthetic-survey',answers:{6:'Produtor e sócio',7:'Resultados técnicos, números e retorno financeiro.',8:'Comparativos e custo por hectare.'},assessedAt:'2026-08-20T10:00:00.000Z',evidence:[{id:'synthetic-survey',source_type:'producer_questionnaire',observedAt:'2026-08-20T10:00:00.000Z',...scoped}]},
+  memoryHistory:groundedFixture?[
+   memory(1,'commercial.history','O histórico comercial registra análise de proteção de cultivos.'),memory(2,'agronomic.crop_state','O estado agronômico confirmado indica que o cultivo já emergiu.',{domain:'AGRONOMIC'}),
+   memory(3,'agronomic.application','A aplicação agronômica está próxima.',{domain:'AGRONOMIC'}),memory(4,'commercial.price','O preço ainda precisa ser comparado.')
+  ]:[
    memory(1,'voice.fact','A visita tratará de inseticida no milho.'),memory(2,'voice.fact','O milho já emergiu.',{domain:'AGRONOMIC'}),
    memory(3,'voice.fact','A primeira aplicação está próxima.',{domain:'AGRONOMIC'}),memory(4,'voice.fact','O preço ainda precisa ser comparado.')
   ],
-  memories:[],businessHistory:[{id:'synthetic-business',product:'Inseticida',culture:'Milho',outcome:'won',occurred_at:'2026-06-01T00:00:00.000Z'}],
-  visits:[{id:'synthetic-visit-completed',objective:'Revisão sintética de milho',summary:'Comparativo solicitado.',status:'Concluída',lifecycleStatus:'COMPLETED',occurredAt:'2026-08-26T12:00:00.000Z'}],
-  interactions:[{id:'synthetic-interaction',summary:'Pediu ROI e custo por hectare.',occurred_at:'2026-08-26T13:00:00.000Z'}],
-  commitments:[{commitment_id:'synthetic-commitment',description:'Enviar comparativo de custo por hectare',status:'OPEN',due_at:'2026-08-28T12:00:00.000Z'}],
-  opportunities:[{id:'synthetic-opportunity',title:'Inseticida no milho',category:'Proteção',stage:'proposta',estimated_value:80000,next_action:'Revisar comparativo',next_action_at:'2026-08-28T00:00:00.000Z',updated_at:'2026-08-26T00:00:00.000Z'}],
-  properties:[],fieldReports:[{id:'synthetic-field-report',summary:'Milho emergido; causa de qualquer sintoma ainda não diagnosticada.',observed_at:'2026-08-26T00:00:00.000Z'}],
-  soilAnalyses:[{id:'synthetic-soil-analysis',sampledAt:'2026-08-20T00:00:00.000Z',laboratory:'Laboratório Sintético',measurements:[{metric:'pH',value:5.4,unit:'pH'},{metric:'CTC',value:11.2,unit:'cmolc/dm3'}]}],
-  ndviObservations:[],manualRecords:[{id:'synthetic-manual-record',summary:'Registro técnico sintético confirmado.'}],signals:[],
+  memories:[],businessHistory:[{id:'synthetic-business',product:'Inseticida',culture:'Milho',outcome:'won',occurred_at:'2026-06-01T00:00:00.000Z',...scoped}],
+  visits:[{id:'synthetic-visit-completed',objective:'Revisão sintética de milho',summary:'Comparativo solicitado.',status:'Concluída',lifecycleStatus:'COMPLETED',occurredAt:'2026-08-26T12:00:00.000Z',...scoped}],
+  interactions:[{id:'synthetic-interaction',summary:'Pediu ROI e custo por hectare.',occurred_at:'2026-08-26T13:00:00.000Z',...scoped}],
+  commitments:[{id:'synthetic-commitment',commitment_id:'synthetic-commitment',description:'Enviar comparativo de custo por hectare',status:'OPEN',created_at:'2026-08-26T13:00:00.000Z',due_at:'2026-08-28T12:00:00.000Z',...scoped}],
+  opportunities:[{id:'synthetic-opportunity',title:groundedFixture?'Proteção de cultivos':'Inseticida no milho',category:'Proteção',stage:'proposta',estimated_value:80000,next_action:'Revisar comparativo',next_action_at:'2026-08-28T00:00:00.000Z',updated_at:'2026-08-26T00:00:00.000Z',...scoped}],
+  properties:[],fieldReports:[{id:'synthetic-field-report',propertyId:'synthetic-property',fieldId:'synthetic-field',summary:fieldReportSummary,observed_at:'2026-08-26T00:00:00.000Z',...scoped}],
+  soilAnalyses:[{id:'synthetic-soil-analysis',propertyId:'synthetic-property',fieldId:'synthetic-field',sampledAt:'2026-08-20T00:00:00.000Z',laboratory:'Laboratório Sintético',measurements:[{id:'synthetic-soil-ph',metric:'pH',value:5.4,unit:'pH'},{id:'synthetic-soil-ctc',metric:'CTC',value:11.2,unit:'cmolc/dm3'}],...scoped}],
+  ndviObservations:[],manualRecords:[{id:'synthetic-manual-record',summary:'Registro técnico agronômico sintético confirmado.',updatedAt:'2026-08-26T00:00:00.000Z',...scoped}],signals:[],
+  decisionIntelligence:groundedFixture?{evidence:[
+   {id:'synthetic-interaction',source_id:'synthetic-interaction',source_type:'interaction',statement:'O produtor pediu ROI e custo por hectare.',observed_at:'2026-08-26T13:00:00.000Z'},
+   {id:'synthetic-opportunity',source_id:'synthetic-opportunity',source_type:'opportunity',statement:'A oportunidade comercial de proteção de cultivos está na etapa proposta.',observed_at:'2026-08-26T00:00:00.000Z'},
+   {id:'synthetic-field-report',source_id:'synthetic-field-report',source_type:'field_report',statement:'O relatório observou no Talhão Norte um risco agronômico ainda sem causa diagnosticada.',observed_at:'2026-08-26T00:00:00.000Z'}
+  ]}:undefined,
   priorRecommendations:[{id:'synthetic-recommendation',golden_questions:[{question:'Qual evidência define a decisão?',context_refs:['synthetic-interaction']}]}],conversionInnovations:{},
   attachments:[scanAttachment('NUTRISCAN',1),scanAttachment('FITOSCAN',2)]
  }
  const canonical=geometryFixture()
- context.properties=[{id:'synthetic-property',name:'Propriedade Sintética',fields:[{id:'synthetic-field',name:'Talhão Norte',geometry_ref:encodeCanonicalGeometryRef(canonical),geometry_version:canonical.geometryVersion}]}]
- context.contextSnapshot=buildContextSnapshot(context,{organizationId,subjectType:'client',subjectId:clientId,actorId,role:'consultant',scope:'own_portfolio',objective:'golden_performance',requestId:'00000000-0000-4000-8000-000000000804',message:'Preparar decisão sintética',now})
+ context.properties=[{id:'synthetic-property',name:'Propriedade Sintética',updatedAt:'2026-08-26T00:00:00.000Z',...scoped,fields:[{id:'synthetic-field',name:'Talhão Norte',geometry_ref:encodeCanonicalGeometryRef(canonical),geometry_version:canonical.geometryVersion,...scoped}]}]
+ context.contextSnapshot=buildContextSnapshot(context,{organizationId,subjectType:'client',subjectId:clientId,actorId,role:'consultant',scope:'own_portfolio',objective:'golden_performance',requestId:'00000000-0000-4000-8000-000000000804',message,contextDomain,conversationId,contextEpoch,activeEntity,now})
  return context
 }
 
@@ -96,7 +106,7 @@ function adviceFixture(context,commercial){
   next_best_action:'Revisar o comparativo e combinar validação com data.',executive_brief:{headline:'Comparativo pendente para o milho',reason:'A conta pediu números da própria área.',action:'Revisar custo por hectare e combinar validação.',evidence_ids:['synthetic-interaction','synthetic-opportunity'],missing_data:['critério final']},
   strategic_synthesis:{moment:'Decisão de inseticida no milho depende do comparativo.',non_obvious_connection:'A preferência por números muda a forma de avançar.',decision_at_stake:'Avançar ou redesenhar a prova.',do_not_do:'Não discutir desconto antes da prova.',highest_value_unknown:{question:'Qual resultado por hectare tornaria a prova suficiente?',why_it_matters:'Muda a decisão.',how_to_get:'Perguntar ao produtor.',evidence_ids:['synthetic-interaction']}},
   decision_thesis:commercial.decision_thesis,value_plan:commercial.value_plan,behavioral_profile:commercial.behavioral_profile,
-  evidence_used:[{id:'synthetic-interaction',source_type:'interaction',claim_supported:'O produtor pediu custo por hectare.'},{id:'synthetic-opportunity',source_type:'opportunity',claim_supported:'Inseticida no milho está em proposta.'}],
+  evidence_used:[{id:'synthetic-interaction',source_type:'interaction',claim_supported:'O produtor pediu custo por hectare.'},{id:'synthetic-opportunity',source_type:'opportunity',claim_supported:'A proteção de cultivos está em proposta.'}],
   next_question:{question:'Qual resultado por hectare tornaria a prova suficiente?',purpose:'Definir a prova.',evidence_needed:'Métrica aceita.',grounding_ids:['synthetic-interaction']},questions:[],commercial_context:{status:'known',profile_strategy:'Usar números da própria área.'},human_review:{required:false},blocked_actions:[],guardrails:['Não fabricar evidência.'],knowledge_retrieval:commercial.knowledge_retrieval
  }
 }
@@ -108,7 +118,7 @@ function scoring({useful,target,path,safety=true,specificity=0,grounding=0,intri
 
 async function routeAndExecute(measure,{message,intentHint='',context,attachments=[]}={}){
  const route=await measure('INTENT',()=>routeSystemCapability({message,intentHint,hasClient:true,attachmentTypes:attachments.map(item=>item.mimeType||item.mime_type)}))
- const execution=await measure('TOOL',()=>executeCapabilityPlan({route,message,context,attachments,clientId,calculatorOptions:{}}))
+ const execution=await measure('TOOL',()=>executeCapabilityPlan({route,message,context,attachments,clientId,tenantId:organizationId,ownerId:actorId,calculatorOptions:{}}))
  return {route,execution}
 }
 
@@ -116,7 +126,7 @@ const runners={
  'GP-001':async({measure})=>{
   const context=await measure('CONTEXT',()=>syntheticContext())
   const message='Qual foi a última visita?';const route=await measure('INTENT',()=>routeSystemCapability({message,intentHint:'ASK_CLIENT',hasClient:true}))
-  const response=await measure('TOOL',()=>buildFastClientResponse({facts:{client:context.client,latestCompletedVisit:context.visits[0]},message,organizationId,conversationId:'synthetic-gp-001',now}))
+  const response=await measure('TOOL',()=>buildFastClientResponse({facts:{client:context.client,latestCompletedVisit:context.visits[0]},message,organizationId,ownerId:actorId,conversationId:'synthetic-gp-001',now}))
   const run=response.advice.ai_reasoning.run;const target=run.capabilities_used.includes('VISIT_HISTORY');const specific=/Produtor Sintético GP|Revisão sintética de milho/.test(response.advice.answer);const grounded=run.capability_results.some(item=>item.source_ref==='synthetic-visit-completed')
   return {...scoring({useful:Boolean(response.advice.answer),target,path:route.path==='FAST',specificity:specific?1:0,grounding:grounded?1:0}),intent:route.intent,observedPath:route.path,targetExecuted:target}
  },
@@ -127,12 +137,14 @@ const runners={
  },
  'GP-003':async({measure})=>{
   const context=await measure('CONTEXT',()=>syntheticContext());const message='Só me manda as Perguntas de Ouro.';const route=await measure('INTENT',()=>routeSystemCapability({message,hasClient:true}))
-  const payload={advice:{answer:'Leitura sintética.',ai_reasoning:{golden_questions:[{question:'Qual evidência define a decisão?',context_refs:['synthetic-interaction']},{question:'Quem participa da decisão?',context_refs:['synthetic-survey']}]}}}
-  const turn=await measure('TOOL',()=>localNaturalCommandTurn(resolveValNaturalCommand(message),payload));const target=turn?.command==='GOLDEN_QUESTIONS_ONLY';const specific=/evidência define|participa da decisão/i.test(turn?.text||'')
+  const payload={responseScope:{contractVersion:'val.response_scope.v1',tenantId:organizationId,ownerId:actorId,producerId:clientId,conversationId:'synthetic-gp-003',contextEpoch:0,domain:'GENERAL'},advice:{answer:'Leitura sintética.',ai_reasoning:{organization:{id:organizationId},client:{id:clientId},conversation_id:'synthetic-gp-003',premises:{context_scope:{tenant_id:organizationId,owner_id:actorId,producer_id:clientId,conversation_id:'synthetic-gp-003',context_epoch:0,domain:'GENERAL',minimum_sufficient_context:true}},golden_questions:[{question:'Qual evidência define a decisão?',context_refs:['synthetic-interaction']},{question:'Quem participa da decisão?',context_refs:['synthetic-survey']}]}}}
+  const scope={tenantId:organizationId,ownerId:actorId,conversationId:'synthetic-gp-003',producerId:clientId,contextEpoch:0,domain:'GENERAL'}
+  const completedTurn={role:'assistant',status:'completed',serverGrounded:true,grounding:'SERVER_RETURNED',responseId:'synthetic-response-gp-003',...scope,payload}
+  const turn=await measure('TOOL',()=>localNaturalCommandTurn(resolveValNaturalCommand(message),completedTurn,scope));const target=turn?.command==='GOLDEN_QUESTIONS_ONLY';const specific=/evidência define|participa da decisão/i.test(turn?.text||'')
   return {...scoring({useful:Boolean(turn?.text),target,path:route.path==='FAST',specificity:specific?1:0,grounding:target?.9:0}),intent:route.intent,observedPath:route.path,targetExecuted:target}
  },
  'GP-004':async({measure})=>{
-  const context=await measure('CONTEXT',()=>syntheticContext());const message='Prepare a próxima visita para discutir o inseticida no milho.';const route=await measure('INTENT',()=>routeSystemCapability({message,intentHint:'PREPARE_VISIT',hasClient:true}))
+  const message='Prepare a próxima visita para discutir o inseticida no milho.';const context=await measure('CONTEXT',()=>syntheticContext({message,conversationId:'synthetic-gp-004'}));const route=await measure('INTENT',()=>routeSystemCapability({message,intentHint:'PREPARE_VISIT',hasClient:true}))
   const commercial=await measure('MCA',()=>buildCommercialComposition({context,contextSnapshot:context.contextSnapshot,organizationId,message,now}))
   const visit={id:'00000000-0000-4000-8000-000000000860',clientId,scheduledAt:'2026-08-28T12:00:00.000Z',objective:'Negociar inseticida no milho com evidência.',status:'Agendada'}
   const actionPlan=await measure('TOOL',()=>buildActionPlan({organizationId,subjectId:clientId,contextSnapshot:context.contextSnapshot,decisionThesis:commercial.decision_thesis,valuePlan:commercial.value_plan,actor:{type:'USER',id:actorId},defaultDueAt:visit.scheduledAt,now}))
@@ -141,7 +153,7 @@ const runners={
   return {...scoring({useful:Boolean(preparation.objective&&preparation.golden_questions.length),target,path:route.path==='DEEP',specificity,grounding,intrinsic:preparation.quality_audit?.score}),intent:route.intent,observedPath:route.path,targetExecuted:target}
  },
  'GP-005':async({measure})=>{
-  const context=await measure('CONTEXT',()=>syntheticContext());const message='Interpreta essa análise de solo.';const {route,execution}=await routeAndExecute(measure,{message,intentHint:'ANALYZE_SOIL',context,attachments:[{id:'synthetic-soil-file',mimeType:'application/pdf'}]})
+  const context=await measure('CONTEXT',()=>syntheticContext());const message='Interpreta essa análise de solo.';const {route,execution}=await routeAndExecute(measure,{message,intentHint:'ANALYZE_SOIL',context,attachments:[{id:'synthetic-soil-file',clientId,organizationId,ownerId:actorId,mimeType:'application/pdf'}]})
   const target=execution.capabilities_used.includes('SOIL_ANALYSIS');const specific=execution.tool_result?.measurement_count===2||execution.tool_result?.facts?.measurement_count===2;const grounded=execution.capability_results.some(item=>item.source_ref==='synthetic-soil-analysis')
   return {...scoring({useful:Boolean(execution.tool_result),target,path:route.path==='TOOL',specificity:specific?1:0,grounding:grounded?1:0}),intent:route.intent,observedPath:route.path,targetExecuted:target}
  },
@@ -160,13 +172,13 @@ const runners={
  },
  'GP-010':async({measure})=>{
   const message='Qual é a cotação atual da soja?';const route=await measure('INTENT',()=>routeSystemCapability({message,intentHint:'ASK_MARKET',hasClient:false}))
-  const workspace=await measure('CONTEXT',()=>({marketSnapshots:[{id:'synthetic-market',commodity:'soja',marketKind:'spot',region:'Município Sintético/BR',price:123.45,priceUnit:'BRL/sc_60kg',sourceName:'Fonte Sintética Autorizada',sourceUrl:'https://example.test/source',observedAt:'2026-08-27T11:30:00.000Z',confidence:90,status:'active'}]}))
+  const workspace=await measure('CONTEXT',()=>({marketSnapshots:[{id:'synthetic-market',commodity:'soja',marketKind:'spot',region:'Município Sintético/BR',price:123.45,priceUnit:'BRL/sc_60kg',sourceName:'Fonte Sintética Autorizada',sourceUrl:'https://example.test/source',observedAt:'2026-08-27T11:30:00.000Z',confidence:90,status:'active',tenant_id:organizationId,context_owner_id:actorId,scope:'MARKET'}]}))
   const response=await measure('TOOL',()=>buildFastMarketResponse({workspace,message,intentHint:'ASK_MARKET',organizationId,ownerId:actorId,conversationId:'synthetic-gp-010',now}))
   const run=response.advice.ai_reasoning.run;const target=run.capabilities_used.includes('MARKET_COMMODITY');const specific=/123,45|Município Sintético/.test(response.advice.answer);const grounded=/Fonte Sintética Autorizada/.test(response.advice.answer)&&run.capability_results.some(item=>item.source_ref==='synthetic-market')
   return {...scoring({useful:Boolean(response.advice.answer),target,path:route.path==='LIVE_DATA',specificity:specific?1:0,grounding:grounded?1:0}),intent:route.intent,observedPath:route.path,targetExecuted:target}
  },
  'GP-011':async({measure})=>{
-  const context=await measure('CONTEXT',()=>syntheticContext());const message='Cruze agronomia, histórico, perfil e preço e recomende a próxima decisão.';const route=await measure('INTENT',()=>routeSystemCapability({message,intentHint:'ASK_AGRONOMIC',hasClient:true}))
+  const message='Cruze agronomia, histórico, perfil e preço e recomende a próxima decisão.';const context=await measure('CONTEXT',()=>syntheticContext({message,conversationId:'synthetic-gp-011',groundedFixture:true}));const route=await measure('INTENT',()=>routeSystemCapability({message,intentHint:'ASK_AGRONOMIC',hasClient:true}))
   const commercial=await measure('MCA',()=>buildCommercialComposition({context,contextSnapshot:context.contextSnapshot,organizationId,message,now}));const advice=adviceFixture(context,commercial)
   const composition=await measure('MIA',()=>composeAIReasoning({advice,context,message,intentHint:'ASK_AGRONOMIC',conversationId:'synthetic-gp-011'}));const quality=composition.quality;const target=quality.passed===true&&composition.result.run.path==='DEEP'
   return {...scoring({useful:Boolean(composition.result.recommended_strategy?.action),target,path:route.path==='DEEP',specificity:Number(quality.dimensions?.specificity||0),grounding:Number(quality.dimensions?.context_usage||0),intrinsic:quality.overall}),intent:composition.result.intent,observedPath:route.path,targetExecuted:target}
@@ -183,17 +195,17 @@ const runners={
   return {...scoring({useful:target,target,path:true,specificity:context.field?.label==='Talhão Norte'?1:0,grounding:grounded?1:0}),intent:'ASK_AGRONOMIC',observedPath:'TOOL',targetExecuted:target}
  },
  'GP-014':async({measure})=>{
-  const context=await measure('CONTEXT',()=>syntheticContext());const hero=await measure('CONTEXT',()=>createAgroHeroContext({producer:context.client,field:{id:'synthetic-field',name:'Talhão Norte'}}));const message='Qual é o risco agronômico deste talhão?';const route=await measure('INTENT',()=>routeSystemCapability({message,intentHint:'ASK_AGRONOMIC',hasClient:true,activeContext:{type:'field',id:'synthetic-field'}}))
-  const commercial=await measure('MCA',()=>buildCommercialComposition({context,contextSnapshot:context.contextSnapshot,organizationId,message,now}));const composition=await measure('MIA',()=>composeAIReasoning({advice:adviceFixture(context,commercial),context,message,intentHint:'ASK_AGRONOMIC'}));const target=hero.clientId===clientId&&route.path==='CONTEXT'&&Boolean(composition.result.recommended_strategy?.reading);const quality=composition.quality
+  const message='Qual é o risco agronômico deste talhão?';const context=await measure('CONTEXT',()=>syntheticContext({message,conversationId:'synthetic-gp-014',activeEntity:{type:'field',id:'synthetic-field'},groundedFixture:true}));const hero=await measure('CONTEXT',()=>createAgroHeroContext({producer:context.client,field:{id:'synthetic-field',name:'Talhão Norte'}}));const route=await measure('INTENT',()=>routeSystemCapability({message,intentHint:'ASK_AGRONOMIC',hasClient:true,activeContext:{type:'field',id:'synthetic-field'}}))
+  const commercial=await measure('MCA',()=>buildCommercialComposition({context,contextSnapshot:context.contextSnapshot,organizationId,message,now}));const composition=await measure('MIA',()=>composeAIReasoning({advice:adviceFixture(context,commercial),context,message,intentHint:'ASK_AGRONOMIC',conversationId:'synthetic-gp-014'}));const target=hero.clientId===clientId&&route.path==='CONTEXT'&&Boolean(composition.result.recommended_strategy?.reading);const quality=composition.quality
   return {...scoring({useful:target,target,path:route.path==='CONTEXT',specificity:Number(quality.dimensions?.specificity||0),grounding:Number(quality.dimensions?.context_usage||0),intrinsic:quality.overall}),intent:route.intent,observedPath:route.path,targetExecuted:target}
  },
  'GP-015':async({measure})=>{
   const context=await measure('CONTEXT',()=>syntheticContext());const file={name:'synthetic-field.jpg',type:'image/jpeg',size:2048};const validation=await measure('VALIDATION',()=>validateAgroHeroFile(file,'photo'));const media=await measure('TOOL',()=>createAgroSessionMediaMessage({files:[file],intent:'IMAGE_DIAGNOSIS',navigationRequestId:'synthetic-nav-gp-015',transferId:'synthetic-transfer-gp-015'}));const message='VAL, analisa essa foto.'
-  const {route,execution}=await routeAndExecute(measure,{message,intentHint:'IMAGE_DIAGNOSIS',context,attachments:[{id:'00000000-0000-4000-8000-000000000872',mimeType:'image/jpeg',analysis:{summary:'Sintoma visual registrado sem causa confirmada.',diagnosticStatus:'not_a_diagnosis'}}]});const target=validation.ok&&media.version===2&&execution.capabilities_used.includes('IMAGE_DIAGNOSIS');const grounded=execution.capability_results.some(item=>item.source_ref==='00000000-0000-4000-8000-000000000872')
+  const {route,execution}=await routeAndExecute(measure,{message,intentHint:'IMAGE_DIAGNOSIS',context,attachments:[{id:'00000000-0000-4000-8000-000000000872',clientId,organizationId,ownerId:actorId,mimeType:'image/jpeg',analysis:{summary:'Sintoma visual registrado sem causa confirmada.',diagnosticStatus:'not_a_diagnosis'}}]});const target=validation.ok&&media.version===2&&execution.capabilities_used.includes('IMAGE_DIAGNOSIS');const grounded=execution.capability_results.some(item=>item.source_ref==='00000000-0000-4000-8000-000000000872')
   return {...scoring({useful:Boolean(execution.tool_result),target,path:route.path==='TOOL',specificity:/sem causa confirmada/.test(execution.tool_result?.summary||'')?1:0,grounding:grounded?1:0}),intent:route.intent,observedPath:route.path,targetExecuted:target}
  },
  'GP-016':async({measure})=>{
-  const context=await measure('CONTEXT',()=>syntheticContext());const file={name:'synthetic-soil-analysis.pdf',type:'application/pdf',size:4096};const validation=await measure('VALIDATION',()=>validateAgroHeroFile(file,'file'));const media=await measure('TOOL',()=>createAgroSessionMediaMessage({files:[file],intent:'ANALYZE_SOIL',navigationRequestId:'synthetic-nav-gp-016',transferId:'synthetic-transfer-gp-016'}));const message='VAL, interpreta essa análise de solo.';const {route,execution}=await routeAndExecute(measure,{message,intentHint:'ASK_AGRONOMIC',context,attachments:[{id:'synthetic-soil-file',mimeType:'application/pdf'}]});const target=validation.ok&&media.version===2&&execution.capabilities_used.includes('SOIL_ANALYSIS');const grounded=execution.capability_results.some(item=>item.source_ref==='synthetic-soil-analysis')
+  const context=await measure('CONTEXT',()=>syntheticContext());const file={name:'synthetic-soil-analysis.pdf',type:'application/pdf',size:4096};const validation=await measure('VALIDATION',()=>validateAgroHeroFile(file,'file'));const media=await measure('TOOL',()=>createAgroSessionMediaMessage({files:[file],intent:'ANALYZE_SOIL',navigationRequestId:'synthetic-nav-gp-016',transferId:'synthetic-transfer-gp-016'}));const message='VAL, interpreta essa análise de solo.';const {route,execution}=await routeAndExecute(measure,{message,intentHint:'ASK_AGRONOMIC',context,attachments:[{id:'synthetic-soil-file',clientId,organizationId,ownerId:actorId,mimeType:'application/pdf'}]});const target=validation.ok&&media.version===2&&execution.capabilities_used.includes('SOIL_ANALYSIS');const grounded=execution.capability_results.some(item=>item.source_ref==='synthetic-soil-analysis')
   return {...scoring({useful:Boolean(execution.tool_result),target,path:route.path==='TOOL',specificity:execution.tool_result?.facts?.measurement_count===2?1:0,grounding:grounded?1:0}),intent:route.intent,observedPath:route.path,targetExecuted:target}
  }
 }

@@ -40,10 +40,23 @@ test('MEX 4 — Commitment concluído registra evidência',()=>{
 })
 
 test('MEX 5 — Commitment vencido retorna ao ContextSnapshot',()=>{
- const context=phase4Context({commitments:[buildCommitmentCandidate(commitmentInput({due_at:'2026-08-20T12:00:00.000Z'})).commitment]})
+ const commitment=buildCommitmentCandidate(commitmentInput({
+  due_at:'2026-08-20T12:00:00.000Z',
+  evidence_refs:[{id:'action-plan:one',type:'action_plan'}]
+ })).commitment
+ const context=phase4Context({commitments:[{
+  ...commitment,
+  tenant_id:tenantA,
+  producer_id:'producer-a',
+  context_owner_id:actorA
+ }]})
  const snapshot=buildContextSnapshot(context,{organizationId:tenantA,subjectType:'client',subjectId:'producer-a',actorId:actorA,role:'consultant',scope:'own_portfolio',objective:'prepare_visit',requestId:'00000000-0000-4000-8000-000000000455',now})
  assert.equal(snapshot.relationship_context.overdue_commitments.length,1)
- assert.match(snapshot.relationship_context.overdue_commitments[0].commitment_ref,/commitment:/)
+ const overdue=snapshot.relationship_context.overdue_commitments[0]
+ assert.match(overdue.commitment_ref,/commitment:/)
+ assert.equal(overdue.tenantId,tenantA)
+ assert.equal(overdue.producerId,'producer-a')
+ assert.equal(overdue.ownerId,actorA)
 })
 
 test('MEX 6 — ActionPlan cross-tenant é bloqueado',()=>{

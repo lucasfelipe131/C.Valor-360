@@ -65,7 +65,7 @@ test('router usa TOOL PATH para cálculo e o executor não inventa inputs ausent
 test('executor calcula custo/ha deterministicamente e mantém resultado apenas na resposta',async()=>{
  const message='Calcule custo/ha com custo total de R$ 10.000 em área de 20 ha.'
  const route=routeSystemCapability({message,hasClient:true})
- const execution=await executeCapabilityPlan({route,message,context:{},clientId:'synthetic-client'})
+ const execution=await executeCapabilityPlan({route,message,context:{},clientId:'synthetic-client',tenantId:'synthetic-tenant'})
  assert.equal(execution.path,'TOOL')
  assert.equal(execution.tool_result.status,'EXECUTED')
  assert.deepEqual(execution.tool_result.facts,{

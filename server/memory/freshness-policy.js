@@ -25,6 +25,8 @@ export const contextFreshnessPolicies=Object.freeze([
     domain:'BEHAVIORAL',
     source_type:'behavioral_profile',
     strategy:'EXPLICIT_VALID_UNTIL',
+    require_observed_at:true,
+    max_age_days:730,
     date_fields:Object.freeze(['assessed_at','assessedAt','updated_at','updatedAt'])
   }),
   Object.freeze({
@@ -76,6 +78,10 @@ export function evaluateSourceFreshness({domain,sourceType,source={},observedAt,
     metadata.reason_code='NOT_YET_VALID'
     return {status:'UNKNOWN',metadata}
   }
+  if(resolvedObservedAt&&new Date(resolvedObservedAt)>safeNow){
+    metadata.reason_code='OBSERVATION_DATE_IN_FUTURE'
+    return {status:'UNKNOWN',metadata}
+  }
   if(resolvedValidUntil&&new Date(resolvedValidUntil)<=safeNow){
     metadata.reason_code='VALIDITY_EXPIRED'
     return {status:'STALE',metadata}
@@ -98,9 +104,20 @@ export function evaluateSourceFreshness({domain,sourceType,source={},observedAt,
     return {status:'CURRENT',metadata}
   }
   if(policy.strategy==='EXPLICIT_VALID_UNTIL'){
+    if(policy.require_observed_at&&!resolvedObservedAt){
+      metadata.reason_code='OBSERVATION_DATE_MISSING'
+      return {status:'UNKNOWN',metadata}
+    }
     if(!resolvedValidUntil){
       metadata.reason_code='EXPLICIT_VALID_UNTIL_MISSING'
       return {status:'UNKNOWN',metadata}
+    }
+    if(Number.isFinite(policy.max_age_days)){
+      metadata.age_days=Math.max(0,(safeNow.getTime()-new Date(resolvedObservedAt).getTime())/dayMs)
+      if(metadata.age_days>policy.max_age_days){
+        metadata.reason_code='DOMAIN_SOURCE_MAX_AGE_EXCEEDED'
+        return {status:'STALE',metadata}
+      }
     }
     metadata.reason_code='WITHIN_EXPLICIT_VALIDITY'
     return {status:'CURRENT',metadata}

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import test from 'node:test'
 import {routeValIntent} from '../server/ai-reasoning/intent-router.js'
+import {buildContextSnapshot} from '../server/memory/context-snapshot.js'
 import {
  answerCurrentMarket,
  buildClientMarketResponse,
@@ -23,7 +24,7 @@ const now=new Date('2026-08-25T15:00:00.000Z')
 const quote=(overrides={})=>({
  id:'quote-base',commodity:'soja',marketKind:'spot',region:'Cascavel/PR',price:110,
  priceUnit:'BRL/sc_60kg',sourceName:'Fonte autorizada',sourceUrl:'https://example.test/quote',
- observedAt:'2026-08-25T13:00:00.000Z',confidence:92,status:'active',...overrides
+ observedAt:'2026-08-25T13:00:00.000Z',confidence:92,status:'active',tenantId:'tenant-a',contextOwnerId:'owner-a',scope:'MARKET',...overrides
 })
 
 test('continuação de mercado — commodity nova e mais recente prevalece sobre a âncora antiga',()=>{
@@ -115,9 +116,9 @@ test('Decision Interview — “não sei” não satisfaz preço-alvo e pergunta
 
 test('memórias comerciais confirmadas e estruturadas satisfazem preço-alvo e janela só na commodity/safra corretas',()=>{
  const memories=[
-  {id:'target',status:'verified',memory_state:'FACT',memory_domain:'COMMERCIAL',key:'grain_decision.target_price',value:{commodity:'soja',season:'2026/27',targetPrice:118,priceUnit:'BRL/sc_60kg',statement:'R$ 118 por saca'}},
-  {id:'window',status:'verified',memory_state:'FACT',memory_domain:'COMMERCIAL',key:'grain_decision.decision_window',value:{commodity:'soja',season:'2026/27',decisionWindow:'Vender na próxima semana',statement:'Vender na próxima semana'}}
- ]
+ {id:'target',status:'verified',memory_state:'FACT',memory_domain:'COMMERCIAL',key:'grain_decision.target_price',value:{commodity:'soja',season:'2026/27',targetPrice:118,priceUnit:'BRL/sc_60kg',statement:'R$ 118 por saca'}},
+ {id:'window',status:'verified',memory_state:'FACT',memory_domain:'COMMERCIAL',key:'grain_decision.decision_window',value:{commodity:'soja',season:'2026/27',decisionWindow:'Vender na próxima semana',statement:'Vender na próxima semana'}}
+ ].map(item=>({...item,producer_id:'producer-memory',tenant_id:'tenant-a',context_owner_id:'owner-a'}))
  const response=buildClientMarketResponse({
   workspace:{marketSnapshots:[quote()],intentions:[]},
   context:{client:{id:'producer-memory',name:'Produtor Memória'},opportunities:[],memories},
@@ -132,7 +133,7 @@ test('memórias comerciais confirmadas e estruturadas satisfazem preço-alvo e j
  assert.ok(reasoning.run.capabilities_used.includes('CONFIRMED_MEMORY'))
 })
 
-test('anexos + dado atual — intenção semântica vence imagem e composição só declara anexos processados',()=>{
+test('anexos + dado atual — composição usa somente evidência relevante, scoped e previamente grounded',()=>{
  const imageTypes=['image/jpeg']
  assert.equal(routeValIntent({message:'Como o preço da soja de hoje muda a negociação?',hasClient:true,attachmentTypes:imageTypes}).intent,'ASK_COMMODITY')
  assert.equal(routeValIntent({message:'Confira a previsão de chuva para amanhã.',hasClient:true,attachmentTypes:imageTypes}).intent,'CHECK_WEATHER')
@@ -149,18 +150,34 @@ test('anexos + dado atual — intenção semântica vence imagem e composição 
  assert.ok(route.capabilities.includes('MARKET_COMMODITY'))
  assert.ok(route.capabilities.includes('IMAGE_DIAGNOSIS'))
 
- const marketResponse=buildFastMarketResponse({workspace:{marketSnapshots:[quote()]},message:'Preço da soja hoje',intentHint:'ASK_COMMODITY',now})
+ const question='Preço da soja hoje e analise agronomicamente esta foto.'
+ const marketResponse=buildClientMarketResponse({workspace:{marketSnapshots:[quote()],intentions:[]},context:{client:{id:'producer-attachment',name:'Produtor Attachment'},opportunities:[],memories:[]},facts:{client:{id:'producer-attachment',name:'Produtor Attachment'}},message:question,intentHint:'ASK_COMMODITY',attachmentTypes:imageTypes,organizationId:'tenant-a',ownerId:'owner-a',conversationId:'attachment-thread',contextEpoch:2,contextDomain:'MULTI_DOMAIN',now})
+ const attachmentFact={id:'image-a',source_type:'consultant_attachment',epistemic_type:'OBSERVATION',statement:'Há amarelecimento visível; causa não confirmada.',observed_at:'2026-08-25T14:00:00.000Z',producer_id:'producer-attachment',tenant_id:'tenant-a',context_owner_id:'owner-a'}
  const composed=composeMarketAttachmentResponse({
   marketResponse,
   attachmentTypes:imageTypes,
-  attachmentResponse:{recommendationId:'rec-attachment',engineMode:'structured_hybrid',model:'fixture',attachments:[{id:'image-a',mimeType:'image/jpeg',status:'interpreted',analysis:{summary:'Há amarelecimento visível; causa não confirmada.'},createdAt:'2026-08-25T14:00:00.000Z'}],advice:{ai_reasoning:{agronomic_context:{status:'requires_human_review',human_review_required:true}}}}
+  attachmentResponse:{recommendationId:'rec-attachment',engineMode:'structured_hybrid',model:'fixture',attachments:[{id:'image-a',organizationId:'tenant-a',contextOwnerId:'owner-a',clientId:'producer-attachment',mimeType:'image/jpeg',status:'interpreted',analysis:{summary:'POISON_SUMMARY_CPF_FINANCEIRA'},createdAt:'2026-08-25T14:00:00.000Z'}],advice:{ai_reasoning:{organization:{id:'tenant-a'},client:{id:'producer-attachment'},facts_used:[attachmentFact],grounding:{passed:true,claim_ledger:[{supported:true,evidence_refs:['image-a']}]},agronomic_context:{status:'requires_human_review',human_review_required:true},premises:{context_scope:{tenant_id:'tenant-a',owner_id:'owner-a',producer_id:'producer-attachment',conversation_id:'attachment-thread',context_epoch:2,domain:'MULTI_DOMAIN'}}}}}
  })
  assert.equal(composed.engineArchitecture,'current-data-plus-multimodal-composition')
  assert.equal(composed.responseMetadata.attachmentCompositionStatus,'EXECUTED')
  assert.match(composed.advice.answer,/Tipo de mercado: disponível \(spot\)/)
  assert.match(composed.advice.answer,/amarelecimento visível/)
+ assert.doesNotMatch(JSON.stringify(composed),/POISON_SUMMARY_CPF_FINANCEIRA/)
  assert.ok(composed.advice.ai_reasoning.run.capabilities_used.includes('IMAGE_DIAGNOSIS'))
  assert.ok(composed.advice.ai_reasoning.facts_used.some(item=>item.source_type==='consultant_attachment'&&item.id==='image-a'))
+
+ const missingOwnerAttachment={id:'image-missing-owner',organizationId:'tenant-a',clientId:'producer-attachment',mimeType:'image/jpeg',status:'interpreted',createdAt:'2026-08-25T14:00:00.000Z'}
+ assert.throws(()=>composeMarketAttachmentResponse({
+  marketResponse,attachmentTypes:imageTypes,
+  attachmentResponse:{attachments:[missingOwnerAttachment],advice:{ai_reasoning:{organization:{id:'tenant-a'},client:{id:'producer-attachment'},facts_used:[],grounding:{passed:true,claim_ledger:[]},premises:{context_scope:{tenant_id:'tenant-a',owner_id:'owner-a',producer_id:'producer-attachment',conversation_id:'attachment-thread',context_epoch:2,domain:'MULTI_DOMAIN'}}}}}
+ }),error=>error?.code==='CONTEXT_SCOPE_VIOLATION'&&error?.reason==='MISSING_OWNER_SCOPE')
+
+ const marketOnly=buildClientMarketResponse({workspace:{marketSnapshots:[quote()],intentions:[]},context:{client:{id:'producer-attachment',name:'Produtor Attachment'},opportunities:[],memories:[]},facts:{client:{id:'producer-attachment',name:'Produtor Attachment'}},message:'Preço da soja hoje.',intentHint:'ASK_COMMODITY',organizationId:'tenant-a',ownerId:'owner-a',conversationId:'market-only-thread',contextEpoch:3,contextDomain:'GRAINS',now})
+ const irrelevantFact={id:'credit-file',source_type:'consultant_attachment',epistemic_type:'OBSERVATION',statement:'O arquivo registra CPF financeiro em revisão.',observed_at:'2026-08-25T14:00:00.000Z',producer_id:'producer-attachment',tenant_id:'tenant-a',context_owner_id:'owner-a'}
+ const skipped=composeMarketAttachmentResponse({marketResponse:marketOnly,attachmentTypes:['text/plain'],attachmentResponse:{attachments:[{id:'credit-file',organizationId:'tenant-a',contextOwnerId:'owner-a',clientId:'producer-attachment',mimeType:'text/plain',status:'interpreted',createdAt:'2026-08-25T14:00:00.000Z'}],advice:{ai_reasoning:{organization:{id:'tenant-a'},client:{id:'producer-attachment'},facts_used:[irrelevantFact],grounding:{passed:true,claim_ledger:[{supported:true,evidence_refs:['credit-file']}]},premises:{context_scope:{tenant_id:'tenant-a',owner_id:'owner-a',producer_id:'producer-attachment',conversation_id:'market-only-thread',context_epoch:3,domain:'GRAINS'}}}}}})
+ assert.equal(skipped.responseMetadata.attachmentCompositionStatus,'SKIPPED_IRRELEVANT')
+ assert.equal(skipped.responseMetadata.attachmentEvidenceSelected,0)
+ assert.doesNotMatch(skipped.advice.answer,/CPF financeiro/i)
 })
 
 test('perfis confirmados — cinco produtores pela mesma rota geram premissas e abordagens materialmente diferentes',()=>{
@@ -176,7 +193,7 @@ test('perfis confirmados — cinco produtores pela mesma rota geram premissas e 
    workspace:{marketSnapshots:[quote()],intentions:[]},
    context:{client:{id:`producer-${id}`,name:`Produtor ${id}`},profile:label?{primaryProfile:label,status}:{},opportunities:[],memories:[]},
    facts:{client:{id:`producer-${id}`,name:`Produtor ${id}`}},
-   message:'Como o preço da soja de hoje muda a negociação deste produtor?',intentHint:'ASK_COMMODITY',now
+   message:'Como o preço da soja de hoje muda a negociação deste produtor?',intentHint:'ASK_COMMODITY',organizationId:'tenant-a',ownerId:'owner-a',now
   })
   const reasoning=response.advice.ai_reasoning
   assert.equal(reasoning.run.path,'DEEP')
@@ -194,7 +211,7 @@ test('perfil PENDING/PROPOSED nunca vira premissa confirmada nem personaliza a a
   const response=buildClientMarketResponse({
    workspace:{marketSnapshots:[quote()],intentions:[]},
    context:{client:{id:`producer-${status}`,name:`Produtor ${status}`,primaryProfile:'Analítico'},profile:{primaryProfile:'Analítico',status},opportunities:[],memories:[]},
-   facts:{client:{id:`producer-${status}`,name:`Produtor ${status}`}},message:'Como o preço da soja de hoje muda a negociação deste produtor?',intentHint:'ASK_COMMODITY',now
+   facts:{client:{id:`producer-${status}`,name:`Produtor ${status}`}},message:'Como o preço da soja de hoje muda a negociação deste produtor?',intentHint:'ASK_COMMODITY',organizationId:'tenant-a',ownerId:'owner-a',now
   })
   const reasoning=response.advice.ai_reasoning
   assert.equal(reasoning.premises.profile_specific,true)
@@ -213,7 +230,7 @@ test('capabilities usadas e latência — NO_DATA fica apenas no plano e mediç�
  assert.equal(fastMarketRun.capability_results[0].status,'NO_DATA')
  assert.ok(Object.values(fastMarketRun.latency_breakdown).every(value=>value===null))
 
- const fastClient=buildFastClientResponse({facts:{client:{id:'producer-empty',name:'Sem histórico'}},message:'Qual foi a última visita?',now,latencyMs:5})
+ const fastClient=buildFastClientResponse({facts:{client:{id:'producer-empty',name:'Sem histórico',producer_id:'producer-empty',tenant_id:'tenant-a',context_owner_id:'owner-a'}},message:'Qual foi a última visita?',organizationId:'tenant-a',ownerId:'owner-a',now,latencyMs:5})
  const fastClientRun=fastClient.advice.ai_reasoning.run
  assert.deepEqual(fastClientRun.capabilities_used,[])
  assert.equal(fastClientRun.capability_results[0].status,'NO_DATA')
@@ -250,19 +267,24 @@ test('finalização de anexo — falha antes da persistência e compõe somente 
 
 test('rastreabilidade — recommendationId persistido aponta para a mesma composição devolvida',async()=>{
  const context={client:{id:'producer-trace',name:'Produtor Trace'},profile:{answers:{},evidence:[]},signals:[],learning:{},memories:[],memoryHistory:[],businessHistory:[],visits:[],interactions:[],commitments:[],opportunities:[],properties:[],fieldReports:[],soilAnalyses:[],ndviObservations:[],manualRecords:[],priorRecommendations:[]}
- const attachment={id:'attachment-trace',clientId:'producer-trace',originalName:'trace.pdf',mimeType:'application/pdf',sizeBytes:3,status:'confirmed',analysis:{summary:'Documento confirmado para composição.'},dataBase64:Buffer.from('pdf').toString('base64'),createdAt:'2026-08-25T12:00:00.000Z'}
+ const traceMessage='Preço da soja hoje e analise agronomicamente este documento.'
+ const attachment={id:'attachment-trace',organizationId:'tenant-trace',contextOwnerId:'owner-trace',clientId:'producer-trace',originalName:'trace.pdf',mimeType:'application/pdf',sizeBytes:3,status:'confirmed',analysis:{summary:'Documento confirmado para composição.'},dataBase64:Buffer.from('pdf').toString('base64'),createdAt:'2026-08-25T12:00:00.000Z'}
  const records=[]
  const repository={
-  getClientContext:async()=>structuredClone(context),
+  getClientContext:async({tenantId,ownerId,clientId,contextRequest={}})=>{
+   const value=structuredClone(context)
+   value.contextSnapshot=buildContextSnapshot(value,{organizationId:tenantId,subjectType:'client',subjectId:clientId,actorId:ownerId,role:'consultant',scope:'own_portfolio',objective:'general_assistance',message:contextRequest.message||traceMessage,requestId:'market-attachment-trace',now})
+   return value
+  },
   getAttachments:async()=>[structuredClone(attachment)],
   listAttachments:async()=>[],
   recordRecommendation:async input=>{records.push(structuredClone(input));return '00000000-0000-4000-8000-000000000999'}
  }
  const runtimeConfig={openaiApiKey:'',openaiProject:'',openaiTimeoutMs:1000,openaiMaxRetries:0,modelDaily:'daily',modelStrategic:'strategic',modelFast:'fast',knowledgeVectorStoreId:'',maxContextChars:10_000,maxOutputTokens:10_000,strategicMaxOutputTokens:10_000,openaiStoreResponses:false}
  const engine=new ValEngine({runtimeConfig,repository,logger:()=>{},clock:()=>now})
- const marketResponse=buildFastMarketResponse({workspace:{marketSnapshots:[quote()]},message:'Preço da soja hoje',now})
+ const marketResponse=buildClientMarketResponse({workspace:{marketSnapshots:[quote({tenantId:'tenant-trace',contextOwnerId:'owner-trace'})],intentions:[]},context:{...context,contextSnapshot:buildContextSnapshot(context,{organizationId:'tenant-trace',subjectType:'client',subjectId:'producer-trace',actorId:'owner-trace',role:'consultant',scope:'own_portfolio',objective:'general_assistance',message:traceMessage,requestId:'market-attachment-trace-base',now})},facts:{client:{id:'producer-trace',name:'Produtor Trace'}},message:traceMessage,intentHint:'ASK_COMMODITY',attachmentTypes:[attachment.mimeType],organizationId:'tenant-trace',ownerId:'owner-trace',conversationId:'stateless',contextEpoch:0,contextDomain:'MULTI_DOMAIN',now})
  const finalizeRecommendation=draft=>finalizeAttachmentRecommendation({draft,attachmentIds:[attachment.id],attachmentTypes:[attachment.mimeType],marketResponse})
- const answer=await engine.answer({tenantId:'tenant-trace',ownerId:'owner-trace',clientId:'producer-trace',client:context.client,message:'Preço da soja hoje',attachmentIds:[attachment.id],finalizeRecommendation})
+ const answer=await engine.answer({tenantId:'tenant-trace',ownerId:'owner-trace',clientId:'producer-trace',client:context.client,message:traceMessage,attachmentIds:[attachment.id],finalizeRecommendation})
  assert.equal(answer.recommendationId,'00000000-0000-4000-8000-000000000999')
  assert.equal(records.length,1)
  assert.deepEqual(records[0].advice,answer.advice)
@@ -271,7 +293,7 @@ test('rastreabilidade — recommendationId persistido aponta para a mesma compos
  assert.equal(records[0].modelRun.prePersistFinalization.status,'completed')
 
  attachment.status='received'
- await assert.rejects(()=>engine.answer({tenantId:'tenant-trace',ownerId:'owner-trace',clientId:'producer-trace',client:context.client,message:'Preço da soja hoje',attachmentIds:[attachment.id],finalizeRecommendation}),error=>error.code==='val_attachment_analysis_unavailable')
+ await assert.rejects(()=>engine.answer({tenantId:'tenant-trace',ownerId:'owner-trace',clientId:'producer-trace',client:context.client,message:traceMessage,attachmentIds:[attachment.id],finalizeRecommendation}),error=>error.code==='val_attachment_analysis_unavailable')
  assert.equal(records.length,1)
 })
 

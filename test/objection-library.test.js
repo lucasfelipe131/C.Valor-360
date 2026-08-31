@@ -94,6 +94,61 @@ test('consulta da carteira fica restrita ao tenant e ao consultor autenticado',a
  assert.deepEqual(call.params.slice(0,2),['tenant-a','owner-a'])
 })
 
+test('fallback da biblioteca rejeita eventos cross-tenant, cross-owner, sem escopo e aliases conflitantes',async()=>{
+ clearObjectionLibraryCache()
+ const businessEvents=[
+  {id:'own',tenantId:'tenant-a',ownerId:'owner-a',outcome:'lost',lossReason:'Preço',occurredAt:'2026-08-01T12:00:00.000Z'},
+  {id:'other-tenant',tenantId:'tenant-b',ownerId:'owner-a',outcome:'lost',lossReason:'Crédito',occurredAt:'2026-08-02T12:00:00.000Z'},
+  {id:'other-owner',tenantId:'tenant-a',ownerId:'owner-b',outcome:'won',occurredAt:'2026-08-03T12:00:00.000Z'},
+  {id:'unscoped',outcome:'lost',lossReason:'Contrato',occurredAt:'2026-08-04T12:00:00.000Z'},
+  {id:'conflict',tenantId:'tenant-a',organizationId:'tenant-b',ownerId:'owner-a',outcome:'lost',lossReason:'Fertilizante',occurredAt:'2026-08-05T12:00:00.000Z'}
+ ]
+ const repository={tenantId:'tenant-a',db:{configured:false},readStore:()=>({businessEvents})}
+ const events=await loadPortfolioBusinessHistory(repository,'owner-a')
+ assert.deepEqual(events.map(item=>item.id),['own'])
+ await assert.rejects(()=>loadPortfolioBusinessHistory({...repository,tenantId:''},'owner-a'),error=>error.code==='objection_history_scope_required')
+ await assert.rejects(()=>loadPortfolioBusinessHistory(repository,''),error=>error.code==='objection_history_scope_required')
+ clearObjectionLibraryCache()
+})
+
+test('invalidação da biblioteca remove somente o tenant e owner solicitados',async()=>{
+ clearObjectionLibraryCache()
+ let callsA=0;let callsB=0
+ const repositoryA={tenantId:'tenant-a',db:{configured:true,query:async()=>{callsA++;return {rows:[]}}}}
+ const repositoryB={tenantId:'tenant-b',db:{configured:true,query:async()=>{callsB++;return {rows:[]}}}}
+ await loadPortfolioBusinessHistory(repositoryA,'owner-a')
+ await loadPortfolioBusinessHistory(repositoryB,'owner-a')
+ clearObjectionLibraryCache({tenantId:'tenant-a',ownerId:'owner-a'})
+ await loadPortfolioBusinessHistory(repositoryA,'owner-a')
+ await loadPortfolioBusinessHistory(repositoryB,'owner-a')
+ assert.equal(callsA,2)
+ assert.equal(callsB,1)
+ assert.throws(()=>clearObjectionLibraryCache({tenantId:'tenant-a'}),error=>error.code==='objection_cache_scope_required')
+})
+
+test('consulta antiga em voo não repopula a biblioteca após invalidação do escopo',async()=>{
+ clearObjectionLibraryCache()
+ let releaseStale
+ const staleResult=new Promise(resolve=>{releaseStale=resolve})
+ let calls=0
+ const repository={tenantId:'tenant-race',db:{configured:true,query:()=>{
+  calls+=1
+  if(calls===1)return staleResult
+  return Promise.resolve({rows:[{id:'fresh-event',occurred_at:'2026-08-30T12:00:00.000Z',outcome:'won',payload:{version:'fresh'}}]})
+ }}}
+ const staleLoad=loadPortfolioBusinessHistory(repository,'owner-race')
+ assert.equal(calls,1)
+ clearObjectionLibraryCache({tenantId:'tenant-race',ownerId:'owner-race'})
+ const fresh=await loadPortfolioBusinessHistory(repository,'owner-race')
+ assert.equal(fresh[0].id,'fresh-event')
+ releaseStale({rows:[{id:'stale-event',occurred_at:'2026-08-29T12:00:00.000Z',outcome:'lost',payload:{version:'stale'}}]})
+ assert.equal((await staleLoad)[0].id,'stale-event')
+ const cached=await loadPortfolioBusinessHistory(repository,'owner-race')
+ assert.equal(cached[0].id,'fresh-event')
+ assert.equal(calls,2)
+ clearObjectionLibraryCache()
+})
+
 test('estúdio exibe objeções reais, foco, evidências e limite causal',()=>{
  const studio=readFileSync(new URL('../src/components/ConversionOpportunityStudio.jsx',import.meta.url),'utf8')
  const panel=readFileSync(new URL('../src/components/ObjectionEvidencePanel.jsx',import.meta.url),'utf8')

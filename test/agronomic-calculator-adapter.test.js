@@ -7,6 +7,7 @@ import {executeCopilotCalculator,identifyAgronomicCalculator,parseAgronomicCalcu
 import {consultZarc,zarcProviderVersion,zarcSourcePage} from '../server/zarc-provider.js'
 import {routeSystemCapability} from '../server/decision-copilot/capability-router.js'
 import {buildCapabilityExecutionResponse,executeCapabilityPlan} from '../server/decision-copilot/capability-executor.js'
+import {classifyValContextDomain} from '../server/decision-copilot/context-selector.js'
 
 const root=join(import.meta.dirname,'..')
 const read=relative=>readFileSync(join(root,relative),'utf8')
@@ -143,14 +144,19 @@ test('cancelamento de um waiter ZARC não contamina outro waiter do mesmo cache'
 
 test('resultado do cálculo fica session-only e o modelo recebe fatos estruturados, não uma fórmula para recalcular',async()=>{
  const [key,message]=matrix.find(([calculator])=>calculator==='sementes')
+ assert.equal(classifyValContextDomain(message,'CALCULATE'),'AGRONOMY')
+ assert.equal(classifyValContextDomain('Qual é a margem comercial desta venda?'),'COMMERCIAL')
  const route=routeSystemCapability({message,hasClient:true})
- const execution=await executeCapabilityPlan({route,message,clientId:'client-parity',context:{}})
+ const execution=await executeCapabilityPlan({route,message,clientId:'client-parity',tenantId:'tenant-parity',context:{}})
  const response=buildCapabilityExecutionResponse({execution,route,message,organizationId:'tenant-parity',clientId:'client-parity'})
  assert.equal(key,execution.tool_result.calculator)
  assert.equal(response.advice.ai_reasoning.persistence_mode,'NONE')
  assert.equal(response.advice.ai_reasoning.run.provider,'capability-executor')
  assert.equal(response.advice.ai_reasoning.run.tool_result.facts.seedsRequired,37080000)
  assert.equal(response.advice.ai_reasoning.premises.source,'authorized_capability_execution')
+ assert.equal(response.advice.ai_reasoning.premises.context_scope.domain,'AGRONOMY')
+ assert.equal(response.advice.ai_reasoning.grounding.passed,true)
+ assert.equal(response.advice.ai_reasoning.grounding.question_relevance,'PASS')
 })
 
 test('UI direta referencia os mesmos módulos canônicos, sem segunda fórmula de população/colheita',()=>{

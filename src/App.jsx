@@ -226,9 +226,9 @@ export default function App(){
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
     {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
     {page==='admin'&&currentUser?.role==='admin'&&<Admin currentUser={currentUser} onNotify={notify}/>}
-    {copilotLoaded&&<GlobalValCopilot key={copilotOwnerScope||'session'}
-     open={page==='copilot'&&copilotOpen} onClose={closeCopilot}
-     clients={clientList} seed={copilotSeed} workspaceContext={workspaceContext} storageScope={currentUser?.storageScope}
+	    {copilotLoaded&&<GlobalValCopilot key={copilotOwnerScope||'session'}
+	     open={page==='copilot'&&copilotOpen} onClose={closeCopilot}
+	     clients={clientList} seed={copilotSeed} workspaceContext={workspaceContext} storageScope={currentUser?.storageScope} identityScope={{tenantId:currentUser?.tenantId||'',ownerId:currentUser?.ownerId||''}}
      visits={visits} opportunities={opportunities} onRefreshPortfolio={refreshPortfolio}
      onOpenClient={openClient} onPrepareVisit={prepareClient} onNavigate={navigate} onWorkspaceAction={executeValWorkspaceAction}
     />}

@@ -11,7 +11,7 @@ function memory({index,clientId,visitId,key,statement,state='FACT',domain='COMME
  const at=now.toISOString()
  return {
   id:`00000000-0000-4000-8000-${String(910+index).padStart(12,'0')}`,
-  organization_id:qualityTenant,client_id:clientId,subject_type:'visit',subject_id:visitId,
+  organization_id:qualityTenant,client_id:clientId,context_owner_id:qualityActor,subject_type:'visit',subject_id:visitId,
   memory_type:state==='FACT'?'fact':'inference',memory_state:state,memory_domain:domain,key,
   value:{statement,category:state==='HYPOTHESIS'?'HYPOTHESIS':'FACT_CANDIDATE'},
   evidence:[{id:`candidate-${index}`,source_ref:`voice-interaction:${visitId}`,confirmation_status:'CONFIRMED'}],
@@ -22,9 +22,13 @@ function memory({index,clientId,visitId,key,statement,state='FACT',domain='COMME
 
 export function runPrepareQualityFixture({id,client,profile,memoryHistory=[],businessHistory=[],opportunities=[],fieldReports=[],objective}){
  const visitId=`00000000-0000-4000-8000-${String(id).padStart(12,'0')}`
- const visit={id:visitId,clientId:client.id,scheduledAt:'2026-08-25T12:00:00.000Z',objective,status:'Agendada'}
+ const scope=item=>({...item,tenant_id:qualityTenant,producer_id:client.id,context_owner_id:qualityActor})
+ const visit=scope({id:visitId,clientId:client.id,scheduledAt:'2026-08-25T12:00:00.000Z',objective,status:'Agendada'})
+ const profileSourceId=profile?.sourceId||profile?.evidence?.[0]?.id||null
+ const scopedEvidence=(profile?.evidence||[]).map(item=>scope({...item,profile_source_ref:item.profile_source_ref||profileSourceId,source_type:item.source_type||'producer_questionnaire',assessed_at:item.assessed_at||now.toISOString(),valid_until:item.valid_until||'2027-08-24T12:00:00.000Z'}))
+ const scopedProfile={...profile,sourceId:profileSourceId,assessedAt:profile?.assessedAt||now.toISOString(),validUntil:profile?.validUntil||'2027-08-24T12:00:00.000Z',evidence:scopedEvidence}
  const normalizedMemories=memoryHistory.map((item,index)=>memory({index,clientId:client.id,visitId,...item}))
- const context={client,profile,memoryHistory:normalizedMemories,businessHistory,opportunities,fieldReports,visits:[visit],interactions:[],commitments:[],properties:[],soilAnalyses:[],ndviObservations:[],conversionInnovations:{}}
+ const context={client:{...client,profileEvidence:scopedEvidence,profileSource:profileSourceId},profile:scopedProfile,memoryHistory:normalizedMemories,businessHistory:businessHistory.map(scope),opportunities:opportunities.map(scope),fieldReports:fieldReports.map(scope),visits:[visit],interactions:[],commitments:[],properties:[],soilAnalyses:[],ndviObservations:[],conversionInnovations:{}}
  const snapshot=buildContextSnapshot(context,{organizationId:qualityTenant,subjectType:'client',subjectId:client.id,actorId:qualityActor,role:'consultant',scope:'own_portfolio',objective:'prepare_visit',requestId:`00000000-0000-4000-8000-${String(Number(id)+100).padStart(12,'0')}`,message:objective,now})
  context.contextSnapshot=snapshot
  const commercial=buildCommercialComposition({context,contextSnapshot:snapshot,organizationId:qualityTenant,message:`Preparar visita: ${objective}`,now})

@@ -100,18 +100,21 @@ export function attachLatencyPerformance(payload,{latency,path,intent,toolExecut
  const performance=Object.freeze({version:latencyObservabilityVersion,path,intent,latency:Object.freeze(canonicalLatency),content_free:true})
  const responseMetadata={...(payload.responseMetadata||{}),performance}
  if(!run)return {...payload,responseMetadata}
+ const groundingBlocked=payload?.advice?.ai_reasoning?.grounding?.blocked===true||payload?.advice?.ai_reasoning?.grounding?.passed===false
+ const blockedResults=items=>(Array.isArray(items)?items:[]).map(item=>({capability:String(item?.capability||'UNKNOWN').slice(0,80),status:'GROUNDING_BLOCKED',source_ref:null,tool_result:null}))
  const nextRun={
   ...run,
   path:path||run.path,
   latency_ms:canonicalLatency?.TOTAL??run.latency_ms,
   latency_breakdown:legacyLatencyBreakdown(canonicalLatency,run.latency_breakdown),
   performance,
-  ...(toolExecution?{
+  ...(toolExecution&&!groundingBlocked?{
    capabilities_planned:toolExecution.capabilities_planned,
    capabilities_used:toolExecution.capabilities_used,
    capability_results:toolExecution.capability_results,
    tool_result:toolExecution.tool_result
-  }:{})
+  }:{}),
+  ...(groundingBlocked?{capabilities_used:[],capability_results:blockedResults(run.capability_results||toolExecution?.capability_results),tool_result:null}:{})
  }
  return {...payload,responseMetadata,advice:{...payload.advice,ai_reasoning:{...payload.advice.ai_reasoning,run:nextRun}}}
 }

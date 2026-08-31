@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {ValRepository} from '../server/repository.js'
-import {clientReferenceResolutionVersion,extractNaturalClientReference,normalizeClientReference,resolveAuthorizedClientReference} from '../server/decision-copilot/client-reference-resolver.js'
+import {clientReferenceResolutionVersion,extractNaturalClientReference,normalizeClientReference,resolveAuthorizedClientReference,selectAuthorizedClientClarification} from '../server/decision-copilot/client-reference-resolver.js'
 
 const tenantA='tenant-natural-a'
 const tenantB='tenant-natural-b'
@@ -102,6 +102,18 @@ test('resolução N preserva homônimos e exige desambiguação',()=>{
  assert.equal(resolution.client,null)
  assert.deepEqual(resolution.options.map(item=>item.id),['antonio-1','antonio-2'])
  assert.deepEqual(resolution.options.map(item=>item.municipality),['Cambé','Londrina'])
+})
+
+test('seleção de desambiguação aceita somente ID da opção e a mesma referência recalculada',()=>{
+ const ambiguous=resolveAuthorizedClientReference({message:'Abra João.',authorizedClients:[{id:'joao-a',name:'João Pereira'},{id:'joao-b',name:'João Souza'},{id:'carlos',name:'Carlos Lima'}]})
+ assert.equal(ambiguous.status,'AMBIGUOUS')
+ const selected=selectAuthorizedClientClarification({resolution:ambiguous,clientId:'joao-b',reference:ambiguous.reference})
+ assert.equal(selected.status,'RESOLVED')
+ assert.equal(selected.client.id,'joao-b')
+ assert.equal(selected.reason_code,'USER_CLARIFICATION_SELECTED')
+ assert.equal(selectAuthorizedClientClarification({resolution:ambiguous,clientId:'carlos',reference:ambiguous.reference}).reason_code,'CLARIFICATION_OPTION_NOT_AUTHORIZED')
+ assert.equal(selectAuthorizedClientClarification({resolution:ambiguous,clientId:'joao-b',reference:'Carlos'}).reason_code,'CLARIFICATION_REFERENCE_MISMATCH')
+ assert.equal(selectAuthorizedClientClarification({resolution:selected,clientId:'joao-b',reference:ambiguous.reference}).reason_code,'CLARIFICATION_NOT_AMBIGUOUS')
 })
 
 test('pronome só reutiliza cliente atual quando o ID foi reconciliado na carteira autorizada',()=>{

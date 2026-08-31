@@ -10,6 +10,7 @@
     "request_id",
     "organization_id",
     "subject",
+    "context_scope",
     "objective",
     "facts",
     "inferences",
@@ -31,10 +32,16 @@
     "contextItem": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["key", "value", "memory_ref", "source_ref", "source_type", "confidence", "valid_from", "valid_until", "observed_at", "source_updated_at", "freshness", "freshness_metadata"],
+      "required": ["key", "value", "memory_domain", "epistemic_type", "evidence_type", "tenant_id", "producer_id", "owner_id", "memory_ref", "source_ref", "source_type", "confidence", "valid_from", "valid_until", "observed_at", "source_updated_at", "freshness", "freshness_metadata"],
       "properties": {
         "key": {"type": "string", "minLength": 1, "maxLength": 180},
         "value": {},
+        "memory_domain": {"enum": ["PRODUCER", "COMMERCIAL", "AGRONOMIC", "BEHAVIORAL", "RELATIONSHIP", "ORGANIZATIONAL", "STRATEGIC"]},
+        "epistemic_type": {"enum": ["FACT", "INFERENCE", "HYPOTHESIS", "VALIDATED_KNOWLEDGE"]},
+        "evidence_type": {"enum": ["FACT", "OBSERVATION", "INFERENCE", "INTENTION", "QUOTE", "STRATEGY", "HYPOTHESIS"]},
+        "tenant_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "producer_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "owner_id": {"type": ["string", "null"], "maxLength": 180},
         "memory_ref": {"type": "string", "minLength": 1, "maxLength": 180},
         "source_ref": {"type": "string", "minLength": 1, "maxLength": 240},
         "source_type": {"type": "string", "minLength": 1, "maxLength": 100},
@@ -55,6 +62,22 @@
         "type": {"type": "string", "minLength": 1, "maxLength": 100},
         "id": {"type": "string", "minLength": 1, "maxLength": 240}
       }
+    },
+    "contextTraceItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sourceType", "sourceId", "producerId", "tenantId", "ownerId", "timestamp", "relevanceScore", "reasonSelected", "status"],
+      "properties": {
+        "sourceType": {"type": "string", "minLength": 1, "maxLength": 100},
+        "sourceId": {"type": "string", "minLength": 1, "maxLength": 240},
+        "producerId": {"type": "string", "minLength": 1, "maxLength": 180},
+        "tenantId": {"type": "string", "minLength": 1, "maxLength": 180},
+        "ownerId": {"type": ["string", "null"], "maxLength": 180},
+        "timestamp": {"type": ["string", "null"], "format": "date-time"},
+        "relevanceScore": {"type": ["number", "null"]},
+        "reasonSelected": {"type": ["string", "null"], "maxLength": 180},
+        "status": {"enum": ["SELECTED", "REJECTED"]}
+      }
     }
   },
   "properties": {
@@ -69,6 +92,37 @@
       "properties": {
         "type": {"type": "string", "minLength": 1, "maxLength": 40},
         "id": {"type": "string", "minLength": 1, "maxLength": 180}
+      }
+    },
+    "context_scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["tenant_id", "owner_id", "producer_id", "active_entity", "conversation_id", "context_epoch", "domain", "requested_domains", "query_fingerprint", "selector_version", "minimum_sufficient_context"],
+      "properties": {
+        "tenant_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "owner_id": {"type": ["string", "null"], "maxLength": 180},
+        "producer_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "active_entity": {
+          "oneOf": [
+            {"type": "null"},
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type", "id"],
+              "properties": {
+                "type": {"enum": ["client", "property", "field", "soil_analysis", "visit", "opportunity", "agronomic_tool"]},
+                "id": {"type": "string", "minLength": 1, "maxLength": 180}
+              }
+            }
+          ]
+        },
+        "conversation_id": {"type": ["string", "null"], "maxLength": 180},
+        "context_epoch": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "domain": {"enum": ["PROFILE", "COMMERCIAL", "AGRONOMY", "GRAINS", "CREDIT", "GEO", "VISIT", "OPPORTUNITY", "GENERAL", "MULTI_DOMAIN"]},
+        "requested_domains": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"enum": ["PROFILE", "COMMERCIAL", "AGRONOMY", "GRAINS", "CREDIT", "GEO", "VISIT", "OPPORTUNITY", "GENERAL"]}},
+        "query_fingerprint": {"type": ["string", "null"], "pattern": "^[0-9a-f]{64}$"},
+        "selector_version": {"const": "val.context_selector.v1"},
+        "minimum_sufficient_context": {"const": true}
       }
     },
     "objective": {"type": "string", "minLength": 1, "maxLength": 120},
@@ -122,7 +176,7 @@
     "selection": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["policy_version", "considered_refs", "selected_refs", "selection_reason_codes", "excluded_refs", "exclusion_reason_codes", "unauthorized_count", "invalid_count", "latency_ms"],
+      "required": ["policy_version", "considered_refs", "selected_refs", "selection_reason_codes", "excluded_refs", "exclusion_reason_codes", "domain", "selector_version", "context_trace", "unauthorized_count", "invalid_count", "latency_ms"],
       "properties": {
         "policy_version": {"const": "val.context.selection.v1"},
         "considered_refs": {"type": "array", "items": {"type": "string", "maxLength": 180}},
@@ -150,6 +204,18 @@
               "ref": {"type": "string", "maxLength": 180},
               "reason_codes": {"type": "array", "uniqueItems": true, "items": {"type": "string", "maxLength": 120}}
             }
+          }
+        },
+        "domain": {"enum": ["PROFILE", "COMMERCIAL", "AGRONOMY", "GRAINS", "CREDIT", "GEO", "VISIT", "OPPORTUNITY", "GENERAL", "MULTI_DOMAIN"]},
+        "selector_version": {"const": "val.context_selector.v1"},
+        "context_trace": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["selected", "rejected", "content_free"],
+          "properties": {
+            "selected": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/contextTraceItem"}},
+            "rejected": {"type": "array", "maxItems": 100, "items": {"$ref": "#/$defs/contextTraceItem"}},
+            "content_free": {"const": true}
           }
         },
         "unauthorized_count": {"type": "integer", "minimum": 0},

@@ -96,13 +96,17 @@ export class ValCore{
     }
     const route=routeCoreRequest(requestEnvelope)
     this.observe('core.route.selected',{routeId:route.route_id,contractVersion:coreRouterVersion})
+    const hasContextEpoch=Object.prototype.hasOwnProperty.call(engineInput||{},'contextEpoch')||Object.prototype.hasOwnProperty.call(engineInput||{},'context_epoch')
     const contextualEngineInput={...engineInput,contextRequest:{
       requestId:requestEnvelope.request_id,
       objective:requestEnvelope.objective,
       actorRole:requestEnvelope.actor.role,
       scope:requestEnvelope.policy_context.scope,
       contextRefs:requestEnvelope.context_refs,
+      ...(engineInput?.intent!=null?{intent:engineInput.intent}:{}),
       ...(engineInput?.conversationId?{conversationId:String(engineInput.conversationId).slice(0,180)}:{}),
+      ...(hasContextEpoch?{contextEpoch:Object.prototype.hasOwnProperty.call(engineInput,'contextEpoch')?engineInput.contextEpoch:engineInput.context_epoch}:{}),
+      ...(engineInput?.contextDomain!=null||engineInput?.context_domain!=null?{contextDomain:engineInput.contextDomain??engineInput.context_domain}:{}),
       ...(engineInput?.sessionState?{conversationState:engineInput.sessionState}:{})
     }}
     const execution=await executeModulePlan({

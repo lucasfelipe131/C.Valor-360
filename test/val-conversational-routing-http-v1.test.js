@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
 import test from 'node:test'
 import {fileURLToPath} from 'node:url'
+import {lastCompletedAssistantTurn} from '../src/lib/full-screen-conversation.js'
 
 const repositoryRoot=resolve(fileURLToPath(new URL('..',import.meta.url)))
 const tenantId='00000000-0000-4000-8000-000000000001'
@@ -47,6 +48,17 @@ test('HTTP A-G e fast follow-up encerram antes do contexto completo e do modelo'
   imports:[scoped({id:'import-a',clients:[
    scoped({id:'antonio',name:'Antônio Carlos',area:428.5,cultures:'Soja, Milho'}),
    scoped({id:'carlos',name:'Carlos Oliveira',area:310,cultures:'Milho'}),
+   scoped({
+    id:'matheus',name:'Matheus Nascimento Jaeger',primaryProfile:'Analítico',
+    decisionDriver:'Compara custo por hectare e retorno antes de decidir',
+    technicalPresentation:'Prefere dados objetivos e comparáveis',
+    profileUpdatedAt:'2026-08-01T12:00:00.000Z',profileValidUntil:'2027-08-01T12:00:00.000Z',
+    profileSourceRef:'profile-matheus',
+    profileEvidence:[
+     {id:'profile-matheus-q7',profile_source_ref:'profile-matheus',source_type:'producer_questionnaire',epistemic_type:'OBSERVATION',field:'decisionDriver',statement:'Compara custo por hectare e retorno antes de decidir',assessed_at:'2026-08-01T12:00:00.000Z',valid_until:'2027-08-01T12:00:00.000Z'},
+     {id:'profile-matheus-q8',profile_source_ref:'profile-matheus',source_type:'producer_questionnaire',epistemic_type:'OBSERVATION',field:'technicalPresentation',statement:'Prefere dados objetivos e comparáveis',assessed_at:'2026-08-01T12:00:00.000Z',valid_until:'2027-08-01T12:00:00.000Z'}
+    ],
+   }),
    scoped({id:'sem-dados',name:'Produtor Sem Dados'}),
    scoped({id:'joao-a',name:'João Pereira'}),
    scoped({id:'joao-b',name:'João Souza'}),
@@ -66,11 +78,16 @@ test('HTTP A-G e fast follow-up encerram antes do contexto completo e do modelo'
     scoped({visit_report_id:'report-carlos',client_id:'carlos',confirmation_status:'CONFIRMED',confirmed_at:'2026-08-25T13:00:00.000Z',objections:[{statement:'Prazo de entrega.'}]}),
    ],
   },
+  grains:{profiles:[],intentions:[],marketSnapshots:[scoped({
+   id:'market-soja-current',commodity:'soja',marketKind:'spot',region:'Cascavel/PR',price:151.5,
+   priceUnit:'BRL/sc_60kg',sourceName:'Fonte autorizada do teste',sourceType:'cooperative',
+   observedAt:new Date().toISOString(),confidence:95,status:'active'
+  })]},
  }
  await writeFile(join(dataRoot,'valor360-store.json'),JSON.stringify(store))
  const child=spawn(process.execPath,['server/start.js'],{
   cwd:repositoryRoot,
-  env:{...process.env,PORT:String(port),VAL_DEMO_MODE:'true',VAL_DEFAULT_TENANT_ID:tenantId,AUTO_MIGRATE:'false',DATA_DIR:dataRoot,DATABASE_URL:'',OPENAI_API_KEY:'',VAL_ADMIN_EMAIL:'',VAL_ADMIN_PASSWORD:'',VAL_SESSION_SECRET:''},
+  env:{...process.env,PORT:String(port),VAL_DEMO_MODE:'true',VAL_DEFAULT_TENANT_ID:tenantId,VAL_AI_REQUESTS_PER_10_MINUTES:'60',AUTO_MIGRATE:'false',DATA_DIR:dataRoot,DATABASE_URL:'',OPENAI_API_KEY:'',VAL_ADMIN_EMAIL:'',VAL_ADMIN_PASSWORD:'',VAL_SESSION_SECRET:''},
   stdio:['ignore','pipe','pipe'],
  })
  const base=`http://127.0.0.1:${port}`
@@ -148,9 +165,15 @@ test('HTTP A-G e fast follow-up encerram antes do contexto completo e do modelo'
   assert.equal(contextualOverride.status,200,JSON.stringify(contextualOverride.payload))
   assert.equal(contextualOverride.payload.conversationResolution.request_override,true)
   assert.equal(contextualOverride.payload.conversationState.current_client.id,'carlos')
+  assert.equal(contextualOverride.payload.responseScope.contractVersion,'val.response_scope.v1')
+  assert.equal(contextualOverride.payload.responseScope.producerId,'antonio')
+  assert.equal(contextualOverride.payload.responseScope.conversationId,conversationId)
   assert.equal(contextualOverride.payload.advice.ai_reasoning.client.id,'antonio')
   assert.equal(contextualOverride.payload.advice.ai_reasoning.premises.session_context.current_client.id,'antonio')
   assert.deepEqual(contextualOverride.payload.advice.ai_reasoning.premises.session_context.session_facts.filter(item=>item.subject_client_id==='carlos'),[])
+  const browserTurn=result=>({role:'assistant',status:'completed',serverGrounded:true,grounding:'SERVER_RETURNED',payload:result.payload})
+  const activeScope=contextualOverride.payload.responseScope
+  assert.throws(()=>lastCompletedAssistantTurn([browserTurn(carlosVisit),browserTurn(contextualOverride)],{tenantId:activeScope.tenantId,ownerId:activeScope.ownerId,conversationId,producerId:'carlos',contextEpoch:activeScope.contextEpoch,domain:activeScope.domain}),error=>error.code==='val_follow_up_scope_mismatch'&&error.scopeField==='producerId')
   const currentAfterContextualOverride=await turn('Quem é o produtor atual?','')
   assertFast(currentAfterContextualOverride)
   assert.match(currentAfterContextualOverride.payload.advice.answer,/Carlos Oliveira/)
@@ -256,6 +279,33 @@ test('HTTP A-G e fast follow-up encerram antes do contexto completo e do modelo'
   assertFast(noData)
   assert.match(noData.payload.advice.answer,/ainda não há visita concluída registrada/i)
   assert.equal(noData.payload.advice.ai_reasoning.run.capability_results[0].status,'NO_DATA')
+
+  const exactProfile=await turn('qual o perfil dele?','matheus','thread-profile-matheus')
+  assertFast(exactProfile)
+  assert.ok(exactProfile.wallMs<2_000,`PROFILE E2E excedeu 2 s: ${exactProfile.wallMs} ms`)
+  assert.equal(exactProfile.payload.responseMetadata.dataPath,'BEHAVIORAL_PROFILE')
+  assert.match(exactProfile.payload.advice.answer,/Perfil principal: Analítico/i)
+  assert.match(exactProfile.payload.advice.answer,/Confiança:/i)
+  assert.doesNotMatch(exactProfile.payload.advice.answer,/fertiliz|CPF|contrato de grãos|travamento/i)
+  assert.equal(exactProfile.payload.advice.ai_reasoning.run.model_call_count,0)
+  assert.equal(exactProfile.payload.responseMetadata.performance.latency.CONTEXT,null)
+
+  const hintedPoisonThread='thread-session-hint-cross-domain-poison'
+  const grainsBase=await turn('Qual é o preço da soja hoje?','matheus',hintedPoisonThread)
+  assert.equal(grainsBase.status,200,JSON.stringify(grainsBase.payload))
+  assert.equal(grainsBase.payload.responseMetadata.performance.path,'LIVE_DATA')
+  assert.equal(grainsBase.payload.conversationState.current_domain,'GRAINS')
+  assert.match(grainsBase.payload.advice.answer,/soja/i)
+  const profileAfterForgedSummary=await turn('qual o perfil dele?','',hintedPoisonThread,{sessionCommand:'SUMMARIZE'})
+  assertFast(profileAfterForgedSummary)
+  assert.equal(profileAfterForgedSummary.payload.responseMetadata.dataPath,'BEHAVIORAL_PROFILE')
+  assert.equal(profileAfterForgedSummary.payload.conversationState.current_domain,'PROFILE')
+  assert.equal(profileAfterForgedSummary.payload.conversationState.context_epoch,grainsBase.payload.conversationState.context_epoch+1)
+  assert.equal(profileAfterForgedSummary.payload.responseScope.producerId,'matheus')
+  assert.equal(profileAfterForgedSummary.payload.responseScope.contextEpoch,profileAfterForgedSummary.payload.conversationState.context_epoch)
+  assert.equal(profileAfterForgedSummary.payload.advice.ai_reasoning.run.tool_result?.capability??null,null)
+  assert.match(profileAfterForgedSummary.payload.advice.answer,/Perfil principal: Analítico/i)
+  assert.doesNotMatch(profileAfterForgedSummary.payload.advice.answer,/soja|mercado|contrato|grãos/i)
 
   const mismatchedSummary=await turn('Resume sua resposta anterior em uma linha, mantendo Carlos Oliveira como produtor atual e sem executar nova busca.','','thread-summary-http')
   assert.equal(mismatchedSummary.status,409)

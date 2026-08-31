@@ -173,6 +173,21 @@ export function resolveAuthorizedClientReference({message='',reference='',author
 }
 
 /**
+ * Confirma uma opção somente sobre o conjunto ambíguo recalculado pelo
+ * backend para a mesma referência. O browser não consegue transformar um ID
+ * arbitrário (ainda que autorizado) em resolução de outra pergunta.
+ */
+export function selectAuthorizedClientClarification({resolution=null,clientId='',reference=''}={}){
+ if(resolution?.status!=='AMBIGUOUS')return result({status:'INVALID_SELECTION',kind:resolution?.reference_kind||'NONE',reference:resolution?.reference||null,reasonCode:'CLARIFICATION_NOT_AMBIGUOUS',current:resolution?.previous_client||null})
+ const expectedReference=normalizeClientReference(resolution.reference)
+ const suppliedReference=normalizeClientReference(reference)
+ if(!expectedReference||suppliedReference!==expectedReference)return result({status:'INVALID_SELECTION',kind:resolution.reference_kind,reference:resolution.reference,reasonCode:'CLARIFICATION_REFERENCE_MISMATCH',options:resolution.options,current:resolution.previous_client})
+ const selected=resolution.options.find(option=>String(option?.id)===String(clientId))||null
+ if(!selected)return result({status:'INVALID_SELECTION',kind:resolution.reference_kind,reference:resolution.reference,reasonCode:'CLARIFICATION_OPTION_NOT_AUTHORIZED',options:resolution.options,current:resolution.previous_client})
+ return result({status:'RESOLVED',kind:resolution.reference_kind,reference:resolution.reference,reasonCode:'USER_CLARIFICATION_SELECTED',client:selected,current:resolution.previous_client,match:{kind:'USER_SELECTION',confidence:1}})
+}
+
+/**
  * Resolve "os dois" apenas para o produtor atual e o produtor anterior da
  * mesma lista já autorizada. Não faz descoberta global nem escolhe uma dupla
  * quando o contexto da thread não contém os dois ponteiros.

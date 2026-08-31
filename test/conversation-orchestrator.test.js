@@ -11,8 +11,19 @@ import {prepareConversationThread} from '../server/conversation-thread-context.j
 
 const question='FIZEMOS A APLICAÇÃO DE DESSECAÇÃO NA ÁREA PRÉ MILHO, ENTRAMOS COM GLUFOSINATO, CALARIS, DUAL GOLD E TRINCA CAPS. Preciso projetar o manejo de inseticidas visando cigarrinha no milho e me ajudar em uma venda de valor para o produto novo eficon da basf que custa 170 reais/ha'
 
+const threadScope={
+  tenant_id:'tenant-conversation-test',
+  owner_id:'owner-conversation-test',
+  producer_id:'produtor-1',
+  conversation_id:'conversation-orchestrator-test',
+  context_epoch:0,
+  domain:'GENERAL'
+}
+const scopedTurn=(item,activeContext=question)=>({...threadScope,...item,user_question:activeContext===item.user_question?item.user_question:`${item.user_question}\nContexto técnico-comercial ativo do último turno concluído: ${activeContext}`})
+
 const baseContext={
   client:{id:'produtor-1',name:'João da Silva',area:100,cultures:'Milho',commercial:{potentialTotal:800000,purchaseCurrentSeason:300000}},
+  contextSnapshot:{organization_id:threadScope.tenant_id,subject:{type:'client',id:threadScope.producer_id},context_scope:{tenant_id:threadScope.tenant_id,owner_id:threadScope.owner_id,producer_id:threadScope.producer_id,conversation_id:threadScope.conversation_id,context_epoch:threadScope.context_epoch,domain:threadScope.domain}},
   opportunities:[{id:'o1',title:'Programa inicial de milho',category:'Milho',stage:'Proposta',estimated_value:45000,next_action:'Validar programa com o produtor',next_action_at:'2026-08-20T12:00:00.000Z',updated_at:'2026-08-15T12:00:00.000Z',evidence:[{id:'e1'}]}],
   visits:[{id:'v1',summary:'Área pré-milho em preparação.',updated_at:'2026-08-15T12:00:00.000Z'}],
   interactions:[],businessHistory:[],properties:[],fieldReports:[],soilAnalyses:[],ndviObservations:[],manualRecords:[],signals:[],memories:[],priorRecommendations:[]
@@ -55,9 +66,9 @@ test('classifica pergunta técnico-comercial para rota híbrida com base oficial
 test('a próxima conversa herda produtos, operação e custo da pergunta anterior',()=>{
   const context={
     ...baseContext,
-    priorRecommendations:[{
+    priorRecommendations:[scopedTurn({
       id:'r1',user_question:question,created_at:'2026-08-16T21:20:00.000Z',next_best_action:'Mapear risco e proposta.'
-    }]
+    })]
   }
   const continuity=buildConversationContinuity(context,'E agora como eu conduzo a próxima conversa e fecho a decisão?')
   assert.equal(continuity.carryForward,true)
@@ -69,7 +80,7 @@ test('a próxima conversa herda produtos, operação e custo da pergunta anterio
 })
 
 test('resposta técnica deixa de ser genérica e cita toda a sequência anterior',()=>{
-  const context={...baseContext,priorRecommendations:[{id:'r1',user_question:question,created_at:'2026-08-16T21:20:00.000Z'}]}
+  const context={...baseContext,priorRecommendations:[scopedTurn({id:'r1',user_question:question,created_at:'2026-08-16T21:20:00.000Z'})]}
   const orchestration=buildConversationOrchestration(context,'Continue e me ajude a tomar a decisão.')
   const advice=enrichAdviceWithOrchestration(genericAdvice(),orchestration,{usedGenerativeAi:true})
   assert.doesNotMatch(advice.answer,/Converse com o cliente, entenda suas necessidades/)
@@ -118,7 +129,7 @@ test('botão de preparação de visita é determinístico quando o pedido é dir
 })
 
 test('mudança explícita de assunto não carrega os produtos anteriores',()=>{
-  const context={...baseContext,priorRecommendations:[{id:'r1',user_question:question,created_at:'2026-08-16T21:20:00.000Z'}]}
+  const context={...baseContext,priorRecommendations:[scopedTurn({id:'r1',user_question:question,created_at:'2026-08-16T21:20:00.000Z'})]}
   const continuity=buildConversationContinuity(context,'Novo assunto: quero falar de trigo.')
   assert.equal(continuity.carryForward,false)
   assert.equal(continuity.previousProductNames.length,5)
@@ -126,12 +137,12 @@ test('mudança explícita de assunto não carrega os produtos anteriores',()=>{
 })
 
 test('sequência avança um dado por vez em vez de repetir perguntas prontas',()=>{
-  const context={...baseContext,priorRecommendations:[{id:'r1',user_question:question,created_at:'2026-08-16T21:20:00.000Z'}]}
+  const context={...baseContext,priorRecommendations:[scopedTurn({id:'r1',user_question:question,created_at:'2026-08-16T21:20:00.000Z'})]}
   const firstThread=prepareConversationThread(context,'Continue o planejamento.')
   const first=buildConversationOrchestration(firstThread.context,firstThread.message).technicalCommercialPlan
   assert.match(first.nextQuestion,/data prevista de emergência|milho tiguera|lavoura de milho mais velha/i)
   const secondContext={...context,priorRecommendations:[
-    {id:'r2',user_question:'A emergência será dia 10 e não há tiguera, mas existe milho mais velho ao lado.',created_at:'2026-08-16T21:30:00.000Z'},
+    scopedTurn({id:'r2',user_question:'A emergência será dia 10 e não há tiguera, mas existe milho mais velho ao lado.',created_at:'2026-08-16T21:30:00.000Z'}),
     ...context.priorRecommendations
   ]}
   const secondThread=prepareConversationThread(secondContext,'Pode seguir.')
@@ -144,9 +155,9 @@ test('sequência avança um dado por vez em vez de repetir perguntas prontas',()
 
 test('o fio ativo sobrevive a uma resposta intermediária sem repetir os produtos',()=>{
   const context={...baseContext,priorRecommendations:[
-    {id:'r3',user_question:'O híbrido será X e o tratamento de sementes já foi definido.',created_at:'2026-08-16T21:40:00.000Z'},
-    {id:'r2',user_question:'A emergência será dia 10 e existe milho mais velho ao lado.',created_at:'2026-08-16T21:30:00.000Z'},
-    {id:'r1',user_question:question,created_at:'2026-08-16T21:20:00.000Z'}
+    scopedTurn({id:'r3',user_question:'O híbrido será X e o tratamento de sementes já foi definido.',created_at:'2026-08-16T21:40:00.000Z'}),
+    scopedTurn({id:'r2',user_question:'A emergência será dia 10 e existe milho mais velho ao lado.',created_at:'2026-08-16T21:30:00.000Z'}),
+    scopedTurn({id:'r1',user_question:question,created_at:'2026-08-16T21:20:00.000Z'})
   ]}
   const thread=prepareConversationThread(context,'Prossiga para a próxima decisão.')
   const orchestration=buildConversationOrchestration(thread.context,thread.message)

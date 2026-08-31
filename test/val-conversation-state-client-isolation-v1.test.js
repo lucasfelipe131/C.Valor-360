@@ -2,9 +2,9 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {activeComparisonClientIds,advanceConversationState,conversationStateContext,createConversationState} from '../server/decision-copilot/conversation-state.js'
 
-const scope={conversationId:'thread-comparison',clientId:'carlos',client:{id:'carlos',name:'Carlos Oliveira'}}
+const scope={tenantId:'tenant-a',ownerId:'owner-a',conversationId:'thread-comparison',clientId:'carlos',client:{id:'carlos',name:'Carlos Oliveira'}}
 
-test('fatos preservam subject_client_id e owner explícitos sem deduplicar produtores distintos',()=>{
+test('estado single-client descarta fatos e hipóteses explicitamente atribuídos a outro produtor',()=>{
  const state=advanceConversationState(createConversationState(scope),{
   scope,
   response:{advice:{ai_reasoning:{
@@ -16,10 +16,9 @@ test('fatos preservam subject_client_id e owner explícitos sem deduplicar produ
   }}}
  })
 
- assert.equal(state.session_facts.length,2)
- assert.deepEqual(state.session_facts.map(item=>[item.subject_client_id,item.owner_id]),[['carlos','owner-a'],['antonio','owner-a']])
- assert.equal(state.session_hypotheses[0].subject_client_id,'antonio')
- assert.equal(state.session_hypotheses[0].owner_id,'owner-a')
+ assert.equal(state.session_facts.length,1)
+ assert.deepEqual(state.session_facts.map(item=>[item.subject_client_id,item.owner_id]),[['carlos','owner-a']])
+ assert.deepEqual(state.session_hypotheses,[])
 })
 
 test('comparação rotula fatos por produtor e contexto single-client não expõe o outro cliente',()=>{
@@ -30,8 +29,8 @@ test('comparação rotula fatos por produtor e contexto single-client não expõ
    responseMetadata:{comparedClients},
    comparisonResolution:{clients:comparedClients},
    advice:{ai_reasoning:{recommended_strategy:{reading:'Carlos Oliveira teve visita dia 25; Antônio Carlos, dia 24.'},decision_thesis:{THESIS:'Comparar os dois históricos.',KEY_UNCERTAINTY:'Qual dimensão importa?'},facts_used:[
-    {id:'visit-carlos',statement:'Última visita concluída de Carlos Oliveira em 25/08/2026.'},
-    {id:'visit-antonio',statement:'Última visita concluída de Antônio Carlos em 24/08/2026.'},
+    {id:'visit-carlos',subject_client_id:'carlos',statement:'Última visita concluída de Carlos Oliveira em 25/08/2026.'},
+    {id:'visit-antonio',subject_client_id:'antonio',statement:'Última visita concluída de Antônio Carlos em 24/08/2026.'},
    ],hypotheses:[],golden_questions:[
     {question:'Qual conta deve ser priorizada entre os dois produtores?'},
     {question:'O que Carlos Oliveira espera da próxima visita?'},
@@ -65,15 +64,15 @@ test('fato agregado multi-cliente fica retido no estado mas só entra em context
  const comparedClients=[{id:'carlos',name:'Carlos Oliveira'},{id:'antonio',name:'Antônio Carlos'}]
  const state=advanceConversationState(createConversationState(scope),{
   scope,
-  response:{responseMetadata:{comparedClients},advice:{ai_reasoning:{facts_used:[{id:'aggregate',statement:'As duas contas precisam de validação adicional.'}],hypotheses:[]}}}
+  response:{responseMetadata:{comparedClients},advice:{ai_reasoning:{facts_used:[{id:'aggregate',subject_client_ids:['carlos','antonio'],statement:'As duas contas precisam de validação adicional.'}],hypotheses:[]}}}
  })
 
  assert.deepEqual(state.session_facts[0].subject_client_ids,['carlos','antonio'])
  assert.deepEqual(conversationStateContext(state).session_facts,[])
- assert.equal(conversationStateContext(state,{includeCrossClient:true}).session_facts[0].source_ref,'aggregate')
+ assert.equal(conversationStateContext(state,{includeCrossClient:true,allowedClientIds:['carlos','antonio']}).session_facts[0].source_ref,'aggregate')
 })
 
-test('fatos legados sem subject continuam compatíveis e são vinculados ao produtor atual',()=>{
+test('itens legados sem subject falham fechados e não são reatribuídos ao produtor atual',()=>{
  const context=conversationStateContext({
   conversation_id:'legacy-thread',
   current_client:{id:'carlos',name:'Carlos Oliveira'},
@@ -83,8 +82,8 @@ test('fatos legados sem subject continuam compatíveis e são vinculados ao prod
   recent_tool_results:[{capability:'LEGACY_TOOL',status:'EXECUTED',source_ref:'legacy-tool'}]
  })
 
- assert.equal(context.session_facts[0].subject_client_id,'carlos')
- assert.equal(context.session_hypotheses[0].subject_client_id,'carlos')
- assert.deepEqual(context.recent_questions,['Pergunta legada?'])
- assert.equal(context.recent_tool_results[0].source_ref,'legacy-tool')
+ assert.deepEqual(context.session_facts,[])
+ assert.deepEqual(context.session_hypotheses,[])
+ assert.deepEqual(context.recent_questions,[])
+ assert.deepEqual(context.recent_tool_results,[])
 })

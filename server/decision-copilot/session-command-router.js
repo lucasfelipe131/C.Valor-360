@@ -26,6 +26,11 @@ const rules=Object.freeze([
 const localCommands=new Set(['OUTPUT_TEXT','OUTPUT_AUDIO','DO_NOT_REGISTER'])
 const deterministicFollowUps=new Set(['EXPLAIN','SHOW_NUMBERS'])
 const summaryReference=/^(?:(?:agora\s+)?(?:resume|resuma)(?:\s+(?:isso|a resposta|sua resposta anterior|a resposta anterior))?(?:\s+em uma linha)?(?:,?\s+mantendo\s+(?:(?<same_client>(?:o\s+)?mesmo\s+produtor)|(?<expected_client>[a-z0-9][a-z0-9 '-]{0,119}?)\s+como\s+produtor\s+atual))?(?:\s+e\s+sem\s+executar\s+nova\s+busca)?|faz um resumo|resumo)[.!?]*$/
+const expandedHintPatterns=Object.freeze({
+ DEEPEN:/\baprofund\w*\b.*\b(?:ultima (?:leitura|resposta|recomendacao)|resposta anterior|contexto atual|fatos confirmados desta conversa)\b/,
+ EXPLAIN:/\bexpli\w*\b.*\b(?:ultima (?:leitura|resposta|recomendacao)|resposta anterior|contexto atual|chegou a ultima recomendacao)\b/,
+ SHOW_NUMBERS:/\bmostr\w*\b.*\bnumeros?\b.*\b(?:ultima (?:leitura|resposta|recomendacao)|resposta anterior|contexto atual)\b/
+})
 
 export function normalizeSessionCommand(value){
  const normalized=String(value??'').trim().toUpperCase()
@@ -33,12 +38,22 @@ export function normalizeSessionCommand(value){
  return sessionCommands.includes(canonical)?canonical:null
 }
 
+export function sessionCommandHintMatchesMessage(message='',commandHint=''){
+ const source=normalize(message)
+ const hinted=normalizeSessionCommand(commandHint)
+ if(!source||!hinted)return false
+ const summaryMatch=source.match(summaryReference)
+ const explicit=summaryMatch?'SUMMARIZE':rules.find(([,pattern])=>pattern.test(source))?.[0]||null
+ return explicit===hinted||Boolean(expandedHintPatterns[hinted]?.test(source))
+}
+
 export function routeSessionCommand(message='',commandHint=''){
  const source=normalize(message)
  const hinted=normalizeSessionCommand(commandHint)
  if(!source&&!hinted)return null
  const summaryMatch=source.match(summaryReference)
- const match=hinted?[hinted,null]:summaryMatch?['SUMMARIZE',summaryReference]:rules.find(([,pattern])=>pattern.test(source))
+ const explicitMatch=summaryMatch?['SUMMARIZE',summaryReference]:rules.find(([,pattern])=>pattern.test(source))
+ const match=hinted&&sessionCommandHintMatchesMessage(source,hinted)?[hinted,null]:explicitMatch
  if(!match)return null
  const command=match[0]
  return Object.freeze({

@@ -6,11 +6,11 @@ import {routeSystemCapability} from '../server/decision-copilot/capability-route
 
 const context={
  client:{id:'client-a',name:'Produtor A'},
- opportunities:[{id:'opp-a',title:'Oportunidade A'}],
- visits:[{id:'visit-a',objective:'Revisar proposta'}],
- properties:[{id:'property-a',name:'Fazenda A',fields:[{id:'field-a',name:'Talhão Norte',geometry_ref:'map-1'}]}],
- soilAnalyses:[{id:'soil-a',laboratory:'Laboratório A',measurements:[{id:'m-1'}]}],
- contextSnapshot:{context_snapshot_id:'snapshot-a'}
+ opportunities:[{id:'opp-a',producer_id:'client-a',tenant_id:'tenant-a',context_owner_id:'owner-a',title:'Oportunidade A'}],
+ visits:[{id:'visit-a',producer_id:'client-a',tenant_id:'tenant-a',context_owner_id:'owner-a',objective:'Revisar proposta'}],
+ properties:[{id:'property-a',producer_id:'client-a',tenant_id:'tenant-a',context_owner_id:'owner-a',name:'Fazenda A',fields:[{id:'field-a',name:'Talhão Norte',geometry_ref:'map-1'}]}],
+ soilAnalyses:[{id:'soil-a',producer_id:'client-a',tenant_id:'tenant-a',context_owner_id:'owner-a',laboratory:'Laboratório A',measurements:[{id:'m-1'}]}],
+ contextSnapshot:{context_snapshot_id:'snapshot-a',organization_id:'tenant-a',subject:{id:'client-a'},context_scope:{producer_id:'client-a',tenant_id:'tenant-a',owner_id:'owner-a'}}
 }
 
 test('contexto ativo é vinculado ao objeto autorizado, não apenas à label da UI',async()=>{

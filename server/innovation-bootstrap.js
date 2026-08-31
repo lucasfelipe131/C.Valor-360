@@ -11,16 +11,32 @@ const PATCHED=Symbol.for('valor360.conversion-innovations.patched')
 export const innovationCompositionVersion='innovation-bootstrap-v1'
 const GRAIN_CACHE_TTL_MS=5*60_000
 const grainCache=new Map()
+const grainCacheGenerations=new Map()
+let grainCacheEpoch=0
 
-async function grainWorkspaceFor(repository,ownerId){
+export function clearInnovationGrainCache({tenantId,ownerId}={}){
+ const tenant=String(tenantId??'').trim()
+ const owner=String(ownerId??'').trim()
+ if(!tenant&&!owner){const removed=grainCache.size;grainCacheEpoch+=1;grainCache.clear();grainCacheGenerations.clear();return removed}
+ if(!tenant||!owner)throw Object.assign(new Error('tenantId e ownerId são obrigatórios para invalidar o cache de grãos.'),{code:'grain_cache_scope_required'})
+ const key=`${tenant}:${owner}`
+ grainCacheGenerations.set(key,(grainCacheGenerations.get(key)||0)+1)
+ return grainCache.delete(key)?1:0
+}
+
+export async function grainWorkspaceFor(repository,ownerId){
  if(ownerId==null)return null
  const key=`${repository.tenantId||'tenant'}:${ownerId}`
  const cached=grainCache.get(key)
  if(cached&&cached.expiresAt>Date.now())return cached.value
+ const loadEpoch=grainCacheEpoch
+ const loadGeneration=grainCacheGenerations.get(key)||0
  try{
   const grainRepository=new GrainRepository({db:repository.db,readStore:repository.readStore,saveStore:repository.saveStore,tenantId:repository.tenantId})
   const value=await grainRepository.getWorkspace(ownerId)
-  grainCache.set(key,{expiresAt:Date.now()+GRAIN_CACHE_TTL_MS,value})
+  // Não permita que uma leitura iniciada antes da invalidação ressuscite
+  // o valor removido quando sua promise concluir fora de ordem.
+  if(loadEpoch===grainCacheEpoch&&loadGeneration===(grainCacheGenerations.get(key)||0))grainCache.set(key,{expiresAt:Date.now()+GRAIN_CACHE_TTL_MS,value})
   return value
  }catch{return null}
 }

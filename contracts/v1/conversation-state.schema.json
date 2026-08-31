@@ -7,8 +7,23 @@
   "required": [
     "contract_version",
     "conversation_id",
+    "tenant_id",
+    "owner_id",
     "persistence_mode",
     "persistent_memory_unchanged",
+    "context_epoch",
+    "current_domain",
+    "current_client",
+    "recent_clients",
+    "current_property",
+    "current_field",
+    "current_crop",
+    "current_season",
+    "current_opportunity",
+    "current_visit",
+    "current_objective",
+    "current_topic",
+    "current_decision_thesis",
     "recent_entities",
     "recent_tool_results",
     "recent_questions",
@@ -17,13 +32,20 @@
     "conversation_turns",
     "input_modality",
     "response_mode",
-    "conversation_mode"
+    "conversation_mode",
+    "active_object",
+    "created_at",
+    "updated_at"
   ],
   "properties": {
     "contract_version": {"const": "val.conversation_state.v1"},
     "conversation_id": {"type": "string", "minLength": 1, "maxLength": 180},
+    "tenant_id": {"type": ["string", "null"], "maxLength": 180},
+    "owner_id": {"type": ["string", "null"], "maxLength": 180},
     "persistence_mode": {"const": "NONE"},
     "persistent_memory_unchanged": {"const": true},
+    "context_epoch": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "current_domain": {"type": ["string", "null"], "maxLength": 40},
     "current_client": {"$ref": "#/$defs/entityOrNull"},
     "current_property": {"$ref": "#/$defs/entityOrNull"},
     "current_field": {"$ref": "#/$defs/entityOrNull"},
@@ -33,13 +55,14 @@
     "current_visit": {"$ref": "#/$defs/entityOrNull"},
     "current_objective": {"type": ["string", "null"], "maxLength": 900},
     "current_topic": {"type": ["string", "null"], "maxLength": 180},
-    "current_decision_thesis": {"type": ["object", "null"]},
+    "current_decision_thesis": {"$ref": "#/$defs/thesisOrNull"},
+    "recent_clients": {"type": "array", "maxItems": 6, "items": {"$ref": "#/$defs/entity"}},
     "recent_entities": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/entity"}},
-    "recent_tool_results": {"type": "array", "maxItems": 12, "items": {"type": "object"}},
-    "recent_questions": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 700}},
+    "recent_tool_results": {"type": "array", "maxItems": 12, "items": {"$ref": "#/$defs/toolResult"}},
+    "recent_questions": {"type": "array", "maxItems": 12, "items": {"$ref": "#/$defs/questionItem"}},
     "session_facts": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/sessionKnowledge"}},
     "session_hypotheses": {"type": "array", "maxItems": 12, "items": {"$ref": "#/$defs/sessionKnowledge"}},
-    "conversation_turns": {"type": "array", "maxItems": 20, "items": {"type": "object"}},
+    "conversation_turns": {"type": "array", "maxItems": 20, "items": {"$ref": "#/$defs/turn"}},
     "input_modality": {"enum": ["text", "voice", "photo", "file"]},
     "response_mode": {"enum": ["text", "audio", "both"]},
     "conversation_mode": {"type": "boolean"},
@@ -62,12 +85,95 @@
     "sessionKnowledge": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["statement", "epistemic_status", "persistence", "source_ref"],
+      "required": ["statement", "epistemic_status", "persistence", "source_ref", "tenant_id", "owner_id"],
+      "anyOf": [
+        {"required": ["subject_client_id"]},
+        {"required": ["subject_client_ids"]}
+      ],
       "properties": {
         "statement": {"type": "string", "maxLength": 700},
         "epistemic_status": {"enum": ["SESSION_FACT", "SESSION_HYPOTHESIS"]},
         "persistence": {"const": "SESSION_ONLY"},
-        "source_ref": {"type": ["string", "null"], "maxLength": 180}
+        "source_ref": {"type": "string", "minLength": 1, "maxLength": 180},
+        "subject_client_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "subject_client_ids": {"type": "array", "minItems": 2, "maxItems": 6, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 180}},
+        "tenant_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "owner_id": {"type": "string", "minLength": 1, "maxLength": 180}
+      }
+    },
+    "subjectScope": {
+      "anyOf": [
+        {"required": ["subject_client_id"]},
+        {"required": ["subject_client_ids"]}
+      ]
+    },
+    "toolResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability", "status", "source_ref", "tenant_id", "owner_id"],
+      "allOf": [{"$ref": "#/$defs/subjectScope"}],
+      "properties": {
+        "capability": {"type": "string", "minLength": 1, "maxLength": 80},
+        "status": {"type": "string", "maxLength": 80},
+        "source_ref": {"type": ["string", "null"], "maxLength": 180},
+        "summary": {"type": ["string", "null"], "maxLength": 500},
+        "subject_client_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "subject_client_ids": {"type": "array", "minItems": 2, "maxItems": 6, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 180}},
+        "tenant_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "owner_id": {"type": "string", "minLength": 1, "maxLength": 180}
+      }
+    },
+    "questionItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["question", "tenant_id", "owner_id"],
+      "allOf": [{"$ref": "#/$defs/subjectScope"}],
+      "properties": {
+        "question": {"type": "string", "minLength": 1, "maxLength": 700},
+        "subject_client_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "subject_client_ids": {"type": "array", "minItems": 2, "maxItems": 6, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 180}},
+        "tenant_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "owner_id": {"type": "string", "minLength": 1, "maxLength": 180}
+      }
+    },
+    "thesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["thesis", "uncertainty", "next_action", "tenant_id", "owner_id"],
+      "allOf": [{"$ref": "#/$defs/subjectScope"}],
+      "properties": {
+        "thesis": {"type": ["string", "null"], "maxLength": 1000},
+        "uncertainty": {"type": ["string", "null"], "maxLength": 700},
+        "next_action": {"type": ["string", "null"], "maxLength": 700},
+        "subject_client_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "subject_client_ids": {"type": "array", "minItems": 2, "maxItems": 6, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 180}},
+        "tenant_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "owner_id": {"type": "string", "minLength": 1, "maxLength": 180}
+      }
+    },
+    "thesisOrNull": {"anyOf": [{"$ref": "#/$defs/thesis"}, {"type": "null"}]},
+    "turn": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "text", "status", "scope_verified", "server_grounded", "conversation_id", "context_epoch", "modality", "intent", "created_at", "tenant_id", "owner_id"],
+      "properties": {
+        "role": {"enum": ["user", "assistant", "system"]},
+        "text": {"type": "string", "minLength": 1, "maxLength": 1200},
+        "status": {"enum": ["accepted", "completed", "incomplete"]},
+        "scope_verified": {"type": "boolean"},
+        "server_grounded": {"type": "boolean"},
+        "conversation_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "context_epoch": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+        "modality": {"enum": ["text", "voice", "photo", "file", "tool"]},
+        "intent": {"type": ["string", "null"], "maxLength": 80},
+        "created_at": {"type": "string", "format": "date-time"},
+        "subject_client_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "subject_client_ids": {"type": "array", "minItems": 2, "maxItems": 6, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 180}},
+        "tenant_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "owner_id": {"type": "string", "minLength": 1, "maxLength": 180},
+        "facts": {"type": "array", "maxItems": 16, "items": {"$ref": "#/$defs/sessionKnowledge"}},
+        "questions": {"type": "array", "maxItems": 12, "items": {"type": "string", "maxLength": 700}},
+        "decision_thesis": {"$ref": "#/$defs/thesisOrNull"}
       }
     }
   }
