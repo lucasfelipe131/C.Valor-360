@@ -1,0 +1,58 @@
+name: Publish VAL Context Integrity Handoff
+
+on:
+  push:
+    branches:
+      - bootstrap/val-context-integrity-loader-v1
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: val-context-integrity-loader
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout loader
+        uses: actions/checkout@v4
+        with:
+          ref: bootstrap/val-context-integrity-loader-v1
+          path: loader
+          fetch-depth: 1
+
+      - name: Checkout target
+        uses: actions/checkout@v4
+        with:
+          ref: fix/val-context-integrity-grounding-v1
+          path: target
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Download, verify and publish exact handoff
+        env:
+          BASE_SHA: 5aee2cf0d2bac615ed4f6ec39791980f5cb4f487
+          EXPECTED_HEAD: cff63e9ad61517108d8337a6fc7ca3ed1533b838
+          EXPECTED_TREE: ae992f8b942581af32d607be3fb92cdae0cfded2
+          PAYLOAD_SHA256: 0a0ef77d7f857737fd53f4ad7ee81f3e6045cd3488500ccfe779f69e1d7e79e4
+          PAYLOAD_URL: https://filebin.net/val-context-0a0ef77d-20260831/context.patch.xz
+        run: |
+          set -euo pipefail
+          curl --fail --show-error --silent --location \
+            --retry 4 --retry-all-errors --connect-timeout 20 --max-time 180 \
+            "$PAYLOAD_URL" -o /tmp/context.patch.xz
+          echo "${PAYLOAD_SHA256}  /tmp/context.patch.xz" | sha256sum -c -
+          xz -dc /tmp/context.patch.xz > /tmp/context.patch
+          cd target
+          test "$(git rev-parse HEAD)" = "${BASE_SHA}"
+          git config user.name Codex
+          git config user.email codex@openai.com
+          GIT_COMMITTER_NAME=Codex GIT_COMMITTER_EMAIL=codex@openai.com \
+            git am --committer-date-is-author-date /tmp/context.patch
+          test "$(git rev-parse HEAD)" = "${EXPECTED_HEAD}"
+          test "$(git rev-parse HEAD^{tree})" = "${EXPECTED_TREE}"
+          git push origin HEAD:refs/heads/fix/val-context-integrity-grounding-v1
