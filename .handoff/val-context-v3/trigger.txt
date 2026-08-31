@@ -1,0 +1,3 @@
+inspect-request=2026-08-31T00:00:00Z
+purpose=read-only-identification-before-v2-publication
+base=5aee2cf0d2bac615ed4f6ec39791980f5cb4f487
