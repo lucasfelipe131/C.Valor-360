@@ -1,0 +1,107 @@
+name: Publish VAL Context Integrity Handoff v2
+
+on:
+  push:
+    branches:
+      - bootstrap/val-context-integrity-loader-v1
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+env:
+  TARGET_BRANCH: fix/val-context-integrity-grounding-v1
+  PR_BRANCH: pr/val-context-integrity-grounding-v1
+  BASE_BRANCH: feature/val-conversational-os-vnext
+  BASE_SHA: 5aee2cf0d2bac615ed4f6ec39791980f5cb4f487
+  EXPECTED_HEAD: cff63e9ad61517108d8337a6fc7ca3ed1533b838
+  EXPECTED_TREE: ae992f8b942581af32d607be3fb92cdae0cfded2
+  PAYLOAD_SHA256: 0a0ef77d7f857737fd53f4ad7ee81f3e6045cd3488500ccfe779f69e1d7e79e4
+  PAYLOAD_URL: https://filebin.net/val-context-0a0ef77d-20260831/context.patch.xz
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout target
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_BRANCH }}
+          path: target
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Publish exact commit chain when still at frozen base
+        working-directory: target
+        run: |
+          set -euo pipefail
+          current="$(git rev-parse HEAD)"
+          if [ "$current" = "$EXPECTED_HEAD" ]; then
+            echo "Exact handoff already published."
+          else
+            test "$current" = "$BASE_SHA"
+            curl --fail --show-error --silent --location \
+              --retry 4 --retry-all-errors --connect-timeout 20 --max-time 180 \
+              "$PAYLOAD_URL" -o /tmp/context.patch.xz
+            echo "${PAYLOAD_SHA256}  /tmp/context.patch.xz" | sha256sum -c -
+            xz -dc /tmp/context.patch.xz > /tmp/context.patch
+            git config user.name Codex
+            git config user.email codex@openai.com
+            GIT_COMMITTER_NAME=Codex GIT_COMMITTER_EMAIL=codex@openai.com \
+              git am --committer-date-is-author-date /tmp/context.patch
+            test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+            test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
+            git push origin HEAD:refs/heads/$TARGET_BRANCH
+          fi
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD^{tree})" = "$EXPECTED_TREE"
+
+      - name: Create exact PR branch
+        working-directory: target
+        run: |
+          set -euo pipefail
+          git fetch origin "$TARGET_BRANCH" "$BASE_BRANCH"
+          test "$(git rev-parse origin/$TARGET_BRANCH)" = "$EXPECTED_HEAD"
+          git push origin "$EXPECTED_HEAD:refs/heads/$PR_BRANCH" --force-with-lease
+
+      - name: Create or verify DRAFT pull request
+        working-directory: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          existing="$(gh pr list --state open --head "$PR_BRANCH" --base "$BASE_BRANCH" --json number --jq '.[0].number // empty')"
+          if [ -z "$existing" ]; then
+            gh pr create \
+              --draft \
+              --head "$PR_BRANCH" \
+              --base "$BASE_BRANCH" \
+              --title "fix(val): enforce context integrity and grounded follow-ups" \
+              --body "Publicação controlada do handoff VAL Context Integrity + Grounding + Fast Follow-up Recovery v1. HEAD exato: $EXPECTED_HEAD. Tree exata: $EXPECTED_TREE. Sem merge em main, sem produção e sem deploy automático. O gate permanece pendente de CI remoto, staging exato, Context Trace do caso Matheus e PROFILE p95 abaixo de 2 s."
+          else
+            test "$(gh pr view "$existing" --json headRefOid --jq .headRefOid)" = "$EXPECTED_HEAD"
+            test "$(gh pr view "$existing" --json baseRefName --jq .baseRefName)" = "$BASE_BRANCH"
+            test "$(gh pr view "$existing" --json isDraft --jq .isDraft)" = "true"
+          fi
+
+      - name: Publication summary
+        working-directory: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          number="$(gh pr list --state open --head "$PR_BRANCH" --base "$BASE_BRANCH" --json number --jq '.[0].number')"
+          url="$(gh pr view "$number" --json url --jq .url)"
+          {
+            echo "## VAL publication"
+            echo "- Target: $TARGET_BRANCH"
+            echo "- Head: $EXPECTED_HEAD"
+            echo "- Tree: $EXPECTED_TREE"
+            echo "- Draft PR: #$number"
+            echo "- URL: $url"
+            echo "- main: unchanged"
+            echo "- production: unchanged"
+            echo "- staging: unchanged"
+          } >> "$GITHUB_STEP_SUMMARY"
