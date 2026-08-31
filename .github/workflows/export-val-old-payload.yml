@@ -1,0 +1,42 @@
+name: Export VAL old payload
+
+on:
+  push:
+    branches:
+      - automation/val-context-integrity-handoff-v1
+    paths:
+      - .handoff/val-context-v3/export-trigger.txt
+
+permissions:
+  contents: read
+
+env:
+  PAYLOAD_DIR: .handoff/val-context-v3
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout payload branch
+        uses: actions/checkout@v4
+        with:
+          ref: automation/val-context-integrity-handoff-v1
+          fetch-depth: 1
+
+      - name: Assemble existing payload without decoding
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat "$PAYLOAD_DIR"/part-*.b64 > /tmp/old-payload.b64
+          wc -c /tmp/old-payload.b64
+          sha256sum /tmp/old-payload.b64 | tee /tmp/old-payload.b64.sha256
+
+      - name: Upload existing payload
+        uses: actions/upload-artifact@v4
+        with:
+          name: val-old-payload
+          path: |
+            /tmp/old-payload.b64
+            /tmp/old-payload.b64.sha256
+          if-no-files-found: error
+          retention-days: 1
