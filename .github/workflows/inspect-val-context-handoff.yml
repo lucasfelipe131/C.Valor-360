@@ -1,0 +1,102 @@
+name: Inspect VAL Context Handoff
+
+on:
+  push:
+    branches:
+      - automation/val-context-integrity-handoff-v1
+    paths:
+      - .handoff/val-context-v3/trigger.txt
+
+permissions:
+  contents: write
+
+concurrency:
+  group: inspect-val-context-handoff
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout automation branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: automation/val-context-integrity-handoff-v1
+
+      - name: Decode and inspect staged payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          dir=.handoff/val-context-v3
+          cat "$dir"/part-*.b64 > /tmp/val-context-payload.b64
+          base64 --decode /tmp/val-context-payload.b64 > /tmp/val-context-payload.xz
+          xz --test /tmp/val-context-payload.xz
+          xz --decompress --stdout /tmp/val-context-payload.xz > /tmp/val-context-payload
+
+          {
+            echo "inspection_version=1"
+            echo "automation_head=$(git rev-parse HEAD)"
+            echo "encoded_bytes=$(wc -c < /tmp/val-context-payload.b64)"
+            echo "xz_bytes=$(wc -c < /tmp/val-context-payload.xz)"
+            echo "decoded_bytes=$(wc -c < /tmp/val-context-payload)"
+            echo "encoded_sha256=$(sha256sum /tmp/val-context-payload.b64 | awk '{print $1}')"
+            echo "xz_sha256=$(sha256sum /tmp/val-context-payload.xz | awk '{print $1}')"
+            echo "decoded_sha256=$(sha256sum /tmp/val-context-payload | awk '{print $1}')"
+            echo "file_type=$(file -b /tmp/val-context-payload | tr '\n' ' ')"
+            echo "first_lines_begin"
+            head -n 24 /tmp/val-context-payload || true
+            echo "first_lines_end"
+          } > "$dir/inspection.txt"
+
+          rm -rf /tmp/val-context-probe
+          mkdir -p /tmp/val-context-probe
+          git clone --no-hardlinks . /tmp/val-context-probe >/dev/null 2>&1
+          cd /tmp/val-context-probe
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git switch --detach 5aee2cf0d2bac615ed4f6ec39791980f5cb4f487 >/dev/null 2>&1
+
+          set +e
+          git am /tmp/val-context-payload >/tmp/am.out 2>/tmp/am.err
+          am_status=$?
+          if [ "$am_status" -ne 0 ]; then
+            git am --abort >/dev/null 2>&1 || true
+            git reset --hard 5aee2cf0d2bac615ed4f6ec39791980f5cb4f487 >/dev/null 2>&1
+            git apply --check /tmp/val-context-payload >/tmp/apply-check.out 2>/tmp/apply-check.err
+            apply_check_status=$?
+          else
+            apply_check_status=99
+          fi
+          set -e
+
+          {
+            echo "git_am_status=$am_status"
+            echo "git_apply_check_status=$apply_check_status"
+            if [ "$am_status" -eq 0 ]; then
+              echo "result_head=$(git rev-parse HEAD)"
+              echo "result_tree=$(git rev-parse HEAD^{tree})"
+              echo "result_commits=$(git rev-list --count 5aee2cf0d2bac615ed4f6ec39791980f5cb4f487..HEAD)"
+              git log --oneline --reverse 5aee2cf0d2bac615ed4f6ec39791980f5cb4f487..HEAD
+            else
+              echo "git_am_error_begin"
+              sed -n '1,80p' /tmp/am.err
+              echo "git_am_error_end"
+              echo "git_apply_error_begin"
+              sed -n '1,80p' /tmp/apply-check.err
+              echo "git_apply_error_end"
+            fi
+          } >> "$GITHUB_WORKSPACE/$dir/inspection.txt"
+
+      - name: Commit inspection only
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .handoff/val-context-v3/inspection.txt
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "chore: inspect staged VAL context handoff"
+          git push origin HEAD:automation/val-context-integrity-handoff-v1
