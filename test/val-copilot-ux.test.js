@@ -114,7 +114,7 @@ test('Cliente 360 mantém dossiê em drill-down sem chamar agendamento de intera
 })
 
 test('navegação preserva agronomia nativa e deixa o workspace como aprofundamento',()=>{
- assert.match(sidebar,/\['dashboard','Hoje',BrainCircuit\]/)
+ assert.match(sidebar,/\['dashboard','Hoje',LayoutDashboard\]/)
  assert.match(sidebar,/Perguntar à VAL/)
  assert.doesNotMatch(sidebar,/\['val','Ambientes VAL'/)
  assert.match(sidebar,/\['questionnaire','Coletar preferências'/)
