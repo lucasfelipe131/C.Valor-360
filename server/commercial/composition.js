@@ -31,7 +31,7 @@ function retrieveKnowledge(input,snapshot,profile){
    contextSnapshot:snapshot,
    context:input.context,
    behavioralProfile:profile,
-   modules:['MCTX','MDI','MVV','MIA'],
+   modules:['MCTX','MDI','MVV','MIA','MIC'],
    geography:text(input.geography||input.context?.client?.country||'Brazil',120),
    limit:3,
    now

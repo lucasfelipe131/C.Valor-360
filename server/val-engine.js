@@ -764,7 +764,7 @@ export class ValEngine{
     try{
       knowledgeRetrieval=context.contextSnapshot?.context_scope?.domain==='PROFILE'
         ?normalizeKnowledgeRetrieval({status:'NO_APPLICABLE_KNOWLEDGE',reason_codes:['DOMAIN_MINIMUM_CONTEXT_ONLY']},{now:knowledgeNow})
-        :normalizeKnowledgeRetrieval(selectKnowledge({query:String(message||'').slice(0,5000),message:String(message||'').slice(0,3000),contextSnapshot:context.contextSnapshot,context,modules:['MCTX','MDI','MVV','MIA'],geography:String(context?.client?.country||'Brazil').slice(0,120),limit:3,now:knowledgeNow}),{now:knowledgeNow})
+        :normalizeKnowledgeRetrieval(selectKnowledge({query:String(message||'').slice(0,5000),message:String(message||'').slice(0,3000),contextSnapshot:context.contextSnapshot,context,modules:['MCTX','MDI','MVV','MIA','MIC'],geography:String(context?.client?.country||'Brazil').slice(0,120),limit:3,now:knowledgeNow}),{now:knowledgeNow})
     }catch(error){
       observe('knowledge.selection.failed',{contextSnapshotId:context.contextSnapshot?.context_snapshot_id,errorCode:String(error?.code||'knowledge_selection_failed').slice(0,120),outcome:'degraded'})
       knowledgeRetrieval=normalizeKnowledgeRetrieval({status:'NO_APPLICABLE_KNOWLEDGE',reason_codes:['SELECTION_UNAVAILABLE']},{now:knowledgeNow})
