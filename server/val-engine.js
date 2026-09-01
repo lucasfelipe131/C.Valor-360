@@ -501,6 +501,10 @@ const applicationRate=/\b\d+(?:[.,]\d+)?\s*(?:l|ml|kg|g|t)\s*\/\s*(?:ha|hectares
 const actionableAgronomy=/\b(?:(?:recomendo|use|utilize|aplique|misture|prescreva|deve aplicar)\b.{0,100}\b(?:produto|dose|dosagem|mistura|defensivo|fungicida|herbicida|inseticida|aduba[cç][aã]o|calagem|receita agron[oô]mica)\b|dose de\s+\d|diagn[oó]stico (?:é|indica|confirma)|(?:é|indica|confirma) (?:defici[eê]ncia|doen[cç]a|praga|compacta[cç][aã]o))\b/i
 const explicitAgronomyRequest=/\b(?:(?:qual|quais|quanto|quantos|calcule|indique|recomende|prescreva|defina|monte|fa[cç]a|devo|posso|como)\b.{0,80}\b(?:dose|dosagem|mistura|produto|defensivo|fungicida|herbicida|inseticida|aduba[cç][aã]o|calagem|receita agron[oô]mica|diagn[oó]stico)\b|(?:aplique|misture|prescreva|diagnostique)\b)/i
 const attachmentReadIntent=/\b(?:leia|ler|transcreva|transcrever|interprete|interpretar|o que (?:está|ta|tá) (?:escrito|anotado)|essa (?:foto|imagem|anota[cç][aã]o)|esse (?:arquivo|documento)|comprovante|nota|receita|r[oó]tulo)\b/i
+// Perguntas puramente conceituais (sem alvo, cultura ou contexto pessoal) não pedem prescrição;
+// não devem acionar a barreira determinística de entrada. A barreira de saída (actionableAgronomy)
+// continua ativa e intacta como rede de segurança caso a resposta do modelo seja prescritiva mesmo assim.
+const genericAgronomyExplanation=/^\s*(?:o\s+que\s+[ée]|o\s+que\s+significa|como\s+funciona|(?:para|pra)\s+que\s+serve|qual\s+(?:a\s+)?diferen[çc]a\s+entre|quais\s+(?:s[ãa]o\s+)?os\s+tipos\s+de|explique|me\s+explica|resumo\s+sobre|resuma)(?=\s|[?,.:!]|$)/i
 
 const count=value=>Array.isArray(value)?value.length:0
 export function summarizeContextCoverage(context={}){
@@ -689,7 +693,8 @@ export function enforceValSafety(advice,context,message='',options={}){
   const isAttachmentReading=attachmentReadIntent.test(String(message))&&currentAttachments.length>0
   const mayTranscribeAttachment=isAttachmentReading&&!currentAttachments.some(imageAttachment)
   const comparisonRequest=isCommercialProductComparison(message)
-  const requestRequiresReview=!mayTranscribeAttachment&&((explicitAgronomyRequest.test(String(message))&&!comparisonRequest)||applicationRate.test(String(message)))
+  const isGenericExplanationRequest=genericAgronomyExplanation.test(String(message||''))
+  const requestRequiresReview=!mayTranscribeAttachment&&!isGenericExplanationRequest&&((explicitAgronomyRequest.test(String(message))&&!comparisonRequest)||applicationRate.test(String(message)))
   const outputRequiresReview=!mayTranscribeAttachment&&(applicationRate.test(generatedContent)||actionableAgronomy.test(generatedAction+'\n'+generatedContent))
   const providerHumanReview=options.providerHumanReview&&typeof options.providerHumanReview==='object'?structuredClone(options.providerHumanReview):null
   const technicalSafetyAudit=buildTechnicalSafetyAudit({requestRequiresReview,outputRequiresReview,signalRequiresReview,productRequiresReview,providerHumanReview,at:options.at||new Date()})

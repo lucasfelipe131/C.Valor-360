@@ -88,6 +88,36 @@ test('evento de divergência é estruturado e não contém pergunta ou resposta'
  assert.doesNotThrow(()=>emitTechnicalSafetyAudit({warn:()=>{throw new Error('logger fora')}},audit))
 })
 
+test('pergunta puramente conceitual não aciona a barreira determinística de entrada',()=>{
+ for(const message of [
+  'Como funciona a adubação de cobertura no milho?',
+  'O que é calagem?',
+  'Qual a diferença entre fungicida sistêmico e de contato?',
+  'Quais os tipos de herbicida que existem?'
+ ]){
+  let audit=null
+  const advice=fallback(message)
+  const result=enforceValSafety(advice,baseContext,message,{
+   providerHumanReview:{required:false,reason:'Sem revisão.',required_role:'none'},
+   onSafetyAudit:value=>{audit=value}
+  })
+  assert.equal(audit.status,'aligned_clear',message)
+  assert.doesNotMatch(result.answer,/reteve qualquer orientação técnica acionável/,message)
+ }
+})
+
+test('pedido de dose específico continua bloqueado mesmo com abertura semelhante a pergunta conceitual',()=>{
+ let audit=null
+ const message='Qual dose devo aplicar no milho?'
+ const advice=fallback(message)
+ const result=enforceValSafety(advice,baseContext,message,{
+  providerHumanReview:{required:false,reason:'Sem revisão.',required_role:'none'},
+  onSafetyAudit:value=>{audit=value}
+ })
+ assert.equal(audit.status,'deterministic_override')
+ assert.match(result.answer,/reteve qualquer orientação técnica acionável/)
+})
+
 test('engine persiste e devolve a auditoria técnica sem alterar o schema do modelo',()=>{
  const engine=readFileSync(new URL('../server/val-engine.js',import.meta.url),'utf8')
  const playbook=readFileSync(new URL('../server/sales-playbook.js',import.meta.url),'utf8')
