@@ -39,7 +39,7 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
  activeScopeRef.current={scopeKey,clientId:String(clientId),producerId:String(clientId),conversationId:String(conversationId),contextEpoch:currentEpoch}
  const scopeKeyRef=useRef(scopeKey),scopeReconnectPending=useRef(null)
  const callbacks=useRef({onUserTranscript,onAssistantTranscript,onToolCall,onMemoryReview,onMetrics,onError,onStateChange})
- const marks=useRef(null),pendingUser=useRef(''),assistantBuffers=useRef(new Map())
+ const marks=useRef(null),pendingUser=useRef(''),assistantBuffers=useRef(new Map()),thinkingWatchdog=useRef(null)
  callbacks.current={onUserTranscript,onAssistantTranscript,onToolCall,onMemoryReview,onMetrics,onError,onStateChange}
  const capabilities=useMemo(()=>realtimeWebRTCCapabilities(),[])
  const update=useCallback(next=>setMachine(current=>({...current,...(typeof next==='function'?next(current):next)})),[])
@@ -52,7 +52,9 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   if(!response.ok&&response.status!==402)throw Object.assign(new Error(result?.error||'Falha no controle da sessão realtime.'),{code:result?.code||'realtime_voice_control_failed'})
   return result
  },[])
+ const clearThinkingWatchdog=useCallback(()=>{if(thinkingWatchdog.current){globalThis.clearTimeout(thinkingWatchdog.current);thinkingWatchdog.current=null}},[])
  const cleanup=useCallback(async({final=true,reason='EXIT',nextStatus=STATES.IDLE}={})=>{
+  clearThinkingWatchdog()
   const current=resources.current
   if(current.timer)globalThis.clearTimeout(current.timer)
   current.timer=null
@@ -63,7 +65,7 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   if(final&&!current.finalized&&current.sessionId){current.finalized=true;postSession('usage',{final:true,disconnectReason:reason},{keepalive:true,sessionId:current.sessionId}).catch(()=>null)}
   resources.current=emptyResources()
   marks.current=null;pendingUser.current='';assistantBuffers.current.clear();update({status:nextStatus,microphoneActive:false,sessionId:'',error:'',fallbackReason:nextStatus===STATES.FALLBACK?reason:''})
- },[postSession,update])
+ },[clearThinkingWatchdog,postSession,update])
  const requestReconnect=useCallback(async(targetScopeKey=activeScopeRef.current.scopeKey)=>{
   const request={scopeKey:String(targetScopeKey||'')}
   scopeReconnectPending.current=request
@@ -81,6 +83,16 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   callbacks.current.onError?.(message,{code})
   return {ok:false,reason:code,error:message}
  },[cleanup,eventIsCurrent,update])
+ // Sem isto, uma sessão realtime que nunca emite response.done/error após
+ // response.created (falha silenciosa do provider) deixa a VAL presa em
+ // "pensando" para sempre, sem qualquer forma de recuperação para o usuário.
+ const armThinkingWatchdog=useCallback(eventScope=>{
+  clearThinkingWatchdog()
+  thinkingWatchdog.current=globalThis.setTimeout(()=>{
+   thinkingWatchdog.current=null
+   if(eventIsCurrent(eventScope))fail(Object.assign(new Error('A VAL não respondeu a tempo. Tente novamente.'),{code:'REALTIME_THINKING_TIMEOUT'}),{eventScope})
+  },20_000)
+ },[clearThinkingWatchdog,eventIsCurrent,fail])
  const reportUsage=useCallback(async(event,eventScope)=>{
   if(!eventIsCurrent(eventScope))return false
   const responseId=safeText(event?.response?.id||event?.response_id,180)
@@ -116,30 +128,31 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   if(type==='session.created'||type==='session.updated'){update({status:STATES.LISTENING,microphoneActive:true,error:''});return}
   if(type==='input_audio_buffer.speech_started'){
    const timestamp=now();const interrupted=machineRef.current.status===STATES.SPEAKING
-   marks.current={speechStarted:timestamp,bargeIn:interrupted};update({status:STATES.LISTENING,microphoneActive:true});return
+   marks.current={speechStarted:timestamp,bargeIn:interrupted};clearThinkingWatchdog();update({status:STATES.LISTENING,microphoneActive:true});return
   }
   if(type==='input_audio_buffer.speech_stopped'){
-   const timestamp=now();marks.current={...(marks.current||{}),speechEnd:timestamp,turnDetected:timestamp};update({status:STATES.THINKING,microphoneActive:true});return
+   const timestamp=now();marks.current={...(marks.current||{}),speechEnd:timestamp,turnDetected:timestamp};armThinkingWatchdog(eventScope);update({status:STATES.THINKING,microphoneActive:true});return
   }
   if(type==='conversation.item.input_audio_transcription.completed'){
    const transcript=safeText(event.transcript);if(marks.current)marks.current.transcriptAvailable=now();pendingUser.current=transcript;if(transcript)callbacks.current.onUserTranscript?.(transcript,eventScope);postSession('usage',{responseId:`transcript:${safeText(event.item_id,140)}`,kind:'TRANSCRIPTION',usage:event.usage||{},final:false},{sessionId:eventScope.sessionId}).then(result=>{if(!eventIsCurrent(eventScope))return;if(result?.remainingUsd!=null)update({budgetRemainingUsd:result.remainingUsd});if(result?.exhausted)fail(Object.assign(new Error('O teto autorizado do UAT realtime foi atingido.'),{code:'realtime_voice_budget_exhausted'}),{eventScope})}).catch(()=>null);return
   }
-  if(type==='response.created'){if(marks.current)marks.current.reasoningStarted=now();update({status:STATES.THINKING,microphoneActive:true});return}
+  if(type==='response.created'){if(marks.current)marks.current.reasoningStarted=now();armThinkingWatchdog(eventScope);update({status:STATES.THINKING,microphoneActive:true});return}
   if(type==='response.output_audio_transcript.delta'){
    const key=event.response_id||event.item_id||'active';const next=(assistantBuffers.current.get(key)||'')+String(event.delta||'');assistantBuffers.current.set(key,next);if(marks.current&&!Number.isFinite(marks.current.firstResponseToken))marks.current.firstResponseToken=now();return
   }
   if(type==='response.output_audio_transcript.done'){
    const key=event.response_id||event.item_id||'active';const transcript=safeText(event.transcript||assistantBuffers.current.get(key));assistantBuffers.current.delete(key);if(transcript&&eventIsCurrent(eventScope)){callbacks.current.onAssistantTranscript?.(transcript,eventScope);if(pendingUser.current)reportTurn(pendingUser.current,transcript,eventScope);pendingUser.current=''}return
   }
-  if(type==='output_audio_buffer.started'){if(marks.current&&!Number.isFinite(marks.current.firstAudio))marks.current.firstAudio=now();update({status:STATES.SPEAKING,microphoneActive:true});return}
+  if(type==='output_audio_buffer.started'){if(marks.current&&!Number.isFinite(marks.current.firstAudio))marks.current.firstAudio=now();clearThinkingWatchdog();update({status:STATES.SPEAKING,microphoneActive:true});return}
   if(type==='output_audio_buffer.stopped'){update({status:STATES.LISTENING,microphoneActive:true});return}
   if(type==='response.function_call_arguments.done'){await handleTool(event,eventScope);return}
   if(type==='response.done'){
+   clearThinkingWatchdog()
    if(marks.current){marks.current.responseEnd=now();callbacks.current.onMetrics?.(realtimeLatencySample(marks.current,event.response?.status==='completed'?'SUCCESS':event.response?.status==='cancelled'?'CANCELLED':'ERROR'));marks.current=null}
    await reportUsage(event,eventScope).catch(()=>null);return
   }
-  if(type==='error')await fail(Object.assign(new Error(event.error?.message||'O provider realtime encerrou a sessão.'),{code:event.error?.code||'realtime_provider_error'}),{eventScope})
- },[eventIsCurrent,fail,handleTool,postSession,reportTurn,reportUsage,update])
+  if(type==='error'){clearThinkingWatchdog();await fail(Object.assign(new Error(event.error?.message||'O provider realtime encerrou a sessão.'),{code:event.error?.code||'realtime_provider_error'}),{eventScope})}
+ },[armThinkingWatchdog,clearThinkingWatchdog,eventIsCurrent,fail,handleTool,postSession,reportTurn,reportUsage,update])
  const start=useCallback(async()=>{
   if(disabled)return {ok:false,reason:'DISABLED'}
   if(!capabilities.supported)return fail(Object.assign(new Error(!capabilities.secureContext?'Abra a VAL em uma conexão HTTPS segura.':'Este navegador não oferece WebRTC e microfone compatíveis.'),{code:!capabilities.secureContext?'INSECURE_CONTEXT':'WEBRTC_UNAVAILABLE'}))
