@@ -4,6 +4,7 @@ import {executeCopilotCalculator} from '../agronomic-calculator-adapter.js'
 import {conversationStateContext,lastCompletedAssistantTurn,normalizeConversationState} from './conversation-state.js'
 import {assertActiveProducerBoundary,assertContextScopeAliases,classifyValContextDomain,explicitlyGlobalContext} from './context-selector.js'
 import {evaluateReasoningGrounding} from './response-grounding.js'
+import {selectKnowledge} from '../knowledge/library.js'
 
 export const capabilityExecutorVersion='val.capability_executor.v1'
 
@@ -604,7 +605,27 @@ function generalAnswer(message=''){
  if(/\bcusto\s*\/\s*ha|custo por hectare/.test(source))return 'Custo por hectare é o custo total dividido pela área efetivamente considerada. Informe ambos com unidade e período para a VAL calcular.'
  if(/\bctc\b/.test(source))return 'CTC representa a capacidade do solo de reter e trocar cátions. Sua interpretação depende do método, da camada amostrada, do pH e das demais medições do laudo.'
  if(/\bph\b/.test(source))return 'O pH indica a acidez ou alcalinidade do solo e influencia disponibilidade de nutrientes e manejo de correção. A interpretação prática depende do método, da camada, da cultura e das demais medições do laudo.'
+ const governed=governedGeneralAnswer(message)
+ if(governed)return governed
  return 'Posso tratar esta dúvida sem selecionar um produtor e sem consultar memória privada. Informe a cultura, o conceito ou a decisão geral que deseja entender; dados atuais e recomendações técnicas continuam exigindo fonte, contexto e revisão.'
+}
+
+// Consulta a Knowledge Library governada (server/knowledge) antes de recorrer ao texto
+// genérico de esclarecimento. Arredondado ao minuto para que a nova chamada de
+// validação em validateGeneralGuidanceSource produza o mesmo texto byte a byte.
+function governedGeneralAnswer(message){
+ const now=new Date(Math.floor(Date.now()/60_000)*60_000)
+ let selection
+ try{selection=selectKnowledge({query:String(message||''),modules:['MCTX','MDI','MVV','MIA','MIC'],geography:'General',limit:1,now})}
+ catch{return ''}
+ const item=selection?.items?.[0]
+ if(!item?.statement)return ''
+ // application_val é nota interna de engenharia (ex.: "MDI usa X para separar Y pago na
+ // praça do produtor") e menciona "produtor" genericamente; incluí-la aqui já disparou
+ // GLOBAL_PRODUCER_SPECIFIC_CLAIM no grounding por parecer uma afirmação individual.
+ // Só o princípio (statement) é apropriado para fala/exibição direta ao usuário.
+ const caveat=item.requires_human_review?' A execução prática continua exigindo responsável técnico habilitado.':''
+ return `${item.statement}`.replace(/\s+/g,' ').trim()+caveat
 }
 
 function isGeneralConceptRequest(message=''){
