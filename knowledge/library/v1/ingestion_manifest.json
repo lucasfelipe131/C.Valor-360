@@ -4,8 +4,8 @@
   "created_for": "VAL",
   "language": "pt-BR",
   "counts": {
-    "knowledge_items": 100,
-    "sources": 30,
+    "knowledge_items": 122,
+    "sources": 40,
     "scenarios": 30
   },
   "ingestion_policy": {

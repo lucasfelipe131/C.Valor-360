@@ -328,5 +328,115 @@
     "geography": "Global",
     "domain": "learning_transfer",
     "notes": "Field study of spaced practice in sales training; supports reinforcement rather than one-off training."
+  },
+  {
+    "source_id": "SRC-031",
+    "title": "AGRICULTURAL PRODUCTS Self-Study Guide to Hedging with Grain and Oilseed Futures and Options",
+    "publisher": "CME Group",
+    "year": 2019,
+    "url": "https://www.cmegroup.com/trading/agricultural/files/pm255_self-study-guide_hedging_en_2019.pdf",
+    "authority": "B",
+    "geography": "Global",
+    "domain": "commodity_markets",
+    "notes": "Exchange-published educational guide covering basis, hedging mechanics and residual basis risk."
+  },
+  {
+    "source_id": "SRC-032",
+    "title": "World Agricultural Supply and Demand Estimates (WASDE)",
+    "publisher": "USDA World Agricultural Outlook Board",
+    "year": 2026,
+    "url": "https://www.usda.gov/about-usda/general-information/staff-offices/office-chief-economist/commodity-markets/wasde-report",
+    "authority": "A",
+    "geography": "Global",
+    "domain": "commodity_markets",
+    "notes": "Official monthly US government balance-sheet report for major grains and oilseeds; supply, use and stocks by category."
+  },
+  {
+    "source_id": "SRC-033",
+    "title": "B3 + Agro",
+    "publisher": "B3 S.A.",
+    "year": 2026,
+    "url": "https://www.b3.com.br/pt_br/b3-agro/",
+    "authority": "B",
+    "geography": "Brazil",
+    "domain": "commodity_markets",
+    "notes": "Exchange-published description of Brazilian agricultural derivatives, including the Brazil Soybean futures contract developed with CME Group."
+  },
+  {
+    "source_id": "SRC-034",
+    "title": "Acompanhamento da Safra Brasileira de Grãos",
+    "publisher": "Conab - Companhia Nacional de Abastecimento",
+    "year": 2026,
+    "url": "https://www.conab.gov.br/info-agro/safras/graos",
+    "authority": "A",
+    "geography": "Brazil",
+    "domain": "commodity_markets",
+    "notes": "Official monthly Brazilian government crop survey; area, productivity, production, climate and market analysis from a nationwide agent network and satellite monitoring."
+  },
+  {
+    "source_id": "SRC-035",
+    "title": "Custos de Produção - Metodologia",
+    "publisher": "Conab - Companhia Nacional de Abastecimento",
+    "year": 2026,
+    "url": "https://www.conab.gov.br/info-agro/custos-de-producao",
+    "authority": "A",
+    "geography": "Brazil",
+    "domain": "farm_economics",
+    "notes": "Official standard cost-of-production methodology separating variable cost, operational cost (with depreciation) and total cost (with land/capital remuneration)."
+  },
+  {
+    "source_id": "SRC-036",
+    "title": "Resistência de fungos a fungicidas",
+    "publisher": "Embrapa",
+    "year": 2026,
+    "url": "https://www.embrapa.br/en/busca-de-publicacoes/-/publicacao/13231/resistencia-de-fungos-a-fungicidas",
+    "authority": "A",
+    "geography": "Brazil",
+    "domain": "agronomic_decision",
+    "notes": "Application-window discipline and mode-of-action rotation limit repeated selection pressure and delay fungicide resistance in soybean diseases."
+  },
+  {
+    "source_id": "SRC-037",
+    "title": "Correção da acidez superficial do solo no Cerrado: recomendação para utilização de calcário",
+    "publisher": "Embrapa",
+    "year": 2026,
+    "url": "https://www.embrapa.br/en/busca-de-solucoes-tecnologicas/-/produto-servico/2371/correcao-da-acidez-superficial-do-solo-no-cerrado-recomendacao-para-utilizacao-de-calcario",
+    "authority": "A",
+    "geography": "Brazil",
+    "domain": "agronomic_decision",
+    "notes": "Liming timing (2-3 months ahead of planting) and PRNT-adjusted dose as determinants of effective soil acidity correction."
+  },
+  {
+    "source_id": "SRC-038",
+    "title": "Resistência de plantas daninhas",
+    "publisher": "Embrapa",
+    "year": 2026,
+    "url": "https://www.embrapa.br/en/agencia-de-informacao-tecnologica/cultivos/soja/producao/manejo-de-plantas-daninhas/resistencia-de-plantas-daninhas",
+    "authority": "A",
+    "geography": "Brazil",
+    "domain": "agronomic_decision",
+    "notes": "Repeated use of the same herbicide mechanism of action under monoculture/no-till increases resistance selection risk; crop and herbicide rotation are core countermeasures."
+  },
+  {
+    "source_id": "SRC-039",
+    "title": "Behavioral Preferences and Price Risk Management in Agriculture: A Systematic Literature Review",
+    "publisher": "Journal of Agricultural and Applied Economics / Cambridge University Press",
+    "year": 2024,
+    "url": "https://www.cambridge.org/core/journals/journal-of-agricultural-and-applied-economics/article/behavioral-preferences-and-price-risk-management-in-agriculture-a-systematic-literature-review/A9EE07CFC02B987423B9B7C7E1C012C7",
+    "authority": "B",
+    "geography": "Global",
+    "domain": "adaptive_behavior",
+    "notes": "Systematic review; mixed evidence on how risk aversion relates to adoption and hedging behavior across farm studies."
+  },
+  {
+    "source_id": "SRC-040",
+    "title": "Farmers' Risk-Based Decision Making Under Pervasive Uncertainty: Cognitive Thresholds and Hazy Hedging",
+    "publisher": "Risk Analysis / Wiley (Findlater et al.)",
+    "year": 2019,
+    "url": "https://onlinelibrary.wiley.com/doi/abs/10.1111/risa.13290",
+    "authority": "B",
+    "geography": "Global",
+    "domain": "adaptive_behavior",
+    "notes": "Farmers satisfice rather than optimize under multifaceted uncertainty; risk and ambiguity preferences are distinct decision dimensions."
   }
 ]

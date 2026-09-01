@@ -7,9 +7,9 @@ import {fileURLToPath} from 'node:url'
 import {containsPromptInjection,loadKnowledgeLibrary,selectKnowledge} from '../server/knowledge/index.js'
 import {normalizeRisk} from '../server/knowledge/policy.js'
 
-test('Biblioteca VAL v1 carrega 100 itens, 30 fontes e 30 cenários com referências válidas',()=>{
+test('Biblioteca VAL v1 carrega 122 itens, 40 fontes e 30 cenários com referências válidas',()=>{
  const library=loadKnowledgeLibrary({forceReload:true})
- assert.deepEqual(library.validation.counts,{knowledge_items:100,sources:30,scenarios:30})
+ assert.deepEqual(library.validation.counts,{knowledge_items:122,sources:40,scenarios:30})
  assert.equal(library.validation.valid,true)
  assert.deepEqual(library.validation.errors,[])
  assert.ok(library.validation.warnings.some(item=>item.code==='DUPLICATE_SOURCE_REF_REMOVED'&&item.ref==='KI-012'))
