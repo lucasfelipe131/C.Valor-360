@@ -628,13 +628,16 @@ function governedGeneralAnswer(message){
  return `${item.statement}`.replace(/\s+/g,' ').trim()+caveat
 }
 
+// Reconhece perguntas conceituais gen\u00e9ricas (agronomia, comercial, etc.) pelo formato
+// da pergunta, n\u00e3o por uma lista fixa de termos \u2014 sem isso, qualquer conceito fora de
+// ctc/ph/margem/roi/custo-ha ca\u00eda no bloqueio "selecione um produtor", mesmo sem
+// nenhuma refer\u00eancia a um produtor, cliente ou dado espec\u00edfico.
 function isGeneralConceptRequest(message=''){
  const source=String(message).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim()
  const contextual=/\b(?:deste|desse|dessa|daquele|daquela|atual|selecionad[oa]|produtor|cliente|conta|oportunidade|visita|talhao|propriedade|laudo|analise)\b/.test(source)
  if(contextual)return false
- const definition=/\b(?:o que (?:e|significa)|explique|defina|qual (?:e )?a importancia)\b.*\b(?:ctc|ph|margem|roi|retorno sobre investimento|custo\s*\/\s*ha|custo por hectare)\b/.test(source)
- const formula=/\bcomo (?:se )?(?:calcula|calcular)\b.*\b(?:margem|roi|retorno sobre investimento|custo\s*\/\s*ha|custo por hectare)\b/.test(source)
- return definition||formula
+ const genericLeadIn=/^(?:o que (?:e|significa)|explique|defina|me explic[ae]|me fal[ae] sobre|me conta sobre|resumo sobre|resuma|como (?:se )?funciona|como (?:se )?calcula(?:r)?|para que serve|pra que serve|qual (?:e )?a importancia|qual (?:e )?a diferenc[ae] (?:entre|de)|quais (?:sao )?(?:as diferencas entre|os tipos de)|(?:eu )?(?:quero|queria|gostaria de|preciso) (?:saber|entender|aprender)(?: mais)? sobre)\b/
+ return genericLeadIn.test(source)
 }
 
 function isPureAbsenceOrInputSummary(value=''){

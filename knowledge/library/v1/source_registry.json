@@ -438,5 +438,16 @@
     "geography": "Global",
     "domain": "adaptive_behavior",
     "notes": "Farmers satisfice rather than optimize under multifaceted uncertainty; risk and ambiguity preferences are distinct decision dimensions."
+  },
+  {
+    "source_id": "SRC-041",
+    "title": "Volatilização de amônia após aplicação de ureia em cobertura no milho safrinha na Amazônia Mato-Grossense",
+    "publisher": "Embrapa Agrosilvopastoral (Oliveira, A.P.S. et al.)",
+    "year": 2018,
+    "url": "https://www.embrapa.br/en/busca-de-publicacoes/-/publicacao/1140311/volatilizacao-de-amonia-apos-aplicacao-de-ureia-em-cobertura-no-milho-safrinha-na-amazonia-mato-grossense",
+    "authority": "B",
+    "geography": "Brazil",
+    "domain": "agronomic_decision",
+    "notes": "Regional field study (Amazônia Mato-Grossense, off-season corn); measured ammonia volatilization loss magnitude is condition-specific (soil, climate, timing) and must not be generalized as a fixed percentage."
   }
 ]

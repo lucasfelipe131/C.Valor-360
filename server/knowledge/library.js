@@ -5,7 +5,7 @@ import {knowledgeItemVersion,knowledgeSourceVersion,validateKnowledgeItem,valida
 import {authorityRank,containsPromptInjection,knowledgePolicyVersion,mapSourceStatus,normalizeRisk,text,uniqueText,usagePolicyForRisk} from './policy.js'
 
 const defaultDirectory=new URL('../../knowledge/library/v1/',import.meta.url)
-const defaultExpectedCounts=Object.freeze({knowledge_items:122,sources:40,scenarios:30})
+const defaultExpectedCounts=Object.freeze({knowledge_items:123,sources:41,scenarios:30})
 let defaultCache=null
 
 function directoryUrl(value){
