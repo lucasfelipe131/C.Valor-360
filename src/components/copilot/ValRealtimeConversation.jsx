@@ -45,6 +45,7 @@ export default function ValRealtimeConversation({
  if(inactive)return <button type="button" className="val-conversation-opt-in" onClick={start} disabled={disabled} aria-label="Iniciar modo conversa por voz"><Mic/><span><b>Modo conversa</b><small>Fale e ouça a VAL sem enviar a cada turno</small></span></button>
 
  return <section className={rootClass} aria-label="Modo conversa por voz" data-version={state.version||REALTIME_CONVERSATION_POLICY.version} data-transport={state.transport||'WEB_SPEECH'} data-microphone-active={state.microphoneActive?'true':'false'}>
+  <div className="val-conversation-orb" aria-hidden="true"><span className="val-orb-ring r3"></span><span className="val-orb-ring r2"></span><span className="val-orb-ring"></span><span className="val-orb-core"></span></div>
   <div className="val-conversation-status" role="status" aria-live="polite">
    <span className="val-conversation-mic" aria-hidden="true">{state.microphoneActive?<Mic/>:<MicOff/>}</span>
    <span><b>{state.label}</b><small>{state.microphoneActive?state.isSpeaking?'Microfone ativo para permitir interrupção':'Microfone ativo e indicado':state.status===REALTIME_CONVERSATION_STATES.PROCESSING||state.status==='THINKING'?'A VAL está preparando a resposta':state.status===REALTIME_CONVERSATION_STATES.SPEAKING?'Você pode interromper':'Microfone desligado'}</small></span>
