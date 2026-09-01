@@ -78,7 +78,7 @@ test('nova pergunta isola o turno pendente e troca de escopo cancela a anterior 
 
 test('override factual de um turno não troca o produtor selecionado na interface',()=>{
  const ask=section('const ask=async','const selectClarification=')
- assert.match(ask,/const changesConversationScope=Boolean\(resolvedClient\?\.id&&payload\.conversationResolution\?\.request_override!==true\)/)
- assert.match(ask,/if\(changesConversationScope\)\{setSelectedId\(resolvedClient\.id\)/)
+ assert.match(ask,/const changesConversationScope=Boolean\(resolvedClient\?\.id&&String\(resolvedClient\.id\)!==String\(client\?\.id\|\|''\)&&payload\.conversationResolution\?\.request_override!==true\)/)
+ assert.match(ask,/if\(changesConversationScope\)\{[\s\S]*setSelectedId\(resolvedClient\.id\)/)
  assert.doesNotMatch(ask,/if\(resolvedClient\?\.id\)\{setSelectedId\(resolvedClient\.id\)/)
 })

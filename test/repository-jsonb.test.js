@@ -113,6 +113,7 @@ test('recomendação e model_run serializam arrays e detalhes de erro explicitam
   assert.deepEqual(JSON.parse(recommendation.params[9]),{signals:[]})
   assert.deepEqual(JSON.parse(recommendation.params[10]),['signal-1'])
   assert.equal(JSON.parse(recommendation.params[11]).confidence.score,60)
+  assert.equal(recommendation.params[12],60)
   assert.deepEqual(JSON.parse(modelRun.params[10]),{causes:['timeout']})
 })
 
@@ -362,10 +363,13 @@ test('contexto entregue à VAL também neutraliza oportunidade negativa persisti
   assert.equal(context.client.commercial.opportunityProvenance.state,'none_declared')
   assert.deepEqual(context.profile.answers,{1:'Cliente',2:'Município'})
   assert.equal(context.profile.assessedAt,'2026-08-01T12:00:00.000Z')
-  for(const key of ['businessHistory','visits','interactions','opportunities','properties','fieldReports','soilAnalyses','ndviObservations','manualRecords','priorRecommendations'])assert.equal(context[key].length,1,key)
+  for(const key of ['businessHistory','visits','interactions','opportunities','properties','fieldReports','soilAnalyses','ndviObservations','manualRecords'])assert.equal(context[key].length,1,key)
+  assert.deepEqual(context.priorRecommendations,[],'recomendação legada sem escopo conversacional completo deve falhar fechada')
   assert.deepEqual(contextParams.slice(1),['client-ext',ownerId])
   assert.match(contextSql,/r\.consultant_id=\$3/)
   assert.match(contextSql,/val_recommendation\.consultant_id=\$3/)
+  assert.match(contextSql,/input_context->'contextSnapshot'->'context_scope'->>'context_epoch' context_epoch/)
+  assert.match(contextSql,/input_context->'contextSnapshot'->'context_scope'->>'domain' domain/)
   assert.match(contextSql,/generated_content->'methodology_state' methodology_state/)
 })
 

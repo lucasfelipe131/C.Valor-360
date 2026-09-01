@@ -51,7 +51,7 @@ test('a composição explícita preserva fundação, inovações e fallback dete
   await repository.updateAttachment({tenantId:'tenant-a',ownerId:'consultor-a',id:attachment.id,status:'confirmed',analysis:{summary:'Documento confirmado para análise.'}})
   const attachmentAnswer=await engine.answer({
     tenantId:'tenant-a',ownerId:'consultor-a',clientId:client.id,client,
-    message:'Analise este documento no contexto do produtor.',attachmentIds:[attachment.id],mode:'daily',
+    message:'Analise agronomicamente este documento no contexto do produtor.',attachmentIds:[attachment.id],mode:'daily',
     finalizeRecommendation:draft=>finalizeAttachmentRecommendation({draft,attachmentIds:[attachment.id],attachmentTypes:['application/pdf']})
   })
   assert.equal(attachmentAnswer.responseMetadata?.prePersistFinalized,undefined)

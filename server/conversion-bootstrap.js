@@ -1,6 +1,6 @@
 import {AsyncLocalStorage} from 'node:async_hooks'
 import {createHash} from 'node:crypto'
-import {ValEngine,enforceValSafety,summarizeContextCoverage,validatePreloadedValContext} from './val-engine.js'
+import {ValEngine,enforceValSafety,scopeValContextForModel,summarizeContextCoverage,validatePreloadedValContext} from './val-engine.js'
 import {ValRepository} from './repository.js'
 import {buildFallbackAdvice} from './sales-playbook.js'
 import {buildDecisionIntelligence} from './decision-intelligence.js'
@@ -8,7 +8,7 @@ import {buildValueBridge} from './product-intelligence.js'
 import {buildConversionFoundation,buildConversionIntelligence,reconcileAdviceWithConversion,conversionCoreVersion} from './conversion-engine.js'
 import {normalizeAdviceForValUi,toValUiPriority} from './conversion-ui-contract.js'
 import {buildConversationOrchestration,enrichAdviceWithOrchestration,conversationOrchestratorVersion} from './conversation-orchestrator-runtime.js'
-import {prepareConversationThread} from './conversation-thread-context.js'
+import {prepareConversationThread,selectScopedPriorRecommendations} from './conversation-thread-context.js'
 import {languageEnhancerVersion,preserveEnhancedLanguage} from './language-enhancer.js'
 import {buildPortfolioRadar} from './portfolio-radar.js'
 import {buildInsightFeed} from './execution/insight-card.js'
@@ -97,8 +97,9 @@ function radarFingerprint(intelligence,ownerId,now){
 }
 
 function finalAdvice(advice,rawContext,message,usedGenerativeAi=false,executionInput={}){
-  const thread=prepareConversationThread(rawContext||{},message||'')
-  const context=thread.context
+  const preparedThread=prepareConversationThread(rawContext||{},message||'')
+  const context=scopeValContextForModel({...preparedThread.context,conversationThread:{continued:preparedThread.continued,carriedPriorTurn:preparedThread.carriedPriorTurn,domain:preparedThread.domain,referenceKind:preparedThread.referenceKind}})
+  const thread={...preparedThread,context}
   const effectiveMessage=thread.message
   const conversion=buildConversionIntelligence(context,effectiveMessage)
   let orchestration=buildConversationOrchestration(context,effectiveMessage,{attachmentCount:context.currentAttachments?.length||0})
@@ -151,11 +152,16 @@ export function installConversionComposition(){
   ValRepository.prototype.getClientContext=async function conversionAwareContext(input){
     const context=await originalGetClientContext.call(this,input)
     const conversationId=String(input?.contextRequest?.conversationId||'').trim().slice(0,180)
-    // Sem conversationId não existe autorização para agregar históricos de
-    // threads diferentes. A visão stateless recebe zero turnos conversacionais.
-    const priorRecommendations=conversationId
-      ?list(context.priorRecommendations).filter(item=>String(item?.conversation_id||'')===conversationId)
-      :[]
+    // Recomendações anteriores são evidência de turno, não memória universal.
+    // A seleção fail-closed acontece antes de qualquer heurística de conversa.
+    const priorRecommendations=selectScopedPriorRecommendations(context,input?.contextRequest?.message||'',{
+      tenantId:input?.tenantId||this.tenantId,
+      ownerId:input?.ownerId,
+      producerId:input?.clientId||context.client?.id,
+      conversationId,
+      contextEpoch:input?.contextRequest?.contextEpoch??input?.contextRequest?.context_epoch,
+      contextDomain:input?.contextRequest?.contextDomain??input?.contextRequest?.context_domain
+    })
     const conversationState=input?.contextRequest?.conversationState
       ?normalizeConversationState(input.contextRequest.conversationState,{conversationId,clientId:input?.clientId||context.client?.id,client:context.client})
       :null
@@ -246,7 +252,7 @@ export function installConversionComposition(){
     const originalMessage=String(input.message||'Prepare a próxima melhor ação.').trim()
     emitProgress(input,'context')
     throwIfConversionCancelled(input.signal)
-    const rawContext=validatePreloadedValContext(input.preloadedContext,{tenantId:input.tenantId,ownerId:input.ownerId,clientId:input.clientId})||await raceConversionOperation(input.signal,()=>this.repository.getClientContext({
+    const rawContext=validatePreloadedValContext(input.preloadedContext,{tenantId:input.tenantId,ownerId:input.ownerId,clientId:input.clientId,conversationId:input.contextRequest?.conversationId,contextEpoch:input.contextRequest?.contextEpoch??input.contextRequest?.context_epoch,contextDomain:input.contextRequest?.contextDomain??input.contextRequest?.context_domain,message:originalMessage})||await raceConversionOperation(input.signal,()=>this.repository.getClientContext({
       tenantId:input.tenantId,
       ownerId:input.ownerId,
       clientId:input.clientId,
@@ -254,8 +260,18 @@ export function installConversionComposition(){
       contextRequest:{...(input.contextRequest||{}),message:originalMessage}
     }))
     throwIfConversionCancelled(input.signal)
-    const thread=prepareConversationThread(rawContext,originalMessage)
-    const context=thread.context
+    const threadInputContext={
+      ...rawContext,
+      priorRecommendations:selectScopedPriorRecommendations(rawContext,originalMessage,{
+        tenantId:input.tenantId,ownerId:input.ownerId,producerId:input.clientId,
+        conversationId:input.contextRequest?.conversationId,
+        contextEpoch:input.contextRequest?.contextEpoch??input.contextRequest?.context_epoch,
+        contextDomain:input.contextRequest?.contextDomain??input.contextRequest?.context_domain
+      })
+    }
+    const preparedThread=prepareConversationThread(threadInputContext,originalMessage)
+    const context=scopeValContextForModel({...preparedThread.context,conversationThread:{continued:preparedThread.continued,carriedPriorTurn:preparedThread.carriedPriorTurn,domain:preparedThread.domain,referenceKind:preparedThread.referenceKind}})
+    const thread={...preparedThread,context}
     const effectiveMessage=thread.message
     const attachmentCount=Array.isArray(input.attachmentIds)?input.attachmentIds.length:0
     let orchestration=buildConversationOrchestration(context,effectiveMessage,{attachmentCount})
@@ -269,12 +285,14 @@ export function installConversionComposition(){
       const result=await originalQuestionContext.run(originalMessage,()=>originalAnswer.call(this,{
         ...input,
         message:effectiveMessage,
+        contextRequest:{...(input.contextRequest||{}),snapshotMessage:originalMessage,conversationId:context.contextSnapshot?.context_scope?.conversation_id||input.contextRequest?.conversationId,contextEpoch:context.contextSnapshot?.context_scope?.context_epoch,contextDomain:context.contextSnapshot?.context_scope?.domain},
+        preloadedContext:{scope:{tenantId:input.tenantId,ownerId:input.ownerId,clientId:input.clientId,conversationId:context.contextSnapshot?.context_scope?.conversation_id||'',contextEpoch:context.contextSnapshot?.context_scope?.context_epoch??0,contextDomain:context.contextSnapshot?.context_scope?.domain||''},context},
         attachmentIds:[],
         mode:reasoning.tier
       }))
       emitProgress(input,'complete')
       const providerUsed=result.engineMode==='openai'
-      const resolved=finalAdvice(result.advice||{},rawContext,originalMessage,providerUsed,{actorId:input.ownerId,intentHint:input.intent,modelRun:{model:result.model,promptVersion:'val-ai-copilot-v2',status:providerUsed?'completed':'fallback',generativeUsed:providerUsed}})
+      const resolved=finalAdvice(result.advice||{},context,originalMessage,providerUsed,{actorId:input.ownerId,intentHint:input.intent,modelRun:{model:result.model,promptVersion:'val-ai-copilot-v2',status:providerUsed?'completed':'fallback',generativeUsed:providerUsed}})
       throwIfConversionCancelled(input.signal)
       return {
         ...result,

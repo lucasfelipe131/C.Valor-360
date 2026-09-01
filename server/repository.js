@@ -11,6 +11,7 @@ import {encodeCanonicalGeometryRef,manualToCanonicalValGeometry} from '../src/li
 import {buildAgronomicScanProvenance} from './agronomic-scan-provenance.js'
 import {resolveAuthorizedClientReference as reconcileAuthorizedClientReference} from './decision-copilot/client-reference-resolver.js'
 import {createProducerEntityIndexCache} from './decision-copilot/producer-entity-index-cache.js'
+import {selectScopedPriorRecommendations} from './conversation-thread-context.js'
 
 export function jsonbParameter(value){
   if(value===undefined)return null
@@ -121,6 +122,14 @@ const parseDate=(value,fallback)=>parsedDate(value)||parsedDate(fallback)
 const outcome=value=>/perd|cancel|recus|desist/i.test(String(value||''))?'lost':/ganh|fech|conclu|fatur|vend|aprov/i.test(String(value||''))?'won':/abert|andament|negocia|propost|pendente|\bopen\b/i.test(String(value||''))?'open':null
 const serviceError=message=>Object.assign(new Error(message),{statusCode:503})
 const domainError=(message,statusCode,code)=>Object.assign(new Error(message),{statusCode,...(code?{code}:{})})
+const recommendationConfidence=value=>{
+  if(value===undefined||value===null||value==='')return null
+  const score=Number(value)
+  if(!Number.isFinite(score)||score<0||score>100)throw domainError('A confiança da recomendação está fora do contrato.',500,'recommendation_confidence_invalid')
+  // AI reasoning uses 0..1, while the PostgreSQL compatibility column stores
+  // an integer percentage. Legacy 0..100 scores keep their original scale.
+  return Math.round(score<=1?score*100:score)
+}
 const persistenceCancellationError=signal=>signal?.reason instanceof Error
   ?signal.reason
   :Object.assign(new Error('A persistência foi cancelada antes do commit.'),{name:'AbortError',statusCode:499,code:'val_persistence_cancelled',safeToRetry:true})
@@ -265,7 +274,7 @@ const scheduledVisitTimestamp=(visit,now)=>{
   const scheduled=timestamp(visit?.scheduledAt??visit?.scheduled_at)
   return scheduled!==null&&scheduled>=now.getTime()?scheduled:null
 }
-const attachmentRecord=row=>({id:String(row.id),organizationId:String(row.tenant_id||row.tenantId||''),clientId:row.client_external_key||row.clientId||row.client_id||null,association:row.client_external_key||row.clientId||row.client_id?'LINKED_CLIENT':'UNLINKED',originalName:row.original_name,mimeType:row.mime_type,sizeBytes:Number(row.size_bytes||0),sha256:row.sha256,status:row.status,analysis:jsonObject(row.analysis),createdAt:iso(row.created_at),updatedAt:iso(row.updated_at),confirmedAt:iso(row.confirmed_at),...(row.content_base64?{dataBase64:row.content_base64}:{})})
+const attachmentRecord=row=>({id:String(row.id),organizationId:String(row.tenant_id||row.tenantId||''),contextOwnerId:String(row.consultant_id||row.consultantId||row.context_owner_id||row.contextOwnerId||row.ownerId||''),clientId:row.client_external_key||row.clientId||row.client_id||null,association:row.client_external_key||row.clientId||row.client_id?'LINKED_CLIENT':'UNLINKED',originalName:row.original_name,mimeType:row.mime_type,sizeBytes:Number(row.size_bytes||0),sha256:row.sha256,status:row.status,analysis:jsonObject(row.analysis),createdAt:iso(row.created_at),updatedAt:iso(row.updated_at),confirmedAt:iso(row.confirmed_at),...(row.content_base64?{dataBase64:row.content_base64}:{})})
 const attachmentMetadataRecord=row=>{const {dataBase64,...metadata}=attachmentRecord(row);return metadata}
 const attachmentInTenant=(row,tenantId)=>String(row?.tenantId||row?.tenant_id||'')===String(tenantId||'')
 const opportunityRecord=row=>({id:`o-${row.client_external_key||row.client_id}`,databaseId:row.id,clientId:row.client_external_key||row.client_id,title:row.title,value:row.estimated_value==null?0:Number(row.estimated_value),probability:row.probability==null?null:Number(row.probability),stage:row.stage||'Diagnóstico',candidateKey:row.evidence?.find?.(item=>item?.candidateKey)?.candidateKey||row.external_key||'',stageEvidence:row.evidence?.find?.(item=>item?.type==='manual_advance'||item?.type==='manual_set'||item?.type==='won'),nextAction:row.next_action||'',nextActionAt:iso(row.next_action_at),updatedAt:iso(row.updated_at)})
@@ -326,19 +335,349 @@ const visitReportRecord=row=>({contract_version:row.contract_version,version:row
 const outcomeRecord=row=>({contract_version:row.contract_version,version:row.contract_version,outcome_id:String(row.id),organization_id:String(row.tenant_id),visit_id:String(row.visit_id),client_id:String(row.client_external_key||row.client_id),visit_report_id:row.visit_report_id?String(row.visit_report_id):null,recommendation_id:row.recommendation_id?String(row.recommendation_id):null,action_plan_id:row.action_plan_id?String(row.action_plan_id):null,commitment_id:row.commitment_id?String(row.commitment_id):null,outcome_type:row.outcome_type,result:jsonObject(row.result),evidence_refs:Array.isArray(row.evidence_refs)?row.evidence_refs:[],measured_at:iso(row.measured_at),recorded_by:String(row.recorded_by),confidence:Number(row.confidence||0),notes:row.notes||'',created_at:iso(row.created_at)})
 const learningCandidateRecord=row=>({contract_version:row.contract_version,version:row.contract_version,candidate_id:String(row.id),organization_id:String(row.tenant_id),source_visit_id:String(row.source_visit_id),source_visit_report_id:row.source_visit_report_id?String(row.source_visit_report_id):null,source_outcome_id:row.source_outcome_id?String(row.source_outcome_id):null,hypothesis:row.hypothesis,scope:jsonObject(row.scope),supporting_evidence:Array.isArray(row.supporting_evidence)?row.supporting_evidence:[],contrary_evidence:Array.isArray(row.contrary_evidence)?row.contrary_evidence:[],confidence:Number(row.confidence||0),status:row.status,created_by:row.created_by?String(row.created_by):null,created_at:iso(row.created_at)})
 
-function attachContextSnapshot(context,{tenantId,clientId,subjectId,ownerId,contextRequest={}}){
-  const snapshot=buildContextSnapshot(context,{
-    organizationId:tenantId,
-    subjectType:'client',
-    subjectId:String(subjectId||context?.client?.id||clientId||''),
-    actorId:ownerId,
-    role:contextRequest.actorRole||'consultant',
-    scope:contextRequest.scope||'own_portfolio',
-    objective:contextRequest.objective||'general_assistance',
-    requestId:contextRequest.requestId,
-    message:contextRequest.message,
-    now:contextRequest.now
+function repositoryScopedRecord(item,{tenantId,producerId,ownerId,repositoryClientId='',validUntil=null}={}){
+  if(!item||typeof item!=='object'||Array.isArray(item))return item
+  const {client_id:rawClientId,clientId:rawClientIdCamel,owner_id:rawOwnerId,ownerId:rawOwnerIdCamel,...rest}=item
+  const existingProducer=String(item.producer_id??item.producerId??item.client_external_key??item.clientExternalKey??'').trim()
+  const clientAliases=[rawClientId,rawClientIdCamel].map(value=>String(value??'').trim()).filter(Boolean)
+  const distinctClientAliases=[...new Set(clientAliases)]
+  const internalClientId=String(repositoryClientId??'').trim()
+  const existingTenant=String(item.tenant_id??item.tenantId??item.organization_id??item.organizationId??'').trim()
+  const existingOwner=String(item.context_owner_id??item.contextOwnerId??item.consultant_id??item.consultantId??'').trim()
+  if(existingProducer&&existingProducer!==String(producerId))throw Object.assign(new Error('Registro recuperado fora do produtor ativo.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'PRODUCER_MISMATCH'})
+  if(distinctClientAliases.some(value=>value!==String(producerId)&&value!==internalClientId))throw Object.assign(new Error('Registro recuperado fora do produtor ativo.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'PRODUCER_MISMATCH'})
+  if(existingTenant&&existingTenant!==String(tenantId))throw Object.assign(new Error('Registro recuperado fora do tenant ativo.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'TENANT_MISMATCH'})
+  if(existingOwner&&existingOwner!==String(ownerId))throw Object.assign(new Error('Registro recuperado fora do owner ativo.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'OWNER_MISMATCH'})
+  const sourceOwnerId=rawOwnerId??rawOwnerIdCamel
+  const domainOwner=Object.hasOwn(item,'owner_type')||Object.hasOwn(item,'ownerType')
+  return {
+    ...rest,
+    ...(!domainOwner&&sourceOwnerId!==undefined?{owner_id:sourceOwnerId}:{}),
+    ...(domainOwner&&sourceOwnerId!==undefined?{record_owner_id:sourceOwnerId}:{}),
+    client_id:String(producerId),tenant_id:String(tenantId),producer_id:String(producerId),context_owner_id:String(ownerId),
+    ...(validUntil&&!item.valid_until&&!item.validUntil?{valid_until:validUntil}:{})
+  }
+}
+
+const profileEvidenceIdentifier=item=>String(item?.id??item?.source_id??item?.sourceId??item?.survey_id??item?.surveyId??'').trim()
+const explicitProfileSource=item=>String(item?.profile_source_ref??item?.profileSourceRef??'').trim()
+function profileEvidenceRecord(item,scope,profileSourceRef){
+  const scoped=repositoryScopedRecord(item,scope)
+  // Preserve an explicit divergent link so the downstream relational gate can
+  // reject it; never silently rewrite it to the current profile parent.
+  return explicitProfileSource(scoped)||!profileSourceRef?scoped:{...scoped,profile_source_ref:profileSourceRef}
+}
+
+const profileBehavioralAnswerFields=Object.freeze([
+  Object.freeze({field:'decisionDriver',question:'7'}),
+  Object.freeze({field:'technicalPresentation',question:'8'}),
+  Object.freeze({field:'planningStyle',question:'9'}),
+  Object.freeze({field:'innovationBehavior',question:'10'}),
+  Object.freeze({field:'servicePreference',question:'11'}),
+  Object.freeze({field:'trustDriver',question:'14'}),
+  Object.freeze({field:'buyingBehavior',question:'16'}),
+])
+const profileAnswerText=value=>String(value??'').replace(/\s+/g,' ').trim().slice(0,500)
+function profileBehavioralAnswers(answers={}){
+  if(!answers||typeof answers!=='object'||Array.isArray(answers))return {}
+  return Object.fromEntries(profileBehavioralAnswerFields.map(({field,question})=>{
+    const value=profileAnswerText(answers[field]??answers[question]??answers[`Q${question}`]??answers[`q${question}`])
+    return [field,value]
+  }).filter(([,value])=>value))
+}
+function materializeLegacyProfileEvidence(rawEvidence=[],scope={},profileSourceRef,{answers={},assessedAt=null,validUntil=null}={}){
+  const scoped=(Array.isArray(rawEvidence)?rawEvidence:[]).map(item=>profileEvidenceRecord(item,{...scope,validUntil},profileSourceRef))
+  const behavioralAnswers=profileBehavioralAnswers(answers)
+  if(!Object.keys(behavioralAnswers).length)return scoped
+  const anchorIndex=scoped.findIndex(item=>profileEvidenceIdentifier(item))
+  const existing=anchorIndex>=0?scoped[anchorIndex]:{}
+  const evidenceId=profileEvidenceIdentifier(existing)||String(profileSourceRef||'').trim()
+  if(!evidenceId)return scoped
+  const sourceType=String(existing.source_type??existing.sourceType??existing.source??'behavioral_profile_evidence').trim()
+  const observedAt=existing.assessed_at??existing.assessedAt??existing.observed_at??existing.observedAt??assessedAt
+  const epistemicType=String(existing.epistemic_type??existing.epistemicType??existing.evidence_type??existing.evidenceType??(existing.self_reported===true||existing.selfReported===true?'QUOTE':'OBSERVATION')).trim().toUpperCase()
+  const materialized=profileEvidenceRecord({
+    ...existing,id:evidenceId,source_type:sourceType,epistemic_type:epistemicType,
+    answers:{...(existing.answers&&typeof existing.answers==='object'&&!Array.isArray(existing.answers)?existing.answers:{}),...behavioralAnswers},
+    assessed_at:observedAt,valid_until:existing.valid_until??existing.validUntil??validUntil,
+  },{...scope,validUntil},profileSourceRef)
+  if(anchorIndex>=0)return scoped.map((item,index)=>index===anchorIndex?materialized:item)
+  return [...scoped,materialized]
+}
+
+const canonicalProfileFields=Object.freeze([
+  Object.freeze({field:'primaryProfile',question:null,aliases:['primaryProfile','primary_profile'],profileColumn:'primaryProfile',epistemicType:'FACT'}),
+  Object.freeze({field:'secondaryProfile',question:null,aliases:['secondaryProfile','secondary_profile'],profileColumn:'secondaryProfile',epistemicType:'FACT'}),
+  ...profileBehavioralAnswerFields.map(({field,question})=>Object.freeze({
+    field,question,aliases:[field,field.replace(/[A-Z]/g,match=>`_${match.toLowerCase()}`),question,`Q${question}`,`q${question}`],
+    epistemicType:'OBSERVATION',
+  })),
+])
+const canonicalProfilePoison=/\b(?:prioridade|priority|oportunidade|opportunity|next\s*action|produto\w*|product\w*|fertiliz\w*|cpf\s+financeir\w*|contrato\s+de\s+graos?|preco\w*|price\w*|margem|margin|negociacao|negotiation)\b/i
+const canonicalProfileText=value=>{
+  const candidate=profileAnswerText(value)
+  return candidate&&!canonicalProfilePoison.test(normalize(candidate))?candidate:''
+}
+const profileContextClientValue=(field,value)=>{
+  const candidate=profileAnswerText(value)
+  if(field!=='servicePreference'||!candidate)return candidate||null
+  return candidate.replace(/^visitas?\s+presenciais?\s+frequentes?/i,'Prefere atendimento presencial frequente').replace(/^visitas?\s+presenciais?/i,'Prefere atendimento presencial')
+}
+const objectAt=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{}
+const profileAliasState=(source,aliases,normalizeValue=value=>String(value??'').trim())=>{
+  const record=objectAt(source)
+  const entries=aliases.filter(alias=>Object.hasOwn(record,alias)).map(alias=>{
+    const value=record[alias]
+    return {alias:String(alias),value,normalized:normalizeValue(value)}
+  }).filter(item=>item.normalized)
+  const distinct=[...new Set(entries.map(item=>item.normalized))]
+  return {entries,value:entries[0]?.value,normalized:distinct[0]||'',conflict:distinct.length>1}
+}
+const canonicalProfileDate=value=>{
+  const parsed=value instanceof Date?value:new Date(String(value??''))
+  return Number.isNaN(parsed.getTime())?'':parsed.toISOString()
+}
+const canonicalProfileFieldName=value=>{
+  const marker=normalize(String(value??'').trim())
+  if(!marker)return ''
+  return canonicalProfileFields.find(spec=>spec.aliases.some(alias=>normalize(String(alias))===marker))?.field||`invalid:${marker}`
+}
+const profileFieldValue=(source,spec)=>{
+  const state=profileAliasState(source,spec.aliases,value=>normalize(profileAnswerText(value)))
+  if(!state.entries.length)return null
+  if(state.conflict)return {conflict:true,aliases:state.entries.map(item=>item.alias)}
+  return {value:profileAnswerText(state.value),alias:state.entries[0].alias,conflict:false}
+}
+const canonicalEvidenceField=item=>String(item?.source_field??item?.sourceField??item?.profile_field??item?.profileField??item?.field??item?.key??item?.question_id??item?.questionId??'').trim()
+const canonicalEvidenceText=item=>profileAnswerText(item?.statement??item?.observation??item?.answer??item?.text??item?.value)
+const canonicalEvidenceSourceType=item=>String(item?.source_type??item?.sourceType??item?.source??'').trim().toLowerCase()
+const canonicalEvidenceTimestamp=item=>iso(item?.assessed_at??item?.assessedAt??item?.observed_at??item?.observedAt??item?.created_at??item?.createdAt)
+const canonicalEvidenceParent=item=>String(item?.profile_source_ref??item?.profileSourceRef??item?.parent_source_ref??item?.parentSourceRef??'').trim()
+const canonicalProfileSourceId=value=>{
+  const candidate=String(value??'').trim().slice(0,180)
+  return /^[A-Za-z0-9][A-Za-z0-9:._/-]{0,179}$/.test(candidate)&&!canonicalProfilePoison.test(normalize(candidate))?candidate:''
+}
+const allowedCanonicalEvidenceSourceTypes=new Set(['behavioral_profile_evidence','producer_questionnaire','producer_360','survey'])
+
+function assertVerifiedProfileRowScope(row,{tenantId,ownerId,producerId}={}){
+  if(!row?.profile_id)return null
+  const clientInternalId=String(row.client_internal_id??'').trim()
+  const clientTenantId=String(row.client_tenant_id??'').trim()
+  const clientOwnerId=String(row.client_consultant_id??'').trim()
+  const profileTenantId=String(row.profile_tenant_id??'').trim()
+  const profileClientId=String(row.profile_client_id??'').trim()
+  const externalKey=String(row.client_external_key??'').trim()
+  if(!clientInternalId||!clientTenantId||!clientOwnerId||!profileTenantId||!profileClientId||!externalKey)throw Object.assign(new Error('O perfil recuperado não comprova o escopo PostgreSQL completo.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'MISSING_PROFILE_SOURCE_SCOPE'})
+  if(clientTenantId!==String(tenantId)||profileTenantId!==String(tenantId))throw Object.assign(new Error('O perfil recuperado pertence a outro tenant.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'TENANT_MISMATCH'})
+  if(clientOwnerId!==String(ownerId))throw Object.assign(new Error('O perfil recuperado pertence a outro owner.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'OWNER_MISMATCH'})
+  if(externalKey!==String(producerId)||profileClientId!==clientInternalId)throw Object.assign(new Error('O perfil recuperado pertence a outro produtor.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'PRODUCER_MISMATCH'})
+  return {tenantId:clientTenantId,ownerId:clientOwnerId,producerId:externalKey,repositoryClientId:clientInternalId}
+}
+
+/**
+ * Converte as formas PostgreSQL (evidence, answers e profile_snapshot) em uma
+ * única lista canônica, por campo. O escopo é aceito somente depois de o JOIN
+ * comprovar tenant, owner, cliente interno e chave externa.
+ */
+function materializeCanonicalBehavioralProfileEvidence({
+  profileId,primaryProfile=null,secondaryProfile=null,answers={},evidence=[],profileSnapshot={},
+  sourceSurveyId=null,assessedAt=null,validUntil=null,scope={},
+}={}){
+  const parentRef=String(profileId?`client_profile:${profileId}`:'').trim()
+  const observedAt=canonicalProfileDate(assessedAt)
+  const expiresAt=canonicalProfileDate(validUntil)
+  if(!parentRef||!observedAt||!expiresAt||!scope?.tenantId||!scope?.ownerId||!scope?.producerId)return {selected:[],rejected:[]}
+
+  const candidates=[]
+  const rejected=[]
+  const reject=(item,reason)=>rejected.push({
+    source_type:canonicalEvidenceSourceType(item)||'behavioral_profile_evidence',
+    source_id:canonicalProfileSourceId(profileEvidenceIdentifier(item))||parentRef,reason,
+    producer_id:String(scope.producerId),tenant_id:String(scope.tenantId),context_owner_id:String(scope.ownerId),
+    observed_at:canonicalProfileDate(canonicalEvidenceTimestamp(item))||observedAt,
   })
+  const add=({spec,value,locator,priority,sourceType,epistemicType,sourceId,evidenceRefs=[],candidateObservedAt=observedAt,candidateValidUntil=expiresAt})=>{
+    const safeValue=canonicalProfileText(value)
+    if(!safeValue){if(profileAnswerText(value))reject({source_type:sourceType,source_id:sourceId},'PROFILE_FIELD_POISON');return}
+    candidates.push({spec,value:safeValue,locator,priority,sourceType,epistemicType,sourceId,evidenceRefs,observedAt:candidateObservedAt,validUntil:candidateValidUntil})
+  }
+
+  for(const item of Array.isArray(evidence)?evidence:[]){
+    if(!item||typeof item!=='object'||Array.isArray(item))continue
+    const idState=profileAliasState(item,['id','source_id','sourceId','survey_id','surveyId'],value=>canonicalProfileSourceId(value))
+    const typeState=profileAliasState(item,['source_type','sourceType','source'],value=>String(value??'').trim().toLowerCase())
+    const timestampState=profileAliasState(item,['assessed_at','assessedAt','observed_at','observedAt','created_at','createdAt'],canonicalProfileDate)
+    const validityState=profileAliasState(item,['valid_until','validUntil'],canonicalProfileDate)
+    const parentState=profileAliasState(item,['profile_source_ref','profileSourceRef','parent_source_ref','parentSourceRef'],value=>String(value??'').trim())
+    const fieldState=profileAliasState(item,['source_field','sourceField','profile_field','profileField','field','key','question_id','questionId'],canonicalProfileFieldName)
+    const producerState=profileAliasState(item,['producer_id','producerId','client_external_key','clientExternalKey'],value=>String(value??'').trim())
+    const clientState=profileAliasState(item,['client_id','clientId'],value=>String(value??'').trim())
+    const tenantState=profileAliasState(item,['tenant_id','tenantId','organization_id','organizationId'],value=>String(value??'').trim())
+    const ownerState=profileAliasState(item,['context_owner_id','contextOwnerId','consultant_id','consultantId','owner_id','ownerId'],value=>String(value??'').trim())
+    const epistemicState=profileAliasState(item,['epistemic_type','epistemicType','evidence_type','evidenceType'],value=>String(value??'').trim().toUpperCase())
+    const selfReportedState=profileAliasState(item,['self_reported','selfReported'],value=>typeof value==='boolean'?String(value):'')
+    const textState=profileAliasState(item,['statement','observation','answer','text','value'],value=>normalize(profileAnswerText(value)))
+    if([idState,typeState,timestampState,validityState,parentState,fieldState,producerState,clientState,tenantState,ownerState,epistemicState,selfReportedState,textState].some(state=>state.conflict)){
+      reject(item,'PROFILE_EVIDENCE_ALIAS_CONFLICT');continue
+    }
+    const rawId=canonicalProfileSourceId(idState.value)
+    const sourceType=typeState.normalized
+    const timestamp=timestampState.normalized
+    const evidenceValidUntil=validityState.normalized
+    const parent=parentState.normalized
+    const explicitProducer=producerState.normalized||(clientState.normalized===String(scope.producerId)?clientState.normalized:'')
+    if(!explicitProducer){reject(item,'MISSING_PRODUCER_SCOPE');continue}
+    if(!tenantState.normalized){reject(item,'MISSING_TENANT_SCOPE');continue}
+    if(!ownerState.normalized){reject(item,'MISSING_OWNER_SCOPE');continue}
+    if(explicitProducer!==String(scope.producerId)){reject(item,'PRODUCER_MISMATCH');continue}
+    if(clientState.normalized&&clientState.normalized!==String(scope.producerId)&&clientState.normalized!==String(scope.repositoryClientId||'')){reject(item,'PRODUCER_MISMATCH');continue}
+    if(tenantState.normalized!==String(scope.tenantId)){reject(item,'TENANT_MISMATCH');continue}
+    if(ownerState.normalized!==String(scope.ownerId)){reject(item,'OWNER_MISMATCH');continue}
+    if(!parent){reject(item,'MISSING_PROFILE_SOURCE_REF');continue}
+    if(parent!==parentRef){reject(item,'PROFILE_SOURCE_REF_MISMATCH');continue}
+    if(!rawId){reject(item,'MISSING_PROFILE_EVIDENCE_ID');continue}
+    if(!sourceType||!allowedCanonicalEvidenceSourceTypes.has(sourceType)){reject(item,'INVALID_PROFILE_EVIDENCE_SOURCE_TYPE');continue}
+    if(!timestamp){reject(item,'MISSING_PROFILE_EVIDENCE_TIMESTAMP');continue}
+    if(!evidenceValidUntil){reject(item,'MISSING_PROFILE_EVIDENCE_VALID_UNTIL');continue}
+    if(new Date(evidenceValidUntil).getTime()<=new Date(timestamp).getTime()){
+      reject(item,'INVALID_PROFILE_EVIDENCE_WINDOW');continue
+    }
+    const explicitEpistemic=epistemicState.normalized||(selfReportedState.normalized==='true'?'QUOTE':'')
+    if(explicitEpistemic&&!['FACT','OBSERVATION','QUOTE'].includes(explicitEpistemic)){
+      reject(item,'INVALID_PROFILE_EVIDENCE_EPISTEMIC_TYPE');continue
+    }
+    const maps=[['answers',objectAt(item.answers)],['fields',objectAt(item.fields)],['values',objectAt(item.values)]]
+    for(const spec of canonicalProfileFields){
+      const found=[]
+      let aliasConflict=false
+      for(const [path,map] of maps){
+        const entry=profileFieldValue(map,spec)
+        if(entry?.conflict){aliasConflict=true;break}
+        if(entry)found.push({...entry,path})
+      }
+      if(aliasConflict){reject(item,'PROFILE_FIELD_ALIAS_CONFLICT');continue}
+      const marker=fieldState.normalized
+      if(marker===spec.field&&textState.entries.length)found.push({value:profileAnswerText(textState.value),alias:canonicalEvidenceField(item),path:'field'})
+      if(!found.length)continue
+      if(new Set(found.map(entry=>normalize(entry.value))).size>1){reject(item,'PROFILE_FIELD_ALIAS_CONFLICT');continue}
+      const selectedField=found[0]
+      add({
+        spec,value:selectedField.value,locator:`evidence.${selectedField.path}.${selectedField.alias}`,priority:1,
+        sourceType,epistemicType:explicitEpistemic||spec.epistemicType,sourceId:rawId,evidenceRefs:[rawId],
+        candidateObservedAt:timestamp,candidateValidUntil:evidenceValidUntil,
+      })
+    }
+  }
+
+  for(const spec of canonicalProfileFields.filter(item=>item.question)){
+    const direct=profileFieldValue(answers,spec)
+    if(direct?.conflict){reject({source_type:sourceSurveyId?'producer_questionnaire':'behavioral_profile_evidence',source_id:String(sourceSurveyId||profileId)},'PROFILE_FIELD_ALIAS_CONFLICT');continue}
+    if(direct)add({spec,value:direct.value,locator:`answers.q${spec.question}`,priority:2,sourceType:sourceSurveyId?'producer_questionnaire':'behavioral_profile_evidence',epistemicType:sourceSurveyId?'QUOTE':'OBSERVATION',sourceId:String(sourceSurveyId||profileId),evidenceRefs:sourceSurveyId?[String(sourceSurveyId)]:[]})
+  }
+  const snapshot=objectAt(profileSnapshot)
+  const snapshotAnswers=objectAt(snapshot.answers)
+  for(const spec of canonicalProfileFields.filter(item=>item.question)){
+    const options=[profileFieldValue(snapshot,spec),profileFieldValue(snapshotAnswers,spec)].filter(Boolean)
+    if(options.some(item=>item.conflict)||new Set(options.map(item=>normalize(item.value)).filter(Boolean)).size>1){
+      reject({source_type:'behavioral_profile_evidence',source_id:String(profileId)},'PROFILE_FIELD_ALIAS_CONFLICT');continue
+    }
+    const direct=options[0]||null
+    if(direct)add({spec,value:direct.value,locator:`profile_snapshot.${direct.alias}`,priority:4,sourceType:'behavioral_profile_evidence',epistemicType:'OBSERVATION',sourceId:String(profileId),evidenceRefs:[]})
+  }
+  for(const spec of canonicalProfileFields.filter(item=>!item.question)){
+    const value=spec.field==='primaryProfile'?primaryProfile:secondaryProfile
+    if(value)add({spec,value,locator:spec.field==='primaryProfile'?'primary_profile':'secondary_profile',priority:5,sourceType:'behavioral_profile_evidence',epistemicType:'FACT',sourceId:String(profileId),evidenceRefs:[]})
+  }
+
+  const selected=[]
+  const seenFields=new Set()
+  for(const candidate of candidates.sort((left,right)=>left.priority-right.priority)){
+    if(seenFields.has(candidate.spec.field))continue
+    seenFields.add(candidate.spec.field)
+    const fieldCandidates=candidates.filter(item=>item.spec.field===candidate.spec.field)
+    const distinctValues=new Set(fieldCandidates.map(item=>normalize(item.value)).filter(Boolean))
+    if(distinctValues.size>1){
+      rejected.push({
+        source_type:candidate.sourceType||'behavioral_profile_evidence',source_id:candidate.sourceId||parentRef,
+        reason:'PROFILE_FIELD_CONFLICT',producer_id:String(scope.producerId),tenant_id:String(scope.tenantId),context_owner_id:String(scope.ownerId),observed_at:observedAt,
+      })
+      continue
+    }
+    const id=`${parentRef}:${candidate.locator}`
+    const statement=candidate.spec.field==='primaryProfile'
+      ?`Perfil principal registrado: ${candidate.value}.`
+      :candidate.spec.field==='secondaryProfile'
+        ?`Perfil secundário registrado: ${candidate.value}.`
+        :candidate.value
+    selected.push(Object.freeze({
+      id,source_id:candidate.sourceId||String(profileId),source_ref:parentRef,profile_source_ref:parentRef,
+      source_type:candidate.sourceType,source_field:candidate.spec.field,source_locator:candidate.locator,
+      field:candidate.spec.field,...(candidate.spec.question?{question_id:candidate.spec.question}:{}),
+      materialized_value:candidate.value,
+      producer_id:String(scope.producerId),tenant_id:String(scope.tenantId),context_owner_id:String(scope.ownerId),
+      observed_at:candidate.observedAt,assessed_at:candidate.observedAt,valid_until:candidate.validUntil,
+      epistemic_type:['FACT','OBSERVATION','QUOTE'].includes(candidate.epistemicType)?candidate.epistemicType:candidate.spec.epistemicType,
+      statement,relevance_score:1,reason_selected:'BEHAVIORAL_EVIDENCE',evidence_refs:candidate.evidenceRefs,
+    }))
+  }
+  return {selected,rejected}
+}
+
+function scopeRepositoryContext(context,{tenantId,clientId,ownerId,repositoryClientId='',contextRequest={}}={}){
+  const producerId=String(context?.client?.id||clientId||'')
+  const scope={tenantId:String(tenantId),producerId,ownerId:String(ownerId),repositoryClientId:String(repositoryClientId||'')}
+  const profileValidUntil=context?.profile?.validUntil??context?.client?.profileValidUntil??null
+  const rawProfileEvidence=[...(Array.isArray(context?.profile?.evidence)?context.profile.evidence:[]),...(Array.isArray(context?.client?.profileEvidence)?context.client.profileEvidence:[])]
+  const firstEvidenceId=rawProfileEvidence.map(profileEvidenceIdentifier).find(Boolean)||''
+  const profileSourceRef=String(context?.profile?.sourceId??context?.client?.profileSourceRef??context?.client?.profileSource??firstEvidenceId).trim()
+  const alreadyCanonical=rawProfileEvidence.length>0&&rawProfileEvidence.every(item=>profileEvidenceIdentifier(item)&&String(item?.source_field??item?.sourceField??'').trim()&&String(item?.source_locator??item?.sourceLocator??'').trim())
+  const profileEvidence=alreadyCanonical
+    ?rawProfileEvidence.map(item=>profileEvidenceRecord(item,{...scope,validUntil:profileValidUntil},profileSourceRef))
+    :materializeLegacyProfileEvidence(rawProfileEvidence,scope,profileSourceRef,{answers:context?.profile?.answers,assessedAt:context?.profile?.assessedAt??context?.client?.profileUpdatedAt,validUntil:profileValidUntil})
+  const evidenceById=new Map(profileEvidence.map(item=>[profileEvidenceIdentifier(item),item]).filter(([id])=>id))
+  const scopedProfileEvidence=[...evidenceById.values()]
+  const map=items=>(Array.isArray(items)?items:[]).map(item=>repositoryScopedRecord(item,scope))
+  const priorRecommendations=selectScopedPriorRecommendations(context,contextRequest.message||'',{
+    tenantId,ownerId,producerId,
+    conversationId:contextRequest.conversationId??contextRequest.conversation_id,
+    contextEpoch:contextRequest.contextEpoch??contextRequest.context_epoch,
+    contextDomain:contextRequest.contextDomain??contextRequest.context_domain
+  })
+  return {
+    ...context,
+    client:{...(context.client||{}),profileEvidence:scopedProfileEvidence},
+    profile:{...(context.profile||{}),sourceId:profileSourceRef||null,evidence:scopedProfileEvidence},
+    businessHistory:map(context.businessHistory),visits:map(context.visits),interactions:map(context.interactions),commitments:map(context.commitments),opportunities:map(context.opportunities),properties:map(context.properties),fieldReports:map(context.fieldReports),soilAnalyses:map(context.soilAnalyses),ndviObservations:map(context.ndviObservations),
+    manualRecords:map(context.manualRecords),attachments:map(context.attachments),
+    priorRecommendations
+  }
+}
+
+function attachContextSnapshot(context,{tenantId,clientId,subjectId,ownerId,repositoryClientId='',contextRequest={}}){
+  const scopedContext=scopeRepositoryContext(context,{tenantId,clientId,ownerId,repositoryClientId,contextRequest})
+  let snapshot
+  try{
+    snapshot=buildContextSnapshot(scopedContext,{
+      organizationId:tenantId,
+      subjectType:'client',
+      subjectId:String(subjectId||scopedContext?.client?.id||clientId||''),
+      actorId:ownerId,
+      role:contextRequest.actorRole||'consultant',
+      scope:contextRequest.scope||'own_portfolio',
+      objective:contextRequest.objective||'general_assistance',
+      requestId:contextRequest.requestId,
+      message:contextRequest.message,
+      intent:contextRequest.intent,
+      contextDomain:contextRequest.contextDomain||contextRequest.context_domain,
+      conversationId:contextRequest.conversationId,
+      contextEpoch:contextRequest.contextEpoch??contextRequest.context_epoch,
+      activeEntity:contextRequest.activeEntity??contextRequest.active_entity,
+      now:contextRequest.now
+    })
+  }catch(error){
+    if(error?.code==='CONTEXT_SCOPE_VIOLATION')observe('context.scope.violation',{errorCode:'CONTEXT_SCOPE_VIOLATION',reason:String(error.reason||'UNKNOWN').slice(0,80),outcome:'blocked'})
+    throw error
+  }
   const exclusionReasonCounts=snapshot.selection.exclusion_reason_codes.reduce((counts,item)=>{
     for(const code of item.reason_codes)counts[code]=(counts[code]||0)+1
     return counts
@@ -355,7 +694,7 @@ function attachContextSnapshot(context,{tenantId,clientId,subjectId,ownerId,cont
     durationMs:snapshot.selection.latency_ms,
     outcome:'ok'
   })
-  return {...context,memoryHistory:Array.isArray(context.memoryHistory)?context.memoryHistory:context.memories||[],contextSnapshot:snapshot}
+  return {...scopedContext,memoryHistory:Array.isArray(scopedContext.memoryHistory)?scopedContext.memoryHistory:scopedContext.memories||[],contextSnapshot:snapshot}
 }
 
 export class ValRepository{
@@ -1008,7 +1347,7 @@ export class ValRepository{
     ownerId=String(ownerId??'').trim()
     if(!ownerId)throw domainError('O proprietário da carteira é obrigatório para consultar fatos rápidos.',403,'owner_scope_required')
     now=now instanceof Date&&!Number.isNaN(now.getTime())?now:new Date()
-    const allowedPaths=new Set(['LATEST_VISIT','LATEST_COMMITMENT','LATEST_PURCHASE','LATEST_CONFIRMED_OBJECTION','LATEST_VISIT_CONFIRMED_OBJECTION','REGISTERED_CROPS','REGISTERED_AREA','CLIENT_COMPARISON'])
+    const allowedPaths=new Set(['LATEST_VISIT','LATEST_COMMITMENT','LATEST_PURCHASE','LATEST_CONFIRMED_OBJECTION','LATEST_VISIT_CONFIRMED_OBJECTION','REGISTERED_CROPS','REGISTERED_AREA','BEHAVIORAL_PROFILE','CLIENT_COMPARISON'])
     const requestedPath=allowedPaths.has(String(dataPath||''))?String(dataPath):'ALL'
     const needs=path=>requestedPath==='ALL'||requestedPath==='CLIENT_COMPARISON'||requestedPath===path
     if(!this.db.configured){
@@ -1036,7 +1375,13 @@ export class ValRepository{
       }:null
       const totalArea=client.totalAreaHa??client.total_area_ha??client.area
       const hasTotalArea=totalArea!=null&&String(totalArea).trim()!==''&&Number.isFinite(Number(totalArea))
-      return {client:{id:client.id,name:client.name,totalAreaHa:hasTotalArea?Number(totalArea):null,areaBand:client.areaBand??client.area_band??null,cultures:client.cultures??null},latestVisit:completed,latestCompletedVisit:completed,nextScheduledVisit:nextScheduledVisit?structuredClone(nextScheduledVisit):null,latestCommitment:latestCommitment?structuredClone(latestCommitment):null,latestPurchase:latestPurchase?structuredClone(latestPurchase):null,latestConfirmedObjection:latestConfirmedObjection?structuredClone(latestConfirmedObjection):null,latestVisitConfirmedObjection:correlatedVisitReport,latestCropSeason:latestCropSeason?structuredClone(latestCropSeason):null}
+      const fastScope={tenantId,producerId:String(client.id),ownerId}
+      const rawProfileEvidence=needs('BEHAVIORAL_PROFILE')?(Array.isArray(client.profileEvidence)?structuredClone(client.profileEvidence):[]):[]
+      const profileEvidenceId=rawProfileEvidence.map(profileEvidenceIdentifier).find(Boolean)||''
+      const profileSourceRef=needs('BEHAVIORAL_PROFILE')?String(client.profileSourceRef||client.profileSource||profileEvidenceId||'').trim()||null:null
+      const profileEvidence=materializeLegacyProfileEvidence(rawProfileEvidence,fastScope,profileSourceRef,{answers:client.profileAnswers,assessedAt:client.profileUpdatedAt,validUntil:client.profileValidUntil??null})
+      const scopedFast=item=>item?repositoryScopedRecord(structuredClone(item),fastScope):null
+      return {client:repositoryScopedRecord({id:client.id,name:client.name,totalAreaHa:hasTotalArea?Number(totalArea):null,areaBand:client.areaBand??client.area_band??null,cultures:client.cultures??null,...(needs('BEHAVIORAL_PROFILE')?{primaryProfile:client.primaryProfile??client.primary_profile??null,secondaryProfile:client.secondaryProfile??client.secondary_profile??null,decisionDriver:client.decisionDriver??null,technicalPresentation:client.technicalPresentation??null,planningStyle:client.planningStyle??null,buyingBehavior:client.buyingBehavior??null,trustDriver:client.trustDriver??null,servicePreference:client.servicePreference??null,profileEvidence,profileUpdatedAt:client.profileUpdatedAt??null,profileValidUntil:client.profileValidUntil??null}: {})},fastScope),profileEvidence,profileSourceRef,profileAssessedAt:client.profileUpdatedAt??null,profileValidUntil:client.profileValidUntil??null,latestVisit:scopedFast(completed),latestCompletedVisit:scopedFast(completed),nextScheduledVisit:scopedFast(nextScheduledVisit),latestCommitment:scopedFast(latestCommitment),latestPurchase:scopedFast(latestPurchase),latestConfirmedObjection:scopedFast(latestConfirmedObjection),latestVisitConfirmedObjection:scopedFast(correlatedVisitReport),latestCropSeason:scopedFast(latestCropSeason)}
     }
     try{
       const select=['c.external_key client_external_key','c.name','c.total_area_ha','c.area_band','c.cultures']
@@ -1047,12 +1392,36 @@ export class ValRepository{
       if(needs('LATEST_PURCHASE'))select.push(`(SELECT row_to_json(purchase) FROM (SELECT business.id,business.occurred_at,business.created_at,business.category,business.product,business.quantity,business.value,business.margin,business.currency,business.source,business.external_id FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won' ORDER BY business.occurred_at DESC NULLS LAST,business.created_at DESC NULLS LAST,business.id DESC LIMIT 1) purchase) latest_purchase`)
       if(needs('LATEST_CONFIRMED_OBJECTION'))select.push(`(SELECT row_to_json(report_record) FROM (SELECT report.id visit_report_id,report.visit_id,report.objections,report.confirmed_at,report.created_at FROM val_visit_reports report JOIN visits report_visit ON report_visit.tenant_id=report.tenant_id AND report_visit.id=report.visit_id AND report_visit.client_id=report.client_id WHERE report.tenant_id=c.tenant_id AND report.client_id=c.id AND report.created_by=c.consultant_id AND report_visit.consultant_id=c.consultant_id AND report.confirmation_status='CONFIRMED' AND jsonb_array_length(COALESCE(report.objections,'[]'::jsonb))>0 ORDER BY COALESCE(report.confirmed_at,report.created_at) DESC,report.id DESC LIMIT 1) report_record) latest_confirmed_objection`)
       if(needs('LATEST_VISIT_CONFIRMED_OBJECTION'))select.push(`(SELECT row_to_json(report_record) FROM (SELECT report.id visit_report_id,report.visit_id,report.objections,report.confirmed_at,report.created_at,latest_visit.occurred_at visit_occurred_at,latest_visit.completed_at visit_completed_at,latest_visit.scheduled_at visit_scheduled_at,latest_visit.status visit_status,latest_visit.lifecycle_status visit_lifecycle_status FROM (SELECT visit.id,visit.occurred_at,visit.completed_at,visit.scheduled_at,visit.status,visit.lifecycle_status FROM visits visit WHERE visit.tenant_id=c.tenant_id AND visit.client_id=c.id AND visit.consultant_id=c.consultant_id AND (visit.lifecycle_status='COMPLETED' OR (visit.lifecycle_status IS NULL AND (LOWER(COALESCE(visit.status,'')) LIKE 'realizad%' OR LOWER(COALESCE(visit.status,'')) LIKE 'conclu%'))) AND COALESCE(visit.occurred_at,visit.completed_at,visit.scheduled_at) IS NOT NULL ORDER BY COALESCE(visit.occurred_at,visit.completed_at,visit.scheduled_at) DESC,visit.id DESC LIMIT 1) latest_visit JOIN val_visit_reports report ON report.tenant_id=c.tenant_id AND report.client_id=c.id AND report.visit_id=latest_visit.id WHERE report.created_by=c.consultant_id AND report.confirmation_status='CONFIRMED' AND jsonb_array_length(COALESCE(report.objections,'[]'::jsonb))>0 ORDER BY COALESCE(report.confirmed_at,report.created_at) DESC,report.id DESC LIMIT 1) report_record) latest_visit_confirmed_objection`)
-      if(needs('REGISTERED_CROPS'))select.push(`(SELECT row_to_json(latest_crop) FROM (SELECT season.season,season.crop,season.cultivar,season.area_ha,season.planted_at,season.harvested_at,season.created_at,field.id field_id,property.id property_id FROM crop_seasons season JOIN fields field ON field.tenant_id=season.tenant_id AND field.id=season.field_id JOIN properties property ON property.tenant_id=field.tenant_id AND property.id=field.property_id WHERE season.tenant_id=c.tenant_id AND property.client_id=c.id ORDER BY COALESCE(season.planted_at,season.created_at::date) DESC,season.id DESC LIMIT 1) latest_crop) latest_crop_season`)
-      const result=await this.db.query(`SELECT ${select.join(',\n')} FROM clients c WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' AND (c.id::text=$3 OR c.external_key=$3 OR COALESCE(c.commercial_profile->'manual_identity'->'external_key_aliases','[]'::jsonb) ? $3) ORDER BY CASE WHEN c.id::text=$3 OR c.external_key=$3 THEN 0 ELSE 1 END LIMIT 1`,[tenantId,ownerId,String(clientId)],...databaseTimeoutArgs(timeoutMs))
+      if(needs('REGISTERED_CROPS'))select.push(`(SELECT row_to_json(latest_crop) FROM (SELECT season.id,season.season,season.crop,season.cultivar,season.area_ha,season.planted_at,season.harvested_at,season.created_at,field.id field_id,property.id property_id FROM crop_seasons season JOIN fields field ON field.tenant_id=season.tenant_id AND field.id=season.field_id JOIN properties property ON property.tenant_id=field.tenant_id AND property.id=field.property_id WHERE season.tenant_id=c.tenant_id AND property.client_id=c.id ORDER BY COALESCE(season.planted_at,season.created_at::date) DESC,season.id DESC LIMIT 1) latest_crop) latest_crop_season`)
+      if(needs('BEHAVIORAL_PROFILE'))select.push(
+        'c.id client_internal_id','c.tenant_id client_tenant_id','c.consultant_id client_consultant_id',
+        'p.id profile_id','p.tenant_id profile_tenant_id','p.client_id profile_client_id',
+        'p.primary_profile','p.secondary_profile','p.answers profile_answers','p.evidence profile_evidence',
+        'p.profile_snapshot','p.source_survey_id','p.valid_until profile_valid_until','p.assessed_at profile_assessed_at'
+      )
+      const profileJoin=needs('BEHAVIORAL_PROFILE')?' LEFT JOIN LATERAL (SELECT id,tenant_id,client_id,primary_profile,secondary_profile,answers,evidence,profile_snapshot,source_survey_id,valid_until,assessed_at FROM client_profiles WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY assessed_at DESC LIMIT 1) p ON true':''
+      const result=await this.db.query(`SELECT ${select.join(',\n')} FROM clients c${profileJoin} WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' AND (c.id::text=$3 OR c.external_key=$3 OR COALESCE(c.commercial_profile->'manual_identity'->'external_key_aliases','[]'::jsonb) ? $3) ORDER BY CASE WHEN c.id::text=$3 OR c.external_key=$3 THEN 0 ELSE 1 END LIMIT 1`,[tenantId,ownerId,String(clientId)],...databaseTimeoutArgs(timeoutMs))
       if(!result.rowCount)throw domainError('Produtor não encontrado na carteira autorizada.',404)
       const row=result.rows[0]
       const completed=row.latest_completed_visit||null
-      return {client:{id:String(row.client_external_key),name:String(row.name||'Produtor'),totalAreaHa:row.total_area_ha==null?null:Number(row.total_area_ha),areaBand:row.area_band||null,cultures:row.cultures||null},latestVisit:completed,latestCompletedVisit:completed,nextScheduledVisit:row.next_scheduled_visit||null,latestCommitment:row.latest_commitment||null,latestPurchase:row.latest_purchase||null,latestConfirmedObjection:row.latest_confirmed_objection||null,latestVisitConfirmedObjection:row.latest_visit_confirmed_objection||null,latestCropSeason:row.latest_crop_season||null}
+      const requestedFastScope={tenantId,producerId:String(row.client_external_key),ownerId}
+      const fastScope=row.profile_id?assertVerifiedProfileRowScope(row,requestedFastScope):requestedFastScope
+      const profileValidUntil=iso(row.profile_valid_until)
+      const profileSourceRef=row.profile_id?`client_profile:${row.profile_id}`:null
+      const canonicalProfile=needs('BEHAVIORAL_PROFILE')&&row.profile_id?materializeCanonicalBehavioralProfileEvidence({
+        profileId:row.profile_id,primaryProfile:row.primary_profile,secondaryProfile:row.secondary_profile,
+        answers:row.profile_answers,evidence:row.profile_evidence,profileSnapshot:row.profile_snapshot,
+        sourceSurveyId:row.source_survey_id,assessedAt:row.profile_assessed_at,validUntil:row.profile_valid_until,scope:fastScope,
+      }):{selected:[],rejected:[]}
+      const profileEvidence=canonicalProfile.selected
+      const canonicalProfileValues=Object.fromEntries(profileEvidence.map(item=>[item.source_field,item.materialized_value]).filter(([field,value])=>field&&value))
+      const fastProfileClient=needs('BEHAVIORAL_PROFILE')?{
+        primaryProfile:canonicalProfileValues.primaryProfile??null,secondaryProfile:canonicalProfileValues.secondaryProfile??null,
+        ...Object.fromEntries(profileBehavioralAnswerFields.map(({field})=>[field,canonicalProfileValues[field]??null])),
+        profileEvidence,profileUpdatedAt:iso(row.profile_assessed_at),profileValidUntil,
+      }:{}
+      const scopedFast=item=>item?repositoryScopedRecord(item,fastScope):null
+      return {client:repositoryScopedRecord({id:String(row.client_external_key),name:String(row.name||'Produtor'),totalAreaHa:row.total_area_ha==null?null:Number(row.total_area_ha),areaBand:row.area_band||null,cultures:row.cultures||null,...fastProfileClient},fastScope),profileEvidence,profileRejectedEvidence:canonicalProfile.rejected,profileSourceRef,profileAssessedAt:iso(row.profile_assessed_at),profileValidUntil,latestVisit:scopedFast(completed),latestCompletedVisit:scopedFast(completed),nextScheduledVisit:scopedFast(row.next_scheduled_visit),latestCommitment:scopedFast(row.latest_commitment),latestPurchase:scopedFast(row.latest_purchase),latestConfirmedObjection:scopedFast(row.latest_confirmed_objection),latestVisitConfirmedObjection:scopedFast(row.latest_visit_confirmed_objection),latestCropSeason:scopedFast(row.latest_crop_season)}
     }catch(error){if(error.statusCode)throw error;throw serviceError('Os fatos rápidos do produtor não puderam ser lidos no PostgreSQL configurado.')}
   }
 
@@ -1062,15 +1431,15 @@ export class ValRepository{
       const store=this.fallback()
       const currentTechnical=fallbackTechnicalContext(store.val.technicalContexts,tenantId,ownerId,clientId)
       const technicalHistory=[...(store.val.technicalContextHistory||[]).filter(item=>exactScope(item,tenantId,ownerId)&&String(item.clientId)===String(clientId)),...(currentTechnical?[{...currentTechnical,clientId}]:[])].map(item=>({...item,tenant_id:tenantId,client_id:clientId,memory_type:'fact',memory_state:item.memoryState||'HYPOTHESIS',memory_domain:item.memoryDomain||'AGRONOMIC',key:'consultant_technical_context',value:Object.fromEntries(Object.entries(item).filter(([key])=>!['id','clientId','tenantId','ownerId','status','validFrom','validUntil','updatedAt','sourceRef','sourceType','supersedesId','memoryState','memoryDomain','observedAt','sourceUpdatedAt','freshnessPolicyVersion','freshnessMetadata'].includes(key))),source:'consultant_input',source_ref:item.sourceRef||`fallback_memory:${item.id||clientId}`,source_type:item.sourceType||'consultant_input',observed_at:item.observedAt||null,source_updated_at:item.sourceUpdatedAt||null,freshness_policy_version:item.freshnessPolicyVersion||null,freshness_metadata:item.freshnessMetadata||{},valid_from:item.validFrom||item.updatedAt,valid_until:item.validUntil,updated_at:item.updatedAt,id:item.id||`fallback-${clientId}`,supersedes_id:item.supersedesId||null,acl:{scope:'own_portfolio'}}))
-      const visitMemories=store.val.memories.filter(item=>String(item.tenantId??item.tenant_id??tenantId)===String(tenantId)&&String(item.ownerId??ownerId)===String(ownerId)&&String(item.client_id??item.clientId)===String(clientId))
+      const visitMemories=store.val.memories.filter(item=>exactScope(item,tenantId,ownerId)&&String(item.client_id??item.clientId)===String(clientId))
       const memoryHistory=[...visitMemories,...technicalHistory]
-      const commitments=store.val.commitments.filter(item=>String(item.tenantId||tenantId)===String(tenantId)&&String(item.ownerId??ownerId)===String(ownerId)&&String(item.client_id)===String(clientId))
+      const commitments=store.val.commitments.filter(item=>exactScope(item,tenantId,ownerId)&&String(item.client_id??item.clientId)===String(clientId))
       const attachments=(store.val.attachments||[]).filter(item=>attachmentInTenant(item,tenantId)&&String(item.ownerId)===String(ownerId)&&String(item.clientId)===String(clientId)&&item.status!=='rejected').sort((left,right)=>(timestamp(right.updated_at??right.updatedAt??right.created_at??right.createdAt)||0)-(timestamp(left.updated_at??left.updatedAt??left.created_at??left.createdAt)||0)).slice(0,12).map(attachmentMetadataRecord)
-      const context={client,profile:{answers:client.profileAnswers||{},evidence:client.profileEvidence||[],assessedAt:client.profileUpdatedAt||null,validUntil:client.profileValidUntil||null},signals:store.val.signals.filter(item=>exactScope(item,tenantId,ownerId)&&(!clientId||item.clientExternalKey===clientId)).slice(-20),learning:{...this.fallbackLearning(clientId,ownerId,tenantId),visitOutcomes:store.val.outcomes.filter(item=>String(item.tenantId)===String(tenantId)&&String(item.ownerId)===String(ownerId)&&String(item.client_id)===String(clientId))},memories:memoryHistory.filter(item=>['proposed','verified'].includes(item.status)&&(!item.valid_until||new Date(item.valid_until)>new Date())),memoryHistory,businessHistory:[],visits:(store.visits||[]).filter(item=>String(item.tenantId||tenantId)===String(tenantId)&&String(item.ownerId??ownerId)===String(ownerId)&&String(item.clientId)===String(clientId)),interactions:store.interactions.filter(item=>String(item.tenantId)===String(tenantId)&&String(item.ownerId)===String(ownerId)&&String(item.clientId)===String(clientId)),commitments,opportunities:(store.opportunities||[]).filter(item=>exactScope(item,tenantId,ownerId)&&String(item.clientId)===String(clientId)),properties:[],fieldReports:[],soilAnalyses:[],ndviObservations:[],manualRecords:[],attachments,priorRecommendations:[]}
-      return attachContextSnapshot(context,{tenantId,clientId,ownerId,contextRequest})
+      const context={client,profile:{answers:client.profileAnswers||{},evidence:client.profileEvidence||[],assessedAt:client.profileUpdatedAt||null,validUntil:client.profileValidUntil||null},signals:store.val.signals.filter(item=>exactScope(item,tenantId,ownerId)&&(!clientId||item.clientExternalKey===clientId)).slice(-20),learning:{...this.fallbackLearning(clientId,ownerId,tenantId),visitOutcomes:store.val.outcomes.filter(item=>exactScope(item,tenantId,ownerId)&&String(item.client_id??item.clientId)===String(clientId))},memories:memoryHistory.filter(item=>['proposed','verified'].includes(item.status)&&(!item.valid_until||new Date(item.valid_until)>new Date())),memoryHistory,businessHistory:[],visits:(store.visits||[]).filter(item=>exactScope(item,tenantId,ownerId)&&String(item.clientId??item.client_id)===String(clientId)),interactions:store.interactions.filter(item=>exactScope(item,tenantId,ownerId)&&String(item.clientId??item.client_id)===String(clientId)),commitments,opportunities:(store.opportunities||[]).filter(item=>exactScope(item,tenantId,ownerId)&&String(item.clientId??item.client_id)===String(clientId)),properties:[],fieldReports:[],soilAnalyses:[],ndviObservations:[],manualRecords:[],attachments,priorRecommendations:[]}
+      return attachContextSnapshot(context,{tenantId,clientId,ownerId,repositoryClientId:client.id||clientId,contextRequest})
     }
     try{
-      const result=await this.db.query(`SELECT c.*,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.answers,p.evidence profile_evidence,p.source_survey_id,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,
+      const result=await this.db.query(`SELECT c.*,p.id profile_id,p.tenant_id profile_tenant_id,p.client_id profile_client_id,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.answers,p.evidence profile_evidence,p.source_survey_id,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,
         COALESCE(NULLIF(p.profile_snapshot,'{}'::jsonb),survey.result,'{}'::jsonb) profile_snapshot,
         COALESCE((SELECT SUM(value) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won'),0) purchase_total,
         COALESCE((SELECT COUNT(*) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won'),0) purchase_count,
@@ -1093,26 +1462,49 @@ export class ValRepository{
         COALESCE((SELECT jsonb_agg(ndvi ORDER BY ndvi.observed_at DESC) FROM (SELECT id,source,external_id,property_external_key,field_external_key,index_name,observed_at,sensor,resolution_m,cloud_percent,processing_version,geometry_version,statistics,anomaly,validated_at,created_at FROM ndvi_observations WHERE tenant_id=$1 AND client_id=c.id ORDER BY observed_at DESC LIMIT 30) ndvi),'[]'::jsonb) ndvi_observations,
         COALESCE((SELECT jsonb_agg(manual_record ORDER BY manual_record.occurred_at DESC) FROM (SELECT id,external_id,event_type,occurred_at,property_external_key,field_external_key,payload,status,ingested_at FROM integration_events WHERE tenant_id=$1 AND owner_user_id=$3 AND source='manual-do-agronomo' AND (client_external_key=c.external_key OR COALESCE(c.commercial_profile->'manual_identity'->'external_key_aliases','[]'::jsonb) ? client_external_key) AND event_type IN ('manual.record.saved','manual.producer.updated','manual.workspace.updated') ORDER BY occurred_at DESC LIMIT 40) manual_record),'[]'::jsonb) manual_records,
         COALESCE((SELECT jsonb_agg(attachment_record ORDER BY COALESCE(attachment_record.updated_at,attachment_record.created_at) DESC) FROM (SELECT attachment.id,attachment.tenant_id,attachment.client_id,c.external_key client_external_key,attachment.original_name,attachment.mime_type,attachment.size_bytes,attachment.sha256,attachment.status,attachment.analysis,attachment.created_at,attachment.updated_at,attachment.confirmed_at FROM val_attachments attachment WHERE attachment.tenant_id=$1 AND attachment.consultant_id=$3 AND attachment.client_id=c.id AND attachment.status<>'rejected' ORDER BY COALESCE(attachment.updated_at,attachment.created_at) DESC LIMIT 12) attachment_record),'[]'::jsonb) attachments,
-        COALESCE((SELECT jsonb_agg(recommendation ORDER BY recommendation.created_at DESC) FROM (SELECT val_recommendation.id,val_recommendation.user_question,val_recommendation.mode,val_recommendation.model_version,val_recommendation.status,val_recommendation.context_snapshot_id,val_recommendation.context_snapshot_version,val_recommendation.generated_content->'ai_reasoning'->>'conversation_id' conversation_id,val_recommendation.generated_content->>'next_best_action' next_best_action,val_recommendation.generated_content->'methodology_state' methodology_state,val_recommendation.generated_content->'next_question' next_question,val_recommendation.generated_content->'decision_profile' decision_profile,val_recommendation.generated_content->'commercial_context' commercial_context,val_recommendation.created_at,(SELECT jsonb_build_object('rating',feedback.rating,'outcome',feedback.outcome,'notes',feedback.notes,'created_at',feedback.created_at) FROM val_feedback feedback WHERE feedback.tenant_id=$1 AND feedback.recommendation_id=val_recommendation.id LIMIT 1) feedback FROM val_recommendations val_recommendation WHERE val_recommendation.tenant_id=$1 AND val_recommendation.consultant_id=$3 AND (val_recommendation.client_id=c.id OR val_recommendation.client_external_key=c.external_key) ORDER BY val_recommendation.created_at DESC LIMIT 10) recommendation),'[]'::jsonb) prior_recommendations
+        COALESCE((SELECT jsonb_agg(recommendation ORDER BY recommendation.created_at DESC) FROM (SELECT val_recommendation.id,val_recommendation.tenant_id::text tenant_id,val_recommendation.consultant_id::text owner_id,COALESCE(val_recommendation.client_external_key,val_recommendation.client_id::text) producer_id,val_recommendation.user_question,val_recommendation.mode,val_recommendation.model_version,val_recommendation.status,val_recommendation.context_snapshot_id,val_recommendation.context_snapshot_version,val_recommendation.input_context->'contextSnapshot'->'context_scope'->>'conversation_id' conversation_id,val_recommendation.input_context->'contextSnapshot'->'context_scope'->>'context_epoch' context_epoch,val_recommendation.input_context->'contextSnapshot'->'context_scope'->>'domain' domain,val_recommendation.generated_content->>'next_best_action' next_best_action,val_recommendation.generated_content->'methodology_state' methodology_state,val_recommendation.generated_content->'next_question' next_question,val_recommendation.generated_content->'decision_profile' decision_profile,val_recommendation.generated_content->'commercial_context' commercial_context,val_recommendation.created_at,(SELECT jsonb_build_object('rating',feedback.rating,'outcome',feedback.outcome,'notes',feedback.notes,'created_at',feedback.created_at) FROM val_feedback feedback WHERE feedback.tenant_id=$1 AND feedback.recommendation_id=val_recommendation.id LIMIT 1) feedback FROM val_recommendations val_recommendation WHERE val_recommendation.tenant_id=$1 AND val_recommendation.consultant_id=$3 AND (val_recommendation.client_id=c.id OR val_recommendation.client_external_key=c.external_key) ORDER BY val_recommendation.created_at DESC LIMIT 10) recommendation),'[]'::jsonb) prior_recommendations
         FROM clients c LEFT JOIN LATERAL (SELECT * FROM client_profiles WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY assessed_at DESC LIMIT 1) p ON true
         LEFT JOIN survey_invitations survey ON survey.tenant_id=c.tenant_id AND survey.id=p.source_survey_id
         WHERE c.tenant_id=$1 AND c.consultant_id=$3 AND (c.id::text=$2 OR c.external_key=$2 OR COALESCE(c.commercial_profile->'manual_identity'->'external_key_aliases','[]'::jsonb) ? $2) ORDER BY CASE WHEN c.id::text=$2 OR c.external_key=$2 THEN 0 ELSE 1 END LIMIT 1`,[tenantId,clientId,ownerId],...databaseTimeoutArgs(contextRequest?.databaseTimeoutMs))
       if(!result.rows[0])throw Object.assign(new Error('Cliente não encontrado na base autorizada.'),{statusCode:404})
       const row=result.rows[0]
-      const profileEvidence=Array.isArray(row.profile_evidence)?row.profile_evidence:[]
+      const publicClientId=String(row.external_key||clientId)
+      const rawProfileEvidence=Array.isArray(row.profile_evidence)?row.profile_evidence:[]
       const canonicalClientMemory=item=>{
         const type=String(item?.subject_type||item?.subjectType||'client').toLowerCase()
         if(type!=='client')return item
-        return {...item,client_id:clientId,subject_id:clientId}
+        return {...item,client_id:publicClientId,subject_id:publicClientId}
       }
       const memories=(row.memories||[]).map(canonicalClientMemory)
       const memoryHistory=(row.memory_history||row.memories||[]).map(canonicalClientMemory)
-      const context={client:{...clientFromRow(row),profileSelfReported:profileEvidence.some(item=>item?.self_reported===true),profileEvidence},profile:{answers:jsonObject(row.answers),evidence:profileEvidence,assessedAt:iso(row.profile_assessed_at)||null,validUntil:iso(row.profile_valid_until)||null,sourceId:row.source_survey_id||null},signals:row.signals||[],learning:{...(row.learning||{}),recommendations:row.feedback_learning||{},visitOutcomes:row.visit_outcomes||[]},memories,memoryHistory,businessHistory:row.business_history||[],visits:row.visits||[],interactions:row.interactions||[],commitments:row.commitments||[],opportunities:row.opportunities||[],properties:row.properties||[],fieldReports:row.field_reports||[],soilAnalyses:row.soil_analyses||[],ndviObservations:row.ndvi_observations||[],manualRecords:row.manual_records||[],attachments:(row.attachments||[]).map(attachmentMetadataRecord),priorRecommendations:row.prior_recommendations||[]}
+      const profileSourceRef=row.profile_id?`client_profile:${row.profile_id}`:row.source_survey_id||rawProfileEvidence.map(profileEvidenceIdentifier).find(Boolean)||null
+      const verifiedProfileScope=row.profile_id?assertVerifiedProfileRowScope({
+        ...row,client_internal_id:row.id,client_tenant_id:row.tenant_id,client_consultant_id:row.consultant_id,client_external_key:publicClientId,
+      },{tenantId,ownerId,producerId:publicClientId}):{tenantId,ownerId,producerId:publicClientId,repositoryClientId:String(row.id||'')}
+      const canonicalProfile=row.profile_id?materializeCanonicalBehavioralProfileEvidence({
+        profileId:row.profile_id,primaryProfile:row.primary_profile,secondaryProfile:row.secondary_profile,
+        answers:row.answers,evidence:rawProfileEvidence,profileSnapshot:row.profile_snapshot,
+        sourceSurveyId:row.source_survey_id,assessedAt:row.profile_assessed_at,validUntil:row.profile_valid_until,scope:verifiedProfileScope,
+      }):{selected:[],rejected:[]}
+      const profileEvidence=row.profile_id
+        ?canonicalProfile.selected
+        :materializeLegacyProfileEvidence(rawProfileEvidence,verifiedProfileScope,profileSourceRef,{answers:row.answers,assessedAt:iso(row.profile_assessed_at),validUntil:iso(row.profile_valid_until)})
+      const canonicalProfileValues=Object.fromEntries(profileEvidence.map(item=>[item.source_field,item.materialized_value]).filter(([field,value])=>field&&value))
+      const canonicalAnswers=row.profile_id
+        ?Object.fromEntries(profileBehavioralAnswerFields.map(({field,question})=>[question,canonicalProfileValues[field]]).filter(([,value])=>value))
+        :jsonObject(row.answers)
+      const baseClient=clientFromRow(row)
+      const contextClient=row.profile_id?{
+        ...baseClient,primaryProfile:canonicalProfileValues.primaryProfile??null,secondaryProfile:canonicalProfileValues.secondaryProfile??null,
+        ...Object.fromEntries(profileBehavioralAnswerFields.map(({field})=>[field,profileContextClientValue(field,canonicalProfileValues[field])])),
+        profileSelfReported:profileEvidence.some(item=>item.epistemic_type==='QUOTE'),profileEvidence,
+      }:{...baseClient,profileSelfReported:profileEvidence.some(item=>item?.self_reported===true),profileEvidence}
+      const context={client:contextClient,profile:{answers:canonicalAnswers,evidence:profileEvidence,rejectedEvidence:canonicalProfile.rejected,assessedAt:iso(row.profile_assessed_at)||null,validUntil:iso(row.profile_valid_until)||null,sourceId:profileSourceRef},signals:row.signals||[],learning:{...(row.learning||{}),recommendations:row.feedback_learning||{},visitOutcomes:row.visit_outcomes||[]},memories,memoryHistory,businessHistory:row.business_history||[],visits:row.visits||[],interactions:row.interactions||[],commitments:row.commitments||[],opportunities:row.opportunities||[],properties:row.properties||[],fieldReports:row.field_reports||[],soilAnalyses:row.soil_analyses||[],ndviObservations:row.ndvi_observations||[],manualRecords:row.manual_records||[],attachments:(row.attachments||[]).map(attachmentMetadataRecord),priorRecommendations:row.prior_recommendations||[]}
       // ContextSnapshot usa o identificador canônico exposto pelo contrato
       // (external_key), igual a context.client.id e ao envelope do ValEngine.
       // O UUID interno já foi validado pelo SELECT tenant+owner e não deve
       // atravessar a fronteira de contexto pré-carregado.
-      return attachContextSnapshot(context,{tenantId,clientId,ownerId,contextRequest})
+      return attachContextSnapshot(context,{tenantId,clientId:publicClientId,ownerId,repositoryClientId:row.id,contextRequest})
     }catch(error){if(error.statusCode===404)throw error;throw serviceError('O contexto do cliente não pôde ser lido no banco configurado.')}
   }
 
@@ -1227,6 +1619,7 @@ export class ValRepository{
     const persistence=recommendationPersistencePayload(record)
     const persistedContext=persistence.context
     const persistedAdvice=persistence.advice
+    const persistedConfidence=recommendationConfidence(persistedAdvice?.confidence?.score)
     const snapshot=persistedContext?.contextSnapshot
     if(snapshot&&String(snapshot.organization_id)!==String(tenantId))throw domainError('O ContextSnapshot pertence a outra organização.',403,'cross_tenant_context_snapshot_denied')
     if(this.db.configured){
@@ -1249,7 +1642,7 @@ export class ValRepository{
             throwIfPersistenceCancelled(record.signal)
           }
           await connection.query(`INSERT INTO val_recommendations (id,tenant_id,consultant_id,client_id,client_external_key,user_question,mode,model_version,prompt_version,input_context,source_ids,generated_content,confidence,status,context_snapshot_id,context_snapshot_version,created_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())`,[id,tenantId,record.ownerId,clientId,clientExternalKey,record.question,record.mode,record.model,record.promptHash||null,jsonbParameter(persistedContext),jsonbParameter(sourceIds),jsonbParameter(persistedAdvice),persistedAdvice?.confidence?.score??null,recommendationStatus,snapshot?.context_snapshot_id||null,snapshot?.contract_version||null])
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())`,[id,tenantId,record.ownerId,clientId,clientExternalKey,record.question,record.mode,record.model,record.promptHash||null,jsonbParameter(persistedContext),jsonbParameter(sourceIds),jsonbParameter(persistedAdvice),persistedConfidence,recommendationStatus,snapshot?.context_snapshot_id||null,snapshot?.contract_version||null])
           throwIfPersistenceCancelled(record.signal)
           if(record.modelRun){const run=record.modelRun;await connection.query(`INSERT INTO model_runs (id,tenant_id,recommendation_id,model,prompt_version,latency_ms,input_tokens,output_tokens,status,error_code,error_details,provider_response_id,provider_request_id,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,[randomUUID(),tenantId,id,run.model,run.promptVersion||null,run.latencyMs||null,run.inputTokens||null,run.outputTokens||null,run.status,run.errorCode||null,jsonbParameter(run.errorDetails),run.responseId||null,run.requestId||null])}
           throwIfPersistenceCancelled(record.signal)

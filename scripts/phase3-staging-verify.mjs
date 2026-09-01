@@ -52,7 +52,7 @@ try{
     })
   }
 
-  const contextA=await repositoryA.getClientContext({tenantId:tenantA,clientId:'gate-client-a',ownerId:userA,contextRequest:{requestId:'00000000-0000-4000-8000-000000000411',objective:'agronomic_question',actorRole:'consultant',scope:'own_portfolio'}})
+  const contextA=await repositoryA.getClientContext({tenantId:tenantA,clientId:'gate-client-a',ownerId:userA,contextRequest:{requestId:'00000000-0000-4000-8000-000000000411',objective:'agronomic_question',message:'Considere o histórico da área plantada estrutural e os conflitos materiais.',contextDomain:'AGRONOMY',actorRole:'consultant',scope:'own_portfolio'}})
   const emptyContext=await repositoryA.getClientContext({tenantId:tenantA,clientId:emptyClient,ownerId:userA,contextRequest:{requestId:'00000000-0000-4000-8000-000000000412',objective:'general_assistance',actorRole:'consultant',scope:'own_portfolio'}})
   const contextB=await repositoryB.getClientContext({tenantId:tenantB,clientId:'gate-client-b',ownerId:userB,contextRequest:{requestId:'00000000-0000-4000-8000-000000000413',objective:'general_assistance',actorRole:'consultant',scope:'own_portfolio'}})
 

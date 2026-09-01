@@ -6,13 +6,16 @@ export const tenantA='00000000-0000-4000-8000-000000000401'
 export const tenantB='00000000-0000-4000-8000-000000000402'
 export const actorA='00000000-0000-4000-8000-000000000403'
 
+const scoped=item=>({...item,tenant_id:tenantA,producer_id:'producer-a',context_owner_id:actorA})
+const profileEvidence=scoped({id:'survey-a',profile_source_ref:'survey-a',source_type:'producer_questionnaire',assessed_at:'2026-08-20T10:00:00.000Z',valid_until:'2027-08-20T10:00:00.000Z'})
+
 export function phase4Context(overrides={}){
  const context={
-  client:{id:'producer-a',name:'Produtor A',primaryProfile:'Analítico',secondaryProfile:'Relacional',scores:{analitico:3,relacional:1,digital:2},commercial:{}},
-  profile:{answers:{6:'Produtor e sócio',7:'Resultados técnicos, números e retorno financeiro.',8:'Comparativos, custos, gráficos e dados de produtividade.',14:'Dados técnicos e retorno sobre o investimento.'},assessedAt:'2026-08-20T10:00:00.000Z',evidence:[{id:'survey-a',source_type:'producer_questionnaire'}]},
-  memoryHistory:[{id:'memory-a',tenant_id:tenantA,client_id:'producer-a',subject_type:'client',subject_id:'producer-a',memory_domain:'COMMERCIAL',memory_state:'FACT',key:'commercial_goal',value:'Proteger margem e validar retorno',status:'ACTIVE',source_ref:'survey-a',source_type:'producer_questionnaire',confidence:90,valid_from:'2026-08-01T00:00:00.000Z',created_at:'2026-08-01T00:00:00.000Z',updated_at:'2026-08-20T00:00:00.000Z',evidence_refs:[{id:'survey-a',source_type:'producer_questionnaire'}],acl:{scope:'own_portfolio'}}],
-  memories:[],businessHistory:[{id:'business-a',outcome:'won',value:100000,occurred_at:'2026-07-01T00:00:00.000Z'}],visits:[],interactions:[{id:'interaction-a',summary:'Pediu comparativo e ROI.',occurred_at:'2026-08-19T00:00:00.000Z'}],
-  opportunities:[{id:'opp-a',title:'Semente premium',stage:'proposta',estimated_value:80000,next_action:'Revisar comparativo',next_action_at:'2026-08-25T00:00:00.000Z',updated_at:'2026-08-20T00:00:00.000Z'},{id:'opp-b',title:'Tratamento complementar',stage:'diagnóstico',estimated_value:30000,next_action:'Confirmar problema',updated_at:'2026-08-18T00:00:00.000Z'}],
+  client:{id:'producer-a',name:'Produtor A',primaryProfile:'Analítico',secondaryProfile:'Relacional',scores:{analitico:3,relacional:1,digital:2},commercial:{},profileEvidence:[profileEvidence],profileSource:'survey-a'},
+  profile:{sourceId:'survey-a',answers:{6:'Produtor e sócio',7:'Resultados técnicos, números e retorno financeiro.',8:'Comparativos, custos, gráficos e dados de produtividade.',14:'Dados técnicos e retorno sobre o investimento.'},assessedAt:'2026-08-20T10:00:00.000Z',validUntil:'2027-08-20T10:00:00.000Z',evidence:[profileEvidence]},
+  memoryHistory:[{id:'memory-a',tenant_id:tenantA,client_id:'producer-a',context_owner_id:actorA,subject_type:'client',subject_id:'producer-a',memory_domain:'COMMERCIAL',memory_state:'FACT',key:'commercial_goal',value:'Proteger margem e validar retorno',status:'ACTIVE',source_ref:'survey-a',source_type:'producer_questionnaire',confidence:90,valid_from:'2026-08-01T00:00:00.000Z',created_at:'2026-08-01T00:00:00.000Z',updated_at:'2026-08-20T00:00:00.000Z',evidence_refs:[{id:'survey-a',source_type:'producer_questionnaire'}],acl:{scope:'own_portfolio'}}],
+  memories:[],businessHistory:[scoped({id:'business-a',outcome:'won',value:100000,occurred_at:'2026-07-01T00:00:00.000Z'})],visits:[],interactions:[scoped({id:'interaction-a',summary:'Pediu comparativo e ROI.',occurred_at:'2026-08-19T00:00:00.000Z'})],
+  opportunities:[scoped({id:'opp-a',title:'Semente premium',stage:'proposta',estimated_value:80000,next_action:'Revisar comparativo',next_action_at:'2026-08-25T00:00:00.000Z',updated_at:'2026-08-20T00:00:00.000Z'}),scoped({id:'opp-b',title:'Tratamento complementar',stage:'diagnóstico',estimated_value:30000,next_action:'Confirmar problema',updated_at:'2026-08-18T00:00:00.000Z'})],
   properties:[],fieldReports:[],soilAnalyses:[],ndviObservations:[],manualRecords:[],signals:[],priorRecommendations:[],conversionInnovations:{}
  }
  Object.assign(context,overrides)

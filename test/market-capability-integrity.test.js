@@ -25,7 +25,8 @@ const currentQuote={
  observedAt:'2026-08-25T13:00:00.000Z',
  confidence:92,
  notes:'Safra 2026/27',
- status:'active'
+ status:'active',
+ tenantId:'tenant-a',contextOwnerId:'owner-a',scope:'MARKET'
 }
 
 function assertNotSyntheticPass(response,label){
@@ -33,7 +34,7 @@ function assertNotSyntheticPass(response,label){
  assert.ok(quality,`${label}: quality ausente`)
  assert.equal(quality.status,'NOT_EVALUATED',`${label}: FAST sem avaliador não pode declarar PASSED`)
  for(const [name,result] of Object.entries(quality.automatic_tests||{})){
-  assert.notEqual(result?.passed,true,`${label}: ${name} não foi executado e não pode declarar passed=true`)
+  if(result?.evaluated!==true)assert.notEqual(result?.passed,true,`${label}: ${name} não foi executado e não pode declarar passed=true`)
  }
 }
 
@@ -79,23 +80,74 @@ test('mercado — answer e voice_output carregam fonte e data observada',()=>{
  assert.equal(spoken,answer)
 })
 
+test('mercado — GLOBAL exige tenant e owner exatos e dispensa somente produtor',()=>{
+ const build=marketSnapshot=>buildFastMarketResponse({
+  workspace:{marketSnapshots:[marketSnapshot]},message:'Qual é o preço da soja hoje?',
+  organizationId:'tenant-a',ownerId:'owner-a',clientId:'producer-a',clientName:'Produtor A',conversationId:'market-scope',contextDomain:'GRAINS',now
+ })
+ for(const [snapshot,reason] of [
+ [{...currentQuote,tenantId:undefined},'MISSING_TENANT_SCOPE'],
+  [{...currentQuote,contextOwnerId:undefined},'MISSING_OWNER_SCOPE'],
+  [{...currentQuote,scope:undefined},'MISSING_MARKET_SCOPE'],
+  [{...currentQuote,scope:'GLOBAL'},'MARKET_SCOPE_MISMATCH'],
+  [{...currentQuote,tenantId:'tenant-b'},'TENANT_MISMATCH'],
+  [{...currentQuote,contextOwnerId:'owner-b'},'OWNER_MISMATCH'],
+  [{...currentQuote,producerId:'producer-a'},'GLOBAL_WITH_PRODUCER_ID']
+ ])assert.throws(()=>build(snapshot),error=>error?.code==='CONTEXT_SCOPE_VIOLATION'&&error?.reason===reason)
+
+ const response=build(currentQuote)
+ const reasoning=response.advice.ai_reasoning
+ const evidence=reasoning.facts_used[0]
+ assert.equal(reasoning.client.id,'producer-a')
+ assert.equal(reasoning.premises.context_scope.producer_id,'producer-a')
+ assert.equal(evidence.scope,'MARKET')
+ assert.equal(evidence.producer_id,null)
+ assert.equal(evidence.tenant_id,'tenant-a')
+ assert.equal(evidence.context_owner_id,'owner-a')
+})
+
+test('mercado + produtor — intenção estrangeira não pode ser relabelada para o escopo ativo',()=>{
+ const build=intention=>capabilityRouter.buildClientMarketResponse({
+  workspace:{marketSnapshots:[currentQuote],intentions:[intention]},
+  context:{client:{id:'producer-a',name:'Produtor A'},opportunities:[],memories:[]},facts:{client:{id:'producer-a',name:'Produtor A'}},
+  message:'Como o preço da soja muda a negociação deste produtor?',organizationId:'tenant-a',ownerId:'owner-a',contextDomain:'GRAINS',now
+ })
+ const intention={id:'intent-a',clientId:'producer-a',commodity:'soja',direction:'sell',status:'confirmed',observedAt:'2026-08-25T12:00:00.000Z'}
+ for(const [candidate,reason] of [
+  [{...intention,contextOwnerId:'owner-a'},'MISSING_TENANT_SCOPE'],
+  [{...intention,tenantId:'tenant-a'},'MISSING_OWNER_SCOPE'],
+  [{...intention,tenantId:'tenant-b',contextOwnerId:'owner-a'},'TENANT_MISMATCH'],
+  [{...intention,tenantId:'tenant-a',contextOwnerId:'owner-b'},'OWNER_MISMATCH'],
+  [{...intention,clientId:undefined,tenantId:'tenant-a',contextOwnerId:'owner-a'},'MISSING_PRODUCER_SCOPE']
+ ])assert.throws(()=>build(candidate),error=>error?.code==='CONTEXT_SCOPE_VIOLATION'&&error?.reason===reason)
+
+ const response=build({...intention,tenantId:'tenant-a',contextOwnerId:'owner-a'})
+ const evidence=response.advice.ai_reasoning.facts_used.find(item=>item.source_type==='negotiation_intent')
+ assert.equal(evidence?.source_id,'intent-a')
+ assert.equal(evidence?.producer_id,'producer-a')
+ assert.equal(evidence?.tenant_id,'tenant-a')
+ assert.equal(evidence?.context_owner_id,'owner-a')
+})
+
 test('FAST — qualidade não inventa PASS nem sucesso de testes automáticos',()=>{
  const market=buildFastMarketResponse({
   workspace:{marketSnapshots:[currentQuote]},
   message:'Preço da soja hoje',
   organizationId:'tenant-a',
+  ownerId:'owner-a',
   now
  })
  const client=buildFastClientResponse({
   facts:{
-   client:{id:'producer-a',name:'Produtor A'},
+   client:{id:'producer-a',name:'Produtor A',producer_id:'producer-a',tenant_id:'tenant-a',context_owner_id:'owner-a'},
    latestCompletedVisit:{
     id:'visit-a',status:'Concluída',lifecycleStatus:'COMPLETED',
-    occurredAt:'2026-08-24T14:00:00.000Z',summary:'Revisão comercial.'
+    occurredAt:'2026-08-24T14:00:00.000Z',summary:'Revisão comercial.',producer_id:'producer-a',tenant_id:'tenant-a',context_owner_id:'owner-a'
    }
   },
   message:'Qual foi a última visita?',
   organizationId:'tenant-a',
+  ownerId:'owner-a',
   now
  })
  assertNotSyntheticPass(market,'market')
@@ -117,10 +169,13 @@ test('router — PREPARE_VISIT não vira FAST por mencionar última visita',()=>
 
 test('GrainRepository.getMarketReferences — fallback mantém escopo estrito do owner',async()=>{
  const store={grains:{profiles:[],intentions:[],marketSnapshots:[
-  {...currentQuote,id:'owner-a-current',ownerId:'owner-a'},
-  {...currentQuote,id:'owner-b-current',ownerId:'owner-b'},
-  {...currentQuote,id:'ownerless',ownerId:null},
-  {...currentQuote,id:'owner-a-inactive',ownerId:'owner-a',status:'inactive'}
+  {...currentQuote,id:'owner-a-current',ownerId:'owner-a',contextOwnerId:'owner-a'},
+  {...currentQuote,id:'owner-b-current',ownerId:'owner-b',contextOwnerId:'owner-b'},
+  {...currentQuote,id:'ownerless',ownerId:null,contextOwnerId:null},
+  {...currentQuote,id:'missing-market-scope',ownerId:'owner-a',contextOwnerId:'owner-a',scope:undefined},
+  {...currentQuote,id:'cross-tenant-market',ownerId:'owner-a',contextOwnerId:'owner-a',tenantId:'tenant-b'},
+  {...currentQuote,id:'producer-market',ownerId:'owner-a',contextOwnerId:'owner-a',producerId:'producer-a'},
+  {...currentQuote,id:'owner-a-inactive',ownerId:'owner-a',contextOwnerId:'owner-a',status:'inactive'}
  ]}}
  const repository=new GrainRepository({
   db:{configured:false},
@@ -132,6 +187,21 @@ test('GrainRepository.getMarketReferences — fallback mantém escopo estrito do
  const ownerB=await repository.getMarketReferences('owner-b')
  assert.deepEqual(ownerA.marketSnapshots.map(item=>item.id),['owner-a-current'])
  assert.deepEqual(ownerB.marketSnapshots.map(item=>item.id),['owner-b-current'])
+})
+
+test('GrainRepository.getWorkspace — rejeita fallback sem proveniência original em vez de preencher escopo',async()=>{
+ const store={imports:[{tenantId:'tenant-a',ownerId:'owner-a',clients:[{id:'producer-a',name:'Produtor A'}]}],grains:{profiles:[],marketSnapshots:[],intentions:[
+  {id:'intent-scoped',tenantId:'tenant-a',ownerId:'owner-a',clientId:'producer-a',commodity:'soja',direction:'sell',status:'confirmed'},
+  {id:'intent-unscoped',ownerId:'owner-a',clientId:'producer-a',commodity:'soja',direction:'sell',status:'confirmed'},
+  {id:'intent-cross-tenant',tenantId:'tenant-b',ownerId:'owner-a',clientId:'producer-a',commodity:'soja',direction:'sell',status:'confirmed'}
+ ]}}
+ const repository=new GrainRepository({db:{configured:false},readStore:()=>structuredClone(store),saveStore:()=>{},tenantId:'tenant-a'})
+ const workspace=await repository.getWorkspace('owner-a')
+ const scoped=workspace.intentions.find(item=>item.id==='intent-scoped')
+ assert.equal(scoped.tenantId,'tenant-a')
+ assert.equal(scoped.contextOwnerId,'owner-a')
+ assert.equal(scoped.clientId,'producer-a')
+ assert.deepEqual(workspace.intentions.map(item=>item.id),['intent-scoped'])
 })
 
 test('mercado + produtor — resposta DEEP cruza perfil e negociação sem promover memória',()=>{
@@ -149,7 +219,7 @@ test('mercado + produtor — resposta DEEP cruza perfil e negociação sem promo
     id:'intent-a',clientId:'producer-a',commodity:'soja',direction:'sell',
     volume:1200,volumeUnit:'sc_60kg',targetPrice:null,priceUnit:'BRL/sc_60kg',
     deliveryStart:null,deliveryEnd:null,deliveryLocation:'Cascavel/PR',
-    status:'confirmed',confidence:90
+    status:'confirmed',confidence:90,observedAt:'2026-08-20T12:00:00.000Z',tenantId:'tenant-a',contextOwnerId:'owner-a'
    }]
   },
   context:{
@@ -158,7 +228,7 @@ test('mercado + produtor — resposta DEEP cruza perfil e negociação sem promo
     primaryProfile:'Analítico',decisionDriver:'comparativo econômico com dados da própria fazenda'
    },
    profile:{primaryProfile:'Analítico',status:'CONFIRMED',decisionDriver:'comparativo econômico com dados da própria fazenda'},
-   opportunities:[{id:'opp-a',title:'Comercialização da soja',stage:'Diagnóstico',nextAction:'Validar preço-alvo e janela'}],
+   opportunities:[{id:'opp-a',title:'Comercialização da soja',stage:'Diagnóstico',nextAction:'Validar preço-alvo e janela',producer_id:'producer-a',tenant_id:'tenant-a',context_owner_id:'owner-a',updated_at:'2026-08-20T12:00:00.000Z'}],
    visits:[{id:'visit-a',status:'Concluída',summary:'Produtor pediu cenário FOB antes de decidir.'}],
    commitments:[{commitment_id:'commitment-a',description:'Comparar cenário FOB com preço-alvo',status:'OPEN'}],
    memories:[]
@@ -301,8 +371,8 @@ test('mercado + produtor — seleção de oportunidade procura a ativa da commod
   context:{
    client:{id:'producer-opportunity-match',name:'Produtor Oportunidade Compatível'},
    opportunities:[
-    {id:'opp-milho-first',title:'Venda de milho',stage:'Diagnóstico'},
-    {id:'opp-soja-second',title:'Venda de soja',stage:'Validação',nextAction:'Validar preço-alvo da soja'}
+    {id:'opp-milho-first',title:'Venda de milho',stage:'Diagnóstico',producer_id:'producer-opportunity-match',tenant_id:'tenant-a',context_owner_id:'owner-a',updated_at:'2026-08-20T12:00:00.000Z'},
+    {id:'opp-soja-second',title:'Venda de soja',stage:'Validação',nextAction:'Validar preço-alvo da soja',producer_id:'producer-opportunity-match',tenant_id:'tenant-a',context_owner_id:'owner-a',updated_at:'2026-08-20T12:00:00.000Z'}
    ],
    memories:[]
   },

@@ -30,15 +30,37 @@ test('telemetria comercial registra referências e versões sem conteúdo sensí
  assert.doesNotMatch(JSON.stringify(logs),new RegExp(secret))
 })
 
-test('composição real da ValEngine persiste artefatos comerciais tenant-safe',async()=>{
+test('composição real da ValEngine persiste somente resposta grounded tenant-safe',async()=>{
  installValRuntimeComposition()
  let store={surveys:[],imports:[],opportunities:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[],modelRuns:[],technicalContexts:{},attachments:[]}}
  const repository=new ValRepository({db:{configured:false},readStore:()=>store,saveStore:value=>{store=value},tenantId:tenantA})
- const client={id:'producer-a',name:'Produtor A',scores:{analitico:2},profileAnswers:{7:'Resultados técnicos, números e retorno financeiro.'}}
+ const profileSource='profile-evidence-roi'
+ const client={
+  id:'producer-a',name:'Produtor A',primaryProfile:'Analítico',secondaryProfile:'Relacional',scores:{analitico:2},
+  profileAnswers:{7:'Resultados técnicos, números e retorno financeiro.',8:'Comparativos, custos, gráficos e dados de produtividade.'},
+  profileSource,profileUpdatedAt:'2026-08-20T10:00:00.000Z',profileValidUntil:'2027-08-20T10:00:00.000Z',
+  profileEvidence:[
+   {id:profileSource,profile_source_ref:profileSource,source_type:'producer_questionnaire',epistemic_type:'OBSERVATION',field:'decision_driver',statement:'Pediu comparativos de custo por hectare e retorno antes de decidir.',tenant_id:tenantA,producer_id:'producer-a',context_owner_id:actorA,assessed_at:'2026-08-20T10:00:00.000Z',valid_until:'2027-08-20T10:00:00.000Z'},
+   {id:'profile-evidence-data',profile_source_ref:profileSource,source_type:'producer_questionnaire',epistemic_type:'OBSERVATION',field:'technical_presentation',statement:'Prefere dados objetivos e comparáveis.',tenant_id:tenantA,producer_id:'producer-a',context_owner_id:actorA,assessed_at:'2026-08-20T10:00:00.000Z',valid_until:'2027-08-20T10:00:00.000Z'}
+  ]
+ }
  const engine=new ValEngine({runtimeConfig:{openaiApiKey:'',openaiProject:'',openaiTimeoutMs:1000,openaiMaxRetries:0,modelDaily:'terra',modelStrategic:'sol',modelFast:'luna',knowledgeVectorStoreId:'',maxContextChars:10_000,maxOutputTokens:26_000,strategicMaxOutputTokens:32_000,openaiStoreResponses:false},repository,logger:()=>{}})
- const answer=await engine.answer({tenantId:tenantA,ownerId:actorA,clientId:client.id,client,message:'O produtor pediu ROI e comparativos.',attachmentIds:[],mode:'daily',contextRequest:{requestId:'00000000-0000-4000-8000-000000000406',objective:'next_best_action',actorRole:'consultant',scope:'own_portfolio'}})
- assert.equal(answer.advice.behavioral_profile.organization_id,tenantA)
- assert.equal(answer.advice.decision_thesis.context_snapshot_id,answer.contextSnapshotId)
- assert.equal(answer.advice.value_plan.guardrails.automatic_discount,false)
- assert.equal(store.val.recommendations[0].advice.commercial_modules.version,'val.commercial_composition.v1')
+ const answer=await engine.answer({tenantId:tenantA,ownerId:actorA,clientId:client.id,client,message:'Qual é o perfil dele?',attachmentIds:[],mode:'daily',contextRequest:{requestId:'00000000-0000-4000-8000-000000000406',objective:'profile_query',intent:'PROFILE_QUERY',actorRole:'consultant',scope:'own_portfolio',conversationId:'phase4-composition-profile',contextEpoch:0,contextDomain:'PROFILE'}})
+ const reasoning=answer.advice.ai_reasoning
+ assert.deepEqual(reasoning.premises.context_scope,{tenant_id:tenantA,owner_id:actorA,producer_id:client.id,active_entity:null,conversation_id:'phase4-composition-profile',context_epoch:0,domain:'PROFILE',requested_domains:['PROFILE'],query_fingerprint:reasoning.premises.context_scope.query_fingerprint,selector_version:'val.context_selector.v1',minimum_sufficient_context:true})
+ assert.equal(reasoning.organization.id,tenantA)
+ assert.equal(reasoning.client.id,client.id)
+ assert.equal(reasoning.context_snapshot.id,answer.contextSnapshotId)
+ assert.equal(reasoning.grounding.passed,true)
+ assert.equal(reasoning.grounding.question_relevance,'PASS')
+ assert.equal(reasoning.grounding.blocked_or_regenerated,true)
+ assert.ok(reasoning.context_trace.selected.every(item=>item.sourceType==='behavioral_profile'))
+ assert.equal(answer.advice.answer,'Não há evidência comportamental atual e auditável suficiente para determinar o perfil comportamental.')
+ assert.equal(answer.advice.behavioral_profile,undefined)
+ assert.equal(answer.advice.value_plan,undefined)
+ const persisted=store.val.recommendations[0].advice
+ assert.equal(persisted.ai_reasoning.organization.id,tenantA)
+ assert.equal(persisted.ai_reasoning.client.id,client.id)
+ assert.equal(persisted.ai_reasoning.grounding.passed,true)
+ assert.equal(persisted.behavioral_profile,undefined)
 })

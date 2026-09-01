@@ -1,7 +1,22 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import {buildContextSnapshot} from '../server/memory/context-snapshot.js'
 import {ValEngine} from '../server/val-engine.js'
 import {buildFallbackAdvice} from '../server/sales-playbook.js'
+
+const snapshotNow=new Date('2026-08-29T12:00:00.000Z')
+const scopedContext=(context,{tenantId,ownerId,clientId,contextRequest={}}={})=>{
+ const value=structuredClone(context)
+ const message=String(contextRequest.message||'Prepare a visita')
+ value.contextSnapshot=buildContextSnapshot(value,{
+  organizationId:tenantId,subjectType:'client',subjectId:clientId,actorId:ownerId,
+  role:'consultant',scope:'own_portfolio',objective:'general_assistance',message,
+  ...(/analise a foto/i.test(message)?{contextDomain:'AGRONOMY',intent:'IMAGE_DIAGNOSIS'}:{}),
+  conversationId:contextRequest.conversationId,contextEpoch:contextRequest.contextEpoch??contextRequest.context_epoch,
+  requestId:`stream-fixture:${clientId}`,now:snapshotNow
+ })
+ return value
+}
 
 test('provider usa stream, observa primeiro delta e passa timeout conversacional',async()=>{
  const progress=[];const streamEvents=[]
@@ -9,7 +24,7 @@ test('provider usa stream, observa primeiro delta e passa timeout conversacional
  const context={client:{id:'client-stream',name:'Produtor Streaming'},signals:[],learning:{},opportunities:[]}
  const advice=buildFallbackAdvice({...context,message:'Prepare a visita'})
  const repository={
-  getClientContext:async()=>structuredClone(context),
+  getClientContext:async input=>scopedContext(context,input),
   recordRecommendation:async input=>{recordedModelRun=input.modelRun;return '00000000-0000-4000-8000-000000000099'},
  }
  const runtimeConfig={
@@ -63,7 +78,7 @@ test('deadline total rejeita stream pendente mesmo quando o iterador ignora abor
  let abortCalls=0,recordCalls=0,providerSignal=null,recordedModelRun=null
  const context={client:{id:'client-timeout',name:'Produtor Timeout'},signals:[],learning:{},opportunities:[]}
  const repository={
-  getClientContext:async()=>structuredClone(context),
+  getClientContext:async input=>scopedContext(context,input),
   recordRecommendation:async input=>{recordCalls+=1;recordedModelRun=input.modelRun;return '00000000-0000-4000-8000-000000000100'},
  }
  const engine=new ValEngine({
@@ -101,7 +116,7 @@ test('deadline total rejeita finalResponse pendente mesmo quando o provider igno
  let abortCalls=0,recordCalls=0,finalResponseCalls=0
  const context={client:{id:'client-final-timeout',name:'Produtor Final Timeout'},signals:[],learning:{},opportunities:[]}
  const repository={
-  getClientContext:async()=>structuredClone(context),
+  getClientContext:async input=>scopedContext(context,input),
   recordRecommendation:async()=>{recordCalls+=1;return '00000000-0000-4000-8000-000000000101'},
  }
  const engine=new ValEngine({
@@ -131,7 +146,7 @@ test('cancelamento pai aborta stream pendente, preserva erro do core e não exec
  let abortCalls=0,updateCalls=0,finalizerCalls=0,recordCalls=0,providerSignal=null
  const context={client:{id:'client-core-cancel',name:'Produtor Cancelamento'},signals:[],learning:{},opportunities:[]}
  const repository={
-  getClientContext:async()=>structuredClone(context),
+  getClientContext:async input=>scopedContext(context,input),
   updateAttachment:async()=>{updateCalls+=1},
   recordRecommendation:async()=>{recordCalls+=1;return 'should-not-persist'},
  }
@@ -178,7 +193,7 @@ test('cancelamento observado ao concluir provider bloqueia interpretação, fina
  const attachment={id:'attachment-post-provider',clientId:'client-post-provider',originalName:'campo.png',mimeType:'image/png',sizeBytes:4,status:'stored',analysis:{},createdAt:'2026-08-29T12:00:00.000Z',dataBase64:'dGVzdA=='}
  const advice=buildFallbackAdvice({...context,message:'Analise a foto'})
  const repository={
-  getClientContext:async()=>structuredClone(context),
+  getClientContext:async input=>scopedContext(context,input),
   getAttachments:async()=>[structuredClone(attachment)],
   listAttachments:async()=>[],
   updateAttachment:async()=>{updateCalls+=1;return attachment},
@@ -213,7 +228,7 @@ test('cancelamento durante finalização impede início da persistência',async(
  let recordCalls=0
  const context={client:{id:'client-finalizer-cancel',name:'Produtor Finalizer'},signals:[],learning:{},opportunities:[]}
  const repository={
-  getClientContext:async()=>structuredClone(context),
+  getClientContext:async input=>scopedContext(context,input),
   recordRecommendation:async()=>{recordCalls+=1;return 'should-not-persist'},
  }
  const engine=new ValEngine({
@@ -241,7 +256,7 @@ test('cancelamento durante updateAttachment é propagado à escrita e impede rec
  const attachment={id:'attachment-update-cancel',clientId:'client-update-cancel',originalName:'campo.png',mimeType:'image/png',sizeBytes:4,status:'stored',analysis:{},createdAt:'2026-08-29T12:00:00.000Z',dataBase64:'dGVzdA=='}
  const advice=buildFallbackAdvice({...context,message:'Analise a foto'})
  const repository={
-  getClientContext:async()=>structuredClone(context),
+  getClientContext:async input=>scopedContext(context,input),
   getAttachments:async()=>[structuredClone(attachment)],
   listAttachments:async()=>[],
   updateAttachment:async input=>{
@@ -277,7 +292,7 @@ test('cancelamento durante recordRecommendation é propagado e rejeita sem commi
  let recordSignal=null,commits=0
  const context={client:{id:'client-record-cancel',name:'Produtor Record'},signals:[],learning:{},opportunities:[]}
  const repository={
-  getClientContext:async()=>structuredClone(context),
+  getClientContext:async input=>scopedContext(context,input),
   recordRecommendation:async input=>{
    recordSignal=input.signal
    recordStartedResolve()

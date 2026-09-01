@@ -10,6 +10,8 @@ const STAGES=Object.freeze({
 
 const REQUEST_ID=/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 const text=value=>String(value??'').trim().slice(0,180)
+const requiredScope=(value,label)=>{const normalized=text(value);if(!normalized)throw Object.assign(new Error(`${label} é obrigatório para escopar o acompanhamento.`),{code:'val_progress_scope_required'});return normalized}
+const progressKey=(tenantId,ownerId,requestId)=>`${requiredScope(tenantId,'tenantId')}\u001f${requiredScope(ownerId,'ownerId')}\u001f${requestId}`
 
 export function normalizeValProgressRequestId(value){
   const requestId=text(value)
@@ -42,21 +44,26 @@ export function createValProgressTracker({ttlMs=300_000,maxEntries=500,clock=()=
     }
   }
 
-  function start({requestId,ownerId,clientId,mode='daily'}){
+  function start({requestId,tenantId,ownerId,clientId,mode='daily'}){
     prune()
     const normalized=normalizeValProgressRequestId(requestId)
     if(!normalized)return null
     const now=clock()
-    const entry={requestId:normalized,ownerId:text(ownerId),clientId:text(clientId),mode:text(mode)||'daily',stage:'received',updatedAtMs:now}
-    entries.set(normalized,entry)
+    const tenant=requiredScope(tenantId,'tenantId')
+    const owner=requiredScope(ownerId,'ownerId')
+    const entry={requestId:normalized,tenantId:tenant,ownerId:owner,clientId:text(clientId),mode:text(mode)||'daily',stage:'received',updatedAtMs:now}
+    entries.set(progressKey(tenant,owner,normalized),entry)
     return snapshot(entry)
   }
 
-  function update({requestId,ownerId,stage}){
+  function update({requestId,tenantId,ownerId,stage}){
     prune()
     const normalized=normalizeValProgressRequestId(requestId)
-    const entry=entries.get(normalized)
-    if(!entry||entry.ownerId!==text(ownerId)||!STAGES[stage])return null
+    if(!normalized)return null
+    const tenant=requiredScope(tenantId,'tenantId')
+    const owner=requiredScope(ownerId,'ownerId')
+    const entry=entries.get(progressKey(tenant,owner,normalized))
+    if(!entry||entry.tenantId!==tenant||entry.ownerId!==owner||!STAGES[stage])return null
     const current=STAGES[entry.stage]?.order??0
     const next=STAGES[stage].order
     if(stage!=='failed'&&next<current)return snapshot(entry)
@@ -68,10 +75,14 @@ export function createValProgressTracker({ttlMs=300_000,maxEntries=500,clock=()=
   const complete=input=>update({...input,stage:'complete'})
   const fail=input=>update({...input,stage:'failed'})
 
-  function get({requestId,ownerId}){
+  function get({requestId,tenantId,ownerId}){
     prune()
-    const entry=entries.get(normalizeValProgressRequestId(requestId))
-    if(!entry||entry.ownerId!==text(ownerId))return null
+    const normalized=normalizeValProgressRequestId(requestId)
+    if(!normalized)return null
+    const tenant=requiredScope(tenantId,'tenantId')
+    const owner=requiredScope(ownerId,'ownerId')
+    const entry=entries.get(progressKey(tenant,owner,normalized))
+    if(!entry||entry.tenantId!==tenant||entry.ownerId!==owner)return null
     return snapshot(entry)
   }
 

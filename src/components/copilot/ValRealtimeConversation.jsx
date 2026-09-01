@@ -27,7 +27,7 @@ export default function ValRealtimeConversation({
 }){
  const [transport,setTransport]=useState('natural')
  const legacy=useRealtimeConversation({disabled,responseText,responseKey,processing,onTranscript,onError,onStateChange,onMetrics})
- const natural=useNaturalRealtimeVoice({disabled,clientId:realtimeContext?.clientId||'',conversationId:realtimeContext?.conversationId||'',activeContext:realtimeContext?.activeContext||null,onUserTranscript:onRealtimeUserTranscript,onAssistantTranscript:onRealtimeAssistantTranscript,onToolCall:onRealtimeToolCall,onMemoryReview:onRealtimeMemoryReview,onError,onStateChange,onMetrics})
+ const natural=useNaturalRealtimeVoice({disabled,clientId:realtimeContext?.clientId||'',conversationId:realtimeContext?.conversationId||'',contextEpoch:realtimeContext?.contextEpoch??0,activeContext:realtimeContext?.activeContext||null,onUserTranscript:onRealtimeUserTranscript,onAssistantTranscript:onRealtimeAssistantTranscript,onToolCall:onRealtimeToolCall,onMemoryReview:onRealtimeMemoryReview,onError,onStateChange,onMetrics})
  const conversation=transport==='legacy'?legacy:natural
  const {state}=conversation
  const inactive=state.status===REALTIME_CONVERSATION_STATES.IDLE

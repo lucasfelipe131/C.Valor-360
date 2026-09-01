@@ -16,6 +16,7 @@ const requestId='00000000-0000-4000-8000-000000000405'
 const now=new Date('2026-08-23T15:00:00.000Z')
 const later=new Date('2026-08-23T15:10:00.000Z')
 const audioDataUrl=`data:audio/wav;base64,${Buffer.from('fixture-audio').toString('base64')}`
+const marketScope={tenant_id:tenantId,owner_id:actorId,scope:'MARKET'}
 
 const clone=value=>value==null?value:structuredClone(value)
 const serial=(prefix,value)=>`${prefix}-${String(value).padStart(4,'0')}`
@@ -918,9 +919,9 @@ test('VoiceCaptureService — confirmação do REGISTER grava preço e janela co
   assert.deepEqual({domain:window.memory_domain,state:window.memory_state,status:window.status,commodity:window.value.commodity,season:window.value.season,decisionWindow:window.value.decisionWindow},{domain:'COMMERCIAL',state:'FACT',status:'verified',commodity:'soja',season:'2026/27',decisionWindow:'Vender na próxima semana'})
 
   const nextRequest=buildClientMarketResponse({
-    workspace:{marketSnapshots:[{id:'quote-register',commodity:'soja',marketKind:'forward',region:'Cascavel/PR',price:120,priceUnit:'BRL/sc_60kg',deliveryStart:'2026-10-01',deliveryEnd:'2026-10-31',sourceName:'Fonte autorizada',observedAt:'2026-08-23T14:00:00.000Z',notes:'Safra 2026/27',status:'active'}],intentions:[]},
-    context:{client:{id:clientId,name:'Produtor REGISTER'},opportunities:[],memories:context.repository.memories},
-    facts:{client:{id:clientId,name:'Produtor REGISTER'}},message:'Como a soja da safra 2026/27 muda a negociação deste produtor?',intentHint:'ASK_COMMODITY',now:later
+    workspace:{marketSnapshots:[{...marketScope,id:'quote-register',commodity:'soja',marketKind:'forward',region:'Cascavel/PR',price:120,priceUnit:'BRL/sc_60kg',deliveryStart:'2026-10-01',deliveryEnd:'2026-10-31',sourceName:'Fonte autorizada',observedAt:'2026-08-23T14:00:00.000Z',notes:'Safra 2026/27',status:'active'}],intentions:[]},
+    context:{client:{id:clientId,name:'Produtor REGISTER',tenant_id:tenantId,owner_id:actorId},opportunities:[],memories:context.repository.memories},
+    facts:{client:{id:clientId,name:'Produtor REGISTER',tenant_id:tenantId,owner_id:actorId}},organizationId:tenantId,ownerId:actorId,message:'Como a soja da safra 2026/27 muda a negociação deste produtor?',intentHint:'ASK_COMMODITY',now:later
   })
   const reasoning=nextRequest.advice.ai_reasoning
   assert.equal(reasoning.decision_interview.status,'NOT_NEEDED')
@@ -945,9 +946,9 @@ test('VoiceCaptureService — rejeição no REGISTER não vira premissa e nova r
   assert.equal(context.repository.memories[0].value.targetPrice,126)
 
   const nextRequest=buildClientMarketResponse({
-    workspace:{marketSnapshots:[{id:'quote-register-reject',commodity:'soja',marketKind:'forward',region:'Cascavel/PR',price:120,priceUnit:'BRL/sc_60kg',deliveryStart:'2026-10-01',deliveryEnd:'2026-10-31',sourceName:'Fonte autorizada',observedAt:'2026-08-23T14:00:00.000Z',notes:'Safra 2026/27',status:'active'}],intentions:[]},
-    context:{client:{id:clientId,name:'Produtor REGISTER'},opportunities:[],memories:context.repository.memories},
-    facts:{client:{id:clientId,name:'Produtor REGISTER'}},message:'Como a soja da safra 2026/27 muda a negociação deste produtor?',intentHint:'ASK_COMMODITY',now:later
+    workspace:{marketSnapshots:[{...marketScope,id:'quote-register-reject',commodity:'soja',marketKind:'forward',region:'Cascavel/PR',price:120,priceUnit:'BRL/sc_60kg',deliveryStart:'2026-10-01',deliveryEnd:'2026-10-31',sourceName:'Fonte autorizada',observedAt:'2026-08-23T14:00:00.000Z',notes:'Safra 2026/27',status:'active'}],intentions:[]},
+    context:{client:{id:clientId,name:'Produtor REGISTER',tenant_id:tenantId,owner_id:actorId},opportunities:[],memories:context.repository.memories},
+    facts:{client:{id:clientId,name:'Produtor REGISTER',tenant_id:tenantId,owner_id:actorId}},organizationId:tenantId,ownerId:actorId,message:'Como a soja da safra 2026/27 muda a negociação deste produtor?',intentHint:'ASK_COMMODITY',now:later
   })
   const reasoning=nextRequest.advice.ai_reasoning
   assert.deepEqual(reasoning.decision_interview.material_missing_information,['decision_window'])

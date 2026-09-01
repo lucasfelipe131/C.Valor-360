@@ -25,15 +25,32 @@ export const voiceConversationGoldenVersion='val.voice_conversation_golden.v1'
 const client=Object.freeze({id:'client-antonio',name:'Antônio Ferreira'})
 const visit=Object.freeze({type:'visit',id:'visit-antonio-2026-08-29',label:'Visita de 29/08/2026'})
 const field=Object.freeze({type:'field',id:'field-north',label:'Talhão Norte'})
-const scope=Object.freeze({conversationId:'voice-golden-thread',clientId:client.id,client})
+const scope=Object.freeze({
+ conversationId:'voice-golden-thread',
+ tenantId:'tenant-golden',
+ ownerId:'owner-golden',
+ clientId:client.id,
+ client,
+})
+
+const scopedVoiceEvidence=(item,index,epistemicType)=>({
+ ...item,
+ source_ref:item?.source_ref||`voice-golden-turn-${String(index+1).padStart(3,'0')}`,
+ source_type:item?.source_type||'consultant_input',
+ epistemic_type:item?.epistemic_type||epistemicType,
+ producer_id:item?.producer_id||client.id,
+ tenant_id:item?.tenant_id||scope.tenantId,
+ owner_id:item?.owner_id||scope.ownerId,
+ observed_at:item?.observed_at||'2026-08-28T12:00:00.000Z'
+})
 
 const assistantResponse=({reading,action='',facts=[],hypotheses=[],questions=[],goldenQuestions=[],thesis='',uncertainty='',execution=null}={})=>({
  advice:{
   answer:reading,
   ai_reasoning:{
    recommended_strategy:{reading,action},
-   facts_used:facts,
-   hypotheses,
+   facts_used:facts.map((item,index)=>scopedVoiceEvidence(item,index,'OBSERVATION')),
+   hypotheses:hypotheses.map((item,index)=>scopedVoiceEvidence(item,index,'HYPOTHESIS')),
    decision_thesis:thesis?{THESIS:thesis,KEY_UNCERTAINTY:uncertainty}:null,
    decision_interview:{questions:questions.map(question=>({question}))},
    golden_questions:goldenQuestions.map(question=>({question})),
@@ -78,6 +95,22 @@ const stateTurn=(state,{message,response,now,activeContext,inputModality='voice'
  scope:{...scope,activeContext,now}
 })
 
+const completedAssistantTurn=(payload,state,responseId)=>{
+ const domain=state.current_domain||'GENERAL'
+ const contextScope={tenant_id:scope.tenantId,owner_id:scope.ownerId,producer_id:client.id,conversation_id:scope.conversationId,context_epoch:state.context_epoch,domain}
+ const sessionContext={tenant_id:scope.tenantId,owner_id:scope.ownerId,conversation_id:scope.conversationId,context_epoch:state.context_epoch,current_domain:domain,current_client:{id:client.id}}
+ const reasoning=payload?.advice?.ai_reasoning||{}
+ return {
+  role:'assistant',status:'completed',serverGrounded:true,grounding:'SERVER_RETURNED',responseId,
+  tenantId:scope.tenantId,ownerId:scope.ownerId,conversationId:scope.conversationId,producerId:client.id,contextEpoch:state.context_epoch,domain,
+  payload:{
+   ...payload,
+   responseScope:{contractVersion:'val.response_scope.v1',tenantId:scope.tenantId,ownerId:scope.ownerId,producerId:client.id,conversationId:scope.conversationId,contextEpoch:state.context_epoch,domain},
+   advice:{...payload?.advice,ai_reasoning:{...reasoning,organization:{id:scope.tenantId},client:{id:client.id,name:client.name},conversation_id:scope.conversationId,premises:{...(reasoning.premises||{}),context_scope:contextScope,session_context:sessionContext},decision_interview:{...(reasoning.decision_interview||{}),session_context:{conversation_id:scope.conversationId,context_epoch:state.context_epoch}}}}
+  }
+ }
+}
+
 function runGolden001(){
  const trace=[]
  const clientIds=[]
@@ -88,26 +121,26 @@ function runGolden001(){
   trace.push(Object.freeze({input,topic:state.current_topic,client_id:state.current_client?.id,turns:state.conversation_turns.length}))
  }
 
- advance('VAL, amanhã vou no Antônio.',assistantResponse({
+ advance('VAL, amanhã vou no Antônio para falar de nutrição e preço.',assistantResponse({
   reading:'Certo. A visita com Antônio está ativa nesta conversa. Qual decisão você quer preparar?',
   action:'Confirmar o objetivo material da visita.',
   questions:['Qual decisão você quer preparar?']
  }),'2026-08-28T12:00:01.000Z')
 
- advance('Não é mais inseticida. Agora é nutrição.',assistantResponse({
+ advance('Não é mais inseticida. Agora é nutrição, e a decisão de preço continua.',assistantResponse({
   reading:'Entendi. Com Antônio, o foco da visita passa a ser nutrição, não inseticida.',
   action:'Tratar nutrição como o objetivo atual.',
-  facts:[{statement:'O foco informado para a visita mudou de inseticida para nutrição.'}]
+  facts:[{statement:'O foco informado para a visita mudou de inseticida para nutrição.',source_ref:'voice-golden-turn-002'}]
  }),'2026-08-28T12:00:02.000Z')
 
- advance('Ele comentou preço de novo.',assistantResponse({
+ advance('Ele comentou preço de novo na conversa de nutrição.',assistantResponse({
   reading:'Certo. Antônio voltou a falar de preço; isso entra como sinal comercial, sem apagar o foco em nutrição.',
   action:'Quantificar a sensibilidade a preço.',
-  facts:[{statement:'Antônio comentou preço novamente na conversa sobre nutrição.'}]
+  facts:[{statement:'Antônio comentou preço novamente na conversa sobre nutrição.',source_ref:'voice-golden-turn-003'}]
  }),'2026-08-28T12:00:03.000Z')
 
  const missingQuestion='Qual faixa de investimento Antônio considera viável para começar?'
- advance('Que informação tá faltando?',assistantResponse({
+ advance('Que informação de nutrição e preço tá faltando?',assistantResponse({
   reading:`Só preciso confirmar uma coisa: ${missingQuestion}`,
   action:'Confirmar a faixa de investimento.',
   questions:[missingQuestion]
@@ -122,15 +155,16 @@ function runGolden001(){
  const thesisResponse=assistantResponse({
   reading:'Entendi. Com Antônio focado em nutrição e sensível a preço, a tese é começar pela área prioritária dentro do orçamento.',
   action:'Usar as três perguntas para validar valor, área inicial e decisores.',
-  facts:[{statement:'A faixa inicial informada é de até R$ 20 mil.'}],
+  facts:[{statement:'A faixa inicial informada é de até R$ 20 mil.',source_ref:'voice-golden-turn-005'}],
   goldenQuestions,
   thesis,
   uncertainty:'A área inicial e os participantes da decisão ainda precisam ser confirmados.'
  })
- advance('Ele aceita começar com até vinte mil reais.',thesisResponse,'2026-08-28T12:00:05.000Z')
+ advance('Para nutrição, ele aceita começar com preço e investimento de até vinte mil reais.',thesisResponse,'2026-08-28T12:00:05.000Z')
 
  const goldenCommand=resolveValNaturalCommand('Agora me manda só as três perguntas de ouro.')
- const goldenTurn=localNaturalCommandTurn(goldenCommand,thesisResponse)
+ const completedThesis=completedAssistantTurn(thesisResponse,state,'voice-golden-thesis-001')
+ const goldenTurn=localNaturalCommandTurn(goldenCommand,completedThesis,{tenantId:scope.tenantId,ownerId:scope.ownerId,conversationId:scope.conversationId,producerId:client.id,contextEpoch:state.context_epoch,domain:state.current_domain||'GENERAL'})
  const questionLines=String(goldenTurn?.text||'').split('\n').filter(Boolean)
  trace.push(Object.freeze({input:'Agora me manda só as três perguntas de ouro.',command:goldenCommand?.action,output:'text',question_count:questionLines.length}))
 
@@ -155,7 +189,7 @@ function runGolden001(){
  trace.push(Object.freeze({input:'Registra que o filho vai participar.',command:registerCommand?.action,persistence:registerCommand?.persistence,assistant:registerTurn?.text}))
 
  const naturalness=evaluateConversationalNaturalness({
-  user_message:'Ele aceita começar com até vinte mil reais.',
+  user_message:'Para nutrição, ele aceita começar com preço e investimento de até vinte mil reais.',
   assistant_response:thesisResponse.advice.ai_reasoning.recommended_strategy.reading,
   prior_turns:state.conversation_turns.slice(-6,-2).map(turn=>({role:turn.role,content:turn.text})),
   active_context:{client:'Antônio',topic:'nutrição'},
@@ -170,7 +204,7 @@ function runGolden001(){
   check('G001.CONTEXT.CLIENT',clientIds.length===5&&clientIds.every(id=>id===client.id),client.id,[...clientIds]),
   check('G001.CONTEXT.TOPIC_UPDATE',state.current_topic==='nutrição','nutrição',state.current_topic),
   check('G001.CONTEXT.PRICE_SIGNAL',state.session_facts.some(item=>/preço novamente/i.test(item.statement)),'price signal retained',state.session_facts.map(item=>item.statement)),
-  check('G001.INTERVIEW.MINIMUM_ONLY',state.recent_questions.filter(question=>question===missingQuestion).length===1,'one material follow-up',state.recent_questions),
+  check('G001.INTERVIEW.MINIMUM_ONLY',state.recent_questions.filter(question=>(question?.question??question)===missingQuestion).length===1,'one material follow-up',state.recent_questions),
   check('G001.THESIS.UPDATED',state.current_decision_thesis?.thesis===thesis,thesis,state.current_decision_thesis),
   check('G001.GOLDEN.EXACT_COMMAND',goldenCommand?.action==='GOLDEN_QUESTIONS_ONLY'&&goldenCommand?.local===true,'GOLDEN_QUESTIONS_ONLY local',goldenCommand),
   check('G001.GOLDEN.THREE_TEXT',questionLines.length===3&&goldenCommand?.outputMode===undefined,'three text questions',questionLines),
@@ -190,25 +224,28 @@ async function runGolden002(){
   message:'No Talhão Norte, o Antônio quer reduzir risco sem estourar o preço.',
   response:assistantResponse({
    reading:'Entendi. No Talhão Norte, a conversa com Antônio precisa ligar risco agronômico e impacto no preço.',
-   facts:[{statement:'Antônio quer reduzir o risco no Talhão Norte sem elevar demais o preço.'}]
+   facts:[{statement:'Antônio quer reduzir o risco no Talhão Norte sem elevar demais o preço.',source_ref:'voice-golden-turn-101'}]
   }),
   now:'2026-08-28T13:00:01.000Z',
   activeContext:field
  })
  trace.push(Object.freeze({input:'conversa sobre talhão',client_id:state.current_client?.id,field_id:state.current_field?.id}))
 
- const photoMessage='VAL, analisa esta foto do Talhão Norte.'
+ const photoMessage='VAL, analisa esta foto do Talhão Norte e o impacto dela na conversa de preço.'
  const route=routeSystemCapability({message:photoMessage,hasClient:true,attachmentTypes:['image/jpeg'],activeContext:field})
  const capabilityContext={
   client,
-  properties:[{id:'property-good-view',name:'Fazenda Boa Vista',fields:[{id:field.id,name:field.label}]}]
+  properties:[{id:'property-good-view',producer_id:client.id,tenant_id:scope.tenantId,context_owner_id:scope.ownerId,name:'Fazenda Boa Vista',fields:[{id:field.id,name:field.label}]}]
  }
  const attachment={
   id:'photo-field-north',
+  producer_id:client.id,
+  tenant_id:scope.tenantId,
+  context_owner_id:scope.ownerId,
   mimeType:'image/jpeg',
   analysis:{summary:'A foto mostra lesões foliares localizadas; a causa permanece uma hipótese para validação em campo.',diagnosticStatus:'assisted_triage_not_prescription'}
  }
- const execution=await executeCapabilityPlan({route,message:photoMessage,clientId:client.id,context:capabilityContext,attachments:[attachment],activeContext:field})
+ const execution=await executeCapabilityPlan({route,message:photoMessage,clientId:client.id,tenantId:scope.tenantId,ownerId:scope.ownerId,context:capabilityContext,attachments:[attachment],activeContext:field})
  const photoResponse=assistantResponse({
   reading:execution.tool_result?.summary,
   action:'Validar a hipótese em campo antes de decidir.',
@@ -226,7 +263,7 @@ async function runGolden002(){
  const crossResponse=assistantResponse({
   reading:crossReading,
   action:'Validar a observação no campo e quantificar o impacto antes de propor uma solução.',
-  facts:[{statement:'A conversa deve cruzar a triagem técnica com o contexto comercial confirmado nesta sessão.'}],
+  facts:[{statement:'A conversa deve cruzar a triagem técnica com o contexto comercial confirmado nesta sessão.',source_ref:'voice-golden-turn-103'}],
   thesis:crossThesis,
   uncertainty:'A causa das lesões e o impacto econômico ainda não foram confirmados.'
  })

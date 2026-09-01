@@ -3,7 +3,14 @@ import test from 'node:test'
 import {routeValIntent} from '../server/ai-reasoning/intent-router.js'
 import {buildCapabilityExecutionResponse,buildGeneralNoClientResponse,executeCapabilityPlan} from '../server/decision-copilot/capability-executor.js'
 import {reasoningPaths,routeSystemCapability} from '../server/decision-copilot/capability-router.js'
-import {routeSessionCommand,sessionCommands} from '../server/decision-copilot/session-command-router.js'
+import {routeSessionCommand,sessionCommandHintMatchesMessage,sessionCommands} from '../server/decision-copilot/session-command-router.js'
+
+const scopedFact=(id,statement)=>({id,source_ref:id,subject_client_id:'client-a',tenant_id:'tenant-a',owner_id:'owner-a',statement,epistemic_status:'SESSION_FACT'})
+const completedConversation=({text,facts=[],thesis=null}={})=>({
+ tenant_id:'tenant-a',owner_id:'owner-a',conversation_id:'thread-a',context_epoch:0,current_client:{id:'client-a',name:'João'},
+ current_decision_thesis:thesis?{...thesis,subject_client_id:'client-a',tenant_id:'tenant-a',owner_id:'owner-a'}:null,session_facts:facts,
+ conversation_turns:[{role:'assistant',status:'completed',scope_verified:true,server_grounded:true,tenant_id:'tenant-a',owner_id:'owner-a',conversation_id:'thread-a',context_epoch:0,subject_client_id:'client-a',text,facts,questions:[],decision_thesis:thesis?{...thesis,subject_client_id:'client-a',tenant_id:'tenant-a',owner_id:'owner-a'}:null}]
+})
 
 test('vNext — os cinco paths são explícitos e materialidade governa o uso da engine',()=>{
  assert.deepEqual(reasoningPaths,['FAST','CONTEXT','DEEP','TOOL','LIVE_DATA'])
@@ -41,11 +48,17 @@ test('vNext — comandos naturais ficam na sessão e preservam confirmação hum
   assert.equal(intent.session_command.command,command)
   assert.equal(intent.persistence_mode,command==='REGISTER_LAST'?'CONFIRM_REQUIRED':'NONE')
  }
- assert.equal(routeSessionCommand('Prompt expandido sobre as premissas.','EXPLAIN_WHY').command,'EXPLAIN')
+ assert.equal(routeSessionCommand('Explique por que chegou à última recomendação.','EXPLAIN_WHY').command,'EXPLAIN')
  assert.equal(routeSessionCommand('Por quê?').command,'EXPLAIN')
- assert.equal(routeSystemCapability({message:'Prompt expandido.',sessionCommandHint:'DEEPEN',hasClient:true}).path,'DEEP')
- assert.equal(routeSystemCapability({message:'Prompt expandido.',sessionCommandHint:'SHOW_NUMBERS',hasClient:true}).path,'FAST')
+ assert.equal(routeSystemCapability({message:'Aprofunde a última leitura usando apenas os fatos confirmados desta conversa.',sessionCommandHint:'DEEPEN',hasClient:true}).path,'DEEP')
+ assert.equal(routeSystemCapability({message:'Mostre os números materiais da última leitura usando apenas os fatos confirmados desta conversa.',sessionCommandHint:'SHOW_NUMBERS',hasClient:true}).path,'FAST')
  assert.equal(routeSystemCapability({message:'Por quê?',hasClient:true}).path,'FAST')
+ assert.equal(sessionCommandHintMatchesMessage('qual o perfil dele?','SUMMARIZE'),false)
+ assert.equal(routeSessionCommand('qual o perfil dele?','SUMMARIZE'),null)
+ const profileWithForgedSummary=routeValIntent({message:'qual o perfil dele?',sessionCommandHint:'SUMMARIZE',hasClient:true})
+ assert.equal(profileWithForgedSummary.session_command,null)
+ assert.equal(routeSystemCapability({message:'qual o perfil dele?',sessionCommandHint:'SUMMARIZE',hasClient:true}).data_path,'BEHAVIORAL_PROFILE')
+ assert.equal(routeSystemCapability({message:'Como devo abordar ele?',hasClient:true}).data_path,'BEHAVIORAL_PROFILE')
 })
 
 test('vNext — EXPLAIN reutiliza tese, fatos e resposta da sessão sem contexto completo ou modelo',async()=>{
@@ -53,15 +66,12 @@ test('vNext — EXPLAIN reutiliza tese, fatos e resposta da sessão sem contexto
  const sessionCommand=routeSessionCommand(message)
  const route={path:'FAST',intent:'FOLLOW_UP',direct:true,capabilities:['SESSION_COMMAND'],session_command:sessionCommand,materiality:{engine_required:false}}
  const context={
-  client:{id:'client-a',name:'João'},
-  conversationState:{
-   current_decision_thesis:{thesis:'Eu não começaria por preço',uncertainty:'O critério de valor ainda não foi confirmado',next_action:'Validar o foco em nutrição'},
-   session_facts:[
-    {statement:'João cultiva 420 ha',epistemic_status:'SESSION_FACT'},
-    {statement:'A objeção confirmada na última visita foi preço',epistemic_status:'SESSION_FACT'}
-   ],
-   conversation_turns:[{role:'assistant',text:'Eu não começaria por preço. Primeiro confirmaria o valor percebido.'}]
-  },
+ client:{id:'client-a',name:'João'},
+  conversationState:completedConversation({
+   text:'Eu não começaria por preço. Primeiro confirmaria o valor percebido.',
+   thesis:{thesis:'Eu não começaria por preço',uncertainty:'O critério de valor ainda não foi confirmado',next_action:'Validar o foco em nutrição'},
+   facts:[scopedFact('fact-area','João cultiva 420 ha'),scopedFact('fact-objection','A objeção confirmada na última visita foi preço')]
+  }),
   priorRecommendations:[]
  }
  const execution=await executeCapabilityPlan({route,message,context,clientId:'client-a'})
@@ -77,28 +87,53 @@ test('vNext — EXPLAIN reutiliza tese, fatos e resposta da sessão sem contexto
  assert.match(execution.tool_result.summary,/João cultiva 420 ha/)
  assert.match(execution.tool_result.summary,/objeção confirmada na última visita foi preço/)
  assert.match(execution.tool_result.summary,/principal incerteza.*critério de valor/i)
- assert.match(execution.tool_result.summary,/próximo passo.*foco em nutrição/i)
+ assert.match(execution.tool_result.summary,/ação indicada.*foco em nutrição/i)
 
- const response=buildCapabilityExecutionResponse({execution,route,message,organizationId:'tenant-a',clientId:'client-a',clientName:'João',conversationId:'thread-a'})
+ const response=buildCapabilityExecutionResponse({execution,route,message,organizationId:'tenant-a',ownerId:'owner-a',clientId:'client-a',clientName:'João',conversationId:'thread-a',contextEpoch:0})
  assert.equal(response.route,'FAST')
  assert.equal(response.engineMode,'rules')
  assert.equal(response.responseMetadata.executionBudget.modelCalls,0)
  assert.equal(response.advice.ai_reasoning.run.model_call_count,0)
  assert.equal(response.advice.answer,execution.tool_result.summary)
+ assert.equal(response.advice.ai_reasoning.grounding.passed,true)
+ assert.deepEqual(response.advice.ai_reasoning.facts_used.map(item=>({id:item.id,sourceType:item.source_type,evidenceType:item.evidence_type,producerId:item.producer_id,tenantId:item.tenant_id,ownerId:item.owner_id,observedAt:Boolean(item.observed_at)})),[
+  {id:'session:thread-a:0:EXPLAIN',sourceType:'conversation_turn',evidenceType:'INFERENCE',producerId:'client-a',tenantId:'tenant-a',ownerId:'owner-a',observedAt:true}
+ ])
+ assert.deepEqual(response.advice.ai_reasoning.premises.context_scope,{tenant_id:'tenant-a',owner_id:'owner-a',producer_id:'client-a',conversation_id:'thread-a',context_epoch:0,domain:'GENERAL'})
+})
+
+test('vNext — rótulo neutro do EXPLAIN não libera ação cross-domain em PROFILE',async()=>{
+ const message='Por quê?'
+ const route={path:'FAST',intent:'FOLLOW_UP',direct:true,capabilities:['SESSION_COMMAND'],session_command:routeSessionCommand(message),materiality:{engine_required:false}}
+ const context={client:{id:'client-a',name:'João'},conversationState:completedConversation({
+  text:'Perfil principal: Conservador. Confiança: alta. Como abordar: confirme o critério de decisão com evidência.',
+  facts:[scopedFact('profile-evidence','João decide comparando evidências.')],
+  thesis:{
+   thesis:'Perfil principal: Conservador',
+   uncertainty:'Validar se a preferência continua atual',
+   next_action:'Trave o contrato de grãos hoje'
+  }
+ })}
+ const execution=await executeCapabilityPlan({route,message,context,clientId:'client-a'})
+ const response=buildCapabilityExecutionResponse({
+  execution,route,message,organizationId:'tenant-a',ownerId:'owner-a',clientId:'client-a',clientName:'João',
+  conversationId:'thread-a',contextEpoch:0,contextDomain:'PROFILE',now:new Date('2026-08-30T12:00:00.000Z')
+ })
+ assert.equal(response.advice.ai_reasoning.grounding.passed,false)
+ assert.equal(response.advice.ai_reasoning.grounding.blocked,true)
+ assert.ok(response.advice.ai_reasoning.grounding.unsupported_terms.includes('UNSUPPORTED_CROSS_DOMAIN_CLAIM'))
+ assert.equal(response.advice.answer,'Não há evidência verificável suficiente nesta execução para responder com segurança.')
+ assert.doesNotMatch(response.advice.answer,/contrato|grãos|trave/i)
 })
 
 test('vNext — SHOW_NUMBERS devolve somente fatos numéricos já presentes na sessão',async()=>{
  const message='Me mostra os números.'
  const sessionCommand=routeSessionCommand(message)
  const route={path:'FAST',intent:'FOLLOW_UP',direct:true,capabilities:['SESSION_COMMAND'],session_command:sessionCommand,materiality:{engine_required:false}}
- const context={conversationState:{
-  session_facts:[
-   {statement:'João cultiva 420 ha'},
-   {statement:'A proposta anterior foi de R$ 175 por hectare'},
-   {statement:'O foco atual é nutrição'}
-  ],
-  conversation_turns:[{role:'assistant',text:'A leitura anterior combinou área, preço e nutrição.'}]
- },priorRecommendations:[]}
+ const context={conversationState:completedConversation({
+  text:'A leitura anterior combinou área, preço e nutrição.',
+  facts:[scopedFact('fact-area','João cultiva 420 ha'),scopedFact('fact-price','A proposta anterior foi de R$ 175 por hectare'),scopedFact('fact-focus','O foco atual é nutrição')]
+ }),priorRecommendations:[]}
  const execution=await executeCapabilityPlan({route,message,context,clientId:'client-a'})
  assert.deepEqual(execution.capabilities_used,['SESSION_COMMAND'])
  assert.equal(execution.reasoning_required,false)
@@ -108,11 +143,121 @@ test('vNext — SHOW_NUMBERS devolve somente fatos numéricos já presentes na s
  assert.match(execution.tool_result.summary,/R\$ 175 por hectare/)
  assert.doesNotMatch(execution.tool_result.summary,/O foco atual é nutrição/)
 
- const noNumbers=await executeCapabilityPlan({route,message,clientId:'client-a',context:{conversationState:{session_facts:[{statement:'O foco atual é nutrição'}],conversation_turns:[{role:'assistant',text:'Primeiro eu validaria a necessidade.'}]},priorRecommendations:[]}})
+ const noNumbers=await executeCapabilityPlan({route,message,clientId:'client-a',context:{conversationState:completedConversation({text:'Primeiro eu validaria a necessidade.',facts:[scopedFact('fact-focus-2','O foco atual é nutrição')]}),priorRecommendations:[]}})
  assert.deepEqual(noNumbers.capabilities_used,[])
  assert.equal(noNumbers.tool_result.status,'NO_DATA')
  assert.deepEqual(noNumbers.tool_result.facts.numeric_facts,[])
  assert.match(noNumbers.tool_result.summary,/Não há fatos numéricos estruturados/)
+})
+
+test('vNext — status NO_DATA não libera summary contaminado pelo grounding',()=>{
+ const message='Qual o perfil dele?'
+ const route={path:'FAST',intent:'ASK_CLIENT',direct:true,capabilities:['CLIENT_CONTEXT'],materiality:{engine_required:false}}
+ const execution={
+  path:'FAST',capabilities_planned:['CLIENT_CONTEXT'],capabilities_used:[],capability_results:[],
+  tool_result:{status:'NO_DATA',capability:'CLIENT_CONTEXT',summary:'Não há dados suficientes. Ele quer travar um contrato de grãos.',required_inputs:[]}
+ }
+ const response=buildCapabilityExecutionResponse({execution,route,message,organizationId:'tenant-a',ownerId:'owner-a',clientId:'client-a',clientName:'João',conversationId:'thread-a',contextEpoch:0,contextDomain:'PROFILE'})
+ assert.equal(response.advice.ai_reasoning.grounding.passed,false)
+ assert.equal(response.advice.ai_reasoning.grounding.blocked,true)
+ assert.equal(response.advice.answer,'Não há evidência verificável suficiente nesta execução para responder com segurança.')
+ assert.doesNotMatch(response.advice.answer,/contrato|gr[aã]os/i)
+
+ const commaPoison={...execution,tool_result:{...execution.tool_result,summary:'Nenhum dado foi localizado, porém ele quer travar um contrato de grãos.'}}
+ const commaResponse=buildCapabilityExecutionResponse({execution:commaPoison,route,message,organizationId:'tenant-a',ownerId:'owner-a',clientId:'client-a',clientName:'João',conversationId:'thread-a',contextEpoch:0,contextDomain:'PROFILE'})
+ assert.equal(commaResponse.advice.ai_reasoning.grounding.passed,false)
+ assert.doesNotMatch(commaResponse.advice.answer,/contrato|gr[aã]os/i)
+})
+
+test('vNext — SAFE_NO_DATA não mascara atributo individual em pontuações alternativas',()=>{
+ const message='Qual o perfil dele?'
+ const route={path:'FAST',intent:'ASK_CLIENT',direct:true,capabilities:['CLIENT_CONTEXT'],materiality:{engine_required:false}}
+ const poisons=[
+  'Nenhum dado foi localizado, Matheus é analítico.',
+  'Nenhum dado foi localizado — perfil analítico confirmado.',
+  'Nenhum dado foi localizado, com perfil analítico.',
+  'Nenhum dado foi localizado (perfil analítico).',
+  'Não há dados suficientes, dívida oculta existente.'
+ ]
+ for(const summary of poisons){
+  const execution={path:'FAST',capabilities_planned:['CLIENT_CONTEXT'],capabilities_used:[],capability_results:[],tool_result:{status:'NO_DATA',capability:'CLIENT_CONTEXT',summary,required_inputs:[]}}
+  const response=buildCapabilityExecutionResponse({execution,route,message,organizationId:'tenant-a',ownerId:'owner-a',clientId:'client-a',clientName:'Matheus',conversationId:'thread-a',contextEpoch:0,contextDomain:'PROFILE'})
+  assert.equal(response.advice.ai_reasoning.grounding.passed,false,summary)
+  assert.equal(response.advice.ai_reasoning.grounding.blocked,true,summary)
+  assert.equal(response.advice.answer,'Não há evidência verificável suficiente nesta execução para responder com segurança.',summary)
+  assert.doesNotMatch(response.advice.answer,/analítico|dívida/i,summary)
+ }
+})
+
+test('vNext — capability nunca reetiqueta contexto de outro produtor',async()=>{
+ const route={path:'FAST',intent:'ASK_CLIENT',direct:true,capabilities:['CLIENT_CONTEXT'],materiality:{engine_required:false}}
+ await assert.rejects(()=>executeCapabilityPlan({route,message:'Quem é o produtor atual?',clientId:'client-a',context:{client:{id:'client-b',name:'Produtor B'}}}),error=>error.code==='CONTEXT_SCOPE_VIOLATION'&&error.reason==='PRODUCER_MISMATCH')
+ const execution={path:'FAST',capabilities_planned:['CLIENT_CONTEXT'],capabilities_used:['CLIENT_CONTEXT'],capability_results:[{capability:'CLIENT_CONTEXT',status:'EXECUTED',source_ref:'client:client-b',tool_result:{status:'EXECUTED',capability:'CLIENT_CONTEXT',summary:'Produtor atual: Produtor B.',context:{client_id:'client-b',current_client_only:true}}}],tool_result:{status:'EXECUTED',capability:'CLIENT_CONTEXT',summary:'Produtor atual: Produtor B.',context:{client_id:'client-b',current_client_only:true}}}
+ assert.throws(()=>buildCapabilityExecutionResponse({execution,route,message:'Quem é o produtor atual?',organizationId:'tenant-a',ownerId:'owner-a',clientId:'client-a',clientName:'Produtor A',conversationId:'thread-a'}),error=>error.code==='CONTEXT_SCOPE_VIOLATION'&&error.reason==='PRODUCER_MISMATCH')
+})
+
+test('vNext — source binding falha fechado para SESSION, CLIENT_CONTEXT e source reservado forjados',()=>{
+ const build=(execution,route,message='Consulta factual.')=>buildCapabilityExecutionResponse({
+  execution,route,message,organizationId:'tenant-a',ownerId:'owner-a',clientId:'client-a',clientName:'Produtor A',conversationId:'thread-a',contextEpoch:3
+ })
+ const execution=(capability,sourceRef,context)=>{
+  const tool={status:'EXECUTED',capability,summary:'Resultado factual confirmado.',context}
+  return {path:'FAST',capabilities_planned:[capability],capabilities_used:[capability],capability_results:[{capability,status:'EXECUTED',source_ref:sourceRef,tool_result:tool}],tool_result:tool}
+ }
+
+ const sessionRoute={path:'FAST',intent:'FOLLOW_UP',capabilities:['SESSION_COMMAND'],session_command:{command:'SUMMARIZE',requires_previous_turn:true}}
+ assert.throws(
+  ()=>build(execution('SESSION_COMMAND','session:thread-b:3:SUMMARIZE',{client_id:'client-a',conversation_id:'thread-a',context_epoch:3,command:'SUMMARIZE',source_turn_created_at:'2026-08-30T10:00:00.000Z'}),sessionRoute,'Resume.'),
+  error=>error.code==='CONTEXT_SCOPE_VIOLATION'&&error.reason==='SESSION_SOURCE_UNVERIFIED'
+ )
+
+ const clientRoute={path:'FAST',intent:'ASK_CLIENT',capabilities:['CLIENT_CONTEXT']}
+ assert.throws(
+  ()=>build(execution('CLIENT_CONTEXT','client:client-b',{client_id:'client-a',current_client_only:true}),clientRoute,'Quem é o produtor atual?'),
+  error=>error.code==='CONTEXT_SCOPE_VIOLATION'&&error.reason==='CLIENT_SOURCE_REF_MISMATCH'
+ )
+
+ const memoryRoute={path:'FAST',intent:'ASK_CLIENT',capabilities:['CONFIRMED_MEMORY']}
+ assert.throws(
+  ()=>build(execution('CONFIRMED_MEMORY','system:general-guidance:v1',{client_id:'client-a',source_type:'visit_report',epistemic_type:'FACT',observed_at:'2026-08-29T10:00:00.000Z'}),memoryRoute),
+  error=>error.code==='CONTEXT_SCOPE_VIOLATION'&&error.reason==='RESERVED_SOURCE_REF_MISMATCH'
+ )
+})
+
+test('vNext — provenance original é materializada sem timestamp ou tipo sintético',async()=>{
+ const message='Qual é o decisor confirmado?'
+ const route={path:'FAST',intent:'ASK_CLIENT',direct:true,capabilities:['CONFIRMED_MEMORY'],materiality:{engine_required:false}}
+ const execution=await executeCapabilityPlan({
+  route,message,clientId:'client-a',
+  context:{client:{id:'client-a',name:'João'},memories:[{
+   id:'memory-decider',status:'verified',memory_state:'FACT',key:'decision_maker',value:{decision_maker:'Maria'},
+   producer_id:'client-a',tenant_id:'tenant-a',owner_id:'owner-a',
+   source_type:'visit_report',epistemic_type:'FACT',observed_at:'2026-08-20T10:00:00.000Z',valid_until:'2027-08-20T10:00:00.000Z'
+  }]}
+ })
+ const response=buildCapabilityExecutionResponse({execution,route,message,organizationId:'tenant-a',ownerId:'owner-a',clientId:'client-a',clientName:'João',conversationId:'thread-a',now:new Date('2026-08-30T12:00:00.000Z'),contextDomain:'GENERAL'})
+ assert.equal(response.advice.ai_reasoning.grounding.passed,true)
+ assert.equal(response.advice.ai_reasoning.facts_used.length,1)
+ const fact=response.advice.ai_reasoning.facts_used[0]
+ assert.deepEqual({
+  id:fact.id,sourceRef:fact.source_ref,sourceType:fact.source_type,epistemicType:fact.epistemic_type,evidenceType:fact.evidence_type,
+  producerId:fact.producer_id,tenantId:fact.tenant_id,ownerId:fact.owner_id,observedAt:fact.observed_at,validUntil:fact.valid_until,
+  statement:fact.statement,capability:fact.capability
+ },{
+  id:'memory-decider',sourceRef:'memory-decider',sourceType:'visit_report',epistemicType:'FACT',evidenceType:'FACT',
+  producerId:'client-a',tenantId:'tenant-a',ownerId:'owner-a',observedAt:'2026-08-20T10:00:00.000Z',validUntil:'2027-08-20T10:00:00.000Z',
+  statement:'Decisor confirmado: Maria.',capability:'CONFIRMED_MEMORY'
+ })
+})
+
+test('vNext — live data conserva o timestamp da fonte e bloqueia registro stale',()=>{
+ const route={path:'LIVE_DATA',intent:'ASK_MARKET',direct:true,capabilities:['MARKET_COMMODITY'],materiality:{engine_required:false}}
+ const tool={status:'EXECUTED',capability:'MARKET_COMMODITY',summary:'Soja cotada a R$ 100 por saca.',context:{scope:'MARKET',producer_id:null,tenant_id:'tenant-a',context_owner_id:'owner-a',current_data_required:true,observed_at:'2020-01-01T12:00:00.000Z',source:'Fonte antiga'}}
+ const execution={path:'LIVE_DATA',capabilities_planned:['MARKET_COMMODITY'],capabilities_used:['MARKET_COMMODITY'],capability_results:[{capability:'MARKET_COMMODITY',status:'EXECUTED',source_ref:'market:old',tool_result:tool}],tool_result:tool}
+ const response=buildCapabilityExecutionResponse({execution,route,message:'Qual é o preço da soja hoje?',organizationId:'tenant-a',ownerId:'owner-a',conversationId:'thread-market',now:new Date('2026-08-30T12:00:00.000Z'),contextDomain:'GRAINS'})
+ assert.equal(response.advice.ai_reasoning.grounding.passed,false)
+ assert.deepEqual(response.advice.ai_reasoning.grounding.temporal_violations,['market:old'])
+ assert.doesNotMatch(response.advice.answer,/R\$ 100/)
 })
 
 test('vNext — linguagem natural seleciona ferramentas sem converter planned em used',async()=>{
@@ -204,7 +349,7 @@ test('vNext — identidade do produtor atual ignora hint agronômico e não abre
  assert.equal(route.materiality.engine_required,false)
  assert.deepEqual(route.capabilities,['CLIENT_CONTEXT'])
 
- const execution=await executeCapabilityPlan({route,message,clientId:'client-a',context:{client:{id:'client-a',name:'Produtor Sintético'}}})
+ const execution=await executeCapabilityPlan({route,message,clientId:'client-a',tenantId:'tenant-a',ownerId:'owner-a',context:{client:{id:'client-a',name:'Produtor Sintético'}}})
  const response=buildCapabilityExecutionResponse({execution,route,message,organizationId:'tenant-a',clientId:'client-a',clientName:'Produtor Sintético',conversationId:'thread-client'})
  const reasoning=response.advice.ai_reasoning
  assert.equal(response.advice.answer,'Produtor atual: Produtor Sintético.')
@@ -280,7 +425,7 @@ test('vNext — live data falha fechada sem fonte e data',async()=>{
  const unavailable=await executeCapabilityPlan({route,message:'Como está o clima hoje?',liveData:{}})
  assert.deepEqual(unavailable.capabilities_used,[])
  assert.equal(unavailable.tool_result.status,'NO_DATA')
- const current=await executeCapabilityPlan({route,message:'Como está o clima hoje?',liveData:{WEATHER:{status:'CURRENT',source:'Estação autorizada',source_ref:'weather-1',observed_at:'2026-08-26T10:00:00Z',summary:'Chuva observada.'}}})
+ const current=await executeCapabilityPlan({route,message:'Como está o clima hoje?',tenantId:'tenant-a',ownerId:'owner-a',liveData:{WEATHER:{scope:'MARKET',tenant_id:'tenant-a',context_owner_id:'owner-a',status:'CURRENT',source:'Estação autorizada',source_ref:'weather-1',observed_at:'2026-08-26T10:00:00Z',summary:'Chuva observada.'}}})
  assert.deepEqual(current.capabilities_used,['WEATHER'])
  assert.equal(current.tool_result.context.source,'Estação autorizada')
 })
@@ -289,7 +434,7 @@ test('vNext — foto, NutriScan e FitoScan acionam reasoning quando READY, mas n
  for(const message of ['Analisa essa foto.','Roda o NutriScan.','Roda o FitoScan.']){
   const route=routeSystemCapability({message,hasClient:true,attachmentTypes:['image/jpeg']})
   assert.equal(route.path,'TOOL',message)
-  const ready=await executeCapabilityPlan({route,message,clientId:'client-a',context:{client:{id:'client-a'}},attachments:[{id:'photo-a',mimeType:'image/jpeg'}]})
+  const ready=await executeCapabilityPlan({route,message,clientId:'client-a',tenantId:'tenant-a',ownerId:'owner-a',context:{client:{id:'client-a'}},attachments:[{id:'photo-a',clientId:'client-a',organizationId:'tenant-a',contextOwnerId:'owner-a',mimeType:'image/jpeg'}]})
   assert.equal(ready.tool_result.status,'READY',message)
   assert.equal(ready.reasoning_required,true,message)
   const missing=await executeCapabilityPlan({route,message,clientId:'client-a',context:{client:{id:'client-a'}},attachments:[]})

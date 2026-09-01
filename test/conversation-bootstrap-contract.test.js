@@ -49,9 +49,12 @@ test('barreira de especificidade mantém fatos e segurança determinísticos',()
   assert.match(specificity,/doubleCountingGuardFor/)
 })
 
-test('fio ativo encontra produtos em conversas anteriores intermediadas',()=>{
+test('fio ativo só usa recomendação anterior com referência e escopo comprovados',()=>{
   assert.match(thread,/activeAnchor/)
-  assert.match(thread,/const continuation=/)
+  assert.match(thread,/selectScopedPriorRecommendations/)
+  assert.match(thread,/conversationReferenceKind\(message\)!=='TURN_CONTENT'/)
+  assert.match(thread,/scope\.domain==='PROFILE'/)
+  assert.match(thread,/tenant_id.*owner_id.*producer_id/s)
   assert.match(thread,/Contexto técnico-comercial ativo das conversas anteriores/)
   assert.match(thread,/Continue a sequência técnica e comercial já iniciada/)
 })

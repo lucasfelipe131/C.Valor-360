@@ -1,3 +1,5 @@
+import {assertCompletedAssistantTurnScope} from './full-screen-conversation.js'
+
 const clean=(value,max=3000)=>String(value??'').replace(/[\r\n\t]+/g,' ').replace(/\s+/g,' ').trim().slice(0,Math.max(0,Number.isFinite(Number(max))?Number(max):3000))
 const fold=value=>clean(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR').replace(/[.!?]+$/g,'').trim()
 
@@ -46,29 +48,43 @@ export function naturalCommandMatchesClient(command,client){
  return current===expected||current.startsWith(`${expected} `)||expected.startsWith(`${current} `)
 }
 
-const settledResponseActions=new Set(['SUMMARIZE','REPEAT','GOLDEN_QUESTIONS_ONLY','OUTPUT_AUDIO'])
-export const naturalCommandNeedsSettledResponse=command=>Boolean(command?.local&&settledResponseActions.has(command.action))
+const settledResponseActions=new Set(['SUMMARIZE','REPEAT','GOLDEN_QUESTIONS_ONLY','OUTPUT_AUDIO','DEEPEN','EXPLAIN','SHOW_NUMBERS','EXPLAIN_WHY'])
+export const naturalCommandNeedsSettledResponse=command=>Boolean(settledResponseActions.has(command?.action))
 
-const reasoningOf=payload=>payload?.advice?.ai_reasoning||{}
-const answerOf=payload=>{
- const reasoning=reasoningOf(payload)
- return clean(reasoning.recommended_strategy?.reading||payload?.advice?.answer||'')
+const monotonicNow=()=>globalThis.performance?.now?.()??Date.now()
+const responseId=()=>globalThis.crypto?.randomUUID?.()||`fast-${Date.now()}-${Math.random().toString(36).slice(2)}`
+const fastIntent=action=>({SUMMARIZE:'FOLLOW_UP_RESUME',REPEAT:'FOLLOW_UP_REPEAT',GOLDEN_QUESTIONS_ONLY:'FOLLOW_UP_GOLDEN_QUESTIONS'}[action]||`FOLLOW_UP_${clean(action,80)}`)
+const cleanMultiline=(value,max=3000)=>String(value??'').replace(/[\r\t]+/g,' ').split('\n').map(line=>line.replace(/\s+/g,' ').trim()).filter(Boolean).join('\n').slice(0,max)
+
+function directFastTurn(command,text,scope={},source=null){
+ const at=monotonicNow()
+ const answer=cleanMultiline(text,3000)
+ if(!Number.isSafeInteger(scope.contextEpoch)||scope.contextEpoch<0)throw Object.assign(new Error('O follow-up não possui contextEpoch exato.'),{code:'val_follow_up_scope_mismatch',scopeField:'contextEpoch',reason:'invalid'})
+ return {
+  role:'assistant_text',mode:'FAST',status:'completed',serverGrounded:true,grounding:'DERIVED_FROM_SERVER_GROUNDED',command:command.action,intent:fastIntent(command.action),
+  answer,text:answer,responseId:responseId(),producerId:clean(scope.producerId,180)||null,
+  conversationId:clean(scope.conversationId,180)||null,contextEpoch:scope.contextEpoch,
+  goldenQuestions:Array.isArray(source?.goldenQuestions)?source.goldenQuestions.slice(0,3):[],sourceResponseId:clean(source?.responseId,180)||null,
+  persistence:'NONE',trace:{CLIENT_INPUT:at,CLIENT_SEND:at,CLIENT_RESPONSE_RECEIVED:monotonicNow(),STORE_UPDATED:null,RENDER_COMMITTED:null}
+ }
 }
 
-export function localNaturalCommandTurn(command,payload){
+const completedSource=(source,scope)=>assertCompletedAssistantTurnScope(source?.role?source:{role:'assistant',status:'completed',serverGrounded:source?.serverGrounded===true,grounding:source?.grounding,payload:source},scope)
+
+export function localNaturalCommandTurn(command,source,scope={}){
  if(!command?.local)return null
- const reasoning=reasoningOf(payload)
- const questions=Array.isArray(reasoning.golden_questions)?reasoning.golden_questions.slice(0,3):[]
+ const settled=naturalCommandNeedsSettledResponse(command)?completedSource(source,scope):null
+ const questions=Array.isArray(settled?.goldenQuestions)?settled.goldenQuestions.slice(0,3):[]
  if(command.action==='SUMMARIZE'){
-  const reading=answerOf(payload)
+  const reading=settled.text
   const firstSentence=reading.match(/^.*?[.!?](?:\s|$)/)?.[0]?.trim()||reading
-  return {role:'system',command:command.action,text:clean(firstSentence,500)||'Ainda não há uma resposta da VAL para resumir.',persistence:'NONE'}
+  return directFastTurn(command,clean(firstSentence,500),settled,settled)
  }
- if(command.action==='GOLDEN_QUESTIONS_ONLY')return {role:'system',command:command.action,text:questions.length?questions.map((item,index)=>`${index+1}. ${clean(item?.question||item)}`).join('\n'):'A leitura atual não gerou Perguntas de Ouro.',persistence:'NONE'}
- if(command.action==='REPEAT')return payload?{role:'assistant',command:command.action,payload,persistence:'NONE'}:{role:'system',command:command.action,text:'Ainda não há uma resposta da VAL para repetir.',persistence:'NONE'}
+ if(command.action==='GOLDEN_QUESTIONS_ONLY')return directFastTurn(command,questions.length?questions.map((item,index)=>`${index+1}. ${clean(item?.question||item)}`).join('\n'):'A leitura atual não gerou Perguntas de Ouro.',settled,settled)
+ if(command.action==='REPEAT')return directFastTurn(command,settled.text,settled,settled)
+ if(command.action==='OUTPUT_AUDIO')return directFastTurn(command,settled.text,settled,settled)
  const messages={
   OUTPUT_TEXT:'Certo. A partir de agora respondo por escrito.',
-  OUTPUT_AUDIO:'Certo. A partir de agora respondo por áudio.',
   OUTPUT_BOTH:'Certo. A partir de agora respondo em texto e áudio.',
   OPEN_REGISTER:command.candidate?`Tenho esta informação para revisar: “${clean(command.candidate)}”. Nada será registrado sem sua confirmação.`:'Vou abrir a revisão. Nada será registrado sem sua confirmação.',
   KEEP_SESSION_ONLY:'Certo. Esta informação fica somente nesta conversa.',
