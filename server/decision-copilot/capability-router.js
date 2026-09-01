@@ -230,6 +230,7 @@ export function classifyStructuredClientFact(message=''){
  if(/\s+e\s+(?:o\s+que|como|por\s+que|qual|quais|quando|onde|se|devo|deveria|posso|poderia|abra|mostre|prepare|calcule|analise|registre)\b/.test(source))return null
  const owner='(?:\\s+(?:dele|dela)|\\s+(?:do|da)\\s+[a-z][a-z0-9 \'-]{0,120})?'
  if(new RegExp(`^(?:e\\s+)?(?:(?:qual|como)\\s+(?:e\\s+)?(?:o\\s+)?perfil${owner}|(?:mostre|mostra|me\\s+mostre)\\s+(?:o\\s+)?perfil${owner})$`).test(source))return 'BEHAVIORAL_PROFILE'
+ if(/^(?:e\s+)?como\s+(?:eu\s+)?devo\s+abordar\s+(?:ele|ela|o\s+produtor|a\s+produtora)$/.test(source))return 'BEHAVIORAL_PROFILE'
  if(new RegExp(`^(?:e\\s+)?(?:qual\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?)?objecao\\s+(?:da|na)\\s+(?:ultima|mais recente)\\s+visita${owner}$`).test(source))return 'LATEST_VISIT_CONFIRMED_OBJECTION'
  if(new RegExp(`^(?:e\\s+)?(?:qual\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?)?(?:(?:ultima|mais recente)\\s+objecao\\s+confirmada|objecao\\s+confirmada\\s+(?:mais recente|ultima))${owner}$`).test(source))return 'LATEST_CONFIRMED_OBJECTION'
  const patterns=[

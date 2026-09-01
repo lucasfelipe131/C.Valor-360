@@ -300,6 +300,19 @@ test('HTTP A-G e fast follow-up encerram antes do contexto completo e do modelo'
   assert.match(profileWhy.payload.advice.answer,/Perfil principal: Analítico/i)
   assert.doesNotMatch(profileWhy.payload.advice.answer,/fertiliz|CPF|contrato de grãos|travamento/i)
 
+  const profileApproach=await turn('Como devo abordar ele?','', 'thread-profile-matheus')
+  assertFast(profileApproach)
+  assert.equal(profileApproach.payload.responseMetadata.dataPath,'BEHAVIORAL_PROFILE')
+  assert.equal(profileApproach.payload.conversationState.current_domain,'PROFILE')
+  assert.equal(profileApproach.payload.advice.ai_reasoning.grounding.passed,true)
+  assert.match(profileApproach.payload.advice.answer,/Perfil principal: Analítico/i)
+  const publicProfileApproach={
+   answer:profileApproach.payload.advice.answer,
+   facts_used:profileApproach.payload.advice.ai_reasoning.facts_used,
+   context_trace:profileApproach.payload.advice.ai_reasoning.context_trace,
+  }
+  assert.doesNotMatch(JSON.stringify(publicProfileApproach),/fertiliz|CPF|contrato de grãos|PRIORIDADE|OPORTUNIDADE|produto|preço|margem|negociação/i)
+
   const profileSummary=await turn('Resume.','', 'thread-profile-matheus')
   assertFast(profileSummary)
   assert.equal(profileSummary.payload.advice.ai_reasoning.grounding.passed,true)

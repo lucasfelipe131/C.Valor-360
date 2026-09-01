@@ -160,6 +160,7 @@ test('CTX-011 Cross-producer poison é bloqueado antes do modelo',()=>{
 
 test('CTX-012 Cross-domain poison e resposta não fundamentada são rejeitados',()=>{
  assert.equal(classifyStructuredClientFact('qual o perfil dele?'),'BEHAVIORAL_PROFILE')
+ assert.equal(classifyValContextDomain('Como devo abordar ele?'),'PROFILE')
  const route=routeSystemCapability({message:'qual o perfil dele?',hasClient:true})
  assert.equal(route.path,'FAST')
  assert.equal(route.data_path,'BEHAVIORAL_PROFILE')

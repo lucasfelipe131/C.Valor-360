@@ -58,6 +58,7 @@ test('vNext — comandos naturais ficam na sessão e preservam confirmação hum
  const profileWithForgedSummary=routeValIntent({message:'qual o perfil dele?',sessionCommandHint:'SUMMARIZE',hasClient:true})
  assert.equal(profileWithForgedSummary.session_command,null)
  assert.equal(routeSystemCapability({message:'qual o perfil dele?',sessionCommandHint:'SUMMARIZE',hasClient:true}).data_path,'BEHAVIORAL_PROFILE')
+ assert.equal(routeSystemCapability({message:'Como devo abordar ele?',hasClient:true}).data_path,'BEHAVIORAL_PROFILE')
 })
 
 test('vNext — EXPLAIN reutiliza tese, fatos e resposta da sessão sem contexto completo ou modelo',async()=>{

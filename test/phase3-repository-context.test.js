@@ -92,6 +92,35 @@ test('recomendação persiste ContextSnapshot de primeira classe e mantém input
   assert.equal(JSON.parse(insertion.params[9]).contextSnapshot.context_snapshot_id,context.contextSnapshot.context_snapshot_id)
 })
 
+test('recomendação PROFILE converte confiança canônica 0..1 para o inteiro PostgreSQL 0..100',async()=>{
+  const calls=[]
+  const query=async(sql,params=[])=>{
+    calls.push({sql,params})
+    if(sql.startsWith('SELECT id,external_key FROM clients'))return {rowCount:1,rows:[{id:'00000000-0000-4000-8000-000000000211',external_key:'client-ext'}]}
+    if(sql.includes('INSERT INTO val_recommendations')&&!Number.isInteger(params[12])){
+      throw Object.assign(new Error('invalid input syntax for type integer'),{code:'22P02'})
+    }
+    return {rowCount:1,rows:[]}
+  }
+  const repository=repositoryWith({configured:true,transaction:work=>work({query})})
+  await repository.recordRecommendation({
+    tenantId:tenantA,ownerId:actor,clientId:'client-ext',question:'Como devo abordar ele?',mode:'daily',model:'rules-v4',
+    context:{},advice:{confidence:{level:'alta',score:.8},human_review:{required:false}}
+  })
+  const insertion=calls.find(call=>call.sql.includes('INSERT INTO val_recommendations'))
+  assert.equal(insertion.params[12],80)
+})
+
+test('recomendação rejeita confiança fora de 0..100 antes de escrever',async()=>{
+  let transactions=0
+  const repository=repositoryWith({configured:true,transaction:async()=>{transactions+=1}})
+  await assert.rejects(()=>repository.recordRecommendation({
+    tenantId:tenantA,ownerId:actor,question:'Como devo abordar ele?',mode:'daily',model:'rules-v4',
+    context:{},advice:{confidence:{score:101},human_review:{required:false}}
+  }),error=>error.code==='recommendation_confidence_invalid'&&error.statusCode===500)
+  assert.equal(transactions,0)
+})
+
 test('persistência e leitura de snapshot bloqueiam tenant ou ator diferente',async()=>{
   const repository=repositoryWith({configured:true,query:async(sql,params)=>({rowCount:params[0]===tenantA&&params[1]===actor?1:0,rows:params[0]===tenantA&&params[1]===actor?[{snapshot_payload:{context_snapshot_id:'snapshot-own'}}]:[]})})
   assert.deepEqual(await repository.getContextSnapshot({tenantId:tenantA,ownerId:actor,id:'snapshot-own'}),{context_snapshot_id:'snapshot-own'})

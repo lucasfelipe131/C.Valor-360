@@ -113,6 +113,7 @@ test('recomendação e model_run serializam arrays e detalhes de erro explicitam
   assert.deepEqual(JSON.parse(recommendation.params[9]),{signals:[]})
   assert.deepEqual(JSON.parse(recommendation.params[10]),['signal-1'])
   assert.equal(JSON.parse(recommendation.params[11]).confidence.score,60)
+  assert.equal(recommendation.params[12],60)
   assert.deepEqual(JSON.parse(modelRun.params[10]),{causes:['timeout']})
 })
 

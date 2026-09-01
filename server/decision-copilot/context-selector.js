@@ -11,7 +11,7 @@ const normalize=value=>clean(value).normalize('NFD').replace(/[\u0300-\u036f]/g,
 const safeJson=value=>{try{return JSON.stringify(value??'')}catch{return String(value??'')}}
 
 const domainPatterns=Object.freeze({
- PROFILE:/\b(?:perfi(?:l|s)|comportament\w*|analitic\w*|relacional|inovador|conservador|digital|como (?:ele|ela|o produtor|a produtora) decide|como abordar (?:ele|ela))\b/,
+ PROFILE:/\b(?:perfi(?:l|s)|comportament\w*|analitic\w*|relacional|inovador|conservador|digital|como (?:ele|ela|o produtor|a produtora) decide|como (?:devo )?abordar (?:ele|ela))\b/,
  GRAINS:/\b(?:graos?|soja|milho|trigo|sorgo|cevada|commodity|commodities|contrato (?:de|dos?) graos?|trava(?:mento|r)?|fixa(?:cao|r)|saca|basis)\b/,
  CREDIT:/\b(?:credito|financeir\w*|cpf|limite|score|inadimpl\w*|financiamento|prazo de pagamento)\b/,
  GEO:/\b(?:geo|mapa|mapeamento|geometria|poligono|coordenad\w*|talhao|area desenhada)\b/,

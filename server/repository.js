@@ -122,6 +122,14 @@ const parseDate=(value,fallback)=>parsedDate(value)||parsedDate(fallback)
 const outcome=value=>/perd|cancel|recus|desist/i.test(String(value||''))?'lost':/ganh|fech|conclu|fatur|vend|aprov/i.test(String(value||''))?'won':/abert|andament|negocia|propost|pendente|\bopen\b/i.test(String(value||''))?'open':null
 const serviceError=message=>Object.assign(new Error(message),{statusCode:503})
 const domainError=(message,statusCode,code)=>Object.assign(new Error(message),{statusCode,...(code?{code}:{})})
+const recommendationConfidence=value=>{
+  if(value===undefined||value===null||value==='')return null
+  const score=Number(value)
+  if(!Number.isFinite(score)||score<0||score>100)throw domainError('A confiança da recomendação está fora do contrato.',500,'recommendation_confidence_invalid')
+  // AI reasoning uses 0..1, while the PostgreSQL compatibility column stores
+  // an integer percentage. Legacy 0..100 scores keep their original scale.
+  return Math.round(score<=1?score*100:score)
+}
 const persistenceCancellationError=signal=>signal?.reason instanceof Error
   ?signal.reason
   :Object.assign(new Error('A persistência foi cancelada antes do commit.'),{name:'AbortError',statusCode:499,code:'val_persistence_cancelled',safeToRetry:true})
@@ -1611,6 +1619,7 @@ export class ValRepository{
     const persistence=recommendationPersistencePayload(record)
     const persistedContext=persistence.context
     const persistedAdvice=persistence.advice
+    const persistedConfidence=recommendationConfidence(persistedAdvice?.confidence?.score)
     const snapshot=persistedContext?.contextSnapshot
     if(snapshot&&String(snapshot.organization_id)!==String(tenantId))throw domainError('O ContextSnapshot pertence a outra organização.',403,'cross_tenant_context_snapshot_denied')
     if(this.db.configured){
@@ -1633,7 +1642,7 @@ export class ValRepository{
             throwIfPersistenceCancelled(record.signal)
           }
           await connection.query(`INSERT INTO val_recommendations (id,tenant_id,consultant_id,client_id,client_external_key,user_question,mode,model_version,prompt_version,input_context,source_ids,generated_content,confidence,status,context_snapshot_id,context_snapshot_version,created_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())`,[id,tenantId,record.ownerId,clientId,clientExternalKey,record.question,record.mode,record.model,record.promptHash||null,jsonbParameter(persistedContext),jsonbParameter(sourceIds),jsonbParameter(persistedAdvice),persistedAdvice?.confidence?.score??null,recommendationStatus,snapshot?.context_snapshot_id||null,snapshot?.contract_version||null])
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())`,[id,tenantId,record.ownerId,clientId,clientExternalKey,record.question,record.mode,record.model,record.promptHash||null,jsonbParameter(persistedContext),jsonbParameter(sourceIds),jsonbParameter(persistedAdvice),persistedConfidence,recommendationStatus,snapshot?.context_snapshot_id||null,snapshot?.contract_version||null])
           throwIfPersistenceCancelled(record.signal)
           if(record.modelRun){const run=record.modelRun;await connection.query(`INSERT INTO model_runs (id,tenant_id,recommendation_id,model,prompt_version,latency_ms,input_tokens,output_tokens,status,error_code,error_details,provider_response_id,provider_request_id,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,[randomUUID(),tenantId,id,run.model,run.promptVersion||null,run.latencyMs||null,run.inputTokens||null,run.outputTokens||null,run.status,run.errorCode||null,jsonbParameter(run.errorDetails),run.responseId||null,run.requestId||null])}
           throwIfPersistenceCancelled(record.signal)
