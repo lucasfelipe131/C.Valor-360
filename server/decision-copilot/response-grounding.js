@@ -206,7 +206,7 @@ const pureGapVocabulary=new Set([
  'disponivel','disponiveis','entrada','entradas','encontrada','encontrado','escopo','especifica','especificas','estruturado','estruturados','evidencia','evidencias','execucao',
  'fato','fatos','fonte','fontes','insuficiente','insuficientes','localizada','localizado','material','materiais','nenhuma','nenhum','numerico','numericos','objecao','perfil',
  'ligada','ligadas','possui','principal','produtor','produtora','propriedade','referencia','registro','registros','registrada','registrado','responder','resposta','safra','seguranca','selecionada','selecionado',
- 'sessao','suficiente','suficientes','sustentar','total','verificavel','verificaveis','vinculada','vinculado','visita','comportamental','confianca','determinada','validar'
+ 'sessao','suficiente','suficientes','sustentar','total','verificavel','verificaveis','vinculada','vinculado','visita','comportamental','confianca','determinada','validar','oportunidade'
 ])
 const pureGapFunctionWords=new Set(['a','ao','aos','as','com','da','das','de','do','dos','e','em','esta','este','foi','ha','na','nao','nas','nem','nesta','neste','no','nos','o','os','ou','para','por','que','sem','uma','um','ainda','preciso','faltam','falta','como'])
 
@@ -270,6 +270,7 @@ function isPureInsufficiencyClaim(value='',question='',domain='GENERAL'){
   /^ainda nao ha visita concluida registrada(?: com referencia auditavel)?$/,
   /^ainda nao ha objecao confirmada(?: na ultima visita concluida)? registrada(?: com referencia auditavel)?$/,
   /^ainda nao ha compromisso registrado(?: com referencia auditavel)?$/,
+  /^ainda nao ha oportunidade registrada(?: com referencia auditavel)?$/,
   /^ainda nao ha compra concluida registrada(?: com referencia auditavel)?$/,
   /^ainda nao ha cultura ou safra registrada$/,
   /^ainda nao ha area total cadastrada$/

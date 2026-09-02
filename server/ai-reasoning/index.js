@@ -313,11 +313,23 @@ export function reasoningGroundingBlocks(result={}){
  return Object.fromEntries(Object.entries(blocks).filter(([,value])=>clean(value)))
 }
 
+// response-grounding.js's isPureInsufficiencyClaim only accepts a closed, pre-approved
+// list of exact "no data" sentences (see closedPatterns there) — free-form text about what
+// is missing gets rejected as an ungrounded FACT claim, which is what made this fallback a
+// single generic sentence for every domain. Several domain-specific sentences already exist
+// in that closed list (visit, commitment, purchase, crop/season) but were never used here;
+// this only selects among them by domain instead of always falling back to the generic one.
+const groundingFallbackReadingByDomain={
+ VISIT:'Ainda não há visita concluída registrada.',
+ OPPORTUNITY:'Ainda não há oportunidade registrada.',
+ COMMERCIAL:'Ainda não há compromisso registrado.'
+}
+
 function applyGroundingFallback(result,context,domain){
  const profile=domain==='PROFILE'
  const reading=profile
   ?'Não há evidência comportamental atual e auditável suficiente para determinar o perfil comportamental.'
-  :'Não há evidência selecionada suficiente para afirmar uma resposta específica com segurança.'
+  :groundingFallbackReadingByDomain[domain]||'Não há evidência selecionada suficiente para afirmar uma resposta específica com segurança.'
  result.objective='Confirme a fonte antes de continuar.'
  result.situation_summary=reading
  result.decision_thesis={
