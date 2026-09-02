@@ -647,7 +647,10 @@ async function handleApi(request,response,url){
     const direct=buildCapabilityExecutionResponse({execution,route:capability,message,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),executionCounts:{entityResolutions:entityLookupCount,dataLookups:0,toolCalls:1,hops:entityLookupCount+1}})
     return json(response,200,complete(direct,execution))
    }
-   const general=await buildGeneralNoClientResponse({message,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:voiceOpenAI,aiModel:config.modelFast})
+   const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
+   const general=await buildGeneralNoClientResponse({message,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast})
+   const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
+   if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})
    return json(response,200,complete(general))
   }
   const clientCapability=routeSystemCapability({message,intentHint:routedIntent.intent,sessionCommandHint:routedIntent.session_command?.command||'',hasClient:true,attachmentTypes:requestedAttachmentTypes,activeContext})

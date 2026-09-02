@@ -2,7 +2,7 @@ import {randomUUID} from 'node:crypto'
 import {generateTemporaryPassword,hashPassword,normalizeEmail,validEmail,validPassword,verifyPassword} from './auth.js'
 
 const roles=new Set(['admin','manager','consultant','technical_reviewer'])
-const usageTypes=new Set(['login','page_view','client_updated','memory_saved','visit_saved','visit_report_created','visit_report_confirmed','visit_outcome_recorded','opportunity_saved','val_analysis','val_feedback','val_attachment_uploaded','val_attachment_interpreted','val_attachment_confirmed','val_attachment_stored','val_attachment_rejected','voice_interaction_created','voice_audio_uploaded','voice_interaction_processed','voice_interaction_confirmed','voice_interaction_cancelled','realtime_voice_session_created','realtime_voice_fallback','manual_sync','survey_created','survey_integrated','commercial_import'])
+const usageTypes=new Set(['login','page_view','client_updated','memory_saved','visit_saved','visit_report_created','visit_report_confirmed','visit_outcome_recorded','opportunity_saved','val_analysis','val_feedback','val_attachment_uploaded','val_attachment_interpreted','val_attachment_confirmed','val_attachment_stored','val_attachment_rejected','voice_interaction_created','voice_audio_uploaded','voice_interaction_processed','voice_interaction_confirmed','voice_interaction_cancelled','realtime_voice_session_created','realtime_voice_fallback','manual_sync','survey_created','survey_integrated','commercial_import','ai_general_knowledge_usage'])
 const domainError=(message,statusCode=400)=>Object.assign(new Error(message),{statusCode})
 const safeName=value=>String(value||'').trim().replace(/\s+/g,' ').slice(0,120)
 const accountFromRow=(row,tenantId)=>({
@@ -98,6 +98,20 @@ export class AccessRepository{
     const entityId=String(input.entityId||'').trim().slice(0,180)||null
     const metadata=input.metadata&&typeof input.metadata==='object'&&!Array.isArray(input.metadata)?input.metadata:{}
     try{await this.db.query(`INSERT INTO usage_events (tenant_id,user_id,event_type,page,entity_type,entity_id,metadata,occurred_at) VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())`,[this.tenantId,userId,eventType,page,entityType,entityId,JSON.stringify(metadata)]);return true}catch{return false}
+  }
+
+  // Teto de custo do fallback de IA não verificada (conhecimento geral sem fonte na
+  // Knowledge Library), reiniciado a cada novo login — não é um teto por tenant nem
+  // vitalício, é o gasto acumulado desde o último login registrado deste usuário.
+  async checkAiGeneralKnowledgeBudget(actor,{budgetUsd=5}={}){
+    const userId=typeof actor==='string'?actor:actor?.id
+    if(!this.db.configured||!/^[0-9a-f-]{36}$/i.test(String(userId||'')))return {allowed:true,spentUsd:0,remainingUsd:budgetUsd}
+    const result=await this.db.query(`SELECT COALESCE(SUM((event.metadata->>'costUsd')::numeric),0)::float8 spent_usd
+      FROM usage_events event JOIN users user_record ON user_record.id=event.user_id
+      WHERE event.tenant_id=$1 AND event.user_id=$2 AND event.event_type='ai_general_knowledge_usage'
+        AND event.occurred_at>=COALESCE(user_record.last_login_at,'epoch'::timestamptz)`,[this.tenantId,userId])
+    const spentUsd=Number(result.rows[0]?.spent_usd||0)
+    return {allowed:spentUsd<budgetUsd,spentUsd,remainingUsd:Math.max(0,budgetUsd-spentUsd)}
   }
 
   async getAdminMetrics(actor,requestedDays=30){

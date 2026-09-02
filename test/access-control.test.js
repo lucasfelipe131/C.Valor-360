@@ -94,3 +94,42 @@ test('painel de métricas é exclusivo do administrador e consolida por tenant',
  assert.equal(calls.length,4)
  assert.ok(calls.every(call=>call.params[0]===tenantId))
 })
+
+test('teto de conhecimento geral de IA reinicia por login e bloqueia acima de US$ 5',async()=>{
+ const tenantId='00000000-0000-4000-8000-000000000001'
+ const actor={id:'00000000-0000-4000-8000-000000000010',role:'consultant'}
+ let spentUsd=0
+ const calls=[]
+ const db={configured:true,query:async(sql,params)=>{
+  calls.push({sql,params})
+  return {rows:[{spent_usd:spentUsd}]}
+ }}
+ const repository=new AccessRepository({db,tenantId,runtimeConfig:{}})
+ const fresh=await repository.checkAiGeneralKnowledgeBudget(actor)
+ assert.equal(fresh.allowed,true)
+ assert.equal(fresh.remainingUsd,5)
+ assert.match(calls[0].sql,/event_type='ai_general_knowledge_usage'/)
+ assert.match(calls[0].sql,/occurred_at>=COALESCE\(user_record\.last_login_at/)
+ assert.deepEqual(calls[0].params,[tenantId,actor.id])
+
+ spentUsd=4.999999
+ const almostExhausted=await repository.checkAiGeneralKnowledgeBudget(actor)
+ assert.equal(almostExhausted.allowed,true)
+ assert.ok(almostExhausted.remainingUsd>0)
+
+ spentUsd=5
+ const exhausted=await repository.checkAiGeneralKnowledgeBudget(actor)
+ assert.equal(exhausted.allowed,false)
+ assert.equal(exhausted.remainingUsd,0)
+
+ spentUsd=7.5
+ const overBudget=await repository.checkAiGeneralKnowledgeBudget(actor)
+ assert.equal(overBudget.allowed,false)
+ assert.equal(overBudget.remainingUsd,0)
+
+ const noDb=new AccessRepository({db:{configured:false},tenantId,runtimeConfig:{}})
+ const disabled=await noDb.checkAiGeneralKnowledgeBudget(actor)
+ assert.equal(disabled.allowed,true)
+
+ assert.equal(await repository.recordUsage(actor,{eventType:'ai_general_knowledge_usage',page:'val',metadata:{costUsd:0.0004,model:'gpt-5.6-luna'}}),true)
+})

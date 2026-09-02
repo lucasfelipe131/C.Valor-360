@@ -628,19 +628,32 @@ const highStakesGeneralRequest=/\b(?:(?:qual|quais|quanto|quantos|calcule|indiqu
 const aiUnverifiedRefusalSentinel='PRECISA_FONTE'
 const aiUnverifiedSourceRef='system:ai-general-knowledge:v1'
 
+// Estimativa conservadora para o tier "fast" (config.modelFast) — não há tabela de preço
+// real para os modelos internos deste projeto, então isto é propositalmente uma estimativa
+// documentada (padrão de tier econômico), suficiente para o teto de orçamento por login
+// funcionar como trava de segurança, não como faturamento exato.
+const aiGeneralKnowledgePricePerMillionInputTokensUsd=.15
+const aiGeneralKnowledgePricePerMillionOutputTokensUsd=.6
+const estimateAiGeneralKnowledgeCostUsd=usage=>{
+ const inputTokens=Number(usage?.input_tokens)||0
+ const outputTokens=Number(usage?.output_tokens)||0
+ return Number((inputTokens*aiGeneralKnowledgePricePerMillionInputTokensUsd/1_000_000+outputTokens*aiGeneralKnowledgePricePerMillionOutputTokensUsd/1_000_000).toFixed(8))
+}
+
 async function unverifiedModelKnowledgeAnswer({message='',aiClient=null,model=''}={}){
- if(!aiClient||!model)return ''
- if(highStakesGeneralRequest.test(String(message||'')))return ''
+ if(!aiClient||!model)return {text:'',costUsd:0}
+ if(highStakesGeneralRequest.test(String(message||'')))return {text:'',costUsd:0}
  const instructions='Você responde SOMENTE com conhecimento geral, amplamente estabelecido e atemporal, em português do Brasil, em no máximo 3 frases curtas.\n'+
   'Nunca informe: preço ou cotação atual, previsão do tempo, dose ou produto específico, recomendação técnica prescritiva, ou qualquer dado que dependeria do contexto de um produtor específico.\n'+
   'Se a pergunta pedir qualquer coisa dessas, ou depender de dado atual, responda apenas com a palavra '+aiUnverifiedRefusalSentinel+', sem mais nada.'
  let response
  try{
   response=await aiClient.responses.create({model,instructions,input:[{role:'user',content:clean(message,2000)}],max_output_tokens:400,text:{format:{type:'text'}}})
- }catch{return ''}
+ }catch{return {text:'',costUsd:0}}
+ const costUsd=estimateAiGeneralKnowledgeCostUsd(response?.usage)
  const text=clean(response?.output_text,1200)
- if(!text||text.toUpperCase().includes(aiUnverifiedRefusalSentinel))return ''
- return text
+ if(!text||text.toUpperCase().includes(aiUnverifiedRefusalSentinel))return {text:'',costUsd}
+ return {text,costUsd}
 }
 
 // Consulta a Knowledge Library governada (server/knowledge) antes de recorrer ao texto
@@ -810,9 +823,11 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  // modelo sem fonte; perguntas de alto risco continuam bloqueadas dentro de
  // unverifiedModelKnowledgeAnswer independentemente do motivo do bloqueio aqui.
  if(catalog||contextRequired||curatedResponse.advice.ai_reasoning.grounding?.blocked!==true)return curatedResponse
- const aiAnswer=await unverifiedModelKnowledgeAnswer({message,aiClient,model:aiModel})
+ const {text:aiAnswer,costUsd:aiCostUsd}=await unverifiedModelKnowledgeAnswer({message,aiClient,model:aiModel})
  if(!aiAnswer)return curatedResponse
  const aiToolResult={status:'EXECUTED',capability:'AI_GENERAL_KNOWLEDGE',tool:'ai_general_knowledge',title:'Conhecimento geral do modelo (não verificado)',summary:aiAnswer,page:'copilot',manual_page:null,mode:'general_unverified',context:{client_id:null,private_memory_used:false}}
  const aiExecution=deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['AI_GENERAL_KNOWLEDGE'],capability_results:[{capability:'AI_GENERAL_KNOWLEDGE',status:'EXECUTED',source_ref:aiUnverifiedSourceRef,tool_result:aiToolResult}],tool_result:aiToolResult,active_context:null})
- return finalize(aiExecution,{unverified:true})
+ const aiResponse=finalize(aiExecution,{unverified:true})
+ aiResponse.responseMetadata={...aiResponse.responseMetadata,aiGeneralKnowledgeCostUsd:aiCostUsd}
+ return aiResponse
 }
