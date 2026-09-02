@@ -449,5 +449,71 @@
     "geography": "Brazil",
     "domain": "agronomic_decision",
     "notes": "Regional field study (Amazônia Mato-Grossense, off-season corn); measured ammonia volatilization loss magnitude is condition-specific (soil, climate, timing) and must not be generalized as a fixed percentage."
+  },
+  {
+    "source_id": "SRC-042",
+    "title": "Boas práticas para o enfrentamento da ferrugem-asiática da soja",
+    "publisher": "Embrapa Soja (Godoy, C.V.; Seixas, C.D.S.; Soares, R.M.; Meyer, M.C.; Costamilan, L.M.; Adegas, F.S.)",
+    "year": 2017,
+    "url": "https://www.embrapa.br/en/busca-de-publicacoes/-/publicacao/1074899/boas-praticas-para-o-enfrentamento-da-ferrugem-asiatica-da-soja",
+    "authority": "A",
+    "geography": "Brazil",
+    "domain": "agronomic_decision",
+    "notes": "Sanitary break, early cultivars and multi-site fungicide rotation as core management practices; loss magnitude (up to 90%) is a without-control ceiling, not an expected outcome."
+  },
+  {
+    "source_id": "SRC-043",
+    "title": "Manejo Integrado de Pragas da Soja (MIP-Soja)",
+    "publisher": "Embrapa Soja",
+    "year": null,
+    "url": "https://www.embrapa.br/en/busca-de-solucoes-tecnologicas/-/produto-servico/6039/manejo-integrado-de-pragas-da-soja---mip-soja",
+    "authority": "B",
+    "geography": "Brazil",
+    "domain": "agronomic_decision",
+    "notes": "Technology/solution page describing the MIP-Soja approach and stink-bug action-level reference (cloth-beating sampling); exact numeric thresholds should be confirmed against the current technical circular before use in a specific case."
+  },
+  {
+    "source_id": "SRC-044",
+    "title": "Manejo do mofo branco",
+    "publisher": "Embrapa Arroz e Feijão (Lobo Junior, M.; Santos, P.F.)",
+    "year": 2013,
+    "url": "https://www.embrapa.br/en/busca-de-publicacoes/-/publicacao/963194/manejo-do-mofo-branco",
+    "authority": "A",
+    "geography": "Brazil",
+    "domain": "agronomic_decision",
+    "notes": "Integrated management (rotation, no-till straw cover, biological control, fungicides) reduces incidence; the disease is not eliminated by any single practice."
+  },
+  {
+    "source_id": "SRC-045",
+    "title": "Efeito da população de plantas e do espaçamento sobre a produtividade de milho",
+    "publisher": "Revista Brasileira de Milho e Sorgo / Embrapa Milho e Sorgo (Dourado Neto, D. et al.)",
+    "year": 2003,
+    "url": "https://www.embrapa.br/en/busca-de-publicacoes/-/publicacao/487473/efeito-da-populacao-de-plantas-e-do-espacamento-sobre-a-produtividade-de-milho",
+    "authority": "A",
+    "geography": "Brazil",
+    "domain": "agronomic_decision",
+    "notes": "Yield response to plant population and row spacing depends on hybrid leaf architecture; findings come from field trials with three genotypes, not a universal rule across all hybrids/regions."
+  },
+  {
+    "source_id": "SRC-046",
+    "title": "Zoneamento Agrícola de Risco Climático (ZARC)",
+    "publisher": "Embrapa / MAPA (Monteiro, J.E.B.A. et al.)",
+    "year": 2021,
+    "url": "https://www.embrapa.br/en/busca-de-publicacoes/-/publicacao/1136438/zoneamento-agricola-de-risco-climatico-zarc",
+    "authority": "A",
+    "geography": "Brazil",
+    "domain": "agronomic_decision",
+    "notes": "ZARC defines lower-agroclimatic-risk planting windows by municipality/crop and underpins eligibility for rural credit and agricultural insurance; consult the official MAPA panel for the current-season window."
+  },
+  {
+    "source_id": "SRC-047",
+    "title": "Armazenamento inadequado de grãos resulta em cerca de 15% de perdas",
+    "publisher": "Embrapa (notícia)",
+    "year": 2015,
+    "url": "https://www.embrapa.br/en/busca-de-noticias/-/noticia/3860638/armazenamento-inadequado-de-graos-resulta-em-cerca-de-15-de-perdas",
+    "authority": "B",
+    "geography": "Brazil",
+    "domain": "agronomic_decision",
+    "notes": "News item citing internal Embrapa estimates; loss magnitude is an approximation, not a precise universal figure, and varies by storage structure and management."
   }
 ]

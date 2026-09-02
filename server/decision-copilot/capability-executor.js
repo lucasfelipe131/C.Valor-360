@@ -631,13 +631,19 @@ function governedGeneralAnswer(message){
 // Reconhece perguntas conceituais gen\u00e9ricas (agronomia, comercial, etc.) pelo formato
 // da pergunta, n\u00e3o por uma lista fixa de termos \u2014 sem isso, qualquer conceito fora de
 // ctc/ph/margem/roi/custo-ha ca\u00eda no bloqueio "selecione um produtor", mesmo sem
-// nenhuma refer\u00eancia a um produtor, cliente ou dado espec\u00edfico.
+// nenhuma refer\u00eancia a um produtor, cliente ou dado espec\u00edfico. Uma lista fechada de
+// frases de abertura ("o que \u00e9", "explique"...) vira ca\u00e7a a fantasma a cada nova forma de
+// perguntar ("qual o...", "por que..."); em vez disso, qualquer pergunta sem refer\u00eancia a um
+// produtor/cliente/dado espec\u00edfico \u00e9 tratada como geral. Isso nunca exp\u00f5e dado privado: o
+// caminho geral (generalAnswer/governedGeneralAnswer) nunca consulta base de produtor, e o
+// grounding a jusante continua exigindo evid\u00eancia real para qualquer afirma\u00e7\u00e3o factual.
 function isGeneralConceptRequest(message=''){
- const source=String(message).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\s+/g,' ').trim()
- const contextual=/\b(?:deste|desse|dessa|daquele|daquela|atual|selecionad[oa]|produtor|cliente|conta|oportunidade|visita|talhao|propriedade|laudo|analise)\b/.test(source)
+ const original=String(message).replace(/\s+/g,' ').trim()
+ const source=original.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+ const contextual=/\b(?:deste|desse|dessa|desta|daquele|daquela|daquilo|atual|selecionad[oa]|produtor|cliente|conta|oportunidade|visita|talhao|propriedade|laudo|analise|fazenda|dele|dela)\b/.test(source)
  if(contextual)return false
- const genericLeadIn=/^(?:o que (?:e|significa)|explique|defina|me explic[ae]|me fal[ae] sobre|me conta sobre|resumo sobre|resuma|como (?:se )?funciona|como (?:se )?calcula(?:r)?|para que serve|pra que serve|qual (?:e )?a importancia|qual (?:e )?a diferenc[ae] (?:entre|de)|quais (?:sao )?(?:as diferencas entre|os tipos de)|(?:eu )?(?:quero|queria|gostaria de|preciso) (?:saber|entender|aprender)(?: mais)? sobre)\b/
- return genericLeadIn.test(source)
+ const questionShape=/^(?:o que|que|qual|quais|como|por\s*que|quando|quanto|quantos|quantas|quem|onde|explique|defina|resuma|me\s+(?:explic[ae]|fal[ae]|conta)|(?:eu\s+)?(?:quero|queria|gostaria\s+de|preciso)\s+(?:saber|entender|aprender))\b/.test(source)
+ return questionShape||/\?\s*$/.test(original)
 }
 
 function isPureAbsenceOrInputSummary(value=''){
