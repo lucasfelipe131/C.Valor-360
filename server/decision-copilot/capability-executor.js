@@ -597,6 +597,11 @@ export async function executeCapabilityPlan(options={}){
  return execution
 }
 
+// Texto exposto quando nada na Biblioteca de Conhecimento cobre a pergunta. Extraida como
+// constante para buildGeneralNoClientResponse detectar com seguranca quando deve tentar o
+// fallback de conhecimento geral do modelo, sem duplicar a string em dois lugares.
+const noKnowledgeCoverageStub='Posso tratar esta dúvida sem selecionar um produtor e sem consultar memória privada. Informe a cultura, o conceito ou a decisão geral que deseja entender; dados atuais e recomendações técnicas continuam exigindo fonte, contexto e revisão.'
+
 function generalAnswer(message=''){
  const source=String(message).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
  if(isCurrentClientIdentityRequest(source))return 'Nenhum produtor está selecionado nesta conversa.'
@@ -607,7 +612,35 @@ function generalAnswer(message=''){
  if(/\bph\b/.test(source))return 'O pH indica a acidez ou alcalinidade do solo e influencia disponibilidade de nutrientes e manejo de correção. A interpretação prática depende do método, da camada, da cultura e das demais medições do laudo.'
  const governed=governedGeneralAnswer(message)
  if(governed)return governed
- return 'Posso tratar esta dúvida sem selecionar um produtor e sem consultar memória privada. Informe a cultura, o conceito ou a decisão geral que deseja entender; dados atuais e recomendações técnicas continuam exigindo fonte, contexto e revisão.'
+ return noKnowledgeCoverageStub
+}
+
+// Bloqueia o fallback de IA nao verificada para qualquer pergunta com cheiro de decisao
+// prescritiva ou de dado vivo: dose/produto/defensivo (mesmo padrao de explicitAgronomyRequest
+// em val-engine.js), credito/financiamento especifico, ou cotacao/clima/hoje/agora. Essas
+// classes de pergunta continuam exigindo fonte real e responsavel tecnico; conhecimento geral
+// do modelo nunca deve preencher essa lacuna.
+const highStakesGeneralRequest=/\b(?:(?:qual|quais|quanto|quantos|calcule|indique|recomende|prescreva|monte|fa[cç]a|devo|posso|como)\b.{0,80}\b(?:dose|dosagem|mistura|produto|defensivo|fungicida|herbicida|inseticida|aduba[cç][aã]o|calagem|receita agron[oô]mica|diagn[oó]stico)\b|(?:aplique|misture|prescreva|diagnostique)\b|\b(?:financiamento|emprestimo|empr[eé]stimo|credito|cr[eé]dito|taxa de juros|parcelamento)\b.{0,40}\b(?:aprovar|aprovacao|liberar|liminar|contratar|contrata[cç][aã]o|limite)\b|\b(?:cota[cç][aã]o|preco atual|pre[cç]o atual|clima atual|previsao do tempo|previs[aã]o do tempo|quanto est[aá]|quanto esta)\b|\bhoje\b|\bagora\b)/i
+
+// Ultima camada antes de deixar o modelo responder sem fonte: alem do bloqueio lexico acima,
+// a propria instrucao ao modelo pede que ele recuse (sentinela PRECISA_FONTE) qualquer pergunta
+// que dependa de dado atual, especifico do produtor, ou de uma decisao tecnica prescritiva.
+const aiUnverifiedRefusalSentinel='PRECISA_FONTE'
+const aiUnverifiedSourceRef='system:ai-general-knowledge:v1'
+
+async function unverifiedModelKnowledgeAnswer({message='',aiClient=null,model=''}={}){
+ if(!aiClient||!model)return ''
+ if(highStakesGeneralRequest.test(String(message||'')))return ''
+ const instructions='Você responde SOMENTE com conhecimento geral, amplamente estabelecido e atemporal, em português do Brasil, em no máximo 3 frases curtas.\n'+
+  'Nunca informe: preço ou cotação atual, previsão do tempo, dose ou produto específico, recomendação técnica prescritiva, ou qualquer dado que dependeria do contexto de um produtor específico.\n'+
+  'Se a pergunta pedir qualquer coisa dessas, ou depender de dado atual, responda apenas com a palavra '+aiUnverifiedRefusalSentinel+', sem mais nada.'
+ let response
+ try{
+  response=await aiClient.responses.create({model,instructions,input:[{role:'user',content:clean(message,2000)}],max_output_tokens:400,text:{format:{type:'text'}}})
+ }catch{return ''}
+ const text=clean(response?.output_text,1200)
+ if(!text||text.toUpperCase().includes(aiUnverifiedRefusalSentinel))return ''
+ return text
 }
 
 // Consulta a Knowledge Library governada (server/knowledge) antes de recorrer ao texto
@@ -673,7 +706,7 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
   const live=['MARKET_COMMODITY','WEATHER','LABELS'].includes(capability)
   const globalSource=explicitlyGlobalContext(context)
   const globalOrigin=globalSource?validateGlobalLiveScope({...context,source_ref:item.source_ref},{tenantId:clean(organizationId,180),ownerId:clean(ownerId,180)},`response_${capability.toLowerCase()}`):null
-  const sourceType=live?'market_snapshot':capability==='AGRONOMIC_WORKSPACE'?'official_product_catalog':capability==='SESSION_COMMAND'?'conversation_turn':capability==='CLIENT_CONTEXT'?'client_registration':capability==='CONFIRMED_MEMORY'?clean(context.source_type,120).toLowerCase()||'confirmed_memory':capability==='COMMERCIAL_HISTORY'?'commitment':capability==='SOIL_ANALYSIS'?'soil_analysis':['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?'attachment_analysis':capability==='AREA_MAPPING'?'context_snapshot':capability==='CALCULATORS'?'calculation':'system_capability'
+  const sourceType=live?'market_snapshot':capability==='AGRONOMIC_WORKSPACE'?'official_product_catalog':capability==='SESSION_COMMAND'?'conversation_turn':capability==='CLIENT_CONTEXT'?'client_registration':capability==='CONFIRMED_MEMORY'?clean(context.source_type,120).toLowerCase()||'confirmed_memory':capability==='COMMERCIAL_HISTORY'?'commitment':capability==='SOIL_ANALYSIS'?'soil_analysis':['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?'attachment_analysis':capability==='AREA_MAPPING'?'context_snapshot':capability==='CALCULATORS'?'calculation':capability==='AI_GENERAL_KNOWLEDGE'?'model_general_knowledge':'system_capability'
   const sourceEpistemic=capability==='SESSION_COMMAND'?'INFERENCE':capability==='CONFIRMED_MEMORY'?clean(context.epistemic_type,40).toUpperCase()||'FACT':['SOIL_ANALYSIS','IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?'OBSERVATION':'FACT'
   const sourceObservedAt=capability==='SESSION_COMMAND'?context.source_turn_created_at:live?context.observed_at:capability==='CONFIRMED_MEMORY'||capability==='COMMERCIAL_HISTORY'?context.observed_at:capability==='SOIL_ANALYSIS'?item.tool_result?.facts?.sampled_at:['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?item.tool_result?.facts?.result_created_at:createdAt
   const sourceValidUntil=context.valid_until??null
@@ -743,24 +776,43 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  return {route:route?.path||execution?.path||'TOOL',engineMode:'rules',model:'rules-capability-executor-v1',warning:'',responseMetadata:{toolExecutionVersion:capabilityExecutorVersion,executionBudget},advice:{answer,executive_brief:{headline:blocked?'Resposta bloqueada por grounding':tool?.title||'Capacidade da VAL',reason:answer,action:reasoning.recommended_strategy.action},next_best_action:reasoning.recommended_strategy.action,ai_reasoning:reasoning}}
 }
 
-export function buildGeneralNoClientResponse({message='',route={},organizationId='unknown',ownerId='',conversationId='',contextEpoch=0,contextDomain='',now=new Date()}={}){
+export async function buildGeneralNoClientResponse({message='',route={},organizationId='unknown',ownerId='',conversationId='',contextEpoch=0,contextDomain='',now=new Date(),aiClient=null,aiModel=''}={}){
  const catalog=route?.tool_hint==='AGRONOMIC_TOOL_CATALOG'&&list(route.capabilities).includes('AGRONOMIC_WORKSPACE')
  const contextRequired=!catalog&&route?.client_context_required===true&&!isGeneralConceptRequest(message)
  const catalogExecution=catalog?agronomicToolCatalogResult():null
- const summary=catalog
+ const curatedSummary=catalog
   ?catalogExecution.tool_result.summary
   :contextRequired
    ?isCurrentClientIdentityRequest(message)?'Nenhum produtor está selecionado nesta conversa.':'Nenhum produtor está selecionado nesta conversa. Selecione um produtor autorizado para continuar.'
    :generalAnswer(message)
- const execution=deepFreeze(catalog
+ const curatedExecution=deepFreeze(catalog
   ?{path:route.path,capabilities_planned:[...list(route.capabilities)],capabilities_used:['AGRONOMIC_WORKSPACE'],capability_results:[catalogExecution],tool_result:catalogExecution.tool_result,active_context:null}
   :contextRequired
-   ?{path:route.path,capabilities_planned:[...list(route.capabilities)],capabilities_used:[],capability_results:[{capability:'CLIENT_CONTEXT',status:'CONTEXT_REQUIRED',source_ref:null,tool_result:null},...list(route.capabilities).filter(capability=>capability!=='CLIENT_CONTEXT').map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null}))],tool_result:{status:'CONTEXT_REQUIRED',capability:'CLIENT_CONTEXT',tool:'client_selector',title:'Produtor necessário',summary,page:'clients',manual_page:null,mode:'select_client',context:{client_id:null,private_memory_used:false},required_inputs:['client_id']},active_context:null}
-  :{path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'EXECUTED',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:'Orientação geral',summary,page:'copilot',manual_page:null,mode:'general',context:{client_id:null,private_memory_used:false}},active_context:null})
- trustedCapabilityExecutions.add(execution)
- const response=buildCapabilityExecutionResponse({execution,route,message,organizationId,ownerId,conversationId,contextEpoch,contextDomain,now,executionCounts:{entityResolutions:0,dataLookups:0,toolCalls:catalog?1:0,hops:catalog?1:0}})
- response.advice.ai_reasoning.client={id:'portfolio',name:'Conversa geral'}
- response.advice.ai_reasoning.premises.profile_specific=false
- response.advice.ai_reasoning.premises.source=contextRequired?'client_context_required':'general_request_without_private_context'
- return response
+   ?{path:route.path,capabilities_planned:[...list(route.capabilities)],capabilities_used:[],capability_results:[{capability:'CLIENT_CONTEXT',status:'CONTEXT_REQUIRED',source_ref:null,tool_result:null},...list(route.capabilities).filter(capability=>capability!=='CLIENT_CONTEXT').map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null}))],tool_result:{status:'CONTEXT_REQUIRED',capability:'CLIENT_CONTEXT',tool:'client_selector',title:'Produtor necessário',summary:curatedSummary,page:'clients',manual_page:null,mode:'select_client',context:{client_id:null,private_memory_used:false},required_inputs:['client_id']},active_context:null}
+   :{path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'EXECUTED',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:'Orientação geral',summary:curatedSummary,page:'copilot',manual_page:null,mode:'general',context:{client_id:null,private_memory_used:false}},active_context:null})
+ const finalize=(execution,{unverified=false}={})=>{
+  trustedCapabilityExecutions.add(execution)
+  const built=buildCapabilityExecutionResponse({execution,route,message,organizationId,ownerId,conversationId,contextEpoch,contextDomain,now,executionCounts:{entityResolutions:0,dataLookups:0,toolCalls:catalog?1:0,hops:catalog?1:0}})
+  built.advice.ai_reasoning.client={id:'portfolio',name:'Conversa geral'}
+  built.advice.ai_reasoning.premises.profile_specific=false
+  built.advice.ai_reasoning.premises.source=contextRequired?'client_context_required':unverified?'ai_general_knowledge_unverified':'general_request_without_private_context'
+  if(unverified&&!built.advice.ai_reasoning.grounding?.blocked){
+   built.advice.ai_reasoning.confidence={level:'NAO_VERIFICADO',score:null,rationale:'Resposta de conhecimento geral do modelo, sem fonte na Biblioteca de Conhecimento; não passou por verificação de evidência ou revisão humana.'}
+   built.advice.ai_reasoning.evidence_status='UNVERIFIED_MODEL_KNOWLEDGE'
+  }
+  return built
+ }
+ const curatedResponse=finalize(curatedExecution)
+ // A Knowledge Library quase sempre devolve algum item (o retriever não tem piso de
+ // relevância), então "nada encontrado" raramente chega como stub puro — na prática, o
+ // sinal real de "esta pergunta não tem cobertura real" é o próprio grounding bloqueando
+ // a resposta a jusante (item errado, sem overlap real com a pergunta). Só aí tentamos o
+ // modelo sem fonte; perguntas de alto risco continuam bloqueadas dentro de
+ // unverifiedModelKnowledgeAnswer independentemente do motivo do bloqueio aqui.
+ if(catalog||contextRequired||curatedResponse.advice.ai_reasoning.grounding?.blocked!==true)return curatedResponse
+ const aiAnswer=await unverifiedModelKnowledgeAnswer({message,aiClient,model:aiModel})
+ if(!aiAnswer)return curatedResponse
+ const aiToolResult={status:'EXECUTED',capability:'AI_GENERAL_KNOWLEDGE',tool:'ai_general_knowledge',title:'Conhecimento geral do modelo (não verificado)',summary:aiAnswer,page:'copilot',manual_page:null,mode:'general_unverified',context:{client_id:null,private_memory_used:false}}
+ const aiExecution=deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['AI_GENERAL_KNOWLEDGE'],capability_results:[{capability:'AI_GENERAL_KNOWLEDGE',status:'EXECUTED',source_ref:aiUnverifiedSourceRef,tool_result:aiToolResult}],tool_result:aiToolResult,active_context:null})
+ return finalize(aiExecution,{unverified:true})
 }

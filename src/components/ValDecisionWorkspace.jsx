@@ -32,7 +32,7 @@ const componentLabels={
 }
 
 const priorityLabels={imediata:'Agir agora',esta_semana:'Fazer nesta semana',acompanhar:'Acompanhar',sem_acao:'Sem ação comercial',alta:'Fazer nesta semana','média':'Acompanhar',media:'Acompanhar',qualificar:'Qualificar primeiro'}
-const confidenceLabels={high:'Alta',moderate:'Moderada',low:'Baixa',insufficient:'Insuficiente',not_calibrated:'Em calibração','alta':'Alta','média':'Moderada',media:'Moderada','baixa':'Baixa'}
+const confidenceLabels={high:'Alta',moderate:'Moderada',low:'Baixa',insufficient:'Insuficiente',not_calibrated:'Em calibração','alta':'Alta','média':'Moderada',media:'Moderada','baixa':'Baixa',nao_verificado:'Não verificado'}
 
 const array=value=>Array.isArray(value)?value:[]
 const text=(value,fallback='')=>String(value??fallback).replace(/\s+/g,' ').trim()

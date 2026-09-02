@@ -305,7 +305,7 @@ test('vNext — catálogo agronômico responde com ou sem produtor pelo FAST det
  assert.equal(route.materiality.engine_required,false)
  assert.deepEqual(route.capabilities,['AGRONOMIC_WORKSPACE'])
 
- const response=buildGeneralNoClientResponse({message,route,organizationId:'tenant-a',conversationId:'thread-catalog'})
+ const response=await buildGeneralNoClientResponse({message,route,organizationId:'tenant-a',conversationId:'thread-catalog'})
  const reasoning=response.advice.ai_reasoning
  assert.match(response.advice.answer,/mapeamento de áreas/i)
  assert.match(response.advice.answer,/NutriScan e FitoScan/)
@@ -364,7 +364,7 @@ test('vNext — identidade do produtor atual ignora hint agronômico e não abre
  assert.equal(withoutAuthorizedClient.intent,'ASK_CLIENT')
  const noClientRoute=routeSystemCapability({message,intentHint:'ASK_AGRONOMIC',hasClient:false})
  assert.equal(noClientRoute.path,'FAST')
- const noClientResponse=buildGeneralNoClientResponse({message,route:noClientRoute,organizationId:'tenant-a',conversationId:'thread-no-client'})
+ const noClientResponse=await buildGeneralNoClientResponse({message,route:noClientRoute,organizationId:'tenant-a',conversationId:'thread-no-client'})
  assert.equal(noClientResponse.advice.answer,'Nenhum produtor está selecionado nesta conversa.')
  assert.equal(noClientResponse.advice.ai_reasoning.decision_interview.status,'NOT_NEEDED')
  const missingExecution=await executeCapabilityPlan({route,message,clientId:'client-a',context:{}})
@@ -380,7 +380,7 @@ test('vNext — identidade do produtor atual ignora hint agronômico e não abre
  assert.deepEqual(compoundRoute.capabilities,['OPPORTUNITY_PIPELINE','COMMERCIAL_HISTORY'])
  const noClientCompoundRoute=routeSystemCapability({message:compound,intentHint:'ASK_AGRONOMIC',hasClient:false})
  assert.equal(noClientCompoundRoute.client_context_required,true)
- const noClientCompoundResponse=buildGeneralNoClientResponse({message:compound,route:noClientCompoundRoute,organizationId:'tenant-a',conversationId:'thread-no-client-opportunity'})
+ const noClientCompoundResponse=await buildGeneralNoClientResponse({message:compound,route:noClientCompoundRoute,organizationId:'tenant-a',conversationId:'thread-no-client-opportunity'})
  assert.match(noClientCompoundResponse.advice.answer,/Nenhum produtor está selecionado/)
  assert.match(noClientCompoundResponse.advice.answer,/Selecione um produtor autorizado/)
  assert.equal(noClientCompoundResponse.advice.ai_reasoning.run.tool_result.status,'CONTEXT_REQUIRED')
@@ -400,7 +400,7 @@ test('vNext — identidade do produtor atual ignora hint agronômico e não abre
  ]
  for(const [question,expected] of generalConcepts){
   const generalRoute=routeSystemCapability({message:question,intentHint:'ASK_AGRONOMIC',hasClient:false})
-  const generalResponse=buildGeneralNoClientResponse({message:question,route:generalRoute,organizationId:'tenant-a',conversationId:'thread-general-concept'})
+  const generalResponse=await buildGeneralNoClientResponse({message:question,route:generalRoute,organizationId:'tenant-a',conversationId:'thread-general-concept'})
   assert.match(generalResponse.advice.answer,expected,question)
   assert.notEqual(generalResponse.advice.ai_reasoning.run.tool_result.status,'CONTEXT_REQUIRED',question)
   assert.deepEqual(generalResponse.advice.ai_reasoning.run.capabilities_used,[],question)
@@ -409,7 +409,7 @@ test('vNext — identidade do produtor atual ignora hint agronômico e não abre
 
  const contextualCalculation='Como calcular custo/ha desta oportunidade?'
  const contextualCalculationRoute=routeSystemCapability({message:contextualCalculation,intentHint:'ASK_AGRONOMIC',hasClient:false})
- const contextualCalculationResponse=buildGeneralNoClientResponse({message:contextualCalculation,route:contextualCalculationRoute,organizationId:'tenant-a',conversationId:'thread-contextual-calculation'})
+ const contextualCalculationResponse=await buildGeneralNoClientResponse({message:contextualCalculation,route:contextualCalculationRoute,organizationId:'tenant-a',conversationId:'thread-contextual-calculation'})
  assert.equal(contextualCalculationResponse.advice.ai_reasoning.run.tool_result.status,'CONTEXT_REQUIRED')
 
  const clientAlias=routeSystemCapability({message:'Qual cliente está selecionado?',intentHint:'ASK_AGRONOMIC',hasClient:true})
@@ -441,4 +441,39 @@ test('vNext — foto, NutriScan e FitoScan acionam reasoning quando READY, mas n
   assert.equal(missing.tool_result.status,'INPUT_REQUIRED',message)
   assert.equal(missing.reasoning_required,false,message)
  }
+})
+
+test('vNext — fallback de IA sem fonte só responde conceito geral fora da Knowledge Library, nunca prescrição ou dado vivo',async()=>{
+ const mockAnswer=text=>({responses:{create:async()=>({output_text:text})}})
+ const generalRoute=routeSystemCapability({message:'O que é fotossíntese?',intentHint:'ASK_GENERAL',hasClient:false})
+ const withoutClient=await buildGeneralNoClientResponse({message:'O que é fotossíntese?',route:generalRoute,organizationId:'tenant-a',conversationId:'thread-ai-fallback-off',aiClient:null,aiModel:''})
+ assert.notEqual(withoutClient.advice.ai_reasoning.run.tool_result?.capability,'AI_GENERAL_KNOWLEDGE')
+ assert.equal(withoutClient.advice.ai_reasoning.evidence_status,undefined)
+
+ const relevantAnswer='A fotossíntese é o processo pelo qual plantas convertem luz solar, água e CO2 em glicose e oxigênio, usando clorofila nos cloroplastos da fotossíntese.'
+ const withClient=await buildGeneralNoClientResponse({message:'O que é fotossíntese?',route:generalRoute,organizationId:'tenant-a',conversationId:'thread-ai-fallback-on',aiClient:mockAnswer(relevantAnswer),aiModel:'gpt-5.6-luna'})
+ assert.equal(withClient.advice.ai_reasoning.run.tool_result?.capability,'AI_GENERAL_KNOWLEDGE')
+ assert.equal(withClient.advice.ai_reasoning.evidence_status,'UNVERIFIED_MODEL_KNOWLEDGE')
+ assert.equal(withClient.advice.ai_reasoning.confidence.level,'NAO_VERIFICADO')
+ assert.equal(withClient.advice.answer,relevantAnswer)
+
+ let dosageModelCalled=false
+ const dosageClient={responses:{create:async()=>{dosageModelCalled=true;return {output_text:'Isso nunca deveria ser dito.'}}}}
+ const dosageRoute=routeSystemCapability({message:'Qual dose de fungicida devo aplicar no milho?',intentHint:'ASK_GENERAL',hasClient:false})
+ const dosageResponse=await buildGeneralNoClientResponse({message:'Qual dose de fungicida devo aplicar no milho?',route:dosageRoute,organizationId:'tenant-a',conversationId:'thread-ai-fallback-dose',aiClient:dosageClient,aiModel:'gpt-5.6-luna'})
+ assert.equal(dosageModelCalled,false)
+ assert.notEqual(dosageResponse.advice.ai_reasoning.run.tool_result?.capability,'AI_GENERAL_KNOWLEDGE')
+
+ let liveDataModelCalled=false
+ const liveDataClient={responses:{create:async()=>{liveDataModelCalled=true;return {output_text:'Isso nunca deveria ser dito.'}}}}
+ const liveDataRoute=routeSystemCapability({message:'Qual a cotação atual da soja hoje?',intentHint:'ASK_GENERAL',hasClient:false})
+ await buildGeneralNoClientResponse({message:'Qual a cotação atual da soja hoje?',route:liveDataRoute,organizationId:'tenant-a',conversationId:'thread-ai-fallback-live',aiClient:liveDataClient,aiModel:'gpt-5.6-luna'})
+ assert.equal(liveDataModelCalled,false)
+
+ let coveredModelCalled=false
+ const coveredClient={responses:{create:async()=>{coveredModelCalled=true;return {output_text:'Isso nunca deveria ser dito.'}}}}
+ const coveredRoute=routeSystemCapability({message:'O que é CTC?',intentHint:'ASK_GENERAL',hasClient:false})
+ const coveredResponse=await buildGeneralNoClientResponse({message:'O que é CTC?',route:coveredRoute,organizationId:'tenant-a',conversationId:'thread-ai-fallback-covered',aiClient:coveredClient,aiModel:'gpt-5.6-luna'})
+ assert.equal(coveredModelCalled,false)
+ assert.match(coveredResponse.advice.answer,/CTC representa/)
 })

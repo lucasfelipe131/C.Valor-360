@@ -33,6 +33,7 @@ const sourceContracts=new Map([
  ['market_snapshot',sourceContract(['FACT','OBSERVATION'],{maxAgeMs:3*DAY_MS,validUntilMayExtend:false})],
  ['context_snapshot',sourceContract(['FACT'],{maxAgeMs:DAY_MS,validUntilMayExtend:false})],
  ['system_capability',sourceContract(['FACT'],{maxAgeMs:DAY_MS,validUntilMayExtend:false})],
+ ['model_general_knowledge',sourceContract(['FACT'],{staticSource:true})],
  ['calculation',sourceContract(['FACT'],{maxAgeMs:DAY_MS,validUntilMayExtend:false})],
  ['conversation_turn',sourceContract(['INFERENCE'],{maxAgeMs:180*DAY_MS,validUntilMayExtend:false})],
  ['business_event',sourceContract(['FACT','OBSERVATION'],{maxAgeMs:180*DAY_MS})],
@@ -73,7 +74,7 @@ const sourceContracts=new Map([
 // GLOBAL is an isolation marker, not a licence to relabel arbitrary producer
 // records.  Only sources whose semantics are genuinely non-individual may use
 // it; producer observations/quotes/intentions must always carry producer_id.
-const trustedGlobalSourceTypes=new Set(['general_knowledge','market_snapshot','official_product_catalog','system_capability','system_safety_policy'])
+const trustedGlobalSourceTypes=new Set(['general_knowledge','market_snapshot','official_product_catalog','system_capability','system_safety_policy','model_general_knowledge'])
 const globalScopeOf=item=>clean(item?.scope??item?.context_scope??item?.subject_type??item?.entity_type??item?.entityType,80).toUpperCase()
 const explicitlyGlobal=item=>['GLOBAL','MARKET','GENERAL_KNOWLEDGE'].includes(globalScopeOf(item))
 const processGuidanceDomains=Object.freeze({
@@ -429,6 +430,14 @@ function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}
  const conceptText=text.replace(/\bcusto por hectare\b/g,'custo unitario')
  if(sourceType==='official_product_catalog')return globalConceptAnchor.test(text)&&!implicitIndividualAttribute.test(conceptText)
  if(['general_knowledge','system_capability'].includes(sourceType))return globalConceptAnchor.test(text)&&!implicitIndividualAttribute.test(conceptText)
+ // model_general_knowledge é o fallback de IA não verificada (capability AI_GENERAL_KNOWLEDGE em
+ // capability-executor.js): resposta de conceito geral sem item correspondente na Knowledge
+ // Library, sem qualquer contexto de produtor injetado no prompt e já bloqueada a montante para
+ // perguntas prescritivas/dose/produto/dado vivo (highStakesGeneralRequest). Ao contrário de
+ // general_knowledge/system_capability, o vocabulário aqui é por definição imprevisível (qualquer
+ // conceito), então a lista fechada de âncoras não se aplica; a proteção contra atribuição
+ // individual acima (genericAssertion/hasNamedIndividualAssertion) continua valendo.
+ if(sourceType==='model_general_knowledge')return !implicitIndividualAttribute.test(conceptText)
  if(sourceType==='system_safety_policy')return deterministicSafetyPolicy.test(text)
  return false
 }

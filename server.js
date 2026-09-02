@@ -647,7 +647,7 @@ async function handleApi(request,response,url){
     const direct=buildCapabilityExecutionResponse({execution,route:capability,message,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),executionCounts:{entityResolutions:entityLookupCount,dataLookups:0,toolCalls:1,hops:entityLookupCount+1}})
     return json(response,200,complete(direct,execution))
    }
-   const general=buildGeneralNoClientResponse({message,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent)})
+   const general=await buildGeneralNoClientResponse({message,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:voiceOpenAI,aiModel:config.modelFast})
    return json(response,200,complete(general))
   }
   const clientCapability=routeSystemCapability({message,intentHint:routedIntent.intent,sessionCommandHint:routedIntent.session_command?.command||'',hasClient:true,attachmentTypes:requestedAttachmentTypes,activeContext})
