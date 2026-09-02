@@ -107,17 +107,16 @@ function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onRe
  const openScoped=target=>onOpenModule?.(scopedTarget(target))
  const openWithSources=target=>onOpenModule?.(scopedTarget(target,{sourceAttachments}))
  return <article className={`global-val-answer is-${density}`}>
-  {degraded&&<p className="global-val-degraded">Tenho pouca informação para te orientar com precisão.</p>}
   {isBehavioralProfile?<ProfileResponse reasoning={reasoning} answer={answer} facts={facts} outputMode={outputMode} audioNode={audioNode}/>:<>
-  <DecisionCard reasoning={reasoning} answer={answer} action={strategy.action} showText={outputMode!=='audio'} audioNode={audioNode}/>
+  <DecisionCard reasoning={reasoning} answer={answer} action={degraded?'':strategy.action} showText={outputMode!=='audio'} audioNode={audioNode}/>
   {toolResult?<GenericToolCard title={toolResult.title} summary={toolResult.summary} status={toolResult.status} onOpen={()=>openWithSources({page:toolResult.page||'agro',tool:toolResult.tool,manualPage:toolResult.manual_page,mode:toolResult.mode,context:toolResult.context})}/>:null}
-  {intent==='PREPARE_VISIT'&&<PrepareVisitCard reasoning={reasoning} questions={questions} onOpen={openScoped}/>}
-  {toolResult?.status!=='CATALOG'&&['ASK_AGRONOMIC','ANALYZE_SOIL'].includes(intent)&&<AgronomicInsightCard reasoning={reasoning} onOpen={openScoped}/>}
-  {intent==='IMAGE_DIAGNOSIS'&&<DiagnosisCard reasoning={reasoning} onOpen={openWithSources}/>}
-  {intent==='CHECK_OPPORTUNITY'&&<OpportunityCard reasoning={reasoning} onOpen={openScoped}/>}
-  {['ASK_MARKET','ASK_COMMODITY','CHECK_MARKET','CHECK_WEATHER','CHECK_LABEL'].includes(intent)&&<MarketCard reasoning={reasoning} onOpen={openScoped}/>}
-  {intent==='CALCULATE'&&<CalculationCard reasoning={reasoning} onOpen={openScoped}/>}
-  {['FOLLOW_UP_HELP','POST_VISIT'].includes(intent)&&<CommitmentCard reasoning={reasoning} onOpen={openScoped}/>}
+  {!degraded&&intent==='PREPARE_VISIT'&&<PrepareVisitCard reasoning={reasoning} questions={questions} onOpen={openScoped}/>}
+  {!degraded&&toolResult?.status!=='CATALOG'&&['ASK_AGRONOMIC','ANALYZE_SOIL'].includes(intent)&&<AgronomicInsightCard reasoning={reasoning} onOpen={openScoped}/>}
+  {!degraded&&intent==='IMAGE_DIAGNOSIS'&&<DiagnosisCard reasoning={reasoning} onOpen={openWithSources}/>}
+  {!degraded&&intent==='CHECK_OPPORTUNITY'&&<OpportunityCard reasoning={reasoning} onOpen={openScoped}/>}
+  {!degraded&&['ASK_MARKET','ASK_COMMODITY','CHECK_MARKET','CHECK_WEATHER','CHECK_LABEL'].includes(intent)&&<MarketCard reasoning={reasoning} onOpen={openScoped}/>}
+  {!degraded&&intent==='CALCULATE'&&<CalculationCard reasoning={reasoning} onOpen={openScoped}/>}
+  {!degraded&&['FOLLOW_UP_HELP','POST_VISIT'].includes(intent)&&<CommitmentCard reasoning={reasoning} onOpen={openScoped}/>}
   <DecisionInterviewCard interview={reasoning.decision_interview} onReply={question=>onReply?.({...question,intent:reasoning.intent,objective:reasoning.objective,commodity:reasoning.commercial_context?.commodity||reasoning.premises?.current_data?.source?.commodity||'',season:reasoning.commercial_context?.season||''},responseScope)} onRegister={()=>onRegister?.(responseScope)}/>
   {intent!=='PREPARE_VISIT'&&questions.length>0&&<section className="global-val-questions"><small>PERGUNTAS QUE MUDAM A DECISÃO</small>{questions.map((item,index)=><div key={`${item.question}-${index}`}><b>{item.question}</b>{item.reason&&<span>{item.reason}</span>}</div>)}</section>}
   {density==='analytical'&&<div className="val-inline-evidence-grid"><EvidenceCard facts={facts} onOpen={()=>onOpenEvidence?.(responseScope)}/><KnowledgeCard items={knowledge}/></div>}
