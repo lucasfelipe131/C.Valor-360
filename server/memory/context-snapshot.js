@@ -195,9 +195,11 @@ function resolveActiveEntity(context,input,{subjectId,organizationId,actorId}={}
   const raw=input.activeEntity??input.active_entity??input.activeObject??input.active_object
   if(raw==null)return null
   if(!plainObject(raw))throw Object.assign(new Error('A entidade ativa do contexto não é válida.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'ACTIVE_ENTITY_INVALID'})
-  const aliases={analysis:'soil_analysis',visit_draft:'visit'}
+  const aliases={analysis:'soil_analysis'}
   const type=aliases[text(raw.type).toLowerCase()]||text(raw.type).toLowerCase()
   const id=text(raw.id)
+  // Rascunho de visita ainda não existe no banco: o id é rótulo de tela, não chave de autorização, e não restringe o contexto do produtor.
+  if(type==='visit_draft')return {type,id:id||'rascunho',ids:new Set([id||'rascunho']),record:null}
   if(!type||!id)throw Object.assign(new Error('A entidade ativa precisa de tipo e identificador.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'ACTIVE_ENTITY_INVALID'})
   if(type==='client'){
     const allowed=new Set([subjectId,...entityIds(context?.client)].filter(Boolean))
@@ -234,7 +236,7 @@ function resolveActiveEntity(context,input,{subjectId,organizationId,actorId}={}
 }
 
 function memoryMatchesActiveEntity(record,activeEntity){
- if(!activeEntity||['client','agronomic_tool'].includes(activeEntity.type))return true
+ if(!activeEntity||['client','agronomic_tool','visit_draft'].includes(activeEntity.type))return true
  const subjectType=text(record?.subject_type).toLowerCase();const subjectId=text(record?.subject_id)
  if(activeEntity.type==='property')return subjectType==='property'&&activeEntity.ids.has(subjectId)||subjectType==='field'&&activeEntity.fieldIds.has(subjectId)
  if(activeEntity.type==='field')return subjectType==='field'&&activeEntity.ids.has(subjectId)||subjectType==='property'&&activeEntity.propertyIds.has(subjectId)
@@ -245,7 +247,7 @@ function memoryMatchesActiveEntity(record,activeEntity){
 }
 
 function scopeCollectionToActiveEntity(items,sourceType,activeEntity,onRejected=()=>{}){
-  if(!activeEntity||['client','agronomic_tool'].includes(activeEntity.type))return items
+  if(!activeEntity||['client','agronomic_tool','visit_draft'].includes(activeEntity.type))return items
   const matchesAny=(values,expected)=>values.some(value=>expected.has(value))
   const keep=[]
   for(const item of items){
@@ -816,7 +818,7 @@ const memoryDomains=new Set(['PRODUCER','COMMERCIAL','AGRONOMIC','BEHAVIORAL','R
 const epistemicTypes=new Set(['FACT','INFERENCE','HYPOTHESIS','VALIDATED_KNOWLEDGE'])
 const evidenceTypes=new Set(['FACT','OBSERVATION','INFERENCE','INTENTION','QUOTE','STRATEGY','HYPOTHESIS'])
 const freshnessTypes=new Set(['CURRENT','STALE','EXPIRED','SUPERSEDED','UNKNOWN'])
-const activeEntityTypes=new Set(['client','property','field','soil_analysis','visit','opportunity','agronomic_tool'])
+const activeEntityTypes=new Set(['client','property','field','soil_analysis','visit','visit_draft','opportunity','agronomic_tool'])
 const isoValue=value=>typeof value==='string'&&iso(value)===value
 const nullableIso=value=>value===null||isoValue(value)
 const nullableText=value=>value===null||typeof value==='string'

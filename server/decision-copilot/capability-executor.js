@@ -67,7 +67,7 @@ const agronomicCatalogPolicy=Object.freeze({
 })
 
 const contextCollections=Object.freeze({
- opportunity:'opportunities',visit:'visits',visit_draft:'visits',soil_analysis:'soilAnalyses',analysis:'soilAnalyses',property:'properties'
+ opportunity:'opportunities',visit:'visits',soil_analysis:'soilAnalyses',analysis:'soilAnalyses',property:'properties'
 })
 
 function fieldRecords(context={}){
@@ -288,6 +288,10 @@ export function validateActiveContext({activeContext,context={},clientId='',tena
  if(!activeContext||typeof activeContext!=='object'||Array.isArray(activeContext))throw scopeError('O contexto ativo enviado não é válido.',400,'val_active_context_invalid')
  const type=clean(activeContext.type,80).toLowerCase()
  const id=clean(activeContext.id,180)
+ if(type==='visit_draft'){
+  const draftId=id||'rascunho'
+  return Object.freeze({type,id:draftId,label:clean(activeContext.label,180),source_ref:`visit_draft:${draftId}`})
+ }
  if(!type||!id)throw scopeError('O contexto ativo precisa informar tipo e identificador.',400,'val_active_context_invalid')
  if(type==='agronomic_tool'){
   if(!supportedAgroTools.has(id))throw scopeError('A ferramenta agronômica informada não existe neste ambiente.')

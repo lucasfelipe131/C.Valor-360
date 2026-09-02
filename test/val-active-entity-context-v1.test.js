@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import test from 'node:test'
 import {buildContextSnapshot} from '../server/memory/context-snapshot.js'
+import {validateActiveContext} from '../server/decision-copilot/capability-executor.js'
 
 const tenantId='tenant-a'
 const ownerId='owner-a'
@@ -117,4 +118,41 @@ test('activeEntity não suportada ou sem proveniência nunca entra no prompt por
 test('repository propaga activeEntity para o snapshot selecionado',()=>{
  const repository=readFileSync(new URL('../server/repository.js',import.meta.url),'utf8')
  assert.match(repository,/activeEntity:contextRequest\.activeEntity\?\?contextRequest\.active_entity/)
+})
+
+test('rascunho de visita ativo nao exige registro persistido e nao restringe o contexto do produtor',()=>{
+ const semContexto=snapshot(baseContext(),null)
+ const semId=snapshot(baseContext(),{type:'visit_draft',label:'Revisar manejo de soja'})
+ const idNaoPersistido=snapshot(baseContext(),{type:'visit_draft',id:'draft-local-1',label:'Revisar manejo de soja'})
+
+ assert.deepEqual(semId.context_scope.active_entity,{type:'visit_draft',id:'rascunho'})
+ assert.deepEqual(idNaoPersistido.context_scope.active_entity,{type:'visit_draft',id:'draft-local-1'})
+ assert.deepEqual(semId.selection.selected_refs,semContexto.selection.selected_refs)
+ assert.deepEqual(idNaoPersistido.selection.selected_refs,semContexto.selection.selected_refs)
+ assert.equal(semId.selection.context_trace.rejected.some(item=>item.reasonSelected==='ACTIVE_ENTITY_MISMATCH'),false)
+ assert.equal(idNaoPersistido.selection.context_trace.rejected.some(item=>item.reasonSelected==='ACTIVE_ENTITY_MISMATCH'),false)
+
+ assert.throws(
+  ()=>snapshot(baseContext(),{type:'visit',id:'draft-local-1'}),
+  error=>error.code==='CONTEXT_SCOPE_VIOLATION'&&error.reason==='ACTIVE_ENTITY_NOT_FOUND'
+ )
+ assert.throws(
+  ()=>snapshot(baseContext(),{type:'visit',label:'sem identificador'}),
+  error=>error.code==='CONTEXT_SCOPE_VIOLATION'&&error.reason==='ACTIVE_ENTITY_INVALID'
+ )
+})
+
+test('validateActiveContext aceita rascunho de visita e mantem visita persistida verificada',()=>{
+ const context={client:{id:producerId,name:'Produtor A'},visits:[scoped({id:'visit-real',objective:'Revisar manejo'})]}
+ const draft=validateActiveContext({activeContext:{type:'visit_draft',label:'Nova visita'},context,clientId:producerId,tenantId,ownerId})
+ assert.deepEqual(draft,{type:'visit_draft',id:'rascunho',label:'Nova visita',source_ref:'visit_draft:rascunho'})
+
+ const persisted=validateActiveContext({activeContext:{type:'visit',id:'visit-real'},context,clientId:producerId,tenantId,ownerId})
+ assert.equal(persisted.type,'visit')
+ assert.equal(persisted.source_ref,'visit:visit-real')
+
+ assert.throws(
+  ()=>validateActiveContext({activeContext:{type:'visit',id:'visit-inexistente'},context,clientId:producerId,tenantId,ownerId}),
+  error=>error.code==='val_active_context_scope_invalid'
+ )
 })
