@@ -477,3 +477,16 @@ test('vNext — fallback de IA sem fonte só responde conceito geral fora da Kno
  assert.equal(coveredModelCalled,false)
  assert.match(coveredResponse.advice.answer,/CTC representa/)
 })
+
+test('vNext — cumprimento puro responde direto sem cair no bloqueio de evidência',async()=>{
+ for(const message of ['oi','Oi','olá','ola','opa','bom dia','boa tarde','boa noite','tudo bem?','tudo bem','eae','hey','hello','oii']){
+  const route=routeSystemCapability({message,intentHint:'ASK_GENERAL',hasClient:false})
+  const response=await buildGeneralNoClientResponse({message,route,organizationId:'tenant-a',conversationId:'thread-greeting'})
+  assert.equal(response.advice.ai_reasoning.run.tool_result?.status,'EXECUTED',message)
+  assert.doesNotMatch(response.advice.answer,/Não há evidência/,message)
+  assert.match(response.advice.answer,/posso ajudar/i,message)
+ }
+ const stillGated=routeSystemCapability({message:'Preparar visita',intentHint:'ASK_GENERAL',hasClient:false})
+ const gatedResponse=await buildGeneralNoClientResponse({message:'Preparar visita',route:stillGated,organizationId:'tenant-a',conversationId:'thread-greeting-control'})
+ assert.equal(gatedResponse.advice.ai_reasoning.run.tool_result?.status,'CONTEXT_REQUIRED')
+})

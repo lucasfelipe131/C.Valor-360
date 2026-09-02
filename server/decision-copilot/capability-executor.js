@@ -602,9 +602,18 @@ export async function executeCapabilityPlan(options={}){
 // fallback de conhecimento geral do modelo, sem duplicar a string em dois lugares.
 const noKnowledgeCoverageStub='Posso tratar esta dúvida sem selecionar um produtor e sem consultar memória privada. Informe a cultura, o conceito ou a decisão geral que deseja entender; dados atuais e recomendações técnicas continuam exigindo fonte, contexto e revisão.'
 
+// Um cumprimento puro ("oi", "bom dia") não tem nenhuma palavra com 4+ letras para o
+// mecanismo de relevância comparar contra a resposta, e nunca deveria acionar a busca na
+// Knowledge Library — o retriever de lá sempre devolve algum item mesmo sem relação real
+// com a pergunta (não tem piso de relevância), e esse item aleatório é que falhava o
+// grounding, não o cumprimento em si. Resolvido com resposta fixa antes da busca.
+const greetingOnlyRequest=/^\s*(oi+|ol[aá]|opa|e\s*a[ií]|eae|hey|hi|hello|bom\s*dia|boa\s*tarde|boa\s*noite|tudo\s*bem|tudo\s*bom|como\s*vai|como\s*voc[eê]\s*est[aá]|beleza)[\s!.,?]*$/i
+
 function generalAnswer(message=''){
  const source=String(message).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
  if(isCurrentClientIdentityRequest(source))return 'Nenhum produtor está selecionado nesta conversa.'
+ const greetingMatch=greetingOnlyRequest.exec(String(message||''))
+ if(greetingMatch){const greetingText=greetingMatch[1];return `${greetingText.charAt(0).toUpperCase()}${greetingText.slice(1)}, posso ajudar com dúvidas gerais, agronomia, mercado ou sobre um produtor específico.`}
  if(/\bmargem\b/.test(source))return 'Margem é a diferença entre receita e custos. Em percentual, divida a margem em valor pela receita e multiplique por 100; confirme quais custos entram na comparação.'
  if(/\broi\b|retorno sobre investimento/.test(source))return 'ROI compara o ganho líquido com o investimento: (retorno menos investimento) dividido pelo investimento. Informe período, custos e premissas para evitar uma precisão falsa.'
  if(/\bcusto\s*\/\s*ha|custo por hectare/.test(source))return 'Custo por hectare é o custo total dividido pela área efetivamente considerada. Informe ambos com unidade e período para a VAL calcular.'

@@ -714,9 +714,15 @@ function directlyAnswersQuestion({domain,question,answer,unsupportedClaims}){
  if(calculationRequested&&calculationReturned&&sharedCalculationTopic)return true
  const relevanceStop=new Set(['qual','quais','como','quando','onde','quem','porque','favor','mostre','mostrar','diga','dizer','devo','esta','estao','foi','foram','mais','recente','atual','aqui','posso','pode','podem','usar','use','resuma','resumir','linha','confirme','confirmar','explique','explicar'])
  const questionTokens=tokens(question).filter(token=>!relevanceStop.has(token))
+ // A pergunta sem nenhum token material (cumprimento como "oi", "bom dia") não tem
+ // conteúdo específico para a resposta endereçar ou deixar de endereçar — todo o resto
+ // desta função (domínio, faceta, suporte por evidência de cada claim) já rodou antes
+ // deste ponto, então "irrelevante" não é um conceito aplicável aqui. Sem isto, qualquer
+ // cumprimento cai no bloqueio de grounding só por ser curto demais para gerar overlap.
+ if(!questionTokens.length)return true
  const answerTokens=new Set(tokens(answer))
  const overlap=questionTokens.filter(token=>answerTokens.has(token)).length
- return questionTokens.length>0&&overlap>=Math.max(1,Math.ceil(questionTokens.length*.5))
+ return overlap>=Math.max(1,Math.ceil(questionTokens.length*.5))
 }
 
 /**
