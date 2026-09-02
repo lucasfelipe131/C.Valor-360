@@ -570,5 +570,38 @@
     "geography": "Global",
     "domain": "agronomic_decision",
     "notes": "Official international committee classifying herbicide active ingredients by mode-of-action/site-of-action group to support resistance-management rotation."
+  },
+  {
+    "source_id": "SRC-053",
+    "title": "Manejo da Adubação Fosfatada para Culturas Anuais no Cerrado (Comunicado Técnico 33)",
+    "publisher": "Embrapa Cerrados",
+    "year": null,
+    "url": "https://www.infoteca.cnptia.embrapa.br/infoteca/bitstream/doc/1061419/1/CT33.pdf",
+    "authority": "A",
+    "geography": "Brazil",
+    "domain": "agronomic_decision",
+    "notes": "Solos tropicais fixam fósforo por óxidos de ferro e alumínio; aplicação próxima à linha de semeadura reduz o contato do fertilizante com o solo, diminuindo a fixação e concentrando o nutriente perto das raízes no estabelecimento inicial."
+  },
+  {
+    "source_id": "SRC-054",
+    "title": "Recomendação de Adubações Nitrogenada e Potássica nas Produtividades (Boletim de Pesquisa 132)",
+    "publisher": "Embrapa Milho e Sorgo",
+    "year": 2021,
+    "url": "https://www.infoteca.cnptia.embrapa.br/infoteca/bitstream/doc/1134681/1/RecomendacaoAdubacoesNitrogenadaPotassicaProdutivuidadeMilhoBP132.2021.pdf",
+    "authority": "A",
+    "geography": "Brazil",
+    "domain": "agronomic_decision",
+    "notes": "Em solos arenosos e de baixa CTC, o parcelamento do potássio (parte na semeadura, parte em cobertura) reduz a perda do nutriente por lixiviação em comparação à aplicação total de uma só vez."
+  },
+  {
+    "source_id": "SRC-055",
+    "title": "Adoção e custo do tratamento de sementes na cultura da soja",
+    "publisher": "Embrapa",
+    "year": null,
+    "url": "https://www.infoteca.cnptia.embrapa.br/infoteca/bitstream/doc/1101435/1/ID36739.pdf",
+    "authority": "B",
+    "geography": "Brazil",
+    "domain": "agronomic_decision",
+    "notes": "Tratamento de sementes com fungicida e inseticida representou cerca de 1,48% do custo total de produção de soja na safra 2018/2019 (Embrapa), sem efeito negativo observado sobre a qualidade fisiológica da semente durante o armazenamento."
   }
 ]
