@@ -515,5 +515,60 @@
     "geography": "Brazil",
     "domain": "agronomic_decision",
     "notes": "News item citing internal Embrapa estimates; loss magnitude is an approximation, not a precise universal figure, and varies by storage structure and management."
+  },
+  {
+    "source_id": "SRC-048",
+    "title": "Paridade de preços internacionais e preços ao produtor brasileiro",
+    "publisher": "CEPEA - Centro de Estudos Avançados em Economia Aplicada (Esalq/USP)",
+    "year": null,
+    "url": "https://www.cepea.org.br/br/opiniao-cepea/paridade-de-precos-internacionais-e-precos-ao-produtor-brasileiro.aspx",
+    "authority": "B",
+    "geography": "Brazil",
+    "domain": "commodity_markets",
+    "notes": "Explains export-parity pricing: international quote plus export premium, minus export expenses and freight to port, converted to reais by the exchange rate; price paid to the producer falls as distance to port increases."
+  },
+  {
+    "source_id": "SRC-049",
+    "title": "FRAC Code List and Mode of Action classification",
+    "publisher": "FRAC - Fungicide Resistance Action Committee (CropLife International)",
+    "year": null,
+    "url": "https://www.frac.info/",
+    "authority": "A",
+    "geography": "Global",
+    "domain": "agronomic_decision",
+    "notes": "Official international committee classifying fungicide active ingredients by mode-of-action group to support resistance-management rotation strategies."
+  },
+  {
+    "source_id": "SRC-050",
+    "title": "IRAC Mode of Action Classification",
+    "publisher": "IRAC - Insecticide Resistance Action Committee (CropLife International)",
+    "year": null,
+    "url": "https://irac-online.org/mode-of-action/",
+    "authority": "A",
+    "geography": "Global",
+    "domain": "agronomic_decision",
+    "notes": "Official international committee classifying insecticide/acaricide active ingredients by mode-of-action group (25+ groups) to support resistance-management rotation."
+  },
+  {
+    "source_id": "SRC-051",
+    "title": "Prospect Theory: An Analysis of Decision under Risk",
+    "publisher": "Econometrica (Kahneman, D.; Tversky, A.)",
+    "year": 1979,
+    "url": "https://www.econometricsociety.org/publications/econometrica/1979/03/01/prospect-theory-analysis-decision-under-risk",
+    "authority": "A",
+    "geography": "Global",
+    "domain": "adaptive_behavior",
+    "notes": "Foundational peer-reviewed paper establishing loss aversion: losses are felt more intensely than equivalent gains; cited in the 2002 Nobel Memorial Prize in Economics."
+  },
+  {
+    "source_id": "SRC-052",
+    "title": "HRAC Global Herbicide MoA Classification",
+    "publisher": "HRAC - Herbicide Resistance Action Committee (CropLife International)",
+    "year": 2026,
+    "url": "https://hracglobal.com/tools/2026-hrac-global-herbicide-moa-classification",
+    "authority": "A",
+    "geography": "Global",
+    "domain": "agronomic_decision",
+    "notes": "Official international committee classifying herbicide active ingredients by mode-of-action/site-of-action group to support resistance-management rotation."
   }
 ]
