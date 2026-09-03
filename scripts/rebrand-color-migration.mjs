@@ -26,15 +26,21 @@
 // A migração é idempotente: as matizes de destino (88–150) caem fora da faixa
 // de entrada (155–246), então rodar duas vezes não muda nada.
 //
+// A mesma migração vale para o app embutido do Manual do Agrônomo: ele roda
+// dentro do iframe da VAL e precisa da mesma identidade, senão a marca quebra
+// exatamente na fronteira onde o usuário não percebe que trocou de aplicação.
+//
 // Uso:
-//   node scripts/rebrand-color-migration.mjs            aplica
-//   node scripts/rebrand-color-migration.mjs --check    só relata
-//   node scripts/rebrand-color-migration.mjs --report   relata cor a cor
+//   node scripts/rebrand-color-migration.mjs                aplica em src/
+//   node scripts/rebrand-color-migration.mjs manual/app     aplica em outra pasta
+//   node scripts/rebrand-color-migration.mjs --check        só relata
+//   node scripts/rebrand-color-migration.mjs --report       relata cor a cor
 
 import {readFileSync,writeFileSync,readdirSync} from 'node:fs'
 import {join} from 'node:path'
 
-const DIR='src'
+const DIRS=process.argv.slice(2).filter(argument=>!argument.startsWith('--'))
+const TARGETS=DIRS.length?DIRS:['src']
 const HUE_IN=[155,246]   // ciano, azul e verde-água da marca antiga
 const SAT_CAP=0.52       // verde acima disto fica ácido
 const SAT_CAP_TINT=0.45  // tintas muito claras
@@ -138,7 +144,7 @@ const transform=source=>source
 // -------------------------------------------------------------------- execução
 const check=process.argv.includes('--check')
 const report=process.argv.includes('--report')
-const files=readdirSync(DIR).filter(name=>name.endsWith('.css')).map(name=>join(DIR,name))
+const files=TARGETS.flatMap(dir=>readdirSync(dir).filter(name=>name.endsWith('.css')).map(name=>join(dir,name)))
 
 let touched=0
 for(const file of files){
