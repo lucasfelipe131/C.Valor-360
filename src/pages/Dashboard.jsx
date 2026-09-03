@@ -18,6 +18,7 @@ import ConversionOpportunityStudio from '../components/ConversionOpportunityStud
 import VoiceCapture from '../components/voice/VoiceCapture'
 import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
 import {buildHomeCopilotAnswer,buildLocalHomePriorities,canonicalVoiceChange} from '../lib/copilot-view-model'
+import {buildDayBriefing} from '../lib/home-command-center'
 import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline,resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
 const greeting=()=>{
@@ -117,11 +118,42 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
   return {...stage,count:stageItems.length,value:stageItems.reduce((sum,item)=>sum+Number(item.value||0),0)}
  })
  const recentVisits=[...(visits||[])].sort((a,b)=>(scheduledAtOf(b)?.getTime()||0)-(scheduledAtOf(a)?.getTime()||0)).slice(0,4)
+ // Centro operacional: o que precisa de atenção agora, contado a partir do que
+ // já está na sessão. Nenhum número estimado, nenhum alerta inventado.
+ const briefing=useMemo(()=>buildDayBriefing({visits,opportunities,clients}),[visits,opportunities,clients])
+ const openVisit=entry=>{const client=clients.find(item=>String(item.id)===String(entry.clientId));if(client)onPrepare(client);else setPage('visits')}
 
  return <div className="page-stack val-copilot-home">
   <section className="copilot-welcome">
    <div><span className="eyebrow">VAL • SEU COPILOTO</span><h2>{greeting()}, {firstName}.</h2><p>Estas são as decisões que merecem sua atenção agora.</p></div>
    <button type="button" onClick={()=>setPage('visits')}><CalendarDays/>Abrir agenda</button>
+  </section>
+
+  <section className="home-day-strip" aria-label="Resumo do dia">
+   {briefing.cards.map(card=>
+    <button type="button" key={card.id} className={`home-day-card is-${card.id}`} onClick={()=>setPage(card.page)}>
+     <small>{card.label}</small>
+     <strong>{String(card.value).padStart(2,'0')}</strong>
+     <span>{card.hint}</span>
+    </button>
+   )}
+  </section>
+
+  <section className="home-next-visits" aria-labelledby="home-next-visits-title">
+   <header>
+    <div><span className="eyebrow">PRÓXIMAS VISITAS</span><h3 id="home-next-visits-title">O que vem agora na agenda</h3></div>
+    <button type="button" onClick={()=>setPage('visits')}>Ver agenda<ChevronRight/></button>
+   </header>
+   {briefing.upcoming.length
+    ?<ul>{briefing.upcoming.map(entry=>
+      <li key={entry.id}>
+       <time dateTime={entry.at.toISOString()}><b>{entry.at.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</b><small>{entry.at.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}).replace('.','')}</small></time>
+       <div><b>{entry.clientName}</b><span>{entry.place||'Local não informado'}</span><p>{entry.objective}</p></div>
+       <button type="button" onClick={()=>openVisit(entry)}>{entry.lifecycle==='PREPARED'?'Abrir preparação':'Preparar com a VAL'}<ChevronRight/></button>
+      </li>
+     )}</ul>
+    :<p className="home-next-empty">Nenhum compromisso futuro na agenda. Agende uma visita para a VAL montar a próxima rota.</p>}
+   {briefing.undatedVisits>0&&<p className="home-next-note" role="status">{briefing.undatedVisits} visita{briefing.undatedVisits>1?'s':''} sem data registrada ficaram fora desta lista.</p>}
   </section>
 
   <section className="copilot-priorities" aria-labelledby="copilot-priorities-title">
