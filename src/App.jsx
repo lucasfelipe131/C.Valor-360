@@ -10,7 +10,7 @@ import {opportunityCacheKey} from './lib/opportunity-pipeline'
 import {resolveCopilotLaunch} from './lib/copilot-context'
 import {clearCopilotSessionStorage} from './lib/copilot-session-storage'
 import {createValWorkspaceContext,validateValWorkspaceAction} from './lib/val-workspace-context'
-import {resolveActiveWorkspace,workspaceEntryPoint} from './lib/val-workspaces'
+import {resolveActiveWorkspace,workspaceEntryPoint,workspaceHoldsPage} from './lib/val-workspaces'
 
 const GlobalValCopilot=lazy(()=>import('./components/GlobalValCopilot'))
 const Dashboard=lazy(()=>import('./pages/Dashboard'))
@@ -188,7 +188,7 @@ export default function App(){
  const expireSession=()=>invalidateSession('Sua sessão expirou. Entre novamente.')
  // Módulos transversais (Hoje, Copiloto) herdam o workspace ativo em vez de
  // zerá-lo: o usuário abre a VAL e volta para onde estava trabalhando.
- useEffect(()=>{setWorkspace(current=>resolveActiveWorkspace(page,current))},[page])
+ useEffect(()=>{setWorkspace(current=>workspaceHoldsPage(current,page,currentUser?.role)?current:resolveActiveWorkspace(page,current))},[page,currentUser?.role])
  const changeWorkspace=id=>{setWorkspace(id);navigate(workspaceEntryPoint(id,currentUser?.role))}
  // Ferramenta agronomica ativa: e o que diferencia Manual, Calculadoras e
  // Mapas na subnavegacao, ja que todas moram na mesma rota.

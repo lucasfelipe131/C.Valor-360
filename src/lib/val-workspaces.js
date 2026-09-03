@@ -97,13 +97,21 @@ export const workspaceEntryPoint=(workspaceId,role)=>workspaceModules(workspaceI
 export const moduleLabel=page=>MODULES[page]?.label||'VAL'
 
 // Um item da subnavegação está ativo quando a rota bate e, havendo ferramenta,
-// quando a ferramenta aberta é a dele.
+// quando a ferramenta aberta é a dele. Um item SEM ferramenta na mesma rota só
+// fica ativo com nenhuma ferramenta aberta — senão "Inteligência Agronômica" e
+// "Calculadoras" acenderiam juntas.
 export const isNavItemActive=(item,{page,tool}={})=>{
  if(item.action==='copilot')return page==='copilot'
  if(item.page!==page)return false
  if(item.tool)return item.tool===tool
- return !tool||item.id===item.page
+ return !tool
 }
+
+// Vários workspaces compartilham a rota `agro`, cada um com suas ferramentas.
+// Enquanto o workspace atual comportar a rota aberta, ele permanece — senão
+// clicar em Calculadoras dentro de Inteligência jogaria o usuário em Campo.
+export const workspaceHoldsPage=(workspaceId,page,role)=>
+ workspaceModules(workspaceId,role).some(item=>item.page===page)
 
 export const contextTrail=({page,workspace,client})=>{
  const trail=[]

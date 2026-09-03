@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs'
 import {
  MODULES,WORKSPACES,SETTINGS_NAV,HOME,COPILOT,
  assertModuleCoverage,contextTrail,isNavItemActive,resolveActiveWorkspace,
- settingsModules,workspaceEntryPoint,workspaceModules,workspaceOf
+ settingsModules,workspaceEntryPoint,workspaceHoldsPage,workspaceModules,workspaceOf
 } from '../src/lib/val-workspaces.js'
 import {AGRO_GROUPS,AGRO_TOOLS,agroToolsById} from '../src/lib/agro-tools.js'
 
@@ -102,6 +102,23 @@ test('a ferramenta aberta decide qual item do Campo está ativo',()=>{
  assert.equal(isNavItemActive(mapas,{page:'visits',tool:'produtores'}),false)
  const copiloto=workspaceModules('inteligencia','admin').find(entry=>entry.action==='copilot')
  assert.equal(isNavItemActive(copiloto,{page:'copilot'}),true)
+})
+
+test('workspaces que compartilham a rota agro não roubam o usuário um do outro',()=>{
+ // Calculadoras vive em Inteligência e Análises de solo em Campo; as duas
+ // abrem a rota `agro`. Sem isto, clicar em Calculadoras jogava o usuário
+ // em Campo, porque a rota pertence nominalmente a Campo.
+ assert.equal(workspaceHoldsPage('inteligencia','agro','admin'),true)
+ assert.equal(workspaceHoldsPage('campo','agro','admin'),true)
+ assert.equal(workspaceHoldsPage('comercial','agro','admin'),false)
+
+ // Só a ferramenta aberta acende, nunca as duas.
+ const inteligencia=workspaceModules('inteligencia','admin')
+ const agro=inteligencia.find(entry=>entry.id==='agro')
+ const calc=inteligencia.find(entry=>entry.id==='calculadoras')
+ assert.equal(isNavItemActive(calc,{page:'agro',tool:'calculadoras'}),true)
+ assert.equal(isNavItemActive(agro,{page:'agro',tool:'calculadoras'}),false)
+ assert.equal(isNavItemActive(agro,{page:'agro',tool:''}),true)
 })
 
 test('a trilha de contexto mostra workspace, módulo e produtor ativo',()=>{
