@@ -13,20 +13,17 @@
  --val-text:#10231f;
  --val-muted:#6c7f78;
  --val-line:#dce8e4;
- --val-logo-blue-start:#2d8cff;
- --val-logo-blue-mid:#167fe8;
- --val-logo-blue-end:#0757b6;
- --val-logo-fold-start:#0b67d8;
- --val-logo-fold-end:#063a8c;
- --val-logo-green-start:#00c896;
- --val-logo-green-mid:#009f78;
- --val-logo-green-end:#006e5e;
- --val-logo-leaf-start:#00c896;
- --val-logo-leaf-mid:#00c896;
- --val-logo-leaf-end:#007a5c;
- --val-logo-word:#082c57;
- --val-logo-accent:#009f78;
- --val-logo-highlight:#fff;
+ --val-logo-stem-top:#1d3b27;
+ --val-logo-stem-bottom:#12291b;
+ --val-logo-leaf-top:#a6cc5b;
+ --val-logo-leaf-mid:#79a63e;
+ --val-logo-leaf-deep:#3f6b26;
+ --val-logo-leaf-shade-top:#5f8a32;
+ --val-logo-leaf-shade-bottom:#2f5720;
+ --val-logo-vein:#f2f6e9;
+ --val-logo-word:#12291b;
+ --val-logo-accent:#5f8a32;
+ --val-logo-highlight:#f2f6e9;
  --navy:var(--val-ink);
  --navy2:var(--val-forest);
  --blue:var(--val-emerald-dark);
@@ -50,20 +47,17 @@ body{background:radial-gradient(circle at 86% 0,rgba(45,140,255,.07),transparent
 
 /* Assinatura VAL — a superfície controla contraste; a geometria permanece única. */
 .val-brand{
- --val-logo-blue-start:#2d8cff;
- --val-logo-blue-mid:#167fe8;
- --val-logo-blue-end:#0757b6;
- --val-logo-fold-start:#0b67d8;
- --val-logo-fold-end:#063a8c;
- --val-logo-green-start:#00c896;
- --val-logo-green-mid:#009f78;
- --val-logo-green-end:#006e5e;
- --val-logo-leaf-start:#00c896;
- --val-logo-leaf-mid:#00c896;
- --val-logo-leaf-end:#007a5c;
- --val-logo-word:#082c57;
- --val-logo-accent:#009f78;
- --val-logo-highlight:#fff;
+ --val-logo-stem-top:#1d3b27;
+ --val-logo-stem-bottom:#12291b;
+ --val-logo-leaf-top:#a6cc5b;
+ --val-logo-leaf-mid:#79a63e;
+ --val-logo-leaf-deep:#3f6b26;
+ --val-logo-leaf-shade-top:#5f8a32;
+ --val-logo-leaf-shade-bottom:#2f5720;
+ --val-logo-vein:#f2f6e9;
+ --val-logo-word:#12291b;
+ --val-logo-accent:#5f8a32;
+ --val-logo-highlight:#f2f6e9;
  display:flex;
  align-items:center;
  color:var(--val-logo-word);
@@ -76,34 +70,28 @@ body{background:radial-gradient(circle at 86% 0,rgba(45,140,255,.07),transparent
 .public-welcome .val-brand.is-surface-auto,
 .login-story .val-brand.is-surface-auto,
 .val-fs-header .val-brand.is-surface-auto{
- --val-logo-blue-start:#72b8ff;
- --val-logo-blue-mid:#2d8cff;
- --val-logo-blue-end:#167fe8;
- --val-logo-fold-start:#9bd2ff;
- --val-logo-fold-end:#2d8cff;
- --val-logo-green-start:#c8f25e;
- --val-logo-green-mid:#00c896;
- --val-logo-green-end:#009f78;
- --val-logo-leaf-start:#d9ff80;
- --val-logo-leaf-mid:#72e6c5;
- --val-logo-leaf-end:#00c896;
- --val-logo-word:#f4f8f6;
- --val-logo-accent:#72e6c5;
- --val-logo-highlight:#fff;
+ --val-logo-stem-top:#f1f1ea;
+ --val-logo-stem-bottom:#cfcfc6;
+ --val-logo-leaf-top:#b6d96b;
+ --val-logo-leaf-mid:#8cbc49;
+ --val-logo-leaf-deep:#4e7a2e;
+ --val-logo-leaf-shade-top:#6e9c38;
+ --val-logo-leaf-shade-bottom:#3a6624;
+ --val-logo-vein:#0d1f15;
+ --val-logo-word:#edede6;
+ --val-logo-accent:#9bc85a;
+ --val-logo-highlight:#f4f7ec;
  color:#f4f8f6;
 }
 .val-brand.is-monochrome{
- --val-logo-blue-start:currentColor;
- --val-logo-blue-mid:currentColor;
- --val-logo-blue-end:currentColor;
- --val-logo-fold-start:currentColor;
- --val-logo-fold-end:currentColor;
- --val-logo-green-start:currentColor;
- --val-logo-green-mid:currentColor;
- --val-logo-green-end:currentColor;
- --val-logo-leaf-start:currentColor;
+ --val-logo-stem-top:currentColor;
+ --val-logo-stem-bottom:currentColor;
+ --val-logo-leaf-top:currentColor;
  --val-logo-leaf-mid:currentColor;
- --val-logo-leaf-end:currentColor;
+ --val-logo-leaf-deep:currentColor;
+ --val-logo-leaf-shade-top:currentColor;
+ --val-logo-leaf-shade-bottom:currentColor;
+ --val-logo-vein:currentColor;
  --val-logo-word:currentColor;
  --val-logo-accent:currentColor;
  --val-logo-highlight:currentColor;
@@ -236,17 +224,17 @@ body{background:radial-gradient(circle at 86% 0,rgba(45,140,255,.07),transparent
 @media(max-width:760px){
  body{background:var(--val-canvas)}
  .topbar-mobile-logo .val-brand.is-surface-auto{
-  --val-logo-blue-start:#72b8ff;
-  --val-logo-blue-mid:#2d8cff;
-  --val-logo-blue-end:#167fe8;
-  --val-logo-fold-start:#9bd2ff;
-  --val-logo-fold-end:#2d8cff;
-  --val-logo-green-start:#c8f25e;
-  --val-logo-green-mid:#00c896;
-  --val-logo-green-end:#009f78;
-  --val-logo-leaf-start:#d9ff80;
-  --val-logo-leaf-mid:#72e6c5;
-  --val-logo-leaf-end:#00c896;
+  --val-logo-stem-top:#f1f1ea;
+  --val-logo-stem-bottom:#cfcfc6;
+  --val-logo-leaf-top:#b6d96b;
+  --val-logo-leaf-mid:#8cbc49;
+  --val-logo-leaf-deep:#4e7a2e;
+  --val-logo-leaf-shade-top:#6e9c38;
+  --val-logo-leaf-shade-bottom:#3a6624;
+  --val-logo-vein:#0d1f15;
+  --val-logo-word:#edede6;
+  --val-logo-accent:#9bc85a;
+  --val-logo-highlight:#f4f7ec;
   color:#f4f8f6;
  }
  .topbar{background:radial-gradient(circle at 88% 0,rgba(45,140,255,.28),transparent 37%),linear-gradient(145deg,#071b19,#0a433a);border-bottom-color:rgba(255,255,255,.06)}

@@ -1,5 +1,10 @@
 import React,{useId} from 'react'
 
+// Marca oficial da VAL: o V em marfim/floresta e a folha em verde-oliva.
+// A geometria abaixo é o ativo aprovado. Não reinterpretar, não substituir.
+// As variantes (full, compact, icon-only, monochrome) derivam deste mesmo desenho;
+// a superfície controla apenas o contraste, nunca a forma.
+
 const variants=new Set(['full','compact','icon-only','monochrome'])
 const surfaces=new Set(['auto','light','dark'])
 
@@ -15,10 +20,9 @@ export default function Logo({
  const resolvedVariant=compact?'icon-only':variants.has(variant)?variant:'compact'
  const resolvedSurface=surfaces.has(surface)?surface:'auto'
  const iconOnly=resolvedVariant==='icon-only'
- const signalId=`val-signal-${uid}`
- const blueFoldId=`val-blue-fold-${uid}`
- const greenId=`val-green-${uid}`
+ const stemId=`val-stem-${uid}`
  const leafId=`val-leaf-${uid}`
+ const leafShadeId=`val-leaf-shade-${uid}`
  const classes=[
   'brand','val-brand','val-final-brand',
   `is-${resolvedVariant}`,
@@ -32,42 +36,36 @@ export default function Logo({
   <span className="brand-mark" aria-hidden="true">
    <svg viewBox="0 0 64 64" fill="none" focusable="false">
     <defs>
-     <linearGradient id={signalId} x1="10" y1="7" x2="36" y2="53" gradientUnits="userSpaceOnUse">
-      <stop stopColor="var(--val-logo-blue-start)"/>
-      <stop offset=".48" stopColor="var(--val-logo-blue-mid)"/>
-      <stop offset="1" stopColor="var(--val-logo-blue-end)"/>
+     <linearGradient id={stemId} x1="6" y1="4" x2="30" y2="60" gradientUnits="userSpaceOnUse">
+      <stop stopColor="var(--val-logo-stem-top)"/>
+      <stop offset="1" stopColor="var(--val-logo-stem-bottom)"/>
      </linearGradient>
-     <linearGradient id={blueFoldId} x1="11" y1="8" x2="29" y2="39" gradientUnits="userSpaceOnUse">
-      <stop stopColor="var(--val-logo-fold-start)"/>
-      <stop offset="1" stopColor="var(--val-logo-fold-end)"/>
+     <linearGradient id={leafId} x1="52" y1="4" x2="32" y2="59" gradientUnits="userSpaceOnUse">
+      <stop stopColor="var(--val-logo-leaf-top)"/>
+      <stop offset=".52" stopColor="var(--val-logo-leaf-mid)"/>
+      <stop offset="1" stopColor="var(--val-logo-leaf-deep)"/>
      </linearGradient>
-     <linearGradient id={greenId} x1="32" y1="55" x2="56" y2="24" gradientUnits="userSpaceOnUse">
-      <stop stopColor="var(--val-logo-green-end)"/>
-      <stop offset=".54" stopColor="var(--val-logo-green-mid)"/>
-      <stop offset="1" stopColor="var(--val-logo-green-start)"/>
-     </linearGradient>
-     <linearGradient id={leafId} x1="41" y1="29" x2="58" y2="6" gradientUnits="userSpaceOnUse">
-      <stop stopColor="var(--val-logo-leaf-end)"/>
-      <stop offset=".55" stopColor="var(--val-logo-leaf-mid)"/>
-      <stop offset="1" stopColor="var(--val-logo-leaf-start)"/>
+     <linearGradient id={leafShadeId} x1="56" y1="10" x2="36" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stopColor="var(--val-logo-leaf-shade-top)"/>
+      <stop offset="1" stopColor="var(--val-logo-leaf-shade-bottom)"/>
      </linearGradient>
     </defs>
-    <path d="M12.5 10.1c2.6-2.1 6.5-1.6 8.4 1.2l21.2 31.6-8.6 13.6L9.4 18.7c-1.8-2.8-1.2-6.4 1.4-8.4l1.7-.2Z" fill={`url(#${signalId})`}/>
-    <path className="val-logo-fold" d="M12.5 10.1c2.6-2.1 6.5-1.6 8.4 1.2l4 6-8.9 14.1-6.6-12.7c-1.8-2.8-1.2-6.4 1.4-8.4l1.7-.2Z" fill={`url(#${blueFoldId})`} fillOpacity=".62"/>
-    <path d="M33.5 56.5 49.8 29c1.8-3 5.7-4 8.8-2.3 3.1 1.8 4.1 5.8 2.1 8.8L42.4 59.1c-2.3 3.3-7.3 3.1-8.9-.4v-2.2Z" fill={`url(#${greenId})`}/>
-    <path d="M40.8 28.8C41.8 17.4 48.5 8.9 58.2 6.2c.5 10.7-4.6 19.9-15.8 23.4-.9.3-1.7-.1-1.6-.8Z" fill={`url(#${leafId})`}/>
-    <path className="val-logo-detail" d="M42.7 27.4c4.3-6.8 8.7-12.1 13.4-16.7" stroke="var(--val-logo-highlight)" strokeOpacity=".46" strokeWidth="1.15" strokeLinecap="round"/>
-    <path className="val-logo-detail" d="M16.4 12.6 34.2 49.1" stroke="var(--val-logo-highlight)" strokeOpacity=".2" strokeWidth="1.2" strokeLinecap="round"/>
-    <path className="val-logo-detail" d="M35.8 53.4 51.7 28.3" stroke="var(--val-logo-highlight)" strokeOpacity=".17" strokeWidth="1.1" strokeLinecap="round"/>
-    <circle cx="31.4" cy="45.2" className="val-logo-detail" r="1.1" fill="var(--val-logo-highlight)" fillOpacity=".72"/>
+    {/* Braço esquerdo do V */}
+    <path d="M3.6 5.2H17.8L33.4 53.6L30.2 61.2Z" fill={`url(#${stemId})`}/>
+    {/* Folha — braço direito do V */}
+    <path d="M30.6 61C32.8 45.6 39.4 24.4 52.4 3C60.4 17.4 58 38.6 45.2 51.6C40.6 56.3 35.6 59.4 30.6 61Z" fill={`url(#${leafId})`}/>
+    {/* Meia-folha em sombra: o dobramento que a marca oficial mostra */}
+    <path className="val-logo-fold" d="M52.4 3C60.4 17.4 58 38.6 45.2 51.6C40.6 56.3 35.6 59.4 30.6 61C36.9 44.4 44.6 22.9 52.4 3Z" fill={`url(#${leafShadeId})`}/>
+    {/* Nervura central */}
+    <path className="val-logo-detail" d="M31.4 59.4C37.5 43.2 45 22.2 52.2 3.9" stroke="var(--val-logo-vein)" strokeOpacity=".5" strokeWidth="1.05" strokeLinecap="round"/>
    </svg>
   </span>
   {!iconOnly&&<span className="brand-word" aria-hidden="true">
    <svg className="val-wordmark" viewBox="0 0 220 72" fill="none" focusable="false">
-    <path d="M4 8h20.5l26 43.5c2.2 3.7 4.8 3.7 7 0L83.5 8H104L66 68H41.8L4 8Z" fill="var(--val-logo-word)"/>
-    <path fillRule="evenodd" clipRule="evenodd" d="M89 68 125.5 8h18L180 68h-21l-24.5-40.5L110 68H89Zm33.8-10h23.4l-11.7-19.3L122.8 58Z" fill="var(--val-logo-word)"/>
-    <path d="m134.5 48.8 11.6 19.2h-23.2l11.6-19.2Z" fill="var(--val-logo-accent)"/>
-    <path d="M181 8h20v40c0 3.5 1.8 5 6.2 5H219v15h-21.8C186.4 68 181 62.3 181 50V8Z" fill="var(--val-logo-word)"/>
+    <path d="M2 8H12.5L29 50L45.5 8H56L33.5 64H24.5Z" fill="var(--val-logo-word)"/>
+    <path d="M76 64L101.5 8H108.5L134 64H123.5L105 26L86.5 64Z" fill="var(--val-logo-word)"/>
+    <path d="M88 48H122V57H88Z" fill="var(--val-logo-word)"/>
+    <path d="M154 8H164.5V53.5H212V64H154Z" fill="var(--val-logo-word)"/>
    </svg>
    {resolvedVariant==='full'&&<small className="val-brand-signature">INTELIGÊNCIA QUE GERA VALOR</small>}
   </span>}
