@@ -1,4 +1,4 @@
-import {AGRONOMIC_CALCULATORS,agronomicCalculatorContractVersion,executeAgronomicCalculator} from '../src/lib/agronomic-calculators.js'
+import {AGRONOMIC_CALCULATORS,agronomicCalculatorContractVersion,calculatePlanter,executeAgronomicCalculator} from '../src/lib/agronomic-calculators.js'
 import {consultZarc} from './zarc-provider.js'
 
 export const copilotCalculatorAdapterVersion='val.copilot_calculator_adapter.v1'
@@ -12,7 +12,9 @@ const localNumber=value=>{
  const parsed=Number(raw.replace(/\s/g,'').replace(/\.(?=\d{3}(?:\D|$))/g,'').replace(',','.'))
  return Number.isFinite(parsed)?parsed:undefined
 }
-const captureNumber=(source,pattern)=>localNumber(source.match(new RegExp(`${pattern}\\s*(?:de|=|:)?\\s*(?:r\\$\\s*)?${numberPattern}`,'i'))?.[1])
+const captureNumber=(source,pattern)=>{const match=source.match(new RegExp(String.raw`${pattern}\s*(?:de|=|:)?\s*(?:r\$\s*)?${numberPattern}(\s*mil\b)?`,'i'));const value=localNumber(match?.[1]);return value===undefined?undefined:match?.[2]?value*1000:value}
+// Numero seguido de um sufixo ("300 mil plantas/ha", "45 cm"); "mil" multiplica por 1000.
+const numberBefore=(source,suffix)=>{const match=source.match(new RegExp(String.raw`${numberPattern}(\s*mil\b)?\s*${suffix}`,'i'));const value=localNumber(match?.[1]);return value===undefined?undefined:match?.[2]?value*1000:value}
 const captureText=(source,pattern)=>clean(source.match(pattern)?.[1],180)||undefined
 
 export function identifyAgronomicCalculator(message=''){
@@ -147,6 +149,20 @@ export function parseAgronomicCalculatorRequest(message='',calculator=identifyAg
  return {}
 }
 
+// Aritmetica de plantabilidade que o Manual resolve dentro da regulagem de semeadora,
+// mas que chega ao copiloto como pergunta solta: populacao + espacamento -> plantas/m.
+// Usa a implementacao canonica (calculatePlanter) com estabelecimento neutro; nao e
+// uma decima calculadora, e um recorte deterministico da primeira, como cost_per_ha.
+function plantsPerMeter(message=''){
+ const source=normalize(message)
+ const population=captureNumber(source,String.raw`populacao(?:\s+(?:final|alvo))?`)??numberBefore(source,String.raw`plantas\s*(?:por|\/)\s*(?:hectare|ha)\b`)
+ const spacing=captureNumber(source,'espacamento')??numberBefore(source,String.raw`cm\b`)
+ if(!(population>0)||!(spacing>0))return null
+ const canonical=calculatePlanter({populationPlantsHa:population,spacingCm:spacing,germinationPercent:100,fieldSurvivalPercent:100})
+ const linearMetersHa=Number((10000/(spacing/100)).toFixed(2))
+ return {population_plants_ha:population,spacing_cm:spacing,linear_meters_ha:linearMetersHa,plants_per_meter:canonical.targetPlantsMeter,formula:'plants_per_meter = population_plants_ha * (spacing_cm / 100) / 10000'}
+}
+
 function legacyCostPerHectare(message=''){
  const source=String(message).replace(/\./g,'').replace(/,(?=\d{1,2}\b)/g,'.')
  const costMatch=source.match(/(?:custo(?:\s+total)?|total)\s*(?:de|=|:)?\s*(?:r\$\s*)?(\d+(?:\.\d+)?)/i)||source.match(/r\$\s*(\d+(?:\.\d+)?)/i)
@@ -170,6 +186,10 @@ const summaryFor=(key,output)=>{
 export async function executeCopilotCalculator(message='',options={}){
  options.signal?.throwIfAborted?.()
  const calculator=identifyAgronomicCalculator(message)
+ // "populacao" so faz sentido com cultura/cultivar; se a frase traz apenas numeros, e aritmetica.
+ const recommendation=calculator==='populacao'&&(()=>{const parsed=parseAgronomicCalculatorRequest(message,'populacao');return Boolean(parsed.crop||parsed.cultivar)})()
+ const arithmetic=(!calculator||(calculator==='populacao'&&!recommendation))?plantsPerMeter(message):null
+ if(arithmetic)return {adapter_version:copilotCalculatorAdapterVersion,contract_version:'val.plants_per_meter.v1',calculator:'plantas_por_metro',status:'EXECUTED',input:{population_plants_ha:arithmetic.population_plants_ha,spacing_cm:arithmetic.spacing_cm},output:arithmetic,summary:`Plantabilidade calculada: ${arithmetic.linear_meters_ha.toLocaleString('pt-BR')} m lineares/ha e ${arithmetic.plants_per_meter.toLocaleString('pt-BR',{maximumFractionDigits:2})} plantas/m para ${arithmetic.population_plants_ha.toLocaleString('pt-BR')} plantas/ha em ${arithmetic.spacing_cm} cm.`,source_ref:'calculator:plantas_por_metro'}
  if(!calculator){
   const legacy=legacyCostPerHectare(message)
   if(legacy)return {adapter_version:copilotCalculatorAdapterVersion,contract_version:'val.legacy_cost_per_ha.v1',calculator:'cost_per_ha',status:'EXECUTED',input:{total_cost_brl:legacy.total_cost,area_ha:legacy.area_ha},output:legacy,summary:`Custo calculado: R$ ${legacy.cost_per_ha.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}/ha, usando custo total e área informados.`,source_ref:'calculator:cost_per_ha'}

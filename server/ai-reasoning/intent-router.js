@@ -100,7 +100,9 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
   else if(/\b(?:obje[cç][aã]o|resist[eê]ncia|discord|recus|n[aã]o quer)\b/i.test(source))intent='OBJECTION_HELP'
   else if(/\b(?:oportunidades?|pipeline|neg[oó]cios?|propostas?)\b/i.test(source))intent='CHECK_OPPORTUNITY'
   else if(/\b(?:follow.?up|retomar|cobrar retorno|pr[oó]ximo contato)\b/i.test(source))intent='FOLLOW_UP_HELP'
-  else if(toolHint==='CALCULATOR'||/\b(?:calcul\w*|simul\w*|retorno|roi|margem|ponto de equil[ií]brio|convers[aã]o de unidade)\b/i.test(source))intent='CALCULATE'
+  // Pergunta aritmetica de plantabilidade ("300 mil plantas por hectare em 45 cm") e calculo,
+  // mesmo sem a palavra "calcule". O numero e obrigatorio para nao capturar pergunta de recomendacao.
+  else if(toolHint==='CALCULATOR'||/\b(?:calcul\w*|simul\w*|retorno|roi|margem|ponto de equil[ií]brio|convers[aã]o de unidade)\b/i.test(source)||/\d[\d. ]*\s*(?:mil\s+)?(?:plantas|sementes)\s*(?:por|\/)\s*(?:hectare|ha|metro|m)\b/i.test(source))intent='CALCULATE'
   else intent=hasClient?'ASK_CLIENT':'ASK_GENERAL'
  }
  const persistenceMode=sessionCommand?.persistence_mode||(['REGISTER_INFORMATION','POST_VISIT'].includes(intent)?'CONFIRM_REQUIRED':'NONE')

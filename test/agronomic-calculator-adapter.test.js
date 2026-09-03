@@ -172,3 +172,24 @@ test('UI direta referencia os mesmos módulos canônicos, sem segunda fórmula d
  assert.doesNotMatch(page,/const rawSeedsMeter =/)
  assert.doesNotMatch(nutrient,/coefficients\[key\] \* Math\.max/)
 })
+
+
+test('pergunta aritmetica de plantabilidade vira calculo deterministico sem a palavra calcule',async()=>{
+ for(const message of ['quanto é 300 mil plantas por hectare em espaçamento de 45 cm?','quantas plantas por metro para 300000 plantas/ha com 45 cm?','calcule plantas por metro: população 300000 plantas/ha, espaçamento 45 cm']){
+  const route=routeSystemCapability({message,hasClient:true})
+  assert.equal(route.intent,'CALCULATE',message)
+  assert.deepEqual(route.capabilities,['CALCULATORS'],message)
+  const result=await executeCopilotCalculator(message)
+  assert.equal(result.status,'EXECUTED',message)
+  assert.equal(result.calculator,'plantas_por_metro',message)
+  assert.equal(result.output.plants_per_meter,13.5,message)
+  assert.equal(result.output.linear_meters_ha,22222.22,message)
+  assert.equal(result.source_ref,'calculator:plantas_por_metro',message)
+ }
+ // Recomendacao de populacao continua na calculadora canonica, com seus inputs materiais.
+ const recommendation=await executeCopilotCalculator('qual a população ideal de plantas por hectare para soja cultivar Alfa?')
+ assert.equal(recommendation.calculator,'populacao')
+ assert.equal(recommendation.status,'INPUT_REQUIRED')
+ // Sem numero nao e aritmetica: nao rouba a pergunta de conhecimento.
+ assert.notEqual(routeSystemCapability({message:'o que define a população ideal de plantas por hectare?',hasClient:false}).intent,'CALCULATE')
+})
