@@ -24,7 +24,7 @@ test('item curado da Biblioteca chega ao consultor quando a pergunta o seleciona
   ['adubação fosfatada',/fósforo aplicado é fixado/],
   ['janela de plantio da soja',/Zoneamento Agrícola de Risco Climático/],
   ['sazonalidade de preço',/padrão sazonal/],
-  ['o que é breakeven',/ponto de equilíbrio/],
+  ['o que é breakeven',/quanto ganho adicional paga a diferença|ponto de equilíbrio/],
   ['orçamento parcial',/Orçamento parcial organiza/],
   ['cotação',/Margem exige cruzar custo de produção/]
  ]

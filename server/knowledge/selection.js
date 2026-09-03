@@ -11,8 +11,21 @@ const stopWords=new Set([
  'qual','quais','quem','quando','onde','quanto','quantos','quantas','porque','porquê','pra','para',
  'melhor','melhores','pior','piores','maior','menor','muito','muita','pouco','pouca','todo','toda','todos','todas',
  'fazer','faco','faz','ser','sou','estar','esta','ter','tem','pode','posso','deve','devo','vai','vou','quero','queria',
- 'sobre','tambem','ainda','agora','hoje','assim','entao','depois','antes','mesmo','mesma','cada','outro','outra'
+ 'sobre','tambem','ainda','agora','hoje','assim','entao','depois','antes','mesmo','mesma','cada','outro','outra',
+ // Formas que a normalizacao sem acento deixa com 3 letras ("nao", "ate", "sao"): existiam em
+ // dezenas de itens e davam cobertura artificial a qualquer pergunta que as usasse.
+ 'nao','ate','sao','tao','nem','sim','esta','estao','era','sera','seria','tinha',
+ // Verbos e substantivos de pergunta nao carregam dominio: "explique o que e WASDE" e a mesma
+ // pergunta que "o que e WASDE". Sem isto, o termo desconhecido ("explique") derrubava a maioria
+ // do corpus e a pergunta era declarada fora de assunto.
+ 'explique','explica','explicar','defina','define','definir','resuma','resumir','descreva','descrever',
+ 'conceito','significado','significa','fale','fala','falar','ensina','ensine','entender','entendo',
+ 'funciona','dizer','diz','quer','saber','sei','gostaria'
 ])
+
+// Plural nao e assunto diferente: "daninhas" deve encontrar "daninha" e "herbicidas" deve
+// encontrar "herbicida". Aplicado igualmente a pergunta e ao corpus.
+const singular=token=>token.length>=5&&token.endsWith('s')&&!token.endsWith('ss')?token.slice(0,-1):token
 
 const lexicalExpansions=Object.freeze({
  adubacao:['fertilizante','fertilidade'],
@@ -53,8 +66,9 @@ const exclusiveConceptGroups=Object.freeze([
 
 function tokens(value){
  const result=new Set()
- for(const token of normalizeSearchText(value).split(' ')){
-  if(token.length<3||stopWords.has(token))continue
+ for(const raw of normalizeSearchText(value).split(' ')){
+  if(raw.length<3||stopWords.has(raw))continue
+  const token=singular(raw)
   result.add(token)
   for(const expansion of lexicalExpansions[token]||[])result.add(expansion)
  }
@@ -66,9 +80,9 @@ function tokens(value){
 // so casa com sinonimo generico.
 function baseTokens(value){
  const result=new Set()
- for(const token of normalizeSearchText(value).split(' ')){
-  if(token.length<3||stopWords.has(token))continue
-  result.add(token)
+ for(const raw of normalizeSearchText(value).split(' ')){
+  if(raw.length<3||stopWords.has(raw))continue
+  result.add(singular(raw))
  }
  return result
 }
@@ -163,7 +177,7 @@ function corpusKnowsQuestion(queryBaseTokens,frequency){
 // daninha; "frac" e "yield" aparecem em um so.
 const discriminatingFrequency=2
 
-function scoreItem(item,{searchTokens,queryBaseTokens,corpusFrequency,queryConcepts,requestedModules,requestedGeography,sourceById,now}){
+function scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens=new Set(),normalizedQuery='',corpusFrequency,queryConcepts,requestedModules,requestedGeography,sourceById,now}){
  const reasonCodes=[]
  if(!item.retrieval_eligible)return {eligible:false,reason:item.prompt_safety==='BLOCKED'?'PROMPT_INJECTION_BLOCKED':'STATUS_NOT_ELIGIBLE'}
  if(item.status!=='APPROVED')return {eligible:false,reason:'STATUS_NOT_APPROVED'}
@@ -196,13 +210,31 @@ function scoreItem(item,{searchTokens,queryBaseTokens,corpusFrequency,queryConce
   const itemTokens=new Set(Object.values(fields).flatMap(set=>[...set]))
   const covered=[...queryBaseTokens].filter(token=>itemTokens.has(token)).length
   // triggers sao escritos pelo curador para dizer "este item responde sobre X",
-  // entao um unico termo que caia neles basta. Titulo nao serve para isso:
-  // "capital" aparece no titulo de um item de custo por acaso, "frac" nao.
-  const coveredInTriggers=[...queryBaseTokens].some(token=>fields.triggers.has(token)&&(corpusFrequency?.get(token)??Infinity)<=discriminatingFrequency)
+  // entao um unico termo que caia neles basta. Titulo so vale para termo
+  // discriminante (frequencia <= 2): "breakeven" sim, "custo" nao.
+  const coveredInTriggers=[...queryBaseTokens].some(token=>(fields.triggers.has(token)||fields.title.has(token)&&queryBaseTokens.size===1)&&(corpusFrequency?.get(token)??Infinity)<=discriminatingFrequency)
   if(covered<2&&covered<queryBaseTokens.size&&!coveredInTriggers)return {eligible:false,reason:'WEAK_QUERY_COVERAGE'}
  }
 
- let score=hits.title*7+hits.triggers*8+hits.application*5+hits.statement*4+hits.actions*3+hits.avoid*2+hits.domain*2
+ // Cada termo pontua uma vez, pelo campo mais forte em que aparece, com um bonus pequeno
+ // quando aparece em mais de um campo. Somar o mesmo termo em quatro campos fazia "milho"
+ // (titulo, trigger, statement e application do item de populacao) valer mais do que
+ // "gorgulho do milho" inteiro no trigger do item de armazenagem. Sinonimo expandido
+ // ("fungicida" -> "defensivo") ajuda a recuperar, mas vale metade do termo escrito.
+ const fieldWeights=[['title',8],['triggers',8],['application',5],['statement',4],['actions',3],['avoid',2],['domain',2]]
+ let score=0
+ for(const token of searchTokens){
+  let best=0,breadth=0
+  for(const [field,weight] of fieldWeights)if(fields[field].has(token)){breadth+=1;if(weight>best)best=weight}
+  if(!best)continue
+  const tokenScore=best+(breadth>1?2:0)
+  score+=derivedTokens.has(token)?tokenScore/2:tokenScore
+ }
+ // Trigger inteiro contido na pergunta ("gorgulho do milho", "melhor epoca para vender") e o
+ // curador respondendo por este item; vale mais do que um nome de cultura repetido em quatro
+ // campos de outro item.
+ const triggerPhrase=Boolean(normalizedQuery)&&item.triggers.some(trigger=>{const phrase=normalizeSearchText(trigger);return phrase.length>=4&&normalizedQuery.includes(phrase)})
+ if(triggerPhrase){score+=25;reasonCodes.push('TRIGGER_PHRASE_MATCH')}
  if(hits.title)reasonCodes.push('TITLE_MATCH')
  if(hits.triggers)reasonCodes.push('TRIGGER_MATCH')
  if(hits.application||hits.statement)reasonCodes.push('DECISION_CONTEXT_MATCH')
@@ -273,6 +305,8 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
  const contextText=flattenContext(contextSnapshot).join(' ')
  const queryTokens=tokens(query)
  const queryBaseTokens=baseTokens(query)
+ const normalizedQuery=normalizeSearchText(query)
+ const derivedTokens=new Set([...queryTokens].filter(token=>!queryBaseTokens.has(token)))
  const contextTokens=tokens(contextText)
  const searchTokens=new Set([...queryTokens,...contextTokens])
  const objectiveConcepts=exclusiveConcepts(query)
@@ -286,7 +320,7 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
 
  for(const item of source.items){
   if(offDomainQuestion){excludedReasonCounts.QUESTION_OUTSIDE_CORPUS=(excludedReasonCounts.QUESTION_OUTSIDE_CORPUS||0)+1;continue}
-  const result=scoreItem(item,{searchTokens,queryBaseTokens,corpusFrequency,queryConcepts,requestedModules,requestedGeography:geography,sourceById,now})
+  const result=scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens,normalizedQuery,corpusFrequency,queryConcepts,requestedModules,requestedGeography:geography,sourceById,now})
   if(!result.eligible){
    excludedReasonCounts[result.reason]=(excludedReasonCounts[result.reason]||0)+1
    continue

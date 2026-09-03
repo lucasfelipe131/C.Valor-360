@@ -138,3 +138,33 @@ test('contexto privado serve ao ranking sem aparecer na seleção ou auditoria',
  assert.ok(!JSON.stringify(selection).includes(privateMarker))
  assert.ok(!Object.hasOwn(selection,'contextSnapshot'))
 })
+
+test('verbo de pergunta e plural não mudam o item selecionado',()=>{
+ const modules=['MCTX','MDI','MVV','MIA','MIC']
+ const top=query=>selectKnowledge({query,modules,geography:'General',limit:1}).items[0]?.knowledge_item_id
+ for(const term of ['WASDE','basis','hedge','ZARC','PRNT','FRAC','BATNA','premortem']){
+  const reference=top(`o que é ${term}`)
+  assert.match(reference||'',/^KI-\d+$/,term)
+  for(const prefix of ['explique','explique o que é','me explica','defina','o que significa','conceito de','resuma','como funciona','fale sobre','o que quer dizer'])assert.equal(top(`${prefix} ${term}`),reference,`${prefix} ${term}`)
+ }
+ assert.equal(top('daninhas'),top('daninha'))
+ assert.equal(top('herbicidas'),top('herbicida'))
+})
+
+test('trigger inteiro na pergunta vence nome de cultura repetido em vários campos',()=>{
+ const modules=['MCTX','MDI','MVV','MIA','MIC']
+ const top=query=>selectKnowledge({query,modules,geography:'General',limit:1}).items[0]
+ assert.equal(top('gorgulho do milho').knowledge_item_id,'KI-129')
+ assert.ok(top('gorgulho do milho').reason_codes.includes('TRIGGER_PHRASE_MATCH'))
+ assert.equal(top('melhor época para vender soja').knowledge_item_id,'KI-107')
+ assert.equal(top('herbicida não funcionou').knowledge_item_id,'KI-112')
+ assert.equal(top('população de plantas no milho').knowledge_item_id,'KI-127')
+})
+
+test('"não" e "até" sem acento não dão cobertura artificial a pergunta fora do acervo',()=>{
+ const modules=['MCTX','MDI','MVV','MIA','MIC']
+ for(const query of ['qual a distância da terra até a lua','distância até o aeroporto','por que a terra não é plana','qual a capital da Austrália','quem ganhou a segunda guerra mundial']){
+  const selection=selectKnowledge({query,modules,geography:'General',limit:3})
+  assert.deepEqual(selection.items,[],query)
+ }
+})
