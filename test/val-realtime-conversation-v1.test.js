@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {fileURLToPath} from 'node:url'
 import {readFileSync} from 'node:fs'
 import test from 'node:test'
 import React from 'react'
@@ -146,7 +147,7 @@ test('Web Speech provider — instancia reconhecimento a cada rearm, sem microfo
 })
 
 test('ValRealtimeConversation — SSR mantém entrada opt-in e não ativa microfone no carregamento',async()=>{
- const vite=await createServer({root:new URL('..',import.meta.url).pathname,logLevel:'silent',server:{middlewareMode:true},appType:'custom'})
+ const vite=await createServer({root:fileURLToPath(new URL('..',import.meta.url)),logLevel:'silent',server:{middlewareMode:true},appType:'custom'})
  try{
   const {default:ValRealtimeConversation}=await vite.ssrLoadModule('/src/components/copilot/ValRealtimeConversation.jsx')
   const markup=renderToStaticMarkup(React.createElement(ValRealtimeConversation,{onTranscript:()=>{}}))

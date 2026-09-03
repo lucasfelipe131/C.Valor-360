@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {fileURLToPath} from 'node:url'
 import {readFileSync} from 'node:fs'
 import {after,before,test} from 'node:test'
 import React from 'react'
@@ -23,7 +24,7 @@ let vite
 let markup=''
 
 before(async()=>{
- vite=await createServer({root:new URL('..',import.meta.url).pathname,logLevel:'silent',server:{middlewareMode:true},appType:'custom'})
+ vite=await createServer({root:fileURLToPath(new URL('..',import.meta.url)),logLevel:'silent',server:{middlewareMode:true},appType:'custom'})
  const {default:Agro}=await vite.ssrLoadModule('/src/pages/Agro.jsx')
  markup=renderToStaticMarkup(React.createElement(Agro,{
   producer:{id:'producer-1',name:'João Pereira'},

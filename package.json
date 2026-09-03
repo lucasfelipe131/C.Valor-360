@@ -17,7 +17,7 @@
     "voice:golden": "node scripts/val-voice-golden.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "start": "node server/start.js",
-    "test": "node --test",
+    "test": "node --experimental-strip-types --test",
     "test:phase2:smoke": "node scripts/phase2-smoke.mjs",
     "test:phase5:smoke": "node scripts/phase5-smoke.mjs",
     "test:phase6:smoke": "node scripts/phase6-smoke.mjs",
