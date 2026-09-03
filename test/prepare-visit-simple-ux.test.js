@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {fileURLToPath} from 'node:url'
 import {readFileSync} from 'node:fs'
 import test from 'node:test'
 import React from 'react'
@@ -57,7 +58,7 @@ test('Prepare Visit Simple — pouca informação fica curta e explícita',()=>{
 })
 
 test('Prepare Visit Simple — SSR mantém essencial primeiro, voz e profundidade sob demanda',async()=>{
- const vite=await createServer({root:new URL('..',import.meta.url).pathname,logLevel:'silent',server:{middlewareMode:true},appType:'custom'})
+ const vite=await createServer({root:fileURLToPath(new URL('..',import.meta.url)),logLevel:'silent',server:{middlewareMode:true},appType:'custom'})
  try{
   const {default:PrepareVisitSimple}=await vite.ssrLoadModule('/src/components/visit/PrepareVisitSimple.jsx')
   const html=renderToStaticMarkup(React.createElement(PrepareVisitSimple,{...input,storageScope:'tenant-a:actor-a'}))

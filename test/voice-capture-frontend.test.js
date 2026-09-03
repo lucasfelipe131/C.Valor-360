@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {fileURLToPath} from 'node:url'
 import {readFileSync} from 'node:fs'
 import test from 'node:test'
 import React from 'react'
@@ -22,7 +23,7 @@ const prepareVisitSimple=read('../src/components/visit/PrepareVisitSimple.jsx')
 const occurrences=(source,fragment)=>source.split(fragment).length-1
 
 test('VoiceCapture frontend — launcher SSR preserva rótulo, descrição e bloqueio sem produtor',async()=>{
- const vite=await createServer({root:new URL('..',import.meta.url).pathname,logLevel:'silent',server:{middlewareMode:true},appType:'custom'})
+ const vite=await createServer({root:fileURLToPath(new URL('..',import.meta.url)),logLevel:'silent',server:{middlewareMode:true},appType:'custom'})
  try{
   const {default:VoiceCapture}=await vite.ssrLoadModule('/src/components/voice/VoiceCapture.jsx')
   const enabled=renderToStaticMarkup(React.createElement(VoiceCapture,{clientId:'client-voice-1',interactionType:'CLIENT_NOTE',label:'Registrar áudio',description:'Informação ou lembrete'}))

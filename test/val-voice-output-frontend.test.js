@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {fileURLToPath} from 'node:url'
 import {readFileSync} from 'node:fs'
 import test from 'node:test'
 import React from 'react'
@@ -149,7 +150,7 @@ test('voice output — dispose cancela reprodução e invalida callbacks antigos
 })
 
 test('ValAudioResponse — SSR expõe controles acessíveis, autoplay opt-in e fallback textual',async()=>{
- const vite=await createServer({root:new URL('..',import.meta.url).pathname,logLevel:'silent',server:{middlewareMode:true},appType:'custom'})
+ const vite=await createServer({root:fileURLToPath(new URL('..',import.meta.url)),logLevel:'silent',server:{middlewareMode:true},appType:'custom'})
  try{
   const {default:ValAudioResponse,shouldShowSpeechFallback}=await vite.ssrLoadModule('/src/components/copilot/ValAudioResponse.jsx')
   const markup=renderToStaticMarkup(React.createElement(ValAudioResponse,{text:'Leitura da VAL.',autoPlay:false}))
