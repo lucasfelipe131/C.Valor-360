@@ -325,11 +325,28 @@ const groundingFallbackReadingByDomain={
  COMMERCIAL:'Ainda não há compromisso registrado.'
 }
 
-function applyGroundingFallback(result,context,domain){
+// A frase específica de um domínio só responde a pergunta factual daquele domínio.
+// Pedir preparação de visita não é perguntar qual foi a última visita concluída:
+// nesse caso a leitura honesta é a genérica, sobre evidência insuficiente.
+const pastFactQuestionByDomain={
+ VISIT:/\b(?:ultima|ultimo|anterior|passad\w*|concluid\w*|realizad\w*|aconteceu|ocorreu)\b/,
+ OPPORTUNITY:/\b(?:ultima|ultimo|aberta|abertas|existente|existentes|atual|atuais|quais|tem|ha)\b/,
+ COMMERCIAL:/\b(?:ultimo|ultima|pendente|pendentes|assumid\w*|combinad\w*|quais|tem|ha)\b/
+}
+
+const foldQuestion=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
+
+function groundingFallbackReading(domain,message){
+ const specific=groundingFallbackReadingByDomain[domain]
+ if(!specific)return ''
+ return pastFactQuestionByDomain[domain]?.test(foldQuestion(message))?specific:''
+}
+
+function applyGroundingFallback(result,context,domain,message=''){
  const profile=domain==='PROFILE'
  const reading=profile
   ?'Não há evidência comportamental atual e auditável suficiente para determinar o perfil comportamental.'
-  :groundingFallbackReadingByDomain[domain]||'Não há evidência selecionada suficiente para afirmar uma resposta específica com segurança.'
+  :groundingFallbackReading(domain,message)||'Não há evidência selecionada suficiente para afirmar uma resposta específica com segurança.'
  result.objective='Confirme a fonte antes de continuar.'
  result.situation_summary=reading
  result.decision_thesis={
@@ -413,7 +430,7 @@ export function composeAIReasoning({advice={},context={},message='',run={},conve
  const groundingScope={question:message,domain:selectedDomain,evidence:result.facts_used,activeProducerId:result.client?.id,tenantId:result.organization?.id,ownerId:context.contextSnapshot?.context_scope?.owner_id||''}
  const initialGrounding=evaluateReasoningGrounding({...groundingScope,blocks:reasoningGroundingBlocks(result)})
  const groundingFallbackApplied=!initialGrounding.passed
- if(groundingFallbackApplied)result=safetyPreserved?applySafetyGroundingFallback(result):applyGroundingFallback(result,context,selectedDomain)
+ if(groundingFallbackApplied)result=safetyPreserved?applySafetyGroundingFallback(result):applyGroundingFallback(result,context,selectedDomain,message)
  result.reasoning_confidence=buildReasoningConfidence({context,result})
  result.decision_interview=buildDecisionInterview({intent:result.intent,message,context,result})
  if(groundingFallbackApplied)result.decision_interview={version:'val.decision_interview.v1',status:'NOT_NEEDED',questions:[],material_missing_information:[],non_material_missing_information:['Informação ausente: evidência atual e identificável.'],session_context:{conversation_id:clean(conversationId||context.conversationSession?.id||'stateless',180),persistence_mode:'NONE'},explanation:'Confirme a fonte antes de continuar.'}

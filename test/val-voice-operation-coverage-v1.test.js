@@ -9,7 +9,8 @@ test('matriz operacional classifica leitura, navegação, ferramenta e escrita g
  const cases=[
   ['Abre o produtor Antônio.','OPEN','OPEN_CLIENT',false],
   ['Procura o produtor Beber.','SEARCH','OPEN_CLIENT',false],
-  ['Prepara uma visita para o Antônio.','PREPARE','PREPARE_VISIT',false],
+  ['Abre a preparação de visita do Antônio.','PREPARE','PREPARE_VISIT',false],
+  ['Prepara uma visita para o Antônio.','ASK',null,false],
   ['Registra que ele aumentou 100 hectares.','REGISTER',null,true],
   ['Abre as visitas dele.','NAVIGATE','NAVIGATE',false],
   ['Marca o compromisso como concluído.','MARK_COMPLETE',null,true],

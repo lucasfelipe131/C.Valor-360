@@ -48,8 +48,11 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
  const factualLookup=factualImperative||/\b(?:ultima|ultimo|mais recente|principal)\b.*\b(?:visita|compra|objecao|compromisso)\b|\b(?:visita|compra|objecao|compromisso)\b(?:\s+confirmad[oa])?\s+(?:ultima|ultimo|mais recente|principal)\b(?:\s+(?:dele|dela))?|\b(?:quanto|qual|quais)\b.*\b(?:comprou|cultura|safra|area)\b/.test(source)
  const followUp=routeSessionCommand(message)||/\b(?:volta no que)\b/.test(source)
  if(followUp)return result({intent:'FOLLOW_UP',reason:'CONVERSATION_FAST_PATH'})
- const prepareVisit=/\b(?:prepara|prepare|preparar|monta|monte)\b.*\b(?:visita|conversa)\b|\b(?:visita|conversa)\b.*\b(?:prepara|prepare|preparar|roteiro)\b/.test(source)
- if(prepareVisit&&authorizedClient){
+ const prepareVisit=/\b(?:prepara|prepare|preparar|preparacao|monta|monte)\b.*\b(?:visita|conversa)\b|\b(?:visita|conversa)\b.*\b(?:prepara|prepare|preparar|preparacao|roteiro)\b/.test(source)
+ // Pedir preparação não é pedir navegação. Só abrir a tela quando o usuário
+ // usar um verbo de abrir; caso contrário a preparação pertence ao raciocínio,
+ // como em toda outra rota direta deste roteador.
+ if(prepareVisit&&openVerb&&authorizedClient){
   const workspaceAction=action({type:'PREPARE_VISIT',page:'visits',label:`Preparar visita de ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'PREPARE',reason:'PREPARE_AUTHORIZED_CLIENT',direct:true,workspaceAction,summary:`Abrindo a preparação de visita de ${authorizedClient.name||'produtor'}.`})
  }

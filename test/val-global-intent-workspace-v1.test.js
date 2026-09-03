@@ -13,9 +13,18 @@ test('GlobalIntentRouter v1 abre produtor, prepara visita e navega sem modelo',(
  assert.equal(opened.workspace_action.type,'OPEN_CLIENT')
  assert.equal(opened.workspace_action.client_id,antonio.id)
 
- const prepared=routeGlobalIntent({message:'Prepare a visita do Antônio.',client:antonio})
+ const prepared=routeGlobalIntent({message:'Abra a preparação de visita do Antônio.',client:antonio})
  assert.equal(prepared.intent,'PREPARE')
  assert.equal(prepared.workspace_action.type,'PREPARE_VISIT')
+
+ // Pedir a preparação em si não é comando de navegação: sem verbo de abrir,
+ // o pedido segue para o raciocínio em vez de só trocar de tela.
+ for(const message of ['Prepare a visita do Antônio.','Me prepare para a próxima visita com este produtor.','prepare uma visita']){
+  const reasoned=routeGlobalIntent({message,client:antonio})
+  assert.equal(reasoned.intent,'ASK',message)
+  assert.equal(reasoned.direct,false,message)
+  assert.equal(reasoned.workspace_action,null,message)
+ }
 
  const soil=routeGlobalIntent({message:'Abra a análise de solo.',client:antonio})
  assert.equal(soil.intent,'NAVIGATE')
