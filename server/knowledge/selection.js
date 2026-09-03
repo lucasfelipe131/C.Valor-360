@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto'
 import {knowledgeSelectionVersion,assertKnowledgeContract,validateKnowledgeSelection} from './contracts.js'
 import {loadKnowledgeLibrary} from './library.js'
-import {authorityRank,evaluateGeography,evaluateKnowledgeLifecycle,knowledgePolicyVersion,normalizeSearchText,text,uniqueText} from './policy.js'
+import {authorityRank,evaluateGeography,evaluateKnowledgeLifecycle,knowledgePolicyVersion,list,normalizeSearchText,text,uniqueText} from './policy.js'
 
 const stopWords=new Set([
  'a','ao','aos','as','com','como','da','das','de','do','dos','e','ele','ela','em','entre','essa','esse','esta','este','eu','foi','ha','isso','ja','mais','mas','na','nas','no','nos','o','os','ou','para','pela','pelo','por','que','se','sem','ser','sua','suas','seu','seus','tem','um','uma','voce',
@@ -322,4 +322,31 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
  }
  const selection={contract_version:knowledgeSelectionVersion,policy_version:knowledgePolicyVersion,status,items:selected,selected,reason_code:reasonCode,audit}
  return assertKnowledgeContract(selection,validateKnowledgeSelection,'KnowledgeSelection v1')
+}
+
+/**
+ * Explica a força do casamento entre a pergunta e um item já selecionado, para que o consumidor
+ * saiba se a relevância foi atestada pela curadoria (frase de trigger contida na pergunta, ou
+ * termo discriminante/maioria do título) ou se foi apenas lexical. Não altera o ranking.
+ */
+export function describeSelectionMatch({query='',item=null,library=null,libraryOptions=null}={}){
+ const source=library||loadKnowledgeLibrary(libraryOptions||{})
+ const frequency=corpusVocabulary(source)
+ const normalizedQuery=normalizeSearchText(query)
+ const queryBase=baseTokens(query)
+ const triggers=list(item?.triggers).map(trigger=>normalizeSearchText(trigger)).filter(trigger=>trigger.length>=4)
+ const triggerPhrase=normalizedQuery.length>=4&&triggers.some(trigger=>normalizedQuery.includes(trigger)||trigger.includes(normalizedQuery))
+ const titleTokens=[...baseTokens(item?.title||'')]
+ const covered=titleTokens.filter(token=>queryBase.has(token))
+ const discriminatingTitleToken=covered.some(token=>(frequency.get(token)??Infinity)<=discriminatingFrequency)
+ const titleCoverage=titleTokens.length?covered.length/titleTokens.length:0
+ // "o que e breakeven": a pergunta inteira (tirando interrogativas) esta no titulo do item.
+ const questionInTitle=queryBase.size>0&&[...queryBase].every(token=>titleTokens.includes(token))
+ return Object.freeze({
+  trigger_phrase:triggerPhrase,
+  title_coverage:Number(titleCoverage.toFixed(2)),
+  discriminating_title_token:discriminatingTitleToken,
+  question_in_title:questionInTitle,
+  match:triggerPhrase?'TRIGGER_PHRASE':discriminatingTitleToken||questionInTitle||titleCoverage>=.6?'TITLE_PHRASE':'LEXICAL'
+ })
 }

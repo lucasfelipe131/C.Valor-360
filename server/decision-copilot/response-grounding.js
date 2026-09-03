@@ -74,7 +74,7 @@ const sourceContracts=new Map([
 // GLOBAL is an isolation marker, not a licence to relabel arbitrary producer
 // records.  Only sources whose semantics are genuinely non-individual may use
 // it; producer observations/quotes/intentions must always carry producer_id.
-const trustedGlobalSourceTypes=new Set(['general_knowledge','market_snapshot','official_product_catalog','system_capability','system_safety_policy','model_general_knowledge'])
+const trustedGlobalSourceTypes=new Set(['general_knowledge','market_snapshot','official_product_catalog','system_capability','system_safety_policy','model_general_knowledge','calculation'])
 const globalScopeOf=item=>clean(item?.scope??item?.context_scope??item?.subject_type??item?.entity_type??item?.entityType,80).toUpperCase()
 const explicitlyGlobal=item=>['GLOBAL','MARKET','GENERAL_KNOWLEDGE'].includes(globalScopeOf(item))
 const processGuidanceDomains=Object.freeze({
@@ -420,7 +420,12 @@ function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}
  // GLOBAL describes the subject of the evidence; it cannot be used as an
  // escape hatch for an omitted producer id.  Market facts need an aggregate
  // anchor, while catalog/knowledge facts need an explicit concept anchor.
- if(genericAssertion.test(text)||hasNamedIndividualAssertion(rawText))return false
+ // Statement curado da Biblioteca fala do "produtor" como categoria ("o produtor tende a..."):
+ // não é afirmação sobre um indivíduo. Nome próprio continua barrado para qualquer fonte global.
+ // Statement curado da Biblioteca fala do "produtor" como categoria ("o produtor tende a...") e
+ // cita autores ("Fisher e Ury propõem"): não é afirmação sobre um indivíduo da carteira. O caminho
+ // geral nunca lê dado de produtor, e a ingestão da Biblioteca é curada e fail-closed.
+ if(sourceType!=='general_knowledge'&&(genericAssertion.test(text)||hasNamedIndividualAssertion(rawText)))return false
  if(sourceType==='market_snapshot'){
   if(!globalAggregateAnchor.test(text))return false
   // An aggregate prefix such as "Mercado:" must never launder an individual
@@ -430,7 +435,17 @@ function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}
  }
  const conceptText=text.replace(/\bcusto por hectare\b/g,'custo unitario')
  if(sourceType==='official_product_catalog')return globalConceptAnchor.test(text)&&!implicitIndividualAttribute.test(conceptText)
- if(['general_knowledge','system_capability'].includes(sourceType))return globalConceptAnchor.test(text)&&!implicitIndividualAttribute.test(conceptText)
+ // general_knowledge é a Biblioteca de Conhecimento governada (item APPROVED, escopo General, sem
+ // produtor por construção) ou uma definição fixa do executor. Exigir a lista fechada de âncoras
+ // (globalConceptAnchor) media generalidade pelo vocabulário agronômico/financeiro e deixava 85 dos
+ // 116 itens entregáveis da biblioteca (venda consultiva, negociação, ensaios on-farm, coaching)
+ // presos em GLOBAL_NOT_SEMANTICALLY_GENERAL. A proteção contra afirmação individual (acima) e
+ // contra atributo individual implícito continua valendo; só a âncora lexical deixa de ser exigida.
+ if(sourceType==='general_knowledge')return true
+ if(sourceType==='system_capability')return globalConceptAnchor.test(text)&&!implicitIndividualAttribute.test(conceptText)
+ // calculation é o resultado determinístico de uma calculadora: números e unidades ecoados da
+ // própria pergunta ("300.000 plantas/ha em 45 cm") não são atributos de um produtor.
+ if(sourceType==='calculation')return true
  // model_general_knowledge é o fallback de IA não verificada (capability AI_GENERAL_KNOWLEDGE em
  // capability-executor.js): resposta de conceito geral sem item correspondente na Knowledge
  // Library, sem qualquer contexto de produtor injetado no prompt e já bloqueada a montante para
@@ -486,16 +501,26 @@ function evidenceEntries(evidence=[],scope={}){
   if(scope.domain==='PROFILE'){
    const hardForeign=domains.some(domain=>profileHardForeignDomains.has(domain))
    const softForeign=domains.some(domain=>['COMMERCIAL','OPPORTUNITY','VISIT'].includes(domain))
-   domainCompatible=!hardForeign&&(!softForeign||strictBehavioralSupport(entry.text)&&!profileSpecificState.test(entry.text))
+   // Sem produtor ativo, "perfil de risco" é pergunta conceitual e a Biblioteca pode responder;
+   // com produtor ativo, PROFILE continua restrito a evidência comportamental dele.
+   domainCompatible=sourceType==='general_knowledge'&&!scope.activeProducerId||!hardForeign&&(!softForeign||strictBehavioralSupport(entry.text)&&!profileSpecificState.test(entry.text))
   }
+  // Item da Biblioteca já foi selecionado pela pergunta; o vocabulário do statement (um item de
+  // sazonalidade de preço fala de colheita e de grãos) não o torna de "outro domínio".
+  else if(sourceType==='general_knowledge')domainCompatible=true
   else if(!['GENERAL','MULTI_DOMAIN'].includes(scope.domain)&&domains.length)domainCompatible=domains.includes(scope.domain)||scope.domain==='COMMERCIAL'&&domains.includes('OPPORTUNITY')
   else if(scope.domain==='MULTI_DOMAIN'&&domains.length)domainCompatible=domains.some(domain=>requested.includes(domain))
   const questionFacet=contextFacet(scope.domain,scope.question)
   const intentCompatible=evidenceMatchesFacet(questionFacet,entry.text,sourceType)
-  domainCompatible=domainCompatible&&intentCompatible
-  const globalProducerSpecific=global&&/\b(?:ele|ela|este produtor|esse produtor|aquele produtor|o produtor|a produtora|do produtor|da produtora|para o produtor|para a produtora|este cliente|esse cliente|o cliente|do cliente|da cliente)\b/.test(entry.text)
+  // A faceta (preço, compra, visita...) protege evidência de produtor contra reuso fora da
+  // pergunta; um item curado da Biblioteca já foi selecionado pela própria pergunta.
+  const governedLibrary=sourceType==='general_knowledge'&&(scope.domain!=='PROFILE'||!scope.activeProducerId)
+  domainCompatible=governedLibrary||domainCompatible&&intentCompatible
+  // Statement curado da Biblioteca usa "do produtor" genericamente ("praça do produtor"); a
+  // afirmação individual real continua barrada por genericAssertion/hasNamedIndividualAssertion.
+  const globalProducerSpecific=global&&sourceType!=='general_knowledge'&&/\b(?:ele|ela|este produtor|esse produtor|aquele produtor|o produtor|a produtora|do produtor|da produtora|para o produtor|para a produtora|este cliente|esse cliente|o cliente|do cliente|da cliente)\b/.test(entry.text)
   if(globalProducerSpecific)aliasConflictCodes.push('GLOBAL_PRODUCER_SPECIFIC_CLAIM')
-  if(global&&(genericAssertion.test(entry.text)||hasNamedIndividualAssertion(rawText)))aliasConflictCodes.push('GLOBAL_INDIVIDUAL_ASSERTION')
+  if(global&&sourceType!=='general_knowledge'&&(genericAssertion.test(entry.text)||hasNamedIndividualAssertion(rawText)))aliasConflictCodes.push('GLOBAL_INDIVIDUAL_ASSERTION')
   if(global&&!semanticallyGeneralGlobalEvidence(entry))aliasConflictCodes.push('GLOBAL_NOT_SEMANTICALLY_GENERAL')
   if(global&&entry.producerId)aliasConflictCodes.push('GLOBAL_WITH_PRODUCER_ID')
   if(global&&!trustedGlobalSourceTypes.has(sourceType))aliasConflictCodes.push('UNTRUSTED_GLOBAL_SOURCE_TYPE')
@@ -618,7 +643,10 @@ function claimSupport(claim,entries,question='',domain='GENERAL',field='answer',
   return {supported:true,evidenceRefs:compatible.filter(entry=>claimTokens.some(token=>entry.tokenSet.has(token))).map(entry=>entry.id).slice(0,8),reason:'NON_FACTUAL_STRATEGY'}
  }
  if(!compatible.length)return {supported:false,evidenceRefs:[],reason:'NO_COMPATIBLE_EVIDENCE'}
- const typeCompatible=compatible.filter(entry=>(evidenceCompatibility[kind]||evidenceCompatibility.FACT).has(entry.evidenceType))
+ // Aspas ilustrativas num statement curado ("'vamos pensar' não é 'não'") tipam a claim como
+ // QUOTE; quando a claim é literalmente o texto do item da Biblioteca, o tipo epistêmico da
+ // fonte (FACT curado) é o suporte correto.
+ const typeCompatible=compatible.filter(entry=>(evidenceCompatibility[kind]||evidenceCompatibility.FACT).has(entry.evidenceType)||entry.sourceType==='general_knowledge'&&source.length>=12&&entry.text.includes(source))
  if(!typeCompatible.length)return {supported:false,evidenceRefs:[],reason:'EPISTEMIC_TYPE_MISMATCH'}
  const candidates=typeCompatible.map(entry=>{
  const exact=source.length>=12&&entry.text.includes(source)
@@ -676,6 +704,14 @@ function claimSupport(claim,entries,question='',domain='GENERAL',field='answer',
  return {supported:false,evidenceRefs:[],reason:claimNumbers.length?'UNSUPPORTED_NUMERIC_CLAIM':'UNSUPPORTED_SPECIFIC_CLAIM'}
 }
 
+const lexicalStem=token=>token.length<5?token:token.replace(/s$/,'').replace(/(?:coes|cao|adas|ados|ada|ado|idas|idos|ida|ido|ando|endo|indo|mente|ar|er|ir)$/,'')
+const cropOnlyGrainsQuestion=question=>{
+ const source=normalize(question)
+ const withoutCrops=source.replace(/\b(?:soja|milho|trigo|sorgo|cevada)\b/g,' ')
+ const remaining=matchedValContextDomains(withoutCrops)
+ return matchedValContextDomains(source).includes('GRAINS')&&!remaining.includes('GRAINS')&&remaining.length>0
+}
+
 function directlyAnswersQuestion({domain,question,answer,unsupportedClaims}){
  const source=normalize(answer)
  if(!source)return false
@@ -695,7 +731,10 @@ function directlyAnswersQuestion({domain,question,answer,unsupportedClaims}){
  if(facet&&!evidenceMatchesFacet(facet,source,''))return false
  const answerDomains=matchedValContextDomains(source)
  if(domain==='MULTI_DOMAIN'){
-  const requested=matchedValContextDomains(question)
+  // Um nome de cultura ("soja", "milho") classifica a pergunta também como GRAINS. Quando esse é o
+  // único motivo do GRAINS e a pergunta tem outro domínio material ("janela de plantio da soja"),
+  // a resposta não precisa repetir vocabulário de grãos: basta cobrir o domínio da pergunta.
+  const requested=matchedValContextDomains(question).filter(item=>!(item==='GRAINS'&&cropOnlyGrainsQuestion(question)))
   if(!(requested.length>0&&requested.every(item=>answerDomains.includes(item))))return false
  }
  const domainCompatible=domain==='MULTI_DOMAIN'||answerDomains.includes(domain)||domain==='COMMERCIAL'&&answerDomains.includes('OPPORTUNITY')
@@ -705,14 +744,15 @@ function directlyAnswersQuestion({domain,question,answer,unsupportedClaims}){
  // quando pedido e resposta compartilham o mesmo tópico material e a resposta
  // declara explicitamente que o valor foi calculado. O suporte numérico e a
  // proveniência já foram validados claim a claim antes deste ponto.
- const calculationTopics=new Set(['semente','sementes','semeadora','semeadura','populacao','colheita','zoneamento','zarc','pulverizacao','fertilizante','nutriente','nutrientes','cotacao','insumo','insumos'])
+ const calculationTopics=new Set(['semente','sementes','semeadora','semeadura','populacao','colheita','zoneamento','zarc','pulverizacao','fertilizante','nutriente','nutrientes','cotacao','insumo','insumos','plantas','planta','plantabilidade','espacamento','hectare','hectares','custo','custos','area','metro','metros','linear','lineares','saca','sacas','tonelada','toneladas','retorno','investimento','roi','margem'])
  const questionSource=normalize(question)
- const calculationRequested=/\bcalcul(?:a|ar|e|o|ou)\b/.test(questionSource)
+ // "quanto é 300 mil plantas por hectare em 45 cm?" é pedido de cálculo tanto quanto "calcule".
+ const calculationRequested=/\bcalcul(?:a|ar|e|o|ou)\b|\bquanto (?:e|da|dao|fica|ficam|sao|seria|seriam|custa|rende|vale)\b|\bquant[ao]s\b/.test(questionSource)
  const calculationReturned=/\bcalculad[oa]s?\b/.test(source)&&numbers(source).length>0
  const questionCalculationTopics=new Set(tokens(question).filter(token=>calculationTopics.has(token)))
  const sharedCalculationTopic=tokens(answer).some(token=>questionCalculationTopics.has(token))
  if(calculationRequested&&calculationReturned&&sharedCalculationTopic)return true
- const relevanceStop=new Set(['qual','quais','como','quando','onde','quem','porque','favor','mostre','mostrar','diga','dizer','devo','esta','estao','foi','foram','mais','recente','atual','aqui','posso','pode','podem','usar','use','resuma','resumir','linha','confirme','confirmar','explique','explicar'])
+ const relevanceStop=new Set(['qual','quais','como','quando','onde','quem','porque','favor','mostre','mostrar','diga','dizer','devo','esta','estao','foi','foram','mais','recente','atual','aqui','posso','pode','podem','usar','use','resuma','resumir','linha','confirme','confirmar','explique','explicar','quanto','quantos','quantas','aplicar','aplico','vale','pena','preciso','precisa','fazer','faco','seria','sera','entender','saber','significa','conceito','defina','define','definir','funciona','fale','fala','explica','conta','quero','queria','gostaria','sobre','melhor','ideal'])
  const questionTokens=tokens(question).filter(token=>!relevanceStop.has(token))
  // A pergunta sem nenhum token material (cumprimento como "oi", "bom dia") não tem
  // conteúdo específico para a resposta endereçar ou deixar de endereçar — todo o resto
@@ -720,8 +760,10 @@ function directlyAnswersQuestion({domain,question,answer,unsupportedClaims}){
  // deste ponto, então "irrelevante" não é um conceito aplicável aqui. Sem isto, qualquer
  // cumprimento cai no bloqueio de grounding só por ser curto demais para gerar overlap.
  if(!questionTokens.length)return true
- const answerTokens=new Set(tokens(answer))
- const overlap=questionTokens.filter(token=>answerTokens.has(token)).length
+ // Flexão não é mudança de assunto: "adubação fosfatada" é respondida por "adubo fosfatado" e
+ // "daninhas" por "daninha". A comparação usa radical leve; o suporte de cada claim já foi validado.
+ const answerStems=new Set(tokens(answer).map(lexicalStem))
+ const overlap=questionTokens.filter(token=>answerStems.has(lexicalStem(token))).length
  return overlap>=Math.max(1,Math.ceil(questionTokens.length*.5))
 }
 

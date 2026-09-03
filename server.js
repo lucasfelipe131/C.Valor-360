@@ -641,6 +641,14 @@ async function handleApi(request,response,url){
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'portfolio',entityId:null,metadata:{mode:capability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:capability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
     return json(response,200,final)
    }
+   // Aritmética pura ("quanto é 300 mil plantas por hectare em 45 cm?") não depende de produtor:
+   // a calculadora executa sem contexto privado e o resultado é evidência determinística própria.
+   if(capability.path==='TOOL'&&capability.direct&&capability.capabilities.includes('CALCULATORS')){
+    latency.start('TOOL');const execution=await withOperationTimeout(signal=>executeCapabilityPlan({route:capability,message,context:{},clientId:'',tenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,signal}),{timeoutMs:config.toolRequestTimeoutMs,code:'val_tool_timeout',message:'A ferramenta excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
+    const direct=buildCapabilityExecutionResponse({execution,route:capability,message,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),executionCounts:{entityResolutions:entityLookupCount,dataLookups:0,toolCalls:1,hops:entityLookupCount+1}})
+    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'portfolio',entityId:null,metadata:{mode:'tool',engineMode:'rules',intent:routedIntent.intent,reasoningPath:'TOOL',toolStatus:execution.tool_result?.status}})
+    return json(response,200,complete(direct,execution))
+   }
    if(capability.session_command){
     if(capability.session_command.requires_current_client)return json(response,422,{error:'Este comando precisa de um produtor ativo na conversa.',code:'val_session_command_client_required',conversationId,clarification:{question:'Qual produtor deve permanecer ativo?'}})
     latency.start('TOOL');const execution=await withOperationTimeout(signal=>executeCapabilityPlan({route:capability,message,context:{conversationState:conversationStateContext(sessionState),priorRecommendations:[]},clientId:'',tenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,activeContext,signal}),{timeoutMs:config.toolRequestTimeoutMs,code:'val_tool_timeout',message:'A ferramenta excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
