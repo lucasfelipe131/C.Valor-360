@@ -5,8 +5,8 @@ const choice=(value,allowed,fallback)=>allowed.includes(String(value||'').toLowe
 export const infrastructureTimeoutDefaults=Object.freeze({
   databaseQueryTimeoutMs:3_000,
   toolRequestTimeoutMs:8_000,
-  coreRequestTimeoutMs:15_000,
-  conversationalModelTimeoutMs:12_000,
+  coreRequestTimeoutMs:22_000,
+  conversationalModelTimeoutMs:20_000,
   valChatRequestTimeoutMs:28_000
 })
 
