@@ -10,6 +10,7 @@ const stopWords=new Set([
  // "qual a capital da Australia" casava com um item por causa de "qual".
  'qual','quais','quem','quando','onde','quanto','quantos','quantas','porque','porquê','pra','para',
  'melhor','melhores','pior','piores','maior','menor','muito','muita','pouco','pouca','todo','toda','todos','todas',
+ 'ideal','ideais','otimo','otima','bom','boa','certo','certa','correto','correta','adequado','adequada','recomendado','recomendada','possivel','preciso',
  'fazer','faco','faz','ser','sou','estar','esta','ter','tem','pode','posso','deve','devo','vai','vou','quero','queria',
  'sobre','tambem','ainda','agora','hoje','assim','entao','depois','antes','mesmo','mesma','cada','outro','outra',
  // Formas que a normalizacao sem acento deixa com 3 letras ("nao", "ate", "sao"): existiam em
@@ -174,8 +175,13 @@ function corpusKnowsQuestion(queryBaseTokens,frequency){
 
 // Um termo unico so dispensa a cobertura se for discriminante. "plantas"
 // aparece em varios itens e puxaria populacao de milho para uma pergunta de
-// daninha; "frac" e "yield" aparecem em um so.
+// daninha; "frac" e "yield" aparecem em um so. Nome de cultura ou categoria
+// nunca e discriminante, por mais raro que seja no acervo: "milho" em dois
+// itens nao faz "temperatura ideal para germinacao do milho" ser respondida
+// pelo item de populacao de plantas.
 const discriminatingFrequency=2
+const conceptTerms=new Set(exclusiveConceptGroups.flatMap(([,terms])=>terms))
+const discriminating=(token,frequency)=>!conceptTerms.has(token)&&(frequency?.get(token)??Infinity)<=discriminatingFrequency
 
 function scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens=new Set(),normalizedQuery='',corpusFrequency,queryConcepts,requestedModules,requestedGeography,sourceById,now}){
  const reasonCodes=[]
@@ -212,7 +218,7 @@ function scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens=new Set(),no
   // triggers sao escritos pelo curador para dizer "este item responde sobre X",
   // entao um unico termo que caia neles basta. Titulo so vale para termo
   // discriminante (frequencia <= 2): "breakeven" sim, "custo" nao.
-  const coveredInTriggers=[...queryBaseTokens].some(token=>(fields.triggers.has(token)||fields.title.has(token)&&queryBaseTokens.size===1)&&(corpusFrequency?.get(token)??Infinity)<=discriminatingFrequency)
+  const coveredInTriggers=[...queryBaseTokens].some(token=>(fields.triggers.has(token)||fields.title.has(token)&&queryBaseTokens.size===1)&&discriminating(token,corpusFrequency))
   if(covered<2&&covered<queryBaseTokens.size&&!coveredInTriggers)return {eligible:false,reason:'WEAK_QUERY_COVERAGE'}
  }
 
@@ -372,7 +378,7 @@ export function describeSelectionMatch({query='',item=null,library=null,libraryO
  const triggerPhrase=normalizedQuery.length>=4&&triggers.some(trigger=>normalizedQuery.includes(trigger)||trigger.includes(normalizedQuery))
  const titleTokens=[...baseTokens(item?.title||'')]
  const covered=titleTokens.filter(token=>queryBase.has(token))
- const discriminatingTitleToken=covered.some(token=>(frequency.get(token)??Infinity)<=discriminatingFrequency)
+ const discriminatingTitleToken=covered.some(token=>discriminating(token,frequency))
  const titleCoverage=titleTokens.length?covered.length/titleTokens.length:0
  // "o que e breakeven": a pergunta inteira (tirando interrogativas) esta no titulo do item.
  const questionInTitle=queryBase.size>0&&[...queryBase].every(token=>titleTokens.includes(token))
