@@ -29,7 +29,7 @@ const sourceIdentityKeys=Object.freeze(['source_ref','sourceRef','id','commitmen
 const trustedCapabilityExecutions=new WeakSet()
 
 const navigation=Object.freeze({
- AGRONOMIC_WORKSPACE:{tool:'',title:'Ferramentas agronômicas da VAL',page:'agro',manual_page:null,mode:'catalog'},
+ AGRONOMIC_WORKSPACE:{tool:'',title:'Inteligência Agronômica da VAL',page:'agro',manual_page:null,mode:'catalog'},
  AREA_MAPPING:{tool:'area_mapping',title:'Mapeamento de áreas',page:'agro',manual_page:'produtores',mode:'mapping'},
  CALCULATORS:{tool:'calculators',title:'Calculadoras agronômicas',page:'agro',manual_page:'calculadoras',mode:'calculator'},
  SOIL_ANALYSIS:{tool:'soil_analysis',title:'Análise de solo',page:'agro',manual_page:'solo',mode:'soil'},

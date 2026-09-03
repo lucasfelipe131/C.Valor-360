@@ -113,16 +113,26 @@ test('Cliente 360 mantém dossiê em drill-down sem chamar agendamento de intera
  assert.match(client360,/ProducerFieldGallery/)
 })
 
-test('navegação preserva agronomia nativa e deixa o workspace como aprofundamento',()=>{
+test('navegação expõe a Inteligência Agronômica como jornada principal e deixa o workspace técnico como aprofundamento',()=>{
  assert.match(sidebar,/\['dashboard','Hoje',LayoutDashboard\]/)
  assert.match(sidebar,/Perguntar à VAL/)
  assert.doesNotMatch(sidebar,/\['val','Ambientes VAL'/)
  assert.match(sidebar,/\['questionnaire','Coletar preferências'/)
- assert.match(sidebar,/\['agro','Ferramentas agronômicas'/)
- assert.doesNotMatch(sidebar,/Manual agronômico/)
+ // A agronomia nativa é um destino de primeira classe: entra na jornada principal, antes da
+ // entrada da VAL, com o rótulo institucional. O rótulo antigo não pode voltar em lugar nenhum.
+ const primaryBlock=sidebar.slice(sidebar.indexOf('const primary='),sidebar.indexOf('const secondary='))
+ const secondaryBlock=sidebar.slice(sidebar.indexOf('const secondary='),sidebar.indexOf('export default function Sidebar'))
+ assert.match(primaryBlock,/\['agro','Inteligência Agronômica',Sprout\]/)
+ assert.ok(primaryBlock.indexOf("['agro'")<primaryBlock.indexOf("['copilot'"))
+ assert.doesNotMatch(secondaryBlock,/\['agro'/)
+ assert.doesNotMatch(sidebar,/Ferramentas agronômicas|Manual agronômico/)
  assert.match(mobile,/onClick=\{onOpenVal\} aria-label="Abrir a VAL"/)
  assert.match(mobile,/\['dashboard','Hoje',CalendarDays\]/)
- assert.match(mobile,/\['agro','Ferramentas agronômicas',Sprout\]/)
+ // No celular a barra fixa tem quatro posições (Hoje, Clientes, VAL, Mais); a agronomia abre a
+ // lista de módulos como primeira opção, sem perder o nome institucional.
+ const mobileSecondary=mobile.slice(mobile.indexOf('const secondary='),mobile.indexOf('export default function MobileNav'))
+ assert.match(mobileSecondary,/const secondary=\[\s*\['agro','Inteligência Agronômica',Sprout\]/)
+ assert.doesNotMatch(mobile,/Ferramentas agronômicas/)
 })
 
 test('pós-visita tem um Voice Capture operacional e legado explicitamente inacessível',()=>{
