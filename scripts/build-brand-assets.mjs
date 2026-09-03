@@ -23,7 +23,6 @@ const MARK={
 const WORD=[
  'M2 8H12.5L29 50L45.5 8H56L33.5 64H24.5Z',
  'M76 64L101.5 8H108.5L134 64H123.5L105 26L86.5 64Z',
- 'M88 48H122V57H88Z',
  'M154 8H164.5V53.5H212V64H154Z'
 ]
 
@@ -50,7 +49,7 @@ const defs=(p,id)=>`  <defs>
   </defs>`
 
 const markPaths=(p,id,{detail=true}={})=>[
- `    <path d="${MARK.stem}" fill="url(#${id}stem)"/>`,
+ `    <path d="${MARK.stem}" fill="url(#${id}stem)" stroke="url(#${id}stem)" stroke-width="1.6" stroke-linejoin="round"/>`,
  `    <path d="${MARK.leaf}" fill="url(#${id}leaf)"/>`,
  `    <path d="${MARK.fold}" fill="url(#${id}shade)"/>`,
  detail?`    <path d="${MARK.vein}" stroke="${p.vein}" stroke-opacity=".5" stroke-width="1.05" stroke-linecap="round" fill="none"/>`:''
@@ -93,23 +92,23 @@ const iconMono=svg('0 0 64 64',flatMark('currentColor'))
 
 // ------------------------------------------------------- lockup horizontal
 // símbolo 64x64 à esquerda + wordmark 220x72 à direita, alinhados pela altura
-const horizontal=(p,id,background)=>svg('0 0 360 96',[
- background?`  <rect width="360" height="96" fill="${background}"/>`:'',
+const horizontal=(p,id,background)=>svg('0 0 380 112',[
+ background?`  <rect width="380" height="112" fill="${background}"/>`:'',
  defs(p,id),
- `  <g transform="translate(10 14) scale(1.05)">`,
+ `  <g transform="translate(10 20) scale(1.1)">`,
  markPaths(p,id),
  `  </g>`,
- `  <g transform="translate(92 20) scale(.78)">`,
+ `  <g transform="translate(100 22) scale(.8)">`,
  wordPaths(p.word),
  `  </g>`,
- `  <text x="93" y="80" fill="${p.accent}" font-family="Manrope, Inter, ui-sans-serif, system-ui, sans-serif" font-size="9.5" font-weight="800" letter-spacing="2.1">INTELIGÊNCIA QUE GERA VALOR</text>`
+ `  <text x="101" y="96" fill="${p.accent}" font-family="Manrope, Inter, ui-sans-serif, system-ui, sans-serif" font-size="10" font-weight="800" letter-spacing="2">INTELIGÊNCIA QUE GERA VALOR</text>`
 ].filter(Boolean).join('\n'))
 
-const horizontalMono=svg('0 0 360 96',[
- `  <g transform="translate(10 14) scale(1.05)">`,
+const horizontalMono=svg('0 0 380 112',[
+ `  <g transform="translate(10 20) scale(1.1)">`,
  flatMark('currentColor'),
  `  </g>`,
- `  <g transform="translate(92 20) scale(.78)">`,
+ `  <g transform="translate(100 22) scale(.8)">`,
  wordPaths('currentColor'),
  `  </g>`
 ].join('\n'))

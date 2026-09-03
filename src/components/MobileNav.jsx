@@ -1,23 +1,24 @@
 import React,{useEffect,useState} from 'react'
 import {BrainCircuit,CalendarPlus,ClipboardList,Home,MoreHorizontal,Plus,Target,Users,X} from 'lucide-react'
-import {WORKSPACES,workspaceModules} from '../lib/val-workspaces'
+import {WORKSPACES,isNavItemActive,settingsModules,workspaceModules} from '../lib/val-workspaces'
 
-// Mobile não é desktop encolhido. A barra inferior carrega as quatro coisas
-// que o agrônomo faz em campo — hoje, produtor, registrar, copiloto — e o
-// "Mais" abre o mesmo modelo de workspaces da sidebar, sem lista paralela.
+// Mobile não é desktop encolhido. A barra carrega o que o agrônomo faz em
+// campo — hoje, produtor, registrar, copiloto — e o "Mais" abre o mesmo modelo
+// de workspaces da sidebar, sem lista paralela.
 
 const quickActions=[
- ['visits','Agendar visita','Abre a agenda para criar o compromisso',CalendarPlus],
- ['questionnaire','Novo produtor','Coleta as preferências e compila o perfil',ClipboardList],
- ['opportunities','Nova oportunidade','Registra a hipótese no funil',Target]
+ [{id:'visits',page:'visits'},'Agendar visita','Abre a agenda para criar o compromisso',CalendarPlus],
+ [{id:'questionnaire',page:'questionnaire'},'Novo produtor','Coleta as preferências e compila o perfil',ClipboardList],
+ [{id:'opportunities',page:'opportunities'},'Nova oportunidade','Registra a hipótese no funil',Target]
 ]
 
-export default function MobileNav({page,setPage,currentUser,onOpenVal,workspace,onWorkspaceChange}){
+export default function MobileNav({page,tool,currentUser,workspace,onWorkspaceChange,onSelect,onOpenVal}){
  const [sheet,setSheet]=useState('')
  useEffect(()=>setSheet(''),[page])
  const role=currentUser?.role
- const navigate=id=>{setSheet('');setPage(id)}
- const inWorkspaces=WORKSPACES.some(space=>workspaceModules(space.id,role).some(module=>module.id===page))
+ const go=entry=>{setSheet('');onSelect?.(entry)}
+ const settings=settingsModules(role)
+ const inWorkspaces=WORKSPACES.some(space=>workspaceModules(space.id,role).some(entry=>isNavItemActive(entry,{page,tool})))
  const close=()=>setSheet('')
 
  return <>
@@ -31,7 +32,7 @@ export default function MobileNav({page,setPage,currentUser,onOpenVal,workspace,
     {sheet==='create'
      ?<div className="mobile-quick-actions">
        <button type="button" onClick={()=>{close();onOpenVal?.()}}><span><BrainCircuit/></span><b>Falar com a VAL</b><small>Voz, foto ou arquivo no mesmo gesto</small></button>
-       {quickActions.map(([id,label,hint,Icon])=><button type="button" key={id} onClick={()=>navigate(id)}><span><Icon/></span><b>{label}</b><small>{hint}</small></button>)}
+       {quickActions.map(([entry,label,hint,Icon])=><button type="button" key={entry.id} onClick={()=>go(entry)}><span><Icon/></span><b>{label}</b><small>{hint}</small></button>)}
       </div>
      :<div className="mobile-workspace-list">
        {WORKSPACES.map(({id,label,hint,icon:Icon})=>{
@@ -39,18 +40,28 @@ export default function MobileNav({page,setPage,currentUser,onOpenVal,workspace,
         if(!modules.length)return null
         return <section key={id} className={workspace===id?'is-active':''}>
          <button type="button" className="mobile-workspace-head" onClick={()=>{setSheet('');onWorkspaceChange?.(id)}}><span><Icon/></span><b>{label}</b><small>{hint}</small></button>
-         <div>{modules.map(({id:moduleId,label:moduleLabel,icon:ModuleIcon})=>
-          <button type="button" key={moduleId} className={page===moduleId?'active':''} aria-current={page===moduleId?'page':undefined} onClick={()=>navigate(moduleId)}><span><ModuleIcon/></span><b>{moduleLabel}</b></button>
-         )}</div>
+         <div>{modules.map(entry=>{
+          const ItemIcon=entry.icon
+          const active=isNavItemActive(entry,{page,tool})
+          return <button type="button" key={entry.id} className={active?'active':''} aria-current={active?'page':undefined} onClick={()=>go(entry)}><span><ItemIcon/></span><b>{entry.label}</b></button>
+         })}</div>
         </section>
        })}
+       {settings.length>0&&<section>
+        <p className="mobile-workspace-settings-title">Configurações</p>
+        <div>{settings.map(entry=>{
+         const ItemIcon=entry.icon
+         const active=isNavItemActive(entry,{page,tool})
+         return <button type="button" key={entry.id} className={active?'active':''} aria-current={active?'page':undefined} onClick={()=>go(entry)}><span><ItemIcon/></span><b>{entry.label}</b></button>
+        })}</div>
+       </section>}
       </div>}
    </section>
   </>}
 
   <nav className="mobile-nav" aria-label="Navegação principal">
-   <button type="button" className={page==='dashboard'?'active':''} aria-current={page==='dashboard'?'page':undefined} onClick={()=>navigate('dashboard')}><Home/><span>Início</span></button>
-   <button type="button" className={page==='clients'||page==='client360'?'active':''} aria-current={page==='clients'?'page':undefined} onClick={()=>navigate('clients')}><Users/><span>Produtores</span></button>
+   <button type="button" className={page==='dashboard'?'active':''} aria-current={page==='dashboard'?'page':undefined} onClick={()=>go({id:'dashboard',page:'dashboard'})}><Home/><span>Início</span></button>
+   <button type="button" className={page==='clients'||page==='client360'?'active':''} aria-current={page==='clients'?'page':undefined} onClick={()=>go({id:'producer360',action:'producer',page:'clients'})}><Users/><span>Produtores</span></button>
    <button type="button" className="mobile-create-button" aria-label="Registrar ou criar" aria-expanded={sheet==='create'} onClick={()=>setSheet(value=>value==='create'?'':'create')}><span><Plus/></span></button>
    <button type="button" className={page==='copilot'?'active':''} aria-label="Abrir o Copiloto VAL" onClick={onOpenVal}><BrainCircuit/><span>Copiloto</span></button>
    <button type="button" className={sheet==='more'||(inWorkspaces&&page!=='clients')?'active':''} aria-expanded={sheet==='more'} aria-label="Abrir workspaces e módulos" onClick={()=>setSheet(value=>value==='more'?'':'more')}><MoreHorizontal/><span>Mais</span></button>

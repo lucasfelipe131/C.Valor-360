@@ -1,14 +1,22 @@
 import React,{useEffect,useMemo,useState} from 'react'
 import {
+ AlertTriangle,
  ArrowUpRight,
+ BarChart3,
  BrainCircuit,
+ Calculator,
  CalendarCheck2,
  CalendarDays,
+ CheckCircle2,
  ChevronRight,
+ ClipboardList,
  Clock3,
+ DatabaseZap,
+ LandPlot,
  Percent,
  Send,
  Sparkles,
+ Sprout,
  Target,
  Users
 } from 'lucide-react'
@@ -18,7 +26,7 @@ import ConversionOpportunityStudio from '../components/ConversionOpportunityStud
 import VoiceCapture from '../components/voice/VoiceCapture'
 import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
 import {buildHomeCopilotAnswer,buildLocalHomePriorities,canonicalVoiceChange} from '../lib/copilot-view-model'
-import {buildDayBriefing} from '../lib/home-command-center'
+import {buildDayBriefing,buildFocusProducers,buildPendencies} from '../lib/home-command-center'
 import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline,resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
 const greeting=()=>{
@@ -121,43 +129,97 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  // Centro operacional: o que precisa de atenção agora, contado a partir do que
  // já está na sessão. Nenhum número estimado, nenhum alerta inventado.
  const briefing=useMemo(()=>buildDayBriefing({visits,opportunities,clients}),[visits,opportunities,clients])
+ const focus=useMemo(()=>buildFocusProducers({clients,visits,opportunities}),[clients,visits,opportunities])
+ const pendencies=useMemo(()=>buildPendencies({clients,visits,opportunities}),[clients,visits,opportunities])
  const openVisit=entry=>{const client=clients.find(item=>String(item.id)===String(entry.clientId));if(client)onPrepare(client);else setPage('visits')}
+ const quickActions=[
+  ['Preparar visita',CalendarCheck2,()=>selectedVoiceClient?onPrepare(selectedVoiceClient):setPage('visits')],
+  ['Perguntar à VAL',BrainCircuit,()=>onOpenCopilot?.({})],
+  ['Novo produtor',ClipboardList,()=>setPage('questionnaire')],
+  ['Inteligência agronômica',Sprout,()=>setPage('agro')],
+  ['Calculadoras',Calculator,()=>setPage({page:'agro',tool:'calculadoras',label:'Calculadoras',context:{tool:'calculadoras'}})],
+  ['Mapas e talhões',LandPlot,()=>setPage({page:'agro',tool:'produtores',label:'Mapas e talhões',context:{tool:'produtores'}})],
+  ['Relatórios',BarChart3,()=>setPage('reports')],
+  ['Base Inteligente',DatabaseZap,()=>setPage('datahub')]
+ ]
 
  return <div className="page-stack val-copilot-home">
   <section className="copilot-welcome">
-   <div><span className="eyebrow">VAL • SEU COPILOTO</span><h2>{greeting()}, {firstName}.</h2><p>Estas são as decisões que merecem sua atenção agora.</p></div>
+   <div><span className="eyebrow">VAL • SEU COPILOTO</span><h2>{greeting()}, {firstName}! 👋</h2><p>Aqui está o que preparamos para você hoje.</p></div>
    <button type="button" onClick={()=>setPage('visits')}><CalendarDays/>Abrir agenda</button>
   </section>
 
   <section className="home-day-strip" aria-label="Resumo do dia">
-   {briefing.cards.map(card=>
-    <button type="button" key={card.id} className={`home-day-card is-${card.id}`} onClick={()=>setPage(card.page)}>
-     <small>{card.label}</small>
+   {briefing.cards.map(card=>{
+    const Icon=({today:CalendarDays,prepared:CheckCircle2,opportunities:Target,pending:AlertTriangle})[card.id]||Sparkles
+    return <button type="button" key={card.id} className={`home-day-card is-${card.id}`} onClick={()=>setPage(card.page)}>
+     <span className="home-day-head"><Icon size={17}/><small>{card.label}</small></span>
      <strong>{String(card.value).padStart(2,'0')}</strong>
-     <span>{card.hint}</span>
+     <span className="home-day-hint">{card.hint}</span>
     </button>
-   )}
+   })}
   </section>
 
-  <section className="home-next-visits" aria-labelledby="home-next-visits-title">
-   <header>
-    <div><span className="eyebrow">PRÓXIMAS VISITAS</span><h3 id="home-next-visits-title">O que vem agora na agenda</h3></div>
-    <button type="button" onClick={()=>setPage('visits')}>Ver agenda<ChevronRight/></button>
-   </header>
-   {briefing.upcoming.length
-    ?<ul>{briefing.upcoming.map(entry=>
-      <li key={entry.id}>
-       <time dateTime={entry.at.toISOString()}><b>{entry.at.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</b><small>{entry.at.toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}).replace('.','')}</small></time>
-       <div><b>{entry.clientName}</b><span>{entry.place||'Local não informado'}</span><p>{entry.objective}</p></div>
-       <button type="button" onClick={()=>openVisit(entry)}>{entry.lifecycle==='PREPARED'?'Abrir preparação':'Preparar com a VAL'}<ChevronRight/></button>
-      </li>
-     )}</ul>
-    :<p className="home-next-empty">Nenhum compromisso futuro na agenda. Agende uma visita para a VAL montar a próxima rota.</p>}
-   {briefing.undatedVisits>0&&<p className="home-next-note" role="status">{briefing.undatedVisits} visita{briefing.undatedVisits>1?'s':''} sem data registrada ficaram fora desta lista.</p>}
-  </section>
+  <div className="home-operational">
+   <section className="home-panel home-next-visits" aria-labelledby="home-next-visits-title">
+    <header>
+     <h3 id="home-next-visits-title">Próximas visitas</h3>
+     <button type="button" onClick={()=>setPage('visits')}>Ver agenda<ChevronRight size={14}/></button>
+    </header>
+    {briefing.upcoming.length
+     ?<ul>{briefing.upcoming.map(entry=>
+       <li key={entry.id}>
+        <time dateTime={entry.at.toISOString()}>{entry.at.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</time>
+        <div>
+         <b>{entry.clientName}</b>
+         <span>{entry.place||'Local não informado'}</span>
+        </div>
+        <button type="button" aria-label={`Preparar visita de ${entry.clientName}`} onClick={()=>openVisit(entry)}>{entry.lifecycle==='PREPARED'?'Abrir':'Preparar'}</button>
+       </li>
+      )}</ul>
+     :<p className="home-panel-empty">Nenhum compromisso futuro na agenda. Agende uma visita para a VAL montar a próxima rota.</p>}
+    {briefing.undatedVisits>0&&<p className="home-panel-note" role="status">{briefing.undatedVisits} visita{briefing.undatedVisits>1?'s':''} sem data registrada ficaram fora desta lista.</p>}
+   </section>
+
+   <section className="home-panel home-focus" aria-labelledby="home-focus-title">
+    <header>
+     <h3 id="home-focus-title">Produtores em foco</h3>
+     <button type="button" onClick={()=>setPage('clients')}>Ver todos<ChevronRight size={14}/></button>
+    </header>
+    {focus.length
+     ?<ul>{focus.map(entry=>
+       <li key={entry.id}>
+        <div>
+         <b>{entry.name}</b>
+         <span>{entry.place||'Localização não informada'}</span>
+         <p>{entry.reason}</p>
+        </div>
+        <button type="button" className={`focus-tag is-${entry.tone}`} onClick={()=>onClient(entry.client)}>{entry.label}</button>
+       </li>
+      )}</ul>
+     :<p className="home-panel-empty">Nenhum produtor com sinal registrado que peça atenção agora. A VAL não cria foco sem evidência.</p>}
+   </section>
+
+   <section className="home-panel home-pendencies" aria-labelledby="home-pendencies-title">
+    <header>
+     <h3 id="home-pendencies-title">Pendências e alertas</h3>
+    </header>
+    {pendencies.length
+     ?<ul>{pendencies.map(entry=>
+       <li key={entry.id}>
+        <button type="button" onClick={()=>setPage(entry.page)}>
+         <b>{String(entry.value).padStart(2,'0')}</b>
+         <span>{entry.label}<small>{entry.detail}</small></span>
+         <ChevronRight size={15}/>
+        </button>
+       </li>
+      )}</ul>
+     :<p className="home-panel-empty">Nada pendente com o que já está registrado na carteira.</p>}
+   </section>
+  </div>
 
   <section className="copilot-priorities" aria-labelledby="copilot-priorities-title">
-   <header><div><span className="eyebrow">AGORA</span><h3 id="copilot-priorities-title">Até 3 prioridades para agir</h3></div><small>Somente sinais registrados na sua carteira.</small></header>
+   <header><div><span className="eyebrow">INSIGHTS PARA VOCÊ</span><h3 id="copilot-priorities-title">Até 3 prioridades para agir</h3></div><small>Somente sinais registrados na sua carteira.</small></header>
    {priorities.length?<div className="copilot-priority-grid">{priorities.slice(0,3).map((priority,index)=>{
     const client=clients.find(item=>String(item.id)===String(priority.subject_id))
     return <article key={`${priority.insight_id||priority.subject_id||'priority'}-${index}`}>
@@ -167,6 +229,14 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
     </article>
    })}</div>:<div className="copilot-empty"><Sparkles/><div><h4>Nenhuma prioridade comprovada agora.</h4><p>A VAL não cria urgência sem um sinal registrado. Use a voz para adicionar contexto ou abra a agenda.</p></div></div>}
    {insightsError&&<p className="copilot-data-note" role="status">Prioridades locais exibidas. {insightsError}</p>}
+  </section>
+
+  <section className="home-copilot-banner">
+   <div>
+    <span className="home-copilot-mark"><BrainCircuit size={20}/></span>
+    <div><b>Copiloto VAL</b><p>Pergunte, explore e tome decisões com inteligência.</p></div>
+   </div>
+   <button type="button" onClick={()=>onOpenCopilot?.({})}>Abrir Copiloto<ChevronRight size={16}/></button>
   </section>
 
   <section className="copilot-talk" aria-label="Perguntar ou falar com a VAL">
@@ -191,5 +261,14 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
     </section>
    </div>
   </details>
+
+  <section className="home-quick-actions" aria-label="Ações rápidas">
+   <h3>Ações rápidas</h3>
+   <div>
+    {quickActions.map(([label,Icon,run])=>
+     <button type="button" key={label} onClick={run}><Icon size={16}/><span>{label}</span></button>
+    )}
+   </div>
+  </section>
  </div>
 }

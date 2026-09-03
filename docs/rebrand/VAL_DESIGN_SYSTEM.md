@@ -1,137 +1,53 @@
 # VAL_DESIGN_SYSTEM
 
-Fase **R2 — DESIGN SYSTEM**. Como a identidade oficial passou a valer em toda a superfície do produto.
+Sistema visual da VAL depois do rebrand — **Mescla 09 + identidade oficial**.
 
 ---
 
-## 1. O problema que este documento resolve
+## 1. A decisão que define este documento
 
-A auditoria R0 mediu:
+> **Marca nova. Paleta da VAL.**
 
-| Métrica (todos os `src/*.css`) | Antes |
-|---|---|
-| Cores hex distintas | **2.525** |
-| Literais de cor | 3.952 hex + 786 `rgb()` |
-| Usos de `var(--token)` | **131** |
-| Cor mais frequente depois de `#fff` | `#0b67d8` — **azul** |
+A primeira tentativa deste rebrand rodou uma migração cromática sobre 3.156 literais de
+cor, girando a matiz do produto inteiro do esmeralda da VAL para o oliva da folha da nova
+logo. Tecnicamente funcionou — luminância preservada, contraste intacto. **Foi rejeitada.**
 
-A camada de tokens existia e quase não era usada. **Trocar variáveis não faria rebrand
-nenhum** — mudaria 131 declarações em ~4.700. O produto era azul corporativo escrito à mão.
+O motivo é o certo: a cor da VAL já era a VAL. Trocá-la porque a logo nova tem oliva
+confundia dois problemas. A logo é o ativo que mudou; a paleta é patrimônio do produto.
 
-Duas saídas ruins e uma boa:
+Então:
 
-- ❌ Reescrever as 25 folhas à mão: semanas de trabalho, regressão visual garantida.
-- ❌ Trocar só os tokens: a marca muda, o produto não.
-- ✅ **Migração cromática determinística sobre os literais**, com garantia de contraste.
+- a **paleta permanece** a da VAL — verde profundo, esmeralda, menta, lima;
+- a **marca** é a oficial — V marfim/floresta com folha oliva;
+- o oliva vive **dentro da logo**, e só ali.
+
+O script de migração cromática foi removido do repositório. Mantê-lo seria manter uma
+ferramenta cuja única função é desfazer esta decisão.
 
 ---
 
-## 2. O método: rotação de matiz com preservação de luminância
+## 2. Paleta
 
-`scripts/rebrand-color-migration.mjs`
+Definida em `src/val-brand.css`, inalterada pelo rebrand:
 
-Para cada literal de cor:
-
-1. converte para HSL;
-2. **não toca** em matizes fora da família azul/ciano/verde-água — vermelhos, âmbares,
-   amarelos, os verdes que já eram VAL, violetas e cinzas (`saturação < 6%`);
-3. os que estão na faixa de entrada `[155°, 246°]` recebem a matiz VAL correspondente
-   ao seu papel na interface;
-4. limita a saturação, porque verde satura muito mais que azul aos olhos;
-5. **resolve a claridade por busca binária** para que a luminância relativa (WCAG) final
-   seja idêntica à original.
-
-### Por que o passo 5 é o ponto central
-
-Verde e azul têm coeficientes de luminância muito diferentes (`0.7152` contra `0.0722`).
-Rodar a matiz mantendo o `L` do HSL clarearia tudo e destruiria contraste em silêncio,
-em milhares de lugares.
-
-Resolvendo a claridade pela luminância, **toda razão de contraste do produto permanece
-exatamente a mesma**. Um texto que passava em WCAG antes continua passando depois —
-sem inspecionar 4.700 declarações uma a uma. É o gate A11Y resolvido por construção.
-
-### As âncoras de matiz
-
-A marca tem duas, e nenhum verde puro entre elas:
-
-```
-L ≤ 0.16          → 146°   floresta profunda   (nav, sidebar, superfícies premium)
-0.16 < L < 0.24   → 146°→90°  transição curta
-0.24 ≤ L < 0.76   →  90°   oliva da folha      (ação, marca, destaque, estado positivo)
-L ≥ 0.76          →  90°→146°  tinta menta     (fundos, chips, divisores)
-```
-
-Hue 120 — verde-grama — **não pertence à VAL** e as faixas de transição são curtas de
-propósito para não parar nele. As matizes 146 e 90 são as do ativo oficial:
-`#0D1F15` é hsl(145°), `#79A63E` é hsl(85°).
-
-Saturação limitada a **52%** (45% em tintas muito claras), que é a faixa da folha oficial
-(`#A6CC5B` 52%, `#79A63E` 46%, `#3F6B26` 47%).
-
-### Resultado
-
-```
-arquivos analisados: 26  |  com alteração: 25
-literais de cor: 3.952 hex + 786 rgb
-migrados para a família VAL: 2.955  |  preservados: 1.783
-```
-
-Exemplos:
-
-| Antes | Depois | Papel |
+| Token | Valor | Papel |
 |---|---|---|
-| `#0b67d8` azul primário | `#437820` | ação primária, oliva profundo |
-| `#2d8cff` azul claro | `#589e2a` | acento |
-| `#00c896` verde-água antigo | `#80c23d` | destaque da marca |
-| `#071b19` | `#091b11` | superfície escura |
-| `#082e29 → #0a4038` gradiente da sidebar | `#0c2e1d → #114129` | floresta |
-| `#eaf4ff` tinta azul | `#e5f6ed` | tinta menta |
-| `#e11d48` vermelho | `#e11d48` | **preservado** — semântica |
-| `#c8f25e` lima | `#c8f25e` | **preservado** — já era VAL |
+| `--val-ink` | `#071b19` | superfície mais escura — sidebar, Copiloto |
+| `--val-ink-soft` | `#0b2925` | elevação sobre o ink |
+| `--val-forest` | `#0e3530` | verde profundo |
+| `--val-emerald` | `#00c896` | destaque da marca |
+| `--val-emerald-dark` | `#009f78` | ação primária |
+| `--val-mint` | `#72e6c5` | acento sobre superfície escura |
+| `--val-blue` | `#2d8cff` | acento secundário |
+| `--val-lime` | `#c8f25e` | destaque pontual |
+| `--val-canvas` | `#f4f8f6` | fundo geral |
+| `--val-surface` | `#ffffff` | superfície |
+| `--val-text` | `#10231f` | texto |
+| `--val-muted` | `#6c7f78` | texto secundário |
+| `--val-line` | `#dce8e4` | borda e divisor |
 
-### Idempotência
-
-As matizes de destino (90–146) caem fora da faixa de entrada (155–246). Rodar duas vezes
-não muda nada:
-
-```bash
-node scripts/rebrand-color-migration.mjs --check   # falha se algo mudaria em disco
-node scripts/rebrand-color-migration.mjs --report  # mostra cor a cor
-```
-
----
-
-## 3. Cores semânticas continuam independentes da marca
-
-Regra do prompt mestre respeitada literalmente: **alerta ≠ verde VAL**, **erro continua
-reconhecível**. Vermelhos (0–20°), âmbares (20–55°) e amarelos (55–70°) ficam fora da faixa
-migrada e não foram tocados. Violetas (≥ 247°) também.
-
----
-
-## 4. Camada de tokens
-
-`src/val-brand.css` continua sendo a raiz:
-
-```css
---val-ink       #091b11   superfície mais escura
---val-ink-soft  #0d2919
---val-forest    #113521   floresta
---val-emerald   #80c23d   oliva da folha — destaque
---val-emerald-dark #659a31 oliva profundo — ação
---val-mint      #b9de95   acento claro
---val-lime      #c8f25e   lima (preservada)
---val-canvas    #f4f8f6   fundo geral
---val-surface   #ffffff   superfície
---val-text      #102419
---val-muted     #747e6b
---val-line      #dce8e2
-```
-
-Mais os tokens da marca oficial (`--val-logo-*`, ver `VAL_BRAND_SYSTEM.md`) e os aliases
-legados (`--navy`, `--blue`, `--bg`, `--card`, `--line`), preservados para não quebrar
-nenhuma folha existente.
+Cores semânticas seguem independentes da marca: alerta não é verde VAL, erro continua
+reconhecível.
 
 ### Hierarquia de superfícies
 
@@ -142,47 +58,82 @@ FUNDO GERAL   --val-canvas   #f4f8f6
       AÇÃO    --val-emerald-dark
 ```
 
-A maior parte da área de trabalho permanece **clara e limpa**. O verde floresta fica
-onde o prompt pediu: navegação, sidebar, Copiloto, superfícies institucionais.
+A área de trabalho permanece clara. O verde profundo fica onde a Mescla 09 o coloca:
+sidebar, faixa do Copiloto e superfícies institucionais.
 
 ---
 
-## 5. Camadas de folha, na ordem de carga
+## 3. Camadas de folha, na ordem de carga
 
-`src/main.jsx` carrega, nesta ordem:
+`src/main.jsx`:
 
 | # | Folha | Papel |
 |---|---|---|
 | 1 | `styles.css` | base monolítica herdada (286 KB) |
-| 2 | `val-brand.css` | tokens da marca e da logo |
+| 2 | `val-brand.css` | tokens da paleta e da marca oficial |
 | 3–8 | `agro-workspace`, `mobile-browser`, `mobile-login`, `val-mobile-overflow`, `val-logo-final`, `presentation` | por feature |
 | 9 | `copilot-ux.css` | Copiloto |
-| 10 | `val-ui-simple-modern.css` | camada de refinamento visual |
-| 11 | **`val-workspace-shell.css`** | **novo (R3)** — sidebar por workspace, cabeçalho global, barra inferior mobile |
+| 10 | `val-ui-simple-modern.css` | refinamento visual |
+| 11 | **`val-workspace-shell.css`** | **Mescla 09** — sidebar hierárquica, cockpit da Home, Split View, barra mobile |
 
-O shell entra por último porque é a camada mais nova e precisa vencer o legado sem
-`!important`.
+O shell entra por último porque precisa vencer o legado sem `!important`.
 
 ---
 
-## 6. O que o R2 **não** fez
+## 4. Componentes do shell
 
-- Não migrou a stack. Continua Vite + React 18 + CSS puro.
-- Não reescreveu `styles.css`. A dívida dos 286 KB está registrada no R0; resolvê-la é
-  outro trabalho, com outro risco.
-- Não mexeu em Knowledge Engine, Decision Engine, Memory Engine, roteamento de contexto,
+### Sidebar (`.val-workspace-sidebar`)
+
+Marca com assinatura · Início · **Workspaces** · subnavegação do workspace ativo ·
+**Configurações** · cartão do usuário · **Acessar Copiloto**.
+
+Estados: `active` (pílula sólida esmeralda), `is-loaded` (workspace carregado enquanto o
+usuário está no Início — marcado, não cheio), `is-collapsed` (só ícones, rótulo por
+`title`).
+
+### Cockpit da Home
+
+| Bloco | Classe | Conteúdo |
+|---|---|---|
+| Saudação | `.copilot-welcome` | "Bom dia, {nome}! 👋" + "Aqui está o que preparamos para você hoje." |
+| Resumo do dia | `.home-day-strip` | 4 cartões com ícone, rótulo, número e leitura |
+| Linha operacional | `.home-operational` | Próximas visitas · Produtores em foco · Pendências e alertas |
+| Insights | `.copilot-priorities` | prioridades vindas de `/api/v1/insights` |
+| Copiloto | `.home-copilot-banner` | faixa escura com CTA |
+| Ações rápidas | `.home-quick-actions` | 8 atalhos para funções que já existem |
+
+### Painel contextual (`.context-panel`)
+
+Split View do Produtor 360: Timeline · Contexto · Copiloto. Sticky no desktop, empilhado
+abaixo de 1180px.
+
+### Barra mobile (`.mobile-nav`)
+
+Cinco destinos: Início · Produtores · **+** · Copiloto · Mais.
+
+---
+
+## 5. Responsividade
+
+| Largura | Comportamento |
+|---|---|
+| ≥ 1181 | 4 cartões de dia, 3 painéis operacionais, Split View em duas colunas, busca inline |
+| 1081–1180 | painéis operacionais empilham; Split View vira seção |
+| ≤ 1080 | busca inline vira ícone com painel |
+| ≤ 900 | cartões de dia em 2 colunas |
+| ≤ 760 | sidebar sai, barra inferior entra |
+| ≤ 640 | faixa do Copiloto empilha; ações rápidas em coluna |
+
+Overflow horizontal medido em 1920, 1440, 1366, 1280, 1024, 768, 430, 390 e 375:
+**zero em todas**.
+
+---
+
+## 6. O que o rebrand **não** fez
+
+- Não migrou a stack: Vite + React 18 + CSS puro.
+- Não reescreveu `styles.css` (286 KB) — dívida registrada no R0.
+- Não tocou em Knowledge Engine, Decision Engine, Memory Engine, roteamento de contexto,
   grounding, fronteira de produtor, prompts, roteamento de modelo, voz, banco ou APIs.
 - Não alterou nenhuma rota.
-
----
-
-## 7. Gates do R2
-
-| Gate | Resultado |
-|---|---|
-| Build | ✅ `vite build` limpo |
-| Testes | ✅ **1279 pass / 26 fail** — baseline era 1263/28; as 26 são as ambientais do R0 |
-| Contraste | ✅ preservado por construção (luminância relativa idêntica) |
-| Cores semânticas | ✅ vermelhos, âmbares e amarelos intactos |
-| Azul residual | ✅ zero — teste automatizado varre as 26 folhas |
-| Idempotência | ✅ `--check` limpo |
+- Não trocou a paleta.

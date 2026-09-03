@@ -17,7 +17,7 @@
   padding: 4px;
   border: 1px solid rgba(255, 255, 255, .16);
   border-radius: 12px;
-  background: rgba(5,16,10, .91);
+  background: rgba(4, 16, 14, .91);
   box-shadow: 0 10px 28px rgba(0, 0, 0, .24);
   backdrop-filter: blur(10px);
 }
@@ -29,7 +29,7 @@
   min-height: 36px;
   padding: 0 10px;
   border-radius: 8px;
-  color: #c8d7c6;
+  color: #c5d6d0;
   cursor: pointer;
   white-space: nowrap;
 }
@@ -51,11 +51,11 @@
 
 .workflow .activeStep {
   background: #d5f45c;
-  color: #0c2718;
+  color: #0b261f;
 }
 
 .workflow .activeStep b {
-  border-color: rgba(12,39,24, .28);
+  border-color: rgba(11, 38, 31, .28);
 }
 
 .sidePanel {
@@ -71,7 +71,7 @@
   padding: 14px;
   border: 1px solid rgba(255, 255, 255, .18);
   border-radius: 14px;
-  background: rgba(7,24,15, .94);
+  background: rgba(5, 24, 20, .94);
   box-shadow: 0 18px 48px rgba(0, 0, 0, .34);
   color: #edf6f1;
   backdrop-filter: blur(12px);
@@ -96,7 +96,7 @@
 .boundaryList small,
 .searchResults small,
 .ufField span {
-  color: #b2bda7;
+  color: #a9beb6;
   font-size: 8px;
   line-height: 1.45;
 }
@@ -154,7 +154,7 @@
 .primaryAction,
 .sourceCard button {
   background: #d5f45c;
-  color: #0c2718;
+  color: #0b261f;
 }
 
 .searchResults,
@@ -167,7 +167,7 @@
 
 .boundaryGroupTitle {
   margin-top: 2px;
-  color: #d8e9e0;
+  color: #d8e9e2;
   font-size: 8px;
   font-weight: 900;
   letter-spacing: .06em;
@@ -194,8 +194,8 @@
 }
 
 .boundaryList .selectedBoundary {
-  border-color: #9cd069;
-  background: rgba(156,208,105, .1);
+  border-color: #22d3ee;
+  background: rgba(34, 211, 238, .1);
 }
 
 .status,
@@ -221,13 +221,13 @@
   display: grid;
   gap: 5px;
   padding: 10px;
-  border: 1px solid rgba(156,208,105, .22);
+  border: 1px solid rgba(34, 211, 238, .22);
   border-radius: 10px;
-  background: rgba(156,208,105, .055);
+  background: rgba(34, 211, 238, .055);
 }
 
 .sourceCard b {
-  color: #cdefcc;
+  color: #a5f3fc;
   font-size: 10px;
 }
 
@@ -269,7 +269,7 @@
   padding: 8px;
   border: 1px solid rgba(255, 255, 255, .09);
   border-radius: 8px;
-  color: #a9b49d;
+  color: #9fb5ad;
   font-size: 7px;
 }
 
@@ -299,7 +299,7 @@
   padding: 5px;
   border: 1px solid rgba(255, 255, 255, .16);
   border-radius: 9px;
-  background: rgba(5,16,10, .88);
+  background: rgba(4, 16, 14, .88);
 }
 
 .pointList button {

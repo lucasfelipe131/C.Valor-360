@@ -190,6 +190,19 @@ export default function App(){
  // zerá-lo: o usuário abre a VAL e volta para onde estava trabalhando.
  useEffect(()=>{setWorkspace(current=>resolveActiveWorkspace(page,current))},[page])
  const changeWorkspace=id=>{setWorkspace(id);navigate(workspaceEntryPoint(id,currentUser?.role))}
+ // Ferramenta agronomica ativa: e o que diferencia Manual, Calculadoras e
+ // Mapas na subnavegacao, ja que todas moram na mesma rota.
+ const activeTool=page==='agro'?String(agroLaunch.initialTool?.tool||agroLaunch.initialTool?.id||''):''
+ // Um item de navegacao pode ser uma rota, uma ferramenta dentro do ambiente
+ // tecnico ou um gesto do produto que depende do produtor ativo.
+ const selectNav=entry=>{
+  if(!entry)return
+  if(entry.action==='copilot')return openCopilot()
+  if(entry.action==='prepare')return selected?.id?prepareClient(selected):navigate('visits')
+  if(entry.action==='producer')return selected?.id?openClient(selected):navigate('clients')
+  if(entry.tool)return navigate({page:'agro',tool:entry.tool,label:entry.label,context:{tool:entry.tool,label:entry.label}})
+  return navigate(entry.page)
+ }
  useEffect(()=>{if(!selected&&clientList.length)setSelected(clientList[0])},[clientList,selected])
  useEffect(()=>{setCopilotPageContext(null);setCopilotSeed(null);setCopilotOpen(false);setCopilotLoaded(false);setAgroLaunch(createEmptyAgroLaunch())},[copilotOwnerScope])
  useEffect(()=>{fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(session?.authenticated)rememberStorageScope(session.user);else clearSessionPortfolioCache();setCurrentUser(session?.user||null);setPortfolioReady(Boolean(session?.user?.demo));setAuthenticated(Boolean(session?.authenticated));if(!session?.authenticated&&session?.misconfigured)setAuthNotice('O acesso seguro do servidor ainda não foi configurado.')}).catch(()=>{clearSessionPortfolioCache();setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setCurrentUser(null);setAuthNotice('Não foi possível validar o servidor. O acesso permaneceu bloqueado.');setPortfolioReady(false);setAuthenticated(false)})},[])
@@ -213,7 +226,7 @@ export default function App(){
  if(!portfolioReady)return <main className="auth-loading" role="status"><BrainCircuit/><span>Carregando carteira protegida…</span></main>
  return <div className="app-shell">
   <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-  <Sidebar page={page} currentUser={currentUser} setPage={navigate} onOpenVal={()=>openCopilot()} workspace={workspace} onWorkspaceChange={changeWorkspace}/>
+  <Sidebar page={page} tool={activeTool} currentUser={currentUser} workspace={workspace} onWorkspaceChange={changeWorkspace} onSelect={selectNav} onOpenVal={()=>openCopilot()}/>
   <main className="main" id="main-content" tabIndex="-1">
    {page!=='copilot'&&<Topbar title={title} subtitle={subtitle} onNavigate={navigate} onOpenVal={()=>openCopilot()} workspace={workspace} page={page} client={selected} clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onOpenClient={openClient}/>}
    <div className={`content ${page==='copilot'?'content-copilot-fullscreen':''}`}>
@@ -245,7 +258,7 @@ export default function App(){
     </Suspense>
    </div>
   </main>
-  {page!=='copilot'&&<MobileNav page={page} setPage={navigate} currentUser={currentUser} onOpenVal={()=>openCopilot()} workspace={workspace} onWorkspaceChange={changeWorkspace}/>}
+  {page!=='copilot'&&<MobileNav page={page} tool={activeTool} currentUser={currentUser} workspace={workspace} onWorkspaceChange={changeWorkspace} onSelect={selectNav} onOpenVal={()=>openCopilot()}/>}
   {toast&&<div className="toast" role="status">{toast}</div>}
  </div>
 }

@@ -6,7 +6,7 @@
     <linearGradient id="lshade" x1="56" y1="10" x2="36" y2="56" gradientUnits="userSpaceOnUse"><stop stop-color="#5F8A32"/><stop offset="1" stop-color="#2F5720"/></linearGradient>
   </defs>
   <g>
-    <path d="M3.6 5.2H17.8L33.4 53.6L30.2 61.2Z" fill="url(#lstem)"/>
+    <path d="M3.6 5.2H17.8L33.4 53.6L30.2 61.2Z" fill="url(#lstem)" stroke="url(#lstem)" stroke-width="1.6" stroke-linejoin="round"/>
     <path d="M30.6 61C32.8 45.6 39.4 24.4 52.4 3C60.4 17.4 58 38.6 45.2 51.6C40.6 56.3 35.6 59.4 30.6 61Z" fill="url(#lleaf)"/>
     <path d="M52.4 3C60.4 17.4 58 38.6 45.2 51.6C40.6 56.3 35.6 59.4 30.6 61C36.9 44.4 44.6 22.9 52.4 3Z" fill="url(#lshade)"/>
     <path d="M31.4 59.4C37.5 43.2 45 22.2 52.2 3.9" stroke="#F2F6E9" stroke-opacity=".5" stroke-width="1.05" stroke-linecap="round" fill="none"/>

@@ -173,9 +173,9 @@ test('VoiceCapture frontend — affordances mobile têm sheet, safe area, toque 
  assert.match(styles,/\.voice-text-fallback textarea[^}]*font-size:16px/)
  assert.match(styles,/\.voice-review-footer button\{min-height:48px\}/)
  assert.match(styles,/prefers-reduced-motion:reduce/)
- assert.match(styles,/\.client-hero \.hero-actions \.voice-capture-launcher\{[^}]*background:#eef8f2[^}]*color:#436620/)
+ assert.match(styles,/\.client-hero \.hero-actions \.voice-capture-launcher\{[^}]*background:#edf8f4[^}]*color:#17684f/)
  assert.match(styles,/\.voice-post-next\{grid-column:1\/-1/)
- for(const color of ['#59674c','#5d6a51','#626d58','#5d6950'])assert.match(styles,new RegExp(color))
+ for(const color of ['#4d685f','#526b63','#596e67','#516b62'])assert.match(styles,new RegExp(color))
 })
 
 test('Voice interaction client — criação, consulta, confirmação e cancelamento usam contratos exatos',async()=>{

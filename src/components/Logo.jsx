@@ -51,7 +51,7 @@ export default function Logo({
      </linearGradient>
     </defs>
     {/* Braço esquerdo do V */}
-    <path d="M3.6 5.2H17.8L33.4 53.6L30.2 61.2Z" fill={`url(#${stemId})`}/>
+    <path d="M3.6 5.2H17.8L33.4 53.6L30.2 61.2Z" fill={`url(#${stemId})`} stroke={`url(#${stemId})`} strokeWidth="1.6" strokeLinejoin="round"/>
     {/* Folha — braço direito do V */}
     <path d="M30.6 61C32.8 45.6 39.4 24.4 52.4 3C60.4 17.4 58 38.6 45.2 51.6C40.6 56.3 35.6 59.4 30.6 61Z" fill={`url(#${leafId})`}/>
     {/* Meia-folha em sombra: o dobramento que a marca oficial mostra */}
@@ -62,10 +62,9 @@ export default function Logo({
   </span>
   {!iconOnly&&<span className="brand-word" aria-hidden="true">
    <svg className="val-wordmark" viewBox="0 0 220 72" fill="none" focusable="false">
-    <path d="M2 8H12.5L29 50L45.5 8H56L33.5 64H24.5Z" fill="var(--val-logo-word)"/>
-    <path d="M76 64L101.5 8H108.5L134 64H123.5L105 26L86.5 64Z" fill="var(--val-logo-word)"/>
-    <path d="M88 48H122V57H88Z" fill="var(--val-logo-word)"/>
-    <path d="M154 8H164.5V53.5H212V64H154Z" fill="var(--val-logo-word)"/>
+    <path d="M2 8H12.5L29 50L45.5 8H56L33.5 64H24.5Z" fill="var(--val-logo-word)" stroke="var(--val-logo-word)" strokeWidth="2.6" strokeLinejoin="round"/>
+    <path d="M76 64L101.5 8H108.5L134 64H123.5L105 26L86.5 64Z" fill="var(--val-logo-word)" stroke="var(--val-logo-word)" strokeWidth="2.6" strokeLinejoin="round"/>
+    <path d="M154 8H164.5V53.5H212V64H154Z" fill="var(--val-logo-word)" stroke="var(--val-logo-word)" strokeWidth="2.6" strokeLinejoin="round"/>
    </svg>
    {resolvedVariant==='full'&&<small className="val-brand-signature">INTELIGÊNCIA QUE GERA VALOR</small>}
   </span>}

@@ -6,10 +6,14 @@ Resultado dos gates do rebrand.
 
 ## 1. Suíte automatizada
 
+> **Revisão 2.** Os números abaixo são da entrega final, depois da correção pela
+> referência (paleta restaurada, marca corrigida, navegação e Home refeitas) e depois de
+> o próprio usuário ter triado as falhas ambientais no commit `b8e85b2`.
+
 | Momento | Total | Pass | Fail |
 |---|---|---|---|
 | **Baseline (antes do rebrand)** | 1291 | 1263 | **28** |
-| **Depois do rebrand** | 1327 | **1301** | **26** |
+| **Entrega final** | 1364 | **1359** | **5** |
 
 **+36 testes, +38 passando, −2 falhas.** Nenhum teste que passava passou a falhar.
 (O ganho de 38 supera os 36 novos porque duas falhas do baseline foram resolvidas por trabalho do próprio usuário incorporado nesta branch.)

@@ -45,9 +45,15 @@ Wordmark (viewBox `0 0 220 72`, altura de caixa alta 56, tracking largo):
 ```
 V  M2 8H12.5L29 50L45.5 8H56L33.5 64H24.5Z
 A  M76 64L101.5 8H108.5L134 64H123.5L105 26L86.5 64Z
-A (travessão)  M88 48H122V57H88Z
 L  M154 8H164.5V53.5H212V64H154Z
 ```
+
+Dois detalhes do ativo oficial que precisam ser respeitados:
+
+1. **O "A" não tem travessão.** É um chevron: o wordmark lê "VΛL". É escolha de desenho
+   da marca, não um erro a corrigir.
+2. **Os cantos são arredondados.** Cada letra e o braço do V recebem um contorno da
+   própria cor com `stroke-linejoin="round"` — arredonda a junção sem alterar o traçado.
 
 ---
 

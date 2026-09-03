@@ -50,7 +50,9 @@ export default function Topbar({title,subtitle,onNavigate,onOpenVal,workspace,pa
   return index.filter(item=>normalize(`${item.label} ${item.hint} ${item.kind}`).includes(term)).slice(0,8)
  },[index,query])
 
- useEffect(()=>{if(open)inputRef.current?.focus()},[open])
+ // So rouba o foco quando o campo inline esta realmente visivel; no mobile
+ // ele fica oculto e o foco pertence ao campo do painel.
+ useEffect(()=>{if(open&&inputRef.current?.offsetParent)inputRef.current.focus()},[open])
  useEffect(()=>{
   if(!open)return
   const keydown=event=>{if(event.key==='Escape'){event.stopPropagation();setOpen(false);setQuery('')}}
@@ -84,14 +86,27 @@ export default function Topbar({title,subtitle,onNavigate,onOpenVal,workspace,pa
   </div>
   <div className="top-actions">
    <button type="button" className="val-shortcut" aria-label="Abrir a VAL" onClick={onOpenVal}><BrainCircuit/><span>Abrir a VAL</span></button>
-   <button type="button" className="icon-btn" aria-label="Buscar produtores, visitas, oportunidades e módulos" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>{open?<X size={19}/>:<Search size={19}/>}</button>
+   <div className="global-search-inline">
+    <Search size={16} aria-hidden="true"/>
+    <input
+     ref={inputRef}
+     value={query}
+     onChange={event=>{setQuery(event.target.value);setOpen(true)}}
+     onFocus={()=>setOpen(true)}
+     placeholder="Buscar produtores, culturas, análises…"
+     aria-label="Buscar produtores, visitas, oportunidades, módulos e ferramentas"
+     aria-expanded={open}
+    />
+    {query&&<button type="button" aria-label="Limpar busca" onClick={()=>{setQuery('');setOpen(false)}}><X size={14}/></button>}
+   </div>
+   <button type="button" className="icon-btn is-search-compact" aria-label="Buscar produtores, visitas, oportunidades e módulos" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>{open?<X size={19}/>:<Search size={19}/>}</button>
    <button type="button" className="icon-btn" aria-label="Abrir relatórios e alertas" onClick={()=>onNavigate?.('reports')}><Bell size={19}/></button>
    <time className="date-pill"><CalendarDays size={16}/> Hoje, {today}</time>
   </div>
   {open&&<div className="global-search" role="dialog" aria-label="Busca global">
    <div className="global-search-field">
     <Search size={17} aria-hidden="true"/>
-    <input ref={inputRef} value={query} onChange={event=>setQuery(event.target.value)} placeholder="Buscar produtor, visita, oportunidade ou módulo…" aria-label="Termo de busca"/>
+    <input value={query} onChange={event=>setQuery(event.target.value)} placeholder="Buscar produtor, visita, oportunidade ou módulo…" aria-label="Termo de busca"/>
    </div>
    {query.trim()
     ?results.length

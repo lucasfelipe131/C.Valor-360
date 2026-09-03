@@ -11,11 +11,12 @@ Branch: `rebrand/val-global-hybrid-workspace-v1` · Base: `2bed57c` · `main` n�
 |---|---|---|
 | **R0** | Auditoria e inventário funcional congelado | `rebrand(r0)` |
 | **R1** | Marca oficial instalada e gerada de fonte única | `rebrand(r1)` |
-| **R2** | Design System: migração cromática com preservação de luminância | `rebrand(r2)` |
+| **R2** | Design System sobre a paleta da VAL | `rebrand(r2)` + `rebrand(r12)` |
 | **R3** | App Shell: Workspace Contextual Híbrido | `rebrand(r3)` |
 | **R4** | Home como centro operacional | `rebrand(r4)` |
 | **R5** | Produtor 360 com Split View contextual | `rebrand(r5)` |
-| **R9** | Identidade atravessando a fronteira do iframe | `rebrand(r9)` |
+| **R9** | Fronteira do iframe | `rebrand(r9)` |
+| **R12** | Correção pela referência: paleta restaurada, marca corrigida, navegação e Home refeitas segundo a Mescla 09 | `rebrand(r12)` |
 
 **Não entregues: R6, R7 (parcial), R8, R10 (parcial), R11.** Detalhe na seção 5.
 
@@ -23,22 +24,21 @@ Branch: `rebrand/val-global-hybrid-workspace-v1` · Base: `2bed57c` · `main` n�
 
 ## 2. As três decisões que definiram o trabalho
 
-### 2.1 A migração cromática preserva luminância, não claridade
+### 2.1 Marca nova, paleta da VAL — depois de errar o contrário
 
-A auditoria mediu o problema real: **2.525 cores hex distintas** escritas à mão contra
-**131 usos de `var()`**. A camada de tokens existia e quase não era usada. Trocar tokens
-mudaria 131 declarações de ~4.700 — a marca mudaria e o produto continuaria azul.
+A primeira entrega trocou a paleta junto com a marca: uma migração cromática girou a matiz
+de 3.156 literais de cor do esmeralda da VAL para o oliva da folha da logo nova.
+Tecnicamente correta — luminância relativa preservada, contraste intacto. **Rejeitada pelo
+usuário, com razão.**
 
-A saída foi rodar a matiz dos literais, mas **resolvendo a claridade por busca binária
-para preservar a luminância relativa (WCAG)** de cada cor. Verde e azul têm coeficientes
-de luminância muito diferentes (0,7152 contra 0,0722); girar a matiz mantendo o `L` do HSL
-clarearia tudo e destruiria contraste em silêncio, em milhares de lugares.
+O erro foi confundir dois problemas. A logo era o ativo que tinha mudado; a paleta é
+patrimônio do produto e já era reconhecidamente VAL. "Gostei mais da cor da VAL antiga,
+porém a logo nova" resolveu a questão em uma frase.
 
-Preservando luminância, **toda razão de contraste do produto permanece idêntica**. O gate
-de acessibilidade saiu resolvido por construção, sem inspecionar 4.700 declarações.
-
-3.156 literais migrados no total (2.955 em `src/`, 201 no app embutido), com vermelhos,
-âmbares, amarelos e violetas fora da faixa: **alerta não virou verde VAL**.
+A paleta foi restaurada por completo — `--val-ink`, `--val-emerald`, `--val-mint`,
+`--val-lime` e todas as folhas voltaram ao estado anterior — e o script de migração
+cromática foi removido do repositório: mantê-lo seria manter uma ferramenta cuja única
+função é desfazer esta decisão. O oliva agora vive **dentro da logo**, e só ali.
 
 ### 2.2 A navegação passou a responder "em qual contexto", não "em qual página"
 
@@ -83,7 +83,7 @@ roteamento de modelo, engine de voz, retrieval, banco, APIs, integrações e per
 
 | Gate | Resultado |
 |---|---|
-| Testes | **1301 pass / 26 fail** — baseline era 1263/28. Zero regressões; +36 testes novos |
+| Testes | **1359 pass / 5 fail** — as 5 são ambientais e conhecidas. Zero regressões |
 | Build | ✅ limpo, PWA carimbado e validado |
 | Route smoke | ✅ 5 workspaces e 11 módulos abertos, desktop e mobile |
 | Inventário funcional | ✅ automatizado |
@@ -93,8 +93,8 @@ roteamento de modelo, engine de voz, retrieval, banco, APIs, integrações e per
 | Integridade de contexto | ✅ fronteira de produtor testada e reforçada |
 | Anti-regressão | ✅ nenhum teste verde virou vermelho |
 
-As 26 falhas são as **mesmas ambientais do baseline** (resolução de caminho do vite SSR no
-Windows, loader TS, `ffprobe`). Detalhe em `VAL_REBRAND_TEST_REPORT.md`.
+As falhas restantes são ambientais (`ffprobe`, service worker carimbado, servidor estático)
+e já constavam da triagem feita pelo próprio usuário. Detalhe em `VAL_REBRAND_TEST_REPORT.md`.
 
 ---
 
@@ -105,8 +105,8 @@ Windows, loader TS, `ffprobe`). Detalhe em `VAL_REBRAND_TEST_REPORT.md`.
 | **R6 — Preparar Visita em seis etapas** | não feito | fluxo grande, com comportamento a preservar item a item; merece sua própria fase e seu próprio gate |
 | **R7 — Copiloto** | parcial | painel contextual entregue; a integração de contexto de página já existia e foi preservada. Full screen e voz não foram redesenhados |
 | **R8 — Conhecimento** | não feito | reestruturar a apresentação em Resumo/Diagnóstico/Evidências/… mexe em como a resposta da IA é renderizada — risco alto, precisa de golden set próprio |
-| **R10 — Calculadoras** | parcial | identidade migrada e contrato mobile travado por teste; a refatoração de apresentação não foi feita e **não pôde ser validada em execução**: `manual/node_modules` não está instalado e instalar a sub-aplicação está fora do escopo |
-| **R11 — demais módulos** | herdaram a nova identidade pela migração cromática, mas não foram redesenhados individualmente |
+| **R10 — Calculadoras** | parcial | alcançáveis pela sidebar e pela busca, contrato mobile travado por teste; a refatoração de apresentação não foi feita e **não pôde ser validada em execução**: `manual/node_modules` não está instalado |
+| **R11 — demais módulos** | não redesenhados individualmente; herdaram o shell novo e a paleta original |
 | **Publicação em staging** | não feita | depende de autorização e credenciais que não tenho |
 | **`src/styles.css` com 286 KB** | dívida registrada, não resolvida | é outro trabalho, com outro risco |
 
@@ -128,7 +128,7 @@ git branch -f content/val-knowledge-library-expansion-v1 2bed57c
 ## 7. Próximos passos sugeridos, em ordem
 
 1. Rodar o UAT com carteira real — especialmente **3.2, 3.3 e 3.6**, a fronteira de produtor.
-2. Rodar a suíte em Linux/CI para confirmar que as 26 falhas são mesmo ambientais.
+2. Rodar a suíte em Linux/CI para confirmar que as 5 falhas restantes são mesmo ambientais.
 3. Publicar em staging e validar `/live`, `/ready` e `/health`.
 4. R6 — Preparar Visita, a fase de maior retorno restante.
 5. R10 — instalar o app embutido e validar as calculadoras em execução no celular.
@@ -141,8 +141,12 @@ git branch -f content/val-knowledge-library-expansion-v1 2bed57c
 > "É claramente a VAL que já existia, mas agora virou uma plataforma madura."
 
 A comparação BEFORE/AFTER foi feita com as duas versões rodando lado a lado. A mesma
-carteira, os mesmos módulos, as mesmas engines, os mesmos textos. O que mudou foi a marca,
-a hierarquia da navegação, o que a Home responde primeiro e o fato de a decisão e o que a
-sustenta finalmente aparecerem juntos.
+carteira, os mesmos módulos, as mesmas engines, os mesmos textos, **a mesma paleta**.
+O que mudou foi a marca, a hierarquia da navegação, o que a Home responde primeiro e o
+fato de a decisão e o que a sustenta finalmente aparecerem juntos.
+
+A crítica da referência era exata: *"a Demo atual ainda parece a versão anterior
+reorganizada — o problema não é só cor"*. A resposta a ela é esta revisão: a estrutura
+mudou, e a cor voltou ao lugar.
 
 **VAL — INTELIGÊNCIA QUE GERA VALOR.**

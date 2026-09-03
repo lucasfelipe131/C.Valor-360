@@ -119,12 +119,12 @@ test('navegação preserva agronomia nativa e deixa o workspace como aprofundame
  // único em lib/val-workspaces. O contrato agora é verificado lá; aqui fica
  // o que continua sendo responsabilidade das duas superfícies.
  assert.match(sidebar,/from '\.\.\/lib\/val-workspaces'/)
- assert.match(sidebar,/Copiloto VAL/)
- assert.match(sidebar,/onClick=\{\(\)=>setPage\('dashboard'\)\}/)
+ assert.match(sidebar,/Acessar Copiloto/)
+ assert.match(sidebar,/onSelect\?\.\(\{id:'dashboard',page:'dashboard'\}\)/)
  assert.doesNotMatch(sidebar,/Manual agronômico/)
  assert.match(mobile,/from '\.\.\/lib\/val-workspaces'/)
  assert.match(mobile,/aria-label="Abrir o Copiloto VAL" onClick=\{onOpenVal\}/)
- assert.match(mobile,/onClick=\{\(\)=>navigate\('dashboard'\)\}/)
+ assert.match(mobile,/go\(\{id:'dashboard',page:'dashboard'\}\)/)
  // Agronomia continua nativa: é um workspace inteiro, não um item de accordion.
  assert.equal(workspaceOf('agro'),'campo')
  assert.equal(workspaceEntryPoint('campo','admin'),'agro')

@@ -2,6 +2,10 @@
 
 Matriz de migração do rebrand. **Nenhuma linha pode terminar como `REMOVIDO`.**
 
+> **Revisão 2** — a navegação foi refeita segundo a slide 05 da referência
+> (`VAL_REBRAND_DEMO_REFERENCIA_v1.pptx`) e a paleta da VAL foi restaurada.
+> A tabela reflete o estado final.
+
 Legenda: **PRESERVADO** = existe e funciona igual · **MELHORADO** = existe, funciona igual e ficou mais fácil de alcançar ou de ler.
 
 ---
@@ -10,19 +14,23 @@ Legenda: **PRESERVADO** = existe e funciona igual · **MELHORADO** = existe, fun
 
 | Recurso antigo | Local antigo | Local novo | Status | Testado |
 |---|---|---|---|---|
-| Hoje (`dashboard`) | Sidebar primário | Sidebar, item fixo acima dos workspaces + barra mobile | MELHORADO | ✅ `val-rebrand-home-command-center-v1` |
-| Clientes (`clients`) | Sidebar primário | Workspace **Produtor** + barra mobile "Produtores" | PRESERVADO | ✅ `val-rebrand-workspace-shell-v1` |
-| Cliente 360 (`client360`) | Sem entrada de menu | Workspace **Produtor** (contextual, por clique) + Split View | MELHORADO | ✅ `val-rebrand-split-view-v1` |
-| Visitas (`visits`) | Sidebar primário | Workspace **Comercial** | PRESERVADO | ✅ |
+| Hoje (`dashboard`) | Sidebar primário | **Início** — item fixo acima dos workspaces + barra mobile | MELHORADO | ✅ `val-rebrand-home-command-center-v1` |
+| Clientes (`clients`) | Sidebar primário | Workspace **Produtor** → "Carteira" + barra mobile "Produtores" | PRESERVADO | ✅ `val-rebrand-workspace-shell-v1` |
+| Cliente 360 (`client360`) | Sem entrada de menu | Workspace **Produtor** → "Produtor 360" (abre o produtor ativo) + Split View | MELHORADO | ✅ `val-rebrand-split-view-v1` |
+| Visitas (`visits`) | Sidebar primário | Workspace **Comercial** → "Visitas" e "Preparar Visita" | MELHORADO | ✅ |
 | Oportunidades (`opportunities`) | Sidebar primário / sheet mobile | Workspace **Comercial** (mesmo lugar nos dois) | MELHORADO | ✅ |
 | Copiloto VAL (`copilot`) | Sidebar primário | Cartão dedicado no rodapé da sidebar + barra mobile + painel contextual | MELHORADO | ✅ `val-full-screen-copilot` |
-| Análise avançada (`val`) | `details` "Mais recursos" | Workspace **Inteligência** | MELHORADO | ✅ |
+| Análise avançada (`val`) | `details` "Mais recursos" | Workspace **Inteligência** | MELHORADO |
+| Manual do Agrônomo | só dentro do iframe | Workspace **Inteligência** (deep-link para a ferramenta) | MELHORADO |
+| Calculadoras | só dentro do iframe | Workspace **Inteligência** (deep-link) | MELHORADO |
+| Mapas e talhões · Solo · Diagnóstico · Bulas · Clima | só dentro do iframe | Workspace **Campo** (deep-link por ferramenta) | MELHORADO | ✅ |
 | Base Inteligente (`datahub`) | `details` "Mais recursos" | Workspace **Produtor** | MELHORADO | ✅ |
 | Coletar preferências (`questionnaire`) | `details` "Mais recursos" | Workspace **Produtor** + ação rápida do "+" mobile | MELHORADO | ✅ |
 | Inteligência Agronômica (`agro`) | Sidebar primário (promovida pelo usuário) | Workspace **Campo** | MELHORADO | ✅ `agro-large-workspace`, `agro-manual-parity` |
-| Relatórios (`reports`) | `details` "Mais recursos" | Workspace **Gestão** | PRESERVADO | ✅ |
-| Configurações (`settings`) | `details` "Mais recursos" | Workspace **Gestão** | PRESERVADO | ✅ |
-| Administração (`admin`) | `details`, gate `role==='admin'` | Workspace **Gestão**, gate declarado no modelo | PRESERVADO | ✅ `ui-layout-contract` |
+| Relatórios (`reports`) | `details` "Mais recursos" | Workspace **Gestão** → "Indicadores e relatórios" | PRESERVADO |
+| Documentos | só dentro do iframe | Workspace **Gestão** (deep-link para Biblioteca) | MELHORADO | ✅ |
+| Configurações (`settings`) | `details` "Mais recursos" | Seção fixa **Configurações** → "Preferências" | PRESERVADO | ✅ |
+| Administração (`admin`) | `details`, gate `role==='admin'` | Seção fixa **Configurações**, gate declarado no modelo | PRESERVADO | ✅ `ui-layout-contract` |
 | Login | fora do shell | fora do shell, com marca oficial | MELHORADO | ✅ `val-brand-variants` |
 | Troca de senha | fora do shell | igual | PRESERVADO | ✅ |
 | Pesquisa pública (`?responder=`) | fora do shell | igual | PRESERVADO | ✅ |
@@ -80,7 +88,8 @@ As dez saíram de dentro de `pages/Agro.jsx` para `lib/agro-tools.js` — mesmo 
 | Produtor em foco ao navegar | `navigate()` zerava `selected`; um efeito reativava o **primeiro da carteira** | a seleção explícita do usuário sobrevive | o contexto anterior não era mais seguro, era arbitrário — ninguém escolheu aquele produtor |
 | Sidebar e MobileNav | duas listas independentes, já divergentes | um modelo único | a divergência já era um bug de produto |
 | Busca do cabeçalho | ícone que navegava para `clients` | busca sobre carteira, agenda, funil, módulos e ferramentas | o ícone prometia busca e não buscava |
-| Barra inferior mobile | 4 destinos | 5 destinos com "+" de criação | o prompt pede Início · Produtores · + · Copiloto · Mais |
+| Barra inferior mobile | 4 destinos | 5 destinos com "+" de criação | a referência pede Início · Produtores · + · Copiloto · Mais |
+| Paleta | esmeralda/menta da VAL | **inalterada** | a primeira tentativa girou a matiz do produto para o oliva da logo; foi rejeitada. A logo é o ativo que mudou, a paleta é patrimônio do produto |
 
 Nada além disso mudou de comportamento. Engines, prompts, roteamento de modelo, banco, APIs e permissões seguem intactos.
 
@@ -90,9 +99,9 @@ Nada além disso mudou de comportamento. Engines, prompts, roteamento de modelo,
 
 | Item | Situação |
 |---|---|
-| R6 — Preparar Visita redesenhado | **NÃO FEITO.** `PrepareVisitSimple` recebeu a nova paleta pela migração cromática, mas o fluxo em seis etapas não foi implementado |
+| R6 — Preparar Visita redesenhado | **NÃO FEITO.** O item existe na sidebar e abre a preparação do produtor ativo, mas o fluxo guiado em seis etapas (Objetivo → Contexto → Diagnóstico → Recomendações → Estratégia → Ação) não foi implementado |
 | R8 — Conhecimento em Resumo/Diagnóstico/Evidências/Recomendação/Alternativas/Risco/Próxima ação | **NÃO FEITO.** A apresentação do conhecimento não foi reestruturada |
-| R10 — refatoração das calculadoras | **PARCIAL.** Identidade migrada e contrato mobile travado por teste; a refatoração de apresentação não foi feita e não pôde ser validada em execução (`manual/node_modules` não instalado) |
+| R10 — refatoração das calculadoras | **PARCIAL.** Alcançáveis pela sidebar e pela busca; contrato mobile travado por teste. A refatoração de apresentação não foi feita e não pôde ser validada em execução (`manual/node_modules` não instalado) |
 | `src/styles.css` com 286 KB | dívida registrada no R0, não resolvida |
 | Deep-link / histórico do navegador | não existe router; não foi introduzido |
 | Publicação em staging | **NÃO FEITA** — depende de autorização e credenciais |
