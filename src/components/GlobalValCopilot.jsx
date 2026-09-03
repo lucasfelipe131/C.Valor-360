@@ -108,7 +108,7 @@ function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onRe
  const openWithSources=target=>onOpenModule?.(scopedTarget(target,{sourceAttachments}))
  return <article className={`global-val-answer is-${density}`}>
   {isBehavioralProfile?<ProfileResponse reasoning={reasoning} answer={answer} facts={facts} outputMode={outputMode} audioNode={audioNode}/>:<>
-  <DecisionCard reasoning={reasoning} answer={answer} action={degraded?'':strategy.action} showText={outputMode!=='audio'} audioNode={audioNode}/>
+  <DecisionCard reasoning={reasoning} answer={answer} action={degraded?'':strategy.action} audioNode={audioNode}/>
   {toolResult?<GenericToolCard title={toolResult.title} summary={toolResult.summary} status={toolResult.status} onOpen={()=>openWithSources({page:toolResult.page||'agro',tool:toolResult.tool,manualPage:toolResult.manual_page,mode:toolResult.mode,context:toolResult.context})}/>:null}
   {!degraded&&intent==='PREPARE_VISIT'&&<PrepareVisitCard reasoning={reasoning} questions={questions} onOpen={openScoped}/>}
   {!degraded&&toolResult?.status!=='CATALOG'&&['ASK_AGRONOMIC','ANALYZE_SOIL'].includes(intent)&&<AgronomicInsightCard reasoning={reasoning} onOpen={openScoped}/>}
