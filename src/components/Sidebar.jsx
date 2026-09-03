@@ -2,11 +2,16 @@ import React from 'react'
 import { LayoutDashboard, Users, CalendarDays, Target, Search, Sprout, FileBarChart, Settings, ClipboardList, DatabaseZap, ShieldCheck, Sparkles } from 'lucide-react'
 import Logo from './Logo'
 const primary=[
- ['dashboard','Hoje',LayoutDashboard],['clients','Clientes',Users],['visits','Visitas',CalendarDays],['opportunities','Oportunidades',Target],['copilot','VAL',Sparkles]
+ ['dashboard','Hoje',LayoutDashboard],
+ ['clients','Clientes',Users],
+ ['visits','Visitas',CalendarDays],
+ ['opportunities','Oportunidades',Target],
+ ['agro','Inteligência Agronômica',Sprout],
+ ['copilot','VAL',Sparkles]
 ]
 const secondary=[
  ['val','Análise avançada',Search],['datahub','Base Inteligente',DatabaseZap],['questionnaire','Coletar preferências',ClipboardList],
- ['agro','Ferramentas agronômicas',Sprout],['reports','Relatórios',FileBarChart],['settings','Configurações',Settings]
+ ['reports','Relatórios',FileBarChart],['settings','Configurações',Settings]
 ]
 export default function Sidebar({page,setPage,currentUser,onOpenVal}){
  const account=currentUser?.email||'Ambiente demonstrativo'
