@@ -43,12 +43,9 @@ test('item curado da Biblioteca chega ao consultor quando a pergunta o seleciona
 })
 
 test('cada item elegível da Biblioteca recuperado pelo próprio título é entregue, salvo lacunas conhecidas',async()=>{
- // Lacunas que dependem de outras camadas; cada uma deve sair desta lista quando a camada
- // correspondente for corrigida. KI-001, KI-012, KI-097, KI-111, KI-112 e KI-117: o roteador de
- // intenção lê "objeção", "resistência", "oportunidade" ou "proposta" no título e exige produtor.
- // KI-108: o atalho fixo de "margem" intercepta antes da Biblioteca. KI-122: claim curada sem
- // suporte lexical no próprio statement.
- const knownGaps=new Set(['KI-001','KI-012','KI-097','KI-108','KI-111','KI-112','KI-117','KI-122'])
+ // Lacunas conhecidas: KI-012 ("Preparação aumenta qualidade da conversa") lê como pedido de
+ // preparar visita, que exige produtor; KI-122 tem claim curada sem suporte lexical no statement.
+ const knownGaps=new Set(['KI-012','KI-122'])
  const library=loadKnowledgeLibrary()
  const eligible=library.items.filter(item=>item.module_targets.some(module=>modules.includes(module)))
  let retrievable=0
@@ -66,12 +63,39 @@ test('cada item elegível da Biblioteca recuperado pelo próprio título é entr
  assert.deepEqual(blocked,[],`itens curados presos no grounding:\n${blocked.join('\n')}`)
 })
 
-test('pergunta fora do acervo não recebe item da Biblioteca como resposta',async()=>{
- for(const message of ['qual a capital da Austrália','receita de bolo de cenoura','preço do bitcoin']){
-  const {reasoning}=await general(message)
+test('pergunta fora do acervo recebe pedido de esclarecimento, não item da Biblioteca nem bloqueio de integridade',async()=>{
+ for(const message of ['qual a capital da Austrália','receita de bolo de cenoura','preço do bitcoin','Quanto tempo leva para a soja emergir depois do plantio?']){
+  const {reasoning,response}=await general(message)
   assert.equal(reasoning.facts_used.length,0,message)
-  assert.notEqual(reasoning.run.tool_result?.context?.knowledge_item_id?.startsWith('KI-'),true,message)
+  assert.equal(reasoning.run.tool_result?.status,'NO_DATA',message)
+  assert.equal(reasoning.run.tool_result?.mode,'no_coverage',message)
+  assert.match(response.advice.answer,/^Posso tratar esta dúvida sem selecionar um produtor/,message)
+  assert.doesNotMatch(response.advice.answer,/Não há evidência/,message)
  }
+})
+
+test('sem cobertura curada o modelo sem fonte é consultado, com item curado não é',async()=>{
+ const mock=text=>{let calls=0;return {client:{responses:{create:async()=>{calls+=1;return {output_text:text}}}},calls:()=>calls}}
+ const lua=mock('A distância média entre a Terra e a Lua é de cerca de 384 mil quilômetros.')
+ const luaRoute=routeSystemCapability({message:'qual a distância da terra até a lua',intentHint:'ASK_GENERAL',hasClient:false})
+ const luaResponse=await buildGeneralNoClientResponse({message:'qual a distância da terra até a lua',route:luaRoute,organizationId:tenant,ownerId:owner,conversationId:'ai-lua',aiClient:lua.client,aiModel:'gpt-5.6-luna'})
+ assert.equal(lua.calls(),1)
+ assert.equal(luaResponse.advice.ai_reasoning.run.tool_result?.capability,'AI_GENERAL_KNOWLEDGE')
+ assert.equal(luaResponse.advice.ai_reasoning.evidence_status,'UNVERIFIED_MODEL_KNOWLEDGE')
+ const wasde=mock('Isso nunca deveria ser dito.')
+ const wasdeRoute=routeSystemCapability({message:'o que é WASDE',intentHint:'ASK_GENERAL',hasClient:false})
+ const wasdeResponse=await buildGeneralNoClientResponse({message:'o que é WASDE',route:wasdeRoute,organizationId:tenant,ownerId:owner,conversationId:'ai-wasde',aiClient:wasde.client,aiModel:'gpt-5.6-luna'})
+ assert.equal(wasde.calls(),0)
+ assert.match(wasdeResponse.advice.answer,/WASDE/)
+})
+
+test('atalho fixo de definição não intercepta trigger curado com cultura',async()=>{
+ const soja=await general('qual a margem da soja')
+ assert.equal(soja.reasoning.run.tool_result.context.knowledge_item_id,'KI-108')
+ assert.match(soja.response.advice.answer,/Margem exige cruzar custo de produção/)
+ const concept=await general('o que é margem')
+ assert.match(concept.response.advice.answer,/Margem é a diferença entre receita e custos/)
+ assert.equal(concept.reasoning.run.tool_result.context.knowledge_item_id,undefined)
 })
 
 test('metadados de seleção forjados no envelope de orientação geral não ganham confiança',()=>{

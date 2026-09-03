@@ -629,8 +629,11 @@ function generalGuidance(message=''){
  const greetingMatch=greetingOnlyRequest.exec(String(message||''))
  if(greetingMatch){const greetingText=greetingMatch[1];return curatedGuidance(`${greetingText.charAt(0).toUpperCase()}${greetingText.slice(1)}, posso ajudar com dúvidas gerais, agronomia, mercado ou sobre um produtor específico.`)}
  if(thanksOnlyRequest.test(String(message||'')))return curatedGuidance('Disponha. Posso ajudar com dúvidas gerais, agronomia, mercado ou sobre um produtor específico.')
- if(/\bmargem\b/.test(source))return curatedGuidance('Margem é a diferença entre receita e custos. Em percentual, divida a margem em valor pela receita e multiplique por 100; confirme quais custos entram na comparação.')
- if(/\broi\b|retorno sobre investimento/.test(source))return curatedGuidance('ROI compara o ganho líquido com o investimento: (retorno menos investimento) dividido pelo investimento. Informe período, custos e premissas para evitar uma precisão falsa.')
+ // "qual a margem da soja" e trigger curado da Biblioteca (KI-108); o atalho fixo de definicao
+ // so vale para a pergunta conceitual sem cultura ou produto.
+ const cropMention=/\b(?:soja|milho|trigo|sorgo|cevada|feijao|arroz|algodao|cafe|cana|graos?|safra)\b/.test(source)
+ if(!cropMention&&/\bmargem\b/.test(source))return curatedGuidance('Margem é a diferença entre receita e custos. Em percentual, divida a margem em valor pela receita e multiplique por 100; confirme quais custos entram na comparação.')
+ if(!cropMention&&(/\broi\b|retorno sobre investimento/.test(source)))return curatedGuidance('ROI compara o ganho líquido com o investimento: (retorno menos investimento) dividido pelo investimento. Informe período, custos e premissas para evitar uma precisão falsa.')
  if(/\bcusto\s*\/\s*ha|custo por hectare/.test(source))return curatedGuidance('Custo por hectare é o custo total dividido pela área efetivamente considerada. Informe ambos com unidade e período para a VAL calcular.')
  if(/\bctc\b/.test(source))return curatedGuidance('CTC representa a capacidade do solo de reter e trocar cátions. Sua interpretação depende do método, da camada amostrada, do pH e das demais medições do laudo.')
  if(/\bph\b/.test(source))return curatedGuidance('O pH indica a acidez ou alcalinidade do solo e influencia disponibilidade de nutrientes e manejo de correção. A interpretação prática depende do método, da camada, da cultura e das demais medições do laudo.')
@@ -784,6 +787,9 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  const evaluatedGrounding=evaluateReasoningGrounding({question:message,domain:selectedDomain,evidence:sourceRefs,activeProducerId:clientId,tenantId:String(organizationId),ownerId:String(ownerId||''),blocks:groundingBlocks,now:new Date(createdAt)})
  const scopedSessionCommand=Boolean(route?.session_command?.requires_previous_turn&&sourceRefs.length&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  const trustedGeneralGuidance=Boolean(!clientId&&sourceRefs.length===1&&sourceRefs[0].id==='system:general-guidance:v1'&&sourceRefs[0].capability==='GENERAL_GUIDANCE'&&tool?.capability==='GENERAL_GUIDANCE'&&evaluatedGrounding.question_relevance==='PASS'&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
+ // Pedido de esclarecimento por falta de cobertura curada: texto fixo do servidor, sem fonte e
+ // sem claim factual; e o que o consultor deve ler quando nao ha item nem modelo disponivel.
+ const noCoverageGuidance=Boolean(!sourceRefs.length&&tool?.capability==='GENERAL_GUIDANCE'&&tool?.status==='NO_DATA'&&tool?.mode==='no_coverage'&&summary===clean(noKnowledgeCoverageStub,1200))
  // Comando local da sessao ("por escrito", "nao registra"): a resposta e a confirmacao fixa da
  // preferencia, sem afirmacao factual; nao precisa de turno anterior nem de overlap com a frase.
  const localSessionCommand=Boolean(route?.session_command?.local_only&&sourceRefs.length===1&&sourceRefs[0].capability==='SESSION_COMMAND'&&tool?.capability==='SESSION_COMMAND'&&tool?.status==='EXECUTED'&&trustedCapabilityExecutions.has(execution)&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
@@ -821,6 +827,8 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
    ?{...evaluatedGrounding,passed:true,question_relevance:'LOCAL_SESSION_COMMAND'}
   :workspaceNavigation&&!evaluatedGrounding.passed
    ?{...evaluatedGrounding,passed:true,question_relevance:'WORKSPACE_ACTION'}
+  :noCoverageGuidance&&!evaluatedGrounding.passed
+   ?{...evaluatedGrounding,passed:true,question_relevance:'SAFE_NO_COVERAGE'}
   :safeAbsence
    ?{...evaluatedGrounding,passed:true,question_relevance:'SAFE_NO_DATA'}
    :evaluatedGrounding
@@ -852,11 +860,18 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   :contextRequired
    ?isCurrentClientIdentityRequest(message)?'Nenhum produtor está selecionado nesta conversa.':'Nenhum produtor está selecionado nesta conversa. Selecione um produtor autorizado para continuar.'
    :guidance.summary
+ // Sem cobertura na Biblioteca e sem definicao fixa: o texto e um pedido de esclarecimento, nao
+ // uma resposta factual. Entra como NO_DATA para nao passar por grounding de claims e nunca ser
+ // trocado pela mensagem de bloqueio de integridade. Tambem e o que o consultor le quando o item
+ // recuperado foi bloqueado a jusante e nao ha modelo disponivel para o fallback.
+ const noCoverageExecution=()=>deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'NO_DATA',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:'Orientação geral',summary:noKnowledgeCoverageStub,page:'copilot',manual_page:null,mode:'no_coverage',context:{client_id:null,private_memory_used:false},required_inputs:['topic']},active_context:null})
  const curatedExecution=deepFreeze(catalog
   ?{path:route.path,capabilities_planned:[...list(route.capabilities)],capabilities_used:['AGRONOMIC_WORKSPACE'],capability_results:[catalogExecution],tool_result:catalogExecution.tool_result,active_context:null}
   :contextRequired
    ?{path:route.path,capabilities_planned:[...list(route.capabilities)],capabilities_used:[],capability_results:[{capability:'CLIENT_CONTEXT',status:'CONTEXT_REQUIRED',source_ref:null,tool_result:null},...list(route.capabilities).filter(capability=>capability!=='CLIENT_CONTEXT').map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null}))],tool_result:{status:'CONTEXT_REQUIRED',capability:'CLIENT_CONTEXT',tool:'client_selector',title:'Produtor necessário',summary:curatedSummary,page:'clients',manual_page:null,mode:'select_client',context:{client_id:null,private_memory_used:false},required_inputs:['client_id']},active_context:null}
-   :{path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'EXECUTED',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:'Orientação geral',summary:curatedSummary,page:'copilot',manual_page:null,mode:'general',context:{client_id:null,private_memory_used:false,...(guidance?.knowledge_item_id?{knowledge_item_id:guidance.knowledge_item_id,knowledge_match:guidance.knowledge_match}:{})}},active_context:null})
+   :guidance.coverage==='NONE'
+    ?noCoverageExecution()
+    :{path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'EXECUTED',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:'Orientação geral',summary:curatedSummary,page:'copilot',manual_page:null,mode:'general',context:{client_id:null,private_memory_used:false,...(guidance?.knowledge_item_id?{knowledge_item_id:guidance.knowledge_item_id,knowledge_match:guidance.knowledge_match}:{})}},active_context:null})
  const finalize=(execution,{unverified=false}={})=>{
   trustedCapabilityExecutions.add(execution)
   const built=buildCapabilityExecutionResponse({execution,route,message,organizationId,ownerId,conversationId,contextEpoch,contextDomain,now,executionCounts:{entityResolutions:0,dataLookups:0,toolCalls:catalog?1:0,hops:catalog?1:0}})
@@ -870,15 +885,15 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   return built
  }
  const curatedResponse=finalize(curatedExecution)
- // A Knowledge Library quase sempre devolve algum item (o retriever não tem piso de
- // relevância), então "nada encontrado" raramente chega como stub puro — na prática, o
- // sinal real de "esta pergunta não tem cobertura real" é o próprio grounding bloqueando
- // a resposta a jusante (item errado, sem overlap real com a pergunta). Só aí tentamos o
- // modelo sem fonte; perguntas de alto risco continuam bloqueadas dentro de
- // unverifiedModelKnowledgeAnswer independentemente do motivo do bloqueio aqui.
- if(catalog||contextRequired||curatedResponse.advice.ai_reasoning.grounding?.blocked!==true)return curatedResponse
+ // Dois sinais de "esta pergunta nao tem cobertura curada": o retriever nao devolveu item nem
+ // definicao fixa (coverage NONE, flag explicita), ou devolveu um item que o grounding bloqueou
+ // a jusante (item errado, sem overlap real com a pergunta). Nos dois casos tentamos o modelo
+ // sem fonte; perguntas de alto risco continuam bloqueadas dentro de
+ // unverifiedModelKnowledgeAnswer. Sem modelo, o pedido de esclarecimento e o que o usuario le.
+ const noCoverage=guidance?.coverage==='NONE'
+ if(catalog||contextRequired||!noCoverage&&curatedResponse.advice.ai_reasoning.grounding?.blocked!==true)return curatedResponse
  const {text:aiAnswer,costUsd:aiCostUsd}=await unverifiedModelKnowledgeAnswer({message,aiClient,model:aiModel})
- if(!aiAnswer)return curatedResponse
+ if(!aiAnswer)return curatedResponse.advice.ai_reasoning.grounding?.blocked===true?finalize(noCoverageExecution()):curatedResponse
  const aiToolResult={status:'EXECUTED',capability:'AI_GENERAL_KNOWLEDGE',tool:'ai_general_knowledge',title:'Conhecimento geral do modelo (não verificado)',summary:aiAnswer,page:'copilot',manual_page:null,mode:'general_unverified',context:{client_id:null,private_memory_used:false}}
  const aiExecution=deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['AI_GENERAL_KNOWLEDGE'],capability_results:[{capability:'AI_GENERAL_KNOWLEDGE',status:'EXECUTED',source_ref:aiUnverifiedSourceRef,tool_result:aiToolResult}],tool_result:aiToolResult,active_context:null})
  const aiResponse=finalize(aiExecution,{unverified:true})
