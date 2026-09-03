@@ -13,11 +13,11 @@ function Card({className='',icon:Icon=Lightbulb,label,title,children,actionLabel
  </section>
 }
 
-export function DecisionCard({reasoning={},answer='',action='',audioNode,showText=true}){
+export function DecisionCard({reasoning={},answer='',action='',audioNode}){
  const path=text(reasoning.run?.path,20)
  return <Card className="val-decision-card" icon={Lightbulb} label="MINHA LEITURA" title={reasoning.client?.name||'Decisão em análise'}>
   {path&&<em className={`val-chat-path is-${path.toLowerCase()}`}>{path}</em>}
-  {showText&&<p className="val-chat-lead">{answer||'A orientação chegou sem uma leitura principal.'}</p>}
+  <p className="val-chat-lead">{answer||'A orientação chegou sem uma leitura principal.'}</p>
   {action&&<div className="val-chat-next"><small>EU FARIA AGORA</small><b>{action}</b></div>}
   {audioNode}
  </Card>
