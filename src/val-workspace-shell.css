@@ -307,3 +307,175 @@
  .global-search{right:12px;left:12px;width:auto}
  .context-step{max-width:150px}
 }
+
+/* ------------------------------------------------- Split View contextual (R5)
+   A decisão no centro; o que sustenta a decisão ao lado, sem trocar de página. */
+.producer-split{
+ display:grid;
+ grid-template-columns:minmax(0,1fr) 366px;
+ align-items:start;
+ gap:20px;
+}
+.producer-split:has(.context-panel.is-collapsed){grid-template-columns:minmax(0,1fr) 52px}
+.producer-split-main{min-width:0}
+
+.context-panel{
+ position:sticky;
+ top:104px;
+ display:flex;
+ flex-direction:column;
+ max-height:calc(100vh - 128px);
+ border:1px solid var(--val-line);
+ border-radius:19px;
+ background:var(--val-surface);
+ box-shadow:var(--shadow);
+ overflow:hidden;
+}
+.context-panel.is-collapsed{
+ align-items:center;
+ padding:10px 0;
+ max-height:none;
+}
+
+.context-panel-head{
+ display:flex;
+ align-items:center;
+ justify-content:space-between;
+ gap:6px;
+ padding:9px 9px 9px 10px;
+ border-bottom:1px solid var(--val-line);
+ background:var(--val-canvas);
+}
+.context-panel-head [role="tablist"]{display:flex;gap:3px;min-width:0}
+.context-panel-head [role="tab"]{
+ display:inline-flex;
+ align-items:center;
+ gap:6px;
+ min-height:34px;
+ padding:0 10px;
+ border:0;
+ border-radius:10px;
+ background:transparent;
+ color:var(--val-muted);
+ font-size:11.5px;
+ font-weight:680;
+ cursor:pointer;
+ transition:background .16s ease,color .16s ease;
+}
+.context-panel-head [role="tab"]:hover{background:var(--val-surface);color:var(--val-text)}
+.context-panel-head [role="tab"].active{background:var(--val-surface);color:var(--val-emerald-dark);box-shadow:0 2px 8px rgba(13,42,26,.07)}
+
+.context-panel-toggle{
+ display:grid;
+ place-items:center;
+ width:34px;
+ height:34px;
+ flex:none;
+ border:1px solid var(--val-line);
+ border-radius:10px;
+ background:var(--val-surface);
+ color:var(--val-muted);
+ cursor:pointer;
+}
+.context-panel-toggle:hover{color:var(--val-emerald-dark);border-color:var(--val-emerald)}
+
+.context-pane{padding:14px;overflow-y:auto;scrollbar-width:thin}
+.context-note{margin:0 0 12px;color:var(--val-muted);font-size:11.5px;line-height:1.5}
+.context-note.is-warning{margin:12px 0 0;padding-top:10px;border-top:1px dashed var(--val-line)}
+.context-empty{margin:0;color:var(--val-muted);font-size:12px;line-height:1.55}
+
+/* Timeline 360 */
+.context-timeline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.context-timeline li{
+ display:grid;
+ grid-template-columns:14px minmax(0,1fr);
+ gap:12px;
+ padding:0 0 16px 0;
+ position:relative;
+}
+.context-timeline li:before{
+ content:"";
+ position:absolute;
+ left:5px;
+ top:16px;
+ bottom:0;
+ width:1px;
+ background:var(--val-line);
+}
+.context-timeline li:last-child:before{display:none}
+.context-timeline li:after{
+ content:"";
+ position:absolute;
+ left:1px;
+ top:6px;
+ width:9px;
+ height:9px;
+ border-radius:50%;
+ border:2px solid var(--val-surface);
+ background:var(--val-muted);
+}
+.context-timeline li.is-visit:after{background:var(--val-emerald-dark)}
+.context-timeline li.is-opportunity:after{background:var(--val-emerald)}
+.context-timeline li.is-commitment:after{background:var(--val-lime)}
+.context-timeline time{grid-column:2;color:var(--val-muted);font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
+.context-timeline li>div{grid-column:2}
+.context-timeline small{display:block;margin-top:3px;color:var(--val-emerald-dark);font-size:9px;font-weight:820;letter-spacing:.13em;text-transform:uppercase}
+.context-timeline b{display:block;margin-top:2px;color:var(--val-text);font-size:12.5px;font-weight:700;line-height:1.35}
+.context-timeline p{margin:3px 0 0;color:var(--val-muted);font-size:11.5px;line-height:1.5}
+.context-timeline em{display:block;margin-top:4px;color:var(--val-muted);font-size:10px;font-style:normal;opacity:.72}
+
+/* Contexto */
+.context-block{padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--val-line)}
+.context-block:last-child{padding-bottom:0;margin-bottom:0;border-bottom:0}
+.context-block>small{display:block;margin-bottom:6px;color:var(--val-emerald-dark);font-size:9px;font-weight:820;letter-spacing:.14em}
+.context-block>b{display:block;color:var(--val-text);font-size:15px;font-weight:750}
+.context-block>p{margin:4px 0 0;color:var(--val-muted);font-size:12px;line-height:1.55}
+.context-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.context-list li{display:grid;grid-template-columns:14px minmax(0,1fr);gap:8px;align-items:start;color:var(--val-text);font-size:12px;line-height:1.45}
+.context-list svg{margin-top:2px;color:var(--val-emerald-dark)}
+.context-list em{display:block;color:var(--val-muted);font-size:10.5px;font-style:normal;letter-spacing:.04em;text-transform:uppercase}
+
+/* Copiloto contextual */
+.context-prompts{display:flex;flex-direction:column;gap:7px}
+.context-prompts button{
+ display:grid;
+ grid-template-columns:16px minmax(0,1fr);
+ gap:9px;
+ padding:11px;
+ border:1px solid var(--val-line);
+ border-radius:13px;
+ background:var(--val-surface);
+ text-align:left;
+ cursor:pointer;
+ transition:border-color .16s ease,background .16s ease;
+}
+.context-prompts button:hover{border-color:var(--val-emerald);background:var(--val-canvas)}
+.context-prompts svg{margin-top:2px;color:var(--val-emerald-dark)}
+.context-prompts b{grid-column:2;color:var(--val-text);font-size:12.5px;font-weight:700}
+.context-prompts small{grid-column:2;color:var(--val-muted);font-size:10.5px;line-height:1.4}
+.context-open-copilot{
+ display:flex;
+ align-items:center;
+ justify-content:center;
+ gap:8px;
+ width:100%;
+ min-height:44px;
+ margin-top:12px;
+ border:0;
+ border-radius:13px;
+ background:linear-gradient(135deg,var(--val-emerald-dark),var(--val-emerald));
+ color:#fff;
+ font-weight:740;
+ cursor:pointer;
+}
+
+/* Tablet e mobile: o painel deixa de ser coluna e vira seção logo abaixo da
+   decisão, mantendo o mesmo conteúdo e a mesma ordem de leitura. */
+@media(max-width:1180px){
+ .producer-split,
+ .producer-split:has(.context-panel.is-collapsed){grid-template-columns:minmax(0,1fr)}
+ .context-panel{position:static;max-height:none}
+ .context-panel.is-collapsed{align-items:stretch;padding:0}
+ .context-panel.is-collapsed .context-panel-toggle{width:100%;border-radius:14px;min-height:46px}
+ .context-pane{max-height:none}
+}

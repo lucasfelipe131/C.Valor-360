@@ -4,6 +4,7 @@ import ProducerProfileEditor from '../components/ProducerProfileEditor'
 import ProducerBusinessOverview from '../components/ProducerBusinessOverview'
 import ProducerFieldGallery from '../components/ProducerFieldGallery'
 import VoiceCapture from '../components/voice/VoiceCapture'
+import ContextPanel from '../components/ContextPanel'
 import {compactBRL,commercialMetrics,metricValue} from '../lib/commercial-metrics'
 import {canonicalVoiceChange,resolveCommitmentResource,selectLatestEvidenceVisit} from '../lib/copilot-view-model'
 
@@ -18,6 +19,15 @@ const money=value=>`R$ ${Number(value||0).toLocaleString('pt-BR',{maximumFractio
 const shown=value=>value===null||value===undefined||value===''?'Não informado':String(value)
 const visitDate=visit=>{const parsed=new Date(visit?.completedAt||visit?.occurredAt||visit?.scheduledAt||visit?.date||'');return Number.isNaN(parsed.getTime())?null:parsed}
 const shortDate=value=>{const parsed=value instanceof Date?value:new Date(value||'');return Number.isNaN(parsed.getTime())?'Data a confirmar':parsed.toLocaleDateString('pt-BR',{day:'2-digit',month:'short',year:'numeric'}).replace('.','')}
+// O perfil é camada contextual, não rótulo: orienta a ÊNFASE da conversa,
+// nunca substitui o que está registrado sobre a pessoa.
+const PROFILE_GUIDANCE={
+ 'Analítico':'Priorize dado, comparação e ROI. Traga evidência de campo antes da recomendação.',
+ 'Relacional':'Priorize histórico e confiança. Retome o que já foi combinado antes de propor o próximo passo.',
+ 'Inovador':'Priorize novidade com teste controlado. Ofereça área de prova e métrica de comparação.',
+ 'Conservador':'Priorize segurança e reversibilidade. Mostre o custo de não agir sem forçar mudança ampla.',
+ 'Digital':'Priorize material objetivo e acompanhamento remoto entre visitas.'
+}
 const terminalOpportunity=stage=>/fechado|ganho|perdido|cancelado|closed|won|lost/i.test(String(stage||''))
 
 export default function Client360({client,visits=[],opportunities=[],storageScope,onBack,onPrepare,onUpdate,onSaved,onRefreshPortfolio,onAsk}){
@@ -64,7 +74,13 @@ export default function Client360({client,visits=[],opportunities=[],storageScop
  const lastVisitText=lastEvidenceVisit?`${lastVisitInProgress?'Visita iniciada':'Visita confirmada'} em ${shortDate(visitDate(lastEvidenceVisit))}${lastEvidenceVisit.summary?` — ${lastEvidenceVisit.summary}`:lastEvidenceVisit.objective?` — objetivo registrado: ${lastEvidenceVisit.objective}`:''}`:'Nenhuma visita realizada ou iniciada.'
  const nextCommitmentText=commitmentView.state==='loading'?'Verificando compromissos confirmados…':commitmentView.state==='error'?'Não foi possível verificar os compromissos agora.':commitmentView.state==='ready'?`${commitmentView.commitment.description} — ${shortDate(commitmentView.commitment.due_at||commitmentView.commitment.dueAt)}`:'Nenhum compromisso futuro confirmado.'
 
- return <div className="page-stack client-memory-page">
+ // Fronteira de produtor ativo: o painel contextual nunca recebe a carteira
+ // inteira. Só o que pertence a este produtor atravessa.
+ const clientOpportunities=useMemo(()=>opportunities.filter(item=>String(item?.clientId??item?.client_id)===String(client.id)),[opportunities,client.id])
+ const profileView={measured:metrics.profileMeasured,primary:client.primaryProfile,guidance:PROFILE_GUIDANCE[client.primaryProfile]||'Adapte a ênfase ao que estiver registrado sobre este produtor.'}
+
+ return <div className="producer-split">
+  <div className="producer-split-main page-stack client-memory-page">
   <button className="back-btn" onClick={onBack}><ArrowLeft size={17}/>Voltar</button>
   <section className="client-hero">
    <div><span className="eyebrow">MEMÓRIA DO PRODUTOR</span><h2>{client.name}</h2><p><MapPin size={15}/>{client.municipality} • {client.area} • {client.cultures}</p><div className="tag-row"><span>{metrics.profileMeasured?client.primaryProfile:'Perfil a medir'}</span><span>IRT {metricValue(client.irt,metrics.irtKnown)}</span><span>NPS {metricValue(client.nps,metrics.npsKnown)}</span></div></div>
@@ -100,5 +116,17 @@ export default function Client360({client,visits=[],opportunities=[],storageScop
    <ProducerFieldGallery clientId={client.id} clientName={client.name} onSaved={onSaved}/>
    <Section title="Complemento técnico preenchido pelo consultor"><div className="tag-row"><span>{loadingContext?'Carregando memória':contextMeta.status==='verified'?'Memória verificada':contextMeta.status==='proposed'?'Entrada do consultor • verificação pendente':'Ainda não registrada'}</span>{contextDate(contextMeta.updatedAt)&&<span>Atualizada em {contextDate(contextMeta.updatedAt)}</span>}</div><div className="form-grid"><label>Propriedade<input value={tech.property} onChange={event=>edit('property',event.target.value)} placeholder="Ex.: Fazenda Santa Rita"/></label><label>Área / culturas<input value={tech.area+' • '+tech.crops} onChange={()=>{}} readOnly/></label><label>Principais plantas daninhas<input value={tech.weeds} onChange={event=>edit('weeds',event.target.value)} placeholder="Ex.: buva em 20% do talhão; 3 plantas/m²"/></label><label>Doenças recorrentes<input value={tech.diseases} onChange={event=>edit('diseases',event.target.value)} placeholder="Ex.: ferrugem-asiática observada em R3"/></label><label>Insetos / pragas<input value={tech.insects} onChange={event=>edit('insects',event.target.value)} placeholder="Ex.: 2 percevejos por metro de pano"/></label><label>Resumo de solo<input value={tech.soil} onChange={event=>edit('soil',event.target.value)} placeholder="Ex.: pH 5,2 • V% 58 • argila 42%"/></label><label>Meta do produtor<input value={tech.goal} onChange={event=>edit('goal',event.target.value)} placeholder="Ex.: atingir 75 sc/ha de soja com margem positiva"/></label><label>Concorrentes / categorias adquiridas fora da empresa<input value={tech.competitors} onChange={event=>edit('competitors',event.target.value)} placeholder="Ex.: sementes — Empresa X; fungicidas — Empresa Y"/></label><label className="wide">Observações<textarea value={tech.notes} onChange={event=>edit('notes',event.target.value)} placeholder="Ex.: decisão em setembro; validar custo em R$/ha e resposta em sc/ha."/></label></div>{error&&<div className="form-error" role="alert">{error}</div>}<button className="primary-btn" onClick={save} disabled={saving}><Save size={16}/>{saving?'Salvando…':'Salvar na memória da VAL'}</button></Section>
   </Drilldown>
+  </div>
+
+  <ContextPanel
+   client={client}
+   visits={visits}
+   opportunities={clientOpportunities}
+   commitments={commitmentResource.items}
+   contextMeta={contextMeta}
+   voiceChange={voiceChange}
+   profile={profileView}
+   onAsk={onAsk}
+  />
  </div>
 }

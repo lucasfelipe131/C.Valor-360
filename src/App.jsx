@@ -225,7 +225,7 @@ export default function App(){
      key={selected.id} client={selected} visits={visits} opportunities={opportunities}
      storageScope={currentUser?.storageScope} onBack={()=>navigate('clients')}
      onPrepare={()=>prepareClient(selected)} onUpdate={updateClient} onRefreshPortfolio={refreshPortfolio}
-     onAsk={()=>openCopilot({client:selected})}
+     onAsk={input=>openCopilot(input&&typeof input==='object'&&!input.nativeEvent?{...input,client:input.client||selected}:{client:selected})}
      onSaved={message=>notify(message||'Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}
     />}
     {page==='val'&&<ValWorkspace mode={valMode} onModeChange={setValMode} clients={clientList} selectedClient={selected} onSelect={openClient} onPrepareVisit={prepareClient}/>}
