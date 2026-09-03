@@ -21,11 +21,11 @@ const primary=[
 ]
 
 const secondary=[
+ ['agro','Inteligência Agronômica',Sprout],
  ['opportunities','Oportunidades',Target],
  ['val','Análise avançada',Search],
  ['datahub','Base Inteligente',DatabaseZap],
  ['questionnaire','Coletar preferências',ClipboardList],
- ['agro','Ferramentas agronômicas',Sprout],
  ['reports','Relatórios',BarChart3],
  ['settings','Configurações',Settings]
 ]
