@@ -752,7 +752,9 @@ function directlyAnswersQuestion({domain,question,answer,unsupportedClaims}){
  const questionCalculationTopics=new Set(tokens(question).filter(token=>calculationTopics.has(token)))
  const sharedCalculationTopic=tokens(answer).some(token=>questionCalculationTopics.has(token))
  if(calculationRequested&&calculationReturned&&sharedCalculationTopic)return true
- const relevanceStop=new Set(['qual','quais','como','quando','onde','quem','porque','favor','mostre','mostrar','diga','dizer','devo','esta','estao','foi','foram','mais','recente','atual','aqui','posso','pode','podem','usar','use','resuma','resumir','linha','confirme','confirmar','explique','explicar','quanto','quantos','quantas','aplicar','aplico','vale','pena','preciso','precisa','fazer','faco','seria','sera','entender','saber','significa','conceito','defina','define','definir','funciona','fale','fala','explica','conta','quero','queria','gostaria','sobre','melhor','ideal'])
+ // Agradecimento e fechamento ("obrigado", "perfeito") não têm conteúdo a endereçar, como o
+ // cumprimento: sem isto "Obrigado!" era bloqueado por não ter overlap com "Disponha".
+ const relevanceStop=new Set(['qual','quais','como','quando','onde','quem','porque','favor','mostre','mostrar','diga','dizer','devo','esta','estao','foi','foram','mais','recente','atual','aqui','posso','pode','podem','usar','use','resuma','resumir','linha','confirme','confirmar','explique','explicar','quanto','quantos','quantas','aplicar','aplico','vale','pena','preciso','precisa','fazer','faco','seria','sera','entender','saber','significa','conceito','defina','define','definir','funciona','fale','fala','explica','conta','quero','queria','gostaria','sobre','melhor','ideal','obrigado','obrigada','obrigados','obrigadas','valeu','perfeito','entendi','certo','combinado','legal','show','okay','beleza','muito'])
  const questionTokens=tokens(question).filter(token=>!relevanceStop.has(token))
  // A pergunta sem nenhum token material (cumprimento como "oi", "bom dia") não tem
  // conteúdo específico para a resposta endereçar ou deixar de endereçar — todo o resto

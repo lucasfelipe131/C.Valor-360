@@ -613,7 +613,10 @@ const noKnowledgeCoverageStub='Posso tratar esta dúvida sem selecionar um produ
 // Knowledge Library — o retriever de lá sempre devolve algum item mesmo sem relação real
 // com a pergunta (não tem piso de relevância), e esse item aleatório é que falhava o
 // grounding, não o cumprimento em si. Resolvido com resposta fixa antes da busca.
-const greetingOnlyRequest=/^\s*(oi+|ol[aá]|opa|e\s*a[ií]|eae|hey|hi|hello|bom\s*dia|boa\s*tarde|boa\s*noite|tudo\s*bem|tudo\s*bom|como\s*vai|como\s*voc[eê]\s*est[aá]|beleza)[\s!.,?]*$/i
+const greetingOnlyRequest=/^\s*(?:val[, ]+)?(oi+|ol[aá]|opa|e\s*a[ií]|eae|hey|hi|hello|bom\s*dia|boa\s*tarde|boa\s*noite|tudo\s*bem|tudo\s*bom|como\s*vai|como\s*voc[eê]\s*est[aá]|beleza)(?:[\s!.,]*(?:val|viu|hein))?[\s!.,?]*$/i
+// Agradecimento ou fechamento ("obrigado", "valeu", "perfeito") tambem nao e pergunta: sem esta
+// resposta fixa, "Obrigado!" caia na Biblioteca e terminava em bloqueio de evidencia.
+const thanksOnlyRequest=/^\s*(?:val[, ]+)?(?:(?:muito\s+)?(?:obrigad[oa]s?|valeu|show|perfeito|entendi|certo|ok|okay|blz|t[aá]\s*bom|combinado|legal|beleza)[\s!.,?]*){1,3}(?:(?:val|viu|hein|demais|mesmo)[\s!.,?]*)?$/i
 
 // Resposta geral com a sua proveniência: de onde veio o texto (definição fixa, item da Biblioteca
 // ou ausência de cobertura) e, quando veio da Biblioteca, como o item foi selecionado. O mesmo
@@ -625,6 +628,7 @@ function generalGuidance(message=''){
  if(isCurrentClientIdentityRequest(source))return curatedGuidance('Nenhum produtor está selecionado nesta conversa.')
  const greetingMatch=greetingOnlyRequest.exec(String(message||''))
  if(greetingMatch){const greetingText=greetingMatch[1];return curatedGuidance(`${greetingText.charAt(0).toUpperCase()}${greetingText.slice(1)}, posso ajudar com dúvidas gerais, agronomia, mercado ou sobre um produtor específico.`)}
+ if(thanksOnlyRequest.test(String(message||'')))return curatedGuidance('Disponha. Posso ajudar com dúvidas gerais, agronomia, mercado ou sobre um produtor específico.')
  if(/\bmargem\b/.test(source))return curatedGuidance('Margem é a diferença entre receita e custos. Em percentual, divida a margem em valor pela receita e multiplique por 100; confirme quais custos entram na comparação.')
  if(/\broi\b|retorno sobre investimento/.test(source))return curatedGuidance('ROI compara o ganho líquido com o investimento: (retorno menos investimento) dividido pelo investimento. Informe período, custos e premissas para evitar uma precisão falsa.')
  if(/\bcusto\s*\/\s*ha|custo por hectare/.test(source))return curatedGuidance('Custo por hectare é o custo total dividido pela área efetivamente considerada. Informe ambos com unidade e período para a VAL calcular.')
@@ -779,6 +783,10 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  const evaluatedGrounding=evaluateReasoningGrounding({question:message,domain:selectedDomain,evidence:sourceRefs,activeProducerId:clientId,tenantId:String(organizationId),ownerId:String(ownerId||''),blocks:groundingBlocks,now:new Date(createdAt)})
  const scopedSessionCommand=Boolean(route?.session_command?.requires_previous_turn&&sourceRefs.length&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  const trustedGeneralGuidance=Boolean(!clientId&&sourceRefs.length===1&&sourceRefs[0].id==='system:general-guidance:v1'&&sourceRefs[0].capability==='GENERAL_GUIDANCE'&&tool?.capability==='GENERAL_GUIDANCE'&&evaluatedGrounding.question_relevance==='PASS'&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
+ // Resultado de calculadora: entradas e resultado já foram validados numericamente claim a claim
+ // (unsupported_claims vazio) e a fonte é a própria execução determinística. O overlap lexical
+ // entre "gastei 750 mil reais em 300 hectares" e "Custo calculado: R$ 2.500,00/ha" não mede nada.
+ const calculatorResultGuidance=Boolean(sourceRefs.length===1&&sourceRefs[0].source_type==='calculation'&&sourceRefs[0].capability==='CALCULATORS'&&tool?.capability==='CALCULATORS'&&tool?.status==='EXECUTED'&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  // Item da Biblioteca selecionado por frase inteira de trigger: a relevância foi atestada pelo
  // curador na seleção, e o overlap lexical do grounding não pode derrubar a resposta ("janela de
  // plantio da soja" respondida pelo item do ZARC). Todas as outras barreiras seguem obrigatórias.
@@ -799,6 +807,8 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
    ?{...evaluatedGrounding,passed:true,question_relevance:'TRUSTED_GENERAL_GUIDANCE'}
   :libraryTriggerGuidance&&!evaluatedGrounding.passed
    ?{...evaluatedGrounding,passed:true,question_relevance:'LIBRARY_SELECTION_MATCH'}
+  :calculatorResultGuidance&&!evaluatedGrounding.passed
+   ?{...evaluatedGrounding,passed:true,question_relevance:'CALCULATOR_RESULT'}
   :safeAbsence
    ?{...evaluatedGrounding,passed:true,question_relevance:'SAFE_NO_DATA'}
    :evaluatedGrounding

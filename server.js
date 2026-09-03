@@ -589,7 +589,7 @@ async function handleApi(request,response,url){
    if(!current||expected&&sessionCommandClientResolution?.client?.id!==current)return json(response,409,{error:`O produtor citado${expected?` (${expected})`:''} não corresponde ao produtor atual desta conversa.`,code:'val_session_command_client_mismatch',conversationId,currentClient:sessionState.current_client,clarification:{question:'Abra o produtor citado antes de reutilizar a resposta anterior.'}})
   }
   const comparisonFollowUpClientIds=routedIntent.session_command?activeComparisonClientIds(sessionState):[]
-  const completeSession=(payloadResult,{client=null,active=null,intent=routedIntent.intent}={})=>{
+  const completeSession=(payloadResult,{client=null,active=null,intent=routedIntent.intent,reasoningState=null}={})=>{
    const persistenceCommitted=payloadResult?.responseMetadata?.persistenceCommitted===true
    const assertResponseCanCommit=()=>{
     const committedAtDeadline=persistenceCommitted&&requestController.signal.aborted&&requestController.signal.reason?.code==='val_chat_timeout'
@@ -611,7 +611,7 @@ async function handleApi(request,response,url){
     assertResponseCanCommit()
     sessionState=valConversationSessions.set(persistedScope,completedState)
    }
-   const completed=attachConversationState(payloadResult,sessionState,{reasoningState:turnOnlyClientOverride?requestConversationState:sessionState})
+   const completed=attachConversationState(payloadResult,sessionState,reasoningState?{reasoningState}:{reasoningState:turnOnlyClientOverride?requestConversationState:sessionState})
    const withResolution=conversationResolution?.status==='RESOLVED'?{...completed,conversationResolution}:completed
    return workspaceRoute.workspace_action?{...withResolution,workspaceAction:workspaceRoute.workspace_action,globalIntent:workspaceRoute}:withResolution
   }
@@ -686,6 +686,25 @@ async function handleApi(request,response,url){
    latency.end('CONTEXT');return authorizedContext
   }
   const completeClient=(payloadResult,execution=toolExecution)=>{latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(payloadResult,{latency:values,path:clientCapability.path,intent:routedIntent.intent,toolExecution:execution});const measuredLatency=enriched?.responseMetadata?.performance?.latency||values;valLatencyMetrics.record({path:clientCapability.path,intent:routedIntent.intent,latency:measuredLatency});observe('val.answer.completed',{mode:clientCapability.path.toLowerCase(),engineMode:payloadResult?.engineMode||'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,capability:execution?.tool_result?.capability||clientCapability.capabilities[0],capabilityStatus:execution?.tool_result?.status,materialityScore:clientCapability.materiality.score,engineRequired:clientCapability.materiality.engine_required,ttfrMs:measuredLatency.TTFR,outcome:'ok'});const responseClient=authorizedContext?.client||enriched?.advice?.ai_reasoning?.client||{id:clientId};return completeSession(enriched,{client:{id:clientId,name:responseClient?.name||responseClient?.label},active:activeContextRef})}
+  // Pergunta conceitual ou cumprimento com produtor selecionado: responde pelo mesmo caminho geral
+  // de quem nao tem produtor (Biblioteca governada, definicoes fixas, IA nao verificada com
+  // orcamento), sem ler contexto privado nem acionar a engine, e mantem o produtor ativo na sessao.
+  // Antes, "oi" e "O que e WASDE?" com produtor ativo terminavam em "Nao ha evidencia selecionada
+  // suficiente".
+  if(routedIntent.intent==='ASK_GENERAL'&&clientCapability.path==='CONTEXT'&&!clientCapability.session_command&&!attachmentIds.length&&clientCapability.capabilities.every(item=>item==='KNOWLEDGE_LIBRARY')){
+   // O raciocinio desta resposta e sem produtor (escopo GENERAL_KNOWLEDGE); o estado persistido da
+   // sessao continua com o produtor. O contrato de escopo compara a resposta com o estado usado no
+   // raciocinio, nunca com o estado a persistir (createValResponseScope).
+   const generalScope={tenantId,ownerId:scopedOwnerId,conversationId,clientId:'',client:null,activeContext:null}
+   const generalReasoningState=conversationStateContext(prepareConversationTurnState(createConversationState(generalScope),{message,intent:routedIntent.intent,sessionCommand:routedIntent.session_command,scope:generalScope}))
+   const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
+   const general=await buildGeneralNoClientResponse({message,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:generalReasoningState.context_epoch,contextDomain:generalReasoningState.current_domain||'GENERAL',aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast})
+   const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
+   if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})
+   latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(general,{latency:values,path:clientCapability.path,intent:routedIntent.intent,toolExecution:null});valLatencyMetrics.record({path:clientCapability.path,intent:routedIntent.intent,latency:enriched?.responseMetadata?.performance?.latency||values})
+   observe('val.answer.completed',{mode:'general',engineMode:'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,capability:general?.advice?.ai_reasoning?.run?.tool_result?.capability||'GENERAL_GUIDANCE',outcome:'ok'})
+   return json(response,200,completeSession(enriched,{client:{id:clientId,name:clean(payload.client?.name||requestConversationState.current_client?.label||sessionState.current_client?.label)||null},active:activeContextRef,reasoningState:generalReasoningState}))
+  }
   if(activeContext&&!ignoresActiveContext){
    const scoped=await loadAuthorizedContext();activeContextRef=validateActiveContext({activeContext,context:scoped,clientId})
    sessionState=advanceConversationState(sessionState,{activeContext:activeContextRef,turnPrepared:true,scope:{...sessionScope,activeContext:activeContextRef}})

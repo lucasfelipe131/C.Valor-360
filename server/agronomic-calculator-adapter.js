@@ -164,10 +164,11 @@ function plantsPerMeter(message=''){
 }
 
 function legacyCostPerHectare(message=''){
- const source=String(message).replace(/\./g,'').replace(/,(?=\d{1,2}\b)/g,'.')
- const costMatch=source.match(/(?:custo(?:\s+total)?|total)\s*(?:de|=|:)?\s*(?:r\$\s*)?(\d+(?:\.\d+)?)/i)||source.match(/r\$\s*(\d+(?:\.\d+)?)/i)
+ const source=String(message).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\./g,'').replace(/,(?=\d{1,2}\b)/g,'.')
+ // "gastei 750 mil reais em 300 hectares": o verbo de gasto e "N mil reais" tambem identificam o total.
+ const costMatch=source.match(/(?:custo(?:\s+total)?|total|gastei|gasto|gastos|investi|investimento|paguei|custou)\s*(?:de|=|:|foi|foi de)?\s*(?:r\$\s*)?(\d+(?:\.\d+)?)(\s*mil\b)?/i)||source.match(/r\$\s*(\d+(?:\.\d+)?)(\s*mil\b)?/i)||source.match(/(\d+(?:\.\d+)?)(\s*mil\b)?\s*reais/i)
  const areaMatch=source.match(/(?:area|em)\s*(?:de|=|:)?\s*(\d+(?:\.\d+)?)\s*(?:ha|hectares?)/i)||source.match(/(\d+(?:\.\d+)?)\s*(?:ha|hectares?)/i)
- const total=Number(costMatch?.[1]);const area=Number(areaMatch?.[1])
+ const total=Number(costMatch?.[1])*(costMatch?.[2]?1000:1);const area=Number(areaMatch?.[1])
  return total>0&&area>0?{total_cost:total,area_ha:area,cost_per_ha:Number((total/area).toFixed(2)),currency:'BRL',formula:'total_cost / area_ha'}:null
 }
 
