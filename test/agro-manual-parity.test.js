@@ -25,8 +25,12 @@ test('auditoria aponta para a versão real do Manual e preserva sua navegação 
 
 test('Inteligência Agronômica mantém os cinco domínios VAL e abre o núcleo técnico existente',()=>{
  const agro=read('src/pages/Agro.jsx')
- for(const label of ['CAMPO E SOLO','DIAGNÓSTICO','DECISÃO TÉCNICA','CONTEXTO','CONHECIMENTO'])assert.match(agro,new RegExp(label))
- for(const tool of ['solo','produtores','diagnostico','calculadoras','bulas','mercado'])assert.match(agro,new RegExp(`id:'${tool}'`))
+ // Os grupos sairam de Agro.jsx e viraram registro compartilhado (lib/agro-tools),
+ // para que a busca global tambem enxergue as ferramentas. Os cinco dominios seguem os mesmos.
+ const agroTools=readFileSync(new URL('../src/lib/agro-tools.js',import.meta.url),'utf8')
+ for(const label of ['CAMPO E SOLO','DIAGNÓSTICO','DECISÃO TÉCNICA','CONTEXTO','CONHECIMENTO'])assert.match(agroTools,new RegExp(label))
+ assert.match(agro,/AGRO_GROUPS/)
+ for(const tool of ['solo','produtores','diagnostico','calculadoras','bulas','mercado'])assert.match(agroTools,new RegExp(`id:'${tool}'`))
  assert.match(agro,/src=\{`\/tecnico\?embedded=1&page=\$\{encodeURIComponent/)
  assert.match(agro,/allow="camera 'self'; microphone 'self'; geolocation 'self'"/)
  assert.match(agro,/createAgroWorkspaceMessage/)

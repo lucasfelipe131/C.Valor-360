@@ -10,6 +10,7 @@ import {opportunityCacheKey} from './lib/opportunity-pipeline'
 import {resolveCopilotLaunch} from './lib/copilot-context'
 import {clearCopilotSessionStorage} from './lib/copilot-session-storage'
 import {createValWorkspaceContext,validateValWorkspaceAction} from './lib/val-workspace-context'
+import {resolveActiveWorkspace,workspaceEntryPoint} from './lib/val-workspaces'
 
 const GlobalValCopilot=lazy(()=>import('./components/GlobalValCopilot'))
 const Dashboard=lazy(()=>import('./pages/Dashboard'))
@@ -70,6 +71,7 @@ export default function App(){
  const [portfolioReady,setPortfolioReady]=useState(false)
  const [authNotice,setAuthNotice]=useState('')
  const [page,setPage]=useState('dashboard')
+ const [workspace,setWorkspace]=useState('comercial')
  const [valMode,setValMode]=useState(null)
  const [selected,setSelected]=useState(null)
  const [prepareVisitClientId,setPrepareVisitClientId]=useState('')
@@ -119,11 +121,15 @@ export default function App(){
     },
     initialFiles:Array.isArray(descriptor.files)?descriptor.files.slice(0,3):[]
    })
-    setSelected(agroClient||null)
+    if(agroClient)setSelected(agroClient)
   }else{
    setAgroLaunch(current=>current.initialFiles.length?{...current,initialFiles:[]}:current)
-   if(next!=='client360'&&next!=='copilot')setSelected(null)
   }
+  // Workspace Contextual Híbrido: mudar de módulo não descarta o produtor em
+  // foco. Antes, sair de client360 zerava a seleção e o efeito de fallback
+  // reativava o primeiro da carteira — um contexto que o usuário nunca
+  // escolheu. A troca explícita de produtor continua sendo o único caminho
+  // para trocar o contexto, e o logout continua limpando tudo.
   if(next!=='visits')setPrepareVisitClientId('')
   if(next==='val')setValMode(null)
   if(next!=='copilot')setCopilotOpen(false)
@@ -180,6 +186,10 @@ export default function App(){
  const logout=async()=>{try{const response=await fetch('/api/auth/logout',{method:'POST',signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error();clearSessionPortfolioCache(currentUser?.storageScope);setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setValMode(null);setAgroLaunch(createEmptyAgroLaunch());setAuthNotice('');setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}catch{notify('Não foi possível encerrar a sessão no servidor. Tente novamente.')}}
  const invalidateSession=notice=>{clearSessionPortfolioCache(currentUser?.storageScope);setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setValMode(null);setAgroLaunch(createEmptyAgroLaunch());setAuthNotice(notice);setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}
  const expireSession=()=>invalidateSession('Sua sessão expirou. Entre novamente.')
+ // Módulos transversais (Hoje, Copiloto) herdam o workspace ativo em vez de
+ // zerá-lo: o usuário abre a VAL e volta para onde estava trabalhando.
+ useEffect(()=>{setWorkspace(current=>resolveActiveWorkspace(page,current))},[page])
+ const changeWorkspace=id=>{setWorkspace(id);navigate(workspaceEntryPoint(id,currentUser?.role))}
  useEffect(()=>{if(!selected&&clientList.length)setSelected(clientList[0])},[clientList,selected])
  useEffect(()=>{setCopilotPageContext(null);setCopilotSeed(null);setCopilotOpen(false);setCopilotLoaded(false);setAgroLaunch(createEmptyAgroLaunch())},[copilotOwnerScope])
  useEffect(()=>{fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(session?.authenticated)rememberStorageScope(session.user);else clearSessionPortfolioCache();setCurrentUser(session?.user||null);setPortfolioReady(Boolean(session?.user?.demo));setAuthenticated(Boolean(session?.authenticated));if(!session?.authenticated&&session?.misconfigured)setAuthNotice('O acesso seguro do servidor ainda não foi configurado.')}).catch(()=>{clearSessionPortfolioCache();setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setCurrentUser(null);setAuthNotice('Não foi possível validar o servidor. O acesso permaneceu bloqueado.');setPortfolioReady(false);setAuthenticated(false)})},[])
@@ -203,9 +213,9 @@ export default function App(){
  if(!portfolioReady)return <main className="auth-loading" role="status"><BrainCircuit/><span>Carregando carteira protegida…</span></main>
  return <div className="app-shell">
   <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-  <Sidebar page={page} currentUser={currentUser} setPage={navigate} onOpenVal={()=>openCopilot()}/>
+  <Sidebar page={page} currentUser={currentUser} setPage={navigate} onOpenVal={()=>openCopilot()} workspace={workspace} onWorkspaceChange={changeWorkspace}/>
   <main className="main" id="main-content" tabIndex="-1">
-   {page!=='copilot'&&<Topbar title={title} subtitle={subtitle} onNavigate={navigate} onOpenVal={()=>openCopilot()}/>}
+   {page!=='copilot'&&<Topbar title={title} subtitle={subtitle} onNavigate={navigate} onOpenVal={()=>openCopilot()} workspace={workspace} page={page} client={selected} clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onOpenClient={openClient}/>}
    <div className={`content ${page==='copilot'?'content-copilot-fullscreen':''}`}>
     <Suspense fallback={<RouteFallback/>}>
     {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient} onRefreshPortfolio={refreshPortfolio} onOpenCopilot={openCopilot}/>}
@@ -235,7 +245,7 @@ export default function App(){
     </Suspense>
    </div>
   </main>
-  {page!=='copilot'&&<MobileNav page={page} setPage={navigate} currentUser={currentUser} onOpenVal={()=>openCopilot()}/>}
+  {page!=='copilot'&&<MobileNav page={page} setPage={navigate} currentUser={currentUser} onOpenVal={()=>openCopilot()} workspace={workspace} onWorkspaceChange={changeWorkspace}/>}
   {toast&&<div className="toast" role="status">{toast}</div>}
  </div>
 }

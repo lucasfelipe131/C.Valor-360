@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {workspaceEntryPoint,workspaceOf} from '../src/lib/val-workspaces.js'
 import {readFileSync} from 'node:fs'
 import test from 'node:test'
 import {
@@ -114,15 +115,19 @@ test('Cliente 360 mantém dossiê em drill-down sem chamar agendamento de intera
 })
 
 test('navegação preserva agronomia nativa e deixa o workspace como aprofundamento',()=>{
- assert.match(sidebar,/\['dashboard','Hoje',LayoutDashboard\]/)
- assert.match(sidebar,/Perguntar à VAL/)
- assert.doesNotMatch(sidebar,/\['val','Ambientes VAL'/)
- assert.match(sidebar,/\['questionnaire','Coletar preferências'/)
- assert.match(sidebar,/\['agro','Ferramentas agronômicas'/)
+ // A lista de módulos saiu de dentro de Sidebar/MobileNav e virou modelo
+ // único em lib/val-workspaces. O contrato agora é verificado lá; aqui fica
+ // o que continua sendo responsabilidade das duas superfícies.
+ assert.match(sidebar,/from '\.\.\/lib\/val-workspaces'/)
+ assert.match(sidebar,/Copiloto VAL/)
+ assert.match(sidebar,/onClick=\{\(\)=>setPage\('dashboard'\)\}/)
  assert.doesNotMatch(sidebar,/Manual agronômico/)
- assert.match(mobile,/onClick=\{onOpenVal\} aria-label="Abrir a VAL"/)
- assert.match(mobile,/\['dashboard','Hoje',CalendarDays\]/)
- assert.match(mobile,/\['agro','Ferramentas agronômicas',Sprout\]/)
+ assert.match(mobile,/from '\.\.\/lib\/val-workspaces'/)
+ assert.match(mobile,/aria-label="Abrir o Copiloto VAL" onClick=\{onOpenVal\}/)
+ assert.match(mobile,/onClick=\{\(\)=>navigate\('dashboard'\)\}/)
+ // Agronomia continua nativa: é um workspace inteiro, não um item de accordion.
+ assert.equal(workspaceOf('agro'),'campo')
+ assert.equal(workspaceEntryPoint('campo','admin'),'agro')
 })
 
 test('pós-visita tem um Voice Capture operacional e legado explicitamente inacessível',()=>{
@@ -141,5 +146,5 @@ test('copiloto e memória viva mantêm leitura mobile e foco de teclado',()=>{
  assert.match(styles,/\.copilot-welcome p\{font-size:14px\}/)
  assert.match(styles,/\.copilot-advanced>summary:focus-visible/)
  assert.match(styles,/\.client-memory-grid\{grid-template-columns:1fr\}/)
- assert.match(styles,/\.mobile-nav\{grid-template-columns:repeat\(4,1fr\)!important\}/)
+ assert.match(styles,/\.mobile-nav\{grid-template-columns:repeat\(5,1fr\)!important\}/)
 })

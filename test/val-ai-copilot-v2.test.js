@@ -171,8 +171,8 @@ test('roteador v3 cobre as 17 intenções, mantém aliases e nunca promove ASK p
 test('copiloto global mantém contexto por produtor e oferece texto, voz, foto e arquivo',()=>{
  assert.match(app,/GlobalValCopilot/)
  assert.match(app,/ctrlKey\|\|event\.metaKey/)
- assert.match(sidebar,/Perguntar à VAL/)
- assert.match(mobile,/\['dashboard','Hoje'/)
+ assert.match(sidebar,/sidebar-copilot/)   // camada de inteligencia, nao item de menu
+ assert.match(mobile,/onClick=\{\(\)=>navigate\('dashboard'\)\}/)
  assert.match(mobile,/onClick=\{onOpenVal\}/)
  assert.match(globalCopilot,/conversationKey=\(threadKey,storageScope\)=>`valor360:val-copilot-thread:v4:/)
  assert.match(globalCopilot,/encodeURIComponent\(String\(storageScope\|\|'session'\)\)/)
