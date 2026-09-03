@@ -613,7 +613,12 @@ function claimSupport(claim,entries,question='',domain='GENERAL',field='answer',
  const questionText=normalize(question)
  const foreignClaimDomains=matchedValContextDomains(source).filter(item=>domain==='PROFILE'&&profileForeignDomains.has(item))
  const hardForeignClaim=foreignClaimDomains.some(item=>profileHardForeignDomains.has(item))
- if(hardForeignClaim||foreignClaimDomains.length&&(!strictBehavioralSupport(source)||profileSpecificState.test(source)))return {supported:false,evidenceRefs:[],reason:'UNSUPPORTED_CROSS_DOMAIN_CLAIM'}
+ // A regra de domínio cruzado protege a leitura de perfil de UM produtor: uma resposta de perfil
+ // não pode afirmar dívida, visita ou proposta dele sem evidência daquele domínio. Um princípio
+ // curado da Biblioteca ("pressão financeira muda a leitura de risco"), entregue literalmente e
+ // sem produtor ativo, não afirma nada sobre ninguém — a fonte curada é o suporte da própria frase.
+ const curatedGeneralText=!activeProducerId&&source.length>=12&&compatible.some(entry=>entry.sourceType==='general_knowledge'&&entry.text.includes(source))
+ if(!curatedGeneralText&&(hardForeignClaim||foreignClaimDomains.length&&(!strictBehavioralSupport(source)||profileSpecificState.test(source))))return {supported:false,evidenceRefs:[],reason:'UNSUPPORTED_CROSS_DOMAIN_CLAIM'}
  const declaresInsufficiency=isPureInsufficiencyClaim(claim,question,domain)
  if(declaresInsufficiency){
   return {supported:true,evidenceRefs:[],reason:'EXPLICIT_INSUFFICIENT_EVIDENCE'}

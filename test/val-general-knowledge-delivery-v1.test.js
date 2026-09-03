@@ -4,6 +4,7 @@ import {routeSystemCapability} from '../server/decision-copilot/capability-route
 import {buildCapabilityExecutionResponse,buildGeneralNoClientResponse,executeCapabilityPlan} from '../server/decision-copilot/capability-executor.js'
 import {loadKnowledgeLibrary} from '../server/knowledge/library.js'
 import {selectKnowledge} from '../server/knowledge/selection.js'
+import {evaluateResponseGrounding} from '../server/decision-copilot/response-grounding.js'
 
 const modules=['MCTX','MDI','MVV','MIA','MIC']
 const tenant='tenant-a'
@@ -43,9 +44,9 @@ test('item curado da Biblioteca chega ao consultor quando a pergunta o seleciona
 })
 
 test('cada item elegível da Biblioteca recuperado pelo próprio título é entregue, salvo lacunas conhecidas',async()=>{
- // Lacunas conhecidas: KI-012 ("Preparação aumenta qualidade da conversa") lê como pedido de
- // preparar visita, que exige produtor; KI-122 tem claim curada sem suporte lexical no statement.
- const knownGaps=new Set(['KI-012','KI-122'])
+ // Lacuna conhecida: KI-012 ("Preparação aumenta qualidade da conversa") lê como pedido de
+ // preparar visita, que exige produtor.
+ const knownGaps=new Set(['KI-012'])
  const library=loadKnowledgeLibrary()
  const eligible=library.items.filter(item=>item.module_targets.some(module=>modules.includes(module)))
  let retrievable=0
@@ -61,6 +62,27 @@ test('cada item elegível da Biblioteca recuperado pelo próprio título é entr
  }
  assert.ok(retrievable>=100,`itens recuperáveis pelo título: ${retrievable}`)
  assert.deepEqual(blocked,[],`itens curados presos no grounding:\n${blocked.join('\n')}`)
+})
+
+test('princípio de perfil com termo financeiro é entregue sem produtor; com produtor ativo a regra de domínio cruzado continua',async()=>{
+ // KI-122 fala de "pressão financeira" (vocabulário de CRÉDITO) numa pergunta de PERFIL. A regra
+ // de domínio cruzado existe para a leitura de perfil de um produtor específico e não pode barrar
+ // um princípio curado entregue literalmente sem produtor selecionado.
+ const statement=loadKnowledgeLibrary().items.find(item=>item.knowledge_item_id==='KI-122').statement
+ for(const message of ['perfil de risco muda com contexto recente?','produtor mudou de comportamento','ele sempre foi conservador']){
+  const {reasoning,response}=await general(message)
+  assert.equal(reasoning.run.tool_result.context.knowledge_item_id,'KI-122',message)
+  assert.notEqual(reasoning.grounding?.blocked,true,`${message}: ${JSON.stringify(reasoning.grounding)}`)
+  assert.ok(response.advice.answer.startsWith(statement.slice(0,40)),message)
+  assert.ok(reasoning.grounding.claim_ledger.every(claim=>claim.supported===true),message)
+ }
+ const evidence={id:'system:general-guidance:v1',source_ref:'system:general-guidance:v1',source_type:'general_knowledge',epistemic_type:'FACT',evidence_type:'FACT',scope:'GENERAL_KNOWLEDGE',tenant_id:tenant,owner_id:owner,observed_at:new Date().toISOString(),statement,capability:'GENERAL_GUIDANCE'}
+ const withoutProducer=evaluateResponseGrounding({question:'perfil de risco muda com contexto recente?',domain:'PROFILE',answer:statement,evidence:[evidence],tenantId:tenant,ownerId:owner,checkQuestionRelevance:false})
+ assert.equal(withoutProducer.passed,true,JSON.stringify(withoutProducer))
+ assert.ok(withoutProducer.claim_ledger.every(claim=>claim.reason_code!=='UNSUPPORTED_CROSS_DOMAIN_CLAIM'))
+ const withProducer=evaluateResponseGrounding({question:'qual o perfil dele?',domain:'PROFILE',answer:statement,evidence:[{...evidence,scope:undefined,producer_id:'producer-a'}],activeProducerId:'producer-a',tenantId:tenant,ownerId:owner,checkQuestionRelevance:false})
+ assert.equal(withProducer.passed,false)
+ assert.ok(withProducer.claim_ledger.some(claim=>claim.reason_code==='UNSUPPORTED_CROSS_DOMAIN_CLAIM'),JSON.stringify(withProducer.claim_ledger))
 })
 
 test('pergunta fora do acervo recebe pedido de esclarecimento, não item da Biblioteca nem bloqueio de integridade',async()=>{
