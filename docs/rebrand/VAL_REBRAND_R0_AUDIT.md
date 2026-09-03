@@ -54,13 +54,16 @@ Não há react-router. `App.jsx` mantém `page` em estado e renderiza condiciona
 
 ### Sidebar desktop (`src/components/Sidebar.jsx`)
 
-- **Primário (5):** `dashboard` (Hoje), `clients` (Clientes), `visits` (Visitas), `opportunities` (Oportunidades), `copilot` (VAL)
-- **Secundário, escondido dentro de um `details` chamado "Mais recursos" (6+1):** `val` (Análise avançada), `datahub` (Base Inteligente), `questionnaire` (Coletar preferências), `agro` (Ferramentas agronômicas), `reports` (Relatórios), `settings` (Configurações), `admin` (só role=admin)
+- **Primário (6):** `dashboard` (Hoje), `clients` (Clientes), `visits` (Visitas), `opportunities` (Oportunidades), `agro` (Inteligência Agronômica), `copilot` (VAL)
+- **Secundário, escondido dentro de um `details` chamado "Mais recursos" (5+1):** `val` (Análise avançada), `datahub` (Base Inteligente), `questionnaire` (Coletar preferências), `reports` (Relatórios), `settings` (Configurações), `admin` (só role=admin)
+
+> Estado medido após o merge de `origin/content/val-knowledge-library-expansion-v1`, que
+> promoveu a Inteligência Agronômica ao primário no desktop e ao topo do sheet no mobile.
 
 ### Mobile (`src/components/MobileNav.jsx`)
 
 - **Barra (4):** `dashboard`, `clients`, botão VAL, botão "Mais"
-- **Sheet "Mais" (7+1):** `opportunities`, `val`, `datahub`, `questionnaire`, `agro`, `reports`, `settings`, `admin`
+- **Sheet "Mais" (7+1):** `agro`, `opportunities`, `val`, `datahub`, `questionnaire`, `reports`, `settings`, `admin`
 
 ### Páginas alcançáveis mas ausentes da navegação
 
@@ -69,7 +72,7 @@ Não há react-router. `App.jsx` mantém `page` em estado e renderiza condiciona
 
 ### Dívida de UX identificada
 
-1. **Hierarquia plana e enganosa.** 7 dos 12 módulos vivem atrás de um `details` chamado "Mais recursos" — inclusive `agro`, que concentra mapas, calculadoras, diagnóstico por foto e o Manual inteiro.
+1. **Hierarquia plana e enganosa.** 6 dos 12 módulos vivem atrás de um `details` chamado "Mais recursos", entre eles a Base Inteligente e a Análise avançada. A Inteligência Agronômica — que concentra mapas, calculadoras, diagnóstico por foto e o Manual inteiro — acabou de ser promovida ao primário justamente porque a hierarquia não a acomodava.
 2. **Sem noção de contexto.** A navegação sabe a *página*, não o *contexto de trabalho*. Sair de `client360` para `agro` perde o produtor, salvo o caminho herdado explícito dentro de `navigate()`.
 3. **Mobile diverge do desktop.** `opportunities` é primário no desktop e secundário no mobile. As duas listas são independentes e já divergiram.
 4. **Sem painel contextual.** Timeline, recomendações e Copiloto exigem troca de tela.
