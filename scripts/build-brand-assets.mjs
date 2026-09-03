@@ -147,6 +147,6 @@ write('public/brand/val-logo-vertical-on-dark.svg',vertical(DARK,'d',FOREST))
 // Ativos históricos mantidos nos mesmos caminhos para não quebrar referências.
 write('public/icon.svg',iconOnly(DARK,'d',FOREST))
 write('public/val-logo.svg',horizontal(LIGHT,'l'))
-write('logo.svg',horizontal(DARK,'d',FOREST))
+write('logo.svg',horizontal(LIGHT,'l'))               // alias byte a byte de public/val-logo.svg
 
 console.log('Pronto.')

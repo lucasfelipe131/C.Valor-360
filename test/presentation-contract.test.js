@@ -25,8 +25,8 @@ test('apresentação pública da VAL expõe proposta, soluções, método e aces
 test('sistema visual institucional mantém a paleta VAL e possui experiência móvel própria',()=>{
  const css=read('src/presentation.css')
  const main=read('src/main.jsx')
- assert.match(css,/--vp-green:#00c896/)
- assert.match(css,/--vp-blue:#2d8cff/)
+ assert.match(css,/--vp-green:#80c23d/)   // oliva da folha, apos o rebrand R2
+ assert.match(css,/--vp-blue:#669c31/)   // o azul institucional virou verde VAL no rebrand R2
  assert.match(css,/\.val-public-hero/)
  assert.match(css,/\.val-solution-grid/)
  assert.match(css,/\.val-journey-list/)
