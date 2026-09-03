@@ -617,7 +617,11 @@ async function handleApi(request,response,url){
   }
   if(workspaceRoute.direct&&workspaceRoute.workspace_action){
    if(preferences.inputModality!=='voice')valRequestServiceClass='FAST'
-   const actionClient=conversationResolution?.client||storedConversation?.current_client||null
+   // O produtor da acao e o mesmo que ficara na sessao: o resolvido pela frase, ou o que o
+   // browser enviou nesta requisicao (sessionState ja o incorporou), nao apenas o ja armazenado.
+   // Sem isto, "abre a agenda" com produtor selecionado numa conversa nova declarava produtor
+   // nulo na resposta e o contrato de escopo bloqueava a navegacao com 500.
+   const actionClient=conversationResolution?.client||(sessionState.current_client?.id?{id:sessionState.current_client.id,name:sessionState.current_client.label||sessionState.current_client.name||null}:null)
    const workspaceToolResult={status:'EXECUTED',capability:'WORKSPACE_NAVIGATION',tool:'workspace_action',title:workspaceRoute.workspace_action.label,summary:workspaceRoute.summary,page:workspaceRoute.workspace_action.page,context:{client_id:actionClient?.id||null},source_ref:`workspace:${workspaceRoute.workspace_action.page}`}
    const execution={path:'FAST',capabilities_planned:['WORKSPACE_NAVIGATION'],capabilities_used:['WORKSPACE_NAVIGATION'],capability_results:[{capability:'WORKSPACE_NAVIGATION',status:'EXECUTED',source_ref:`workspace:${workspaceRoute.workspace_action.page}`,tool_result:workspaceToolResult}],tool_result:workspaceToolResult,active_context:null}
    const actionRoute={path:'FAST',intent:workspaceRoute.intent,capabilities:['WORKSPACE_NAVIGATION']}

@@ -22,18 +22,21 @@ export function resolveValNaturalCommand(input){
  if(!normalized)return null
  const registration=clean(input).match(/^(?:registra|registre|anota|anote)\s+que\s+(.+?)[.!?]*$/i)
  if(registration)return {action:'OPEN_REGISTER',local:true,persistence:'CONFIRM_REQUIRED',candidate:clean(registration[1])}
- const summary=normalized.match(/^(?:agora\s+)?(?:resume|resuma)(?:\s+(?:isso|a resposta|sua resposta anterior|a resposta anterior))?(?:\s+em uma linha)?(?:,?\s+mantendo\s+(?:(?<same_client>(?:o\s+)?mesmo\s+produtor)|(?<expected_client>[a-z0-9][a-z0-9 '-]{0,119}?)\s+como\s+produtor\s+atual))?(?:\s+e\s+sem\s+executar\s+nova\s+busca)?$/)
- if(exact(normalized,'resume','resuma')||summary)return {action:'SUMMARIZE',local:true,persistence:'NONE',expectedClientReference:clean(summary?.groups?.expected_client,120)||null,requiresCurrentClient:Boolean(summary?.groups?.same_client||summary?.groups?.expected_client)}
- if(exact(normalized,'repete','repita')||/^(?:repete|repita)(?:\s+isso)?$/.test(normalized))return {action:'REPEAT',local:true,persistence:'NONE'}
+ // Complementos vazios ("pra mim", "isso", "disso", "ai") nao mudam o comando; espelha o
+ // roteador de comandos de sessao do servidor.
+ const tail=String.raw`(?:\s+(?:isso|disso|nisso|aqui|ai|mais|melhor|(?:pra|para)\s+mim|por\s+favor|agora))*`
+ const summary=normalized.match(new RegExp(String.raw`^(?:agora\s+)?(?:me\s+)?(?:resume|resuma)(?:\s+(?:isso|a resposta|sua resposta anterior|a resposta anterior))?(?:\s+em uma linha)?(?:,?\s+mantendo\s+(?:(?<same_client>(?:o\s+)?mesmo\s+produtor)|(?<expected_client>[a-z0-9][a-z0-9 '-]{0,119}?)\s+como\s+produtor\s+atual))?(?:\s+e\s+sem\s+executar\s+nova\s+busca)?${tail}$`))
+ if(exact(normalized,'resume','resuma')||summary||new RegExp(String.raw`^(?:me\s+)?faz um resumo${tail}$`).test(normalized))return {action:'SUMMARIZE',local:true,persistence:'NONE',expectedClientReference:clean(summary?.groups?.expected_client,120)||null,requiresCurrentClient:Boolean(summary?.groups?.same_client||summary?.groups?.expected_client)}
+ if(exact(normalized,'repete','repita')||new RegExp(String.raw`^(?:repete|repita|diga de novo)${tail}$`).test(normalized))return {action:'REPEAT',local:true,persistence:'NONE'}
  if(exact(normalized,'so as perguntas','agora so as perguntas','so as perguntas de ouro','somente as perguntas de ouro','so me manda as perguntas de ouro','agora me manda so as tres perguntas de ouro'))return {action:'GOLDEN_QUESTIONS_ONLY',local:true,persistence:'NONE'}
- if(exact(normalized,'agora por escrito','responda por escrito','me manda isso escrito','agora me manda isso por escrito'))return {action:'OUTPUT_TEXT',local:true,outputMode:'text',persistence:'NONE'}
+ if(exact(normalized,'agora por escrito','responda por escrito','me manda isso escrito','agora me manda isso por escrito','por escrito')||new RegExp(String.raw`^(?:agora\s+)?(?:(?:me\s+)?(?:manda|mande|envia|envie)(?:\s+isso)?\s+(?:por\s+)?escrito|responde(?:r)?\s+por\s+escrito|por escrito|so texto|apenas texto|em texto|so por escrito)${tail}$`).test(normalized))return {action:'OUTPUT_TEXT',local:true,outputMode:'text',persistence:'NONE'}
  if(exact(normalized,'agora fala comigo','agora fala elas pra mim','agora fala isso pra mim','fale comigo','responda em audio','fala de novo'))return {action:'OUTPUT_AUDIO',local:true,outputMode:'audio',persistence:'NONE'}
  if(exact(normalized,'texto e audio','agora texto e audio'))return {action:'OUTPUT_BOTH',local:true,outputMode:'both',persistence:'NONE'}
  if(exact(normalized,'registra','registre'))return {action:'OPEN_REGISTER',local:true,persistence:'CONFIRM_REQUIRED'}
  if(exact(normalized,'nao registra','nao registre'))return {action:'KEEP_SESSION_ONLY',local:true,persistence:'NONE'}
  if(exact(normalized,'so o essencial','somente o essencial'))return {action:'SET_SIMPLE',local:true,density:'simple',persistence:'NONE'}
- if(exact(normalized,'aprofunda','aprofunde'))return {action:'DEEPEN',local:false,density:'analytical',persistence:'NONE'}
- if(exact(normalized,'explica melhor','explique melhor'))return {action:'EXPLAIN',local:false,persistence:'NONE'}
+ if(exact(normalized,'aprofunda','aprofunde')||new RegExp(String.raw`^(?:(?:se\s+)?aprofunda|aprofunde|va mais fundo)${tail}$`).test(normalized))return {action:'DEEPEN',local:false,density:'analytical',persistence:'NONE'}
+ if(exact(normalized,'explica melhor','explique melhor')||new RegExp(String.raw`^(?:me\s+)?(?:explica|explique)\s+melhor${tail}$`).test(normalized))return {action:'EXPLAIN',local:false,persistence:'NONE'}
  if(exact(normalized,'me mostra os numeros','mostre os numeros'))return {action:'SHOW_NUMBERS',local:false,density:'analytical',persistence:'NONE'}
  if(exact(normalized,'por que voce acha isso','por que','porque'))return {action:'EXPLAIN_WHY',local:false,persistence:'NONE'}
  return null

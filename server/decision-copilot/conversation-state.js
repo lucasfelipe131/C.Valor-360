@@ -429,7 +429,11 @@ export function advanceConversationState(current={},event={}){
  const ownerId=identifier(event.scope?.ownerId)||previous.owner_id
  const scopeBoundary={tenantId,ownerId}
  const turnScope={...(comparedClientIds.length>1?{subjectClientIds:comparedClientIds}:client?.id?{fallbackClientId:client.id}:{allowGeneralScope:true}),conversationId:previous.conversation_id,contextEpoch:previous.context_epoch,tenantId,ownerId,trustedScope:true}
- const userTurn=message?turn({role:'user',text:message,modality:event.inputModality||previous.input_modality,intent:event.intent,created_at:event.now},turnScope):null
+ // Comando local de preferencia ("por escrito", "nao registra") nao e conteudo da conversa: se
+ // entrasse como turno, "resume" e "explica melhor" logo depois resumiriam "Preferencia desta
+ // conversa alterada para texto" em vez da ultima leitura de verdade.
+ const localPreferenceCommand=clean(reasoning.run?.tool_result?.capability,80)==='SESSION_COMMAND'&&['OUTPUT_TEXT','OUTPUT_AUDIO','DO_NOT_REGISTER'].includes(clean(reasoning.run?.tool_result?.context?.command,80).toUpperCase())
+ const userTurn=message&&!localPreferenceCommand?turn({role:'user',text:message,modality:event.inputModality||previous.input_modality,intent:event.intent,created_at:event.now},turnScope):null
  const capabilityResults=list(reasoning.run?.capability_results).map(item=>toolResult(item,turnScope)).filter(item=>item&&itemMatchesAuthorizedSubjects(item,authorizedSubjectIds,scopeBoundary))
  const tool=reasoning.run?.tool_result
  if(tool?.capability){const scopedTool=toolResult(tool,turnScope);if(scopedTool&&itemMatchesAuthorizedSubjects(scopedTool,authorizedSubjectIds,scopeBoundary))capabilityResults.unshift(scopedTool)}
@@ -442,7 +446,7 @@ export function advanceConversationState(current={},event={}){
   next_action:clean(reasoning.recommended_strategy?.action??reasoning.next_commitment,700)||null
  }:null
  const reading=clean(reasoning.recommended_strategy?.reading??event.response?.advice?.answer,1200)
- const assistantTurn=reading?turn({role:'assistant',status:'completed',server_grounded:true,text:reading,facts,questions:newQuestions,decision_thesis:turnDecisionThesis,modality:event.responseMode==='audio'?'voice':'text',intent:reasoning.intent??event.intent,created_at:event.now},turnScope):null
+ const assistantTurn=reading&&!localPreferenceCommand?turn({role:'assistant',status:'completed',server_grounded:true,text:reading,facts,questions:newQuestions,decision_thesis:turnDecisionThesis,modality:event.responseMode==='audio'?'voice':'text',intent:reasoning.intent??event.intent,created_at:event.now},turnScope):null
  const mentionedEntities=[client,active].filter(Boolean)
  const scopedPreviousFacts=comparisonPairChanged?[]:previous.session_facts.filter(item=>itemMatchesAuthorizedSubjects(item,authorizedSubjectIds,scopeBoundary))
  const scopedPreviousHypotheses=comparisonPairChanged?[]:previous.session_hypotheses.filter(item=>itemMatchesAuthorizedSubjects(item,authorizedSubjectIds,scopeBoundary))

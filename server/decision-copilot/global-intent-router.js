@@ -42,10 +42,16 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
  const source=fold(message)
  const authorizedClient=clientRef(client)
  if(!source)return result()
- const openVerb=/\b(?:abre|abra|abrir|vai|va|navega|navegue|mostra|mostre|mostrar|leva|ir para|volta para|volte para)\b/.test(source)
+ // "vai" e "va" so sao verbos de abrir como movimento ("vai para oportunidades"); como auxiliar
+ // ("vai chover", "vai plantar", "vai ter geada") a frase e uma pergunta, nao navegacao.
+ const openVerb=/\b(?:abre|abra|abrir|navega|navegue|mostra|mostre|mostrar|leva|ir para|volta para|volte para)\b|\b(?:vai|va)\s+(?:para|pra|pro|ao|a|na|no|em)\b/.test(source)
  const searchVerb=/^(?:val\s+)?(?:agora\s+)?(?:procura|procure|busca|buscar|localiza|localize|encontra|encontre)\b/.test(source)
- const factualImperative=/^(?:val\s+)?(?:agora\s+)?(?:mostre|mostra|me\s+mostre)\s+(?:as?\s+)?(?:culturas?|safra|area)\s+(?:dele|dela|(?:do|da)\s+[a-z][a-z0-9 '-]{0,120})[.!?]?$/.test(source)
- const factualLookup=factualImperative||/\b(?:ultima|ultimo|mais recente|principal)\b.*\b(?:visita|compra|objecao|compromisso)\b|\b(?:visita|compra|objecao|compromisso)\b(?:\s+confirmad[oa])?\s+(?:ultima|ultimo|mais recente|principal)\b(?:\s+(?:dele|dela))?|\b(?:quanto|qual|quais)\b.*\b(?:comprou|cultura|safra|area)\b/.test(source)
+ const factualImperative=/^(?:val\s+)?(?:agora\s+)?(?:mostre|mostra|me\s+mostre|me\s+mostra)\s+(?:as?\s+|o\s+)?(?:culturas?|safra|area|perfil)\s+(?:dele|dela|(?:do|da)\s+[a-z][a-z0-9 '-]{0,120})[.!?]?$/.test(source)
+ // Pergunta sobre dado (perfil, cotacao, clima, "quantos", "qual") nunca vira navegacao, mesmo
+ // com verbo de abrir ou de busca: "mostra o perfil dele" responde o perfil, "busca a cotacao da
+ // soja" consulta o mercado. A resposta e do raciocinio ou da fonte, nao de uma troca de tela.
+ const dataQuestion=/\?\s*$/.test(source)||/\b(?:perfil|cotacao|preco|clima|chover|geada|granizo|bula|quanto|quantos|quantas|qual|quais|como|quando|onde|por que|porque)\b/.test(source)
+ const factualLookup=factualImperative||dataQuestion||/\b(?:ultima|ultimo|mais recente|principal)\b.*\b(?:visita|compra|objecao|compromisso)\b|\b(?:visita|compra|objecao|compromisso)\b(?:\s+confirmad[oa])?\s+(?:ultima|ultimo|mais recente|principal)\b(?:\s+(?:dele|dela))?|\b(?:quanto|qual|quais)\b.*\b(?:comprou|cultura|safra|area)\b/.test(source)
  const followUp=routeSessionCommand(message)||/\b(?:volta no que)\b/.test(source)
  if(followUp)return result({intent:'FOLLOW_UP',reason:'CONVERSATION_FAST_PATH'})
  const prepareVisit=/\b(?:prepara|prepare|preparar|preparacao|monta|monte)\b.*\b(?:visita|conversa)\b|\b(?:visita|conversa)\b.*\b(?:prepara|prepare|preparar|preparacao|roteiro)\b/.test(source)
@@ -71,7 +77,7 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'OPEN',reason:'OPEN_RESOLVED_CLIENT',direct:true,workspaceAction,summary:`Abrindo ${authorizedClient.name||'o produtor'} no Cliente 360.`})
  }
- if(searchVerb&&authorizedClient){
+ if(searchVerb&&authorizedClient&&!factualLookup&&!modules.some(module=>module.pattern.test(source))){
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'SEARCH',reason:'SEARCH_RESOLVED_CLIENT',direct:true,workspaceAction,summary:`Localizei ${authorizedClient.name||'o produtor'} na sua carteira autorizada.`})
  }

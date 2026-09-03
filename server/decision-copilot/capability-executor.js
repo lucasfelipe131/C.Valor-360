@@ -750,7 +750,8 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
   const globalOrigin=globalSource?validateGlobalLiveScope({...context,source_ref:item.source_ref},{tenantId:clean(organizationId,180),ownerId:clean(ownerId,180)},`response_${capability.toLowerCase()}`):null
   const sourceType=live?'market_snapshot':capability==='AGRONOMIC_WORKSPACE'?'official_product_catalog':capability==='SESSION_COMMAND'?'conversation_turn':capability==='CLIENT_CONTEXT'?'client_registration':capability==='CONFIRMED_MEMORY'?clean(context.source_type,120).toLowerCase()||'confirmed_memory':capability==='COMMERCIAL_HISTORY'?'commitment':capability==='SOIL_ANALYSIS'?'soil_analysis':['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?'attachment_analysis':capability==='AREA_MAPPING'?'context_snapshot':capability==='CALCULATORS'?'calculation':capability==='AI_GENERAL_KNOWLEDGE'?'model_general_knowledge':capability==='GENERAL_GUIDANCE'?'general_knowledge':'system_capability'
   const sourceEpistemic=capability==='SESSION_COMMAND'?'INFERENCE':capability==='CONFIRMED_MEMORY'?clean(context.epistemic_type,40).toUpperCase()||'FACT':['SOIL_ANALYSIS','IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?'OBSERVATION':'FACT'
-  const sourceObservedAt=capability==='SESSION_COMMAND'?context.source_turn_created_at:live?context.observed_at:capability==='CONFIRMED_MEMORY'||capability==='COMMERCIAL_HISTORY'?context.observed_at:capability==='SOIL_ANALYSIS'?item.tool_result?.facts?.sampled_at:['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?item.tool_result?.facts?.result_created_at:createdAt
+  // Comando local da sessao ("por escrito") nao tem turno anterior: a observacao e o proprio momento.
+  const sourceObservedAt=capability==='SESSION_COMMAND'?context.source_turn_created_at||(route?.session_command?.local_only?createdAt:null):live?context.observed_at:capability==='CONFIRMED_MEMORY'||capability==='COMMERCIAL_HISTORY'?context.observed_at:capability==='SOIL_ANALYSIS'?item.tool_result?.facts?.sampled_at:['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?item.tool_result?.facts?.result_created_at:createdAt
   const sourceValidUntil=context.valid_until??null
   return {
    id:item.source_ref,source_ref:item.source_ref,source_type:sourceType,
@@ -783,6 +784,13 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  const evaluatedGrounding=evaluateReasoningGrounding({question:message,domain:selectedDomain,evidence:sourceRefs,activeProducerId:clientId,tenantId:String(organizationId),ownerId:String(ownerId||''),blocks:groundingBlocks,now:new Date(createdAt)})
  const scopedSessionCommand=Boolean(route?.session_command?.requires_previous_turn&&sourceRefs.length&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  const trustedGeneralGuidance=Boolean(!clientId&&sourceRefs.length===1&&sourceRefs[0].id==='system:general-guidance:v1'&&sourceRefs[0].capability==='GENERAL_GUIDANCE'&&tool?.capability==='GENERAL_GUIDANCE'&&evaluatedGrounding.question_relevance==='PASS'&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
+ // Comando local da sessao ("por escrito", "nao registra"): a resposta e a confirmacao fixa da
+ // preferencia, sem afirmacao factual; nao precisa de turno anterior nem de overlap com a frase.
+ const localSessionCommand=Boolean(route?.session_command?.local_only&&sourceRefs.length===1&&sourceRefs[0].capability==='SESSION_COMMAND'&&tool?.capability==='SESSION_COMMAND'&&tool?.status==='EXECUTED'&&trustedCapabilityExecutions.has(execution)&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
+ // Navegacao direta (WORKSPACE_NAVIGATION): a resposta e o eco determinístico da acao de interface
+ // ("Abrindo Visitas."), construida pelo servidor; nao ha claim factual a sustentar nem relevancia
+ // lexical a medir entre "abre a agenda" e o rotulo do modulo.
+ const workspaceNavigation=Boolean(route?.path==='FAST'&&list(route?.capabilities).length===1&&route.capabilities[0]==='WORKSPACE_NAVIGATION'&&sourceRefs.length===1&&sourceRefs[0].capability==='WORKSPACE_NAVIGATION'&&/^workspace:[a-z0-9_-]+$/.test(sourceRefs[0].id)&&tool?.capability==='WORKSPACE_NAVIGATION'&&tool?.status==='EXECUTED'&&clean(tool?.summary,500)===summary)
  // Resultado de calculadora: entradas e resultado já foram validados numericamente claim a claim
  // (unsupported_claims vazio) e a fonte é a própria execução determinística. O overlap lexical
  // entre "gastei 750 mil reais em 300 hectares" e "Custo calculado: R$ 2.500,00/ha" não mede nada.
@@ -809,6 +817,10 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
    ?{...evaluatedGrounding,passed:true,question_relevance:'LIBRARY_SELECTION_MATCH'}
   :calculatorResultGuidance&&!evaluatedGrounding.passed
    ?{...evaluatedGrounding,passed:true,question_relevance:'CALCULATOR_RESULT'}
+  :localSessionCommand&&!evaluatedGrounding.passed
+   ?{...evaluatedGrounding,passed:true,question_relevance:'LOCAL_SESSION_COMMAND'}
+  :workspaceNavigation&&!evaluatedGrounding.passed
+   ?{...evaluatedGrounding,passed:true,question_relevance:'WORKSPACE_ACTION'}
   :safeAbsence
    ?{...evaluatedGrounding,passed:true,question_relevance:'SAFE_NO_DATA'}
    :evaluatedGrounding
