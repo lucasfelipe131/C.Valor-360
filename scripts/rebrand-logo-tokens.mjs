@@ -13,7 +13,13 @@
 import {readFileSync,writeFileSync} from 'node:fs'
 
 const TARGET='src/val-brand.css'
-const LEGACY=/^(\s*)--val-logo-(?:blue-start|blue-mid|blue-end|fold-start|fold-end|green-start|green-mid|green-end|leaf-start|leaf-mid|leaf-end|word|accent|highlight)\s*:\s*[^;]+;\s*$/
+// Um bloco só é legado se contiver um token que SÓ a marca antiga tinha.
+// `word`, `accent` e `highlight` sobrevivem na marca oficial: se o gatilho
+// incluísse os três, rodar de novo reescreveria blocos já migrados e
+// duplicaria tokens. Por isso o gatilho e o conjunto de linhas do bloco são
+// coisas diferentes.
+const LEGACY_ONLY=/--val-logo-(?:blue-start|blue-mid|blue-end|fold-start|fold-end|green-start|green-mid|green-end|leaf-start|leaf-end)\s*:/
+const LOGO_LINE=/^(\s*)--val-logo-[a-z-]+\s*:\s*[^;]+;\s*$/
 
 const SETS={
  light:[
@@ -51,6 +57,9 @@ let replaced=0
 
 const flush=()=>{
  if(!block.length)return
+ // Bloco já migrado passa intacto: idempotência é o que permite rodar o
+ // script de novo sem medo depois de qualquer ajuste manual na folha.
+ if(!block.some(line=>LEGACY_ONLY.test(line))){output.push(...block);block=[];return}
  const indent=block[0].match(/^\s*/)[0]
  const set=SETS[surfaceOf(block)]
  for(const [name,value] of set)output.push(`${indent}--val-logo-${name}:${value};`)
@@ -59,7 +68,7 @@ const flush=()=>{
 }
 
 for(const line of lines){
- if(LEGACY.test(line)){block.push(line);continue}
+ if(LOGO_LINE.test(line)){block.push(line);continue}
  flush()
  output.push(line)
 }
@@ -67,11 +76,13 @@ flush()
 
 const result=output.join('\n')
 if(process.argv.includes('--check')){
- const pending=(source.match(LEGACY)||[]).length
  console.log(`blocos legados encontrados: ${replaced}`)
  process.exit(replaced===0?0:1)
 }
-if(result===source){
+// Compara ignorando a quebra de linha: um arquivo com CRLF e LF misturados
+// nao deve contar como "alterado" so por ter sido normalizado na leitura.
+const flat=value=>value.split(/\r?\n/).join('\n')
+if(flat(result)===flat(source)){
  console.log('nenhum token legado da marca antiga restou — nada a fazer.')
 }else{
  writeFileSync(TARGET,result)
