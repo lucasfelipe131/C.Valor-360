@@ -317,8 +317,12 @@ export function routeSystemCapability({message='',intentHint='',sessionCommandHi
  // Uma rota direta responde ao pedido atual sem herdar ferramentas de um
  // objeto ativo antigo. Contexto ativo so amplia rotas que realmente vao
  // compor raciocinio contextual ou profundo.
- if(!direct&&activeContext?.type==='opportunity'&&!capabilities.includes('OPPORTUNITY_PIPELINE'))capabilities.push('OPPORTUNITY_PIPELINE')
- if(!direct&&['visit','visit_draft'].includes(activeContext?.type)&&!capabilities.includes('VISIT_HISTORY'))capabilities.push('VISIT_HISTORY')
+ // Pergunta conceitual ("O que e WASDE?") durante um rascunho de visita continua sendo da
+ // Biblioteca: herdar VISIT_HISTORY aqui tirava a pergunta do atalho geral e a levava ao
+ // raciocinio do produtor, que sem evidencia respondia a frase generica.
+ const conceptual=intentRoute.intent==='ASK_GENERAL'
+ if(!direct&&!conceptual&&activeContext?.type==='opportunity'&&!capabilities.includes('OPPORTUNITY_PIPELINE'))capabilities.push('OPPORTUNITY_PIPELINE')
+ if(!direct&&!conceptual&&['visit','visit_draft'].includes(activeContext?.type)&&!capabilities.includes('VISIT_HISTORY'))capabilities.push('VISIT_HISTORY')
  if(!direct&&activeContext?.type==='agronomic_tool'&&!capabilities.includes('AGRONOMIC_WORKSPACE'))capabilities.push('AGRONOMIC_WORKSPACE')
  const planned=[...new Set(capabilities)]
  const materiality=assessEngineMateriality({path,intent:intentRoute.intent,source,capabilities:planned,attachmentTypes})

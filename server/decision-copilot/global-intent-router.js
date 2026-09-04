@@ -62,6 +62,14 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
   const workspaceAction=action({type:'PREPARE_VISIT',page:'visits',label:`Preparar visita de ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'PREPARE',reason:'PREPARE_AUTHORIZED_CLIENT',direct:true,workspaceAction,summary:`Abrindo a preparação de visita de ${authorizedClient.name||'produtor'}.`})
  }
+ // "volta pro Antonio", "agora o Matheus", "troca pro Bruno": o resolvedor ja trocou o produtor da
+ // sessao; sem esta acao a frase seguia para o raciocinio do novo produtor e a resposta era a
+ // frase generica de evidencia insuficiente, como se a troca tivesse falhado.
+ const switchVerb=/^\s*(?:val\s+)?(?:(?:volta|volte|voltar|retoma|retome|retomar|troca|troque|trocar|muda|mude|mudar)\b|agora\s+(?:com\s+)?(?:o|a)\b)/.test(source)
+ if(!factualLookup&&!prepareVisit&&switchVerb&&authorizedClient&&!modules.some(module=>module.pattern.test(source))){
+  const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
+  return result({intent:'OPEN',reason:'SWITCH_RESOLVED_CLIENT',direct:true,workspaceAction,summary:`Agora falando de ${authorizedClient.name||'o produtor'}. Abrindo no Cliente 360.`})
+ }
  if(!factualLookup&&openVerb&&authorizedClient&&/\b(?:cliente|produtor|produtora)\b/.test(source)){
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'OPEN',reason:'OPEN_AUTHORIZED_CLIENT',direct:true,workspaceAction,summary:`Abrindo ${authorizedClient.name||'o produtor'} no Cliente 360.`})

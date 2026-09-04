@@ -119,7 +119,11 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
  const genericAgroToolOverride=hinted==='ASK_AGRONOMIC'?toolIntent:''
  const explicitCalculatorAction=/\b(?:calcul\w*|simul\w*|rod\w*|execut\w*|abr\w*)\b/i.test(source)
  const calculatorToolOverride=toolHint==='CALCULATOR'&&explicitCalculatorAction?'CALCULATE':''
- let intent=sessionCommand?.command==='REGISTER_LAST'?'REGISTER_INFORMATION':persistenceIntents.has(hinted)?hinted:semanticCurrent||semanticCommand||semanticClientIdentity||semanticGeneral||calculatorToolOverride||genericAgroToolOverride||hinted
+ // "Registra que a cotacao da soja subiu" e um pedido de registro, nao uma consulta de mercado:
+ // o prefixo explicito de registro decide antes de qualquer leitura semantica do conteudo, porque
+ // o conteudo de uma nota quase sempre tem lexema de safra, praga, cotacao ou objecao.
+ const explicitRegister=/^(?:val[, ]+)?(?:registra|registre|anota|anote)\s+que\b/i.test(source)?'REGISTER_INFORMATION':''
+ let intent=sessionCommand?.command==='REGISTER_LAST'?'REGISTER_INFORMATION':persistenceIntents.has(hinted)?hinted:explicitRegister||semanticCurrent||semanticCommand||semanticClientIdentity||semanticGeneral||calculatorToolOverride||genericAgroToolOverride||hinted
  if(!intent){
   if(/\b(?:mercado|commodity|commodities|not[ií]cia econ[oô]mica)\b/i.test(source))intent='ASK_MARKET'
   // Interpretar um laudo e ferramenta; "qual a funcao do potassio na planta" e conhecimento.

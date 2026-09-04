@@ -432,7 +432,10 @@ export function advanceConversationState(current={},event={}){
  // Comando local de preferencia ("por escrito", "nao registra") nao e conteudo da conversa: se
  // entrasse como turno, "resume" e "explica melhor" logo depois resumiriam "Preferencia desta
  // conversa alterada para texto" em vez da ultima leitura de verdade.
- const localPreferenceCommand=clean(reasoning.run?.tool_result?.capability,80)==='SESSION_COMMAND'&&['OUTPUT_TEXT','OUTPUT_AUDIO','DO_NOT_REGISTER'].includes(clean(reasoning.run?.tool_result?.context?.command,80).toUpperCase())
+ const toolCapability=clean(reasoning.run?.tool_result?.capability,80)
+ // Preferencia local ("por escrito") e navegacao ("abre o Matheus") nao sao leituras: sem esta
+ // exclusao, "resume" logo depois devolvia "Abrindo Matheus ... no Cliente 360.".
+ const localPreferenceCommand=toolCapability==='SESSION_COMMAND'&&['OUTPUT_TEXT','OUTPUT_AUDIO','DO_NOT_REGISTER'].includes(clean(reasoning.run?.tool_result?.context?.command,80).toUpperCase())||toolCapability==='WORKSPACE_NAVIGATION'
  const userTurn=message&&!localPreferenceCommand?turn({role:'user',text:message,modality:event.inputModality||previous.input_modality,intent:event.intent,created_at:event.now},turnScope):null
  const capabilityResults=list(reasoning.run?.capability_results).map(item=>toolResult(item,turnScope)).filter(item=>item&&itemMatchesAuthorizedSubjects(item,authorizedSubjectIds,scopeBoundary))
  const tool=reasoning.run?.tool_result
