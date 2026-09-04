@@ -651,10 +651,14 @@ function claimSupport(claim,entries,question='',domain='GENERAL',field='answer',
  // Aspas ilustrativas num statement curado ("'vamos pensar' não é 'não'") tipam a claim como
  // QUOTE; quando a claim é literalmente o texto do item da Biblioteca, o tipo epistêmico da
  // fonte (FACT curado) é o suporte correto.
- const typeCompatible=compatible.filter(entry=>(evidenceCompatibility[kind]||evidenceCompatibility.FACT).has(entry.evidenceType)||entry.sourceType==='general_knowledge'&&source.length>=12&&entry.text.includes(source))
+ // Uma inferencia de perfil que declara literalmente a abordagem ("Abordagem derivada do perfil
+ // registrado: comece pelo historico de confianca...") sustenta a claim de estrategia com o mesmo
+ // texto: a estrategia e derivada do rotulo registrado, nao das palavras do questionario.
+ const literalStrategySupport=entry=>kind==='STRATEGY'&&entry.sourceType==='behavioral_profile'&&strategyBody.length>=12&&entry.text.includes(strategyBody)
+ const typeCompatible=compatible.filter(entry=>(evidenceCompatibility[kind]||evidenceCompatibility.FACT).has(entry.evidenceType)||entry.sourceType==='general_knowledge'&&source.length>=12&&entry.text.includes(source)||literalStrategySupport(entry))
  if(!typeCompatible.length)return {supported:false,evidenceRefs:[],reason:'EPISTEMIC_TYPE_MISMATCH'}
  const candidates=typeCompatible.map(entry=>{
- const exact=source.length>=12&&entry.text.includes(source)
+ const exact=source.length>=12&&entry.text.includes(source)||literalStrategySupport(entry)
   const scopedEntry=scopedAssertion(entry.text)
   return {entry,overlap:claimTokens.filter(token=>entry.tokenSet.has(token)),exact,contradiction:(!exact||Boolean(scopedEntry))&&polarityContradiction(source,entry.text)}
  }).filter(item=>item.exact||item.overlap.length)

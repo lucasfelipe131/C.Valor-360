@@ -18,7 +18,7 @@ const domainPatterns=Object.freeze({
  AGRONOMY:/\b(?:agronom\w*|manejo|solo|nutri[cç][aã]o\w*|fertiliz\w*|herbic\w*|insetic\w*|fungic\w*|praga\w*|doen[cç]a\w*|diagn[oó]stic\w*|fitoscan|nutriscan|lavoura\w*|safra\w*|cultur\w*|plantio\w*|semente\w*|semeadur\w*|germina[cç][aã]o|emerg[eê]ncia)\b/,
  VISIT:/\b(?:visita\w*|preparevisit|perguntas? de ouro|p[oó]s[- ]?visita\w*|[uú]ltim[ao] conversa|compromisso\w*)\b/,
  OPPORTUNITY:/\b(?:oportunidade\w*|pipeline|proposta\w*|neg[oó]cio\w*|pr[oó]ximo passo|fechamento\w*)\b/,
- COMMERCIAL:/\b(?:comercial|venda\w*|pre[cç]o\w*|custo\w*|compra\w*|negocia[cç][aã]o\w*|obje[cç][aã]o\w*|valor(?:es)?|margem|margens)\b/
+ COMMERCIAL:/\b(?:comercial|venda\w*|pre[cç]o\w*|custo\w*|compra\w*|compr(?:ou|ar|aram|ava|avam|e|em|aria)|negocia[cç][aã]o\w*|obje[cç][aã]o\w*|valor(?:es)?|margem|margens)\b/
 })
 
 const intentDomains=Object.freeze({
@@ -196,6 +196,11 @@ export function collectionMatchesContextDomain(item={},sourceType='',domain='GEN
  // Uma oportunidade explicitamente derivada da visita confirmada é contexto
  // legítimo da preparação seguinte, ainda que sua categoria seja agronômica.
  if(selected==='VISIT'&&intrinsic.includes('OPPORTUNITY')&&linkedToConfirmedVisit)return true
+ // A pergunta de oportunidade seleciona a oportunidade pela sua entidade/tipo, como a de visita.
+ // O dominio intrinseco da oportunidade inclui COMMERCIAL e o titulo pode citar safra ou credito;
+ // nada disso pode vetar o proprio registro perguntado ("ele tem oportunidade aberta?" respondia
+ // "ainda nao ha oportunidade registrada" com a oportunidade em Proposta no contexto).
+ if(selected==='OPPORTUNITY'&&intrinsic.includes('OPPORTUNITY'))return true
  if(!domainsFitRequest(itemDomains,selected,requested))return false
  if(selected==='GRAINS'||selected==='CREDIT')return semantic.includes(selected)
  if(selected==='GEO')return intrinsic.includes('GEO')||semantic.includes('GEO')

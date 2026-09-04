@@ -336,17 +336,30 @@ const pastFactQuestionByDomain={
 
 const foldQuestion=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
 
-function groundingFallbackReading(domain,message){
+// A frase de ausência é uma afirmação factual ("ainda não há oportunidade registrada"): só vale
+// quando a coleção correspondente do contexto autorizado está vazia de fato. Com registro presente,
+// a leitura honesta volta a ser a genérica de evidência insuficiente.
+const closedStage=/fechad|perdid|cancelad/i
+const completedVisitRecord=item=>/COMPLETED|realizad|conclu|done/i.test(String(item?.lifecycleStatus??item?.lifecycle_status??item?.status??''))||Boolean(item?.completedAt??item?.completed_at??item?.occurredAt??item?.occurred_at)
+const closedCommitment=/COMPLETED|CANCELLED|REJECTED|DONE|CONCLUID|CANCELAD/i
+const contextRecordAbsent={
+ VISIT:context=>!list(context?.visits).some(completedVisitRecord),
+ OPPORTUNITY:context=>!list(context?.opportunities).some(item=>!closedStage.test(String(item?.stage??''))),
+ COMMERCIAL:context=>!list(context?.commitments).some(item=>!closedCommitment.test(String(item?.status??'')))
+}
+
+function groundingFallbackReading(domain,message,context=null){
  const specific=groundingFallbackReadingByDomain[domain]
  if(!specific)return ''
- return pastFactQuestionByDomain[domain]?.test(foldQuestion(message))?specific:''
+ if(!pastFactQuestionByDomain[domain]?.test(foldQuestion(message)))return ''
+ return contextRecordAbsent[domain]?.(context)?specific:''
 }
 
 function applyGroundingFallback(result,context,domain,message=''){
  const profile=domain==='PROFILE'
  const reading=profile
   ?'Não há evidência comportamental atual e auditável suficiente para determinar o perfil comportamental.'
-  :groundingFallbackReading(domain,message)||'Não há evidência selecionada suficiente para afirmar uma resposta específica com segurança.'
+  :groundingFallbackReading(domain,message,context)||'Não há evidência selecionada suficiente para afirmar uma resposta específica com segurança.'
  result.objective='Confirme a fonte antes de continuar.'
  result.situation_summary=reading
  result.decision_thesis={

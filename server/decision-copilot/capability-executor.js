@@ -541,7 +541,7 @@ function fastContextResult({capability,message,context,clientId,scope}){
   const memoryEntry=scopedMemories.find(item=>String(item.record?.status||'').toLowerCase()==='verified'&&String(item.record?.memory_state||item.record?.memoryState||'FACT').toUpperCase()==='FACT'&&(/decis|quem decide/i.test(String(item.record?.key||''))||confirmedMemoryValue(item.record)))
   const memory=memoryEntry?.record
   const value=memory&&confirmedMemoryValue(memory)
-  const status=value?'EXECUTED':'NO_DATA';const summary=value?`Decisor confirmado: ${value}.`:'Nenhum decisor confirmado foi localizado para este produtor.'
+  const status=value?'EXECUTED':'NO_DATA';const summary=value?`Quem decide (decisor confirmado): ${value}.`:'Nenhum decisor confirmado foi localizado para este produtor.'
   const sourceScope=memoryEntry?.scope||scope
   return result(capability,status,descriptor(capability,{status,summary,context:{client_id:clientId,...(value?{tenant_id:sourceScope.tenantId,context_owner_id:sourceScope.ownerId}:{}),confirmed_memory_only:true,source_type:clean(memory?.source_type??memory?.sourceType,120)||'confirmed_memory',epistemic_type:clean(memory?.epistemic_type??memory?.epistemicType??memory?.memory_state??memory?.memoryState,40).toUpperCase()||'FACT',observed_at:memory?.observed_at??memory?.observedAt??memory?.updated_at??memory?.updatedAt??memory?.created_at??memory?.createdAt??null,valid_until:memory?.valid_until??memory?.validUntil??null}}),value?idOf(memory):null)
  }
@@ -560,7 +560,10 @@ function fastContextResult({capability,message,context,clientId,scope}){
   validateNestedRecords(context.visits,scope,{kind:'visit'})
   validateNestedRecords(context.opportunities,scope,{kind:'opportunity'})
   const clientName=clean(context?.client?.name,180)||'Produtor';const visits=list(context.visits).length;const opportunities=list(context.opportunities).filter(item=>String(item?.stage||'').toLowerCase()!=='fechado').length
-  return result(capability,'EXECUTED',descriptor(capability,{summary:`${clientName}: ${visits} visita(s) e ${opportunities} oportunidade(s) aberta(s) no contexto autorizado.`,context:{client_id:clientId,...(scope.tenantId?{tenant_id:scope.tenantId}:{}),...(scope.ownerId?{context_owner_id:scope.ownerId}:{})}}),context?.contextSnapshot?.context_snapshot_id||null)
+  // Mesmo contrato de fonte do ramo de identidade: o binding de CLIENT_CONTEXT exige
+  // `client:<produtor>` e current_client_only. Com o id do snapshot como fonte, "resume a conta"
+  // montava o resumo e morria em CLIENT_SOURCE_REF_MISMATCH (422) em todos os casos.
+  return result(capability,'EXECUTED',descriptor(capability,{summary:`${clientName}: ${visits} visita(s) e ${opportunities} oportunidade(s) aberta(s) no contexto autorizado.`,context:{client_id:clientId,...(scope.tenantId?{tenant_id:scope.tenantId}:{}),...(scope.ownerId?{context_owner_id:scope.ownerId}:{}),current_client_only:true,context_snapshot_id:context?.contextSnapshot?.context_snapshot_id||null}}),`client:${clientId}`)
  }
  return result(capability,'PLANNED',null,null)
 }
@@ -793,6 +796,14 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  // Comando local da sessao ("por escrito", "nao registra"): a resposta e a confirmacao fixa da
  // preferencia, sem afirmacao factual; nao precisa de turno anterior nem de overlap com a frase.
  const localSessionCommand=Boolean(route?.session_command?.local_only&&sourceRefs.length===1&&sourceRefs[0].capability==='SESSION_COMMAND'&&tool?.capability==='SESSION_COMMAND'&&tool?.status==='EXECUTED'&&trustedCapabilityExecutions.has(execution)&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
+ // "resume"/"repete" numa conversa sem leitura anterior: a resposta é a frase fixa do sistema pedindo
+ // uma pergunta primeiro (INPUT_REQUIRED, sem fonte). Sem esta exceção a frase virava claim sem
+ // evidência e o consultor lia a mensagem genérica de "sem evidência verificável".
+ const sessionCommandInputRequired=Boolean(!sourceRefs.length&&tool?.capability==='SESSION_COMMAND'&&tool?.status==='INPUT_REQUIRED'&&trustedCapabilityExecutions.has(execution)&&isPureAbsenceOrInputSummary(summary)&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
+ // Resumo determinístico do contexto do produtor ("resume a conta"): a fonte é o próprio contexto
+ // autorizado (client:<produtor>, current_client_only) e a contagem de visitas/oportunidades não tem
+ // overlap lexical com o pedido nem claim a sustentar por evidência externa.
+ const clientContextSummary=Boolean(clientId&&sourceRefs.length===1&&sourceRefs[0].capability==='CLIENT_CONTEXT'&&sourceRefs[0].id===`client:${clientId}`&&tool?.capability==='CLIENT_CONTEXT'&&tool?.status==='EXECUTED'&&tool?.context?.current_client_only===true&&trustedCapabilityExecutions.has(execution)&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  // Navegacao direta (WORKSPACE_NAVIGATION): a resposta e o eco determinístico da acao de interface
  // ("Abrindo Visitas."), construida pelo servidor; nao ha claim factual a sustentar nem relevancia
  // lexical a medir entre "abre a agenda" e o rotulo do modulo.
@@ -825,6 +836,10 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
    ?{...evaluatedGrounding,passed:true,question_relevance:'CALCULATOR_RESULT'}
   :localSessionCommand&&!evaluatedGrounding.passed
    ?{...evaluatedGrounding,passed:true,question_relevance:'LOCAL_SESSION_COMMAND'}
+  :clientContextSummary&&!evaluatedGrounding.passed
+   ?{...evaluatedGrounding,passed:true,question_relevance:'CLIENT_CONTEXT_SUMMARY'}
+  :sessionCommandInputRequired&&!evaluatedGrounding.passed
+   ?{...evaluatedGrounding,passed:true,question_relevance:'SESSION_COMMAND_INPUT_REQUIRED'}
   :workspaceNavigation&&!evaluatedGrounding.passed
    ?{...evaluatedGrounding,passed:true,question_relevance:'WORKSPACE_ACTION'}
   :noCoverageGuidance&&!evaluatedGrounding.passed
