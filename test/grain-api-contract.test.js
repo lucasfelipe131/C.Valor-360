@@ -15,8 +15,11 @@ test('rotas SOG exigem sessão e reutilizam o proprietário da carteira',()=>{
  assert.match(server,/\/api\/grains\/profiles/)
  assert.match(server,/\/api\/grains\/intents/)
  assert.match(server,/\/api\/grains\/market/)
- assert.match(server,/grainRepository\.getWorkspace\(identity\?\.id\)/)
- assert.match(server,/grainRepository\.saveIntent\(intention,identity\?\.id\)/)
+ // Mesma chave de proprietario do restante do servidor (id ou e-mail): em modo demo identity.id e
+ // nulo e, com ele, nenhuma cotacao gravada pelo SOG chegava a VAL.
+ assert.match(server,/grainRepository\.getWorkspace\(identity\?\.id\|\|identity\?\.email\)/)
+ assert.match(server,/grainRepository\.saveIntent\(intention,identity\?\.id\|\|identity\?\.email\)/)
+ assert.match(server,/grainRepository\.getMarketReferences\(scopedOwnerId\)/)
 })
 
 test('interface SOG grava somente pelas APIs protegidas e mostra a governança',()=>{

@@ -387,18 +387,18 @@ async function handleApi(request,response,url){
   }
  }
  if(url.pathname==='/api/grains/bootstrap'&&request.method==='GET'){
-  const workspace=await grainRepository.getWorkspace(identity?.id)
+  const workspace=await grainRepository.getWorkspace(identity?.id||identity?.email)
   return json(response,200,workspace)
  }
  if(url.pathname==='/api/grains/profiles'&&request.method==='PUT'){
-  const profile=normalizeGrainProfile(await body(request));const saved=await grainRepository.saveProfile(profile,identity?.id)
+  const profile=normalizeGrainProfile(await body(request));const saved=await grainRepository.saveProfile(profile,identity?.id||identity?.email)
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:profile.clientId})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,grains:true})
   await accessRepository.recordUsage(identity,{eventType:'sog_profile_saved',page:'val',entityType:'client',entityId:profile.clientId,metadata:{confirmed:profile.confirmed,source:profile.source}})
   return json(response,200,{saved:true,profile:saved})
  }
  if(url.pathname==='/api/grains/intents'&&request.method==='POST'){
-  const intention=normalizeGrainIntent(await body(request));const saved=await grainRepository.saveIntent(intention,identity?.id)
+  const intention=normalizeGrainIntent(await body(request));const saved=await grainRepository.saveIntent(intention,identity?.id||identity?.email)
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:intention.clientId})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,grains:true})
   await accessRepository.recordUsage(identity,{eventType:'sog_intent_saved',page:'val',entityType:'client',entityId:intention.clientId,metadata:{commodity:intention.commodity,status:intention.status,source:intention.source}})
@@ -408,14 +408,14 @@ async function handleApi(request,response,url){
  if(grainIntentMatch&&request.method==='PATCH'){
   const payload=await body(request);const status=clean(payload.status)
   if(!intentStatuses.has(status))return json(response,400,{error:'O estado da intenção é inválido.'})
-  const intention=await grainRepository.updateIntentStatus(grainIntentMatch[1],status,identity?.id)
+  const intention=await grainRepository.updateIntentStatus(grainIntentMatch[1],status,identity?.id||identity?.email)
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:mutationClientId(intention)})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,grains:true})
   await accessRepository.recordUsage(identity,{eventType:'sog_intent_status',page:'val',entityType:'grain_intent',entityId:grainIntentMatch[1],metadata:{status}})
   return json(response,200,{saved:true,intention})
  }
  if(url.pathname==='/api/grains/market'&&request.method==='POST'){
-  const snapshot=normalizeGrainMarketSnapshot(await body(request));const saved=await grainRepository.saveMarketSnapshot(snapshot,identity?.id)
+  const snapshot=normalizeGrainMarketSnapshot(await body(request));const saved=await grainRepository.saveMarketSnapshot(snapshot,identity?.id||identity?.email)
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,grains:true})
   await accessRepository.recordUsage(identity,{eventType:'sog_market_saved',page:'val',entityType:'grain_market',entityId:saved.id,metadata:{commodity:snapshot.commodity,source:snapshot.sourceName}})
@@ -488,6 +488,7 @@ async function handleApi(request,response,url){
   const conversationId=conversationIdValue(payload.conversationId)
   valRequestClaim=valConversationRequests.begin({tenantId,ownerId:scopedOwnerId,conversationId},requestController)
   let clientId=clean(payload.clientId||payload.client?.id)
+  const requestedClientId=clientId
   const storedConversation=valConversationSessions.get({tenantId,ownerId:scopedOwnerId,conversationId})
   const storedClientId=clean(storedConversation?.current_client?.id)
   if(!clientId&&storedClientId)clientId=storedClientId
@@ -538,7 +539,11 @@ async function handleApi(request,response,url){
    if(conversationResolution.status==='AMBIGUOUS')return json(response,409,{error:`Encontrei mais de um produtor para “${conversationResolution.reference}”. Qual deles você quer?`,code:'val_client_reference_ambiguous',conversationId,clarification:{contractVersion:'val.client_clarification.v1',reference:conversationResolution.reference,question:'Qual produtor você quer usar nesta conversa?',options:conversationResolution.options}})
    if(conversationResolution.status==='NOT_FOUND')return json(response,422,{error:`Não encontrei “${conversationResolution.reference}” na sua carteira autorizada. Confirme o nome do produtor.`,code:'val_client_reference_not_found',conversationId,clarification:{question:'Qual é o nome do produtor na sua carteira?'}})
    if(conversationResolution.status==='RESOLVED'){
-    turnOnlyClientOverride=naturalClientReference.kind==='FACT_OWNER'&&Boolean(storedClientId)&&storedClientId!==conversationResolution.client.id
+    // O produtor de referencia do turno e o da thread ou, numa conversa nova, o que o browser
+    // enviou: "Mostre a ultima visita do Matheus" com Bruno aberto e consulta pontual nos dois casos,
+    // nao troca de sessao so porque a thread ainda nao tinha sido persistida.
+    const referenceClientId=storedClientId||requestedClientId
+    turnOnlyClientOverride=naturalClientReference.kind==='FACT_OWNER'&&Boolean(referenceClientId)&&referenceClientId!==conversationResolution.client.id
     clientId=conversationResolution.client.id
     if(turnOnlyClientOverride)conversationResolution=Object.freeze({...conversationResolution,changed_client:false,request_override:true})
    }
@@ -546,6 +551,15 @@ async function handleApi(request,response,url){
   if(clarificationSelection&&!clarificationSelectionConsumed)return json(response,409,{error:'A desambiguação expirou ou não corresponde mais à pergunta atual.',code:'val_client_clarification_stale',conversationId})
   const entityResolutionMs=performance.now()-entityResolutionStartedAt
   if(clientId&&storedClientId&&clientId!==storedClientId&&conversationResolution?.status!=='RESOLVED')return json(response,409,{error:'Esta conversa já está vinculada a outro produtor. Confirme a troca ou inicie uma nova conversa.',code:'val_conversation_client_mismatch',conversationId,currentClient:storedConversation.current_client})
+  // O clientId enviado pelo browser so entra na sessao se estiver na carteira autorizada. O FAST ja
+  // negava (404 em getFastClientFacts), mas CONTEXT, navegacao e pergunta geral vinculavam um id
+  // desconhecido ao estado da conversa com o rotulo vindo do browser.
+  const boundClientId=turnOnlyClientOverride?(storedClientId||requestedClientId):clientId
+  if(boundClientId&&!(conversationResolution?.status==='RESOLVED'&&!turnOnlyClientOverride)&&boundClientId!==storedClientId){
+   const authorizedClients=await repository.listAuthorizedClientReferences({tenantId,ownerId:scopedOwnerId,timeoutMs:config.databaseQueryTimeoutMs})
+   throwIfRequestAborted(requestController.signal)
+   if(!authorizedClients.some(item=>String(item?.id||'')===boundClientId))return json(response,404,{error:'Produtor não encontrado na carteira autorizada.',code:'val_client_not_authorized',conversationId})
+  }
   const requestedIntent=payload.intent==null?'':String(payload.intent)
   const requestedSessionCommand=payload.sessionCommand==null?'':String(payload.sessionCommand)
   if(requestedSessionCommand&&!normalizeSessionCommand(requestedSessionCommand))return json(response,400,{error:'O comando de conversa informado não é reconhecido.',code:'val_session_command_invalid'})
@@ -574,8 +588,8 @@ async function handleApi(request,response,url){
   // reconciliado com o contexto autorizado do produtor.
   const storedSessionClient=storedConversation?.current_client?.id===clientId?storedConversation.current_client:null
   const suppliedSessionClient=clientId?{id:clientId,name:clean(payload.client?.name)||null}:null
-  const sessionClient=turnOnlyClientOverride?storedConversation?.current_client:conversationResolution?.client||storedSessionClient||suppliedSessionClient
-  const sessionScope={tenantId,ownerId:scopedOwnerId,conversationId,clientId:turnOnlyClientOverride?storedClientId:clientId,client:sessionClient,activeContext:null}
+  const sessionClient=turnOnlyClientOverride?storedConversation?.current_client||(requestedClientId?{id:requestedClientId,name:clean(payload.client?.name)||null}:null):conversationResolution?.client||storedSessionClient||suppliedSessionClient
+  const sessionScope={tenantId,ownerId:scopedOwnerId,conversationId,clientId:turnOnlyClientOverride?storedClientId||requestedClientId:clientId,client:sessionClient,activeContext:null}
   let sessionState=storedConversation||createConversationState(sessionScope)
   if(!turnOnlyClientOverride&&storedConversation&&conversationResolution?.changed_client&&clientId!==storedClientId)sessionState=switchConversationClient(storedConversation,sessionClient,{tenantId,ownerId:scopedOwnerId,conversationId,clientId,client:sessionClient,activeContext:null})
   if(!turnOnlyClientOverride)sessionState=prepareConversationTurnState(sessionState,{message,intent:routedIntent.intent,sessionCommand:routedIntent.session_command,scope:sessionScope})
@@ -589,7 +603,7 @@ async function handleApi(request,response,url){
    if(!current||expected&&sessionCommandClientResolution?.client?.id!==current)return json(response,409,{error:`O produtor citado${expected?` (${expected})`:''} não corresponde ao produtor atual desta conversa.`,code:'val_session_command_client_mismatch',conversationId,currentClient:sessionState.current_client,clarification:{question:'Abra o produtor citado antes de reutilizar a resposta anterior.'}})
   }
   const comparisonFollowUpClientIds=routedIntent.session_command?activeComparisonClientIds(sessionState):[]
-  const completeSession=(payloadResult,{client=null,active=null,intent=routedIntent.intent,reasoningState=null}={})=>{
+  const completeSession=(payloadResult,{client=null,active=null,intent=routedIntent.intent}={})=>{
    const persistenceCommitted=payloadResult?.responseMetadata?.persistenceCommitted===true
    const assertResponseCanCommit=()=>{
     const committedAtDeadline=persistenceCommitted&&requestController.signal.aborted&&requestController.signal.reason?.code==='val_chat_timeout'
@@ -611,7 +625,7 @@ async function handleApi(request,response,url){
     assertResponseCanCommit()
     sessionState=valConversationSessions.set(persistedScope,completedState)
    }
-   const completed=attachConversationState(payloadResult,sessionState,reasoningState?{reasoningState}:{reasoningState:turnOnlyClientOverride?requestConversationState:sessionState})
+   const completed=attachConversationState(payloadResult,sessionState,{reasoningState:turnOnlyClientOverride?requestConversationState:sessionState})
    const withResolution=conversationResolution?.status==='RESOLVED'?{...completed,conversationResolution}:completed
    return workspaceRoute.workspace_action?{...withResolution,workspaceAction:workspaceRoute.workspace_action,globalIntent:workspaceRoute}:withResolution
   }
@@ -639,7 +653,7 @@ async function handleApi(request,response,url){
    if(activeContext)validateActiveContext({activeContext,context:{},clientId:''})
    if(capability.current_data_required&&capability.capabilities.some(item=>['WEATHER','LABELS'].includes(item)))return json(response,422,{error:'A fonte atual autorizada não está conectada neste ambiente. A VAL não usará memória ou conteúdo antigo como dado atual.',code:'val_current_source_unavailable',intent:routedIntent.intent,reasoningPath:capability.path,capabilitiesPlanned:capability.capabilities})
    if(capability.capabilities.includes('MARKET_COMMODITY')){
-    const startedAt=Date.now();latency.start('TOOL');const workspace=await withOperationTimeout(()=>grainRepository.getMarketReferences(identity?.id),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
+    const startedAt=Date.now();latency.start('TOOL');const workspace=await withOperationTimeout(()=>grainRepository.getMarketReferences(scopedOwnerId),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
     const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),latencyMs:Date.now()-startedAt,executionCounts:{entityResolutions:entityLookupCount,dataLookups:1,toolCalls:1,hops:entityLookupCount+1}})
     const final=complete(fast)
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'portfolio',entityId:null,metadata:{mode:capability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:capability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
@@ -696,18 +710,20 @@ async function handleApi(request,response,url){
   // Antes, "oi" e "O que e WASDE?" com produtor ativo terminavam em "Nao ha evidencia selecionada
   // suficiente".
   if(routedIntent.intent==='ASK_GENERAL'&&clientCapability.path==='CONTEXT'&&!clientCapability.session_command&&!attachmentIds.length&&clientCapability.capabilities.every(item=>item==='KNOWLEDGE_LIBRARY')){
-   // O raciocinio desta resposta e sem produtor (escopo GENERAL_KNOWLEDGE); o estado persistido da
-   // sessao continua com o produtor. O contrato de escopo compara a resposta com o estado usado no
-   // raciocinio, nunca com o estado a persistir (createValResponseScope).
-   const generalScope={tenantId,ownerId:scopedOwnerId,conversationId,clientId:'',client:null,activeContext:null}
-   const generalReasoningState=conversationStateContext(prepareConversationTurnState(createConversationState(generalScope),{message,intent:routedIntent.intent,sessionCommand:routedIntent.session_command,scope:generalScope}))
+   // O raciocinio desta resposta nao le contexto privado (fontes em escopo GENERAL_KNOWLEDGE, client
+   // 'portfolio'), mas a resposta pertence a conversa do produtor ativo: o browser e o contrato de
+   // escopo (createValResponseScope) exigem que context_scope.producer_id, session_context e
+   // responseScope apontem para o mesmo produtor, senao "oi" com produtor aberto e rejeitado na tela.
+   const generalDomain=requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent)
    const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
-   const general=await buildGeneralNoClientResponse({message,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:generalReasoningState.context_epoch,contextDomain:generalReasoningState.current_domain||'GENERAL',aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast})
+   const general=await buildGeneralNoClientResponse({message,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:generalDomain,aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast})
    const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
    if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})
    latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(general,{latency:values,path:clientCapability.path,intent:routedIntent.intent,toolExecution:null});valLatencyMetrics.record({path:clientCapability.path,intent:routedIntent.intent,latency:enriched?.responseMetadata?.performance?.latency||values})
    observe('val.answer.completed',{mode:'general',engineMode:'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,capability:general?.advice?.ai_reasoning?.run?.tool_result?.capability||'GENERAL_GUIDANCE',outcome:'ok'})
-   return json(response,200,completeSession(enriched,{client:{id:clientId,name:clean(payload.client?.name||requestConversationState.current_client?.label||sessionState.current_client?.label)||null},active:activeContextRef,reasoningState:generalReasoningState}))
+   const generalReasoning=enriched.advice.ai_reasoning
+   const scopedGeneral={...enriched,advice:{...enriched.advice,ai_reasoning:{...generalReasoning,premises:{...generalReasoning.premises,context_scope:{...generalReasoning.premises.context_scope,producer_id:clientId}}}}}
+   return json(response,200,completeSession(scopedGeneral,{client:{id:clientId,name:clean(payload.client?.name||requestConversationState.current_client?.label||sessionState.current_client?.label)||null},active:activeContextRef}))
   }
   if(activeContext&&!ignoresActiveContext){
    const scoped=await loadAuthorizedContext();activeContextRef=validateActiveContext({activeContext,context:scoped,clientId})
@@ -739,7 +755,7 @@ async function handleApi(request,response,url){
   if(clientCapability.capabilities.includes('MARKET_COMMODITY')){
    const startedAt=Date.now()
    if(!attachmentIds.length&&['FAST','LIVE_DATA'].includes(clientCapability.path)&&clientCapability.direct){
-    latency.start('TOOL');const workspace=await withOperationTimeout(()=>grainRepository.getMarketReferences(identity?.id),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
+    latency.start('TOOL');const workspace=await withOperationTimeout(()=>grainRepository.getMarketReferences(scopedOwnerId),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
     const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,clientName:requestConversationState.current_client?.name||payload.client?.name||'',conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent),latencyMs:Date.now()-startedAt,executionCounts:{entityResolutions:entityLookupCount,dataLookups:1,toolCalls:1,hops:entityLookupCount+1}})
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:clientCapability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
     return json(response,200,completeClient(fast,null))
@@ -747,7 +763,7 @@ async function handleApi(request,response,url){
    latency.start('DATABASE')
    const [context,workspace,facts]=await withOperationTimeout(()=>Promise.all([
     loadAuthorizedContext(),
-    grainRepository.getWorkspace(identity?.id),
+    grainRepository.getWorkspace(scopedOwnerId),
     repository.getFastClientFacts({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,timeoutMs:config.databaseQueryTimeoutMs})
    ]),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_context_timeout',message:'A composição de mercado excedeu o tempo seguro.',signal:requestController.signal})
    latency.end('DATABASE')
@@ -874,8 +890,8 @@ async function handleApi(request,response,url){
   const survey=await repository.integrateSurvey(integrateMatch[1],identity?.id);repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email});invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email});await accessRepository.recordUsage(identity,{eventType:'survey_integrated',page:'questionnaire'});return json(response,200,{saved:true,status:survey.status})
  }
  if(url.pathname==='/api/intelligence'&&request.method==='GET'){
-  const intelligence=await repository.getIntelligence(identity?.id,{role:identity?.role||'consultant'})
-  repository.listAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id}).catch(error=>observe('val.producer_index.preload',{outcome:'error',errorCode:error?.code||'producer_index_preload_failed'}))
+  const intelligence=await repository.getIntelligence(identity?.id||identity?.email,{role:identity?.role||'consultant'})
+  repository.listAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email}).catch(error=>observe('val.producer_index.preload',{outcome:'error',errorCode:error?.code||'producer_index_preload_failed'}))
   return json(response,200,intelligence)
  }
  if(url.pathname==='/api/visits'&&request.method==='POST'){
@@ -988,7 +1004,7 @@ async function handleApi(request,response,url){
   const clientId=decodeURIComponent(contextMatch[1]);const context=await repository.saveTechnicalContext(clientId,await body(request),identity?.id);invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId});await accessRepository.recordUsage(identity,{eventType:'memory_saved',page:'client360',entityType:'client',entityId:clientId});return json(response,200,{saved:true,context})
  }
  const overviewMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/overview$/)
- if(overviewMatch&&request.method==='GET')return json(response,200,await repository.getClientOverview(decodeURIComponent(overviewMatch[1]),identity?.id))
+ if(overviewMatch&&request.method==='GET')return json(response,200,await repository.getClientOverview(decodeURIComponent(overviewMatch[1]),identity?.id||identity?.email))
  if(url.pathname==='/api/intelligence/imports'&&request.method==='POST'){
   const payload=await body(request);const rows=Array.isArray(payload.rows)?payload.rows.slice(0,5000):[];const mapping=payload.mapping||{};if(!rows.length||!mapping.client||!payload.summary)return json(response,400,{error:'Importação inválida ou sem linhas para validação no servidor.'})
   const clients=buildCommercialIntelligence(rows,mapping);const learned=summarizeLearning(clients,rows.length,clean(payload.summary.fileName)||'importação comercial');const summary={...learned,id:randomUUID(),rawRowCount:rows.length,rawRowsSent:rows.length,truncated:Boolean(payload.summary.truncated)}
