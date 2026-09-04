@@ -30,15 +30,25 @@ const cleanEvidence=(value,key,stage)=>{
  return {type:value.type,from:PIPELINE_STAGES.includes(value.from)?value.from:'Diagnóstico',to:stage,at:String(value.at||'').slice(0,40),candidateKey:key}
 }
 
+// Oportunidade confirmada num relato de visita (candidateKey "visit-report:...") e um registro
+// canonico do servidor, nao um cache de etapa: entra no pipeline como item proprio, com a etapa
+// que o servidor gravou. Antes era descartada e as telas de Oportunidades e Cliente 360 divergiam.
+const visitReportItem=item=>String(item?.candidateKey||'').startsWith('visit-report:')
 export function reconcilePipeline(clients=[],cachedItems=[]){
- const cacheByClient=new Map((Array.isArray(cachedItems)?cachedItems:[]).filter(item=>item&&item.clientId).map(item=>[String(item.clientId),item]))
+ const persisted=(Array.isArray(cachedItems)?cachedItems:[]).filter(item=>item&&item.clientId)
+ const cacheByClient=new Map(persisted.filter(item=>!visitReportItem(item)).map(item=>[String(item.clientId),item]))
+ const reported=new Map();for(const item of persisted.filter(visitReportItem)){const list=reported.get(String(item.clientId))||[];list.push(item);reported.set(String(item.clientId),list)}
  return (Array.isArray(clients)?clients:[]).flatMap(client=>{
-  const candidate=resolveOpportunityCandidate(client);if(!candidate)return []
+  const fromVisits=(reported.get(String(client.id))||[]).map(item=>{
+   const stage=PIPELINE_STAGES.includes(item.stage)?item.stage:'Diagnóstico'
+   return {id:String(item.id||`o-${client.id}:${item.candidateKey}`),clientId:client.id,title:String(item.title||item.category||'Oportunidade registrada na visita'),value:Number.isFinite(Number(item.value??item.estimatedValue))?Number(item.value??item.estimatedValue):currentValue(client),source:String(item.source||'visit_report'),candidateKey:String(item.candidateKey),stage,stageProgress:stageProgress[stage]}
+  })
+  const candidate=resolveOpportunityCandidate(client);if(!candidate)return fromVisits
   const key=candidateKey(candidate);const cached=cacheByClient.get(String(client.id))
   const cachedStage=PIPELINE_STAGES.includes(cached?.stage)?cached.stage:'Diagnóstico'
   const evidence=cleanEvidence(cached?.stageEvidence,key,cachedStage)
   const stage=evidence?cachedStage:'Diagnóstico'
-  return [{id:`o-${client.id}`,clientId:client.id,title:candidate.title,value:currentValue(client),source:candidate.source,candidateKey:key,stage,stageProgress:stageProgress[stage],...(evidence?{stageEvidence:evidence}:{})}]
+  return [{id:`o-${client.id}`,clientId:client.id,title:candidate.title,value:currentValue(client),source:candidate.source,candidateKey:key,stage,stageProgress:stageProgress[stage],...(evidence?{stageEvidence:evidence}:{})},...fromVisits]
  })
 }
 

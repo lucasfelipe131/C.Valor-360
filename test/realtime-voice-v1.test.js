@@ -213,7 +213,8 @@ test('mudança de epoch ou domínio invalida a continuação da sessão realtime
   runtimeConfig,client:{realtime:{clientSecrets:{create:async()=>({value:'ek_epoch',expires_at:1,session:{id:'sess_epoch'}})} }},repository:{getClientContext:async()=>contextFor({contextEpoch:4,domain:'PROFILE'})},
   conversationSessions:{
    ensure:()=>stateFor({contextEpoch:4,domain:'PROFILE'}),
-   advance:scope=>{advances++;assert.equal(scope.contextEpoch,4);return {...stateFor({contextEpoch:5,domain:'CREDIT'}),conversation_turns:[{role:'user',text:'E o crédito?'}]}}
+   // A escrita nao carrega o epoch antigo: com o store real, exigir epoch 4 rejeitaria o proprio avanco para 5.
+   advance:scope=>{advances++;assert.equal(scope.contextEpoch,undefined);assert.equal(scope.conversationId,'thread-a');return {...stateFor({contextEpoch:5,domain:'CREDIT'}),conversation_turns:[{role:'user',text:'E o crédito?'}]}}
   },costStore:createInMemoryRealtimeCostStore()
  })
  const session=await service.createSession({identity,input:{clientId,conversationId:'thread-a'}})

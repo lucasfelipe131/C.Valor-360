@@ -4,7 +4,7 @@ import {valContextDomains,valContextSelectorVersion} from '../decision-copilot/c
 import {buildRealtimeValContext,buildRealtimeValInstructions,realtimeValTools} from './context.js'
 import {estimateRealtimeTranscriptionCost,estimateRealtimeVoiceCost,REALTIME_VOICE_MODEL} from './cost-control.js'
 
-const voiceError=(message,code,statusCode=400)=>Object.assign(new Error(message),{code,statusCode})
+const voiceError=(message,code,statusCode=400)=>Object.assign(new Error(message),{code,statusCode,exposeMessage:true})
 const clean=(value,max=180)=>String(value??'').replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,max)
 const exactEpoch=value=>Number.isSafeInteger(value)&&value>=0
 const domainOf=value=>{const domain=clean(value,40).toUpperCase();return valContextDomains.includes(domain)?domain:'GENERAL'}
@@ -112,8 +112,12 @@ export function createRealtimeVoiceService({runtimeConfig,client,repository,conv
    // fonte de um follow-up determinístico.
    // `null` herdaria o active_object anterior; `false` é o sentinela explícito
    // que o normalizador converte em ausência de objeto ao registrar este turno.
-   const state=assertConversationScope(conversationSessions.advance(turnScope,{message:userTranscript,inputModality:'voice',responseMode:'audio',conversationMode:true,intent:'REALTIME_CONVERSATION',client:session.client,activeContext:false}),{tenantId:session.tenantId,ownerId:session.ownerId,conversationId:session.conversationId,clientId:session.clientId})
-   const scopeChanged=state.context_epoch!==session.contextEpoch||domainOf(state.current_domain)!==session.contextDomain
+   // A gravacao nao pode exigir o epoch antigo: uma mudanca forte de dominio incrementa o epoch dentro de
+   // advance e o store rejeitava a propria escrita (conversation_epoch_scope_mismatch) em vez de sinalizar
+   // reconnectRequired. A leitura acima (ensure) ja validou o epoch da sessao.
+   const {contextEpoch:sessionEpoch,...writeScope}=turnScope
+   const state=assertConversationScope(conversationSessions.advance(writeScope,{message:userTranscript,inputModality:'voice',responseMode:'audio',conversationMode:true,intent:'REALTIME_CONVERSATION',client:session.client,activeContext:false}),{tenantId:session.tenantId,ownerId:session.ownerId,conversationId:session.conversationId,clientId:session.clientId})
+   const scopeChanged=state.context_epoch!==sessionEpoch||domainOf(state.current_domain)!==session.contextDomain
    if(scopeChanged)sessions.set(String(sessionId),{...session,scopeChanged:true})
    logger({event:'val.realtime_voice.turn_recorded',sessionId,tenantId:identity.tenantId,ownerId:identity.id,model})
    return {contractVersion:'val.realtime_voice.turn.v1',accepted:true,persistenceMode:'NONE',persistentMemoryUnchanged:true,conversationId:state.conversation_id,turnCount:state.conversation_turns.length,assistantGrounding:'UNVERIFIED_BROWSER_TRANSCRIPT',followUpEligible:false,reconnectRequired:scopeChanged,contentFreeAudit:true}

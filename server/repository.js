@@ -120,7 +120,8 @@ const parsedDate=value=>{
 }
 const parseDate=(value,fallback)=>parsedDate(value)||parsedDate(fallback)
 const outcome=value=>/perd|cancel|recus|desist/i.test(String(value||''))?'lost':/ganh|fech|conclu|fatur|vend|aprov/i.test(String(value||''))?'won':/abert|andament|negocia|propost|pendente|\bopen\b/i.test(String(value||''))?'open':null
-const serviceError=message=>Object.assign(new Error(message),{statusCode:503})
+// Mensagem de servico escrita para o consultor ('O PostgreSQL e obrigatorio para...'): chega ao usuario em vez da mascara generica de 5xx.
+const serviceError=message=>Object.assign(new Error(message),{statusCode:503,exposeMessage:true})
 const domainError=(message,statusCode,code)=>Object.assign(new Error(message),{statusCode,...(code?{code}:{})})
 const recommendationConfidence=value=>{
   if(value===undefined||value===null||value==='')return null

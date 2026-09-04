@@ -72,7 +72,13 @@ function readStore(){try{return JSON.parse(readFileSync(storePath,'utf8'))}catch
 function saveStore(store){const temporary=`${storePath}.tmp`;writeFileSync(temporary,JSON.stringify(store,null,2));renameSync(temporary,storePath)}
 function json(response,status,payload){response.writeHead(status,{...securityHeaders,'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify(payload))}
 function rawBody(request){return new Promise((resolve,reject)=>{let raw='';let size=0;let settled=false;const tooLarge=()=>Object.assign(new Error('Arquivo ou requisição muito grande.'),{statusCode:413,code:'request_too_large'});const fail=error=>{if(settled)return;settled=true;raw='';reject(error)};const drain=()=>{request.off('data',onData);request.resume()};const onData=chunk=>{size+=chunk.length;if(size>config.maxBodyBytes){drain();fail(tooLarge());return}raw+=chunk};const declared=Number(request.headers['content-length']);request.on('end',()=>{if(settled)return;settled=true;resolve(raw)});request.on('error',fail);if(Number.isFinite(declared)&&declared>config.maxBodyBytes){drain();fail(tooLarge());return}request.on('data',onData)})}
-async function body(request){const raw=await rawBody(request);try{return raw?JSON.parse(raw):{}}catch{throw new Error('Conteúdo inválido.')}}
+async function body(request){
+ const raw=await rawBody(request);let parsed
+ try{parsed=raw?JSON.parse(raw):{}}catch{throw Object.assign(new Error('Conteúdo inválido.'),{statusCode:400,code:'invalid_body'})}
+ // JSON valido que nao e objeto (null, lista, numero) virava TypeError com a mensagem interna exposta ao usuario.
+ if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw Object.assign(new Error('Conteúdo inválido: envie um objeto JSON.'),{statusCode:400,code:'invalid_body'})
+ return parsed
+}
 const requestCancellationError=signal=>signal?.reason instanceof Error?signal.reason:Object.assign(new Error('A requisição foi cancelada.'),{name:'AbortError',statusCode:499,code:'val_request_cancelled',safeToRetry:true})
 const throwIfRequestAborted=signal=>{if(signal?.aborted)throw requestCancellationError(signal)}
 async function withOperationTimeout(operation,{timeoutMs,code='val_operation_timeout',message='A operação excedeu o tempo seguro.',signal}={}){
@@ -477,7 +483,7 @@ async function handleApi(request,response,url){
   throwIfRequestAborted(requestController.signal)
   const rateIdentity=identity?.id||identity?.email||requestIdentity(request)
   if(!consumeRateLimit('val',rateIdentity,config.aiRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de análises atingido. Aguarde alguns minutos.'})
-  const payload=await body(request);throwIfRequestAborted(requestController.signal);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const message=String(payload.message||payload.question||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).trim().slice(0,3000)
+  const payload=await body(request);throwIfRequestAborted(requestController.signal);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const requestedMessage=String(payload.message??payload.question??'').trim();const message=(requestedMessage||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).slice(0,3000)
   const tenantId=identity?.tenantId||config.defaultTenantId;const scopedOwnerId=identity?.id||identity?.email
   const rawClarificationSelection=payload.clarificationSelection
   let clarificationSelection=null
@@ -1043,7 +1049,7 @@ createServer((request,response)=>{
   try{if(technicalWorkspace.handle(request,response,url,await sessionIdentity(request)))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
  }
  if(url.pathname==='/live'||url.pathname==='/ready'||url.pathname==='/health'||url.pathname.startsWith('/api/')){
-  try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){const status=Number(exception.statusCode)||400;const safeMessage=status<500||exception.safeToRetry===true?exception.message:'Não foi possível processar a solicitação.';return json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception.code?{code:String(exception.code).slice(0,100)}:{}),...(exception.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{})})}
+  try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){const programmingError=exception instanceof TypeError||exception instanceof RangeError||exception instanceof ReferenceError||exception instanceof SyntaxError;const status=Number(exception.statusCode)||(programmingError?500:400);const safeMessage=status<500||exception.safeToRetry===true||exception.exposeMessage===true?exception.message:'Não foi possível processar a solicitação.';return json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception.code?{code:String(exception.code).slice(0,100)}:{}),...(exception.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{})})}
   return json(response,404,{error:'Rota não encontrada.'})
  }
  const relative=normalize(url.pathname==='/'?'index.html':url.pathname.replace(/^\/+/,''))
@@ -1064,7 +1070,7 @@ createServer((request,response)=>{
   observe('api.unhandled',{outcome:'error',errorCode:String(exception?.code||'unhandled_error')})
   if(response.headersSent){response.destroy(exception);return}
   const status=Number(exception?.statusCode)||500
-  const safeMessage=status<500||exception?.safeToRetry===true?exception?.message:'Não foi possível processar a solicitação.'
+  const safeMessage=status<500||exception?.safeToRetry===true||exception?.exposeMessage===true?exception?.message:'Não foi possível processar a solicitação.'
   json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception?.code?{code:String(exception.code).slice(0,100)}:{}),...(exception?.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{})})
  })
 }).listen(port,'0.0.0.0',()=>console.log(`VALOR 360 disponível na porta ${port}`))

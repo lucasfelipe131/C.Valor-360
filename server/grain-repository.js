@@ -1,7 +1,8 @@
 import {randomUUID} from 'node:crypto'
 import {buildGrainOpportunities,grainCatalog,summarizeGrainWorkspace} from './grain-intelligence.js'
 
-const serviceError=message=>Object.assign(new Error(message),{statusCode:503})
+// Mensagem de servico escrita para o consultor ('O PostgreSQL e obrigatorio para...'): chega ao usuario em vez da mascara generica de 5xx.
+const serviceError=message=>Object.assign(new Error(message),{statusCode:503,exposeMessage:true})
 const domainError=(message,statusCode)=>Object.assign(new Error(message),{statusCode})
 const iso=value=>value instanceof Date?value.toISOString():value||null
 const jsonb=value=>JSON.stringify(value??null)

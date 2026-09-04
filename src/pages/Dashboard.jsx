@@ -62,7 +62,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  const irt=relationships.irtKnown?relationships.irtAverage.toFixed(1):'A medir'
  const portfolioPriorities=portfolioMetrics.map(({client,metrics})=>({client,metrics,candidate:resolveOpportunityCandidate(client)})).filter(item=>item.candidate).sort((a,b)=>b.metrics.openPotential-a.metrics.openPotential).slice(0,3)
  const now=Date.now()
- const upcomingVisits=[...(visits||[])].filter(visit=>{const scheduled=scheduledAtOf(visit);return scheduled?.getTime()>=now&&!/^(realizada|cancelada)$/i.test(String(visit.status||''))}).sort((a,b)=>scheduledAtOf(a)-scheduledAtOf(b))
+ const upcomingVisits=[...(visits||[])].filter(visit=>{const scheduled=scheduledAtOf(visit);const lifecycle=String(visit.lifecycleStatus||visit.lifecycle_status||'').toUpperCase();const openLifecycle=['IN_PROGRESS','PLANNED','PREPARED'].includes(lifecycle);return (scheduled?.getTime()>=now||openLifecycle)&&!/^(realizada|cancelada)$/i.test(String(visit.status||''))}).sort((a,b)=>scheduledAtOf(a)-scheduledAtOf(b))
  const cacheKey=opportunityCacheKey(currentUser?.storageScope)
  const cachedItems=cacheKey?parseOpportunityCache(localStorage.getItem(cacheKey)):[]
  const pipelineItems=reconcilePipeline(clients,[...cachedItems,...opportunities])

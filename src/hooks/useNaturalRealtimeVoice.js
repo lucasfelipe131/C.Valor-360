@@ -39,7 +39,7 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
  activeScopeRef.current={scopeKey,clientId:String(clientId),producerId:String(clientId),conversationId:String(conversationId),contextEpoch:currentEpoch}
  const scopeKeyRef=useRef(scopeKey),scopeReconnectPending=useRef(null)
  const callbacks=useRef({onUserTranscript,onAssistantTranscript,onToolCall,onMemoryReview,onMetrics,onError,onStateChange})
- const marks=useRef(null),pendingUser=useRef(''),assistantBuffers=useRef(new Map()),thinkingWatchdog=useRef(null)
+ const marks=useRef(null),pendingUser=useRef(''),assistantBuffers=useRef(new Map()),thinkingWatchdog=useRef(null),pendingReconnect=useRef(null)
  callbacks.current={onUserTranscript,onAssistantTranscript,onToolCall,onMemoryReview,onMetrics,onError,onStateChange}
  const capabilities=useMemo(()=>realtimeWebRTCCapabilities(),[])
  const update=useCallback(next=>setMachine(current=>({...current,...(typeof next==='function'?next(current):next)})),[])
@@ -106,7 +106,9 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   if(!eventIsCurrent(eventScope))return null
   const result=await postSession('turns',{userTranscript,assistantTranscript},{sessionId:eventScope.sessionId}).catch(()=>null)
   if(!eventIsCurrent(eventScope))return null
-  if(result?.reconnectRequired)await requestReconnect(eventScope.scopeKey)
+  // O turno e reportado quando o TEXTO da resposta termina; reconectar aqui fechava o RTCPeerConnection
+  // com o audio ainda tocando. Com a VAL falando, a reconexao espera o fim da reproducao.
+  if(result?.reconnectRequired){if(machineRef.current.status===STATES.SPEAKING)pendingReconnect.current=eventScope.scopeKey;else await requestReconnect(eventScope.scopeKey)}
   return result
  },[eventIsCurrent,postSession,requestReconnect])
  const handleTool=useCallback(async(event,eventScope)=>{
@@ -144,12 +146,24 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
    const key=event.response_id||event.item_id||'active';const transcript=safeText(event.transcript||assistantBuffers.current.get(key));assistantBuffers.current.delete(key);if(transcript&&eventIsCurrent(eventScope)){callbacks.current.onAssistantTranscript?.(transcript,eventScope);if(pendingUser.current)reportTurn(pendingUser.current,transcript,eventScope);pendingUser.current=''}return
   }
   if(type==='output_audio_buffer.started'){if(marks.current&&!Number.isFinite(marks.current.firstAudio))marks.current.firstAudio=now();clearThinkingWatchdog();update({status:STATES.SPEAKING,microphoneActive:true});return}
-  if(type==='output_audio_buffer.stopped'){update({status:STATES.LISTENING,microphoneActive:true});return}
+  if(type==='output_audio_buffer.stopped'){update({status:STATES.LISTENING,microphoneActive:true});if(pendingReconnect.current){const scopeKeyToReconnect=pendingReconnect.current;pendingReconnect.current=null;await requestReconnect(scopeKeyToReconnect)}return}
   if(type==='response.function_call_arguments.done'){await handleTool(event,eventScope);return}
   if(type==='response.done'){
    clearThinkingWatchdog()
+   const audioStarted=Number.isFinite(marks.current?.firstAudio)
    if(marks.current){marks.current.responseEnd=now();callbacks.current.onMetrics?.(realtimeLatencySample(marks.current,event.response?.status==='completed'?'SUCCESS':event.response?.status==='cancelled'?'CANCELLED':'ERROR'));marks.current=null}
-   await reportUsage(event,eventScope).catch(()=>null);return
+   await reportUsage(event,eventScope).catch(()=>null)
+   // Resposta que terminou sem audio (failed/incomplete) deixava a VAL presa em "Pensando" sem erro:
+   // o watchdog ja foi desarmado e nenhum evento de audio vai chegar. Volta a ouvir e informa o motivo.
+   const responseStatus=String(event.response?.status||'')
+   if(!audioStarted&&responseStatus&&responseStatus!=='completed'&&responseStatus!=='cancelled'&&eventIsCurrent(eventScope)){
+    const detail=safeText(event.response?.status_details?.error?.message||event.response?.status_details?.reason||'',300)
+    const message=detail?`A VAL não conseguiu responder agora (${detail}). Pode repetir a pergunta.`:'A VAL não conseguiu responder agora. Pode repetir a pergunta.'
+    update({status:STATES.LISTENING,microphoneActive:true,error:message})
+    callbacks.current.onError?.(Object.assign(new Error(message),{code:`realtime_response_${responseStatus}`}))
+   }
+   if(pendingReconnect.current&&!audioStarted){const scopeKeyToReconnect=pendingReconnect.current;pendingReconnect.current=null;await requestReconnect(scopeKeyToReconnect)}
+   return
   }
   if(type==='error'){clearThinkingWatchdog();await fail(Object.assign(new Error(event.error?.message||'O provider realtime encerrou a sessão.'),{code:event.error?.code||'realtime_provider_error'}),{eventScope})}
  },[armThinkingWatchdog,clearThinkingWatchdog,eventIsCurrent,fail,handleTool,postSession,reportTurn,reportUsage,update])
