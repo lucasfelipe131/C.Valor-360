@@ -16,16 +16,31 @@ const captureNumber=(source,pattern)=>{const match=source.match(new RegExp(Strin
 // Numero seguido de um sufixo ("300 mil plantas/ha", "45 cm"); "mil" multiplica por 1000.
 const numberBefore=(source,suffix)=>{const match=source.match(new RegExp(String.raw`${numberPattern}(\s*mil\b)?\s*${suffix}`,'i'));const value=localNumber(match?.[1]);return value===undefined?undefined:match?.[2]?value*1000:value}
 const captureText=(source,pattern)=>clean(source.match(pattern)?.[1],180)||undefined
+// Percentual escrito antes da palavra-chave ("com 5% de desconto", "2% de patinagem", "90% de
+// eficiencia"): antes era ignorado em silencio e o campo recebia o default.
+const percentBefore=(source,keyword)=>localNumber(source.match(new RegExp(String.raw`${numberPattern}\s*%\s*(?:de|da|do|em|na|no)?\s*${keyword}`,'i'))?.[1])
+const capturePercent=(source,keyword)=>captureNumber(source,keyword)??percentBefore(source,keyword)
+// Espacamento em metros ("0,45 m") era lido como 0,45 cm e a regulagem saia 100x errada. Sem
+// unidade, valor abaixo de 3 so pode ser metro.
+const spacingCmFrom=source=>{
+ const match=source.match(new RegExp(String.raw`espacamento(?:\s+entre\s+linhas)?\s*(?:de|=|:)?\s*${numberPattern}\s*(cm|centimetros?|metros?|m)?\b`,'i'))
+ const value=localNumber(match?.[1]);if(value===undefined)return undefined
+ const unit=String(match?.[2]||'').toLowerCase()
+ if(unit.startsWith('m'))return value*100
+ if(!unit&&value<3)return value*100
+ return value
+}
 
 export function identifyAgronomicCalculator(message=''){
  const source=normalize(message)
  const matchers=[
   ['zoneamento',/\b(?:zarc|zoneamento)\b/],['reposicao',/\b(?:extracao|exportacao|reposicao)\b.*\b(?:nutrient|npk|adub|fertiliz)|\b(?:nutrient|npk|adub|fertiliz).*\b(?:extracao|exportacao|reposicao)\b/],
   ['semeadora',/\b(?:regulagem|regular)\b.*\bsemeador|\bsemeador\w*\b.*\b(?:regulagem|regular|patinagem)\b/],
-  ['sementes',/\b(?:demanda|quantidade|necessidade|quantas?)\b.*\bsemente|\bsemente\w*\b.*\b(?:demanda|quantidade|necessidade|embalagens?)\b/],
   ['populacao',/\bpopulacao\b.*\b(?:ideal|plantas?|cultivar|recomenda)|\b(?:ideal|recomenda)\w*\b.*\bpopulacao\b/],
   ['colheita',/\b(?:previsao|estimar?|estimativa|quando)\b.*\bcolheit|\bcolheit\w*\b.*\b(?:previsao|estimar?|estimativa|quando)\b/],
+  // Cotacao antes de sementes: "cotacao ... semente de soja, quantidade 100 sacos" e cotacao, nao demanda.
   ['cotacao',/\b(?:cotacao|orcamento|proposta)\b.*\b(?:insumo|produto|desconto|sacos?|kg|litros?)\b/],
+  ['sementes',/\b(?:demanda|quantidade|necessidade|quantas?)\b.*\bsemente|\bsemente\w*\b.*\b(?:demanda|quantidade|necessidade|embalagens?)\b/],
   ['pulverizacao',/\b(?:pulveriz|calda|tanques?)\w*\b/],['fertilizante',/\b(?:fertilizante|adubo|pontos?\s+npk|fornecimento)\b/],
  ]
  return matchers.find(([,pattern])=>pattern.test(source))?.[0]||null
@@ -67,9 +82,9 @@ function cultivarFrom(source){
 
 function parsePlanter(source){
  return {
-  populationPlantsHa:captureNumber(source,'populacao(?:\\s+(?:final|alvo))?'),spacingCm:captureNumber(source,'espacamento'),
-  germinationPercent:captureNumber(source,'germinacao'),fieldSurvivalPercent:captureNumber(source,'(?:sobrevivencia|emergencia)(?:\\s+de\\s+campo)?'),
-  slippagePercent:captureNumber(source,'patinagem')??0,bagSeeds:captureNumber(source,'(?:sementes\\s+por\\s+)?embalagem'),
+  populationPlantsHa:captureNumber(source,'populacao(?:\\s+(?:final|alvo))?'),spacingCm:spacingCmFrom(source),
+  germinationPercent:capturePercent(source,'germinacao'),fieldSurvivalPercent:capturePercent(source,'(?:sobrevivencia|emergencia)(?:\\s+de\\s+campo)?'),
+  slippagePercent:capturePercent(source,'patinagem')??0,bagSeeds:captureNumber(source,'(?:sementes\\s+por\\s+)?embalagem'),
   testDistanceM:captureNumber(source,'(?:distancia\\s+de\\s+teste|teste)'),testRows:captureNumber(source,'linhas?')??localNumber(source.match(new RegExp(`${numberPattern}\\s*linhas?\\b`,'i'))?.[1]),
   wheelCircumferenceM:captureNumber(source,'circunferencia(?:\\s+da)?\\s+roda'),
  }
@@ -79,12 +94,12 @@ function parsePopulation(source){
  const location=locationFrom(source)
  return {crop:cropFrom(source),cultivar:cultivarFrom(source),plantingDate:dateFrom(source),...location,
   environment:/\brestritiv[oa]\b/.test(source)?'restritivo':/\balto potencial\b|\bambiente alto\b/.test(source)?'alto':/\bambiente medio\b|\bmedio potencial\b/.test(source)?'medio':undefined,
-  yieldGapPercent:captureNumber(source,'yield gap'),germinationPercent:captureNumber(source,'germinacao'),emergencePercent:captureNumber(source,'emergencia'),spacingCm:captureNumber(source,'espacamento'),
+  yieldGapPercent:capturePercent(source,'yield gap'),germinationPercent:capturePercent(source,'germinacao'),emergencePercent:capturePercent(source,'emergencia'),spacingCm:spacingCmFrom(source),
  }
 }
 
 function parseSeeds(source){
- return {areaHa:captureNumber(source,'area'),populationSeedsHa:captureNumber(source,'populacao(?:\\s+de\\s+semeadura)?'),marginPercent:captureNumber(source,'margem(?:\\s+tecnica)?')??0,bagSeeds:captureNumber(source,'(?:sementes\\s+por\\s+)?embalagem')}
+ return {areaHa:captureNumber(source,'area'),populationSeedsHa:captureNumber(source,'populacao(?:\\s+de\\s+semeadura)?'),marginPercent:capturePercent(source,'margem(?:\\s+tecnica)?')??0,bagSeeds:captureNumber(source,'(?:sementes\\s+por\\s+)?embalagem')}
 }
 
 function parseHarvest(source){
@@ -94,17 +109,23 @@ function parseHarvest(source){
 
 function parseZarc(source){
  const location=locationFrom(source)
- const soilMatch=source.match(/\b(?:solo\s*(?:=|:)?\s*)?(ad)?\s*(\d{1,2})\b/i)
+ // O codigo de solo exige o prefixo "solo"/"AD": sem ele, o dia do plantio ("15/11") ou o numero de
+ // linhas virava o solo e a consulta oficial devolvia NO_DATA.
+ const soilMatch=source.match(/\b(?:tipo\s+de\s+)?solo\s*(?:=|:)?\s*(ad)?\s*(\d{1,2})\b/i)||source.match(/\b(ad)\s*(\d{1,2})\b/i)
  const soilSource=soilMatch?.[1]?String(10+Number(soilMatch[2])):soilMatch?.[2]
- const roman=source.match(/\bgrupo\s*(i{1,3}|iv|v|vi)\b/i)?.[1]?.toUpperCase()
+ const roman=source.match(/\bgrupo\s*(?:=|:)?\s*(i{1,3}|iv|v|vi)\b/i)?.[1]?.toUpperCase()
  const groups={I:'20',II:'21',III:'22',IV:'24',V:'25',VI:'26'}
- const cycle=source.match(/\b(?:grupo|ciclo)\s*(?:=|:)?\s*(2[0-6])\b/i)?.[1]||groups[roman]
+ const arabicGroup={1:'20',2:'21',3:'22',4:'24',5:'25',6:'26'}[source.match(/\bgrupo\s*(?:=|:)?\s*([1-6])\b/i)?.[1]]
+ const cycle=source.match(/\b(?:grupo|ciclo)\s*(?:=|:)?\s*(2[0-6])\b/i)?.[1]||groups[roman]||arabicGroup
  return {...location,crop:cropFrom(source,{zarc:true}),soil:soilSource,cycle}
 }
 
 function parseSpraying(source){
- const unit=source.match(/\b(ml\/ha|l\/ha|kg\/ha|g\/ha)\b/i)?.[1]
- const dose=captureNumber(source,'dose')
+ // A unidade da dose e a que vem logo apos o numero da dose; a primeira unidade da frase costuma ser
+ // o volume de calda ("100 L/ha") e transformava doses em mL/ha, g/ha e kg/ha em L/ha.
+ const doseMatch=source.match(new RegExp(String.raw`dose\s*(?:de|=|:)?\s*${numberPattern}\s*(ml\/ha|l\/ha|kg\/ha|g\/ha)?`,'i'))
+ const unit=doseMatch?.[2]
+ const dose=localNumber(doseMatch?.[1])
  const product=captureText(source,/\bproduto\s*(?:=|:)?\s*([a-z0-9 ._/-]{1,100}?)(?=\s*,|\s+dose\b|$)/i)
  const canonicalUnit=unit?.toLowerCase()==='ml/ha'?'mL/ha':unit?.toLowerCase()==='l/ha'?'L/ha':unit?.toLowerCase()==='kg/ha'?'kg/ha':unit?.toLowerCase()==='g/ha'?'g/ha':'L/ha'
  return {areaHa:captureNumber(source,'area'),sprayVolumeLHa:captureNumber(source,'(?:volume(?:\\s+de\\s+calda)?|calda)'),tankVolumeL:captureNumber(source,'(?:volume(?:\\s+do)?\\s+tanque|tanque)'),items:product&&dose?[{product,dose,unit:canonicalUnit}]:[]}
@@ -116,20 +137,24 @@ function parseFertilizer(source){
  const price=captureNumber(source,'preco')
  const priceUnit=source.match(/\b(?:r\$\s*)?\/(t|kg|saco)\b/i)?.[1]?.toLowerCase()||(/\bpor tonelada\b/.test(source)?'t':/\bpor saco\b/.test(source)?'saco':'kg')
  const pricePerKg=price===undefined?undefined:priceUnit==='t'?price/1000:priceUnit==='saco'?price/Math.max(1,bagKg||0):price
- return {areaHa:captureNumber(source,'area'),rateKgHa:captureNumber(source,'(?:dose(?:\\s+planejada)?|taxa)'),bagKg,pricePerKg,efficiencyPercent:captureNumber(source,'eficiencia')??100,
+ return {areaHa:captureNumber(source,'area'),rateKgHa:captureNumber(source,'(?:dose(?:\\s+planejada)?|taxa)'),bagKg,pricePerKg,efficiencyPercent:capturePercent(source,'eficiencia')??100,
   guarantees:npk?{N:Number(npk[1]),P2O5:Number(npk[2]),K2O:Number(npk[3]),S:captureNumber(source,'enxofre')??0}:{N:captureNumber(source,'garantia\\s+n'),P2O5:captureNumber(source,'garantia\\s+p(?:2o5)?'),K2O:captureNumber(source,'garantia\\s+k(?:2o)?'),S:captureNumber(source,'garantia\\s+s')},
  }
 }
 
 function parseNutrientRemoval(source){
- const yieldMatch=source.match(new RegExp(`(?:produtividade|producao)\\s*(?:de|=|:)?\\s*${numberPattern}\\s*(sc\/ha|kg\/ha|t\/ha)`,'i'))
- return {crop:cropFrom(source),yieldValue:localNumber(yieldMatch?.[1]),yieldUnit:yieldMatch?.[2],basis:/\bextracao\b/.test(source)?'extraction':'export',credits:{},soilAdjustments:{},efficiencies:{N:70,P2O5:85,K2O:90,S:80}}
+ // "produtividade esperada de 70 sc/ha", "70 sacas por hectare", "meta 150 sc/ha" sao formas correntes.
+ const yieldMatch=source.match(new RegExp(String.raw`(?:produtividade|producao|rendimento|meta)(?:\s+(?:esperad[ao]|estimad[ao]|prevista|alvo|media|de\s+colheita))?\s*(?:de|=|:)?\s*${numberPattern}\s*(sc\/ha|kg\/ha|t\/ha|sacas?\s*(?:\/|por)\s*(?:ha|hectare)|sc\b|sacas?\b)`,'i'))
+ const yieldUnit=yieldMatch?(/^(?:sc|sacas?)/i.test(yieldMatch[2])?'sc/ha':yieldMatch[2].toLowerCase()):undefined
+ return {crop:cropFrom(source),yieldValue:localNumber(yieldMatch?.[1]),yieldUnit,basis:/\bextracao\b/.test(source)?'extraction':'export',credits:{},soilAdjustments:{},efficiencies:{N:70,P2O5:85,K2O:90,S:80}}
 }
 
 function parseQuote(source){
  const quantity=captureNumber(source,'quantidade')??localNumber(source.match(new RegExp(`${numberPattern}\\s*(?:sacos?|unidades?|kg|l|t)\\b`,'i'))?.[1])
  const price=captureNumber(source,'(?:preco(?:\\s+de\\s+sistema)?|valor(?:\\s+unitario)?)')
- const discount=captureNumber(source,'desconto')??0
+ // "desconto de R$ 10" e valor por unidade, nao percentual: convertido sobre o preco de sistema.
+ const absoluteDiscount=localNumber(source.match(new RegExp(String.raw`desconto\s*(?:de|=|:)?\s*r\$\s*${numberPattern}`,'i'))?.[1])??localNumber(source.match(new RegExp(String.raw`desconto\s*(?:de|=|:)?\s*${numberPattern}\s*reais`,'i'))?.[1])
+ const discount=absoluteDiscount!==undefined?(price>0?Number(((absoluteDiscount/price)*100).toFixed(4)):0):(capturePercent(source,'desconto')??0)
  const product=captureText(source,/\bproduto\s*(?:=|:)?\s*([a-z0-9 ._/-]{1,100}?)(?=\s*,|\s+(?:quantidade|preco|valor|desconto)\b|$)/i)||'Item informado'
  const unit=source.match(/\b(sacos?|unidades?|kg|l|t)\b/i)?.[1]||'un.'
  return {items:quantity&&price?[{product,quantity,unit,systemPrice:price,discountPercent:discount}]:[]}
@@ -156,7 +181,8 @@ export function parseAgronomicCalculatorRequest(message='',calculator=identifyAg
 function plantsPerMeter(message=''){
  const source=normalize(message)
  const population=captureNumber(source,String.raw`populacao(?:\s+(?:final|alvo))?`)??numberBefore(source,String.raw`plantas\s*(?:por|\/)\s*(?:hectare|ha)\b`)
- const spacing=captureNumber(source,'espacamento')??numberBefore(source,String.raw`cm\b`)
+ const spacingMeters=numberBefore(source,String.raw`(?:m|metros?)\b`)
+ const spacing=spacingCmFrom(source)??numberBefore(source,String.raw`cm\b`)??(spacingMeters!==undefined&&spacingMeters<3?spacingMeters*100:undefined)
  if(!(population>0)||!(spacing>0))return null
  const canonical=calculatePlanter({populationPlantsHa:population,spacingCm:spacing,germinationPercent:100,fieldSurvivalPercent:100})
  const linearMetersHa=Number((10000/(spacing/100)).toFixed(2))
@@ -180,7 +206,10 @@ const summaryFor=(key,output)=>{
  if(key==='zoneamento')return `ZARC ${output.safra}: ${output.cropLabel} em ${output.municipality}/${output.uf}, fonte oficial MAPA consultada em ${output.updatedAt}.`
  if(key==='pulverizacao')return `Operação calculada: ${output.totalSprayL.toLocaleString('pt-BR')} L de calda em ${output.tankCount} tanque(s).`
  if(key==='fertilizante')return `Fertilizante calculado: ${output.pointsNpkHa.toLocaleString('pt-BR',{maximumFractionDigits:1})} pontos NPK/ha e ${output.totalKg.toLocaleString('pt-BR')} kg no total.`
- if(key==='reposicao')return `Extração/exportação calculada para ${output.crop}: ${output.yieldTon.toLocaleString('pt-BR',{maximumFractionDigits:2})} t/ha, com coeficientes e fonte técnica preservados.`
+ if(key==='reposicao'){
+  const targets=output.fertilizerTargets||{};const nutrients=['N','P2O5','K2O','S'].filter(nutrient=>Number.isFinite(Number(targets[nutrient]))).map(nutrient=>`${nutrient} ${Number(targets[nutrient]).toLocaleString('pt-BR',{maximumFractionDigits:1})}`).join(', ')
+  return `Extração/exportação calculada para ${output.crop}: ${output.yieldTon.toLocaleString('pt-BR',{maximumFractionDigits:2})} t/ha (base ${output.basis==='extraction'?'extração':'exportação'}); necessidade em kg/ha: ${nutrients||'não calculada'}. Coeficientes e fonte técnica preservados.`
+ }
  return `Cotação calculada: total de ${output.total.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}, desconto de ${output.discount.toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}.`
 }
 
