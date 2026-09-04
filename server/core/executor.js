@@ -44,6 +44,9 @@ async function executeWithDeadline({handler,input,timeoutMs,moduleId,parentSigna
   }
   let timer
   const timeoutError=new CoreExecutionError(`O módulo obrigatório ${moduleId} excedeu o limite de execução.`,'core_module_timeout',504)
+  // Estouro de tempo nao e falha interna: o cliente pode repetir a pergunta e o servidor pode
+  // mostrar a mensagem real em vez de 'Nao foi possivel processar a solicitacao.'.
+  timeoutError.safeToRetry=true
   const timeout=new Promise((resolve,reject)=>{timer=setTimeout(()=>{controller.abort(timeoutError);reject(timeoutError)},timeoutMs)})
   try{return await Promise.race([work,timeout,cancelled])}finally{clearTimeout(timer);controller.signal.removeEventListener('abort',onAbort);cleanup()}
 }

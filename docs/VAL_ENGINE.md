@@ -278,8 +278,8 @@ As duas interfaces legadas que chamam este endpoint (`ValPanel.jsx` e `ValDecisi
 
 | Etapa | Orçamento máximo |
 |---|---:|
-| deadline total do modelo conversacional | 12 s |
-| deadline do módulo obrigatório no Core | 15 s |
+| deadline total do modelo conversacional | 20 s (limitado ao que resta do orçamento do Core e da requisição) |
+| deadline do módulo obrigatório no Core | 22 s |
 | deadline absoluto do POST conversacional no servidor | 28 s |
 | timeout visível do Copilot full-screen | 30 s |
 | teto defensivo das duas interfaces legadas | 120 s |

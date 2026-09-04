@@ -740,7 +740,8 @@ export class ValEngine{
 
   async status(dbHealth){return {configured:Boolean(this.client),mode:this.client?'openai':'demonstration',database:dbHealth,models:{daily:this.config.modelDaily,strategic:this.config.modelStrategic,fast:this.config.modelFast},knowledgeBase:Boolean(this.config.knowledgeVectorStoreId),storeResponses:this.config.openaiStoreResponses}}
 
-  async answer({tenantId,ownerId,clientId,client,message,attachmentIds=[],mode='daily',requestedStage=null,signal,onProgress,contextRequest={},preloadedContext=null,finalizeRecommendation}){
+  async answer({tenantId,ownerId,clientId,client,message,attachmentIds=[],mode='daily',requestedStage=null,signal,onProgress,contextRequest={},preloadedContext=null,finalizeRecommendation,deadlineAt=null}){
+    const answerStartedAt=Date.now()
     throwIfRequestCancelled(signal)
     const hasContextEpoch=own(contextRequest,'contextEpoch')||own(contextRequest,'context_epoch')
     const requestedContextEpoch=hasContextEpoch?scopedContextEpoch(contextRequest):undefined
@@ -786,7 +787,15 @@ export class ValEngine{
     if(!this.client)advice=fallbackAdvice
     else{
       const startedAt=Date.now()
-      const modelTimeoutMs=conversationalModelTimeout(this.config)
+      // O relogio do Core (coreRequestTimeoutMs) comeca antes do trabalho pre-modelo desta engine
+      // (anexos, contexto, Biblioteca). Se o deadline do modelo nao couber no que resta, o Core dispara
+      // 504 generico antes do fallback deterministico do modelo, que e exatamente o que este catch evita.
+      const coreBudgetMs=Number(this.config?.coreRequestTimeoutMs)||0
+      const remainingCoreMs=coreBudgetMs>0?coreBudgetMs-(Date.now()-answerStartedAt)-500:Infinity
+      // Rota TOOL->DEEP: a ferramenta ja consumiu parte do orcamento total da requisicao (28s); o
+      // modelo precisa caber no que resta dela tambem, senao o AbortController do servidor dispara antes.
+      const remainingRequestMs=Number(deadlineAt)>0?Number(deadlineAt)-Date.now()-500:Infinity
+      const modelTimeoutMs=Math.max(1_000,Math.min(conversationalModelTimeout(this.config),remainingCoreMs,remainingRequestMs))
       const modelDeadline=createModelDeadline(signal,modelTimeoutMs)
       let providerStream=null
       let providerStreamAborted=false
