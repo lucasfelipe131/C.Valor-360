@@ -501,6 +501,18 @@ export function writeConversationWorkspace(storage,storageScope,{threads={},meta
  }catch{return false}
 }
 
+// Rotulo legivel do intent no cabecalho do copiloto: o codigo interno ("ASK GENERAL",
+// "CHECK OPPORTUNITY") nao e linguagem do consultor.
+const intentLabels=Object.freeze({
+ ASK_GENERAL:'Pergunta geral',ASK_CLIENT:'Sobre o produtor',ASK_AGRONOMIC:'Agronomia',ASK_MARKET:'Mercado',ASK_COMMODITY:'Mercado',
+ CHECK_WEATHER:'Clima',CHECK_LABEL:'Bula / rótulo',CHECK_OPPORTUNITY:'Oportunidade',PREPARE_VISIT:'Preparar visita',POST_VISIT:'Pós-visita',
+ REGISTER_INFORMATION:'Registro de informação',OBJECTION_HELP:'Objeção',FOLLOW_UP_HELP:'Follow-up',CALCULATE:'Cálculo',ANALYZE_SOIL:'Análise de solo',IMAGE_DIAGNOSIS:'Diagnóstico por imagem'
+})
+export function valIntentLabel(intent){
+ const key=clean(intent,60).toUpperCase()
+ if(!key)return ''
+ return intentLabels[key]||key.toLowerCase().replaceAll('_',' ').replace(/^\p{L}/u,letter=>letter.toUpperCase())
+}
 export function contextStatusLabel({client=null,context=null}={}){
  if(context?.type==='opportunity')return 'Oportunidade ativa'
  if(context?.type==='visit'||context?.type==='visit_draft')return 'Visita ativa'
