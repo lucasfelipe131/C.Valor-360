@@ -38,7 +38,14 @@ async function stop(child){
  await new Promise(resolve=>{const timer=setTimeout(()=>{child.kill('SIGKILL');resolve()},3_000);child.once('exit',()=>{clearTimeout(timer);resolve()})})
 }
 
+const DAY_MS=86_400_000
+// Datas relativas ao relogio real: fixtures com data fixa venciam a janela de frescor (180 dias para
+// compra/compromisso, valid_until do perfil) e o teste passava a falhar sozinho meses depois.
+const daysAgo=(days,hour=12)=>{const date=new Date(Date.now()-days*DAY_MS);date.setUTCHours(hour,0,0,0);return date.toISOString()}
+const daysAhead=(days,hour=12)=>{const date=new Date(Date.now()+days*DAY_MS);date.setUTCHours(hour,0,0,0);return date.toISOString()}
+const brDate=iso=>new Date(iso).toLocaleDateString('pt-BR',{timeZone:'UTC'})
 const scoped=value=>({tenantId,ownerId,...value})
+const profileAssessedAt=daysAgo(34),profileValidUntil=daysAhead(331),antonioVisitAt=daysAgo(11),carlosVisitAt=daysAgo(10)
 
 test('HTTP A-G e fast follow-up encerram antes do contexto completo e do modelo',async()=>{
  const dataRoot=await mkdtemp(join(tmpdir(),'val-routing-http-'))
@@ -52,11 +59,11 @@ test('HTTP A-G e fast follow-up encerram antes do contexto completo e do modelo'
     id:'matheus',name:'Matheus Nascimento Jaeger',primaryProfile:'Analítico',
     decisionDriver:'Compara custo por hectare e retorno antes de decidir',
     technicalPresentation:'Prefere dados objetivos e comparáveis',
-    profileUpdatedAt:'2026-08-01T12:00:00.000Z',profileValidUntil:'2027-08-01T12:00:00.000Z',
+    profileUpdatedAt:profileAssessedAt,profileValidUntil:profileValidUntil,
     profileSourceRef:'profile-matheus',
     profileEvidence:[
-     {id:'profile-matheus-q7',profile_source_ref:'profile-matheus',source_type:'producer_questionnaire',epistemic_type:'OBSERVATION',field:'decisionDriver',statement:'Compara custo por hectare e retorno antes de decidir',assessed_at:'2026-08-01T12:00:00.000Z',valid_until:'2027-08-01T12:00:00.000Z'},
-     {id:'profile-matheus-q8',profile_source_ref:'profile-matheus',source_type:'producer_questionnaire',epistemic_type:'OBSERVATION',field:'technicalPresentation',statement:'Prefere dados objetivos e comparáveis',assessed_at:'2026-08-01T12:00:00.000Z',valid_until:'2027-08-01T12:00:00.000Z'}
+     {id:'profile-matheus-q7',profile_source_ref:'profile-matheus',source_type:'producer_questionnaire',epistemic_type:'OBSERVATION',field:'decisionDriver',statement:'Compara custo por hectare e retorno antes de decidir',assessed_at:profileAssessedAt,valid_until:profileValidUntil},
+     {id:'profile-matheus-q8',profile_source_ref:'profile-matheus',source_type:'producer_questionnaire',epistemic_type:'OBSERVATION',field:'technicalPresentation',statement:'Prefere dados objetivos e comparáveis',assessed_at:profileAssessedAt,valid_until:profileValidUntil}
     ],
    }),
    scoped({id:'sem-dados',name:'Produtor Sem Dados'}),
@@ -64,18 +71,18 @@ test('HTTP A-G e fast follow-up encerram antes do contexto completo e do modelo'
    scoped({id:'joao-b',name:'João Souza'}),
   ]})],
   visits:[
-   scoped({id:'visit-antonio',clientId:'antonio',status:'Realizada',lifecycleStatus:'COMPLETED',occurredAt:'2026-08-24T12:00:00.000Z',summary:'Nutrição e preço.'}),
-   scoped({id:'visit-carlos',clientId:'carlos',status:'Realizada',lifecycleStatus:'COMPLETED',occurredAt:'2026-08-25T12:00:00.000Z',summary:'Milho.'}),
+   scoped({id:'visit-antonio',clientId:'antonio',status:'Realizada',lifecycleStatus:'COMPLETED',occurredAt:antonioVisitAt,summary:'Nutrição e preço.'}),
+   scoped({id:'visit-carlos',clientId:'carlos',status:'Realizada',lifecycleStatus:'COMPLETED',occurredAt:carlosVisitAt,summary:'Milho.'}),
   ],
   businessEvents:[
-   scoped({id:'purchase-antonio',clientId:'antonio',outcome:'won',occurredAt:'2026-08-20T12:00:00.000Z',value:185000,currency:'BRL',product:'Fertilizante X'}),
-   scoped({id:'purchase-carlos',clientId:'carlos',outcome:'won',occurredAt:'2026-08-21T12:00:00.000Z',value:92000,currency:'BRL',product:'Semente Y'}),
+   scoped({id:'purchase-antonio',clientId:'antonio',outcome:'won',occurredAt:daysAgo(15),value:185000,currency:'BRL',product:'Fertilizante X'}),
+   scoped({id:'purchase-carlos',clientId:'carlos',outcome:'won',occurredAt:daysAgo(14),value:92000,currency:'BRL',product:'Semente Y'}),
   ],
   val:{
-   commitments:[scoped({commitment_id:'commitment-antonio',client_id:'antonio',description:'Enviar proposta.',status:'OPEN',updated_at:'2026-08-25T12:00:00.000Z'})],
+   commitments:[scoped({commitment_id:'commitment-antonio',client_id:'antonio',description:'Enviar proposta.',status:'OPEN',updated_at:carlosVisitAt})],
    visitReports:[
-    scoped({visit_report_id:'report-antonio',client_id:'antonio',confirmation_status:'CONFIRMED',confirmed_at:'2026-08-24T13:00:00.000Z',objections:[{statement:'Preço acima do orçamento.'}]}),
-    scoped({visit_report_id:'report-carlos',client_id:'carlos',confirmation_status:'CONFIRMED',confirmed_at:'2026-08-25T13:00:00.000Z',objections:[{statement:'Prazo de entrega.'}]}),
+    scoped({visit_report_id:'report-antonio',client_id:'antonio',confirmation_status:'CONFIRMED',confirmed_at:daysAgo(11,13),objections:[{statement:'Preço acima do orçamento.'}]}),
+    scoped({visit_report_id:'report-carlos',client_id:'carlos',confirmation_status:'CONFIRMED',confirmed_at:daysAgo(10,13),objections:[{statement:'Prazo de entrega.'}]}),
    ],
   },
   grains:{profiles:[],intentions:[],marketSnapshots:[scoped({
@@ -116,7 +123,7 @@ test('HTTP A-G e fast follow-up encerram antes do contexto completo e do modelo'
   const lastVisit=await turn('Qual foi a última visita dele?','')
   assertFast(lastVisit)
   assert.equal(lastVisit.payload.responseMetadata.dataPath,'LATEST_VISIT')
-  assert.match(lastVisit.payload.advice.answer,/visit.*24\/08\/2026/i)
+  assert.match(lastVisit.payload.advice.answer,new RegExp(`visit.*${brDate(antonioVisitAt)}`,'i'))
   assert.notEqual(lastVisit.payload.responseMetadata.performance.latency.DATABASE,null)
   assert.equal(lastVisit.payload.responseMetadata.performance.latency.CONTEXT,null)
   assert.equal(lastVisit.payload.responseMetadata.executionBudget.entityResolutions,0)
@@ -127,7 +134,7 @@ test('HTTP A-G e fast follow-up encerram antes do contexto completo e do modelo'
   assertFast(naturalLastVisit)
   assert.equal(naturalLastVisit.payload.responseMetadata.dataPath,'LATEST_VISIT')
   assert.equal(naturalLastVisit.payload.workspaceAction??null,null)
-  assert.match(naturalLastVisit.payload.advice.answer,/visit.*24\/08\/2026/i)
+  assert.match(naturalLastVisit.payload.advice.answer,new RegExp(`visit.*${brDate(antonioVisitAt)}`,'i'))
 
   const objection=await turn('Qual foi a principal objeção?','')
   assertFast(objection)
@@ -147,8 +154,8 @@ test('HTTP A-G e fast follow-up encerram antes do contexto completo e do modelo'
   const carlosVisit=await turn('E a última visita dele?','')
   assertFast(carlosVisit)
   assert.match(carlosVisit.payload.advice.answer,/Carlos Oliveira/)
-  assert.match(carlosVisit.payload.advice.answer,/25\/08\/2026/)
-  assert.doesNotMatch(carlosVisit.payload.advice.answer,/Antônio|24\/08\/2026/)
+  assert.match(carlosVisit.payload.advice.answer,new RegExp(brDate(carlosVisitAt)))
+  assert.doesNotMatch(carlosVisit.payload.advice.answer,new RegExp(`Antônio|${brDate(antonioVisitAt)}`))
 
   const antonioCropsOverride=await turn('Quais culturas do Antônio estão cadastradas?','')
   assertFast(antonioCropsOverride)
@@ -181,7 +188,7 @@ test('HTTP A-G e fast follow-up encerram antes do contexto completo e do modelo'
 
   const afterOverrideSummary=await turn('Resume.','')
   assertFast(afterOverrideSummary)
-  assert.match(afterOverrideSummary.payload.advice.answer,/Carlos Oliveira|25\/08\/2026|Milho/i)
+  assert.match(afterOverrideSummary.payload.advice.answer,new RegExp(`Carlos Oliveira|${brDate(carlosVisitAt)}|Milho`,'i'))
   assert.doesNotMatch(afterOverrideSummary.payload.advice.answer,/Antônio|Preço acima do orçamento/)
   assert.equal(afterOverrideSummary.payload.conversationState.current_client.id,'carlos')
 

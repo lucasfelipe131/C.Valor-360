@@ -43,3 +43,14 @@ test('cache é versionado, escopado e tolera conteúdo inválido',()=>{
  assert.deepEqual(parseOpportunityCache('{inválido'),[])
  assert.deepEqual(parseOpportunityCache('{"not":"an-array"}'),[])
 })
+
+test('oportunidade confirmada no relato da visita entra no pipeline como item proprio',()=>{
+ const persisted={id:'o-visit-1',clientId:'sem-q27',candidateKey:'visit-report:report-1:venda-de-kcl',title:'Venda de KCl para safra 25/26',stage:'Diagnóstico',source:'visit_report',value:80000}
+ const withoutQ27=client('sem-q27')
+ assert.deepEqual(reconcilePipeline([withoutQ27],[persisted]).map(item=>[item.clientId,item.title,item.stage,item.candidateKey]),[['sem-q27','Venda de KCl para safra 25/26','Diagnóstico','visit-report:report-1:venda-de-kcl']])
+ const withQ27=client('com-q27',{need:'Ampliar armazenagem',status:'reported',commercial:{opportunity:'Ampliar armazenagem',opportunityProvenance:{origin:'producer_360',field:'q27',state:'reported'}}})
+ const items=reconcilePipeline([withQ27],[{...persisted,clientId:'com-q27',stage:'Proposta'}])
+ assert.deepEqual(items.map(item=>[item.title,item.stage]),[['Ampliar armazenagem','Diagnóstico'],['Venda de KCl para safra 25/26','Proposta']])
+ // Cache de etapa continua exigindo evidencia: item sem candidateKey de visita nao cria oportunidade.
+ assert.deepEqual(reconcilePipeline([client('vazio')],[{id:'o-vazio',clientId:'vazio',title:'Inventada',stage:'Proposta'}]),[])
+})

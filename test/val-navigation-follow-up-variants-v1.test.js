@@ -13,6 +13,12 @@ import {resolveValNaturalCommand} from '../src/lib/val-natural-commands.js'
 const repositoryRoot=resolve(fileURLToPath(new URL('..',import.meta.url)))
 const tenantId='00000000-0000-4000-8000-000000000001'
 const ownerId='demo@valor360.local'
+const DAY_MS=86_400_000
+// Datas relativas ao relogio real: fixtures com data fixa venciam a janela de frescor (180 dias para
+// compra/compromisso, valid_until do perfil) e o teste passava a falhar sozinho meses depois.
+const daysAgo=(days,hour=12)=>{const date=new Date(Date.now()-days*DAY_MS);date.setUTCHours(hour,0,0,0);return date.toISOString()}
+const daysAhead=(days,hour=12)=>{const date=new Date(Date.now()+days*DAY_MS);date.setUTCHours(hour,0,0,0);return date.toISOString()}
+const brDate=iso=>new Date(iso).toLocaleDateString('pt-BR',{timeZone:'UTC'})
 const scoped=value=>({tenantId,ownerId,...value})
 const antonio={id:'client-antonio',name:'Antônio Silva'}
 
@@ -70,9 +76,9 @@ async function stop(child){
 }
 
 test('HTTP em modo demo: navegação e comando local respondem, e follow-up natural reutiliza a última leitura',async()=>{
- const matheus=scoped({id:'matheus',name:'Matheus Nascimento Jaeger',primaryProfile:'Analítico',decisionDriver:'Compara custo por hectare e retorno antes de decidir',technicalPresentation:'Prefere dados objetivos e comparáveis',profileUpdatedAt:'2026-08-01T12:00:00.000Z',profileValidUntil:'2027-08-01T12:00:00.000Z',profileSourceRef:'profile-matheus',profileEvidence:[
-  {id:'profile-matheus-q7',profile_source_ref:'profile-matheus',source_type:'producer_questionnaire',epistemic_type:'OBSERVATION',field:'decisionDriver',statement:'Compara custo por hectare e retorno antes de decidir',assessed_at:'2026-08-01T12:00:00.000Z',valid_until:'2027-08-01T12:00:00.000Z'},
-  {id:'profile-matheus-q8',profile_source_ref:'profile-matheus',source_type:'producer_questionnaire',epistemic_type:'OBSERVATION',field:'technicalPresentation',statement:'Prefere dados objetivos e comparáveis',assessed_at:'2026-08-01T12:00:00.000Z',valid_until:'2027-08-01T12:00:00.000Z'}
+ const matheus=scoped({id:'matheus',name:'Matheus Nascimento Jaeger',primaryProfile:'Analítico',decisionDriver:'Compara custo por hectare e retorno antes de decidir',technicalPresentation:'Prefere dados objetivos e comparáveis',profileUpdatedAt:daysAgo(34),profileValidUntil:daysAhead(331),profileSourceRef:'profile-matheus',profileEvidence:[
+  {id:'profile-matheus-q7',profile_source_ref:'profile-matheus',source_type:'producer_questionnaire',epistemic_type:'OBSERVATION',field:'decisionDriver',statement:'Compara custo por hectare e retorno antes de decidir',assessed_at:daysAgo(34),valid_until:daysAhead(331)},
+  {id:'profile-matheus-q8',profile_source_ref:'profile-matheus',source_type:'producer_questionnaire',epistemic_type:'OBSERVATION',field:'technicalPresentation',statement:'Prefere dados objetivos e comparáveis',assessed_at:daysAgo(34),valid_until:daysAhead(331)}
  ]})
  const store={surveys:[],imports:[scoped({id:'import-a',clients:[matheus]})],visits:[],businessEvents:[],val:{commitments:[],visitReports:[]},grains:{profiles:[],intentions:[],marketSnapshots:[]}}
  const dataRoot=await mkdtemp(join(tmpdir(),'val-navigation-variants-'))
