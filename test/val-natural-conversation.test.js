@@ -127,8 +127,25 @@ test('seletor ignora turno incompleto, mas não atravessa um concluído incompat
  assert.throws(()=>lastCompletedAssistantTurn([completedTurn(),poison],scope),error=>error.scopeField==='sourceResponseId'&&error.reason==='missing')
 })
 
+test('conversa sem produtor: follow-up local encontra a última resposta concluída',()=>{
+ const generalScope={...scope,producerId:null,domain:'GENERAL'}
+ const general=structuredClone(payload)
+ general.responseScope={...general.responseScope,producerId:null,domain:'GENERAL'}
+ general.conversationState={...general.conversationState,current_client:null}
+ general.advice.ai_reasoning.client={id:'portfolio',name:'Conversa geral'}
+ general.advice.ai_reasoning.premises.context_scope={...general.advice.ai_reasoning.premises.context_scope,producer_id:'',domain:'GENERAL'}
+ general.advice.ai_reasoning.premises.session_context={...general.advice.ai_reasoning.premises.session_context,current_domain:'GENERAL',current_client:null}
+ const turn={role:'assistant',status:'completed',serverGrounded:true,grounding:'SERVER_RETURNED',producerId:null,conversationId:scope.conversationId,contextEpoch:scope.contextEpoch,domain:'GENERAL',payload:general}
+ assert.equal(lastCompletedAssistantTurn([turn],generalScope).text,'A margem é o ponto central.')
+ assert.throws(()=>lastCompletedAssistantTurn([turn],scope),error=>error.scopeField==='producerId'&&error.reason==='mismatch')
+})
+
 test('turno de usuário pendente bloqueia fallback para resposta antiga do mesmo thread',()=>{
  const pendingUser={role:'user',text:'Pergunta nova ainda sem resposta',...scope}
+ // Pergunta que terminou em erro nao e pendencia: o follow-up volta a ler a ultima resposta concluida.
+ const failedUser={role:'user',text:'Pergunta que falhou',status:'failed',...scope}
+ assert.equal(lastCompletedAssistantTurn([completedTurn(),failedUser],scope).text,'A margem é o ponto central.')
+ assert.equal(lastCompletedAssistantTurn([completedTurn(),failedUser,{role:'system',text:'Ainda não há um produtor ativo nesta conversa.'}],scope).text,'A margem é o ponto central.')
  assert.throws(()=>lastCompletedAssistantTurn([completedTurn(),pendingUser],scope),error=>error.code==='val_follow_up_scope_mismatch'&&error.scopeField==='turn'&&error.reason==='pending_user_turn')
  assert.throws(()=>lastCompletedAssistantTurn([completedTurn(),pendingUser,{role:'assistant_text',status:'pending',text:'INCOMPLETO',...scope}],scope),error=>error.scopeField==='turn'&&error.reason==='pending_user_turn')
  const newPayload=structuredClone(payload)

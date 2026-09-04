@@ -139,7 +139,10 @@ export function normalizeCompletedAssistantTurn(turn){
  const rawQuestions=Array.isArray(turn.goldenQuestions)?turn.goldenQuestions:Array.isArray(reasoning.golden_questions)?reasoning.golden_questions:[]
  return markVerifiedCompletedAssistantTurn({
   role:turn.role,status:'completed',serverGrounded:true,grounding:clean(turn.grounding,80)||'SERVER_GROUNDED',text,answer:text,responseId:clean(turn.responseId??reasoning.reasoning_id,180)||null,
-  conversationId:clean(conversation.value,180),producerId:clean(producer.value,180),contextEpoch,
+  // Conversa sem produtor: o turno concluido carrega producerId null e o escopo ativo tambem
+  // (completeActiveScope). Com clean() aqui o turno virava '' e "resume pra mim" sem produtor
+  // falhava sempre com producerId mismatch.
+  conversationId:clean(conversation.value,180),producerId:producerScopeValue(producer.value)||null,contextEpoch,
   tenantId:canonical?.tenantId||null,ownerId:canonical?.ownerId||null,domain:canonical?.domain||null,
   scopePresence:{conversationId:conversation.present,producerId:producer.present,contextEpoch:epoch.present,tenantId:Boolean(canonical),ownerId:Boolean(canonical),domain:Boolean(canonical)},
   goldenQuestions:rawQuestions.slice(0,3),sourceTurn:turn,canonicalResponseId:clean(turn.responseId??reasoning.reasoning_id,180)||null,provenanceDepth:0
@@ -207,6 +210,9 @@ export function assertCompletedAssistantTurnScope(turn,scope={}){
 
 const userTurnScopeStatus=(turn,scope={})=>{
  if(turn?.role!=='user')return 'not_user'
+ // Pergunta que terminou em erro (422, timeout, comando bloqueado) nao esta pendente de resposta:
+ // sem esta excecao, "resume pra mim" ficava bloqueado ate uma nova resposta bem-sucedida.
+ if(String(turn?.status||'').toLowerCase()==='failed')return 'not_user'
  const dimensions=[
   ['tenantId',['tenantId','tenant_id'],clean],['ownerId',['ownerId','owner_id'],clean],['conversationId',['conversationId','conversation_id'],clean],
   ['producerId',['producerId','producer_id','clientId','client_id'],producerScopeValue],['contextEpoch',['contextEpoch','context_epoch'],exactEpoch],['domain',['domain','contextDomain','context_domain'],domainScopeValue]

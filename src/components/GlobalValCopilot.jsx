@@ -358,7 +358,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   const naturalCommand=!turnAttachments.length?requestedNaturalCommand:null
   if(naturalCommand?.local&&!naturalCommandMatchesClient(naturalCommand,client)){
    cancelChatRun();cancelRealtimeClarification()
-   append({role:'user',text:prompt,intent:'SESSION_COMMAND',command:naturalCommand.action,persistence:'NONE',at:new Date().toISOString()},activeThreadKey)
+   append({role:'user',text:prompt,intent:'SESSION_COMMAND',command:naturalCommand.action,persistence:'NONE',status:'failed',at:new Date().toISOString()},activeThreadKey)
    append({role:'system',command:naturalCommand.action,text:`O produtor citado (${naturalCommand.expectedClientReference||'outro produtor'}) não é o produtor atual desta conversa. Abra esse produtor antes de resumir para eu não misturar contextos.`,persistence:'NONE',at:new Date().toISOString()},activeThreadKey)
    setMessage('');setReplyingTo(null);return {responseText:'',suppressSpeech:true}
   }
@@ -369,7 +369,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   if(naturalCommandNeedsSettledResponse(naturalCommand)){
    try{sourceTurn=lastCompletedAssistantTurn(activeThread,currentScope)}catch(scopeError){
     const blockedMessage=scopeError?.code==='val_follow_up_scope_mismatch'?scopeError.message:'Não encontrei uma resposta concluída e verificada neste contexto para executar o follow-up.'
-    append({role:'user',text:prompt,intent:'SESSION_COMMAND',command:naturalCommand.action,persistence:'NONE',at:new Date().toISOString()},activeThreadKey)
+    append({role:'user',text:prompt,intent:'SESSION_COMMAND',command:naturalCommand.action,persistence:'NONE',status:'failed',at:new Date().toISOString()},activeThreadKey)
     append({role:'system',command:naturalCommand.action,text:blockedMessage,persistence:'NONE',at:new Date().toISOString()},activeThreadKey)
     setError(blockedMessage);setMessage('');setReplyingTo(null);return {responseText:'',suppressSpeech:true,blocked:true}
    }
@@ -454,6 +454,9 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
    return {payload,responseText:reasoning.voice_output?.speakable_text||reasoning.recommended_strategy?.reading||payload?.advice?.answer||'',suppressSpeech:turnOptions.conversationMode===true&&turnOptions.responseMode==='text'}
  }catch(requestError){
   if(!isCurrent()||(requestError?.name==='AbortError'&&!timedOut))return {responseText:'',suppressSpeech:true,cancelled:true}
+  // A pergunta que terminou em erro nao fica "pendente de resposta": sem esta marca, "resume pra mim"
+  // logo depois era bloqueado ate uma nova resposta bem-sucedida.
+  setThreads(current=>({...current,[activeThreadKey]:(current[activeThreadKey]||[]).map(item=>item?.role==='user'&&item.turnId===turnId?{...item,status:'failed'}:item)}))
   if(timedOut&&requestError?.name!=='TimeoutError'){const timeoutError=new Error('A análise ultrapassou 30 segundos. Tente novamente.');timeoutError.name='TimeoutError';requestError=timeoutError}
   const pending=requestError.payload?.clarification
   const clarificationTurn=pending?{...pending,prompt,intent:effectiveIntent||'',turnOptions:{...turnOptions,turnId},activeThreadKey,conversationId:currentConversationId,contextEpoch:currentContextEpoch}:null
