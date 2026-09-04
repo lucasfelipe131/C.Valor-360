@@ -9,7 +9,7 @@ import {normalizeRisk} from '../server/knowledge/policy.js'
 
 test('Biblioteca VAL v1 carrega 122 itens, 40 fontes e 30 cenários com referências válidas',()=>{
  const library=loadKnowledgeLibrary({forceReload:true})
- assert.deepEqual(library.validation.counts,{knowledge_items:152,sources:55,scenarios:30})
+ assert.deepEqual(library.validation.counts,{knowledge_items:164,sources:55,scenarios:30})
  assert.equal(library.validation.valid,true)
  assert.deepEqual(library.validation.errors,[])
  assert.ok(library.validation.warnings.some(item=>item.code==='DUPLICATE_SOURCE_REF_REMOVED'&&item.ref==='KI-012'))
