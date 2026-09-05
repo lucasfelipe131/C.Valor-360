@@ -4,28 +4,25 @@
   "description": "Inteligência aplicada que transforma contexto em decisão e decisão em valor.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#0D1F15",
-  "theme_color": "#0D1F15",
+  "background_color": "#071B19",
+  "theme_color": "#071B19",
   "lang": "pt-BR",
-  "categories": ["business", "productivity"],
+  "categories": [
+    "business",
+    "productivity"
+  ],
   "icons": [
     {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/brand/val-symbol-official.png",
+      "sizes": "512x406",
+      "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/brand/val-icon-maskable.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "maskable"
-    },
-    {
-      "src": "/brand/val-icon-only-monochrome.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
-      "purpose": "monochrome"
+      "src": "/brand/val-logo-official.png",
+      "sizes": "1200x966",
+      "type": "image/png",
+      "purpose": "any"
     }
   ]
 }

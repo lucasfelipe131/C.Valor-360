@@ -171,18 +171,15 @@ test('a barra inferior mobile declara os cinco destinos que o CSS reserva',()=>{
  }
 })
 
-test('a marca oficial substituiu a anterior, e a paleta da VAL foi preservada',()=>{
+test('a marca é o ativo oficial e a paleta da VAL foi preservada',()=>{
  const brand=readFileSync('src/val-brand.css','utf8')
- for(const legado of ['--val-logo-blue-','--val-logo-fold-','--val-logo-green-','--val-logo-leaf-start'])
-  assert.ok(!brand.includes(legado),`token legado da marca antiga "${legado}" ainda está definido`)
- for(const oficial of ['--val-logo-stem-top','--val-logo-leaf-deep','--val-logo-vein'])
-  assert.ok(brand.includes(oficial),`token oficial "${oficial}" não foi instalado`)
-
- // A identidade cromática do produto continua sendo a da VAL: a troca foi de
- // marca, não de paleta.
+ // A troca foi de marca, não de paleta.
  for(const token of ['--val-ink:#071b19','--val-emerald:#00c896','--val-emerald-dark:#009f78','--val-mint:#72e6c5'])
   assert.ok(brand.includes(token),`o token "${token}" da paleta VAL foi perdido`)
+ // Os tokens existiam só para colorir o desenho recusado.
+ assert.ok(!/--val-logo-/.test(brand),'sobraram tokens do desenho da marca')
 
  const logo=readFileSync('src/components/Logo.jsx','utf8')
- assert.ok(!/#0757b6|#2d8cff|#082c57|val-logo-blue/i.test(logo),'a geometria antiga da marca ainda está no componente')
+ assert.match(logo,/val-symbol-official\.png/)
+ assert.ok(!/<svg|<path\s/.test(logo),'a marca voltou a ser desenhada em vez de usar o ativo')
 })

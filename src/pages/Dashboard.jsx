@@ -26,7 +26,7 @@ import ConversionOpportunityStudio from '../components/ConversionOpportunityStud
 import VoiceCapture from '../components/voice/VoiceCapture'
 import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
 import {buildHomeCopilotAnswer,buildLocalHomePriorities,canonicalVoiceChange} from '../lib/copilot-view-model'
-import {buildDayBriefing,buildFocusProducers,buildPendencies} from '../lib/home-command-center'
+import {buildDayBriefing,buildFocusProducers,buildPendencies,buildTopCultures} from '../lib/home-command-center'
 import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline,resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
 const greeting=()=>{
@@ -131,6 +131,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  const briefing=useMemo(()=>buildDayBriefing({visits,opportunities,clients}),[visits,opportunities,clients])
  const focus=useMemo(()=>buildFocusProducers({clients,visits,opportunities}),[clients,visits,opportunities])
  const pendencies=useMemo(()=>buildPendencies({clients,visits,opportunities}),[clients,visits,opportunities])
+ const topCultures=useMemo(()=>buildTopCultures({clients,metricsOf:client=>commercialMetrics(client).openPotential}),[clients])
  const openVisit=entry=>{const client=clients.find(item=>String(item.id)===String(entry.clientId));if(client)onPrepare(client);else setPage('visits')}
  const quickActions=[
   ['Preparar visita',CalendarCheck2,()=>selectedVoiceClient?onPrepare(selectedVoiceClient):setPage('visits')],
@@ -149,6 +150,8 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
    <button type="button" onClick={()=>setPage('visits')}><CalendarDays/>Abrir agenda</button>
   </section>
 
+  <div className="home-cockpit">
+   <div className="home-cockpit-main">
   <section className="home-day-strip" aria-label="Resumo do dia">
    {briefing.cards.map(card=>{
     const Icon=({today:CalendarDays,prepared:CheckCircle2,opportunities:Target,pending:AlertTriangle})[card.id]||Sparkles
@@ -199,23 +202,6 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
       )}</ul>
      :<p className="home-panel-empty">Nenhum produtor com sinal registrado que peça atenção agora. A VAL não cria foco sem evidência.</p>}
    </section>
-
-   <section className="home-panel home-pendencies" aria-labelledby="home-pendencies-title">
-    <header>
-     <h3 id="home-pendencies-title">Pendências e alertas</h3>
-    </header>
-    {pendencies.length
-     ?<ul>{pendencies.map(entry=>
-       <li key={entry.id}>
-        <button type="button" onClick={()=>setPage(entry.page)}>
-         <b>{String(entry.value).padStart(2,'0')}</b>
-         <span>{entry.label}<small>{entry.detail}</small></span>
-         <ChevronRight size={15}/>
-        </button>
-       </li>
-      )}</ul>
-     :<p className="home-panel-empty">Nada pendente com o que já está registrado na carteira.</p>}
-   </section>
   </div>
 
   <section className="copilot-priorities" aria-labelledby="copilot-priorities-title">
@@ -238,6 +224,64 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
    </div>
    <button type="button" onClick={()=>onOpenCopilot?.({})}>Abrir Copiloto<ChevronRight size={16}/></button>
   </section>
+
+   </div>
+
+   <aside className="home-rail" aria-label="Resumo e pendências">
+    <section className="home-rail-card">
+     <h3>Resumo do dia</h3>
+     <div className="home-rail-summary">
+      {briefing.cards.map(card=>
+       <button type="button" key={card.id} onClick={()=>setPage(card.page)}>
+        <b>{String(card.value).padStart(2,'0')}</b>
+        <small>{card.label}</small>
+       </button>
+      )}
+     </div>
+    </section>
+
+    <section className="home-rail-card home-pendencies">
+     <h3>Pendências e alertas</h3>
+     {pendencies.length
+      ?<ul>{pendencies.map(entry=>
+        <li key={entry.id}>
+         <button type="button" onClick={()=>setPage(entry.page)}>
+          <b>{String(entry.value).padStart(2,'0')}</b>
+          <span>{entry.label}<small>{entry.detail}</small></span>
+          <ChevronRight size={15}/>
+         </button>
+        </li>
+       )}</ul>
+      :<p className="home-panel-empty">Nada pendente com o que já está registrado na carteira.</p>}
+    </section>
+
+    <section className="home-rail-card">
+     <h3>Top culturas da carteira</h3>
+     {topCultures.length
+      ?<ul className="home-rail-cultures">{topCultures.map(entry=>
+        <li key={entry.culture}>
+         <b>{entry.culture}</b>
+         <span>{entry.producers} produtor{entry.producers>1?'es':''}</span>
+         <em>{entry.potential>0?compactBRL(entry.potential,{known:true}):null}</em>
+        </li>
+       )}</ul>
+      :<p className="home-panel-empty">Nenhuma cultura declarada na carteira ainda.</p>}
+    </section>
+
+    <section className="home-rail-card">
+     <h3>Atividades recentes</h3>
+     {recentVisits.length
+      ?<ul className="home-rail-activity">{recentVisits.map(visit=>{
+        const client=clients.find(item=>String(item.id)===String(visit.clientId))
+        return <li key={visit.id}>
+         <b>{visit.status==='Realizada'?'Visita realizada':'Visita agendada'}</b>
+         <span>{client?.name||'Produtor'} • {compactDate(visit)}</span>
+        </li>
+       })}</ul>
+      :<p className="home-panel-empty">Nenhuma atividade registrada ainda.</p>}
+    </section>
+   </aside>
+  </div>
 
   <section className="copilot-talk" aria-label="Perguntar ou falar com a VAL">
    <div><BrainCircuit/><div><span className="eyebrow">PERGUNTE OU FALE</span><h3>Converse com a VAL</h3><p>Escolha o produtor e pergunte sem abrir uma visita. Registrar informação continua exigindo sua confirmação.</p></div></div>

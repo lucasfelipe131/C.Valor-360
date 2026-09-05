@@ -1,161 +1,156 @@
 # VAL_BRAND_SYSTEM
 
-Sistema de marca da VAL. Fase **R1 — BRAND FOUNDATION**.
+Sistema de marca da VAL.
 
 ---
 
-## 1. A marca é congelada
+## 1. A marca é o arquivo, não uma reprodução
 
-A identidade oficial da VAL é o **V em marfim/floresta com a folha em verde-oliva**,
-o wordmark **VAL** e a assinatura **INTELIGÊNCIA QUE GERA VALOR**.
+A identidade oficial da VAL é o **V com textura de pedra e duas lâminas de folha
+sobrepostas**, o wordmark **VAL** — com o "A" em forma de chevron, sem travessão — e a
+assinatura **INTELIGÊNCIA QUE GERA VALOR**.
 
-Não redesenhar. Não reinterpretar. Não simplificar. Não substituir.
-Não gerar outra logo. Não alterar o símbolo, o wordmark ou a relação entre eles.
+O briefing é explícito:
+
+> NÃO redesenhar · NÃO reinterpretar · NÃO aproximar por CSS · NÃO recriar com fonte
+> semelhante · **Usar o asset oficial fornecido.**
+
+### O erro que este documento existe para não repetir
+
+A primeira entrega **redesenhou a marca em SVG**: paths vetoriais aproximando o V, uma
+folha única com dobra, e um wordmark reconstruído. Ficava parecido de longe e errado de
+perto — a textura de pedra sumia, as duas lâminas viravam uma só, e as proporções não
+batiam. Foi recusado, corretamente.
+
+A marca agora é **o arquivo original recortado**, e o teste
+`val-brand-variants.test.js` falha se qualquer `<svg>` ou `<path>` voltar ao componente.
 
 ---
 
-## 2. Fonte de verdade única
+## 2. Como as peças são geradas
 
-A geometria vive em **dois lugares que precisam concordar**:
-
-| Arquivo | Papel |
-|---|---|
-| `src/components/Logo.jsx` | versão React usada dentro do produto; cores por token CSS |
-| `scripts/build-brand-assets.mjs` | gerador dos `.svg` estáticos; cores por hex |
-
-Todas as variantes de uso **derivam** do gerador. Nenhuma é desenhada à mão:
+Origem: o PNG oficial entregue (4096×3437, com transparência).
 
 ```bash
-node scripts/build-brand-assets.mjs
+node scripts/extract-brand-asset.mjs <caminho-do-png-oficial> public/brand
 ```
 
-Se a geometria mudar em um, muda no outro. Os dois carregam os mesmos `path`.
+O script abre o arquivo num Chrome headless, mede a **caixa alfa real** de cada faixa
+— símbolo, wordmark, assinatura — e exporta os recortes. Nada é posicionado à mão:
 
-### Geometria aprovada
+- perfil de opacidade por linha separa as três faixas;
+- densidade por coluna descarta os respingos decorativos do original, que uma caixa alfa
+  pura incluiria;
+- a caixa cheia é a **união** das faixas, porque a assinatura é mais larga que o wordmark
+  e tem traço fino — uma densidade global cortaria o "VALOR" do fim.
 
-```
-V (braço esquerdo)  M3.6 5.2H17.8L33.4 53.6L30.2 61.2Z
-folha (braço dir.)  M30.6 61C32.8 45.6 39.4 24.4 52.4 3C60.4 17.4 58 38.6 45.2 51.6C40.6 56.3 35.6 59.4 30.6 61Z
-dobra da folha      M52.4 3C60.4 17.4 58 38.6 45.2 51.6C40.6 56.3 35.6 59.4 30.6 61C36.9 44.4 44.6 22.9 52.4 3Z
-nervura             M31.4 59.4C37.5 43.2 45 22.2 52.2 3.9
-```
+**Para trocar a marca:** troque o arquivo de origem e rode o script. Não edite os recortes.
 
-Wordmark (viewBox `0 0 220 72`, altura de caixa alta 56, tracking largo):
+### Peças em `public/brand/`
 
-```
-V  M2 8H12.5L29 50L45.5 8H56L33.5 64H24.5Z
-A  M76 64L101.5 8H108.5L134 64H123.5L105 26L86.5 64Z
-L  M154 8H164.5V53.5H212V64H154Z
-```
-
-Dois detalhes do ativo oficial que precisam ser respeitados:
-
-1. **O "A" não tem travessão.** É um chevron: o wordmark lê "VΛL". É escolha de desenho
-   da marca, não um erro a corrigir.
-2. **Os cantos são arredondados.** Cada letra e o braço do V recebem um contorno da
-   própria cor com `stroke-linejoin="round"` — arredonda a junção sem alterar o traçado.
-
----
-
-## 3. Variantes geradas
-
-| Arquivo | Uso |
-|---|---|
-| `public/brand/val-icon-only.svg` | símbolo isolado, superfície clara |
-| `public/brand/val-icon-only-on-dark.svg` | símbolo isolado, superfície escura |
-| `public/brand/val-icon-only-monochrome.svg` | símbolo achatado em `currentColor` (mask-icon, stencil) |
-| `public/brand/val-icon-maskable.svg` | ícone PWA maskable, zona segura de 80% |
-| `public/brand/val-logo-on-light.svg` | lockup horizontal, fundo claro |
-| `public/brand/val-logo-on-dark.svg` | lockup horizontal, fundo floresta |
-| `public/brand/val-logo-compact.svg` | lockup reduzido |
-| `public/brand/val-logo-monochrome.svg` / `-light.svg` | lockup em `currentColor` |
-| `public/brand/val-logo-vertical-on-light.svg` | lockup vertical, fundo claro |
-| `public/brand/val-logo-vertical-on-dark.svg` | lockup vertical, fundo floresta |
-| `public/icon.svg` | favicon |
-| `public/val-logo.svg`, `logo.svg` | ativos históricos, mantidos nos mesmos caminhos |
-
----
-
-## 4. Cores da marca (extraídas do ativo oficial)
-
-### Superfície escura — o V é marfim
-
-| Token | Valor | Onde |
+| Arquivo | Recorte do original | Uso |
 |---|---|---|
-| `--val-logo-stem-top` | `#f1f1ea` | topo do V |
-| `--val-logo-stem-bottom` | `#cfcfc6` | base do V |
-| `--val-logo-leaf-top` | `#b6d96b` | ponta da folha |
-| `--val-logo-leaf-mid` | `#8cbc49` | corpo da folha |
-| `--val-logo-leaf-deep` | `#4e7a2e` | base da folha |
-| `--val-logo-leaf-shade-top` | `#6e9c38` | meia-folha em sombra |
-| `--val-logo-leaf-shade-bottom` | `#3a6624` | meia-folha em sombra |
-| `--val-logo-vein` | `#0d1f15` | nervura |
-| `--val-logo-word` | `#edede6` | wordmark |
-| `--val-logo-accent` | `#9bc85a` | assinatura |
-
-### Superfície clara — o V é floresta
-
-| Token | Valor |
-|---|---|
-| `--val-logo-stem-top` | `#1d3b27` |
-| `--val-logo-stem-bottom` | `#12291b` |
-| `--val-logo-leaf-top` | `#a6cc5b` |
-| `--val-logo-leaf-mid` | `#79a63e` |
-| `--val-logo-leaf-deep` | `#3f6b26` |
-| `--val-logo-leaf-shade-top` | `#5f8a32` |
-| `--val-logo-leaf-shade-bottom` | `#2f5720` |
-| `--val-logo-vein` | `#f2f6e9` |
-| `--val-logo-word` | `#12291b` |
-| `--val-logo-accent` | `#5f8a32` |
-
-### Monocromática
-
-Todos os tokens em `currentColor`. A marca herda a cor do texto.
+| `val-symbol-official.png` | 1900×1507 | símbolo isolado (V + folha) |
+| `val-wordmark-only-official.png` | 3320×779 | apenas "VAL" |
+| `val-wordmark-official.png` | 3325×1012 | "VAL" + assinatura |
+| `val-signature-official.png` | 3258×132 | apenas a assinatura |
+| `val-logo-official.png` | 3325×2676 | lockup completo empilhado |
 
 ---
 
-## 5. API do componente
+## 3. Montagem no produto
+
+O lockup do produto é **horizontal com a assinatura embaixo**, como na referência:
+
+```
+[ V+folha ]  [ VAL ]
+[ INTELIGÊNCIA QUE GERA VALOR ]
+```
+
+A assinatura fica sob o conjunto, não espremida ao lado do wordmark — ali ela teria ~4px
+e seria ilegível.
+
+### Dimensionamento
+
+O tamanho é dado pela **altura do símbolo** (`--val-mark-height`); largura e demais peças
+acompanham. Travar largura e altura deformaria a marca.
+
+| Superfície | Altura do símbolo |
+|---|---|
+| Sidebar | 44px |
+| Login (lado institucional) | 70px |
+| Variante `full` padrão | 52px |
+| Pesquisa pública, troca de senha | 46px |
+| Header mobile | 32px |
+
+A assinatura é dimensionada pela **largura do lockup**, não pela altura.
+
+---
+
+## 4. API do componente
 
 ```jsx
-<Logo/>                            // compact — símbolo + wordmark
-<Logo variant="full"/>             // + assinatura INTELIGÊNCIA QUE GERA VALOR
-<Logo variant="icon-only"/>        // símbolo isolado
-<Logo compact/>                    // idem icon-only
-<Logo variant="monochrome"/>       // herda currentColor
-<Logo surface="dark"/>             // força contraste de superfície escura
-<Logo decorative/>                 // aria-hidden, para quando o texto já nomeia a marca
+<Logo/>                       // compact — símbolo + VAL
+<Logo variant="full"/>        // + assinatura embaixo
+<Logo variant="icon-only"/>   // símbolo isolado
+<Logo compact/>               // idem icon-only
+<Logo variant="monochrome"/>  // grayscale derivado do ativo
+<Logo surface="dark"/>        // força tratamento de superfície escura
+<Logo decorative/>            // aria-hidden
 ```
 
-`surface="auto"` (padrão) resolve o contraste pela superfície: `.sidebar`, `.login-story`,
-`.public-welcome`, `.val-fs-header` e `[data-val-surface="dark"]` recebem a versão marfim.
+A API não mudou com a troca do ativo — todas as chamadas existentes continuam válidas.
+
+### Superfícies
+
+A marca foi desenhada para fundo escuro. Em superfície clara o traço de pedra recebe um
+halo mínimo (`drop-shadow`) para não sumir no branco. Em superfície escura, uma sombra
+suave. Nada além disso: **nenhum filtro recolore a marca**.
+
+`surface="auto"` (padrão) resolve pela superfície: `.sidebar`, `.login-story`,
+`.public-welcome`, `.val-fs-header` e `[data-val-surface="dark"]` recebem o tratamento
+escuro.
 
 ---
 
-## 6. Onde a marca aparece
+## 5. Onde a marca aparece
 
 | Superfície | Variante |
 |---|---|
-| Login | lockup completo com assinatura |
-| Sidebar / Workspace | lockup compacto |
-| Header mobile | símbolo + VAL |
-| Splash / carregamento | símbolo |
-| Copiloto em tela cheia | lockup compacto |
-| Pesquisa pública, troca de senha | lockup compacto |
-| PWA (favicon, maskable, monochrome) | símbolo |
-| `theme-color` / `background_color` | `#0D1F15` |
-
-A marca é presente e discreta. A interface não vira publicidade.
+| Login | completa, com assinatura |
+| Sidebar | completa, com assinatura |
+| Header mobile | símbolo |
+| Copiloto em tela cheia | compacta |
+| Pesquisa pública, troca de senha | compacta |
+| Favicon | `val-symbol-official.png` |
+| PWA (`manifest.webmanifest`) | símbolo e lockup completo |
+| Manual do Agrônomo (iframe) | `val-wordmark-official.png`, servido pelo app pai |
+| `theme-color` / `background_color` | `#071B19` — o verde profundo da VAL |
 
 ---
 
-## 7. Migração executada
+## 6. Paleta: inalterada
 
-| Script | O que faz |
-|---|---|
-| `scripts/rebrand-logo-tokens.mjs` | substitui os blocos de tokens `--val-logo-*` antigos (azul + verde-água) pelos oficiais; idempotente, `--check` para auditar |
-| `scripts/build-brand-assets.mjs` | regenera todos os `.svg` a partir da geometria aprovada |
+**A troca foi de marca, não de cor.** A paleta da VAL — `--val-ink`, `--val-emerald`,
+`--val-mint`, `--val-lime` — permanece exatamente como estava. Detalhe em
+`VAL_DESIGN_SYSTEM.md`.
 
-Marca antiga removida de: `Logo.jsx`, `val-brand.css`, `logo.svg`, `public/icon.svg`,
-`public/val-logo.svg`, `public/brand/*.svg` (9 arquivos), `index.html`, `manifest.webmanifest`.
+Os tokens `--val-logo-*` foram removidos: existiam só para colorir o desenho recusado.
+Um ativo raster traz as próprias cores.
 
-Nenhum token azul `--val-logo-blue-*` / `--val-logo-fold-*` / `--val-logo-green-*` permanece.
+---
+
+## 7. O que o teste trava
+
+`test/val-brand-variants.test.js`:
+
+1. as cinco peças existem e têm massa de imagem real;
+2. o componente usa `<img>` com os arquivos oficiais — **nenhum `<svg>` ou `<path>`**;
+3. as geometrias da marca antiga e do redesenho estão banidas por assinatura de path;
+4. a API do componente segue intacta;
+5. a assinatura fica sob o conjunto;
+6. o dimensionamento preserva a proporção;
+7. o extrator mede o alfa em vez de usar coordenadas chumbadas;
+8. nenhum SVG redesenhado sobrou no repositório;
+9. favicon, PWA e app embutido apontam para o ativo;
+10. a paleta da VAL segue preservada.

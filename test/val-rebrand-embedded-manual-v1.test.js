@@ -18,10 +18,9 @@ test('a superfície embutida existe e é lida por este contrato',()=>{
 
 test('a marca embutida usa o ativo oficial servido pelo app pai',()=>{
  const brand=readFileSync('manual/app/val-embedded-brand.css','utf8')
- assert.match(brand,/url\('\/val-logo\.svg'\)/)
- // O arquivo servido é o gerado a partir da geometria aprovada.
- const logo=readFileSync('public/val-logo.svg','utf8')
- assert.ok(logo.includes('M30.6 61C32.8 45.6 39.4 24.4 52.4 3'),'a folha oficial não está no ativo servido')
+ assert.match(brand,/url\('\/brand\/val-wordmark-official\.png'\)/)
+ // O arquivo servido é o recorte do ativo entregue, não um desenho.
+ assert.ok(existsSync('public/brand/val-wordmark-official.png'),'o wordmark oficial não está publicado')
 })
 
 test('as calculadoras empilham no mobile em vez de exigir arraste horizontal',()=>{

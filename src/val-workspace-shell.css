@@ -230,7 +230,7 @@
 .home-day-hint{color:var(--val-muted);font-size:11px;line-height:1.4}
 
 /* Linha operacional: próximas visitas · produtores em foco · pendências. */
-.home-operational{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;align-items:start}
+.home-operational{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
 .home-panel{
  padding:17px;border:1px solid var(--val-line);border-radius:19px;
  background:var(--val-surface);box-shadow:var(--shadow);
@@ -535,4 +535,100 @@
  .global-search-inline{display:none}
  .icon-btn.is-search-compact{display:flex}
  .global-search .global-search-field{display:flex}
+}
+
+/* ------------------------------- Cockpit em duas colunas (Mescla 09, slide 05)
+   A decisão do dia ocupa a coluna larga; o resumo, as pendências e o contexto
+   da carteira ficam à direita, sempre visíveis, sem competir com a ação. */
+.home-cockpit{
+ display:grid;
+ grid-template-columns:minmax(0,1fr) 320px;
+ gap:16px;
+ align-items:start;
+}
+.home-cockpit-main{
+ display:flex;
+ flex-direction:column;
+ gap:16px;
+ min-width:0;
+}
+.home-rail{
+ display:flex;
+ flex-direction:column;
+ gap:12px;
+ position:sticky;
+ top:104px;
+}
+.home-rail-card{
+ padding:15px 16px;
+ border:1px solid var(--val-line);
+ border-radius:18px;
+ background:var(--val-surface);
+ box-shadow:var(--shadow);
+}
+.home-rail-card h3{
+ margin:0 0 11px;
+ font-size:12.5px;
+ font-weight:780;
+ letter-spacing:.01em;
+}
+.home-rail-card ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+
+/* Resumo do dia: os mesmos quatro números, em leitura compacta. */
+.home-rail-summary{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.home-rail-summary button{
+ display:flex;
+ flex-direction:column;
+ gap:1px;
+ padding:10px 11px;
+ border:1px solid var(--val-line);
+ border-radius:12px;
+ background:var(--val-canvas);
+ text-align:left;
+ cursor:pointer;
+ transition:border-color .16s ease,background .16s ease;
+}
+.home-rail-summary button:hover{border-color:rgba(0,200,150,.4);background:#eafff8}
+.home-rail-summary b{
+ color:var(--val-text);
+ font-size:20px;
+ font-weight:780;
+ line-height:1.05;
+ font-variant-numeric:tabular-nums;
+}
+.home-rail-summary small{color:var(--val-muted);font-size:10px;line-height:1.3}
+
+/* Top culturas: leitura de carteira, não gráfico decorativo. */
+.home-rail-cultures li{
+ display:grid;
+ grid-template-columns:minmax(0,1fr) auto;
+ gap:4px 10px;
+ padding:9px 0;
+ border-top:1px solid var(--val-line);
+}
+.home-rail-cultures li:first-child{border-top:0;padding-top:0}
+.home-rail-cultures b{color:var(--val-text);font-size:12.5px;font-weight:700}
+.home-rail-cultures span{color:var(--val-muted);font-size:10.5px}
+.home-rail-cultures em{
+ grid-row:1/3;
+ grid-column:2;
+ align-self:center;
+ color:var(--val-emerald-dark);
+ font-size:11.5px;
+ font-style:normal;
+ font-weight:750;
+ white-space:nowrap;
+}
+
+.home-rail-activity li{padding:8px 0;border-top:1px solid var(--val-line)}
+.home-rail-activity li:first-child{border-top:0;padding-top:0}
+.home-rail-activity b{display:block;color:var(--val-text);font-size:12px;font-weight:700}
+.home-rail-activity span{display:block;color:var(--val-muted);font-size:10.5px}
+
+@media(max-width:1240px){
+ .home-cockpit{grid-template-columns:minmax(0,1fr)}
+ .home-rail{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:760px){
+ .home-rail{grid-template-columns:1fr}
 }

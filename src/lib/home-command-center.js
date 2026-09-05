@@ -122,3 +122,23 @@ export function buildPendencies({clients=[],visits=[],opportunities=[]}={}){
   {id:'early',value:earlyStage,label:'oportunidades ainda em diagnóstico',detail:'Sem avanço registrado para a próxima etapa.',page:'opportunities'}
  ].filter(entry=>entry.value>0)
 }
+
+// Top culturas da carteira: agrupa o potencial em aberto por cultura declarada.
+// Só entra cultura que algum produtor declarou — a VAL não estima carteira.
+export function buildTopCultures({clients=[],metricsOf=null,limit=5}={}){
+ const byCulture=new Map()
+ for(const client of clients){
+  const raw=text(client?.cultures)
+  if(!raw)continue
+  const potential=metricsOf?Number(metricsOf(client)||0):0
+  for(const culture of raw.split(/[•,;/]+/).map(item=>item.trim()).filter(Boolean)){
+   const current=byCulture.get(culture)||{culture,producers:0,potential:0}
+   current.producers+=1
+   current.potential+=potential
+   byCulture.set(culture,current)
+  }
+ }
+ return [...byCulture.values()]
+  .sort((a,b)=>b.producers-a.producers||b.potential-a.potential)
+  .slice(0,limit)
+}
