@@ -148,3 +148,19 @@ test('aritmética de plantabilidade e custo por hectare é entregue com e sem pr
   }
  }
 })
+
+test('saudação ou vocativo colado à pergunta não esconde o item da Biblioteca; resposta do modelo barrada vira pedido de esclarecimento',async()=>{
+ for(const message of ['Oi val o que é wasde?','val, o que é WASDE?','Oi val, o que é o WASDE?']){
+  const {reasoning,response}=await general(message)
+  assert.match(response.advice.answer,/relatório mensal WASDE/,message)
+  assert.equal(reasoning.run.tool_result.context.knowledge_item_id,'KI-103',message)
+ }
+ const blockedModel={responses:{create:async()=>({output_text:'Capital de giro é o recurso que a fazenda precisa para custear a safra até a venda da produção.'})}}
+ const route=routeSystemCapability({message:'o que é capital de giro',intentHint:'ASK_GENERAL',hasClient:false})
+ const response=await buildGeneralNoClientResponse({message:'o que é capital de giro',route,organizationId:tenant,ownerId:owner,conversationId:'general:ai-blocked',aiClient:blockedModel,aiModel:'gpt-test'})
+ assert.match(response.advice.answer,/^Posso tratar esta dúvida sem selecionar um produtor/)
+ assert.doesNotMatch(response.advice.answer,/Não há evidência/)
+ assert.equal(response.advice.ai_reasoning.run.tool_result.status,'NO_DATA')
+ assert.equal(response.advice.ai_reasoning.run.tool_result.mode,'no_coverage')
+ assert.ok(Number.isFinite(Number(response.responseMetadata.aiGeneralKnowledgeCostUsd)))
+})

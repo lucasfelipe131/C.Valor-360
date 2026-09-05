@@ -9,6 +9,9 @@ const stopWords=new Set([
  // Interrogativas e qualificadores genericos nao carregam dominio. Sem isso
  // "qual a capital da Australia" casava com um item por causa de "qual".
  'qual','quais','quem','quando','onde','quanto','quantos','quantas','porque','porquê','pra','para',
+ // Vocativo e saudacao colados a pergunta ("Oi val, o que e WASDE?") nao sao assunto: "val"
+ // contava como termo nao coberto e derrubava a cobertura do item certo.
+ 'val','oi','oie','ola','opa','eai','hey','hello','hi','ei','obrigado','obrigada','valeu','favor',
  'melhor','melhores','pior','piores','maior','menor','muito','muita','pouco','pouca','todo','toda','todos','todas',
  'ideal','ideais','otimo','otima','bom','boa','certo','certa','correto','correta','adequado','adequada','recomendado','recomendada','possivel','preciso',
  'fazer','faco','faz','ser','sou','estar','esta','ter','tem','pode','posso','deve','devo','vai','vou','quero','queria',

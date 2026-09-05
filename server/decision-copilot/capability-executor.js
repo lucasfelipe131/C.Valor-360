@@ -912,6 +912,10 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  const aiToolResult={status:'EXECUTED',capability:'AI_GENERAL_KNOWLEDGE',tool:'ai_general_knowledge',title:'Conhecimento geral do modelo (não verificado)',summary:aiAnswer,page:'copilot',manual_page:null,mode:'general_unverified',context:{client_id:null,private_memory_used:false}}
  const aiExecution=deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['AI_GENERAL_KNOWLEDGE'],capability_results:[{capability:'AI_GENERAL_KNOWLEDGE',status:'EXECUTED',source_ref:aiUnverifiedSourceRef,tool_result:aiToolResult}],tool_result:aiToolResult,active_context:null})
  const aiResponse=finalize(aiExecution,{unverified:true})
- aiResponse.responseMetadata={...aiResponse.responseMetadata,aiGeneralKnowledgeCostUsd:aiCostUsd}
- return aiResponse
+ // Resposta do modelo barrada pelo grounding (afirmacao que soa individual, numero sem fonte): o
+ // consultor le o pedido de esclarecimento, nao "sem evidencia verificavel nesta execucao". O custo
+ // da chamada fica registrado do mesmo jeito.
+ const delivered=aiResponse.advice.ai_reasoning.grounding?.blocked===true?finalize(noCoverageExecution()):aiResponse
+ delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:aiCostUsd}
+ return delivered
 }
