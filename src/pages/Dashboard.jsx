@@ -225,6 +225,34 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
    <button type="button" onClick={()=>onOpenCopilot?.({})}>Abrir Copiloto<ChevronRight size={16}/></button>
   </section>
 
+    <section className="home-analytics">
+     <article className="home-panel">
+      <header><h3>Indicadores da carteira</h3></header>
+      <div className="home-analytics-kpis">
+       <div><small>Produtores</small><b>{clients.length}</b><span>Carteira consolidada</span></div>
+       <div><small>Visitas na agenda</small><b>{upcomingVisits.length}</b><span>Compromissos futuros</span></div>
+       <div><small>Potencial mapeado</small><b>{compactBRL(totalPotential,{known:potentialKnown})}</b><span>{portfolioPriorities.length} {portfolioPriorities.length===1?'prioridade registrada':'prioridades registradas'}</span></div>
+       <div><small>IRT médio</small><b>{irt}</b><span>{relationships.irtKnown} de {relationships.total} perfis medidos</span></div>
+      </div>
+     </article>
+
+     <article className="home-panel">
+      <header>
+       <h3>Oportunidades por etapa</h3>
+       <button type="button" onClick={()=>setPage('opportunities')}>Abrir pipeline<ChevronRight size={14}/></button>
+      </header>
+      <ol className="home-funnel">{pipelineSummary.map((stage,index)=>{
+       const total=pipelineSummary.reduce((sum,item)=>sum+item.count,0)
+       const share=total?Math.round(stage.count/total*100):0
+       return <li key={stage.name} className={`is-stage-${index+1}`}>
+        <div><b>{stage.name}</b><span>{stage.detail}</span></div>
+        <i style={{width:`${share}%`}} aria-hidden="true"/>
+        <em>{stage.count} <small>{compactMoney(stage.value)}</small></em>
+       </li>
+      })}</ol>
+     </article>
+    </section>
+
    </div>
 
    <aside className="home-rail" aria-label="Resumo e pendências">
@@ -296,13 +324,8 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
    <summary><span><small>QUERO APROFUNDAR</small><b>Ver carteira, radar e números</b></span><ChevronRight/></summary>
    <div className="copilot-advanced-content">
     <div className="copilot-advanced-shortcuts"><button type="button" onClick={()=>setPage('val')}><BrainCircuit/>Análise avançada da VAL<ArrowUpRight/></button><button type="button" onClick={()=>setPage('opportunities')}><Target/>Pipeline<ArrowUpRight/></button></div>
-    <section className="kpi-grid home-kpis"><KpiCard icon={Users} label="Clientes ativos" value={clients.length} delta="Carteira consolidada"/><KpiCard icon={CalendarCheck2} label="Visitas na agenda" value={upcomingVisits.length} delta="Compromissos futuros"/><KpiCard icon={Target} label="Potencial mapeado" value={compactBRL(totalPotential,{known:potentialKnown})} delta={`${portfolioPriorities.length} ${portfolioPriorities.length===1?'prioridade registrada':'prioridades registradas'}`} tone="cyan"/><KpiCard icon={Percent} label="IRT médio" value={irt} delta={`${relationships.irtKnown} de ${relationships.total} perfis medidos`} tone="green"/></section>
     <ConversionRadar clients={clients} onClient={onClient} onPrepare={onPrepare}/>
     <ConversionOpportunityStudio clients={clients} onClient={onClient} onPrepare={onPrepare}/>
-    <section className="dashboard-grid home-analysis">
-     <article className="panel funnel-panel"><div className="panel-head"><div><span className="eyebrow">PIPELINE</span><h3>Oportunidades por etapa</h3></div><button type="button" onClick={()=>setPage('opportunities')}>Abrir pipeline</button></div><ol className="funnel">{pipelineSummary.map((stage,index)=><li className={`f-step f${index+1}`} key={stage.name}><span>{stage.name}</span><b>{stage.count} • {compactMoney(stage.value)}</b></li>)}</ol></article>
-     <article className="panel recent-panel"><div className="panel-head"><div><span className="eyebrow">ATIVIDADES</span><h3>Atividades recentes</h3></div><button onClick={()=>setPage('visits')}>Ver todas</button></div>{recentVisits.length?recentVisits.map(visit=>{const client=clients.find(item=>item.id===visit.clientId);return <div className="activity" key={visit.id}><CalendarDays className="purple"/><div><b>{visit.status==='Realizada'?'Visita realizada':'Visita agendada'}</b><span>{client?.name||'Produtor'} • {compactDate(visit)}</span></div></div>}):<div className="activity"><CalendarDays className="purple"/><div><b>Nenhuma atividade registrada</b><span>As visitas salvas aparecerão aqui.</span></div></div>}</article>
-    </section>
    </div>
   </details>
 

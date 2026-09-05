@@ -184,7 +184,11 @@ test('production bundle receives the protected portfolio only from the server',(
  assert.match(dashboard,/reconcilePipeline\(clients,\[\.\.\.cachedItems,\.\.\.opportunities\]\)/)
  assert.doesNotMatch(dashboard,/nextVisit\?\.time\|\|['"]14:00/)
  assert.match(dashboard,/const scheduled=scheduledAtOf\(visit\)/)
- assert.match(dashboard,/recentVisits\.length\?recentVisits\.map/)
+ // As atividades recentes migraram para a coluna direita do cockpit, mas
+ // continuam vindo da carteira carregada do servidor.
+ assert.match(dashboard,/const recentVisits=\[\.\.\.\(visits\|\|\[\]\)\]/)
+ assert.match(dashboard,/recentVisits\.length/)
+ assert.match(dashboard,/recentVisits\.map/)
 })
 
 test('long portfolio guides use progressive disclosure and visits reject incomplete commitments',()=>{
