@@ -725,3 +725,228 @@
 .home-funnel .is-stage-2 i{background:var(--val-emerald)}
 .home-funnel .is-stage-3 i{background:var(--val-mint)}
 .home-funnel .is-stage-4 i{background:var(--val-lime)}
+
+/* ------------------------------------- Linha operacional com três leituras */
+.home-operational{grid-template-columns:repeat(3,minmax(0,1fr))}
+
+.home-insights li{
+ display:grid;
+ grid-template-columns:26px minmax(0,1fr) 20px;
+ gap:9px;
+ align-items:start;
+ padding:11px 0;
+ border-top:1px solid var(--val-line);
+}
+.home-insights li:first-child{border-top:0;padding-top:0}
+.home-insight-mark{
+ display:grid;place-items:center;width:26px;height:26px;
+ border-radius:9px;background:var(--val-canvas);color:var(--val-emerald-dark);
+}
+.home-insights b{display:block;color:var(--val-text);font-size:12.5px;font-weight:700;line-height:1.35}
+.home-insights p{margin:3px 0 0;color:var(--val-muted);font-size:11px;line-height:1.45}
+.home-insights li>button{
+ display:grid;place-items:center;width:20px;height:20px;
+ border:0;border-radius:6px;background:transparent;color:var(--val-muted);cursor:pointer;
+}
+.home-insights li>button:hover:not(:disabled){background:var(--val-canvas);color:var(--val-emerald-dark)}
+.home-insights li>button:disabled{opacity:.35;cursor:default}
+
+/* -------------------------------------- Faixa analítica: quatro leituras */
+.home-analytics{grid-template-columns:repeat(4,minmax(0,1fr))}
+
+/* Barras horizontais — o formato da referência para "top" de alguma coisa. */
+.home-bars{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:11px}
+.home-bars li{display:grid;gap:4px}
+.home-bars li>div{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.home-bars b{color:var(--val-text);font-size:12.5px;font-weight:700}
+.home-bars em{
+ color:var(--val-text);font-size:13px;font-style:normal;font-weight:770;
+ font-variant-numeric:tabular-nums;
+}
+.home-bars i{
+ display:block;height:6px;min-width:4px;border-radius:99px;
+ background:linear-gradient(90deg,var(--val-emerald-dark),var(--val-emerald));
+}
+.home-bars span{color:var(--val-muted);font-size:10.5px}
+
+/* Rosca de cobertura: conic-gradient, sem biblioteca de gráfico. */
+.home-coverage{display:flex;align-items:center;gap:16px}
+.home-donut{
+ --val-share:0%;
+ position:relative;
+ display:grid;
+ place-content:center;
+ justify-items:center;
+ width:96px;
+ height:96px;
+ flex:none;
+ border-radius:50%;
+ background:conic-gradient(var(--val-emerald-dark) 0 var(--val-share),var(--val-line) var(--val-share) 100%);
+}
+.home-donut:before{
+ content:"";
+ position:absolute;
+ inset:11px;
+ border-radius:50%;
+ background:var(--val-surface);
+}
+.home-donut b,.home-donut small{position:relative;z-index:1}
+.home-donut b{color:var(--val-text);font-size:20px;font-weight:780;line-height:1;font-variant-numeric:tabular-nums}
+.home-donut small{color:var(--val-muted);font-size:10px}
+.home-coverage ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;min-width:0}
+.home-coverage li{display:flex;align-items:center;gap:8px;color:var(--val-text);font-size:11.5px;line-height:1.35}
+.home-coverage i{width:9px;height:9px;flex:none;border-radius:50%;background:var(--val-line)}
+.home-coverage i.is-measured{background:var(--val-emerald-dark)}
+
+.home-analytics-kpis{grid-template-columns:1fr 1fr}
+
+/* ------------------------------------------- Ações rápidas em uma linha só */
+.home-quick-actions{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:18px}
+.home-quick-actions h3{margin:0;white-space:nowrap}
+.home-quick-actions>div{
+ display:flex;
+ gap:9px;
+ overflow-x:auto;
+ padding-bottom:2px;
+ scrollbar-width:none;
+}
+.home-quick-actions>div::-webkit-scrollbar{display:none}
+.home-quick-actions button{flex:0 0 auto;border-radius:999px;padding:0 15px}
+
+@media(max-width:1420px){
+ .home-analytics{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:1180px){
+ .home-operational{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .home-insights{grid-column:1/-1}
+}
+@media(max-width:860px){
+ .home-operational,.home-analytics{grid-template-columns:minmax(0,1fr)}
+ .home-insights{grid-column:auto}
+ .home-quick-actions{grid-template-columns:minmax(0,1fr);gap:11px}
+}
+
+/* Uma regra herdada aplica overflow-wrap:anywhere em tudo, o que parte
+   "Oportunidades" no meio quando o cartão é estreito. Título e rótulo curto
+   nunca devem quebrar dentro da palavra. */
+.home-panel h3,
+.home-rail-card h3,
+.home-analytics-kpis small,
+.home-day-head small,
+.home-bars b,
+.home-funnel b{overflow-wrap:normal;word-break:keep-all;hyphens:manual}
+
+/* A faixa analítica são painéis densos: quatro colunas só cabem em tela larga.
+   Abaixo disso, duas — senão o título quebra e o número perde a leitura. */
+.home-analytics{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
+.home-analytics>.home-panel{display:flex;flex-direction:column}
+.home-analytics>.home-panel>ol,
+.home-analytics>.home-panel>div{flex:1}
+
+@media(min-width:1700px){
+ .home-analytics{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+
+/* Cartão vazio não deve esticar para acompanhar o vizinho cheio: vira uma
+   caixa oca enorme. Alturas independentes é o comportamento certo aqui. */
+.home-analytics{align-items:start}
+.home-analytics>.home-panel>ol,
+.home-analytics>.home-panel>div{flex:0 1 auto}
+
+/* Cabeçalho de painel: o título segura a linha e a ação encolhe primeiro. */
+.home-panel>header{gap:8px}
+.home-panel>header h3{min-width:0;font-size:14.5px;line-height:1.25}
+.home-panel>header>button{flex:0 0 auto;white-space:nowrap;padding:0 7px;font-size:10.5px}
+
+/* Ações rápidas: mais itens visíveis antes de precisar rolar. */
+.home-quick-actions button{min-height:42px;padding:0 13px;font-size:11.5px;gap:7px}
+
+/* ============================================================ MOBILE — FINAL
+   Este bloco fica no fim do arquivo de propósito. As regras de densidade do
+   desktop foram sendo acrescentadas depois dos breakpoints e passaram a
+   sobrescrevê-los — "Cobertura" e "Indicadores" voltaram a ficar lado a lado
+   em 375px, com metade do conteúdo cortada. Aqui o celular tem a última
+   palavra, e o que vale é uma coluna, alvo grande e leitura curta. */
+@media(max-width:860px){
+ .home-cockpit{grid-template-columns:minmax(0,1fr);gap:12px}
+ .home-cockpit-main{gap:12px}
+ .home-rail{position:static;grid-template-columns:minmax(0,1fr);display:flex}
+ .home-operational,
+ .home-analytics,
+ .home-analytics-kpis,
+ .home-rail-summary{grid-template-columns:minmax(0,1fr)}
+ .home-analytics>.home-panel{display:block}
+ .home-insights{grid-column:auto}
+}
+
+@media(max-width:760px){
+ /* O dia continua em dois por dois: é a leitura mais rápida com uma mão. */
+ .home-day-strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ .home-day-card{padding:13px 14px;gap:4px}
+ .home-day-card strong{font-size:27px}
+ .home-day-hint{font-size:10.5px}
+
+ /* Alvos de toque: nada abaixo de 44px no caminho principal. */
+ .home-panel>header>button,
+ .home-next-visits li>button,
+ .home-rail-summary button,
+ .home-pendencies li>button,
+ .home-quick-actions button{min-height:44px}
+ .home-panel>header>button{padding:0 11px;font-size:11.5px}
+
+ /* A faixa do Copiloto vira um bloco de ação, com o CTA em largura cheia. */
+ .home-copilot-banner{gap:13px}
+ .home-copilot-banner>button{min-height:48px;font-size:14px}
+
+ /* Resumo do dia na coluna direita já foi lido lá em cima em 2x2: no celular
+    ele volta a ser 2x2 compacto em vez de quatro linhas soltas. */
+ .home-rail-summary{grid-template-columns:1fr 1fr}
+
+ /* Ações rápidas: rolagem horizontal com alvo confortável. */
+ .home-quick-actions>div{gap:8px;padding:2px 0 4px}
+ .home-quick-actions button{padding:0 15px;font-size:12px}
+
+ /* Os painéis perdem moldura dupla e ganham respiro. */
+ .home-panel,.home-rail-card{padding:15px;border-radius:17px}
+ .home-panel>header{margin-bottom:10px}
+ .home-panel h3,.home-rail-card h3{font-size:14.5px}
+}
+
+/* Números da carteira: seção comum no desktop, recolhível no celular. */
+.home-deep>summary{display:none}
+.home-deep>.home-analytics{margin:0}
+
+@media(max-width:760px){
+ .home-deep{
+  border:1px solid var(--val-line);
+  border-radius:17px;
+  background:var(--val-surface);
+  box-shadow:var(--shadow);
+  overflow:hidden;
+ }
+ .home-deep>summary{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:10px;
+  min-height:52px;
+  padding:0 16px;
+  color:var(--val-text);
+  font-size:14px;
+  font-weight:750;
+  cursor:pointer;
+  list-style:none;
+ }
+ .home-deep>summary::-webkit-details-marker{display:none}
+ .home-deep>summary svg{flex:none;color:var(--val-muted);transition:transform .18s ease}
+ .home-deep[open]>summary svg{transform:rotate(90deg)}
+ .home-deep[open]>summary{border-bottom:1px solid var(--val-line)}
+ .home-deep>.home-analytics{padding:13px;gap:11px}
+ /* Dentro do recolhível os painéis perdem a moldura: já estão numa. */
+ .home-deep .home-panel{border:0;box-shadow:none;padding:0 0 13px;border-radius:0;border-bottom:1px solid var(--val-line)}
+ .home-deep .home-panel:last-child{padding-bottom:0;border-bottom:0}
+
+ /* "Resumo do dia" na coluna direita repete os cartões do topo. No celular
+    isso é rolagem por nada. */
+ .home-rail>.home-rail-card:first-child{display:none}
+}

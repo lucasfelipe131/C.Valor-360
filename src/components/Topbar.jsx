@@ -1,5 +1,5 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react'
-import {Bell,BrainCircuit,CalendarDays,ChevronRight,Search,X} from 'lucide-react'
+import {Bell,ChevronRight,Search,X} from 'lucide-react'
 import Logo from './Logo'
 import {MODULES,contextTrail} from '../lib/val-workspaces'
 import {AGRO_TOOLS} from '../lib/agro-tools'
@@ -38,7 +38,13 @@ const buildIndex=({clients,visits,opportunities,role})=>{
 }
 
 export default function Topbar({title,subtitle,onNavigate,onOpenVal,workspace,page,client,clients,visits,opportunities,currentUser,onOpenClient}){
- const today=new Date().toLocaleDateString('pt-BR',{day:'2-digit',month:'short'}).replace('.','')
+ const initials=String(currentUser?.name||currentUser?.email||'VA').replace(/@.*$/,'').split(/[\s._-]+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase()||'VA'
+ // O sino conta pendência real de ciclo de vida — não é contador decorativo.
+ const alerts=(visits||[]).filter(visit=>{
+  const state=String(visit?.lifecycleStatus||visit?.lifecycle_status||'').toUpperCase()
+  if(['IN_PROGRESS','COMPLETED_PENDING_REVIEW'].includes(state))return true
+  return /andamento|iniciad|revis[aã]o/i.test(String(visit?.status||''))
+ }).length
  const [open,setOpen]=useState(false)
  const [query,setQuery]=useState('')
  const inputRef=useRef(null)
@@ -85,7 +91,6 @@ export default function Topbar({title,subtitle,onNavigate,onOpenVal,workspace,pa
    </div>
   </div>
   <div className="top-actions">
-   <button type="button" className="val-shortcut" aria-label="Abrir a VAL" onClick={onOpenVal}><BrainCircuit/><span>Abrir a VAL</span></button>
    <div className="global-search-inline">
     <Search size={16} aria-hidden="true"/>
     <input
@@ -100,8 +105,11 @@ export default function Topbar({title,subtitle,onNavigate,onOpenVal,workspace,pa
     {query&&<button type="button" aria-label="Limpar busca" onClick={()=>{setQuery('');setOpen(false)}}><X size={14}/></button>}
    </div>
    <button type="button" className="icon-btn is-search-compact" aria-label="Buscar produtores, visitas, oportunidades e módulos" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>{open?<X size={19}/>:<Search size={19}/>}</button>
-   <button type="button" className="icon-btn" aria-label="Abrir relatórios e alertas" onClick={()=>onNavigate?.('reports')}><Bell size={19}/></button>
-   <time className="date-pill"><CalendarDays size={16}/> Hoje, {today}</time>
+   <button type="button" className="icon-btn" aria-label={alerts?`Abrir pendências: ${alerts} em aberto`:'Abrir relatórios e alertas'} onClick={()=>onNavigate?.('reports')}>
+    <Bell size={19}/>
+    {alerts>0&&<i className="icon-badge" aria-hidden="true">{alerts>9?'9+':alerts}</i>}
+   </button>
+   <button type="button" className="topbar-avatar" aria-label="Abrir preferências da conta" onClick={()=>onNavigate?.('settings')}>{initials}</button>
   </div>
   {open&&<div className="global-search" role="dialog" aria-label="Busca global">
    <div className="global-search-field">

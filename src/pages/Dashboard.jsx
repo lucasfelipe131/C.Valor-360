@@ -132,6 +132,11 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  const focus=useMemo(()=>buildFocusProducers({clients,visits,opportunities}),[clients,visits,opportunities])
  const pendencies=useMemo(()=>buildPendencies({clients,visits,opportunities}),[clients,visits,opportunities])
  const topCultures=useMemo(()=>buildTopCultures({clients,metricsOf:client=>commercialMetrics(client).openPotential}),[clients])
+ const coverage={total:clients.length,measured:relationships.irtKnown,share:clients.length?Math.round(relationships.irtKnown/clients.length*100):0}
+ // No celular a Home precisa caber na mao: os números da carteira começam
+ // recolhidos e o usuário abre quando quiser. No desktop nascem abertos e o
+ // resumo da seção nem é exibido.
+ const [deepOpen,setDeepOpen]=useState(()=>typeof window==='undefined'||!window.matchMedia('(max-width:760px)').matches)
  const openVisit=entry=>{const client=clients.find(item=>String(item.id)===String(entry.clientId));if(client)onPrepare(client);else setPage('visits')}
  const quickActions=[
   ['Preparar visita',CalendarCheck2,()=>selectedVoiceClient?onPrepare(selectedVoiceClient):setPage('visits')],
@@ -145,10 +150,6 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  ]
 
  return <div className="page-stack val-copilot-home">
-  <section className="copilot-welcome">
-   <div><span className="eyebrow">VAL • SEU COPILOTO</span><h2>{greeting()}, {firstName}! 👋</h2><p>Aqui está o que preparamos para você hoje.</p></div>
-   <button type="button" onClick={()=>setPage('visits')}><CalendarDays/>Abrir agenda</button>
-  </section>
 
   <div className="home-cockpit">
    <div className="home-cockpit-main">
@@ -202,20 +203,30 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
       )}</ul>
      :<p className="home-panel-empty">Nenhum produtor com sinal registrado que peça atenção agora. A VAL não cria foco sem evidência.</p>}
    </section>
+
+   <section className="home-panel home-insights" aria-labelledby="home-insights-title">
+    <header>
+     <h3 id="home-insights-title">Insights para você</h3>
+    </header>
+    {priorities.length
+     ?<ul>{priorities.slice(0,3).map((priority,index)=>{
+       const client=clients.find(item=>String(item.id)===String(priority.subject_id))
+       return <li key={`${priority.insight_id||priority.subject_id||'priority'}-${index}`}>
+        <span className="home-insight-mark"><Sparkles size={14}/></span>
+        <div>
+         <b>{priority.title}</b>
+         <p>{priority.summary}</p>
+        </div>
+        <button type="button" disabled={!client} onClick={()=>openPriority(priority)} aria-label={priority.category==='PREPARE'?'Preparar visita':'Abrir produtor'}>
+         <ChevronRight size={15}/>
+        </button>
+       </li>
+      })}</ul>
+     :<p className="home-panel-empty">Nenhuma prioridade comprovada agora. A VAL não cria urgência sem um sinal registrado.</p>}
+    {insightsError&&<p className="home-panel-note" role="status">Prioridades locais exibidas. {insightsError}</p>}
+   </section>
   </div>
 
-  <section className="copilot-priorities" aria-labelledby="copilot-priorities-title">
-   <header><div><span className="eyebrow">INSIGHTS PARA VOCÊ</span><h3 id="copilot-priorities-title">Até 3 prioridades para agir</h3></div><small>Somente sinais registrados na sua carteira.</small></header>
-   {priorities.length?<div className="copilot-priority-grid">{priorities.slice(0,3).map((priority,index)=>{
-    const client=clients.find(item=>String(item.id)===String(priority.subject_id))
-    return <article key={`${priority.insight_id||priority.subject_id||'priority'}-${index}`}>
-     <span>{String(index+1).padStart(2,'0')}</span>
-     <div><small>{priority.category==='PREPARE'?'PREPARAR':priority.category==='ACT_NOW'?'AGIR AGORA':'ACOMPANHAR'}</small><h4>{priority.title}</h4><p>{priority.summary}</p>{priority.why_now&&<em><Clock3/>{priority.why_now}</em>}<b>{priority.recommended_action}</b></div>
-     <button type="button" disabled={!client} onClick={()=>openPriority(priority)}>{priority.category==='PREPARE'?'Preparar visita':'Abrir produtor'}<ChevronRight/></button>
-    </article>
-   })}</div>:<div className="copilot-empty"><Sparkles/><div><h4>Nenhuma prioridade comprovada agora.</h4><p>A VAL não cria urgência sem um sinal registrado. Use a voz para adicionar contexto ou abra a agenda.</p></div></div>}
-   {insightsError&&<p className="copilot-data-note" role="status">Prioridades locais exibidas. {insightsError}</p>}
-  </section>
 
   <section className="home-copilot-banner">
    <div>
@@ -225,33 +236,66 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
    <button type="button" onClick={()=>onOpenCopilot?.({})}>Abrir Copiloto<ChevronRight size={16}/></button>
   </section>
 
-    <section className="home-analytics">
-     <article className="home-panel">
-      <header><h3>Indicadores da carteira</h3></header>
-      <div className="home-analytics-kpis">
-       <div><small>Produtores</small><b>{clients.length}</b><span>Carteira consolidada</span></div>
-       <div><small>Visitas na agenda</small><b>{upcomingVisits.length}</b><span>Compromissos futuros</span></div>
-       <div><small>Potencial mapeado</small><b>{compactBRL(totalPotential,{known:potentialKnown})}</b><span>{portfolioPriorities.length} {portfolioPriorities.length===1?'prioridade registrada':'prioridades registradas'}</span></div>
-       <div><small>IRT médio</small><b>{irt}</b><span>{relationships.irtKnown} de {relationships.total} perfis medidos</span></div>
-      </div>
-     </article>
+    <details className="home-deep" open={deepOpen} onToggle={event=>setDeepOpen(event.currentTarget.open)}>
+     <summary><span>Números da carteira</span><ChevronRight size={16}/></summary>
+      <section className="home-analytics">
+       <article className="home-panel">
+        <header>
+         <h3>Oportunidades por etapa</h3>
+         <button type="button" onClick={()=>setPage('opportunities')}>Abrir pipeline<ChevronRight size={14}/></button>
+        </header>
+        <ol className="home-funnel">{pipelineSummary.map((stage,index)=>{
+         const total=pipelineSummary.reduce((sum,item)=>sum+item.count,0)
+         const share=total?Math.round(stage.count/total*100):0
+         return <li key={stage.name} className={`is-stage-${index+1}`}>
+          <div><b>{stage.name}</b><span>{stage.detail}</span></div>
+          <i style={{width:`${share}%`}} aria-hidden="true"/>
+          <em>{stage.count} <small>{compactMoney(stage.value)}</small></em>
+         </li>
+        })}</ol>
+       </article>
 
-     <article className="home-panel">
-      <header>
-       <h3>Oportunidades por etapa</h3>
-       <button type="button" onClick={()=>setPage('opportunities')}>Abrir pipeline<ChevronRight size={14}/></button>
-      </header>
-      <ol className="home-funnel">{pipelineSummary.map((stage,index)=>{
-       const total=pipelineSummary.reduce((sum,item)=>sum+item.count,0)
-       const share=total?Math.round(stage.count/total*100):0
-       return <li key={stage.name} className={`is-stage-${index+1}`}>
-        <div><b>{stage.name}</b><span>{stage.detail}</span></div>
-        <i style={{width:`${share}%`}} aria-hidden="true"/>
-        <em>{stage.count} <small>{compactMoney(stage.value)}</small></em>
-       </li>
-      })}</ol>
-     </article>
-    </section>
+       <article className="home-panel">
+        <header><h3>Top culturas da carteira</h3></header>
+        {topCultures.length
+         ?<ol className="home-bars">{topCultures.map(entry=>{
+           const maior=Math.max(...topCultures.map(item=>item.producers))
+           return <li key={entry.culture}>
+            <div><b>{entry.culture}</b><em>{entry.producers}</em></div>
+            <i style={{width:`${Math.round(entry.producers/maior*100)}%`}} aria-hidden="true"/>
+            <span>{entry.potential>0?`${compactBRL(entry.potential,{known:true})} em potencial`:'Potencial não informado'}</span>
+           </li>
+          })}</ol>
+         :<p className="home-panel-empty">Nenhuma cultura declarada na carteira ainda.</p>}
+       </article>
+
+       <article className="home-panel">
+        <header><h3>Cobertura da carteira</h3></header>
+        {clients.length
+         ?<div className="home-coverage">
+           <div className="home-donut" style={{'--val-share':`${coverage.share}%`}} role="img" aria-label={`${coverage.measured} de ${coverage.total} produtores com perfil medido`}>
+            <b>{coverage.share}%</b>
+            <small>perfis</small>
+           </div>
+           <ul>
+            <li><i className="is-measured" aria-hidden="true"/><span>{coverage.measured} com perfil medido</span></li>
+            <li><i aria-hidden="true"/><span>{coverage.total-coverage.measured} ainda a medir</span></li>
+           </ul>
+          </div>
+         :<p className="home-panel-empty">Carteira vazia. A cobertura aparece quando houver produtor registrado.</p>}
+       </article>
+
+       <article className="home-panel">
+        <header><h3>Indicadores da carteira</h3></header>
+        <div className="home-analytics-kpis">
+         <div><small>Produtores</small><b>{clients.length}</b><span>Carteira consolidada</span></div>
+         <div><small>Visitas na agenda</small><b>{upcomingVisits.length}</b><span>Compromissos futuros</span></div>
+         <div><small>Potencial mapeado</small><b>{compactBRL(totalPotential,{known:potentialKnown})}</b><span>{portfolioPriorities.length} {portfolioPriorities.length===1?'prioridade registrada':'prioridades registradas'}</span></div>
+         <div><small>IRT médio</small><b>{irt}</b><span>{relationships.irtKnown} de {relationships.total} perfis medidos</span></div>
+        </div>
+       </article>
+      </section>
+    </details>
 
    </div>
 
@@ -283,18 +327,6 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
       :<p className="home-panel-empty">Nada pendente com o que já está registrado na carteira.</p>}
     </section>
 
-    <section className="home-rail-card">
-     <h3>Top culturas da carteira</h3>
-     {topCultures.length
-      ?<ul className="home-rail-cultures">{topCultures.map(entry=>
-        <li key={entry.culture}>
-         <b>{entry.culture}</b>
-         <span>{entry.producers} produtor{entry.producers>1?'es':''}</span>
-         <em>{entry.potential>0?compactBRL(entry.potential,{known:true}):null}</em>
-        </li>
-       )}</ul>
-      :<p className="home-panel-empty">Nenhuma cultura declarada na carteira ainda.</p>}
-    </section>
 
     <section className="home-rail-card">
      <h3>Atividades recentes</h3>

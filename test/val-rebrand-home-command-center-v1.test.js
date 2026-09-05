@@ -73,13 +73,45 @@ test('o ciclo de vida legado em texto continua sendo entendido',()=>{
 test('a Home mostra o dia antes dos números de carteira',()=>{
  const page=readFileSync('src/pages/Dashboard.jsx','utf8')
  assert.match(page,/buildDayBriefing/)
- const strip=page.indexOf('home-day-strip')
- const next=page.indexOf('home-next-visits')
- const priorities=page.indexOf('copilot-priorities')
- const advanced=page.indexOf('copilot-advanced')
- assert.ok(strip>0&&next>strip,'as próximas visitas vêm depois do resumo do dia')
- assert.ok(next<priorities,'o dia vem antes das prioridades')
- assert.ok(priorities<advanced,'os números de carteira continuam sendo aprofundamento')
+ const dia=page.indexOf('home-day-strip')
+ const operacional=page.indexOf('home-operational')
+ const insights=page.indexOf('home-insights')
+ const copiloto=page.indexOf('home-copilot-banner')
+ const carteira=page.indexOf('home-analytics')
+ const aprofundar=page.indexOf('copilot-advanced')
+ assert.ok(dia>0,'o resumo do dia sumiu da Home')
+ assert.ok(operacional>dia,'a linha operacional vem depois do resumo do dia')
+ assert.ok(insights>operacional,'os insights vivem dentro da linha operacional')
+ assert.ok(copiloto>insights,'a faixa do Copiloto vem depois da linha operacional')
+ assert.ok(carteira>copiloto,'os números de carteira vêm depois da decisão do dia')
+ assert.ok(aprofundar>carteira,'o accordion continua sendo o último recurso')
+ // A saudação é o cabeçalho, não um cartão dentro do corpo.
+ assert.ok(!page.includes('copilot-welcome'),'a saudação voltou a ser um cartão sobre o cabeçalho')
  // Sem chamada nova: o resumo do dia usa o que a sessão já carregou.
  assert.ok(!/fetch\([^)]*briefing/.test(page))
 })
+
+test('no celular a Home cabe na mão: números recolhidos e sem duplicata',()=>{
+ const page=readFileSync('src/pages/Dashboard.jsx','utf8')
+ // O estado inicial vem do viewport: fechado no celular, aberto no desktop.
+ assert.match(page,/window\.matchMedia\('\(max-width:760px\)'\)\.matches/)
+ assert.match(page,/<details className="home-deep" open=\{deepOpen\}/)
+ assert.match(page,/onToggle=\{event=>setDeepOpen\(event\.currentTarget\.open\)\}/)
+
+ const css=readFileSync('src/val-workspace-shell.css','utf8')
+ // No desktop a seção não parece um accordion: o resumo é escondido.
+ assert.match(css,/\.home-deep>summary\{display:none\}/)
+ // "Resumo do dia" da coluna direita repete os cartões do topo no celular.
+ assert.match(css,/\.home-rail>\.home-rail-card:first-child\{display:none\}/)
+})
+
+test('o celular manda na cascata: as regras de densidade não vazam para 375px',()=>{
+ const css=readFileSync('src/val-workspace-shell.css','utf8')
+ // As regras de desktop foram acrescentadas depois dos breakpoints e chegaram
+ // a sobrescrevê-los; o bloco final de mobile existe para ter a última palavra.
+ const ultimoMobile=css.lastIndexOf('@media(max-width:860px)')
+ const duasColunas=css.lastIndexOf('.home-analytics{grid-template-columns:repeat(2')
+ assert.ok(ultimoMobile>duasColunas,'a densidade de desktop voltou a vencer o breakpoint de celular')
+ assert.match(css,/MOBILE — FINAL/)
+})
+

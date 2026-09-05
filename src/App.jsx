@@ -218,7 +218,14 @@ export default function App(){
   return()=>controller.abort()
  },[page,selected?.id,authenticated,portfolioReady,currentUser?.id,currentUser?.demo])
  const valMeta=valMode==='insumos'?['VAL Insumos','Inteligência comercial, técnica e consultiva para gerar valor']:valMode==='graos'?['VAL Grãos','Ambiente dedicado à originação e às operações de grãos']:meta.val
- const [title,subtitle]=page==='val'?valMeta:(meta[page]||['VAL',''])
+ // Na Home o cabeçalho É a saudação, como na referência. Um título "VAL" acima
+ // de um cartão "Bom dia" era um cabeçalho em cima do outro.
+ const hour=new Date().getHours()
+ const greeting=hour<12?'Bom dia':hour<18?'Boa tarde':'Boa noite'
+ const firstName=String(currentUser?.name||currentUser?.email?.split('@')[0]||'Equipe').trim().split(/\s+/)[0]
+ const [title,subtitle]=page==='dashboard'
+  ?[`${greeting}, ${firstName}! 👋`,'Aqui está o que preparamos para você hoje.']
+  :page==='val'?valMeta:(meta[page]||['VAL',''])
  if(publicSurveyToken)return <Suspense fallback={<RouteFallback/>}><PublicSurvey token={publicSurveyToken}/></Suspense>
  if(authenticated===null)return <main className="auth-loading" role="status"><BrainCircuit/><span>Validando acesso seguro…</span></main>
  if(!authenticated)return <Login onLogin={login} notice={authNotice}/>
