@@ -195,7 +195,7 @@ function invalidateDerivedPortfolioCaches({tenantId=config.defaultTenantId,owner
 }
 const mutationClientId=value=>clean(value?.client_id??value?.clientId??value?.client?.id??value?.visit?.client_id??value?.visit?.clientId??value?.action_plan?.client_id??value?.actionPlan?.clientId??value?.outcome?.client_id??value?.outcome?.clientId)
 const realtimeVoiceCostStore=createPostgresRealtimeCostStore({database,tenantId:config.defaultTenantId})
-const realtimeVoice=createRealtimeVoiceService({runtimeConfig:config,client:voiceOpenAI,repository,conversationSessions:valConversationSessions,costStore:realtimeVoiceCostStore,logger:event=>observe('val.realtime_voice',{sessionId:event.sessionId,model:event.model,costUsd:event.costUsd,outcome:event.event})})
+const realtimeVoice=createRealtimeVoiceService({runtimeConfig:config,client:voiceOpenAI,repository,conversationSessions:valConversationSessions,costStore:realtimeVoiceCostStore,logger:event=>observe('val.realtime_voice',{sessionId:event.sessionId,model:event.model,costUsd:event.costUsd,outcome:event.event,errorCode:event.failureCode,providerStatus:event.providerStatus,retryAfterSeconds:event.retryAfterSeconds})})
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
 function consumeRateLimit(scope,key,limit){const now=Date.now();const bucketKey=`${scope}:${key}`;const current=rateBuckets.get(bucketKey);if(!current||current.resetAt<=now){rateBuckets.set(bucketKey,{count:1,resetAt:now+600_000});return true}if(current.count>=limit)return false;current.count+=1;return true}
@@ -241,10 +241,11 @@ async function handleApi(request,response,url){
  if(url.pathname==='/api/release'&&request.method==='GET')return json(response,releaseMetadata?.source?.match===false?409:200,releaseMetadata)
  if(url.pathname==='/api/val/status'&&request.method==='GET'){
   if(!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
-  if(auth.configured&&!await sessionIdentity(request))return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
+  const statusIdentity=await sessionIdentity(request)
+  if(auth.configured&&!statusIdentity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
   const databaseHealth=await database.health();const status=await valEngine.status(databaseHealth)
   const engineConfigured=Boolean(config.openaiApiKey&&auth.configured&&databaseHealth.ready)
-  return json(response,200,{...getPublicEngineConfig(),...status,mode:engineConfigured?'openai':config.openaiApiKey?'locked':'demonstration',configured:engineConfigured,keyConfigured:Boolean(config.openaiApiKey),securityReady:auth.configured,core:valCore.status(),composition:{version:runtimeComposition.version,order:[...runtimeComposition.order]}})
+  return json(response,200,{...getPublicEngineConfig(),...status,mode:engineConfigured?'openai':config.openaiApiKey?'locked':'demonstration',configured:engineConfigured,keyConfigured:Boolean(config.openaiApiKey),securityReady:auth.configured,realtimeVoice:await realtimeVoice.availability({identity:statusIdentity}),core:valCore.status(),composition:{version:runtimeComposition.version,order:[...runtimeComposition.order]}})
  }
  if(url.pathname==='/api/auth/session'&&request.method==='GET'){
   const session=await sessionIdentity(request)
@@ -316,12 +317,13 @@ async function handleApi(request,response,url){
   catch{return json(response,400,{error:'Métrica conversacional inválida.',code:'val_conversation_metric_invalid'})}
  }
  if(url.pathname==='/api/v1/realtime-voice/sessions'&&request.method==='POST'){
-  const actorId=String(identity?.id||identity?.email||'')
-  if(!consumeRateLimit('realtime-voice-session',actorId,config.realtimeVoiceRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de sessões realtime atingido. Aguarde alguns minutos.',code:'realtime_voice_rate_limit'})
+  // The service admits successful sessions separately from startup failures.
+  // A disabled or unavailable provider must not turn into a ten-minute lockout.
   const result=await realtimeVoice.createSession({identity,input:await body(request),requestId:currentRequestContext()?.requestId})
   await accessRepository.recordUsage(identity,{eventType:'realtime_voice_session_created',page:'val',entityType:'realtime_voice_session',entityId:result.sessionId,metadata:{model:result.model,transport:result.transport,clientScoped:Boolean(result.context.clientId),contentFree:true}}).catch(()=>null)
   return json(response,201,result)
  }
+ if(url.pathname==='/api/v1/realtime-voice/status'&&request.method==='GET')return json(response,200,await realtimeVoice.availability({identity}))
  if(url.pathname==='/api/v1/realtime-voice/budget'&&request.method==='GET')return json(response,200,await realtimeVoice.budget({identity}))
  const realtimeUsageMatch=url.pathname.match(/^\/api\/v1\/realtime-voice\/sessions\/([0-9a-f-]{36})\/usage$/i)
  if(realtimeUsageMatch&&request.method==='POST'){
@@ -1074,7 +1076,7 @@ createServer((request,response)=>{
   try{if(technicalWorkspace.handle(request,response,url,await sessionIdentity(request),{demoAllowed:!auth.configured&&config.demoMode}))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
  }
  if(url.pathname==='/live'||url.pathname==='/ready'||url.pathname==='/health'||url.pathname.startsWith('/api/')){
-  try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){const programmingError=exception instanceof TypeError||exception instanceof RangeError||exception instanceof ReferenceError||exception instanceof SyntaxError;const status=Number(exception.statusCode)||(programmingError?500:400);const safeMessage=status<500||exception.safeToRetry===true||exception.exposeMessage===true?exception.message:'Não foi possível processar a solicitação.';return json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception.code?{code:String(exception.code).slice(0,100)}:{}),...(exception.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{})})}
+  try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){const programmingError=exception instanceof TypeError||exception instanceof RangeError||exception instanceof ReferenceError||exception instanceof SyntaxError;const status=Number(exception.statusCode)||(programmingError?500:400);const safeMessage=status<500||exception.safeToRetry===true||exception.exposeMessage===true?exception.message:'Não foi possível processar a solicitação.';const retryAfterSeconds=Math.max(0,Math.min(600,Math.ceil(Number(exception.retryAfterSeconds)||0)));if(retryAfterSeconds)response.setHeader('Retry-After',String(retryAfterSeconds));return json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception.code?{code:String(exception.code).slice(0,100)}:{}),...(exception.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{}),...(retryAfterSeconds?{retryAfterSeconds}:{})})}
   return json(response,404,{error:'Rota não encontrada.'})
  }
  const relative=normalize(url.pathname==='/'?'index.html':url.pathname.replace(/^\/+/,''))
@@ -1096,7 +1098,9 @@ createServer((request,response)=>{
   if(response.headersSent){response.destroy(exception);return}
   const status=Number(exception?.statusCode)||500
   const safeMessage=status<500||exception?.safeToRetry===true||exception?.exposeMessage===true?exception?.message:'Não foi possível processar a solicitação.'
-  json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception?.code?{code:String(exception.code).slice(0,100)}:{}),...(exception?.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{})})
+  const retryAfterSeconds=Math.max(0,Math.min(600,Math.ceil(Number(exception?.retryAfterSeconds)||0)))
+  if(retryAfterSeconds)response.setHeader('Retry-After',String(retryAfterSeconds))
+  json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception?.code?{code:String(exception.code).slice(0,100)}:{}),...(exception?.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{}),...(retryAfterSeconds?{retryAfterSeconds}:{})})
  })
 }).listen(port,'0.0.0.0',()=>console.log(`VALOR 360 disponível na porta ${port}`))
 

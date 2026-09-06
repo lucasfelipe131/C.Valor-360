@@ -1,76 +1,88 @@
-import React,{useState} from 'react'
-import {Keyboard,LoaderCircle,Mic,MicOff,Pause,Play,Power,RotateCcw,Volume2} from 'lucide-react'
-import useRealtimeConversation from '../../hooks/useRealtimeConversation.js'
+import React,{useEffect,useRef} from 'react'
+import {Keyboard,LoaderCircle,Mic,MicOff,Play,Power,RotateCcw,Volume2} from 'lucide-react'
 import useNaturalRealtimeVoice from '../../hooks/useNaturalRealtimeVoice.js'
 import {REALTIME_CONVERSATION_POLICY,REALTIME_CONVERSATION_STATES} from '../../lib/realtime-conversation.js'
 import '../../val-realtime-conversation.css'
 
-export default function ValRealtimeConversation({
- disabled=false,
- responseText='',
- responseKey='',
- processing=false,
- onTranscript,
- onError,
- onStateChange,
- onMetrics,
- onStart,
- onExit,
- onFallbackPushToTalk,
- onFallbackText,
- realtimeContext,
- onRealtimeUserTranscript,
- onRealtimeAssistantTranscript,
- onRealtimeToolCall,
- onRealtimeMemoryReview,
- className=''
+const countdownLabel=seconds=>`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`
+
+/** The voice stage presents the session state without opening a microphone. */
+export function ValRealtimeConversationStage({
+ state,disabled=false,errorMessage='',retryAfterSeconds=0,canRetry=true,liveTranscript='',
+ onRetry,onPause,onResume,onResumeAudio,onInterrupt,onExit,onFallbackPushToTalk,onFallbackText,className=''
 }){
- const [transport,setTransport]=useState('natural')
- const legacy=useRealtimeConversation({disabled,responseText,responseKey,processing,onTranscript,onError,onStateChange,onMetrics})
- const natural=useNaturalRealtimeVoice({disabled,clientId:realtimeContext?.clientId||'',conversationId:realtimeContext?.conversationId||'',contextEpoch:realtimeContext?.contextEpoch??0,activeContext:realtimeContext?.activeContext||null,onUserTranscript:onRealtimeUserTranscript,onAssistantTranscript:onRealtimeAssistantTranscript,onToolCall:onRealtimeToolCall,onMemoryReview:onRealtimeMemoryReview,onError,onStateChange,onMetrics})
- const conversation=transport==='legacy'?legacy:natural
- const {state}=conversation
- const inactive=state.status===REALTIME_CONVERSATION_STATES.IDLE
+ const transcriptRef=useRef(null)
  const unavailable=[REALTIME_CONVERSATION_STATES.ERROR,REALTIME_CONVERSATION_STATES.FALLBACK].includes(state.status)
  const paused=state.status===REALTIME_CONVERSATION_STATES.PAUSED
+ const connecting=state.status==='CONNECTING'
+ const thinking=[REALTIME_CONVERSATION_STATES.PROCESSING,REALTIME_CONVERSATION_STATES.TURN_DETECTED,'THINKING'].includes(state.status)
+ const speaking=state.status===REALTIME_CONVERSATION_STATES.SPEAKING
+ const remaining=Math.max(0,Math.ceil(Number(state.retryAfterSeconds||retryAfterSeconds)||0))
+ const retryDisabled=disabled||!canRetry||state.canRetry===false||remaining>0
+ const userTranscript=String(state.interimTranscript||liveTranscript||'').trim()
+ const assistantTranscript=String(state.assistantTranscript||'').trim()
  const rootClass=['val-realtime-conversation',`is-${state.status.toLowerCase()}`,className].filter(Boolean).join(' ')
- const leave=()=>{conversation.exit();onExit?.()}
- const start=async()=>{
-  onStart?.();setTransport('natural')
-  const result=await natural.start()
-  if(!result?.ok&&result?.reason==='realtime_voice_disabled'){setTransport('legacy');legacy.start()}
- }
- const retry=async()=>{setTransport('natural');await natural.start()}
+ const label=unavailable?'A conversa foi interrompida':paused?'Conversa pausada':connecting?'Conectando sua conversa':speaking?'VAL está falando':thinking?'Pensando na sua pergunta':state.microphoneActive?'Estou ouvindo':state.label||'Preparando o microfone'
+ const detail=unavailable?'Seu microfone está desligado. Você pode continuar por texto.':paused?'Retome quando quiser. Seu microfone está desligado.':connecting?'Um instante. Estamos preparando o áudio.':speaking?'Pode me interromper para perguntar ou complementar.':thinking?state.microphoneActive?'Você pode complementar enquanto preparo a resposta.':'Estou preparando a resposta.':state.microphoneActive?'Fale naturalmente. Eu respondo quando você terminar.':'Aguarde o indicador de microfone ativo para falar.'
+ const permissionDenied=['MICROPHONE_PERMISSION_DENIED','NotAllowedError'].includes(state.fallbackReason)
+ const failureText=permissionDenied?'Permita o microfone nas configurações deste site no navegador e tente novamente.':errorMessage||state.error||'Não foi possível manter a conexão de voz. Você pode tentar novamente ou continuar por texto.'
+ useEffect(()=>{const transcript=transcriptRef.current;if(transcript)transcript.scrollTop=transcript.scrollHeight},[userTranscript,assistantTranscript])
 
- if(inactive)return <button type="button" className="val-conversation-opt-in" onClick={start} disabled={disabled} aria-label="Iniciar modo conversa por voz"><Mic/><span><b>Modo conversa</b><small>Fale e ouça a VAL sem enviar a cada turno</small></span></button>
-
- return <section className={rootClass} aria-label="Modo conversa por voz" data-version={state.version||REALTIME_CONVERSATION_POLICY.version} data-transport={state.transport||'WEB_SPEECH'} data-microphone-active={state.microphoneActive?'true':'false'}>
-  <div className="val-conversation-orb" aria-hidden="true"><span className="val-orb-ring r3"></span><span className="val-orb-ring r2"></span><span className="val-orb-ring"></span><span className="val-orb-core"></span></div>
-  <div className="val-conversation-status" role="status" aria-live="polite">
-   <span className="val-conversation-mic" aria-hidden="true">{state.microphoneActive?<Mic/>:<MicOff/>}</span>
-   <span><b>{state.label}</b><small>{state.microphoneActive?state.isSpeaking?'Microfone ativo para permitir interrupção':'Microfone ativo e indicado':state.status===REALTIME_CONVERSATION_STATES.PROCESSING||state.status==='THINKING'?'A VAL está preparando a resposta':state.status===REALTIME_CONVERSATION_STATES.SPEAKING?'Você pode interromper':'Microfone desligado'}</small></span>
-   {(state.status===REALTIME_CONVERSATION_STATES.PROCESSING||state.status==='THINKING'||state.status==='CONNECTING')&&<LoaderCircle className="val-conversation-spinner" aria-hidden="true"/>}
-   {state.status===REALTIME_CONVERSATION_STATES.SPEAKING&&<Volume2 className="val-conversation-speaking" aria-hidden="true"/>}
+ return <section className={rootClass} aria-label="Modo conversa por voz" data-version={state.version||REALTIME_CONVERSATION_POLICY.version} data-transport={state.transport||'WEBRTC'} data-microphone-active={state.microphoneActive?'true':'false'}>
+  <div className="val-conversation-topline">
+   <span className="val-conversation-eyebrow">Conversa por voz</span>
+   <span className={`val-conversation-connection ${state.microphoneActive?'is-live':''}`}><span aria-hidden="true"/>{connecting?'Conectando':state.microphoneActive?'Microfone ativo':'Microfone desligado'}</span>
   </div>
-
-  {state.interimTranscript&&state.isListening&&<p className="val-conversation-interim" aria-label="Transcrição em andamento">{state.interimTranscript}</p>}
-
+  <div className="val-conversation-stage">
+   <div className="val-conversation-orb" aria-hidden="true"><span className="val-orb-ring r3"/><span className="val-orb-ring r2"/><span className="val-orb-ring"/><span className="val-orb-core"/><span className="val-orb-shimmer"/></div>
+   <div className="val-conversation-status" role="status" aria-live="polite" aria-atomic="true">
+    <div className="val-conversation-status-title">
+     <span className="val-conversation-mic" aria-hidden="true">{connecting||thinking?<LoaderCircle className="val-conversation-spinner"/>:speaking?<Volume2 className="val-conversation-speaking"/>:state.microphoneActive?<Mic/>:<MicOff/>}</span>
+     <h2>{label}</h2>
+    </div>
+    <p>{detail}</p>
+   </div>
+  </div>
+  {(userTranscript||assistantTranscript)&&<div ref={transcriptRef} className="val-conversation-transcript" role="region" aria-label="Transcrição da conversa" tabIndex={0}>
+   {userTranscript&&<div className="val-conversation-transcript-turn is-user"><span>Você</span><p className="val-conversation-interim" aria-label="Sua transcrição">{userTranscript}</p></div>}
+   {assistantTranscript&&<div className="val-conversation-transcript-turn is-assistant"><span>VAL</span><p>{assistantTranscript}</p></div>}
+  </div>}
   {unavailable&&<div className="val-conversation-fallback">
-   <p>{state.fallbackReason==='MICROPHONE_PERMISSION_DENIED'||state.fallbackReason==='NotAllowedError'?'Permita o microfone nos ajustes do Safari/site e tente novamente.':'O modo contínuo não está disponível agora. Você ainda pode falar tocando no microfone.'}</p>
+   <p role="alert">{failureText}</p>
+   {remaining>0&&<p className="val-conversation-retry-note">Nova tentativa disponível em <strong role="timer" aria-live="off">{countdownLabel(remaining)}</strong>. Não é preciso clicar novamente enquanto aguarda.</p>}
    <div>
-    {transport==='natural'&&<button type="button" onClick={retry}><RotateCcw/><span>Tentar modo conversa novamente</span></button>}
+    <button type="button" className="is-primary" onClick={onRetry} disabled={retryDisabled} aria-label="Tentar modo conversa novamente"><RotateCcw/><span>{remaining>0?`Aguarde ${countdownLabel(remaining)}`:'Tentar novamente'}</span></button>
     {onFallbackPushToTalk&&<button type="button" onClick={onFallbackPushToTalk}><Mic/><span>Apertar para falar</span></button>}
-    {onFallbackText&&<button type="button" onClick={onFallbackText}><Keyboard/><span>Digitar</span></button>}
    </div>
   </div>}
-
+  {!unavailable&&state.error&&<p className="val-conversation-notice" role="alert">{state.error}</p>}
   <div className="val-conversation-controls" role="group" aria-label="Controles do modo conversa">
-   {!unavailable&&state.canBargeIn&&<button type="button" className="is-primary" onClick={conversation.bargeIn} aria-label="Interromper a VAL e falar"><RotateCcw/><span>Interromper e falar</span></button>}
-   {!unavailable&&!paused&&state.status!==REALTIME_CONVERSATION_STATES.PROCESSING&&state.status!=='THINKING'&&state.status!=='CONNECTING'&&<button type="button" onClick={conversation.pause} aria-label="Pausar modo conversa"><Pause/><span>Pausar</span></button>}
-   {!unavailable&&paused&&<button type="button" className="is-primary" onClick={conversation.resume} aria-label="Retomar modo conversa"><Play/><span>Retomar</span></button>}
-   <button type="button" onClick={leave} aria-label="Sair do modo conversa"><Power/><span>Sair</span></button>
+   {!unavailable&&state.audioBlocked&&onResumeAudio&&<button type="button" className="val-conversation-control is-primary" onClick={onResumeAudio} aria-label="Retomar áudio da VAL"><Volume2/><span>Retomar áudio</span></button>}
+   {!unavailable&&!paused&&!connecting&&<button type="button" className="val-conversation-control" onClick={onPause} aria-label="Pausar modo conversa e desligar o microfone"><MicOff/><span>Pausar</span></button>}
+   {!unavailable&&paused&&<button type="button" className="val-conversation-control is-primary" onClick={onResume} aria-label="Retomar modo conversa"><Play/><span>Retomar</span></button>}
+   {!unavailable&&state.canBargeIn&&<button type="button" className="val-conversation-control is-primary" onClick={onInterrupt} aria-label="Interromper a VAL e falar"><RotateCcw/><span>Interromper</span></button>}
+   {onFallbackText&&<button type="button" className="val-conversation-control" onClick={onFallbackText} aria-label="Continuar a conversa por texto"><Keyboard/><span>Digitar</span></button>}
+   <button type="button" className="val-conversation-control is-stop" onClick={onExit} aria-label="Sair do modo conversa"><Power/><span>Encerrar</span></button>
   </div>
-
-  <p className="val-conversation-privacy">O microfone só fica ativo quando o indicador informa isso. No WebRTC ele permanece ativo para detectar turnos e interrupções; pausar ou sair encerra a captura.</p>
+  <p className="val-conversation-privacy">Você controla o microfone. Pausar ou encerrar desliga a captura de áudio.</p>
  </section>
+}
+
+export default function ValRealtimeConversation({
+ disabled=false,responseText='',responseKey='',processing=false,onTranscript,onError,onStateChange,onMetrics,onStart,onExit,
+ onFallbackPushToTalk,onFallbackText,realtimeContext,onRealtimeUserTranscript,onRealtimeAssistantTranscript,onRealtimeToolCall,
+ onRealtimeMemoryReview,retryAfterSeconds=0,errorMessage='',canRetry=true,liveTranscript='',className=''
+}){
+ const conversation=useNaturalRealtimeVoice({disabled,clientId:realtimeContext?.clientId||'',conversationId:realtimeContext?.conversationId||'',contextEpoch:realtimeContext?.contextEpoch??0,activeContext:realtimeContext?.activeContext||null,onUserTranscript:onRealtimeUserTranscript,onAssistantTranscript:onRealtimeAssistantTranscript,onToolCall:onRealtimeToolCall,onMemoryReview:onRealtimeMemoryReview,onError,onStateChange,onMetrics})
+ const {state}=conversation
+ const start=async()=>{
+  onStart?.()
+  return conversation.start()
+ }
+ const leave=async()=>{await conversation.exit();onExit?.()}
+ const switchTo=callback=>async()=>{await conversation.exit();onExit?.();callback?.()}
+
+ if(state.status===REALTIME_CONVERSATION_STATES.IDLE)return <button type="button" className="val-conversation-opt-in" onClick={start} disabled={disabled} aria-label="Iniciar modo conversa por voz"><Mic/><span><b>Modo conversa</b><small>Fale e ouça a VAL sem enviar a cada turno</small></span></button>
+
+ return <ValRealtimeConversationStage state={state} disabled={disabled} className={className} errorMessage={errorMessage} retryAfterSeconds={retryAfterSeconds} canRetry={canRetry} liveTranscript={liveTranscript} onRetry={start} onPause={conversation.pause} onResume={conversation.resume} onResumeAudio={conversation.resumeAudio} onInterrupt={conversation.bargeIn} onExit={leave} onFallbackPushToTalk={onFallbackPushToTalk?switchTo(onFallbackPushToTalk):undefined} onFallbackText={onFallbackText?switchTo(onFallbackText):undefined}/>
 }

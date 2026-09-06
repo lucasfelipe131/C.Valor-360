@@ -277,7 +277,7 @@ test('contrato de implantação mantém flag default-off, CSP e fallback',()=>{
  assert.match(hook,/CONTEXT_SCOPE_CHANGED/)
  assert.match(hook,/scopeReconnectPending/)
  assert.match(hook,/const \[reconnectSequence,setReconnectSequence\]=useState\(0\)/)
- assert.match(hook,/await cleanup\(\{final:true,reason:'CONTEXT_SCOPE_CHANGED',nextStatus:STATES\.CONNECTING\}\)[\s\S]*setReconnectSequence\(current=>current\+1\)/)
+ assert.match(hook,/await cleanup\(\{final:true,reason:'CONTEXT_SCOPE_CHANGED',nextStatus:userPaused\.current\?STATES\.PAUSED:STATES\.CONNECTING\}\)[\s\S]*setReconnectSequence\(current=>current\+1\)/)
  assert.match(hook,/\[disabled,reconnectSequence,start,scopeKey\]/)
  assert.match(hook,/JSON\.stringify\(\{clientId:startedScope\.clientId,conversationId:startedScope\.conversationId,contextEpoch:startedScope\.contextEpoch,activeContext\}\)/)
  assert.match(hook,/dc\.onmessage=event=>handleEvent\(event\.data,eventScope\)/)

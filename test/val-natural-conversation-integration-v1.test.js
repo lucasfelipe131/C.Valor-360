@@ -58,7 +58,7 @@ test('superfícies HTTP e UI conectam resolver, sessão, voz, métricas e confir
  assert.match(copilot,/global-val-clarification/)
  assert.match(copilot,/registrationDraft/)
  assert.match(copilot,/onMetrics=\{recordConversationMetrics\}/)
- assert.match(copilot,/onStart=\{\(\)=>\{if\(!hasValOutputModePreference\(storageScope\)\)setOutputMode\(writeValOutputMode\(storageScope,'audio'\)\)\}\}/)
+ assert.match(copilot,/onStart=\{\(\)=>\{setError\(''\);if\(!hasValOutputModePreference\(storageScope\)\)setOutputMode\(writeValOutputMode\(storageScope,'audio'\)\)\}\}/)
  assert.match(copilot,/turnOptions:\{\.\.\.turnOptions,turnId\},activeThreadKey,conversationId:currentConversationId,contextEpoch:currentContextEpoch/)
  assert.match(copilot,/ask\(pending\.prompt,pending\.intent,\{\.\.\.\(pending\.turnOptions\|\|\{\}\),retry:true\}\)/)
  assert.match(copilot,/realtimeClarificationRef\.current=\{resolve,reject,activeThreadKey\}/)

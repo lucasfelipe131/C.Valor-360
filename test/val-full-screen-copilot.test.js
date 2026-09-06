@@ -262,7 +262,7 @@ test('composer multimodal diferencia ASK, REGISTER, voz efêmera e arquivo sem v
  assert.match(speech,/onTranscript/)
  assert.match(copilot,/DecisionInterviewCard/)
  assert.match(interviewCard,/useId\(\)/)
- assert.match(copilot,/onFallbackPushToTalk=\{requestPushToTalk\}/)
+ assert.match(copilot,/onFallbackPushToTalk=\{\(\)=>\{setError\(''\);requestPushToTalk\(\)\}\}/)
  assert.match(copilot,/autoOpenKey=\{pendingCapture==='voice'\?voiceAutoOpenKey:''\}/)
  assert.match(copilot,/autoStartKey=\{pendingCapture==='voice'\?voiceAutoOpenKey:''\}/)
 })
