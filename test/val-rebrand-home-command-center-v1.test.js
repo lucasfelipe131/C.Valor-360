@@ -77,32 +77,43 @@ test('a Home mostra o dia antes dos números de carteira',()=>{
  const operacional=page.indexOf('home-operational')
  const insights=page.indexOf('home-insights')
  const copiloto=page.indexOf('home-copilot-banner')
+ const acoes=page.indexOf('home-quick-actions')
  const carteira=page.indexOf('home-analytics')
- const aprofundar=page.indexOf('copilot-advanced')
+ const perguntar=page.indexOf('copilot-talk')
+ const aprofundar=page.indexOf('copilot-advanced-content')
  assert.ok(dia>0,'o resumo do dia sumiu da Home')
  assert.ok(operacional>dia,'a linha operacional vem depois do resumo do dia')
  assert.ok(insights>operacional,'os insights vivem dentro da linha operacional')
  assert.ok(copiloto>insights,'a faixa do Copiloto vem depois da linha operacional')
- assert.ok(carteira>copiloto,'os números de carteira vêm depois da decisão do dia')
- assert.ok(aprofundar>carteira,'o accordion continua sendo o último recurso')
+ assert.ok(acoes>copiloto,'as ações rápidas fecham o primeiro nível')
+ assert.ok(carteira>acoes,'os números de carteira vêm depois de tudo que é decisão do dia')
+ assert.ok(perguntar>carteira&&aprofundar>perguntar,'o segundo nível é: números, pergunta, radar')
  // A saudação é o cabeçalho, não um cartão dentro do corpo.
  assert.ok(!page.includes('copilot-welcome'),'a saudação voltou a ser um cartão sobre o cabeçalho')
  // Sem chamada nova: o resumo do dia usa o que a sessão já carregou.
  assert.ok(!/fetch\([^)]*briefing/.test(page))
 })
 
-test('no celular a Home cabe na mão: números recolhidos e sem duplicata',()=>{
+test('dois níveis em qualquer tela: o segundo plano nasce recolhido e lembra a escolha',()=>{
  const page=readFileSync('src/pages/Dashboard.jsx','utf8')
- // O estado inicial vem do viewport: fechado no celular, aberto no desktop.
- assert.match(page,/window\.matchMedia\('\(max-width:760px\)'\)\.matches/)
- assert.match(page,/<details className="home-deep" open=\{deepOpen\}/)
- assert.match(page,/onToggle=\{event=>setDeepOpen\(event\.currentTarget\.open\)\}/)
+ // Os três blocos de segundo plano usam o mesmo recolhível, com chave própria.
+ for(const id of ['home-numbers','home-ask','home-deep-dive'])assert.match(page,new RegExp(`<Disclosure id="${id}"`),`o recolhível "${id}" sumiu da Home`)
+ // O recolhível decide por si: nada de viewport, nada de estado local na página.
+ assert.ok(!page.includes('matchMedia'),'a Home voltou a decidir pelo viewport o que fica aberto')
+ assert.ok(!page.includes('className="home-deep"'),'o recolhível antigo, só de celular, voltou')
+ assert.ok(!page.includes('home-rail-summary'),'"Resumo do dia" voltou a repetir os contadores do topo')
+
+ const disclosure=readFileSync('src/components/Disclosure.jsx','utf8')
+ assert.match(disclosure,/defaultOpen=false/)
+ assert.match(disclosure,/localStorage\.(getItem|setItem)\(STORAGE_PREFIX\+id/)
+ assert.match(disclosure,/<details className=\{`val-disclosure/)
 
  const css=readFileSync('src/val-workspace-shell.css','utf8')
- // No desktop a seção não parece um accordion: o resumo é escondido.
- assert.match(css,/\.home-deep>summary\{display:none\}/)
- // "Resumo do dia" da coluna direita repete os cartões do topo no celular.
- assert.match(css,/\.home-rail>\.home-rail-card:first-child\{display:none\}/)
+ // Um único resumo visível nas duas telas: nada de esconder o summary no desktop.
+ assert.ok(!/\.val-disclosure>summary\{display:none\}/.test(css))
+ assert.match(css,/\.val-disclosure\[open\]>summary>svg\{transform:rotate\(90deg\)\}/)
+ // Cartão dentro de cartão não: o que já era cartão perde a moldura ali dentro.
+ assert.match(css,/\.val-disclosure \.copilot-talk\{[^}]*border:0/)
 })
 
 test('o celular manda na cascata: as regras de densidade não vazam para 375px',()=>{
@@ -115,3 +126,27 @@ test('o celular manda na cascata: as regras de densidade não vazam para 375px',
  assert.match(css,/MOBILE — FINAL/)
 })
 
+test('no celular a VAL vem primeiro e a fala é o gesto principal',()=>{
+ const page=readFileSync('src/pages/Dashboard.jsx','utf8')
+ // Dois gestos na faixa da VAL: falar (principal) e escrever.
+ assert.match(page,/className="is-voice" onClick=\{\(\)=>onOpenCopilot\?\.\(\{conversation:true\}\)\}><Mic/)
+ assert.match(page,/onOpenCopilot\?\.\(\{capture:'text'\}\)/)
+ assert.ok(!page.includes('Abrir Copiloto<'),'o botão genérico voltou no lugar dos dois gestos')
+
+ // O pedido atravessa o resolvedor e chega ao modo conversa, que começa sozinho.
+ const resolver=readFileSync('src/lib/copilot-context.js','utf8')
+ assert.match(resolver,/conversation:!rejectedClient&&requested\.conversation===true/)
+ const copilot=readFileSync('src/components/GlobalValCopilot.jsx','utf8')
+ assert.match(copilot,/setConversationAutoStartKey\(seed\.conversation\?String\(seed\.nonce\):''\)/)
+ assert.match(copilot,/autoStartKey=\{conversationAutoStartKey\}/)
+ const realtime=readFileSync('src/components/copilot/ValRealtimeConversation.jsx','utf8')
+ assert.match(realtime,/useEffect\(\(\)=>\{if\(autoStartKey&&inactive&&!disabled\)start\(\)\},\[autoStartKey\]\)/)
+
+ // No celular a faixa sobe para o topo e o botão de voz é o maior da tela.
+ const css=readFileSync('src/val-workspace-shell.css','utf8')
+ const mobile=css.slice(css.indexOf('MOBILE — FINAL'))
+ assert.match(mobile,/\.home-copilot-banner\{order:-1/)
+ assert.match(mobile,/\.home-copilot-actions \.is-voice\{min-height:62px/)
+ const realtimeCss=readFileSync('src/val-realtime-conversation.css','utf8')
+ assert.match(realtimeCss,/@media\(max-width:760px\)\{\s*\.val-fs-conversation>\.val-conversation-opt-in\{[^}]*min-height:64px/)
+})

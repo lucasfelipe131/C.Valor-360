@@ -140,6 +140,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  const [replyingTo,setReplyingTo]=useState(null)
  const [pendingCapture,setPendingCapture]=useState('')
  const [voiceAutoOpenKey,setVoiceAutoOpenKey]=useState('')
+ const [conversationAutoStartKey,setConversationAutoStartKey]=useState('')
  const [sessionReplyOffer,setSessionReplyOffer]=useState(null)
  const [sessionReplies,setSessionReplies]=useState({})
  const [threads,setThreads]=useState(storedWorkspace.threads)
@@ -214,6 +215,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   setMode(seed.mode||'ASK')
   setPendingCapture(seed.capture||'')
   setVoiceAutoOpenKey(seed.capture==='voice'?String(seed.nonce):'')
+  setConversationAutoStartKey(seed.conversation?String(seed.nonce):'')
   setSeedFiles(incomingFiles)
   setSeedVoice(seed.voiceFile?{file:seed.voiceFile,recording:seed.recording||null,intent:seed.intent||'ASK_AGRONOMIC'}:null)
   setSeedText(autoSubmit?{nonce:seed.nonce,prompt:seed.prompt,intent:seed.intent||undefined,clientId:seed.clientId||'',context:seed.context||null}:null)
@@ -620,6 +622,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
     </div>
     {mode==='ASK'&&<ValRealtimeConversation
      disabled={busy||uploading}
+     autoStartKey={conversationAutoStartKey}
      processing={busy}
      responseText={realtimeResponseText}
      responseKey={realtimeResponseKey}

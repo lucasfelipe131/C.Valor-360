@@ -1,4 +1,4 @@
-import React,{useState} from 'react'
+import React,{useEffect,useState} from 'react'
 import {Keyboard,LoaderCircle,Mic,MicOff,Pause,Play,Power,RotateCcw,Volume2} from 'lucide-react'
 import useRealtimeConversation from '../../hooks/useRealtimeConversation.js'
 import useNaturalRealtimeVoice from '../../hooks/useNaturalRealtimeVoice.js'
@@ -23,7 +23,8 @@ export default function ValRealtimeConversation({
  onRealtimeAssistantTranscript,
  onRealtimeToolCall,
  onRealtimeMemoryReview,
- className=''
+ className='',
+ autoStartKey=''
 }){
  const [transport,setTransport]=useState('natural')
  const legacy=useRealtimeConversation({disabled,responseText,responseKey,processing,onTranscript,onError,onStateChange,onMetrics})
@@ -41,6 +42,9 @@ export default function ValRealtimeConversation({
   if(!result?.ok&&result?.reason==='realtime_voice_disabled'){setTransport('legacy');legacy.start()}
  }
  const retry=async()=>{setTransport('natural');await natural.start()}
+ // Quem tocou em "Falar com a VAL" já disse o que quer: a conversa começa
+ // sem um segundo toque. Dispara só quando a chave muda, nunca em re-render.
+ useEffect(()=>{if(autoStartKey&&inactive&&!disabled)start()},[autoStartKey])
 
  if(inactive)return <button type="button" className="val-conversation-opt-in" onClick={start} disabled={disabled} aria-label="Iniciar modo conversa por voz"><Mic/><span><b>Modo conversa</b><small>Fale e ouça a VAL sem enviar a cada turno</small></span></button>
 

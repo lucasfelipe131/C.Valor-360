@@ -17,6 +17,7 @@ Branch: `rebrand/val-global-hybrid-workspace-v1` · Base: `2bed57c` · `main` n�
 | **R5** | Produtor 360 com Split View contextual | `rebrand(r5)` |
 | **R9** | Fronteira do iframe | `rebrand(r9)` |
 | **R12** | Correção pela referência: paleta restaurada, marca corrigida, navegação e Home refeitas segundo a Mescla 09 | `rebrand(r12)` |
+| **R16** | Dois níveis em toda tela (primeiro plano visível, segundo plano em `Disclosure`); no celular a VAL em evidência, com "Falar com a VAL" abrindo o Copiloto já em modo conversa por voz | `rebrand(r16)` |
 
 **Não entregues: R6, R7 (parcial), R8, R10 (parcial), R11.** Detalhe na seção 5.
 
@@ -103,7 +104,7 @@ e já constavam da triagem feita pelo próprio usuário. Detalhe em `VAL_REBRAND
 | Item | Situação | Motivo |
 |---|---|---|
 | **R6 — Preparar Visita em seis etapas** | não feito | fluxo grande, com comportamento a preservar item a item; merece sua própria fase e seu próprio gate |
-| **R7 — Copiloto** | parcial | painel contextual entregue; a integração de contexto de página já existia e foi preservada. Full screen e voz não foram redesenhados |
+| **R7 — Copiloto** | parcial | painel contextual entregue; a integração de contexto de página já existia e foi preservada. No celular o modo conversa por voz ficou em evidência e abre direto da Home (r16); o full screen em si não foi redesenhado |
 | **R8 — Conhecimento** | não feito | reestruturar a apresentação em Resumo/Diagnóstico/Evidências/… mexe em como a resposta da IA é renderizada — risco alto, precisa de golden set próprio |
 | **R10 — Calculadoras** | parcial | alcançáveis pela sidebar e pela busca, contrato mobile travado por teste; a refatoração de apresentação não foi feita e **não pôde ser validada em execução**: `manual/node_modules` não está instalado |
 | **R11 — demais módulos** | não redesenhados individualmente; herdaram o shell novo e a paleta original |

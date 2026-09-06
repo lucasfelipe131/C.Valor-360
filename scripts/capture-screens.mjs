@@ -29,7 +29,9 @@ if(!CHROME){console.error('Nenhum Chrome/Edge encontrado.');process.exit(1)}
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms))
 
 // Cada tela: nome do arquivo, viewport e o caminho de cliques até chegar lá.
-// `nav` clica num botão da sidebar pelo texto exato; `more` abre o sheet mobile.
+// `nav` clica num botão da sidebar pelo texto exato; `more` abre o sheet mobile;
+// `click` clica num seletor CSS; `tab` clica na barra inferior do celular pelo
+// texto; `tap` clica em qualquer botão pelo texto exato.
 const SCREENS=[
  {file:'home-desktop',width:1440,height:1240,steps:[]},
  {file:'workspace-produtor',width:1440,height:1100,steps:[{nav:'Produtor'}]},
@@ -37,12 +39,20 @@ const SCREENS=[
  {file:'workspace-campo',width:1440,height:1240,steps:[{nav:'Campo'}]},
  {file:'workspace-campo-calculadoras',width:1440,height:1240,steps:[{nav:'Inteligência'},{nav:'Calculadoras'}]},
  {file:'workspace-gestao',width:1440,height:1100,steps:[{nav:'Gestão'}]},
+ {file:'workspace-comercial-oportunidades',width:1440,height:1240,steps:[{nav:'Oportunidades'}]},
  {file:'home-mobile',width:375,height:1000,mobile:true,steps:[]},
+ {file:'mobile-copilot',width:375,height:1000,mobile:true,steps:[{click:'.home-copilot-actions button:not(.is-voice)'}]},
+ {file:'mobile-copilot-voice',width:375,height:1000,mobile:true,steps:[{click:'.home-copilot-actions .is-voice'},{wait:2500}]},
+ {file:'mobile-produtores',width:375,height:1000,mobile:true,steps:[{tab:'Produtores'}]},
+ {file:'mobile-visitas',width:375,height:1000,mobile:true,steps:[{more:true},{tap:'Visitas'}]},
+ {file:'mobile-oportunidades',width:375,height:1000,mobile:true,steps:[{more:true},{tap:'Oportunidades'}]},
+ {file:'mobile-campo',width:375,height:1000,mobile:true,steps:[{more:true},{tap:'Mapas e talhões'}]},
  {file:'mobile-workspaces',width:375,height:1000,mobile:true,steps:[{more:true}]}
 ]
 
 const chrome=spawn(CHROME,[
  '--headless=new','--disable-gpu','--hide-scrollbars','--no-first-run','--no-default-browser-check',
+ '--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream',
  `--remote-debugging-port=${PORT}`,`--user-data-dir=${PROFILE}`,'about:blank'
 ],{stdio:'ignore'})
 
@@ -86,6 +96,24 @@ const openMore=`(()=>{
  b.click();return 'ok';
 })()`
 
+const clickSelector=selector=>`(()=>{
+ const b=document.querySelector(${JSON.stringify(selector)});
+ if(!b)return 'nao encontrado: '+${JSON.stringify(selector)};
+ b.click();return 'ok';
+})()`
+
+const tapText=label=>`(()=>{
+ const b=[...document.querySelectorAll('button')].find(x=>x.textContent.trim()===${JSON.stringify(label)});
+ if(!b)return 'sem botao: '+${JSON.stringify(label)};
+ b.click();return 'ok';
+})()`
+
+const clickTab=label=>`(()=>{
+ const b=[...document.querySelectorAll('.mobile-nav>button')].find(x=>x.textContent.trim()===${JSON.stringify(label)});
+ if(!b)return 'sem aba: '+${JSON.stringify(label)};
+ b.click();return 'ok';
+})()`
+
 const run=async()=>{
  const endpoint=await cdpEndpoint()
  const socket=new WebSocket(endpoint)
@@ -108,17 +136,22 @@ const run=async()=>{
   await cdp.send('Page.navigate',{url:BASE})
   await sleep(2600)
   for(const step of screen.steps){
-   const result=await cdp.evaluate(step.nav?clickNav(step.nav):openMore)
+   if(step.wait){await sleep(step.wait);continue}
+   const expression=step.nav?clickNav(step.nav):step.click?clickSelector(step.click):step.tab?clickTab(step.tab):step.tap?tapText(step.tap):openMore
+   const result=await cdp.evaluate(expression)
    const value=result?.result?.value
    if(value&&value!=='ok')console.warn(`  aviso em ${screen.file}: ${value}`)
    await sleep(1100)
   }
+  const height=(await cdp.evaluate('document.documentElement.scrollHeight'))?.result?.value
+  const width=(await cdp.evaluate('document.documentElement.scrollWidth'))?.result?.value
+  if(width>screen.width)console.warn(`  aviso em ${screen.file}: rolagem horizontal (${width}px > ${screen.width}px)`)
   const shot=await cdp.send('Page.captureScreenshot',{format:'png',captureBeyondViewport:true})
   if(!shot.data){console.warn(`  falhou: ${screen.file}`);continue}
   const path=join(OUT,`${screen.file}.png`)
   writeFileSync(path,Buffer.from(shot.data,'base64'))
   saved.push(path)
-  console.log(`  ${path}`)
+  console.log(`  ${path}  (${height}px de altura)`)
  }
  socket.close()
  return saved

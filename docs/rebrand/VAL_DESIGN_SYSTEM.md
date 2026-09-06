@@ -95,12 +95,20 @@ usuário está no Início — marcado, não cheio), `is-collapsed` (só ícones,
 
 | Bloco | Classe | Conteúdo |
 |---|---|---|
-| Saudação | `.copilot-welcome` | "Bom dia, {nome}! 👋" + "Aqui está o que preparamos para você hoje." |
+| Saudação | título do `Topbar` | "Bom dia, {nome}! 👋" + "Aqui está o que preparamos para você hoje." |
 | Resumo do dia | `.home-day-strip` | 4 cartões com ícone, rótulo, número e leitura |
-| Linha operacional | `.home-operational` | Próximas visitas · Produtores em foco · Pendências e alertas |
-| Insights | `.copilot-priorities` | prioridades vindas de `/api/v1/insights` |
-| Copiloto | `.home-copilot-banner` | faixa escura com CTA |
+| Linha operacional | `.home-operational` | Próximas visitas · Produtores em foco · Insights para você (`.home-insights`, de `/api/v1/insights`) |
+| Copiloto | `.home-copilot-banner` | faixa escura com dois gestos: **Falar com a VAL** (`.is-voice`, abre o Copiloto já em modo conversa) e **Perguntar**. No celular sobe para o topo da Home |
 | Ações rápidas | `.home-quick-actions` | 8 atalhos para funções que já existem |
+| Segundo plano | `.val-disclosure` (`Disclosure.jsx`) | Números da carteira · Perguntar à VAL daqui · Carteira, radar e estúdio — nascem fechados e lembram a escolha por chave em `localStorage` |
+| Coluna direita | `.home-rail` | Pendências e alertas · Atividades recentes |
+
+**Regra de dois níveis, em qualquer tela.** O primeiro nível responde "o que faço agora"
+e fica visível. O segundo nível é o que interessa às vezes e mora num `Disclosure`, que
+é o mesmo componente no desktop e no celular — a rolagem encurta nos dois. Cartão dentro
+do recolhível perde a moldura (`.val-disclosure .copilot-talk`, `.pipeline-roi`). O
+Produtor 360 já seguia a regra com `client-drilldown`; Oportunidades passou a seguir com
+o simulador de cenário.
 
 ### Painel contextual (`.context-panel`)
 

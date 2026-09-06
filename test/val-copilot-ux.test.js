@@ -94,7 +94,7 @@ test('Home e Cliente 360 conectam os view models e o refetch protegido',()=>{
  assert.match(dashboard,/fetch\('\/api\/val\/chat'/)
  assert.match(dashboard,/buildHomeCopilotAnswer\(result\)/)
  assert.ok(dashboard.indexOf('try{await onRefreshPortfolio?.()}catch{portfolioRefreshFailed=true}')<dashboard.indexOf("fetch('/api/val/chat'"))
- assert.ok(dashboard.indexOf('Até 3 prioridades para agir')<dashboard.indexOf('Ver carteira, radar e números'))
+ assert.ok(dashboard.indexOf('Insights para você')<dashboard.indexOf('Carteira, radar e estúdio de oportunidades'))
  assert.match(client360,/resolveCommitmentResource\(commitmentResource\)/)
  assert.match(client360,/selectLatestEvidenceVisit\(visits,client\.id\)/)
  assert.match(client360,/canonicalVoiceChange\(payload\)/)
