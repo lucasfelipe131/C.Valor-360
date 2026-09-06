@@ -11,6 +11,8 @@ import {buildDecisionIntelligence} from '../server/decision-intelligence.js'
 import {buildConversionFoundation} from '../server/conversion-engine.js'
 import {routeGlobalIntent} from '../server/decision-copilot/global-intent-router.js'
 import {evaluateResponseGrounding} from '../server/decision-copilot/response-grounding.js'
+import {classifyStructuredClientFact} from '../server/decision-copilot/capability-router.js'
+import {classifyValContextDomain} from '../server/decision-copilot/context-selector.js'
 import {ValRepository} from '../server/repository.js'
 import {resolveValNaturalCommand} from '../src/lib/val-natural-commands.js'
 import {routeValIntent} from '../server/ai-reasoning/intent-router.js'
@@ -132,13 +134,13 @@ test('copiloto: orientação geral sem card de ferramenta, seletor de produtor f
 })
 
 const ev=(id,ref,field,statement)=>({id,profile_source_ref:ref,source_type:'producer_questionnaire',epistemic_type:'OBSERVATION',field,statement,assessed_at:ago(30),valid_until:ahead(300)})
-const antonio=scoped({id:'antonio',name:'Antônio Silva',municipality:'Jataí',primaryProfile:'Relacional',decisionDriver:'Decide pela confiança no consultor',profileUpdatedAt:ago(30),profileValidUntil:ahead(300),profileSourceRef:'profile-antonio',profileEvidence:[ev('pa-1','profile-antonio','decisionDriver','Decide pela confiança no consultor')]})
+const antonio=scoped({id:'antonio',name:'Antônio Silva',municipality:'Jataí',primaryProfile:'Relacional',decisionDriver:'Decide pela confiança no consultor',technicalPresentation:'Prefere conversa presencial e exemplos de vizinhos',profileUpdatedAt:ago(30),profileValidUntil:ahead(300),profileSourceRef:'profile-antonio',profileEvidence:[ev('pa-1','profile-antonio','decisionDriver','Decide pela confiança no consultor'),ev('pa-2','profile-antonio','technicalPresentation','Prefere conversa presencial e exemplos de vizinhos')]})
 const joao=scoped({id:'joao',name:'João Pereira',cultures:'Soja, Milho',totalAreaHa:850,municipality:'Cascavel/PR',primaryProfile:'Analítico',decisionDriver:'Compara custo por hectare antes de decidir',profileUpdatedAt:ago(30),profileValidUntil:ahead(300),profileSourceRef:'profile-joao',profileEvidence:[ev('profile-joao-q7','profile-joao','decisionDriver','Compara custo por hectare antes de decidir')]})
 const store={surveys:[],imports:[scoped({id:'import-a',clients:[antonio,joao]})],
  visits:[scoped({id:'visit-done',clientId:'joao',status:'Realizada',lifecycleStatus:'COMPLETED',occurredAt:ago(10),summary:'Discutimos adubação de base e o preço do fertilizante para a safra.',nextCommitment:'Enviar proposta de KCl até sexta',updatedAt:ago(10)}),scoped({id:'visit-next',clientId:'joao',status:'Agendada',lifecycleStatus:'PLANNED',scheduledAt:ahead(5),objective:'Apresentar proposta de KCl'})],
  businessEvents:[scoped({id:'evt-won-1',clientId:'joao',outcome:'won',product:'Fertilizante NPK 04-14-08',category:'Fertilizante',quantity:20,unit:'t',value:120000,currency:'BRL',occurredAt:ago(30)})],
  opportunities:[scoped({id:'opp-1',clientId:'joao',title:'Venda de KCl para safra 25/26',category:'Fertilizante',stage:'Proposta',estimatedValue:80000,createdAt:ago(9),updatedAt:ago(5)})],
- val:{commitments:[],memories:[],visitReports:[]},
+ val:{commitments:[scoped({commitment_id:'commit-1',client_id:'joao',description:'Enviar proposta de KCl até sexta',status:'open',due_at:ahead(3),created_at:ago(10),updated_at:ago(10),source_ref:'report-1',source_type:'confirmed_visit_report'})],memories:[],visitReports:[]},
  grains:{profiles:[],intentions:[],marketSnapshots:[]}}
 
 async function availablePort(){const server=createServer();await new Promise((resolve,reject)=>{server.once('error',reject);server.listen(0,'127.0.0.1',resolve)});const port=server.address().port;await new Promise(resolve=>server.close(resolve));return port}
@@ -157,7 +159,7 @@ test('HTTP demo: caminho DEEP/CONTEXT sem modelo responde com o registro autoriz
   const opportunity=await turn('ele tem oportunidade aberta?','r3-opp')
   assert.equal(opportunity.status,200)
   assert.match(opportunity.payload.advice.answer,/^Oportunidade aberta “Venda de KCl para safra 25\/26” está em Proposta; valor registrado R\$ 80 mil\./)
-  assert.equal(opportunity.payload.advice.ai_reasoning.facts_used.length,1)
+  assert.ok(opportunity.payload.advice.ai_reasoning.facts_used.some(item=>item.id==='selected-opportunity'),JSON.stringify(opportunity.payload.advice.ai_reasoning.facts_used.map(item=>item.id)))
   assert.equal(opportunity.payload.advice.ai_reasoning.grounding.passed,true)
   const discussed=await turn('o que discutimos na última visita?','r3-visit')
   assert.equal(discussed.status,200)
@@ -178,6 +180,24 @@ test('HTTP demo: caminho DEEP/CONTEXT sem modelo responde com o registro autoriz
    assert.match(write.payload.error,new RegExp(fragment),message)
    assert.equal(write.payload.globalIntent.requires_confirmation,true,message)
   }
+  const nextVisit=await turn('qual a próxima visita?','r4-next')
+  assert.equal(nextVisit.status,200)
+  assert.match(nextVisit.payload.advice.answer,/^A próxima visita agendada de João Pereira está marcada para \d{2}\/\d{2}\/\d{4}/)
+  const pending=await turn('o que ficou pendente da última visita?','r4-pending')
+  assert.equal(pending.status,200)
+  assert.match(pending.payload.advice.answer,/Enviar proposta de KCl até sexta/)
+  const bought=await turn('o que ele comprou?','r4-bought')
+  assert.equal(bought.status,200)
+  assert.match(bought.payload.advice.answer,/Fertilizante NPK 04-14-08/)
+  const prepareAgain=await turn('prepara a visita dele','r4-prepare')
+  assert.equal(prepareAgain.status,200)
+  assert.match(prepareAgain.payload.advice.answer,/Compromisso aberto: Enviar proposta de KCl até sexta/)
+  const decides=await turn('como ele decide?','r4-decides','antonio')
+  assert.equal(decides.status,200)
+  assert.match(decides.payload.advice.answer,/^Perfil principal: Relacional/)
+  const approach=await turn('como abordar ele na próxima visita?','r4-approach')
+  assert.equal(approach.status,200)
+  assert.doesNotMatch(approach.payload.advice.answer,/Ainda não há/)
   await turn('ele tem oportunidade aberta?','r3-switch')
   const switched=await turn('Troca pro Antônio','r3-switch')
   assert.equal(switched.status,200)
@@ -319,4 +339,31 @@ test('fallback em arquivo entrega o contrato de oportunidade do PostgreSQL',asyn
  assert.equal(opportunity.candidateKey,'')
  assert.equal(opportunity.probability,null)
  assert.ok(opportunity.updatedAt)
+})
+
+test('fatos rápidos em linguagem comum: próxima visita, compromisso pendente, compra, objeção e perfil',()=>{
+ assert.equal(classifyStructuredClientFact('qual a próxima visita?'),'NEXT_SCHEDULED_VISIT')
+ assert.equal(classifyStructuredClientFact('quando é a próxima visita dele?'),'NEXT_SCHEDULED_VISIT')
+ assert.equal(classifyStructuredClientFact('o que ficou pendente da última visita?'),'LATEST_COMMITMENT')
+ assert.equal(classifyStructuredClientFact('qual o compromisso pendente?'),'LATEST_COMMITMENT')
+ assert.equal(classifyStructuredClientFact('o que ele comprou?'),'LATEST_PURCHASE')
+ assert.equal(classifyStructuredClientFact('ele tem alguma objeção?'),'LATEST_CONFIRMED_OBJECTION')
+ assert.equal(classifyStructuredClientFact('como ele decide?'),'BEHAVIORAL_PROFILE')
+ assert.equal(classifyStructuredClientFact('como lidar com ele?'),'BEHAVIORAL_PROFILE')
+ assert.equal(classifyStructuredClientFact('como abordar ele na próxima visita?'),null)
+ for(const message of ['como lidar com ele?','qual o estilo dele?','como ele decide?'])assert.equal(classifyValContextDomain(message),'PROFILE',message)
+})
+
+test('preparar a próxima visita usa a última visita como evidência; compromisso aberto vira evidência determinística',()=>{
+ const fact={id:'latest-visit',source_type:'visit',source_ref:'visit:visit-done',epistemic_type:'FACT',statement:'Visita Realizada em 27/08/2026.',observed_at:ago(10),producer_id:'joao',tenant_id:tenantId,owner_id:ownerId}
+ const prepare=evaluateResponseGrounding({question:'me prepara para a próxima visita com ele',answer:fact.statement,domain:'VISIT',evidence:[fact],activeProducerId:'joao',tenantId,ownerId,field:'facts_used.0.statement',checkQuestionRelevance:false})
+ assert.equal(prepare.passed,true,JSON.stringify(prepare.claim_ledger))
+ const next=evaluateResponseGrounding({question:'qual a próxima visita?',answer:fact.statement,domain:'VISIT',evidence:[fact],activeProducerId:'joao',tenantId,ownerId,field:'facts_used.0.statement',checkQuestionRelevance:false})
+ assert.equal(next.passed,false)
+ const intelligence=buildDecisionIntelligence({client:{id:'joao',name:'João Pereira',commercial:{}},profile:{},opportunities:[],visits:[],interactions:[],businessHistory:[],properties:[],commitments:[{commitment_id:'commit-1',description:'Enviar proposta de KCl até sexta',status:'open',dueAt:ahead(3),updatedAt:ago(10)},{commitment_id:'commit-0',description:'Antigo',status:'COMPLETED',updatedAt:ago(40)}]})
+ const commitment=intelligence.evidence.find(item=>item.id==='open-commitment')
+ assert.equal(commitment.source_type,'commitment')
+ assert.equal(commitment.source_id,'commit-1')
+ assert.match(commitment.claim_supported,/^Compromisso aberto: Enviar proposta de KCl até sexta; prazo \d{2}\/\d{2}\/\d{4}; status open\.$/)
+ assert.equal(commitment.observed_at,new Date(ago(10)).toISOString())
 })

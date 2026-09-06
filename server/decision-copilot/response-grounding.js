@@ -207,7 +207,7 @@ const pureGapVocabulary=new Set([
  'fato','fatos','fonte','fontes','insuficiente','insuficientes','localizada','localizado','material','materiais','nenhuma','nenhum','numerico','numericos','objecao','perfil',
  'ligada','ligadas','possui','principal','produtor','produtora','propriedade','referencia','registro','registros','registrada','registrado','responder','resposta','safra','seguranca','selecionada','selecionado',
  'sessao','suficiente','suficientes','sustentar','total','verificavel','verificaveis','vinculada','vinculado','visita','comportamental','confianca','determinada','validar','oportunidade',
- 'tenho','pouca','informacao','orientar','precisao'
+ 'tenho','pouca','informacao','orientar','precisao','agendada'
 ])
 const pureGapFunctionWords=new Set(['a','ao','aos','as','com','da','das','de','do','dos','e','em','esta','este','foi','ha','na','nao','nas','nem','nesta','neste','no','nos','o','os','ou','para','por','que','sem','uma','um','ainda','preciso','faltam','falta','como','te'])
 
@@ -274,6 +274,7 @@ function isPureInsufficiencyClaim(value='',question='',domain='GENERAL'){
   /^nenhum(?:a)? (?:produtor|produtora|cliente) esta selecionad[oa] nesta conversa$/,
   /^nenhum(?:a)? (?:dado|evidencia|fonte|registro|fato|visita)\w*(?: \w+){0,3} (?:foi |foram )?(?:localizad|encontrad|registrad|cadastrad)[oa]s?$/,
   /^ainda nao ha visita concluida registrada(?: com referencia auditavel)?$/,
+  /^ainda nao ha visita agendada registrada(?: com referencia auditavel)?$/,
   /^ainda nao ha objecao confirmada(?: na ultima visita concluida)? registrada(?: com referencia auditavel)?$/,
   /^ainda nao ha compromisso registrado(?: com referencia auditavel)?$/,
   /^ainda nao ha oportunidade registrada(?: com referencia auditavel)?$/,
@@ -389,7 +390,9 @@ function contextFacet(domain,question=''){
  }
  if(domain==='VISIT'){
   if(/\b(?:ultima|mais recente|anterior|concluida|realizada|ocorreu|historico)\b/.test(source))return 'LAST_VISIT'
-  if(/\b(?:proxima|agendada|planejada|futura|prepare|preparar)\b/.test(source))return 'NEXT_VISIT'
+  // Preparar a próxima visita usa a última visita como evidência; a faceta NEXT_VISIT (só agenda
+  // futura) vale para quem pergunta qual/quando é a próxima, não para quem pede preparação.
+  if(/\b(?:proxima|agendada|planejada|futura)\b/.test(source)&&!/\b(?:prepar\w*|abord\w*|organiz\w*)\b/.test(source))return 'NEXT_VISIT'
  }
  if(domain==='COMMERCIAL'){
   if(/\b(?:objecao|rejeitou|resistencia|barreira|impedimento|alegou|questionou)\b/.test(source))return 'OBJECTION'
@@ -414,7 +417,8 @@ function answerClaimsMatchFacet(facet,answer=''){
 function evidenceMatchesFacet(facet,text='',sourceType=''){
  if(!facet)return true
  const source=normalize(text)
- if(facet==='LAST_VISIT')return sourceType!=='scheduled_visit'&&!/\b(?:proxim\w*|agend\w*|planej\w*|futur\w*)\b/.test(source)&&/\b(?:ultima|mais recente|conclu\w*|realiz\w*|ocorreu|visit\w*)\b/.test(source)
+ // O compromisso pendente da última visita pertence à mesma faceta ('o que ficou pendente da última visita?').
+ if(facet==='LAST_VISIT')return sourceType!=='scheduled_visit'&&!/\b(?:proxim\w*|agend\w*|planej\w*|futur\w*)\b/.test(source)&&/\b(?:ultim\w*|mais recente|conclu\w*|realiz\w*|ocorreu|visit\w*|compromiss\w*|pendente\w*)\b/.test(source)
  if(facet==='NEXT_VISIT')return sourceType==='scheduled_visit'||/\b(?:proxim\w*|agend\w*|planej\w*|futur\w*|prepar\w*)\b/.test(source)
  if(facet==='OBJECTION')return /\b(?:objec\w*|rejeit\w*|resist\w*|barreira|imped\w*|aleg\w*|question\w*|caro)\b/.test(source)
  if(facet==='PRICE')return /\b(?:preco|valor|custo|margem)\b|r\$/.test(source)

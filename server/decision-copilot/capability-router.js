@@ -231,13 +231,19 @@ export function classifyStructuredClientFact(message=''){
  const owner='(?:\\s+(?:dele|dela)|\\s+(?:do|da)\\s+[a-z][a-z0-9 \'-]{0,120})?'
  if(new RegExp(`^(?:e\\s+)?(?:(?:qual|como)\\s+(?:e\\s+)?(?:o\\s+)?perfil${owner}|(?:mostre|mostra|me\\s+mostre)\\s+(?:o\\s+)?perfil${owner})$`).test(source))return 'BEHAVIORAL_PROFILE'
  if(/^(?:e\s+)?como\s+(?:eu\s+)?devo\s+abordar\s+(?:ele|ela|o\s+produtor|a\s+produtora)$/.test(source))return 'BEHAVIORAL_PROFILE'
+ // 'como abordar ele', 'como lidar com ela na próxima visita', 'como ele decide', 'qual o estilo dele':
+ // perguntas de perfil comportamental em linguagem comum recebem a mesma resposta auditável do perfil.
+ if(/^(?:e\s+)?como\s+(?:(?:eu\s+)?(?:devo|posso|deveria)\s+)?(?:abordar|lidar\s+com|conversar\s+com|negociar\s+com|falar\s+com)\s+(?:ele|ela|o\s+produtor|a\s+produtora)$/.test(source))return 'BEHAVIORAL_PROFILE'
+ if(/^(?:e\s+)?(?:como\s+(?:ele|ela|o\s+produtor|a\s+produtora)\s+(?:decide|compra|pensa|escolhe|toma\s+(?:as\s+)?decis(?:ao|oes))|qual\s+(?:e\s+)?(?:o\s+)?(?:estilo|jeito)(?:\s+de\s+(?:decisao|decidir|compra|comprar))?\s+(?:dele|dela))$/.test(source))return 'BEHAVIORAL_PROFILE'
  if(new RegExp(`^(?:e\\s+)?(?:qual\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?)?objecao\\s+(?:da|na)\\s+(?:ultima|mais recente)\\s+visita${owner}$`).test(source))return 'LATEST_VISIT_CONFIRMED_OBJECTION'
  if(new RegExp(`^(?:e\\s+)?(?:qual\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?)?(?:(?:ultima|mais recente)\\s+objecao\\s+confirmada|objecao\\s+confirmada\\s+(?:mais recente|ultima))${owner}$`).test(source))return 'LATEST_CONFIRMED_OBJECTION'
+ if(/^(?:e\s+)?(?:ele|ela|o produtor|a produtora)\s+(?:tem|teve|fez|apresentou|levantou)\s+(?:alguma\s+)?objecao(?:\s+(?:registrada|confirmada|recente))?$/.test(source))return 'LATEST_CONFIRMED_OBJECTION'
  const patterns=[
   ['LATEST_CONFIRMED_OBJECTION',new RegExp(`^(?:e\\s+)?(?:(?:qual\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?(?:(?:principal|ultima|mais recente)\\s+)?objecao)|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:a\\s+)?(?:(?:principal|ultima|mais recente)\\s+)?objecao)|(?:(?:a\\s+)?(?:principal|ultima|mais recente)\\s+objecao))${owner}$`)],
   ['LATEST_VISIT',new RegExp(`^(?:e\\s+)?(?:(?:(?:qual|quando)\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?(?:(?:ultima|mais recente)\\s+visita|visita\\s+mais recente))|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:a\\s+)?(?:(?:ultima|mais recente)\\s+visita|visita\\s+mais recente))|(?:(?:a\\s+)?(?:ultima|mais recente)\\s+visita))${owner}$`)],
-  ['LATEST_COMMITMENT',new RegExp(`^(?:e\\s+)?(?:(?:qual\\s+(?:(?:foi|e)\\s+)?(?:o\\s+)?(?:(?:ultimo|mais recente)\\s+)?compromisso)|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:o\\s+)?(?:ultimo|mais recente)\\s+compromisso)|(?:(?:o\\s+)?(?:ultimo|mais recente)\\s+compromisso))${owner}$`)],
-  ['LATEST_PURCHASE',new RegExp(`^(?:e\\s+)?(?:(?:(?:qual|quanto)\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?(?:ultima|mais recente)\\s+compra)|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:a\\s+)?(?:ultima|mais recente)\\s+compra)|(?:(?:a\\s+)?(?:ultima|mais recente)\\s+compra)|(?:quanto\\s+(?:ele|ela|o produtor|a produtora)\\s+comprou))${owner}$`)],
+  ['LATEST_COMMITMENT',new RegExp(`^(?:e\\s+)?(?:(?:qual\\s+(?:(?:foi|e)\\s+)?(?:o\\s+)?(?:(?:ultimo|mais recente)\\s+)?compromisso(?:\\s+(?:pendente|aberto|em aberto|combinado))?)|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:o\\s+)?(?:ultimo|mais recente)\\s+compromisso)|(?:(?:o\\s+)?(?:ultimo|mais recente)\\s+compromisso)|(?:o\\s+que\\s+ficou\\s+(?:pendente|combinado)(?:\\s+(?:da|na)\\s+(?:ultima|mais recente)\\s+visita)?)|(?:(?:tem|ha|existe)\\s+(?:algum\\s+)?compromisso\\s+(?:pendente|aberto|em aberto)))${owner}$`)],
+  ['NEXT_SCHEDULED_VISIT',new RegExp(`^(?:e\\s+)?(?:(?:(?:qual|quando)\\s+(?:(?:e|sera|vai ser|esta marcada|esta agendada)\\s+)?(?:a\\s+)?proxima\\s+visita)|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:a\\s+)?proxima\\s+visita)|(?:(?:a\\s+)?proxima\\s+visita)|(?:(?:tem|ha)\\s+(?:alguma\\s+)?visita\\s+(?:agendada|marcada)))${owner}$`)],
+  ['LATEST_PURCHASE',new RegExp(`^(?:e\\s+)?(?:(?:(?:qual|quanto)\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?(?:ultima|mais recente)\\s+compra)|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:a\\s+)?(?:ultima|mais recente)\\s+compra)|(?:(?:a\\s+)?(?:ultima|mais recente)\\s+compra)|(?:(?:quanto|o\\s+que)\\s+(?:ele|ela|o produtor|a produtora)\\s+comprou(?:\\s+(?:por ultimo|da ultima vez|recentemente))?))${owner}$`)],
   ['REGISTERED_CROPS',/^(?:e\s+)?(?:(?:qual|quais)\s+culturas?\s+(?:(?:ele|ela)\s+(?:esta\s+plantando|planta)|(?:estao?|ficam?)\s+cadastradas?|(?:do|da)\s+[a-z][a-z0-9 '-]{0,120}\s+(?:esta\s+plantando|planta|(?:tem|estao?)\s+cadastradas?))|(?:mostre|mostra|me\s+mostre)\s+(?:as?\s+)?(?:culturas?|safra)\s+(?:dele|dela|(?:do|da)\s+[a-z][a-z0-9 '-]{0,120}))$/],
   ['REGISTERED_AREA',/^(?:e\s+)?(?:(?:qual|quanto)\s+(?:e\s+)?(?:a\s+)?area(?:\s+(?:dele|dela)|\s+(?:do|da)\s+[a-z][a-z0-9 '-]{0,120})?\s+(?:esta\s+)?cadastrada|qual\s+(?:e\s+)?(?:a\s+)?area\s+(?:cadastrada|registrada)(?:\s+(?:dele|dela)|\s+(?:do|da)\s+[a-z][a-z0-9 '-]{0,120})?|(?:mostre|mostra|me\s+mostre)\s+(?:a\s+)?area\s+(?:dele|dela|(?:do|da)\s+[a-z][a-z0-9 '-]{0,120}))$/],
  ]
@@ -268,7 +274,7 @@ export function routeSystemCapability({message='',intentHint='',sessionCommandHi
    ?['CLIENT_CONTEXT','VISIT_HISTORY','COMMERCIAL_HISTORY']
    :[structuredFact==='BEHAVIORAL_PROFILE'
     ?'CLIENT_CONTEXT'
-    :structuredFact==='LATEST_VISIT'||structuredFact==='LATEST_CONFIRMED_OBJECTION'||structuredFact==='LATEST_VISIT_CONFIRMED_OBJECTION'
+    :structuredFact==='LATEST_VISIT'||structuredFact==='NEXT_SCHEDULED_VISIT'||structuredFact==='LATEST_CONFIRMED_OBJECTION'||structuredFact==='LATEST_VISIT_CONFIRMED_OBJECTION'
     ?'VISIT_HISTORY'
     :structuredFact==='LATEST_PURCHASE'||structuredFact==='LATEST_COMMITMENT'
      ?'COMMERCIAL_HISTORY'
@@ -1149,7 +1155,7 @@ export function buildFastClientComparisonResponse({entries=[],authorizedProducer
  return {recommendationId:null,engineMode:'rules',engineArchitecture:'fast-system-capability',route:'FAST',model:'rules-fast-client-comparison-v1',warning:'',globalCopilot:true,responseMetadata:{intent:'COMPARE',reasoningPath:'FAST',dataPath:'CLIENT_COMPARISON',capabilities:route.capabilities,executionBudget,comparedClients:scoped.map(item=>({id:String(item.client.id),name:clean(item.client.name,180)}))},advice:{answer,ai_reasoning:reasoning,val_response_quality:reasoning.quality}}
 }
 
-function profileApproach(label=''){
+export function profileApproach(label=''){
  const normalized=normalize(label)
  if(/analitic/.test(normalized))return 'abra com dados comparáveis e confirme o critério de decisão'
  if(/relacional/.test(normalized))return 'comece pelo histórico de confiança e valide a leitura antes de propor avanço'
@@ -1425,6 +1431,20 @@ function fastFactPresentation({facts,route,now,scope={}}){
   // nas evidências ou nos metadados selecionados para esta intenção.
   return {dataPath,answer:completedAnswer,primaryFound,sourceRef:primaryFound?sourceRef:null,factsUsed,action:clean(primaryFound&&(visit?.next_commitment||visit?.nextCommitment||visit?.next_action||visit?.nextAction)||'Confirme se houve uma visita ainda não registrada.',1200),missing:'Visita concluída com referência auditável',doNotDo:'Não apresentar visita planejada como contato realizado.',latestCompletedVisit:primaryFound?{id:sourceRef,status:visit.status||null,lifecycleStatus:visit.lifecycle_status||visit.lifecycleStatus||null,occurredAt}:null,nextScheduledVisit:null}
  }
+ if(dataPath==='NEXT_SCHEDULED_VISIT'){
+  const visit=facts.nextScheduledVisit||null
+  const scheduledAt=visit?.scheduled_at||visit?.scheduledAt||null
+  const sourceRef=clean(visit?.id,180)||null
+  const scheduledTime=new Date(scheduledAt||'').getTime()
+  const lifecycle=clean(visit?.lifecycle_status||visit?.lifecycleStatus,40).toUpperCase()||'PLANNED'
+  const primaryFound=Boolean(visit&&sourceRef&&Number.isFinite(scheduledTime)&&scheduledTime>=now.getTime()&&['PLANNED','PREPARED'].includes(lifecycle))
+  const objective=clean(visit?.objective,600)
+  // 'está marcada para <data>' — 'é em <data>' lê a data como quantidade e cai em UNSUPPORTED_NUMERIC_CLAIM.
+  const answer=primaryFound?`A próxima visita agendada de ${clientName} está marcada para ${fastDate(scheduledAt)}${objective?`, com objetivo: ${objective}`:''}.`:'Ainda não há visita agendada registrada com referência auditável.'
+  const factsUsed=primaryFound?[{id:sourceRef,source_type:'scheduled_visit',statement:answer,observed_at:scheduledAt,status:clean(visit.status,80)||null,lifecycle_status:lifecycle,confidence:1}]:[]
+  // A agenda futura é a única fonte desta pergunta: a última visita concluída pertence a outra faceta.
+  return {dataPath,answer,primaryFound,capabilityStatus:primaryFound?undefined:'NO_DATA',sourceRef,factsUsed,action:primaryFound?'Prepare a visita antes da data: objetivo, perguntas e compromisso-alvo.':'Agende a visita no módulo Visitas para que ela entre na rota.',missing:'Visita agendada com referência auditável',doNotDo:'Não apresentar visita concluída como próxima visita.'}
+ }
  if(['LATEST_CONFIRMED_OBJECTION','LATEST_VISIT_CONFIRMED_OBJECTION'].includes(dataPath)){
   const latestVisitSpecific=dataPath==='LATEST_VISIT_CONFIRMED_OBJECTION'
   const report=latestVisitSpecific?facts.latestVisitConfirmedObjection||null:facts.latestConfirmedObjection||null
@@ -1526,7 +1546,7 @@ export function buildFastClientResponse({facts={},message='',organizationId='unk
  const dataLookups=Math.max(0,Number(executionCounts.dataLookups??1)||0)
  const hops=Math.max(0,Number(executionCounts.hops??(entityResolutions+dataLookups))||0)
  const executionBudget=Object.freeze({entityResolutions,dataLookups,modelCalls:0,toolCalls:1,hops,estimatedInputTokens:0,estimatedOutputTokens:0,estimatedCostUsd:0})
- const groundingDomain={BEHAVIORAL_PROFILE:'PROFILE',LATEST_VISIT:'VISIT',LATEST_COMMITMENT:'VISIT',LATEST_CONFIRMED_OBJECTION:'COMMERCIAL',LATEST_VISIT_CONFIRMED_OBJECTION:'MULTI_DOMAIN',LATEST_PURCHASE:'COMMERCIAL',REGISTERED_CROPS:'AGRONOMY',REGISTERED_AREA:'GENERAL'}[presentation.dataPath]||'GENERAL'
+ const groundingDomain={BEHAVIORAL_PROFILE:'PROFILE',LATEST_VISIT:'VISIT',NEXT_SCHEDULED_VISIT:'VISIT',LATEST_COMMITMENT:'VISIT',LATEST_CONFIRMED_OBJECTION:'COMMERCIAL',LATEST_VISIT_CONFIRMED_OBJECTION:'MULTI_DOMAIN',LATEST_PURCHASE:'COMMERCIAL',REGISTERED_CROPS:'AGRONOMY',REGISTERED_AREA:'GENERAL'}[presentation.dataPath]||'GENERAL'
  const responseDomain=scopedResponseDomain(message,route.intent,contextDomain)
  if(responseDomain!==groundingDomain)throw Object.assign(new Error('O domínio factual não corresponde ao grounding selecionado.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'DOMAIN_MISMATCH',expectedDomain:groundingDomain,actualDomain:responseDomain})
  const reasoning={
