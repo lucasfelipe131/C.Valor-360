@@ -10,9 +10,10 @@ import {fileURLToPath} from 'node:url'
 import {buildDecisionIntelligence} from '../server/decision-intelligence.js'
 import {buildConversionFoundation} from '../server/conversion-engine.js'
 import {routeGlobalIntent} from '../server/decision-copilot/global-intent-router.js'
-import {evaluateResponseGrounding} from '../server/decision-copilot/response-grounding.js'
+import {evaluateResponseGrounding,factMatchesQuestionFacet} from '../server/decision-copilot/response-grounding.js'
 import {classifyStructuredClientFact} from '../server/decision-copilot/capability-router.js'
-import {classifyValContextDomain} from '../server/decision-copilot/context-selector.js'
+import {classifyValContextDomain,collectionMatchesContextDomain} from '../server/decision-copilot/context-selector.js'
+import {extractNaturalClientReference} from '../server/decision-copilot/producer-entity-resolver.js'
 import {ValRepository} from '../server/repository.js'
 import {resolveValNaturalCommand} from '../src/lib/val-natural-commands.js'
 import {routeValIntent} from '../server/ai-reasoning/intent-router.js'
@@ -136,7 +137,8 @@ test('copiloto: orientação geral sem card de ferramenta, seletor de produtor f
 const ev=(id,ref,field,statement)=>({id,profile_source_ref:ref,source_type:'producer_questionnaire',epistemic_type:'OBSERVATION',field,statement,assessed_at:ago(30),valid_until:ahead(300)})
 const antonio=scoped({id:'antonio',name:'Antônio Silva',municipality:'Jataí',primaryProfile:'Relacional',decisionDriver:'Decide pela confiança no consultor',technicalPresentation:'Prefere conversa presencial e exemplos de vizinhos',profileUpdatedAt:ago(30),profileValidUntil:ahead(300),profileSourceRef:'profile-antonio',profileEvidence:[ev('pa-1','profile-antonio','decisionDriver','Decide pela confiança no consultor'),ev('pa-2','profile-antonio','technicalPresentation','Prefere conversa presencial e exemplos de vizinhos')]})
 const joao=scoped({id:'joao',name:'João Pereira',cultures:'Soja, Milho',totalAreaHa:850,municipality:'Cascavel/PR',primaryProfile:'Analítico',decisionDriver:'Compara custo por hectare antes de decidir',profileUpdatedAt:ago(30),profileValidUntil:ahead(300),profileSourceRef:'profile-joao',profileEvidence:[ev('profile-joao-q7','profile-joao','decisionDriver','Compara custo por hectare antes de decidir')]})
-const store={surveys:[],imports:[scoped({id:'import-a',clients:[antonio,joao]})],
+const genor=scoped({id:'genor',name:'Genor Brum',municipality:'Passo Fundo/RS',primaryProfile:'Conservador',profileUpdatedAt:ago(30),profileValidUntil:ahead(300),profileSourceRef:'profile-genor',profileEvidence:[ev('pg-1','profile-genor','decisionDriver','Decide com segurança e referência de vizinhos')]})
+const store={surveys:[],imports:[scoped({id:'import-a',clients:[antonio,joao,genor]})],
  visits:[scoped({id:'visit-done',clientId:'joao',status:'Realizada',lifecycleStatus:'COMPLETED',occurredAt:ago(10),summary:'Discutimos adubação de base e o preço do fertilizante para a safra.',nextCommitment:'Enviar proposta de KCl até sexta',updatedAt:ago(10)}),scoped({id:'visit-next',clientId:'joao',status:'Agendada',lifecycleStatus:'PLANNED',scheduledAt:ahead(5),objective:'Apresentar proposta de KCl'})],
  businessEvents:[scoped({id:'evt-won-1',clientId:'joao',outcome:'won',product:'Fertilizante NPK 04-14-08',category:'Fertilizante',quantity:20,unit:'t',value:120000,currency:'BRL',occurredAt:ago(30)})],
  opportunities:[scoped({id:'opp-1',clientId:'joao',title:'Venda de KCl para safra 25/26',category:'Fertilizante',stage:'Proposta',estimatedValue:80000,createdAt:ago(9),updatedAt:ago(5)})],
@@ -152,7 +154,7 @@ test('HTTP demo: caminho DEEP/CONTEXT sem modelo responde com o registro autoriz
  const port=await availablePort()
  const child=spawn(process.execPath,['server/start.js'],{cwd:repositoryRoot,env:{...process.env,PORT:String(port),VAL_DEMO_MODE:'true',VAL_DEFAULT_TENANT_ID:tenantId,VAL_AI_REQUESTS_PER_10_MINUTES:'500',AUTO_MIGRATE:'false',DATA_DIR:dataRoot,DATABASE_URL:'',OPENAI_API_KEY:'',VAL_ADMIN_EMAIL:'',VAL_ADMIN_PASSWORD:'',VAL_SESSION_SECRET:''},stdio:['ignore','pipe','pipe']})
  const base=`http://127.0.0.1:${port}`
- const names={antonio:'Antônio Silva',joao:'João Pereira'}
+ const names={antonio:'Antônio Silva',joao:'João Pereira',genor:'Genor Brum'}
  const turn=async(message,conversationId,clientId='joao')=>{const response=await fetch(`${base}/api/val/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,clientId,client:{id:clientId,name:names[clientId]},conversationId,mode:'daily'})});return {status:response.status,payload:await response.json().catch(()=>({}))}}
  try{
   await waitForStartup(child)
@@ -198,6 +200,24 @@ test('HTTP demo: caminho DEEP/CONTEXT sem modelo responde com o registro autoriz
   const approach=await turn('como abordar ele na próxima visita?','r4-approach')
   assert.equal(approach.status,200)
   assert.doesNotMatch(approach.payload.advice.answer,/Ainda não há/)
+  const byName=await turn('Quero falar sobre o Genor Brum','r4-byname','')
+  assert.equal(byName.status,200,JSON.stringify(byName.payload).slice(0,300))
+  assert.equal(byName.payload.workspaceAction?.type,'OPEN_CLIENT')
+  assert.match(byName.payload.advice.answer,/Agora falando de Genor Brum/)
+  const afterByName=await turn('ele tem visita agendada?','r4-byname','')
+  assert.equal(afterByName.status,200)
+  assert.doesNotMatch(afterByName.payload.advice.answer,/Nenhum produtor está selecionado/)
+  const marked=await turn('tem visita marcada?','r4-marked')
+  assert.equal(marked.status,200)
+  assert.match(marked.payload.advice.answer,/está marcada para/)
+  const markedNone=await turn('tem visita marcada?','r4-marked-none','antonio')
+  assert.equal(markedNone.status,200)
+  assert.doesNotMatch(markedNone.payload.advice.answer,/Visita Realizada/)
+  const bare=await turn('Genor Brum','r4-bare','')
+  assert.equal(bare.payload.workspaceAction?.type,'OPEN_CLIENT')
+  const concept=await turn('quero falar sobre calagem','r4-concept','')
+  assert.equal(concept.status,200)
+  assert.notEqual(concept.payload.workspaceAction?.type,'OPEN_CLIENT')
   await turn('ele tem oportunidade aberta?','r3-switch')
   const switched=await turn('Troca pro Antônio','r3-switch')
   assert.equal(switched.status,200)
@@ -366,4 +386,48 @@ test('preparar a próxima visita usa a última visita como evidência; compromis
  assert.equal(commitment.source_id,'commit-1')
  assert.match(commitment.claim_supported,/^Compromisso aberto: Enviar proposta de KCl até sexta; prazo \d{2}\/\d{2}\/\d{4}; status open\.$/)
  assert.equal(commitment.observed_at,new Date(ago(10)).toISOString())
+})
+
+test('produtor citado pelo nome sem produtor selecionado abre esse produtor (texto e voz transcrita)',()=>{
+ for(const [message,expected] of [['Quero falar sobre o Genor Brum','Genor Brum'],['QUERO FALAR SOBRE O GENOR BRUM','GENOR BRUM'],['Sobre o Genor Brum.','Genor Brum'],['fala do Genor','Genor'],['Genor Brum','Genor Brum'],['val, Genor Brum','Genor Brum']]){
+  const extracted=extractNaturalClientReference(message)
+  assert.equal(extracted.kind,'AUTHORIZED_NAME_CANDIDATE',message)
+  assert.equal(extracted.reference,expected,message)
+ }
+ const genorClient={id:'genor',name:'Genor Brum'}
+ for(const message of ['Quero falar sobre o Genor Brum','Sobre o Genor Brum.','Genor Brum','genor','fala do Genor']){
+  const route=routeGlobalIntent({message,client:genorClient})
+  assert.equal(route.reason,'SWITCH_RESOLVED_CLIENT',message)
+  assert.match(route.summary,/Agora falando de Genor Brum/)
+ }
+ for(const message of ['calagem','o que ele comprou?','quero falar sobre calagem','sobre a safra de trigo','Isso muda a abordagem?'])assert.notEqual(routeGlobalIntent({message,client:genorClient}).reason,'SWITCH_RESOLVED_CLIENT',message)
+ for(const message of ['Isso muda a abordagem?','oi val','bom dia','o que é wasde','Bom dia','Obrigado'])assert.notEqual(extractNaturalClientReference(message).kind,'AUTHORIZED_NAME_CANDIDATE',message)
+ const matheus={id:'matheus',name:'Matheus Nascimento Jaeger'}
+ for(const message of ['e o Matheus?','E o Matheus','e o Matheus Jaeger?']){const route=routeGlobalIntent({message,client:matheus});assert.equal(route.reason,'SWITCH_RESOLVED_CLIENT',message);assert.match(route.summary,/Agora falando de Matheus Nascimento Jaeger/)}
+ assert.notEqual(routeGlobalIntent({message:'e o clima hoje?',client:matheus}).reason,'SWITCH_RESOLVED_CLIENT')
+ assert.equal(classifyStructuredClientFact('ele tem visita agendada?'),'NEXT_SCHEDULED_VISIT')
+})
+
+test('contexto comercial mantém compras e oportunidades que citam insumo ou cultura; objeções no plural são comerciais',()=>{
+ assert.equal(collectionMatchesContextDomain({id:'evt-1',product:'Fertilizante NPK 04-14-08',category:'Fertilizante',outcome:'won',value:120000},'business_event','COMMERCIAL','o que ele comprou?'),true)
+ assert.equal(collectionMatchesContextDomain({id:'opp-1',title:'Venda de KCl para safra 25/26',stage:'Proposta'},'opportunity','COMMERCIAL','qual a negociação em andamento?'),true)
+ assert.equal(classifyValContextDomain('quais foram as objeções dele?'),'COMMERCIAL')
+ assert.equal(classifyValContextDomain('qual foi a objeção dele?'),'COMMERCIAL')
+ const at=ago(10)
+ const intelligence=buildDecisionIntelligence({client:{id:'joao',name:'João Pereira',commercial:{}},profile:{},opportunities:[],interactions:[],businessHistory:[],properties:[],visits:[
+  {id:'visit-next',status:'Agendada',lifecycleStatus:'PLANNED',scheduledAt:ahead(5),updatedAt:ago(1)},
+  {id:'visit-done',status:'Realizada',lifecycleStatus:'COMPLETED',occurredAt:at,summary:'Discutimos adubação.',updatedAt:at}
+ ]})
+ const visit=intelligence.evidence.find(item=>item.id==='latest-visit')
+ assert.equal(visit.source_id,'visit-done')
+ assert.match(visit.claim_supported,/Discutimos adubação/)
+})
+
+test('evidência comercial nomeia a compra e o fato literal só vira leitura na faceta da pergunta',()=>{
+ const intelligence=buildDecisionIntelligence({client:{id:'joao',name:'João Pereira',commercial:{}},profile:{},opportunities:[],visits:[],interactions:[],properties:[],businessHistory:[{id:'evt-1',outcome:'won',product:'Fertilizante NPK 04-14-08',category:'Fertilizante',value:120000,occurredAt:ago(30)}]})
+ const purchase=intelligence.evidence.find(item=>item.id==='latest-business-event')
+ assert.match(purchase.claim_supported,/^Compra registrada \(ganha\); categoria Fertilizante; item Fertilizante NPK 04-14-08; valor R\$ 120 mil\./)
+ assert.equal(factMatchesQuestionFacet({domain:'VISIT',question:'tem visita marcada?',statement:'Visita Realizada em 27/08/2026.',sourceType:'visit'}),false)
+ assert.equal(factMatchesQuestionFacet({domain:'VISIT',question:'o que discutimos na última visita?',statement:'Visita Realizada em 27/08/2026; compromisso: Levar orçamento na próxima semana.',sourceType:'visit'}),true)
+ assert.equal(factMatchesQuestionFacet({domain:'COMMERCIAL',question:'o que ele comprou?',statement:purchase.claim_supported,sourceType:'business_history'}),true)
 })

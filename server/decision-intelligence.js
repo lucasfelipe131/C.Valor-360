@@ -74,7 +74,10 @@ function buildEvidence(context){
     items.push(evidence('selected-opportunity',`${parts.join('; ')}.`,'opportunity',opportunity.id||opportunity.external_key||'opportunity:unknown',{observed:field(opportunity,'updated_at','updatedAt','created_at','createdAt'),uncertainty:'O registro mostra avanço administrativo; a prioridade e a prontidão ainda precisam ser confirmadas.'}))
   }
 
-  const visit=latest(context.visits,['occurred_at','occurredAt','completed_at','completedAt','updated_at','updatedAt','scheduled_at','scheduledAt','created_at','createdAt'])
+  // A visita concluída é a evidência; a agendada (scheduled_at futuro) vencia pela data e a visita
+  // realizada nunca entrava.
+  const completedVisits=array(context.visits).filter(item=>/COMPLETED|realizad|conclu/i.test(clean(field(item,'lifecycleStatus','lifecycle_status','status')))||field(item,'completed_at','completedAt','occurred_at','occurredAt'))
+  const visit=latest(completedVisits,['occurred_at','occurredAt','completed_at','completedAt','updated_at','updatedAt','created_at','createdAt'])||latest(context.visits,['occurred_at','occurredAt','completed_at','completedAt','updated_at','updatedAt','scheduled_at','scheduledAt','created_at','createdAt'])
   if(visit){
     const visitDate=field(visit,'occurred_at','occurredAt','completed_at','completedAt','scheduled_at','scheduledAt')
     const parts=[`Visita ${firstText(visit.status,'sem status')}${timestamp(visitDate)!==null?` em ${dateLabel(visitDate)}`:''}`]
@@ -106,7 +109,9 @@ function buildEvidence(context){
 
   const business=latest(context.businessHistory,['occurred_at','occurredAt','created_at','createdAt'])
   if(business){
-    const parts=[`Evento comercial ${firstText(business.outcome,'sem resultado classificado')}`]
+    // 'Compra registrada' responde 'o que ele comprou?' (faceta PURCHASE exige compr*/adquir*).
+    const outcomeLabel=/^won$/i.test(clean(business.outcome))?'Compra registrada (ganha)':/^lost$/i.test(clean(business.outcome))?'Negócio perdido':`Evento comercial ${firstText(business.outcome,'sem resultado classificado')}`
+    const parts=[outcomeLabel]
     if(clean(business.category))parts.push(`categoria ${clean(business.category,100)}`)
     if(clean(business.product))parts.push(`item ${clean(business.product,100)}`)
     if(number(business.value)!==null)parts.push(`valor ${compactBRL(business.value)}`)

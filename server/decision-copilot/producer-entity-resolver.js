@@ -32,6 +32,14 @@ const naturalReferencePatterns=Object.freeze([
  // "e o Matheus?", "e a Maria, como esta?": forma mais natural de trocar de produtor numa conversa.
  // Candidato, nao nome explicito: "e o clima hoje?" nao encontra ninguem e segue como pergunta.
  {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/^\s*(?:val[, ]+)?e\s+(?:o|a)\s+(?!(?:que|qual|quais|quanto|quantos|quantas|como|onde|quando|por)\b)(?<reference>[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,2})\s*(?:[,.!?;]|$)/iu},
+ // "quero falar sobre o Genor Brum", "fala do Genor", "sobre o Genor Brum.", ou só "Genor Brum":
+ // formas naturais (sobretudo por voz) de abrir um produtor sem produtor selecionado. Candidatos:
+ // "quero falar sobre calagem" ou "obrigado" não encontram ninguém e seguem como pergunta.
+ {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/^\s*(?:val[, ]+)?(?:(?:eu\s+)?(?:quero|queria|preciso|gostaria de)\s+(?:falar|conversar)|vamos\s+(?:falar|conversar)|me\s+fal[ae]|fal[ae]|falar|conversar)\s+(?:sobre|do|da|de|com)\s+(?:(?:o|a)\s+)?(?:(?:cliente|produtor|produtora)\s+)?(?<reference>[^,.!?;]+)/iu},
+ {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/^\s*(?:val[, ]+)?sobre\s+(?:(?:o|a)\s+)?(?:(?:cliente|produtor|produtora)\s+)?(?<reference>[^,.!?;]+)/iu},
+ // Só o nome: cada palavra começa em maiúscula (voz transcrita e digitação de nome), até quatro
+ // palavras, sem saudação/comando capitalizado; 'Isso muda a abordagem?' e 'oi val' não são candidatos.
+ {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:new RegExp('^\\s*(?:val[, ]+)?(?!(?:Oi|OI|Ola|OLA|Olá|OLÁ|Opa|OPA|Bom|BOM|Boa|BOA|Obrigado|OBRIGADO|Obrigada|OBRIGADA|Valeu|VALEU|Sim|SIM|Nao|NAO|Não|NÃO|Ok|OK|Certo|CERTO|Perfeito|PERFEITO|Continue|CONTINUE|Continua|CONTINUA|Repete|REPETE|Repita|REPITA|Resume|RESUME|Resuma|RESUMA|Prepare|PREPARE|Prepara|PREPARA|Abra|ABRA|Abre|ABRE|Mostre|MOSTRE|Mostra|MOSTRA|Calcule|CALCULE|Calcula|CALCULA|Registra|REGISTRA|Registre|REGISTRE|Anota|ANOTA|Anote|ANOTE|Isso|ISSO|Essa|ESSA|Esse|ESSE|Qual|QUAL|Quais|QUAIS|Quem|QUEM|Como|COMO|Onde|ONDE|Quando|QUANDO|Quanto|QUANTO)\\b)(?<reference>\\p{Lu}[\\p{L}\'-]*(?:\\s+(?:d[aeo]s?\\s+)?\\p{Lu}[\\p{L}\'-]*){0,3})\\s*[.!?]*$','u')},
 ])
 
 const stripReference=value=>{

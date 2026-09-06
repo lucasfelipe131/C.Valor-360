@@ -18,7 +18,7 @@ const domainPatterns=Object.freeze({
  AGRONOMY:/\b(?:agronom\w*|manejo|solo|nutri[cç][aã]o\w*|fertiliz\w*|herbic\w*|insetic\w*|fungic\w*|praga\w*|doen[cç]a\w*|diagn[oó]stic\w*|fitoscan|nutriscan|lavoura\w*|safra\w*|cultur\w*|plantio\w*|semente\w*|semeadur\w*|germina[cç][aã]o|emerg[eê]ncia)\b/,
  VISIT:/\b(?:visita\w*|preparevisit|perguntas? de ouro|p[oó]s[- ]?visita\w*|[uú]ltim[ao] conversa|compromisso\w*)\b/,
  OPPORTUNITY:/\b(?:oportunidade\w*|pipeline|proposta\w*|neg[oó]cio\w*|pr[oó]ximo passo|fechamento\w*)\b/,
- COMMERCIAL:/\b(?:comercial|venda\w*|pre[cç]o\w*|custo\w*|compra\w*|compr(?:ou|ar|aram|ava|avam|e|em|aria)|negocia[cç][aã]o\w*|obje[cç][aã]o\w*|valor(?:es)?|margem|margens)\b/
+ COMMERCIAL:/\b(?:comercial|venda\w*|pre[cç]o\w*|custo\w*|compra\w*|compr(?:ou|ar|aram|ava|avam|e|em|aria)|negocia[cç][aã]o\w*|obje[cç](?:[aã]o|oes|ões)\w*|valor(?:es)?|margem|margens)\b/
 })
 
 const intentDomains=Object.freeze({
@@ -34,7 +34,7 @@ export function classifyValContextDomain(message='',intent=''){
  // agronômico, não uma margem comercial. A exceção é deliberadamente
  // estreita: preço, custo, venda ou negociação mantêm MULTI_DOMAIN.
  const technicalSeedMargin=/\bmargem tecnica\b/.test(source)&&/\b(?:semente\w*|semeadur\w*)\b/.test(source)
- const explicitCommercial=/\b(?:comercial|venda\w*|preco\w*|custo\w*|compra\w*|negociacao\w*|objecao\w*|valor(?:es)?)\b/.test(source)
+ const explicitCommercial=/\b(?:comercial|venda\w*|preco\w*|custo\w*|compra\w*|negociacao\w*|objec(?:ao|oes)\w*|valor(?:es)?)\b/.test(source)
  if(technicalSeedMargin&&!explicitCommercial&&unique.includes('AGRONOMY')&&unique.includes('COMMERCIAL'))return 'AGRONOMY'
  const dominantPairs=Object.freeze({GRAINS:'COMMERCIAL',CREDIT:'COMMERCIAL',GEO:'AGRONOMY',OPPORTUNITY:'COMMERCIAL'})
  for(const [dominant,auxiliary] of Object.entries(dominantPairs))if(unique.length===2&&unique.includes(dominant)&&unique.includes(auxiliary))return dominant
@@ -201,6 +201,10 @@ export function collectionMatchesContextDomain(item={},sourceType='',domain='GEN
  // nada disso pode vetar o proprio registro perguntado ("ele tem oportunidade aberta?" respondia
  // "ainda nao ha oportunidade registrada" com a oportunidade em Proposta no contexto).
  if(selected==='OPPORTUNITY'&&intrinsic.includes('OPPORTUNITY'))return true
+ // O mesmo para COMMERCIAL: a compra de 'Fertilizante NPK' ou a oportunidade 'KCl para a safra' é
+ // registro comercial ainda que o texto cite insumo ou cultura; só grãos/crédito não pedidos vetam.
+ const foreignFinance=semantic.some(itemDomain=>['GRAINS','CREDIT'].includes(itemDomain))&&!matchedValContextDomains(query).some(itemDomain=>['GRAINS','CREDIT'].includes(itemDomain))
+ if(selected==='COMMERCIAL'&&intrinsic.includes('COMMERCIAL')&&!foreignFinance)return true
  if(!domainsFitRequest(itemDomains,selected,requested))return false
  if(selected==='GRAINS'||selected==='CREDIT')return semantic.includes(selected)
  if(selected==='GEO')return intrinsic.includes('GEO')||semantic.includes('GEO')

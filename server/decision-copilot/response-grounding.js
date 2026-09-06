@@ -392,12 +392,12 @@ function contextFacet(domain,question=''){
   if(/\b(?:ultima|mais recente|anterior|concluida|realizada|ocorreu|historico)\b/.test(source))return 'LAST_VISIT'
   // Preparar a próxima visita usa a última visita como evidência; a faceta NEXT_VISIT (só agenda
   // futura) vale para quem pergunta qual/quando é a próxima, não para quem pede preparação.
-  if(/\b(?:proxima|agendada|planejada|futura)\b/.test(source)&&!/\b(?:prepar\w*|abord\w*|organiz\w*)\b/.test(source))return 'NEXT_VISIT'
+  if(/\b(?:proxima|agendada|planejada|futura|marcada)\b/.test(source)&&!/\b(?:prepar\w*|abord\w*|organiz\w*)\b/.test(source))return 'NEXT_VISIT'
  }
  if(domain==='COMMERCIAL'){
   if(/\b(?:objecao|rejeitou|resistencia|barreira|impedimento|alegou|questionou)\b/.test(source))return 'OBJECTION'
   if(/\b(?:preco|valor|custo|margem)\b|r\$/.test(source))return 'PRICE'
-  if(/\b(?:ultima compra|comprou|compra mais recente|adquiriu)\b/.test(source))return 'PURCHASE'
+  if(/\b(?:ultima compra|compra\w*|comprou|compraram|adquiriu|adquiriram)\b/.test(source))return 'PURCHASE'
  }
  return ''
 }
@@ -418,7 +418,9 @@ function evidenceMatchesFacet(facet,text='',sourceType=''){
  if(!facet)return true
  const source=normalize(text)
  // O compromisso pendente da última visita pertence à mesma faceta ('o que ficou pendente da última visita?').
- if(facet==='LAST_VISIT')return sourceType!=='scheduled_visit'&&!/\b(?:proxim\w*|agend\w*|planej\w*|futur\w*)\b/.test(source)&&/\b(?:ultim\w*|mais recente|conclu\w*|realiz\w*|ocorreu|visit\w*|compromiss\w*|pendente\w*)\b/.test(source)
+ // O registro de uma visita concluída pode citar 'próxima semana' no compromisso: a fonte 'visit'
+ // (concluída) não é vetada pela palavra; só a agenda futura fica fora.
+ if(facet==='LAST_VISIT')return sourceType!=='scheduled_visit'&&(sourceType==='visit'||!/\b(?:proxim\w*|agend\w*|planej\w*|futur\w*)\b/.test(source))&&/\b(?:ultim\w*|mais recente|conclu\w*|realiz\w*|ocorreu|visit\w*|compromiss\w*|pendente\w*)\b/.test(source)
  if(facet==='NEXT_VISIT')return sourceType==='scheduled_visit'||/\b(?:proxim\w*|agend\w*|planej\w*|futur\w*|prepar\w*)\b/.test(source)
  if(facet==='OBJECTION')return /\b(?:objec\w*|rejeit\w*|resist\w*|barreira|imped\w*|aleg\w*|question\w*|caro)\b/.test(source)
  if(facet==='PRICE')return /\b(?:preco|valor|custo|margem)\b|r\$/.test(source)
@@ -804,6 +806,13 @@ export function assertResponseQuestionRelevance({question='',answer='',domain=''
  const result=Object.freeze({version:responseGroundingVersion,domain:selectedDomain,passed,question_relevance:passed?'PASS':'FAIL'})
  if(!passed)throw Object.assign(new Error('A resposta não responde diretamente à pergunta atual.'),{code:'RESPONSE_GROUNDING_VIOLATION',grounding:result})
  return result
+}
+
+// Um fato literal só pode virar leitura quando pertence à faceta da pergunta: a visita concluída não
+// responde 'tem visita marcada?'.
+export function factMatchesQuestionFacet({domain='',question='',statement='',sourceType=''}={}){
+ const facet=contextFacet(domain||classifyValContextDomain(question),question)
+ return evidenceMatchesFacet(facet,normalize(statement),clean(sourceType,120))
 }
 
 export function evaluateResponseGrounding({question='',answer='',domain='',evidence=[],activeProducerId='',tenantId='',ownerId='',field='answer',now=new Date(),checkQuestionRelevance=true}={}){
