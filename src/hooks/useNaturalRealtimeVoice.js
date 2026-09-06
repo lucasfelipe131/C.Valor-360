@@ -1,4 +1,5 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react'
+import {realtimeRetrySeconds,realtimeRetryDelay,realtimeFailureMessage,realtimeEventSuppressedWhilePaused} from '../lib/realtime-recovery.js'
 import {NATURAL_REALTIME_STATES as STATES,NATURAL_REALTIME_VERSION,parseRealtimeEvent,realtimeLatencySample,realtimeStatusLabel,realtimeWebRTCCapabilities,toolOutputEvent} from '../lib/realtime-webrtc.js'
 
 const now=()=>globalThis.performance?.now?.()??Date.now()
@@ -9,7 +10,7 @@ const requiredEpoch=value=>{
  if(epoch===null)throw Object.assign(new Error('contextEpoch deve ser um inteiro seguro não negativo.'),{code:'realtime_voice_context_epoch_invalid'})
  return epoch
 }
-const emptyResources=()=>({pc:null,dc:null,stream:null,audio:null,timer:null,sessionId:'',scopeKey:'',contextEpoch:0,attemptId:null,finalized:false})
+const emptyResources=()=>({pc:null,dc:null,stream:null,audio:null,timer:null,connectionTimer:null,disconnectTimer:null,controller:null,sessionId:'',scopeKey:'',contextEpoch:0,attemptId:null,finalized:false})
 
 export function realtimeVoiceScopeKey({clientId='',conversationId='',contextEpoch=0,activeContext=null}={}){
  return `${String(clientId)}\u001f${String(conversationId)}\u001f${requiredEpoch(contextEpoch)}\u001f${String(activeContext?.type||'')}\u001f${String(activeContext?.id||'')}`
@@ -29,9 +30,13 @@ export function realtimeVoiceReconnectReady(requestScope={},activeScope={},resou
 }
 
 export default function useNaturalRealtimeVoice({clientId='',conversationId='',contextEpoch=0,activeContext=null,disabled=false,onUserTranscript,onAssistantTranscript,onToolCall,onMemoryReview,onMetrics,onError,onStateChange}={}){
- const [machine,setMachine]=useState({status:STATES.IDLE,microphoneActive:false,microphonePermission:'UNKNOWN',error:'',fallbackReason:'',sessionId:'',model:'',budgetRemainingUsd:null})
+ const [machine,setMachine]=useState({status:STATES.IDLE,microphoneActive:false,microphonePermission:'UNKNOWN',error:'',fallbackReason:'',sessionId:'',model:'',budgetRemainingUsd:null,retryAfterSeconds:0,interimTranscript:'',assistantTranscript:''})
  const [reconnectSequence,setReconnectSequence]=useState(0)
  const machineRef=useRef(machine)
+ const retryAt=useRef(0)
+ const lifecycle=useRef(0)
+ const userPaused=useRef(false)
+ const pendingToolResponse=useRef(null)
  const resources=useRef(emptyResources())
  const currentEpoch=requiredEpoch(contextEpoch)
  const scopeKey=realtimeVoiceScopeKey({clientId,conversationId,contextEpoch:currentEpoch,activeContext})
@@ -42,7 +47,7 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
  const marks=useRef(null),pendingUser=useRef(''),assistantBuffers=useRef(new Map()),thinkingWatchdog=useRef(null),pendingReconnect=useRef(null)
  callbacks.current={onUserTranscript,onAssistantTranscript,onToolCall,onMemoryReview,onMetrics,onError,onStateChange}
  const capabilities=useMemo(()=>realtimeWebRTCCapabilities(),[])
- const update=useCallback(next=>setMachine(current=>({...current,...(typeof next==='function'?next(current):next)})),[])
+ const update=useCallback(next=>{const value={...machineRef.current,...(typeof next==='function'?next(machineRef.current):next)};machineRef.current=value;setMachine(value)},[])
  const eventIsCurrent=useCallback(eventScope=>realtimeVoiceEventMatchesScope(eventScope,activeScopeRef.current,resources.current),[])
  const send=useCallback((event,eventScope=null)=>{if(eventScope&&!eventIsCurrent(eventScope))return false;const dc=resources.current.dc;if(dc?.readyState!=='open')return false;try{dc.send(JSON.stringify(event));return true}catch{return false}},[eventIsCurrent])
  const postSession=useCallback(async(path,payload,{keepalive=false,sessionId:explicitSessionId=''}={})=>{
@@ -54,8 +59,13 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
  },[])
  const clearThinkingWatchdog=useCallback(()=>{if(thinkingWatchdog.current){globalThis.clearTimeout(thinkingWatchdog.current);thinkingWatchdog.current=null}},[])
  const cleanup=useCallback(async({final=true,reason='EXIT',nextStatus=STATES.IDLE}={})=>{
+  lifecycle.current+=1
   clearThinkingWatchdog()
   const current=resources.current
+  resources.current=emptyResources()
+  current.controller?.abort()
+  if(current.connectionTimer)globalThis.clearTimeout(current.connectionTimer)
+  if(current.disconnectTimer)globalThis.clearTimeout(current.disconnectTimer)
   if(current.timer)globalThis.clearTimeout(current.timer)
   current.timer=null
   try{current.dc?.close()}catch{}
@@ -63,24 +73,30 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   for(const track of current.stream?.getTracks?.()||[])try{track.stop()}catch{}
   if(current.audio){try{current.audio.pause()}catch{};try{current.audio.srcObject=null;current.audio.remove()}catch{}}
   if(final&&!current.finalized&&current.sessionId){current.finalized=true;postSession('usage',{final:true,disconnectReason:reason},{keepalive:true,sessionId:current.sessionId}).catch(()=>null)}
-  resources.current=emptyResources()
-  marks.current=null;pendingUser.current='';assistantBuffers.current.clear();update({status:nextStatus,microphoneActive:false,sessionId:'',error:'',fallbackReason:nextStatus===STATES.FALLBACK?reason:''})
+  pendingReconnect.current=null
+  pendingToolResponse.current=null
+  marks.current=null;pendingUser.current='';assistantBuffers.current.clear();update({status:nextStatus,microphoneActive:false,sessionId:'',error:'',audioBlocked:false,interimTranscript:'',assistantTranscript:'',fallbackReason:nextStatus===STATES.FALLBACK?reason:''})
  },[clearThinkingWatchdog,postSession,update])
  const requestReconnect=useCallback(async(targetScopeKey=activeScopeRef.current.scopeKey)=>{
   const request={scopeKey:String(targetScopeKey||'')}
   scopeReconnectPending.current=request
-  await cleanup({final:true,reason:'CONTEXT_SCOPE_CHANGED',nextStatus:STATES.CONNECTING})
+  await cleanup({final:true,reason:'CONTEXT_SCOPE_CHANGED',nextStatus:userPaused.current?STATES.PAUSED:STATES.CONNECTING})
   if(scopeReconnectPending.current!==request)return false
   setReconnectSequence(current=>current+1)
   return true
  },[cleanup])
  const fail=useCallback(async(error,{fallback=true,eventScope=null}={})=>{
-  const code=String(error?.code||error?.name||'realtime_voice_failed')
-  const message=error?.message||'O modo contínuo não está disponível agora. Use apertar para falar.'
+  const code=String(typeof error?.code==='string'&&error.code||error?.name||'realtime_voice_failed')
+  const message=realtimeFailureMessage(error)
   if(eventScope&&!eventIsCurrent(eventScope))return {ok:false,reason:'REALTIME_STALE_EVENT',error:message}
-  await cleanup({final:true,reason:code,nextStatus:fallback?STATES.FALLBACK:STATES.ERROR})
-  update({error:message,fallbackReason:code})
-  callbacks.current.onError?.(message,{code})
+  const finishing=cleanup({final:true,reason:code,nextStatus:fallback?STATES.FALLBACK:STATES.ERROR})
+  const failureGeneration=lifecycle.current
+  await finishing
+  if(lifecycle.current!==failureGeneration)return {ok:false,reason:'REALTIME_STALE_EVENT'}
+  const delay=Math.max(0,Number(error?.retryAfterSeconds)||0)
+  if(delay)retryAt.current=Math.max(retryAt.current,Date.now()+delay*1000)
+  update({error:message,fallbackReason:code,retryable:error.canRetry!==false,retryAfterSeconds:realtimeRetrySeconds(retryAt.current)})
+  callbacks.current.onError?.(message,{code,retryAfterSeconds:realtimeRetrySeconds(retryAt.current)})
   return {ok:false,reason:code,error:message}
  },[cleanup,eventIsCurrent,update])
  // Sem isto, uma sessão realtime que nunca emite response.done/error após
@@ -123,31 +139,35 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
    else result={status:'DENIED',message:'Ferramenta não autorizada.'}
   }catch(error){result={status:'ERROR',message:safeText(error?.message||'A ferramenta falhou.',500)}}
   if(!eventIsCurrent(eventScope))return
-  send(toolOutputEvent(event.call_id,result),eventScope);send({type:'response.create'},eventScope)
+  send(toolOutputEvent(event.call_id,result),eventScope)
+  if(userPaused.current)pendingToolResponse.current=eventScope
+  else send({type:'response.create'},eventScope)
  },[eventIsCurrent,send])
  const handleEvent=useCallback(async(raw,eventScope)=>{
   if(!eventIsCurrent(eventScope))return
   const event=parseRealtimeEvent(raw);if(!event)return
   const type=event.type
   // Eventos do provider nao desfazem a pausa do consultor: as tracks continuam desabilitadas.
-  const paused=machineRef.current.status===STATES.PAUSED
+  const paused=userPaused.current
+  if(paused&&realtimeEventSuppressedWhilePaused(type))return
   if(type==='session.created'||type==='session.updated'){if(!paused)update({status:STATES.LISTENING,microphoneActive:true,error:''});return}
   if(type==='input_audio_buffer.speech_started'){
    const timestamp=now();const interrupted=machineRef.current.status===STATES.SPEAKING
-   marks.current={speechStarted:timestamp,bargeIn:interrupted};clearThinkingWatchdog();update({status:STATES.LISTENING,microphoneActive:true});return
+   marks.current={speechStarted:timestamp,bargeIn:interrupted};clearThinkingWatchdog();update({status:STATES.LISTENING,microphoneActive:true,error:'',interimTranscript:'',assistantTranscript:''});return
   }
   if(type==='input_audio_buffer.speech_stopped'){
    const timestamp=now();marks.current={...(marks.current||{}),speechEnd:timestamp,turnDetected:timestamp};armThinkingWatchdog(eventScope);update({status:STATES.THINKING,microphoneActive:true});return
   }
+  if(type==='conversation.item.input_audio_transcription.delta'){if(!paused)update(current=>({interimTranscript:(current.interimTranscript+String(event.delta||'')).slice(-3000)}));return}
   if(type==='conversation.item.input_audio_transcription.completed'){
-   const transcript=safeText(event.transcript);if(marks.current)marks.current.transcriptAvailable=now();pendingUser.current=transcript;if(transcript)callbacks.current.onUserTranscript?.(transcript,eventScope);postSession('usage',{responseId:`transcript:${safeText(event.item_id,140)}`,kind:'TRANSCRIPTION',usage:event.usage||{},final:false},{sessionId:eventScope.sessionId}).then(result=>{if(!eventIsCurrent(eventScope))return;if(result?.remainingUsd!=null)update({budgetRemainingUsd:result.remainingUsd});if(result?.exhausted)fail(Object.assign(new Error('O teto autorizado do UAT realtime foi atingido.'),{code:'realtime_voice_budget_exhausted'}),{eventScope})}).catch(()=>null);return
+   const transcript=safeText(event.transcript);if(marks.current)marks.current.transcriptAvailable=now();pendingUser.current=transcript;if(!paused)update({interimTranscript:transcript});if(transcript)callbacks.current.onUserTranscript?.(transcript,eventScope);postSession('usage',{responseId:`transcript:${safeText(event.item_id,140)}`,kind:'TRANSCRIPTION',usage:event.usage||{},final:false},{sessionId:eventScope.sessionId}).then(result=>{if(!eventIsCurrent(eventScope))return;if(result?.remainingUsd!=null)update({budgetRemainingUsd:result.remainingUsd});if(result?.exhausted)fail(Object.assign(new Error('O teto autorizado do UAT realtime foi atingido.'),{code:'realtime_voice_budget_exhausted'}),{eventScope})}).catch(()=>null);return
   }
   if(type==='response.created'){if(marks.current)marks.current.reasoningStarted=now();armThinkingWatchdog(eventScope);update({status:STATES.THINKING,microphoneActive:true});return}
   if(type==='response.output_audio_transcript.delta'){
-   const key=event.response_id||event.item_id||'active';const next=(assistantBuffers.current.get(key)||'')+String(event.delta||'');assistantBuffers.current.set(key,next);if(marks.current&&!Number.isFinite(marks.current.firstResponseToken))marks.current.firstResponseToken=now();return
+   const key=event.response_id||event.item_id||'active';const next=(assistantBuffers.current.get(key)||'')+String(event.delta||'');assistantBuffers.current.set(key,next);if(!paused)update({assistantTranscript:safeText(next)});if(marks.current&&!Number.isFinite(marks.current.firstResponseToken))marks.current.firstResponseToken=now();return
   }
   if(type==='response.output_audio_transcript.done'){
-   const key=event.response_id||event.item_id||'active';const transcript=safeText(event.transcript||assistantBuffers.current.get(key));assistantBuffers.current.delete(key);if(transcript&&eventIsCurrent(eventScope)){callbacks.current.onAssistantTranscript?.(transcript,eventScope);if(pendingUser.current)reportTurn(pendingUser.current,transcript,eventScope);pendingUser.current=''}return
+   const key=event.response_id||event.item_id||'active';const transcript=safeText(event.transcript||assistantBuffers.current.get(key));assistantBuffers.current.delete(key);if(!paused)update({assistantTranscript:transcript});if(transcript&&eventIsCurrent(eventScope)){callbacks.current.onAssistantTranscript?.(transcript,eventScope);if(pendingUser.current)reportTurn(pendingUser.current,transcript,eventScope);pendingUser.current=''}return
   }
   if(type==='output_audio_buffer.started'){if(marks.current&&!Number.isFinite(marks.current.firstAudio))marks.current.firstAudio=now();clearThinkingWatchdog();update({status:STATES.SPEAKING,microphoneActive:true});return}
   if(type==='output_audio_buffer.stopped'||type==='output_audio_buffer.cleared'){if(!paused)update({status:STATES.LISTENING,microphoneActive:true});if(pendingReconnect.current&&!paused){const scopeKeyToReconnect=pendingReconnect.current;pendingReconnect.current=null;await requestReconnect(scopeKeyToReconnect)}return}
@@ -160,27 +180,36 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
    // Resposta que terminou sem audio (failed/incomplete) deixava a VAL presa em "Pensando" sem erro:
    // o watchdog ja foi desarmado e nenhum evento de audio vai chegar. Volta a ouvir e informa o motivo.
    const responseStatus=String(event.response?.status||'')
-   if(!audioStarted&&responseStatus&&responseStatus!=='completed'&&responseStatus!=='cancelled'&&eventIsCurrent(eventScope)){
+   if(!audioStarted&&responseStatus&&responseStatus!=='completed'&&responseStatus!=='cancelled'&&eventIsCurrent(eventScope)&&!userPaused.current){
     const detail=safeText(event.response?.status_details?.error?.message||event.response?.status_details?.reason||'',300)
     const message=detail?`A VAL não conseguiu responder agora (${detail}). Pode repetir a pergunta.`:'A VAL não conseguiu responder agora. Pode repetir a pergunta.'
     update({status:STATES.LISTENING,microphoneActive:true,error:message})
     callbacks.current.onError?.(message,{code:`realtime_response_${responseStatus}`})
    }
-   if(pendingReconnect.current&&!audioStarted){const scopeKeyToReconnect=pendingReconnect.current;pendingReconnect.current=null;await requestReconnect(scopeKeyToReconnect)}
+   if(!audioStarted&&eventIsCurrent(eventScope)&&!userPaused.current&&responseStatus==='completed')update({status:STATES.LISTENING,microphoneActive:true})
+   if(pendingReconnect.current&&!audioStarted&&!userPaused.current){const scopeKeyToReconnect=pendingReconnect.current;pendingReconnect.current=null;await requestReconnect(scopeKeyToReconnect)}
    return
   }
+  if(type==='error'&&event.error?.code==='response_cancel_not_active')return
   if(type==='error'){clearThinkingWatchdog();await fail(Object.assign(new Error(event.error?.message||'O provider realtime encerrou a sessão.'),{code:event.error?.code||'realtime_provider_error'}),{eventScope})}
  },[armThinkingWatchdog,clearThinkingWatchdog,eventIsCurrent,fail,handleTool,postSession,reportTurn,reportUsage,update])
  const start=useCallback(async()=>{
   if(disabled)return {ok:false,reason:'DISABLED'}
+  const retrySeconds=realtimeRetrySeconds(retryAt.current)
+  if(retrySeconds){update({retryAfterSeconds:retrySeconds});return {ok:false,reason:'realtime_voice_cooldown',retryAfterSeconds:retrySeconds}}
   if(!capabilities.supported)return fail(Object.assign(new Error(!capabilities.secureContext?'Abra a VAL em uma conexão HTTPS segura.':'Este navegador não oferece WebRTC e microfone compatíveis.'),{code:!capabilities.secureContext?'INSECURE_CONTEXT':'WEBRTC_UNAVAILABLE'}))
   if(resources.current.scopeKey)return {ok:false,reason:'ALREADY_ACTIVE'}
+  lifecycle.current+=1
   const startedScope={...activeScopeRef.current}
   const attemptId=Symbol('realtime-voice-start')
-  const attempt={...emptyResources(),scopeKey:startedScope.scopeKey,contextEpoch:startedScope.contextEpoch,attemptId}
+  const attempt={...emptyResources(),controller:new AbortController(),scopeKey:startedScope.scopeKey,contextEpoch:startedScope.contextEpoch,attemptId}
   resources.current=attempt
   const isCurrent=()=>activeScopeRef.current.scopeKey===startedScope.scopeKey&&resources.current.attemptId===attemptId
   const abandon=async(sessionId='')=>{
+   if(resources.current.attemptId===attemptId)resources.current=emptyResources()
+   attempt.controller?.abort()
+   if(attempt.connectionTimer)globalThis.clearTimeout(attempt.connectionTimer)
+   if(attempt.disconnectTimer)globalThis.clearTimeout(attempt.disconnectTimer)
    if(attempt.timer)globalThis.clearTimeout(attempt.timer)
    try{attempt.dc?.close()}catch{};try{attempt.pc?.close()}catch{}
    for(const track of attempt.stream?.getTracks?.()||[])try{track.stop()}catch{}
@@ -190,16 +219,25 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
    return {ok:false,reason:'REALTIME_SCOPE_CHANGED'}
   }
   let permissionState='PROMPT';try{const permission=await navigator.permissions?.query?.({name:'microphone'});if(['granted','denied','prompt'].includes(permission?.state))permissionState=permission.state.toUpperCase()}catch{}
-  update({status:STATES.CONNECTING,microphoneActive:false,microphonePermission:permissionState,error:'',fallbackReason:''})
+  if(!isCurrent())return abandon()
+  update({status:STATES.CONNECTING,microphoneActive:false,microphonePermission:permissionState,error:'',fallbackReason:'',audioBlocked:false,retryable:true,retryAfterSeconds:0,interimTranscript:'',assistantTranscript:''})
   const audio=document.createElement('audio');audio.autoplay=true;audio.playsInline=true;audio.setAttribute('aria-hidden','true');audio.style.display='none';document.body.appendChild(audio);attempt.audio=audio;audio.play().catch(()=>null)
   try{
+   // Configuration must be ready before requesting access to the microphone.
+   attempt.connectionTimer=globalThis.setTimeout(()=>attempt.controller.abort(),8000)
+   const statusResponse=await fetch('/api/v1/realtime-voice/status',{signal:attempt.controller.signal})
+   const availability=await statusResponse.json().catch(()=>null)
+   if(!isCurrent())return abandon()
+   globalThis.clearTimeout(attempt.connectionTimer);attempt.connectionTimer=null
+   if(!statusResponse.ok||!availability?.available)throw Object.assign(new Error(availability?.unavailableMessage||availability?.error||'A conversa por voz está indisponível neste ambiente.'),{code:availability?.unavailableCode||availability?.code||'realtime_voice_unavailable',canRetry:availability?.canRetry,retryAfterSeconds:realtimeRetryDelay(availability,statusResponse.headers)})
    // Permission comes first: do not reserve budget or create a paid provider
    // session when the device cannot supply a microphone stream.
-   const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});attempt.stream=stream;if(!isCurrent())return abandon();update({microphonePermission:'GRANTED'})
-   const sessionResponse=await fetch('/api/v1/realtime-voice/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:startedScope.clientId,conversationId:startedScope.conversationId,contextEpoch:startedScope.contextEpoch,activeContext})})
+   const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});attempt.stream=stream;for(const track of stream.getAudioTracks())track.enabled=!userPaused.current;if(!isCurrent())return abandon();update({microphonePermission:'GRANTED'})
+   attempt.connectionTimer=globalThis.setTimeout(()=>{if(isCurrent())fail(Object.assign(new Error('A conexão de voz demorou demais. Tente novamente.'),{code:'REALTIME_CONNECT_TIMEOUT',retryAfterSeconds:5}))},20000)
+   const sessionResponse=await fetch('/api/v1/realtime-voice/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:startedScope.clientId,conversationId:startedScope.conversationId,contextEpoch:startedScope.contextEpoch,activeContext}),signal:attempt.controller.signal})
    const session=await sessionResponse.json().catch(()=>null)
    if(!isCurrent())return abandon(session?.sessionId)
-   if(!sessionResponse.ok)throw Object.assign(new Error(session?.error||'O modo realtime não está disponível neste ambiente.'),{code:session?.code||'realtime_voice_session_unavailable'})
+   if(!sessionResponse.ok)throw Object.assign(new Error(session?.error||'O modo realtime não está disponível neste ambiente.'),{code:session?.code||'realtime_voice_session_unavailable',canRetry:session?.safe_to_retry,retryAfterSeconds:realtimeRetryDelay(session,sessionResponse.headers)})
    attempt.sessionId=String(session?.sessionId||'')
    const responseScope=session?.context||{}
    const responseHasEpoch=Object.prototype.hasOwnProperty.call(responseScope,'contextEpoch')
@@ -208,18 +246,23 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
    const eventScope={...startedScope,sessionId:attempt.sessionId}
    update({sessionId:attempt.sessionId,model:session.model,budgetRemainingUsd:session.budget?.remainingUsd??null})
    const pc=new RTCPeerConnection();attempt.pc=pc
-   pc.onconnectionstatechange=()=>{if(['failed','disconnected','closed'].includes(pc.connectionState)&&eventIsCurrent(eventScope))fail(Object.assign(new Error('A conexão realtime foi interrompida. Use apertar para falar.'),{code:`WEBRTC_${pc.connectionState.toUpperCase()}`}),{eventScope})}
-   pc.ontrack=event=>{if(!eventIsCurrent(eventScope))return;audio.srcObject=event.streams?.[0]||new MediaStream([event.track]);audio.play().catch(()=>null)}
+   pc.onconnectionstatechange=()=>{
+    if(!eventIsCurrent(eventScope))return
+    if(pc.connectionState==='connected'){if(attempt.disconnectTimer)globalThis.clearTimeout(attempt.disconnectTimer);attempt.disconnectTimer=null;return}
+    if(pc.connectionState==='disconnected'){if(!attempt.disconnectTimer)attempt.disconnectTimer=globalThis.setTimeout(()=>{if(eventIsCurrent(eventScope)&&pc.connectionState==='disconnected')fail(Object.assign(new Error('A conexão de voz foi interrompida. Tente reconectar.'),{code:'WEBRTC_DISCONNECTED',retryAfterSeconds:3}),{eventScope})},4000);return}
+    if(['failed','closed'].includes(pc.connectionState))fail(Object.assign(new Error('A conexão de voz foi encerrada. Tente reconectar.'),{code:`WEBRTC_${pc.connectionState.toUpperCase()}`,retryAfterSeconds:3}),{eventScope})
+   }
+   pc.ontrack=event=>{if(!eventIsCurrent(eventScope))return;audio.srcObject=event.streams?.[0]||new MediaStream([event.track]);if(!userPaused.current)audio.play().catch(()=>{if(eventIsCurrent(eventScope)&&!userPaused.current)update({error:'Toque em Retomar áudio para ouvir a resposta.',audioBlocked:true})})}
    for(const track of stream.getAudioTracks())pc.addTrack(track,stream)
-   const dc=pc.createDataChannel('oai-events');attempt.dc=dc;dc.onmessage=event=>handleEvent(event.data,eventScope);dc.onerror=()=>{if(eventIsCurrent(eventScope))fail(Object.assign(new Error('O canal de eventos realtime falhou.'),{code:'WEBRTC_DATA_CHANNEL_ERROR'}),{eventScope})};dc.onopen=()=>{if(eventIsCurrent(eventScope))update({status:STATES.LISTENING,microphoneActive:true})}
+   const dc=pc.createDataChannel('oai-events');attempt.dc=dc;dc.onmessage=event=>handleEvent(event.data,eventScope);dc.onerror=()=>{if(eventIsCurrent(eventScope))fail(Object.assign(new Error('O canal de eventos realtime falhou.'),{code:'WEBRTC_DATA_CHANNEL_ERROR'}),{eventScope})};dc.onopen=()=>{if(!eventIsCurrent(eventScope))return;if(attempt.connectionTimer)globalThis.clearTimeout(attempt.connectionTimer);attempt.connectionTimer=null;for(const track of stream.getAudioTracks())track.enabled=!userPaused.current;update({status:userPaused.current?STATES.PAUSED:STATES.LISTENING,microphoneActive:!userPaused.current})}
    const offer=await pc.createOffer();if(!isCurrent())return abandon(attempt.sessionId);await pc.setLocalDescription(offer);if(!isCurrent())return abandon(attempt.sessionId)
-   const answerResponse=await fetch(session.callUrl,{method:'POST',body:offer.sdp,headers:{Authorization:`Bearer ${session.clientSecret}`,'Content-Type':'application/sdp'}})
+   const answerResponse=await fetch(session.callUrl,{method:'POST',body:offer.sdp,headers:{Authorization:`Bearer ${session.clientSecret}`,'Content-Type':'application/sdp'},signal:attempt.controller.signal})
    if(!isCurrent())return abandon(attempt.sessionId)
    if(!answerResponse.ok)throw Object.assign(new Error('O provider recusou a conexão WebRTC.'),{code:'WEBRTC_PROVIDER_REJECTED'})
    const answer=await answerResponse.text();if(!isCurrent())return abandon(attempt.sessionId);await pc.setRemoteDescription({type:'answer',sdp:answer});if(!isCurrent())return abandon(attempt.sessionId)
    attempt.timer=globalThis.setTimeout(()=>{if(eventIsCurrent(eventScope))fail(Object.assign(new Error('A sessão atingiu o limite de duração do UAT.'),{code:'REALTIME_SESSION_TIME_LIMIT'}),{eventScope})},Math.max(60,Number(session.maxSessionSeconds)||600)*1000)
    return {ok:true,transport:'WEBRTC',sessionId:attempt.sessionId,scope:eventScope}
-  }catch(error){if(!isCurrent())return abandon(attempt.sessionId);if(error?.code==='realtime_voice_disabled'){await cleanup({final:false,reason:error.code,nextStatus:STATES.IDLE});return {ok:false,reason:error.code,error:error.message}}if(error?.name==='NotAllowedError')update({microphonePermission:permissionState==='DENIED'?'DENIED':'BLOCKED'});else if(error?.name==='NotFoundError')update({microphonePermission:'UNAVAILABLE'});return fail(error)}
+  }catch(error){if(!isCurrent())return abandon(attempt.sessionId);if(error?.name==='NotAllowedError')update({microphonePermission:permissionState==='DENIED'?'DENIED':'BLOCKED'});else if(error?.name==='NotFoundError')update({microphonePermission:'UNAVAILABLE'});return fail(error)}
  },[activeContext,capabilities,disabled,eventIsCurrent,fail,handleEvent,postSession,scopeKey,update])
  useEffect(()=>{
   if(scopeKeyRef.current===scopeKey)return
@@ -231,21 +274,48 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   requestReconnect(scopeKey).catch(()=>null)
  },[requestReconnect,scopeKey])
  useEffect(()=>{
-  if(disabled||!scopeReconnectPending.current||resources.current.scopeKey)return
+  if(disabled||userPaused.current||!scopeReconnectPending.current||resources.current.scopeKey)return
   if(!realtimeVoiceReconnectReady(scopeReconnectPending.current,activeScopeRef.current,resources.current)){scopeReconnectPending.current=null;return}
   scopeReconnectPending.current=null
   start().catch(()=>null)
  },[disabled,reconnectSequence,start,scopeKey])
- const pause=useCallback(()=>{for(const track of resources.current.stream?.getAudioTracks?.()||[])track.enabled=false;try{resources.current.audio?.pause()}catch{};update({status:STATES.PAUSED,microphoneActive:false});return true},[update])
- const resume=useCallback(()=>{for(const track of resources.current.stream?.getAudioTracks?.()||[])track.enabled=true;resources.current.audio?.play?.().catch(()=>null);update({status:STATES.LISTENING,microphoneActive:true});if(pendingReconnect.current){const scopeKeyToReconnect=pendingReconnect.current;pendingReconnect.current=null;requestReconnect(scopeKeyToReconnect).catch(()=>null)}return true},[requestReconnect,update])
+ const pause=useCallback(()=>{userPaused.current=true;clearThinkingWatchdog();send({type:'response.cancel'});send({type:'output_audio_buffer.clear'});for(const track of resources.current.stream?.getAudioTracks?.()||[])track.enabled=false;try{resources.current.audio?.pause()}catch{};update({status:STATES.PAUSED,microphoneActive:false});return true},[clearThinkingWatchdog,send,update])
+ const resumeAudio=useCallback(async()=>{
+  const current=resources.current
+  if(userPaused.current||!current.audio)return false
+  try{await current.audio.play();if(resources.current===current)update({audioBlocked:false,error:''});return true}
+  catch{if(resources.current===current)update({audioBlocked:true,error:'O navegador bloqueou o áudio. Toque em Retomar áudio.'});return false}
+ },[update])
+ const resume=useCallback(()=>{
+  userPaused.current=false
+  if(scopeReconnectPending.current){update({status:STATES.CONNECTING,microphoneActive:false});setReconnectSequence(current=>current+1);return true}
+  if(pendingReconnect.current){const target=pendingReconnect.current;pendingReconnect.current=null;requestReconnect(target).catch(()=>null);return true}
+  if(!resources.current.sessionId)return false
+  send({type:'input_audio_buffer.clear'})
+  for(const track of resources.current.stream?.getAudioTracks?.()||[])track.enabled=true
+  resumeAudio()
+  update({status:STATES.LISTENING,microphoneActive:true})
+  if(pendingToolResponse.current){const eventScope=pendingToolResponse.current;pendingToolResponse.current=null;send({type:'response.create'},eventScope)}
+  return true
+ },[requestReconnect,resumeAudio,send,update])
  // Interromper a fala tambem encerra a reproducao: a reconexao adiada durante a resposta acontece
  // agora, senao a proxima pergunta seria respondida com o contexto antigo.
- const bargeIn=useCallback(()=>{send({type:'response.cancel'});send({type:'output_audio_buffer.clear'});update({status:STATES.LISTENING,microphoneActive:true});if(pendingReconnect.current){const scopeKeyToReconnect=pendingReconnect.current;pendingReconnect.current=null;requestReconnect(scopeKeyToReconnect).catch(()=>null)}return true},[requestReconnect,send,update])
- const exit=useCallback(()=>{scopeReconnectPending.current=null;return cleanup({final:true,reason:'USER_EXIT',nextStatus:STATES.IDLE})},[cleanup])
- useEffect(()=>{machineRef.current=machine;callbacks.current.onStateChange?.(machine)},[machine])
+ const bargeIn=useCallback(()=>{clearThinkingWatchdog();send({type:'response.cancel'});send({type:'output_audio_buffer.clear'});update({status:STATES.LISTENING,microphoneActive:true});if(pendingReconnect.current){const scopeKeyToReconnect=pendingReconnect.current;pendingReconnect.current=null;requestReconnect(scopeKeyToReconnect).catch(()=>null)}return true},[clearThinkingWatchdog,requestReconnect,send,update])
+ const exit=useCallback(()=>{userPaused.current=false;scopeReconnectPending.current=null;return cleanup({final:true,reason:'USER_EXIT',nextStatus:STATES.IDLE})},[cleanup])
+ useEffect(()=>{callbacks.current.onStateChange?.(machine)},[machine])
+ useEffect(()=>{
+  if(!machine.retryAfterSeconds)return
+  const timer=globalThis.setInterval(()=>update({retryAfterSeconds:realtimeRetrySeconds(retryAt.current)}),1000)
+  return ()=>globalThis.clearInterval(timer)
+ },[Boolean(machine.retryAfterSeconds),update])
  useEffect(()=>()=>{
   scopeReconnectPending.current=null
+  clearThinkingWatchdog()
   const current=resources.current
+  resources.current=emptyResources()
+  current.controller?.abort()
+  if(current.connectionTimer)globalThis.clearTimeout(current.connectionTimer)
+  if(current.disconnectTimer)globalThis.clearTimeout(current.disconnectTimer)
   if(current.timer)globalThis.clearTimeout(current.timer)
   if(current.sessionId&&!current.finalized){
    current.finalized=true
@@ -254,5 +324,5 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   try{current.dc?.close();current.pc?.close();current.audio?.remove()}catch{}
   for(const track of current.stream?.getTracks?.()||[])try{track.stop()}catch{}
  },[])
- return {state:{...machine,label:realtimeStatusLabel(machine.status),inputSupported:capabilities.supported,outputSupported:capabilities.supported,isListening:machine.status===STATES.LISTENING,isProcessing:machine.status===STATES.THINKING,isSpeaking:machine.status===STATES.SPEAKING,canBargeIn:machine.status===STATES.SPEAKING,transport:'WEBRTC',version:NATURAL_REALTIME_VERSION},start,pause,resume,bargeIn,exit,capabilities}
+ return {state:{...machine,canRetry:machine.retryable!==false&&machine.retryAfterSeconds===0,label:realtimeStatusLabel(machine.status),inputSupported:capabilities.supported,outputSupported:capabilities.supported,isListening:machine.status===STATES.LISTENING,isProcessing:machine.status===STATES.THINKING,isSpeaking:machine.status===STATES.SPEAKING,canBargeIn:machine.status===STATES.SPEAKING,transport:'WEBRTC',version:NATURAL_REALTIME_VERSION},start,pause,resume,resumeAudio,bargeIn,exit,capabilities}
 }

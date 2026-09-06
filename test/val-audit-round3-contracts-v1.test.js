@@ -265,7 +265,7 @@ test('voz contínua: erro sem áudio chega como texto, pausa não é desfeita pe
  const hook=read('src/hooks/useNaturalRealtimeVoice.js')
  assert.match(hook,/callbacks\.current\.onError\?\.\(message,\{code:`realtime_response_\$\{responseStatus\}`\}\)/)
  assert.doesNotMatch(hook,/onError\?\.\(Object\.assign\(new Error\(message\)/)
- assert.match(hook,/const paused=machineRef\.current\.status===STATES\.PAUSED/)
+ assert.match(hook,/const paused=userPaused\.current/)
  assert.match(hook,/if\(type==='session\.created'\|\|type==='session\.updated'\)\{if\(!paused\)update\(/)
  assert.match(hook,/if\(type==='output_audio_buffer\.stopped'\|\|type==='output_audio_buffer\.cleared'\)\{if\(!paused\)update\(/)
  assert.match(hook,/if\(\[STATES\.SPEAKING,STATES\.PAUSED\]\.includes\(machineRef\.current\.status\)\)pendingReconnect\.current=eventScope\.scopeKey/)
