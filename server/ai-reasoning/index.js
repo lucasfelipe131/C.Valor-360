@@ -50,12 +50,13 @@ function factsUsed(advice={},context={}){
    const key=clean(candidate,240);if(key&&!wrapperBySource.has(key))wrapperBySource.set(key,wrapper)
   }
  }
+ const knownDate=value=>{if(value===null||value===undefined)return null;const text=String(value).trim();return !text||/^unknown$/i.test(text)?null:value}
  const deterministicEvidence=list(context.decisionIntelligence?.evidence).flatMap(item=>{
   const wrapper=wrapperBySource.get(clean(item?.source_id??item?.source_ref,240))
   if(!wrapper)return []
   const sourceType=clean(item?.source_type,120)
   const epistemicType=['interaction','field_report','soil_analysis','ndvi','manual_record','consultant_attachment'].includes(sourceType)?'OBSERVATION':'FACT'
-  return [{...item,source_ref:wrapper.evidence_ref?.id,epistemic_type:epistemicType,producer_id:wrapper.producerId,tenant_id:wrapper.tenantId,owner_id:wrapper.ownerId,observed_at:item?.observed_at??item?.observedAt??wrapper?.observed_at??wrapper?.observedAt??null,valid_until:item?.valid_until??item?.validUntil??wrapper?.valid_until??wrapper?.validUntil??null}]
+  return [{...item,source_ref:wrapper.evidence_ref?.id,epistemic_type:epistemicType,producer_id:wrapper.producerId,tenant_id:wrapper.tenantId,owner_id:wrapper.ownerId,observed_at:knownDate(item?.observed_at??item?.observedAt)??knownDate(wrapper?.observed_at??wrapper?.observedAt)??null,valid_until:item?.valid_until??item?.validUntil??wrapper?.valid_until??wrapper?.validUntil??null}]
  })
  const authorized=[...snapshotEvidence,...deterministicEvidence].filter(item=>clean(item?.producer_id??item?.producerId,180)===producerId&&clean(item?.tenant_id??item?.tenantId,180)===tenantId&&clean(item?.source_ref??item?.evidence_ref?.id,240)&&clean(item?.evidence_type??item?.epistemic_type??item?.memory_state??item?.epistemic_state,40))
  const authorizedById=new Map(authorized.map(item=>[idOf(item),item]).filter(([id])=>id))
@@ -249,12 +250,12 @@ function repairResult(result,advice,context){
 function insufficientResult(result){
  result.situation_summary='Tenho pouca informação para te orientar com precisão.'
  result.decision_thesis.CURRENT_SITUATION=result.situation_summary
- result.decision_thesis.THESIS='Não recomendar ainda; coletar somente a informação que muda materialmente a decisão.'
+ result.decision_thesis.THESIS='Não recomendar ainda.'
  result.recommended_strategy.reading=result.situation_summary
- result.recommended_strategy.action='Confirme as perguntas abaixo antes de transformar a leitura em recomendação.'
+ result.recommended_strategy.action='Confirme a fonte antes de continuar.'
  result.run.status='REASONING_DEGRADED'
  result.run.fallback=true
- result.confidence={...result.confidence,level:'INSUFICIENTE',score:Math.min(.25,Number(result.confidence.score)||.2),rationale:'Evidência insuficiente no contexto selecionado para sustentar uma afirmação específica.'}
+ result.confidence={...result.confidence,level:'INSUFICIENTE',score:Math.min(.25,Number(result.confidence.score)||.2),rationale:'Evidência insuficiente.'}
  return assertAIReasoningResult(result)
 }
 
@@ -355,7 +356,54 @@ function groundingFallbackReading(domain,message,context=null){
  return contextRecordAbsent[domain]?.(context)?specific:''
 }
 
-function applyGroundingFallback(result,context,domain,message=''){
+// Um fato autorizado cuja própria frase passa no grounding (texto literal da evidência selecionada)
+// continua verificável mesmo quando a composição em volta dele falhou: o fallback não pode apagar
+// a visita concluída ou a oportunidade aberta que o consultor perguntou só porque a redação
+// determinística misturou afirmações sem suporte.
+function selfSupportedFacts(result,scope){
+ return list(result?.facts_used).filter(fact=>{
+  const statement=clean(fact?.statement,900)
+  if(!statement)return false
+  try{return evaluateResponseGrounding({...scope,evidence:[fact],answer:statement,field:'facts_used.0.statement',checkQuestionRelevance:false}).passed}catch{return false}
+ }).slice(0,12)
+}
+
+function interviewBlocksPass(interview,scope,evidence){
+ const blocks=reasoningGroundingBlocks({decision_interview:interview})
+ const entries=Object.entries(blocks)
+ if(!entries.length)return false
+ try{return entries.every(([field,answer])=>evaluateResponseGrounding({...scope,evidence,answer,field,checkQuestionRelevance:false}).passed)}catch{return false}
+}
+function groundedInterviewAfterFallback(interview,scope,evidence){
+ if(!list(interview?.questions).length)return null
+ if(interviewBlocksPass(interview,scope,evidence))return interview
+ const withoutWhy={...interview,questions:list(interview.questions).map(item=>({...item,why:''}))}
+ return interviewBlocksPass(withoutWhy,scope,evidence)?withoutWhy:null
+}
+
+// Com fatos retidos, a leitura de fallback tenta ser o próprio registro ("Visita Realizada; resumo:
+// ...") em vez da frase genérica de evidência insuficiente. O candidato só substitui a frase
+// genérica quando passa integralmente no grounding (suporte literal e relevância à pergunta);
+// caso contrário a leitura segura permanece.
+function applyFactualFallbackReading(result,scope){
+ const statements=list(result?.facts_used).map(item=>clean(item?.statement,900)).filter(Boolean).slice(0,2)
+ if(!statements.length)return result
+ const reading=statements.join(' ')
+ const candidate=structuredClone(result)
+ candidate.situation_summary=reading
+ candidate.decision_thesis={...candidate.decision_thesis,CURRENT_SITUATION:reading}
+ candidate.recommended_strategy={...candidate.recommended_strategy,reading}
+ // A fala e a entrevista são reconstruídas depois desta etapa: avalia o candidato com a fala que
+ // ele terá (leitura + ação) e sem a entrevista pré-fallback, que é validada em separado.
+ candidate.voice_output={...candidate.voice_output,speakable_text:clean(`${reading} ${clean(candidate.recommended_strategy?.action)}`,3800)}
+ candidate.decision_interview={...candidate.decision_interview,questions:[],material_missing_information:[],non_material_missing_information:[],explanation:''}
+ try{
+  const grounding=evaluateReasoningGrounding({...scope,evidence:candidate.facts_used,blocks:reasoningGroundingBlocks(candidate)})
+  return grounding.passed?candidate:result
+ }catch{return result}
+}
+
+function applyGroundingFallback(result,context,domain,message='',retainedFacts=[]){
  const profile=domain==='PROFILE'
  const reading=profile
   ?'Não há evidência comportamental atual e auditável suficiente para determinar o perfil comportamental.'
@@ -373,8 +421,9 @@ function applyGroundingFallback(result,context,domain,message=''){
  }
  result.recommended_strategy={reading,action:'Confirme a fonte antes de continuar.',do_not_do:'Evite reutilizar resposta.'}
  result.key_signals=[]
- result.facts_used=[]
- result.evidence_to_use=[]
+ result.facts_used=list(retainedFacts).slice(0,12)
+ result.evidence_to_use=result.facts_used.slice(0,8).map(item=>({id:item.id,source_type:item.source_type,statement:item.statement}))
+ if(result.facts_used.length)result.decision_thesis.WHY=result.facts_used.slice(0,3).map(item=>clean(item.statement,900)).join(' ')
  result.memory_refs=[]
  result.knowledge_refs=[]
  result.premises={...result.premises,confirmed_memory_refs:[]}
@@ -443,11 +492,20 @@ export function composeAIReasoning({advice={},context={},message='',run={},conve
  const groundingScope={question:message,domain:selectedDomain,evidence:result.facts_used,activeProducerId:result.client?.id,tenantId:result.organization?.id,ownerId:context.contextSnapshot?.context_scope?.owner_id||''}
  const initialGrounding=evaluateReasoningGrounding({...groundingScope,blocks:reasoningGroundingBlocks(result)})
  const groundingFallbackApplied=!initialGrounding.passed
- if(groundingFallbackApplied)result=safetyPreserved?applySafetyGroundingFallback(result):applyGroundingFallback(result,context,selectedDomain,message)
+ const retainedFacts=groundingFallbackApplied&&!safetyPreserved?selfSupportedFacts(result,groundingScope):[]
+ if(groundingFallbackApplied)result=safetyPreserved?applySafetyGroundingFallback(result):applyGroundingFallback(result,context,selectedDomain,message,retainedFacts)
+ if(groundingFallbackApplied&&!safetyPreserved&&selectedDomain!=='PROFILE'&&retainedFacts.length)result=applyFactualFallbackReading(result,groundingScope)
  result.reasoning_confidence=buildReasoningConfidence({context,result})
  result.decision_interview=buildDecisionInterview({intent:result.intent,message,context,result})
- if(groundingFallbackApplied)result.decision_interview={version:'val.decision_interview.v1',status:'NOT_NEEDED',questions:[],material_missing_information:[],non_material_missing_information:['Informação ausente: evidência atual e identificável.'],session_context:{conversation_id:clean(conversationId||context.conversationSession?.id||'stateless',180),persistence_mode:'NONE'},explanation:'Confirme a fonte antes de continuar.'}
- const spokenQuestions=list(result.decision_interview?.questions).map((item,index)=>`Pergunta ${index+1}: ${clean(item?.question,500)}`).filter(Boolean)
+ // As perguntas materiais da entrevista (campos `question`) não afirmam nada e continuam válidas
+ // depois do fallback; só o `why` de biblioteca pode ficar sem suporte. Mantém a entrevista quando
+ // ela mesma passa no grounding (com o `why` removido se for o único problema); caso contrário,
+ // NOT_NEEDED como antes.
+ if(groundingFallbackApplied)result.decision_interview=groundedInterviewAfterFallback(result.decision_interview,groundingScope,result.facts_used)||{version:'val.decision_interview.v1',status:'NOT_NEEDED',questions:[],material_missing_information:[],non_material_missing_information:['Informação ausente: evidência atual e identificável.'],session_context:{conversation_id:clean(conversationId||context.conversationSession?.id||'stateless',180),persistence_mode:'NONE'},explanation:'Confirme a fonte antes de continuar.'}
+ // Depois do fallback a fala fica na leitura segura: a lista de perguntas continua no card da
+ // entrevista, mas 'Para melhorar esta leitura: Pergunta 1: ...' não é frase de ausência e
+ // derrubaria o grounding final da própria resposta de fallback.
+ const spokenQuestions=groundingFallbackApplied?[]:list(result.decision_interview?.questions).map((item,index)=>`Pergunta ${index+1}: ${clean(item?.question,500)}`).filter(Boolean)
  const conversationalVoice=context.conversationState?.conversation_mode===true||['audio','both'].includes(context.conversationState?.response_mode)
  const spokenParts=conversationalVoice
   ?[result.recommended_strategy?.reading,result.recommended_strategy?.action,spokenQuestions[0]]

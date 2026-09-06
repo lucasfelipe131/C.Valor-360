@@ -27,6 +27,7 @@ const quantity=(value,unit='')=>number(value)===null?'':`${Number(value).toLocal
 const profileAnswer=(client,profile,key,index)=>firstText(client?.[key],profile?.answers?.[index],profile?.answers?.[String(index)])
 const latest=(items,fields)=>[...array(items)].sort((a,b)=>Math.max(...fields.map(field=>timestamp(b?.[field])??-1))-Math.max(...fields.map(field=>timestamp(a?.[field])??-1)))[0]||null
 const evidenceById=(items,id)=>array(items).find(item=>item.id===id)
+const field=(item,...keys)=>{for(const key of keys){const value=item?.[key];if(value!==undefined&&value!==null&&value!=='')return value}return undefined}
 
 function compactObject(value){
   if(value===null||value===undefined)return ''
@@ -58,42 +59,49 @@ function buildEvidence(context){
   const proof=[profileAnswer(client,context.profile,'technicalPresentation',8),profileAnswer(client,context.profile,'trustDriver',14),profileAnswer(client,context.profile,'decisionDriver',7)].filter(Boolean)
   if(proof.length)items.push(evidence('profile-proof-preference',`Para esta conta, as respostas registradas destacam como prova ou critério de decisão: ${proof.join(' • ')}.`,'producer_questionnaire',`profile:${client.id||'unknown'}:proof`,{observed:context.profile?.assessedAt||client.profileUpdatedAt,direct:true,uncertainty:'Preferências declaradas podem variar conforme a decisão; confirme se continuam válidas.'}))
 
-  const opportunity=latest(array(context.opportunities).filter(item=>lower(item?.stage)!=='fechado'),['next_action_at','updated_at','created_at'])||latest(context.opportunities,['updated_at','created_at'])
+  const opportunity=latest(array(context.opportunities).filter(item=>lower(item?.stage)!=='fechado'),['next_action_at','nextActionAt','updated_at','updatedAt','created_at','createdAt'])||latest(context.opportunities,['updated_at','updatedAt','created_at','createdAt'])
   if(opportunity){
-    const parts=[`“${firstText(opportunity.title,'Oportunidade sem título')}” está em ${firstText(opportunity.stage,'etapa não informada')}`]
-    if(number(opportunity.estimated_value)!==null)parts.push(`valor registrado ${compactBRL(opportunity.estimated_value)}`)
-    if(clean(opportunity.next_action))parts.push(`próxima ação: ${clean(opportunity.next_action,180)}`)
-    if(opportunity.next_action_at)parts.push(`prazo ${dateLabel(opportunity.next_action_at)}`)
+    // O enunciado nomeia a entidade perguntada: 'ele tem oportunidade aberta?' precisa encontrar
+    // 'oportunidade' (e 'aberta', quando a etapa não é de fechamento) no próprio fato.
+    const openStage=!/fechad|perdid|cancelad/i.test(clean(opportunity.stage))
+    const parts=[`Oportunidade${openStage?' aberta':''} “${firstText(opportunity.title,'Oportunidade sem título')}” está em ${firstText(opportunity.stage,'etapa não informada')}`]
+    const opportunityValue=field(opportunity,'estimated_value','estimatedValue','value')
+    if(number(opportunityValue)!==null&&Number(opportunityValue)>0)parts.push(`valor registrado ${compactBRL(opportunityValue)}`)
+    const opportunityNextAction=field(opportunity,'next_action','nextAction'),opportunityNextActionAt=field(opportunity,'next_action_at','nextActionAt')
+    if(clean(opportunityNextAction))parts.push(`próxima ação: ${clean(opportunityNextAction,180)}`)
+    if(opportunityNextActionAt)parts.push(`prazo ${dateLabel(opportunityNextActionAt)}`)
     if(clean(opportunity.value_case?.proof_plan))parts.push(`forma de comprovação: ${clean(opportunity.value_case.proof_plan,180)}`)
-    items.push(evidence('selected-opportunity',`${parts.join('; ')}.`,'opportunity',opportunity.id||opportunity.external_key||'opportunity:unknown',{observed:opportunity.updated_at||opportunity.created_at,uncertainty:'O registro mostra avanço administrativo; a prioridade e a prontidão ainda precisam ser confirmadas.'}))
+    items.push(evidence('selected-opportunity',`${parts.join('; ')}.`,'opportunity',opportunity.id||opportunity.external_key||'opportunity:unknown',{observed:field(opportunity,'updated_at','updatedAt','created_at','createdAt'),uncertainty:'O registro mostra avanço administrativo; a prioridade e a prontidão ainda precisam ser confirmadas.'}))
   }
 
-  const visit=latest(context.visits,['updated_at','scheduled_at','created_at'])
+  const visit=latest(context.visits,['occurred_at','occurredAt','completed_at','completedAt','updated_at','updatedAt','scheduled_at','scheduledAt','created_at','createdAt'])
   if(visit){
-    const parts=[`Visita ${firstText(visit.status,'sem status')}`]
+    const visitDate=field(visit,'occurred_at','occurredAt','completed_at','completedAt','scheduled_at','scheduledAt')
+    const parts=[`Visita ${firstText(visit.status,'sem status')}${timestamp(visitDate)!==null?` em ${dateLabel(visitDate)}`:''}`]
     if(clean(visit.objective))parts.push(`objetivo: ${clean(visit.objective,160)}`)
     if(clean(visit.summary))parts.push(`resumo: ${clean(visit.summary,190)}`)
-    if(clean(visit.next_commitment))parts.push(`compromisso: ${clean(visit.next_commitment,180)}`)
-    if(visit.next_action_at)parts.push(`prazo ${dateLabel(visit.next_action_at)}`)
-    items.push(evidence('latest-visit',`${parts.join('; ')}.`,'visit',visit.id||'visit:unknown',{observed:visit.updated_at||visit.scheduled_at||visit.created_at,uncertainty:'O registro da visita não prova que o compromisso continua prioritário para o produtor.'}))
+    const visitCommitment=field(visit,'next_commitment','nextCommitment'),visitNextActionAt=field(visit,'next_action_at','nextActionAt')
+    if(clean(visitCommitment))parts.push(`compromisso: ${clean(visitCommitment,180)}`)
+    if(visitNextActionAt)parts.push(`prazo ${dateLabel(visitNextActionAt)}`)
+    items.push(evidence('latest-visit',`${parts.join('; ')}.`,'visit',visit.id||'visit:unknown',{observed:field(visit,'occurred_at','occurredAt','completed_at','completedAt','updated_at','updatedAt','scheduled_at','scheduledAt','created_at','createdAt'),uncertainty:'O registro da visita não prova que o compromisso continua prioritário para o produtor.'}))
   }
 
-  const interaction=latest(context.interactions,['occurred_at','created_at'])
+  const interaction=latest(context.interactions,['occurred_at','occurredAt','created_at','createdAt'])
   if(interaction){
     const parts=[`Interação por ${firstText(interaction.channel,'canal não informado')}`]
     if(clean(interaction.summary))parts.push(clean(interaction.summary,230))
     if(compactObject(interaction.commitments))parts.push(`compromissos: ${compactObject(interaction.commitments)}`)
-    items.push(evidence('latest-interaction',`${parts.join('; ')}.`,'interaction',interaction.id||interaction.source_external_id||'interaction:unknown',{observed:interaction.occurred_at||interaction.created_at,uncertainty:'O resumo registra a conversa, mas não substitui a confirmação do próximo passo.'}))
+    items.push(evidence('latest-interaction',`${parts.join('; ')}.`,'interaction',interaction.id||interaction.source_external_id||'interaction:unknown',{observed:field(interaction,'occurred_at','occurredAt','created_at','createdAt'),uncertainty:'O resumo registra a conversa, mas não substitui a confirmação do próximo passo.'}))
   }
 
-  const business=latest(context.businessHistory,['occurred_at'])
+  const business=latest(context.businessHistory,['occurred_at','occurredAt','created_at','createdAt'])
   if(business){
     const parts=[`Evento comercial ${firstText(business.outcome,'sem resultado classificado')}`]
     if(clean(business.category))parts.push(`categoria ${clean(business.category,100)}`)
     if(clean(business.product))parts.push(`item ${clean(business.product,100)}`)
     if(number(business.value)!==null)parts.push(`valor ${compactBRL(business.value)}`)
     if(clean(business.loss_reason))parts.push(`motivo registrado: ${clean(business.loss_reason,180)}`)
-    items.push(evidence('latest-business-event',`${parts.join('; ')}.`,'business_history',business.id||business.external_id||'business:unknown',{observed:business.occurred_at,uncertainty:'Um evento isolado não demonstra padrão nem causa.'}))
+    items.push(evidence('latest-business-event',`${parts.join('; ')}.`,'business_history',business.id||business.external_id||'business:unknown',{observed:field(business,'occurred_at','occurredAt','created_at','createdAt'),uncertainty:'Um evento isolado não demonstra padrão nem causa.'}))
   }
 
   const seasonRow=flattenSeasons(context.properties)[0]
@@ -189,11 +197,11 @@ function buildSignals(context,evidenceItems,now){
   const metrics=commercialMetrics(client)
   const evidenceIds=new Set(evidenceItems.map(item=>item.id))
   const has=id=>evidenceIds.has(id)
-  const opportunity=latest(array(context.opportunities).filter(item=>lower(item.stage)!=='fechado'),['next_action_at','updated_at','created_at'])||latest(context.opportunities,['updated_at','created_at'])
-  const visit=latest(context.visits,['updated_at','scheduled_at','created_at'])
-  const interaction=latest(context.interactions,['occurred_at','created_at'])
-  const business=latest(context.businessHistory,['occurred_at'])
-  const commercialMarkers=[interaction&&{id:'latest-interaction',at:interaction.occurred_at||interaction.created_at},visit&&{id:'latest-visit',at:visit.updated_at||visit.scheduled_at||visit.created_at},business&&{id:'latest-business-event',at:business.occurred_at},opportunity&&{id:'selected-opportunity',at:opportunity.updated_at||opportunity.created_at}].filter(Boolean)
+  const opportunity=latest(array(context.opportunities).filter(item=>lower(item.stage)!=='fechado'),['next_action_at','nextActionAt','updated_at','updatedAt','created_at','createdAt'])||latest(context.opportunities,['updated_at','updatedAt','created_at','createdAt'])
+  const visit=latest(context.visits,['occurred_at','occurredAt','completed_at','completedAt','updated_at','updatedAt','scheduled_at','scheduledAt','created_at','createdAt'])
+  const interaction=latest(context.interactions,['occurred_at','occurredAt','created_at','createdAt'])
+  const business=latest(context.businessHistory,['occurred_at','occurredAt','created_at','createdAt'])
+  const commercialMarkers=[interaction&&{id:'latest-interaction',at:field(interaction,'occurred_at','occurredAt','created_at','createdAt')},visit&&{id:'latest-visit',at:field(visit,'occurred_at','occurredAt','completed_at','completedAt','updated_at','updatedAt','scheduled_at','scheduledAt','created_at','createdAt')},business&&{id:'latest-business-event',at:field(business,'occurred_at','occurredAt','created_at','createdAt')},opportunity&&{id:'selected-opportunity',at:field(opportunity,'updated_at','updatedAt','created_at','createdAt')}].filter(Boolean)
   const latestCommercial=commercialMarkers.sort((a,b)=>(timestamp(b.at)||0)-(timestamp(a.at)||0))[0]
   const technicalMarkers=[
     context.fieldReports?.[0]&&{id:'latest-field-report',at:latest(context.fieldReports,['observed_at','created_at'])?.observed_at||latest(context.fieldReports,['observed_at','created_at'])?.created_at,label:'relatório de campo'},
@@ -205,8 +213,8 @@ function buildSignals(context,evidenceItems,now){
   const latestTechnical=technicalMarkers[0]
 
   const commitments=[
-    visit?.next_action_at&&{id:'latest-visit',at:visit.next_action_at,description:firstText(visit.next_commitment,visit.objective,'compromisso da visita'),status:visit.status},
-    opportunity?.next_action_at&&{id:'selected-opportunity',at:opportunity.next_action_at,description:firstText(opportunity.next_action,opportunity.title,'próxima ação da oportunidade'),status:opportunity.stage}
+    field(visit,'next_action_at','nextActionAt')&&{id:'latest-visit',at:field(visit,'next_action_at','nextActionAt'),description:firstText(field(visit,'next_commitment','nextCommitment'),visit.objective,'compromisso da visita'),status:visit.status},
+    field(opportunity,'next_action_at','nextActionAt')&&{id:'selected-opportunity',at:field(opportunity,'next_action_at','nextActionAt'),description:firstText(field(opportunity,'next_action','nextAction'),opportunity.title,'próxima ação da oportunidade'),status:opportunity.stage}
   ].filter(item=>item&&timestamp(item.at)!==null&&timestamp(item.at)<now&&!/(conclu|realiz|cancel|fechado)/i.test(clean(item.status)))
   if(commitments.length){
     const overdue=commitments.sort((a,b)=>timestamp(a.at)-timestamp(b.at))[0]
@@ -240,7 +248,7 @@ function buildSignals(context,evidenceItems,now){
     addSignal(signals,{id:'productivity-gap',kind:'productivity_gap',score:86,priority:'high',title:'A diferença entre meta e realizado ainda não virou aprendizado',insight:`Em ${label}, a meta foi ${quantity(target,seasonRow.season.unit)} e o realizado ${quantity(actual,seasonRow.season.unit)} — diferença de ${quantity(gap,seasonRow.season.unit)}. O dado só ganha valor comercial quando for ligado à decisão que ele mudou, não quando for usado para adivinhar uma causa.`,decision:'Entender qual decisão futura foi afetada pela diferença e qual evidência é necessária para comparar alternativas.',action:`Revisar a diferença de ${quantity(gap,seasonRow.season.unit)} com o produtor, registrar a explicação dele e encaminhar qualquer causa técnica para validação habilitada.`,question:`Essa diferença de ${quantity(gap,seasonRow.season.unit)} mudou qual decisão para a próxima safra?`,do_not_do:'Não atribuir causa agronômica nem sugerir execução apenas pela diferença entre meta e realizado.',missing_data:['decisão afetada','explicação do produtor','causa tecnicamente validada'],deadline:'Na revisão da safra ou antes do próximo planejamento',evidence_ids:['latest-crop-season',has('latest-field-report')?'latest-field-report':latestCommercial?.id].filter(id=>id&&has(id))})
   }
 
-  if(opportunity&&!clean(opportunity.next_action)&&!opportunity.next_action_at){
+  if(opportunity&&!clean(field(opportunity,'next_action','nextAction'))&&!field(opportunity,'next_action_at','nextActionAt')){
     const opportunityTitle=firstText(opportunity.title,'a oportunidade')
     addSignal(signals,{id:'opportunity-without-next-action',kind:'opportunity_without_next_action',score:76,priority:'medium',title:'A oportunidade existe, mas não há movimento verificável',insight:`“${opportunityTitle}” tem etapa registrada, porém não tem próxima ação nem data. Sem movimento verificável, o estágio pode estar descrevendo expectativa interna, não avanço da decisão do produtor.`,decision:'Confirmar se existe um próximo passo bilateral ou se a oportunidade deve voltar à descoberta.',action:`Reabrir “${opportunityTitle}” pelo último contexto registrado e salvar ação, responsável, prazo e evidência — ou recuar a etapa.`,question:`Qual decisão concreta ainda precisa acontecer em “${opportunityTitle}”, por quem e até quando?`,do_not_do:'Não manter a oportunidade avançada apenas porque já recebeu uma etapa no pipeline.',missing_data:['próxima decisão','responsável','prazo'],deadline:'Antes da próxima revisão do pipeline',evidence_ids:['selected-opportunity',latestCommercial?.id].filter(id=>id&&has(id))})
   }

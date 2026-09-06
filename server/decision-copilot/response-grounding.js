@@ -206,9 +206,10 @@ const pureGapVocabulary=new Set([
  'disponivel','disponiveis','entrada','entradas','encontrada','encontrado','escopo','especifica','especificas','estruturado','estruturados','evidencia','evidencias','execucao',
  'fato','fatos','fonte','fontes','insuficiente','insuficientes','localizada','localizado','material','materiais','nenhuma','nenhum','numerico','numericos','objecao','perfil',
  'ligada','ligadas','possui','principal','produtor','produtora','propriedade','referencia','registro','registros','registrada','registrado','responder','resposta','safra','seguranca','selecionada','selecionado',
- 'sessao','suficiente','suficientes','sustentar','total','verificavel','verificaveis','vinculada','vinculado','visita','comportamental','confianca','determinada','validar','oportunidade'
+ 'sessao','suficiente','suficientes','sustentar','total','verificavel','verificaveis','vinculada','vinculado','visita','comportamental','confianca','determinada','validar','oportunidade',
+ 'tenho','pouca','informacao','orientar','precisao'
 ])
-const pureGapFunctionWords=new Set(['a','ao','aos','as','com','da','das','de','do','dos','e','em','esta','este','foi','ha','na','nao','nas','nem','nesta','neste','no','nos','o','os','ou','para','por','que','sem','uma','um','ainda','preciso','faltam','falta','como'])
+const pureGapFunctionWords=new Set(['a','ao','aos','as','com','da','das','de','do','dos','e','em','esta','este','foi','ha','na','nao','nas','nem','nesta','neste','no','nos','o','os','ou','para','por','que','sem','uma','um','ainda','preciso','faltam','falta','como','te'])
 
 const parseDate=value=>{const parsed=new Date(value??'');return Number.isNaN(parsed.getTime())?null:parsed}
 const actionKinds=value=>strategyActionKinds.filter(([,pattern])=>pattern.test(normalize(value))).map(([kind])=>kind)
@@ -223,9 +224,13 @@ const hasPiggybackAssertion=value=>{
  return producerAssertionSubject.test(tail)||strictBehavioralSupport(tail)||specificStrategy.test(tail)||numbers(tail).length>0
 }
 
+// Frase fixa da especificação (VAL_QUICK_QUESTION_v1) para o resultado insuficiente: é uma
+// declaração de lacuna, sem sujeito produtor nem número, e entra na gramática fechada.
+const specInsufficiency=/^tenho pouca informacao para te orientar com precisao\.?$/
+
 function isPureInsufficiencyClaim(value='',question='',domain='GENERAL'){
  const source=normalize(value).replace(/^por que:\s*/, '')
- if(!source||!insufficient.test(source)&&!/^confianca:\s*(?:baixa|insuficiente|nao determinada)\b/.test(source))return false
+ if(!source||!insufficient.test(source)&&!/^confianca:\s*(?:baixa|insuficiente|nao determinada)\b/.test(source)&&!specInsufficiency.test(source))return false
  const raw=String(value??'').trim()
  const structuralConfidence=/^confian[cç]a:\s*(?:baixa|insuficiente|n[aã]o determinada)\.?$/i.test(raw)
  if(!structuralConfidence&&/[,;:|/…·—–()[\]]/.test(raw))return false
@@ -247,7 +252,7 @@ function isPureInsufficiencyClaim(value='',question='',domain='GENERAL'){
  if(/\b(?:mas|porem|contudo|entretanto|todavia|no entanto|ainda assim)\b/.test(source))return false
  if(/\be\s+(?:(?:a|o|ele|ela|sua|seu|esta|esse|essa|aquele|aquela)\s+\w+|\w+\s+(?:esta|e|tem|possui|quer|pretende|vai|parece))\b/.test(source))return false
  if(/\be\s+(?:perfil|visita|compromisso|credito|compra|cultura|safra|fato|produtor|cliente)\s+(?:confirmad\w*|concluid\w*|cadastrad\w*|registrad\w*|verificad\w*)\b/.test(source))return false
- const allowedStart=/^(?:nao (?:ha|possui|tenho|consigo)\b|nenhum(?:a)?\b|sem (?:dado|dados|evidencia|evidencias|fonte|fontes)\b|(?:a )?evidencia\b|ainda nao\b|preciso confirmar\b|nao determinado\b|faltam?\b|confianca:\s*(?:baixa|insuficiente|nao determinada)\b|o perfil comportamental de\b)/
+ const allowedStart=/^(?:nao (?:ha|possui|tenho|consigo)\b|tenho pouca informacao\b|nenhum(?:a)?\b|sem (?:dado|dados|evidencia|evidencias|fonte|fontes)\b|(?:a )?evidencia\b|ainda nao\b|preciso confirmar\b|nao determinado\b|faltam?\b|confianca:\s*(?:baixa|insuficiente|nao determinada)\b|o perfil comportamental de\b)/
  if(!allowedStart.test(source))return false
  const canonicalSubjectAbsence=/^nenhum(?:a)?\s+(?:produtor|produtora|cliente)\b[^.!?]{0,160}\b(?:selecionad|localizad|encontrad|registrad|cadastrad|confirmad)[oa]s?\b/.test(source)
  if(unsupportedInsufficiencySubject.test(source)&&!/^o perfil comportamental de\b/.test(source)&&!canonicalSubjectAbsence)return false
@@ -258,6 +263,7 @@ function isPureInsufficiencyClaim(value='',question='',domain='GENERAL'){
  const closedPatterns=[
   /^confianca:\s*(?:baixa|insuficiente|nao determinada)$/,
   /^evidencia insuficiente$/,
+  /^tenho pouca informacao para te orientar com precisao$/,
   /^nao determinado$/,
   /^sem (?:dado|dados|evidencia|evidencias|fonte|fontes)$/,
   /^nao ha evidencia comportamental atual e auditavel suficiente para determinar o perfil(?: comportamental)?$/,
@@ -655,7 +661,11 @@ function claimSupport(claim,entries,question='',domain='GENERAL',field='answer',
  // registrado: comece pelo historico de confianca...") sustenta a claim de estrategia com o mesmo
  // texto: a estrategia e derivada do rotulo registrado, nao das palavras do questionario.
  const literalStrategySupport=entry=>kind==='STRATEGY'&&entry.sourceType==='behavioral_profile'&&strategyBody.length>=12&&entry.text.includes(strategyBody)
- const typeCompatible=compatible.filter(entry=>(evidenceCompatibility[kind]||evidenceCompatibility.FACT).has(entry.evidenceType)||entry.sourceType==='general_knowledge'&&source.length>=12&&entry.text.includes(source)||literalStrategySupport(entry))
+ // O mesmo vale para o texto literal de um registro (FACT/OBSERVATION): o título de uma
+ // oportunidade entre aspas tipa a claim como QUOTE, mas a frase é o próprio registro. A regra
+ // nunca promove QUOTE/INFERENCE/HYPOTHESIS a FACT: só evidência de registro sustenta literalmente.
+ const literalRecordSupport=entry=>['FACT','OBSERVATION','VALIDATED_KNOWLEDGE'].includes(entry.evidenceType)&&source.length>=12&&entry.text.includes(source)
+ const typeCompatible=compatible.filter(entry=>(evidenceCompatibility[kind]||evidenceCompatibility.FACT).has(entry.evidenceType)||literalRecordSupport(entry)||literalStrategySupport(entry))
  if(!typeCompatible.length)return {supported:false,evidenceRefs:[],reason:'EPISTEMIC_TYPE_MISMATCH'}
  const candidates=typeCompatible.map(entry=>{
  const exact=source.length>=12&&entry.text.includes(source)||literalStrategySupport(entry)

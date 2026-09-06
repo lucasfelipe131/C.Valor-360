@@ -304,7 +304,10 @@ function collectionItems(items,type,{domain,dateKeys=['updated_at','updatedAt','
       :evaluated
     let selectedData=item
     const visitContentRequested=/\b(?:o que|resum\w*|detalh\w*|assunto\w*|falad\w*|discut\w*|relat\w*|observ\w*|aconteceu|resultado\w*)\b/i.test(text(query).normalize('NFD').replace(/[\u0300-\u036f]/g,''))
-    if(type==='visit'&&contextDomain==='VISIT'&&!visitContentRequested){
+    // Em MULTI_DOMAIN que inclui VISIT ('como abordar ele na próxima visita?') a mesma redução
+    // vale: o resumo narrado (adubação, preço) não pode vetar a própria visita por DOMAIN_MISMATCH.
+    const visitIdentityOnly=contextDomain==='VISIT'||contextDomain==='MULTI_DOMAIN'&&matchedValContextDomains(query).includes('VISIT')
+    if(type==='visit'&&visitIdentityOnly&&!visitContentRequested){
       // A identidade/data da visita responde "qual foi a ultima visita" sem
       // carregar automaticamente todos os assuntos discutidos nela. O tipo
       // VISIT autoriza selecionar o evento, não transforma CPF, grãos ou
@@ -316,7 +319,13 @@ function collectionItems(items,type,{domain,dateKeys=['updated_at','updatedAt','
     if(!collectionMatchesContextDomain(selectedData,type,contextDomain,query)){onRejected(scoped,'DOMAIN_MISMATCH');continue}
     candidates.push(scoped)
   }
+  // Itens UNKNOWN (sem data ou datados no futuro, como a visita agendada) nunca chegam ao modelo;
+  // ordenados antes dos elegíveis eles só gastavam o limite — com "última visita" (limite 1) a
+  // visita agendada tomava a vaga da visita concluída e o contexto ficava sem visita alguma.
+  const eligibilityRank=item=>item.freshness==='UNKNOWN'?1:0
   candidates.sort((left,right)=>{
+    const rankDelta=eligibilityRank(left)-eligibilityRank(right)
+    if(rankDelta)return rankDelta
     const leftTime=new Date(left.observed_at||0).getTime()||0
     const rightTime=new Date(right.observed_at||0).getTime()||0
     return rightTime-leftTime||String(left.evidence_ref.id).localeCompare(String(right.evidence_ref.id))

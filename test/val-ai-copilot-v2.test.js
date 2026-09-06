@@ -89,8 +89,11 @@ test('reasoning não promove payload aninhado nem o preserva após fallback',()=
  const {result}=composeAIReasoning({advice,context,message:'Como avançar?',conversationId:'thread-nested-poison'})
  assert.equal(result.grounding.passed,true)
  assert.equal(result.grounding.blocked_or_regenerated,true)
- assert.deepEqual(result.facts_used,[])
- assert.deepEqual(result.evidence_to_use,[])
+ // O fallback mantém apenas fatos autorizados que se sustentam sozinhos no grounding; o payload
+ // aninhado de outro produtor não é promovido a fato nem preservado.
+ assert.ok(!result.facts_used.some(item=>item.id==='nested-poison'))
+ assert.ok(!result.evidence_to_use.some(item=>item.id==='nested-poison'))
+ assert.ok(result.facts_used.every(item=>item.producer_id==='ana'))
  assert.doesNotMatch(JSON.stringify(result),/dívida oculta/i)
 })
 

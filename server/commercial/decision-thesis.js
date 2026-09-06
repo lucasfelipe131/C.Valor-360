@@ -4,7 +4,8 @@ import {compactKnowledgeRefs,normalizeKnowledgeRetrieval} from './knowledge-supp
 
 const list=value=>Array.isArray(value)?value:[]
 const text=(value,max=800)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,max)
-const unique=items=>[...new Set(items.map(item=>typeof item==='string'||typeof item==='number'?text(item):'').filter(Boolean))]
+// So texto entra no rationale: `conflicts.length&&'...'` produz o numero 0 quando nao ha conflito, e ele virava '0 ' no inicio da frase.
+const unique=items=>[...new Set(items.map(item=>typeof item==='string'?text(item):'').filter(Boolean))]
 const evidenceId=item=>text(item?.id??item?.source_id??item?.evidence_ref??item,240)
 
 function ensureTenant(snapshot,organizationId,profile){
