@@ -13,9 +13,15 @@ const noAdditionalNeedPatterns=[
  /^(?:nenhum|nenhuma|sem)(?: nenhuma?)? (?:necessidade|necessidades|demanda|demandas)(?: adicional| adicionais)?(?: (?:agora|no momento|por enquanto))?$/
 ]
 
+// Placeholder ('-', 'N/A', 'x', 'não sei', 'nada a declarar') não é demanda: sem letra alguma ou na
+// lista de respostas vazias, a Q27 fica como nenhuma necessidade declarada.
+const placeholderAdditionalNeed=/^(?:n ?a|nd|x+|nao sei|nao lembro|nao me lembro|nada a declarar|nao ha|nao no momento(?: obrigad[oa])?|talvez|nenhum(?:a)? no momento|nao se aplica|nada)$/
 export const opportunityFromAdditionalNeed=value=>{
  const raw=String(value??'').trim()
- return raw&&!noAdditionalNeedPatterns.some(pattern=>pattern.test(normalizeText(raw)))?raw:''
+ const normalized=normalizeText(raw)
+ if(!raw||!/[a-z]/.test(normalized))return ''
+ if(placeholderAdditionalNeed.test(normalized))return ''
+ return noAdditionalNeedPatterns.some(pattern=>pattern.test(normalized))?'':raw
 }
 
 export const additionalNeedState=value=>{

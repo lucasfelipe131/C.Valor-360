@@ -50,6 +50,8 @@ npm run dev
 
 O modo demo só é permitido quando `VAL_DEMO_MODE=true` é definido explicitamente. Sem essa variável, o servidor falha fechado enquanto acesso e banco não estiverem configurados.
 
+Atrás de um proxy confiável (Railway), defina `VAL_TRUST_PROXY=true` para que os limites de tentativas de login e de questionário público usem o endereço do cliente informado pelo edge em `X-Forwarded-For` em vez do endereço do proxy, que é compartilhado por todos os usuários.
+
 ## Deploy na Railway
 
 O `railway.json` executa o build, roda a migração antes do deploy e inicia o servidor Node. Configure todos os segredos no projeto da Railway antes de liberar o domínio.

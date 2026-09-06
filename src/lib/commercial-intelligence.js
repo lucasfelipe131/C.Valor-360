@@ -1,5 +1,9 @@
 import {normalizeText,slug} from './profile.js'
 
+// Nome só com símbolos ou alfabeto não latino dá slug vazio; ids vazios se fundem num único cliente
+// no banco. O fallback é determinístico para a mesma grafia.
+const stableHash=value=>{let hash=5381;for(const char of String(value||''))hash=(Math.imul(hash,33)^char.codePointAt(0))>>>0;return hash.toString(16).padStart(8,'0')}
+
 const fieldAliases={
  client:['cliente','produtor','nome cliente','nome produtor','razao social','customer'],
  value:['valor','valor total','valor negocio','faturamento','receita','total venda','venda','amount'],
@@ -50,7 +54,8 @@ export function buildCommercialIntelligence(rows,mapping){
  const groups=new Map()
  rows.forEach(row=>{
   const name=String(row[mapping.client]||'').trim();if(!name)return
-  const key=normalizeText(name);const current=groups.get(key)||{name,rows:[],revenue:0,valueRows:0,wins:0,losses:0,knownOutcomes:0,products:new Set(),lastDate:null,observed:{value:0,date:0,product:0,status:0},municipality:'A definir',culture:'A definir',area:'A definir'}
+  // Nomes só com símbolos normalizam para vazio; sem o fallback pelo nome bruto todos viravam um grupo.
+  const key=normalizeText(name)||name;const current=groups.get(key)||{name,rows:[],revenue:0,valueRows:0,wins:0,losses:0,knownOutcomes:0,products:new Set(),lastDate:null,observed:{value:0,date:0,product:0,status:0},municipality:'A definir',culture:'A definir',area:'A definir'}
   const rawValue=mapping.value?row[mapping.value]:null;const hasValue=rawValue!==null&&rawValue!==undefined&&String(rawValue).trim()!=='';const value=hasValue?parseMoney(rawValue):0
   const date=parseDate(mapping.date?row[mapping.date]:null);const product=String(mapping.product?row[mapping.product]||'':'').trim();const status=mapping.status?row[mapping.status]:null;const isWon=won(status);const isLost=lost(status)
   current.rows.push(row);if(hasValue){current.revenue+=value;current.valueRows++;current.observed.value++}if(isWon||isLost){current.knownOutcomes++;current.observed.status++;if(isWon)current.wins++;if(isLost)current.losses++}if(product){current.products.add(product);current.observed.product++}if(date)current.observed.date++
@@ -68,7 +73,7 @@ export function buildCommercialIntelligence(rows,mapping){
   else if(mapping.product&&group.products.size===1)opportunity='Hipótese: verificar se existe necessidade em outras categorias'
   else if(conversion!==null&&conversion<.5)opportunity='Hipótese: revisar motivos registrados e proposta de valor'
   else if(score>=75)opportunity='Hipótese: confirmar janela e planejamento da próxima decisão'
-  return {id:slug(group.name),name:group.name,municipality:group.municipality,area:group.area,cultures:group.culture,relationshipTime:'Histórico importado',primaryProfile:'A classificar',secondaryProfile:'Aguardando Produtor 360',scores:{},irt:0,irtBand:'Aguardando Produtor 360',nps:0,npsClass:'A medir',servicePreference:'A reconhecer',contactFrequency:days===null?'A confirmar; nenhuma data válida importada':'A confirmar; recência histórica disponível',contentPreference:'A confirmar com o produtor',postSalePreference:'A reconhecer',commercial:{potential:0,potentialValidated:false,lastContactDays:days,priority:score>=75?'Alta':score>=50?'Média':'Nutrir',opportunity,opportunityProvenance:{origin:'commercial_history',field:'derived_hypothesis',state:'reported'},property:'',score,revenue:group.revenue,frequency:group.rows.length,averageTicket:avgTicket,conversion:conversion===null?null:Math.round(conversion*100),knownOutcomes:group.knownOutcomes,categories:[...group.products],lastBusinessAt:group.lastDate?.toISOString()||null,evidenceCoverage},source:'Base Inteligente'}
+  return {id:slug(group.name)||`produtor-${stableHash(group.name)}`,name:group.name,municipality:group.municipality,area:group.area,cultures:group.culture,relationshipTime:'Histórico importado',primaryProfile:'A classificar',secondaryProfile:'Aguardando Produtor 360',scores:{},irt:0,irtBand:'Aguardando Produtor 360',nps:0,npsClass:'A medir',servicePreference:'A reconhecer',contactFrequency:days===null?'A confirmar; nenhuma data válida importada':'A confirmar; recência histórica disponível',contentPreference:'A confirmar com o produtor',postSalePreference:'A reconhecer',commercial:{potential:0,potentialValidated:false,lastContactDays:days,priority:score>=75?'Alta':score>=50?'Média':'Nutrir',opportunity,opportunityProvenance:{origin:'commercial_history',field:'derived_hypothesis',state:'reported'},property:'',score,revenue:group.revenue,frequency:group.rows.length,averageTicket:avgTicket,conversion:conversion===null?null:Math.round(conversion*100),knownOutcomes:group.knownOutcomes,categories:[...group.products],lastBusinessAt:group.lastDate?.toISOString()||null,evidenceCoverage},source:'Base Inteligente'}
  })
 }
 

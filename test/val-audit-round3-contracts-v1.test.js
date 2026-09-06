@@ -13,6 +13,10 @@ import {routeGlobalIntent} from '../server/decision-copilot/global-intent-router
 import {evaluateResponseGrounding} from '../server/decision-copilot/response-grounding.js'
 import {ValRepository} from '../server/repository.js'
 import {resolveValNaturalCommand} from '../src/lib/val-natural-commands.js'
+import {routeValIntent} from '../server/ai-reasoning/intent-router.js'
+import {canTransitionVisit} from '../server/visit-loop/lifecycle.js'
+import {opportunityFromAdditionalNeed} from '../src/lib/profile.js'
+import {buildCommercialIntelligence} from '../src/lib/commercial-intelligence.js'
 
 const repositoryRoot=join(dirname(fileURLToPath(import.meta.url)),'..')
 const read=path=>readFileSync(join(repositoryRoot,path),'utf8')
@@ -182,4 +186,75 @@ test('HTTP demo: caminho DEEP/CONTEXT sem modelo responde com o registro autoriz
   await new Promise(resolve=>{const timer=setTimeout(()=>{child.kill('SIGKILL');resolve()},3000);child.once('exit',()=>{clearTimeout(timer);resolve()})})
   await rmAsync(dataRoot,{recursive:true,force:true})
  }
+})
+
+test('cumprimento colado a pergunta conceitual continua conhecimento geral com produtor selecionado',()=>{
+ for(const message of ['Oi val o que é wasde?','Oi val, o que é WASDE?','Bom dia val, como funciona o hedge?','o que é basis?']){
+  assert.equal(routeValIntent({message,hasClient:true}).intent,'ASK_GENERAL',message)
+  assert.equal(routeValIntent({message,hasClient:false}).intent,'ASK_GENERAL',message)
+ }
+ assert.equal(routeValIntent({message:'Oi val, o que ele comprou?',hasClient:true}).intent,'ASK_CLIENT')
+ assert.equal(routeValIntent({message:'Oi val',hasClient:true}).intent,'ASK_GENERAL')
+})
+
+test('ciclo de vida da visita: estado terminal não aceita transição para si mesmo',()=>{
+ assert.equal(canTransitionVisit('COMPLETED','COMPLETED'),false)
+ assert.equal(canTransitionVisit('CANCELLED','CANCELLED'),false)
+ assert.equal(canTransitionVisit('PREPARED','PREPARED'),true)
+ assert.equal(canTransitionVisit('COMPLETED_PENDING_REVIEW','COMPLETED_PENDING_REVIEW'),true)
+ assert.equal(canTransitionVisit('COMPLETED','COMPLETED_PENDING_REVIEW'),false)
+ assert.equal(canTransitionVisit('PLANNED','CANCELLED'),true)
+})
+
+test('importação: placeholder na Q27 não vira oportunidade e nome sem slug recebe id determinístico',()=>{
+ for(const value of ['-','N/A','n/a','x','0','Não sei','Nada a declarar','Não há','Não no momento, obrigado','…'])assert.equal(opportunityFromAdditionalNeed(value),'',value)
+ for(const value of ['Não tenho irrigação','Preciso de assistência em armazenagem'])assert.equal(opportunityFromAdditionalNeed(value),value)
+ const rows=[{cliente:'***',valor:'1000',data:'2026-01-10',status:'ganho'},{cliente:'???',valor:'2000',data:'2026-01-11',status:'ganho'},{cliente:'Fazenda Boa Vista',valor:'3000',data:'2026-01-12',status:'ganho'}]
+ const mapping={client:'cliente',value:'valor',date:'data',status:'status'}
+ const clients=buildCommercialIntelligence(rows,mapping)
+ const ids=clients.map(item=>item.id)
+ assert.equal(new Set(ids).size,ids.length,JSON.stringify(ids))
+ for(const id of ids)assert.ok(id.length>0,JSON.stringify(ids))
+ assert.equal(ids.filter(id=>id.startsWith('produtor-')).length,2,JSON.stringify(ids))
+ assert.equal(clients.length,3)
+})
+
+test('Biblioteca: itens de mercado novos chegam ao chat e gatilhos específicos não colidem com o item genérico',()=>{
+ const items=read('knowledge/library/v1/knowledge_items.jsonl').split('\n').filter(Boolean).map(line=>JSON.parse(line))
+ const byId=new Map(items.map(item=>[item.item_id,item]))
+ for(const id of ['KI-159','KI-161','KI-162','KI-163'])assert.ok(byId.get(id).modules.includes('MDI'),id)
+ assert.ok(!byId.get('KI-124').triggers.includes('vazio sanitário'))
+ assert.ok(!byId.get('KI-126').triggers.includes('escleródio'))
+ assert.ok(byId.get('KI-148').triggers.includes('vazio sanitário'))
+ assert.ok(byId.get('KI-149').triggers.includes('escleródio'))
+ assert.ok(byId.get('KI-054').triggers.includes('limiar econômico'))
+ assert.ok(byId.get('KI-096').triggers.includes('excesso de informação'))
+ const readme=read('knowledge/library/v1/README.md')
+ assert.match(readme,/`164` KnowledgeItems/)
+ assert.doesNotMatch(readme,/VAL_Biblioteca_Mestre_v1\.docx/)
+ assert.doesNotMatch(read('knowledge/library/v1/ingestion_manifest.json'),/VAL_Biblioteca_Mestre_v1\.docx/)
+ assert.match(read('knowledge/library/v1/taxonomy.md'),/commodity_markets/)
+})
+
+test('voz contínua: erro sem áudio chega como texto, pausa não é desfeita pelo provider e reconexão espera a pausa',()=>{
+ const hook=read('src/hooks/useNaturalRealtimeVoice.js')
+ assert.match(hook,/callbacks\.current\.onError\?\.\(message,\{code:`realtime_response_\$\{responseStatus\}`\}\)/)
+ assert.doesNotMatch(hook,/onError\?\.\(Object\.assign\(new Error\(message\)/)
+ assert.match(hook,/const paused=machineRef\.current\.status===STATES\.PAUSED/)
+ assert.match(hook,/if\(type==='session\.created'\|\|type==='session\.updated'\)\{if\(!paused\)update\(/)
+ assert.match(hook,/if\(type==='output_audio_buffer\.stopped'\|\|type==='output_audio_buffer\.cleared'\)\{if\(!paused\)update\(/)
+ assert.match(hook,/if\(\[STATES\.SPEAKING,STATES\.PAUSED\]\.includes\(machineRef\.current\.status\)\)pendingReconnect\.current=eventScope\.scopeKey/)
+ assert.match(read('src/components/GlobalValCopilot.jsx'),/onError=\{message=>setError\(typeof message==='string'\?message:message\?\.message\|\|''\)\}/)
+ const visits=read('src/pages/Visits.jsx')
+ assert.match(visits,/const historyLifecycle=new Set\(\['COMPLETED','CANCELLED'\]\)/)
+ assert.match(visits,/const open=scheduled\.filter\(visit=>!historyLifecycle\.has\(lifecycleOf\(visit\)\)\)/)
+ assert.match(visits,/COMPLETED_PENDING_REVIEW:'Aguardando confirmação'/)
+ assert.match(visits,/status-pill">\{lifecycleLabels\[lifecycle\]\|\|visit\.status\}</)
+ const technical=read('server/technical-workspace.js')
+ assert.match(technical,/function handle\(request,response,url,session,\{demoAllowed=runtimeConfig\.demoMode\}=\{\}\)/)
+ assert.match(technical,/const resolvedSession=session\|\|\(demoAllowed\?\{email:'demo@valor360\.local'/)
+ assert.match(technical,/json\(response,503,\{error:'O núcleo técnico exige VAL_SESSION_SECRET com 32 ou mais caracteres\.'\}\)/)
+ assert.match(technical,/function scheduleRestart\(\)/)
+ assert.match(read('server.js'),/technicalWorkspace\.handle\(request,response,url,await sessionIdentity\(request\),\{demoAllowed:!auth\.configured&&config\.demoMode\}\)/)
+ assert.match(read('server.js'),/if\(config\.trustProxy\)\{const forwarded=String\(request\.headers\['x-forwarded-for'\]/)
 })

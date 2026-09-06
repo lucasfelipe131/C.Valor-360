@@ -24,7 +24,9 @@ export function legacyVisitLifecycle(visit={}){
 export function canTransitionVisit(fromStatus,toStatus){
  const from=text(fromStatus).toUpperCase()
  const to=text(toStatus).toUpperCase()
- return visitLifecycleStatuses.includes(from)&&visitLifecycleStatuses.includes(to)&&(from===to||transitions[from]?.has(to)===true)
+ // Estado terminal (COMPLETED/CANCELLED) não aceita 'transição' para si mesmo: um segundo relato
+ // pendente não pode ser confirmado sobre visita já concluída, gerando outcome e learning duplicados.
+ return visitLifecycleStatuses.includes(from)&&visitLifecycleStatuses.includes(to)&&((from===to&&transitions[from].size>0)||transitions[from]?.has(to)===true)
 }
 
 export function transitionVisitLifecycle(visit={},toStatus,input={}){

@@ -53,7 +53,7 @@ export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}
  const internalPort=Number(process.env.MANUAL_INTERNAL_PORT||31_001)
  const embedSecret=runtimeConfig.sessionSecret
  const proxy=httpProxy.createProxyServer({xfwd:true,changeOrigin:false,proxyTimeout:120_000,timeout:120_000})
- let child=null
+ let child=null,closing=false,restartTimer=null,restartAttempts=0,startedAt=0
 
  proxy.on('proxyRes',upstream=>{
   delete upstream.headers['x-powered-by']
@@ -63,8 +63,17 @@ export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}
   json(response,503,{error:'O núcleo técnico está reiniciando. Tente novamente em instantes.'})
  })
 
+ // O filho do Next morria e nunca voltava: /tecnico ficava em 503 'está reiniciando' até um redeploy.
+ // Reinicia com backoff limitado; um filho vivo por mais de 60s zera as tentativas.
+ function scheduleRestart(){
+  if(closing||restartTimer)return
+  if(restartAttempts>=10){console.error('Núcleo técnico não reiniciou após 10 tentativas; /tecnico permanece indisponível até novo deploy.');return}
+  const delay=Math.min(1000*2**restartAttempts,30_000);restartAttempts+=1
+  restartTimer=setTimeout(()=>{restartTimer=null;start()},delay);restartTimer.unref?.()
+ }
  function start(){
-  if(!enabled)return false
+  if(!enabled||closing)return false
+  startedAt=Date.now()
   child=spawn(process.execPath,[manualEntry],{
    cwd:manualRoot,
    env:{
@@ -78,17 +87,21 @@ export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}
    },
    stdio:['ignore','inherit','inherit']
   })
-  child.on('exit',(code,signal)=>console.error(`Núcleo técnico encerrado (${signal||code||0}).`))
+  child.on('exit',(code,signal)=>{console.error(`Núcleo técnico encerrado (${signal||code||0}).`);child=null;if(Date.now()-startedAt>60_000)restartAttempts=0;scheduleRestart()})
   return true
  }
+ const healthy=()=>Boolean(enabled&&child&&child.exitCode===null&&!child.killed)
 
- function handle(request,response,url,session){
+ // A identidade demo (admin anônimo) segue a mesma regra do server.js: só quando a autenticação
+ // não está configurada. VAL_DEMO_MODE=true com login ativo não abre o núcleo técnico sem sessão.
+ function handle(request,response,url,session,{demoAllowed=runtimeConfig.demoMode}={}){
   if(!isTechnicalWorkspaceRequest(url.pathname))return false
   if(!enabled){json(response,503,{error:'O núcleo técnico ainda não foi incluído neste build.'});return true}
-  const resolvedSession=(session||runtimeConfig.demoMode)?session||{email:'demo@valor360.local',tenantId:runtimeConfig.defaultTenantId,role:'admin'}:null
+  const resolvedSession=session||(demoAllowed?{email:'demo@valor360.local',tenantId:runtimeConfig.defaultTenantId,role:'admin'}:null)
+  if(!resolvedSession){json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'});return true}
   const tenantId=String(resolvedSession?.tenantId||runtimeConfig.defaultTenantId)
   const signed=signedTechnicalIdentity({session:resolvedSession,tenantId,secret:embedSecret})
-  if(!signed){json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'});return true}
+  if(!signed){observe('integration.error',{source:'manual-do-agronomo',operation:'proxy',reason:'session_secret_short'});json(response,503,{error:'O núcleo técnico exige VAL_SESSION_SECRET com 32 ou mais caracteres.'});return true}
   request.headers['x-valor360-identity']=signed.payload
   request.headers['x-valor360-signature']=signed.signature
   observe('integration.sent',{source:'manual-do-agronomo',operation:'proxy'})
@@ -98,9 +111,11 @@ export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}
  }
 
  function close(){
+  closing=true
+  if(restartTimer){clearTimeout(restartTimer);restartTimer=null}
   proxy.close()
   if(child&&!child.killed)child.kill('SIGTERM')
  }
 
- return {enabled,start,handle,close,internalPort}
+ return {enabled,start,handle,close,internalPort,healthy}
 }

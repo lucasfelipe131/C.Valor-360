@@ -108,7 +108,9 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   if(!eventIsCurrent(eventScope))return null
   // O turno e reportado quando o TEXTO da resposta termina; reconectar aqui fechava o RTCPeerConnection
   // com o audio ainda tocando. Com a VAL falando, a reconexao espera o fim da reproducao.
-  if(result?.reconnectRequired){if(machineRef.current.status===STATES.SPEAKING)pendingReconnect.current=eventScope.scopeKey;else await requestReconnect(eventScope.scopeKey)}
+  // Em pausa a reconexao tambem espera: religar o microfone e abrir sessao nova sem acao do consultor
+  // contraria a pausa; resume() consome a reconexao pendente.
+  if(result?.reconnectRequired){if([STATES.SPEAKING,STATES.PAUSED].includes(machineRef.current.status))pendingReconnect.current=eventScope.scopeKey;else await requestReconnect(eventScope.scopeKey)}
   return result
  },[eventIsCurrent,postSession,requestReconnect])
  const handleTool=useCallback(async(event,eventScope)=>{
@@ -127,7 +129,9 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   if(!eventIsCurrent(eventScope))return
   const event=parseRealtimeEvent(raw);if(!event)return
   const type=event.type
-  if(type==='session.created'||type==='session.updated'){update({status:STATES.LISTENING,microphoneActive:true,error:''});return}
+  // Eventos do provider nao desfazem a pausa do consultor: as tracks continuam desabilitadas.
+  const paused=machineRef.current.status===STATES.PAUSED
+  if(type==='session.created'||type==='session.updated'){if(!paused)update({status:STATES.LISTENING,microphoneActive:true,error:''});return}
   if(type==='input_audio_buffer.speech_started'){
    const timestamp=now();const interrupted=machineRef.current.status===STATES.SPEAKING
    marks.current={speechStarted:timestamp,bargeIn:interrupted};clearThinkingWatchdog();update({status:STATES.LISTENING,microphoneActive:true});return
@@ -146,7 +150,7 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
    const key=event.response_id||event.item_id||'active';const transcript=safeText(event.transcript||assistantBuffers.current.get(key));assistantBuffers.current.delete(key);if(transcript&&eventIsCurrent(eventScope)){callbacks.current.onAssistantTranscript?.(transcript,eventScope);if(pendingUser.current)reportTurn(pendingUser.current,transcript,eventScope);pendingUser.current=''}return
   }
   if(type==='output_audio_buffer.started'){if(marks.current&&!Number.isFinite(marks.current.firstAudio))marks.current.firstAudio=now();clearThinkingWatchdog();update({status:STATES.SPEAKING,microphoneActive:true});return}
-  if(type==='output_audio_buffer.stopped'){update({status:STATES.LISTENING,microphoneActive:true});if(pendingReconnect.current){const scopeKeyToReconnect=pendingReconnect.current;pendingReconnect.current=null;await requestReconnect(scopeKeyToReconnect)}return}
+  if(type==='output_audio_buffer.stopped'||type==='output_audio_buffer.cleared'){if(!paused)update({status:STATES.LISTENING,microphoneActive:true});if(pendingReconnect.current&&!paused){const scopeKeyToReconnect=pendingReconnect.current;pendingReconnect.current=null;await requestReconnect(scopeKeyToReconnect)}return}
   if(type==='response.function_call_arguments.done'){await handleTool(event,eventScope);return}
   if(type==='response.done'){
    clearThinkingWatchdog()
@@ -160,7 +164,7 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
     const detail=safeText(event.response?.status_details?.error?.message||event.response?.status_details?.reason||'',300)
     const message=detail?`A VAL não conseguiu responder agora (${detail}). Pode repetir a pergunta.`:'A VAL não conseguiu responder agora. Pode repetir a pergunta.'
     update({status:STATES.LISTENING,microphoneActive:true,error:message})
-    callbacks.current.onError?.(Object.assign(new Error(message),{code:`realtime_response_${responseStatus}`}))
+    callbacks.current.onError?.(message,{code:`realtime_response_${responseStatus}`})
    }
    if(pendingReconnect.current&&!audioStarted){const scopeKeyToReconnect=pendingReconnect.current;pendingReconnect.current=null;await requestReconnect(scopeKeyToReconnect)}
    return
@@ -233,8 +237,10 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   start().catch(()=>null)
  },[disabled,reconnectSequence,start,scopeKey])
  const pause=useCallback(()=>{for(const track of resources.current.stream?.getAudioTracks?.()||[])track.enabled=false;try{resources.current.audio?.pause()}catch{};update({status:STATES.PAUSED,microphoneActive:false});return true},[update])
- const resume=useCallback(()=>{for(const track of resources.current.stream?.getAudioTracks?.()||[])track.enabled=true;resources.current.audio?.play?.().catch(()=>null);update({status:STATES.LISTENING,microphoneActive:true});return true},[update])
- const bargeIn=useCallback(()=>{send({type:'response.cancel'});send({type:'output_audio_buffer.clear'});update({status:STATES.LISTENING,microphoneActive:true});return true},[send,update])
+ const resume=useCallback(()=>{for(const track of resources.current.stream?.getAudioTracks?.()||[])track.enabled=true;resources.current.audio?.play?.().catch(()=>null);update({status:STATES.LISTENING,microphoneActive:true});if(pendingReconnect.current){const scopeKeyToReconnect=pendingReconnect.current;pendingReconnect.current=null;requestReconnect(scopeKeyToReconnect).catch(()=>null)}return true},[requestReconnect,update])
+ // Interromper a fala tambem encerra a reproducao: a reconexao adiada durante a resposta acontece
+ // agora, senao a proxima pergunta seria respondida com o contexto antigo.
+ const bargeIn=useCallback(()=>{send({type:'response.cancel'});send({type:'output_audio_buffer.clear'});update({status:STATES.LISTENING,microphoneActive:true});if(pendingReconnect.current){const scopeKeyToReconnect=pendingReconnect.current;pendingReconnect.current=null;requestReconnect(scopeKeyToReconnect).catch(()=>null)}return true},[requestReconnect,send,update])
  const exit=useCallback(()=>{scopeReconnectPending.current=null;return cleanup({final:true,reason:'USER_EXIT',nextStatus:STATES.IDLE})},[cleanup])
  useEffect(()=>{machineRef.current=machine;callbacks.current.onStateChange?.(machine)},[machine])
  useEffect(()=>()=>{

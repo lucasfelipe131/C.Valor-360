@@ -2,6 +2,7 @@ import {randomUUID} from 'node:crypto'
 import {observe} from '../observability.js'
 import {buildCommitmentCandidate} from '../execution/commitment.js'
 import {resolveVisitDueDate} from '../visit-loop/report.js'
+import {canTransitionVisit,legacyVisitLifecycle} from '../visit-loop/lifecycle.js'
 import {buildVoiceCandidate,transitionVoiceInteraction,voiceCandidateCategories,voiceInteractionTypes} from './contracts.js'
 import {normalizeValSessionResponse,voiceCandidateTextSecurityReason} from './extraction.js'
 
@@ -187,6 +188,9 @@ export function createVoiceCaptureService({repository,storageProvider,transcript
   async create({tenantId,ownerId,actorId=ownerId,input={},requestId,now}={}){
    const interactionType=String(input.interaction_type||'').toUpperCase();if(!voiceInteractionTypes.includes(interactionType))throw voiceError('Selecione um tipo válido de interação de voz.','voice_interaction_type_invalid')
    const visitId=text(input.visit_id,180)||null;if(['PRE_VISIT','POST_VISIT'].includes(interactionType)&&!visitId)throw voiceError('Esta captura exige uma visita vinculada.','voice_visit_required')
+   // Visita já concluída ou cancelada não recebe novo relato por voz: antes o áudio era processado até
+   // PENDING_REVIEW e a confirmação falhava com erro interno bruto.
+   if(interactionType==='POST_VISIT'&&typeof repository.getVisit==='function'){const linkedVisit=await repository.getVisit({tenantId,ownerId,id:visitId});if(linkedVisit&&!canTransitionVisit(legacyVisitLifecycle(linkedVisit),'COMPLETED_PENDING_REVIEW'))throw voiceError('Esta visita já foi concluída ou cancelada; registre complementos como nota do produtor.','voice_visit_lifecycle_closed',409)}
    const manualText=text(input.manual_text,20_000);const context={...sourceContext(input.source_context),...(manualText?{capture_mode:'TEXT_FALLBACK'}:{capture_mode:'AUDIO'})}
    let interaction=await repository.createVoiceInteraction({tenantId,ownerId,actorId,clientId:text(input.client_id,180),visitId,interactionType,sourceContext:context,now})
    if(manualText){const at=nowIso(now);const transcript=await repository.saveVoiceTranscript({tenantId,ownerId,actorId,transcript:{transcript_id:randomUUID(),organization_id:tenantId,voice_interaction_id:interaction.voice_interaction_id,client_id:interaction.client_id,visit_id:interaction.visit_id,created_by:actorId,provider:'manual',model:'manual-text-v1',provider_version:'val.transcription_provider.v1',provider_reference:null,status:'COMPLETED',transcript_text:manualText,language:text(input.language,30)||'pt-BR',duration_seconds:null,confidence:1,attempt_no:1,error_code:null,metadata:{capture_mode:'TEXT_FALLBACK'},created_at:at,updated_at:at,completed_at:at}});interaction=await persist(interaction,'TRANSCRIBED',{transcript_ref:`voice-transcript:${transcript.transcript_id}`,transcript_status:'COMPLETED',language:transcript.language,transcription:{provider:'manual',model:'manual-text-v1',version:'val.transcription_provider.v1',status:'COMPLETED',provider_reference:null,language:transcript.language,duration_seconds:null,confidence:1,error:null}},{tenantId,ownerId,actorId,now})}
