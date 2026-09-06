@@ -1,5 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import {execFileSync} from 'node:child_process'
+
+// Este teste exercita o ffprobe real, que valida o container de verdade.
+// Onde o binario nao existe ele nao pode rodar - e vermelho permanente treina
+// a equipe a ignorar vermelho. Pula declarando o motivo, e roda onde ha ffprobe.
+const ffprobeDisponivel=(()=>{try{execFileSync('ffprobe',['-version'],{stdio:'ignore'});return true}catch{return false}})()
 import {
   VoiceStorageError,
   buildRepositoryAttachmentRef,
@@ -166,7 +172,7 @@ test('Voice storage — probe do servidor impede fraude na duração declarada',
   assert.equal(repository.lastCreate,null,'O arquivo não pode ser persistido antes da duração real ser aprovada.')
 })
 
-test('Voice storage — ffprobe real valida o container e mede a duração no servidor',async()=>{
+test('Voice storage — ffprobe real valida o container e mede a duração no servidor',{skip:ffprobeDisponivel?false:'ffprobe não está instalado neste ambiente'},async()=>{
   const duration=await probeVoiceAudioDuration({bytes:playableWavBytes(),mimeType:'audio/wav'})
   assert.ok(duration>=0.24&&duration<=0.26,`Duração inesperada do WAV sintético: ${duration}`)
 })

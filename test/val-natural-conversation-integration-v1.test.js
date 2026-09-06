@@ -45,7 +45,7 @@ test('superfícies HTTP e UI conectam resolver, sessão, voz, métricas e confir
  assert.match(server,/sessionState:requestConversationState/)
  assert.match(server,/reasoningState:turnOnlyClientOverride\?requestConversationState:sessionState/)
  assert.match(server,/responseScope=createValResponseScope\(reasoningSession\)/)
- assert.match(server,/activeContext:null\}\n  let sessionState=/)
+ assert.match(server,/activeContext:null\}\r?\n  let sessionState=/)
  assert.match(server,/activeContextRef=validateActiveContext[\s\S]*sessionState=advanceConversationState\(sessionState,\{activeContext:activeContextRef/)
  assert.match(server,/valConversationRequests\.assertCurrent[\s\S]*valConversationSessions\.set\(persistedScope,completedState\)/)
  assert.doesNotMatch(server,/valConversationSessions\.advance\(sessionScope/)

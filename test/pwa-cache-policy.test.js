@@ -39,7 +39,7 @@ test('build carimba e valida o service worker sem depender de edição manual',(
   writeFileSync(join(root,'public','sw.js'),read('public/sw.js'))
   const stamped=stampServiceWorker({root,releaseId:'release-abc123'})
   assert.equal(stamped.cacheName,'valor360-vrelease-abc123')
-  assert.ok(stamped.manifestPath.endsWith('dist/release.json'))
+  assert.ok(stamped.manifestPath.replace(/\\/g,'/').endsWith('dist/release.json'))
   const compiled=readFileSync(join(root,'dist','sw.js'),'utf8')
   assert.match(compiled,/const CACHE='valor360-vrelease-abc123'/)
   assert.doesNotMatch(compiled,/__VAL_RELEASE__/)
@@ -73,7 +73,7 @@ test('static server never serves the worker as immutable',()=>{
  assert.match(server,/extension==='\.html'[\s\S]*?'no-cache'/)
  assert.match(server,/immutableAsset[\s\S]*?'public, max-age=31536000, immutable'/)
 
- const cachePolicy=server.slice(server.indexOf("const immutableAsset="),server.indexOf('response.writeHead(200',server.indexOf("const immutableAsset=")))
+ const cachePolicy=server.slice(server.indexOf("const immutableAsset="),server.indexOf('response.writeHead(200',server.indexOf("const immutableAsset="))).replace(/\r\n/g,'\n')
  assert.ok(cachePolicy.indexOf("url.pathname==='/sw.js'")<cachePolicy.indexOf('immutableAsset\n    ?'),'/sw.js deve ser avaliado antes da política immutable')
 })
 
