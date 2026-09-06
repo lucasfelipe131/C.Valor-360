@@ -42,10 +42,16 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
  const source=fold(message)
  const authorizedClient=clientRef(client)
  if(!source)return result()
- const openVerb=/\b(?:abre|abra|abrir|vai|va|navega|navegue|mostra|mostre|mostrar|leva|ir para|volta para|volte para)\b/.test(source)
+ // "vai" e "va" so sao verbos de abrir como movimento ("vai para oportunidades"); como auxiliar
+ // ("vai chover", "vai plantar", "vai ter geada") a frase e uma pergunta, nao navegacao.
+ const openVerb=/\b(?:abre|abra|abrir|navega|navegue|mostra|mostre|mostrar|leva|ir para|volta para|volte para)\b|\b(?:vai|va)\s+(?:para|pra|pro|ao|a|na|no|em)\b/.test(source)
  const searchVerb=/^(?:val\s+)?(?:agora\s+)?(?:procura|procure|busca|buscar|localiza|localize|encontra|encontre)\b/.test(source)
- const factualImperative=/^(?:val\s+)?(?:agora\s+)?(?:mostre|mostra|me\s+mostre)\s+(?:as?\s+)?(?:culturas?|safra|area)\s+(?:dele|dela|(?:do|da)\s+[a-z][a-z0-9 '-]{0,120})[.!?]?$/.test(source)
- const factualLookup=factualImperative||/\b(?:ultima|ultimo|mais recente|principal)\b.*\b(?:visita|compra|objecao|compromisso)\b|\b(?:visita|compra|objecao|compromisso)\b(?:\s+confirmad[oa])?\s+(?:ultima|ultimo|mais recente|principal)\b(?:\s+(?:dele|dela))?|\b(?:quanto|qual|quais)\b.*\b(?:comprou|cultura|safra|area)\b/.test(source)
+ const factualImperative=/^(?:val\s+)?(?:agora\s+)?(?:mostre|mostra|me\s+mostre|me\s+mostra)\s+(?:as?\s+|o\s+)?(?:culturas?|safra|area|perfil)\s+(?:dele|dela|(?:do|da)\s+[a-z][a-z0-9 '-]{0,120})[.!?]?$/.test(source)
+ // Pergunta sobre dado (perfil, cotacao, clima, "quantos", "qual") nunca vira navegacao, mesmo
+ // com verbo de abrir ou de busca: "mostra o perfil dele" responde o perfil, "busca a cotacao da
+ // soja" consulta o mercado. A resposta e do raciocinio ou da fonte, nao de uma troca de tela.
+ const dataQuestion=/\?\s*$/.test(source)||/\b(?:perfil|cotacao|preco|clima|chover|geada|granizo|bula|quanto|quantos|quantas|qual|quais|como|quando|onde|por que|porque)\b/.test(source)
+ const factualLookup=factualImperative||dataQuestion||/\b(?:ultima|ultimo|mais recente|principal)\b.*\b(?:visita|compra|objecao|compromisso)\b|\b(?:visita|compra|objecao|compromisso)\b(?:\s+confirmad[oa])?\s+(?:ultima|ultimo|mais recente|principal)\b(?:\s+(?:dele|dela))?|\b(?:quanto|qual|quais)\b.*\b(?:comprou|cultura|safra|area)\b/.test(source)
  const followUp=routeSessionCommand(message)||/\b(?:volta no que)\b/.test(source)
  if(followUp)return result({intent:'FOLLOW_UP',reason:'CONVERSATION_FAST_PATH'})
  const prepareVisit=/\b(?:prepara|prepare|preparar|preparacao|monta|monte)\b.*\b(?:visita|conversa)\b|\b(?:visita|conversa)\b.*\b(?:prepara|prepare|preparar|preparacao|roteiro)\b/.test(source)
@@ -55,6 +61,16 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
  if(prepareVisit&&openVerb&&authorizedClient){
   const workspaceAction=action({type:'PREPARE_VISIT',page:'visits',label:`Preparar visita de ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'PREPARE',reason:'PREPARE_AUTHORIZED_CLIENT',direct:true,workspaceAction,summary:`Abrindo a preparação de visita de ${authorizedClient.name||'produtor'}.`})
+ }
+ // "volta pro Antonio", "agora o Matheus", "troca pro Bruno": o resolvedor ja trocou o produtor da
+ // sessao; sem esta acao a frase seguia para o raciocinio do novo produtor e a resposta era a
+ // frase generica de evidencia insuficiente, como se a troca tivesse falhado.
+ // So e troca quando ha destino: "volta pro Antonio", "muda para o Bruno", "agora o Matheus", "volta
+ // pro produtor anterior". "Muda o telefone dele" e pedido de alteracao de dado, nao troca de produtor.
+ const switchVerb=/^\s*(?:val\s+)?(?:(?:volta|volte|voltar|retoma|retome|retomar|troca|troque|trocar|muda|mude|mudar)\s+(?:(?:o|a)\s+(?:cliente|produtor|produtora|conta)\s+)?(?:para|pro|pra|ao|a)\s+\S|(?:volta|volte|voltar|retoma|retome|retomar)\b.*\banterior\b|agora\s+(?:com\s+)?(?:o|a)\s+[^\s?]+\s*[.!]?\s*$)/.test(source)
+ if(!factualLookup&&!prepareVisit&&switchVerb&&authorizedClient&&!modules.some(module=>module.pattern.test(source))){
+  const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
+  return result({intent:'OPEN',reason:'SWITCH_RESOLVED_CLIENT',direct:true,workspaceAction,summary:authorizedClient.name?`Agora falando de ${authorizedClient.name}. Abrindo no Cliente 360.`:'Agora falando do produtor selecionado. Abrindo no Cliente 360.'})
  }
  if(!factualLookup&&openVerb&&authorizedClient&&/\b(?:cliente|produtor|produtora)\b/.test(source)){
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
@@ -71,13 +87,20 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'OPEN',reason:'OPEN_RESOLVED_CLIENT',direct:true,workspaceAction,summary:`Abrindo ${authorizedClient.name||'o produtor'} no Cliente 360.`})
  }
- if(searchVerb&&authorizedClient){
+ if(searchVerb&&authorizedClient&&!factualLookup&&!modules.some(module=>module.pattern.test(source))){
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'SEARCH',reason:'SEARCH_RESOLVED_CLIENT',direct:true,workspaceAction,summary:`Localizei ${authorizedClient.name||'o produtor'} na sua carteira autorizada.`})
  }
- if(/\b(?:marca|marque|conclui|concluir|finaliza|finalize)\b.*\b(?:compromisso|tarefa|visita)\b/.test(source))return result({intent:'MARK_COMPLETE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A conclusão exige confirmação no módulo canônico antes de persistir.'})
- if(/\b(?:cria|crie|agende|agenda|nova)\b.*\b(?:visita|oportunidade|compromisso)\b/.test(source))return result({intent:'CREATE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A criação exige revisão e confirmação antes de persistir.'})
- if(/\b(?:registra|registre|anota|anote|atualiza|atualize)\b/.test(source))return result({intent:/\b(?:atualiza|atualize)\b/.test(source)?'UPDATE':'REGISTER',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A alteração exige revisão e confirmação antes de persistir.'})
+ // Escrita é imperativo no início da frase, com objeto explícito e sem interrogação: "Marque o
+ // compromisso como concluído", "Cria uma visita para amanhã", "Atualiza o telefone dele". Uma
+ // pergunta que cita esses verbos ("quando foi a nova visita?") segue para o raciocínio.
+ const writeHead=String.raw`^\s*(?:val[, ]+)?(?:agora\s+)?(?:por favor[, ]+)?`
+ const writeTurn=!/\?\s*$/.test(source)
+ const writeField=String.raw`(?:telefone|celular|whatsapp|e-?mail|municipio|cidade|endereco|area|nome|estagio|status|valor|data|cultura|safra|perfil|cadastro|hectares)`
+ if(writeTurn&&new RegExp(writeHead+String.raw`(?:marca|marque|marcar|conclui|conclua|concluir|finaliza|finalize|finalizar|encerra|encerre|encerrar)\b(?:\s+\S+){0,4}?\s+(?:(?:o|a|os|as|esse|essa|este|esta)\s+)?(?:compromisso|tarefa|visita)s?\b`).test(source))return result({intent:'MARK_COMPLETE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A conclusão exige confirmação no módulo canônico antes de persistir.'})
+ if(writeTurn&&new RegExp(writeHead+String.raw`(?:cria|crie|criar|agenda|agende|agendar|cadastra|cadastre|cadastrar|adiciona|adicione|adicionar|remarca|remarque|remarcar|cancela|cancele|cancelar)\b.*\b(?:visita|oportunidade|compromisso|tarefa|propriedade|produtor|cliente)s?\b`).test(source))return result({intent:'CREATE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A criação exige revisão e confirmação antes de persistir.'})
+ if(writeTurn&&(new RegExp(writeHead+String.raw`(?:atualiza|atualize|atualizar|corrige|corrija|corrigir|altera|altere|alterar|edita|edite|editar|apaga|apague|apagar|remove|remova|remover|exclui|exclua|excluir)\b(?!-?\s*me\b)`).test(source)||new RegExp(writeHead+String.raw`(?:muda|mude|mudar|troca|troque|trocar)\s+(?:o|a)\s+`+writeField+String.raw`\b`).test(source)||new RegExp(writeHead+String.raw`(?:fecha|feche|fechar)\s+(?:a|o|essa|esse|esta|este)\s+(?:oportunidade|negocio|negociacao|proposta)\b`).test(source)))return result({intent:'UPDATE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A alteração exige revisão e confirmação antes de persistir.'})
+ if(writeTurn&&new RegExp(writeHead+String.raw`(?:registra|registre|registrar|anota|anote|anotar|salva|salve|salvar)\b`).test(source))return result({intent:'REGISTER',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A alteração exige revisão e confirmação antes de persistir.'})
  if(/\b(?:calcula|calcule|calcular|simula|simule)\b/.test(source))return result({intent:'CALCULATE',reason:'CANONICAL_CALCULATOR'})
  if(/\b(?:quanto|cotacao|preco)\b.*\b(?:soja|milho|trigo|sorgo|feijao|arroz|cevada)\b|\b(?:soja|milho|trigo|sorgo|feijao|arroz|cevada)\b.*\b(?:hoje|cotacao|preco|mercado)\b/.test(source))return result({intent:'SHOW',reason:'LIVE_MARKET_DATA'})
  if(/\b(?:analisa|analise|interpretar|interpreta)\b/.test(source))return result({intent:'ANALYZE',reason:'CANONICAL_ANALYSIS'})

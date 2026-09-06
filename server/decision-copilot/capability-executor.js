@@ -5,6 +5,7 @@ import {conversationStateContext,lastCompletedAssistantTurn,normalizeConversatio
 import {assertActiveProducerBoundary,assertContextScopeAliases,classifyValContextDomain,explicitlyGlobalContext} from './context-selector.js'
 import {evaluateReasoningGrounding} from './response-grounding.js'
 import {selectKnowledge} from '../knowledge/library.js'
+import {describeSelectionMatch} from '../knowledge/selection.js'
 
 export const capabilityExecutorVersion='val.capability_executor.v1'
 
@@ -29,7 +30,7 @@ const sourceIdentityKeys=Object.freeze(['source_ref','sourceRef','id','commitmen
 const trustedCapabilityExecutions=new WeakSet()
 
 const navigation=Object.freeze({
- AGRONOMIC_WORKSPACE:{tool:'',title:'Ferramentas agronômicas da VAL',page:'agro',manual_page:null,mode:'catalog'},
+ AGRONOMIC_WORKSPACE:{tool:'',title:'Inteligência Agronômica da VAL',page:'agro',manual_page:null,mode:'catalog'},
  AREA_MAPPING:{tool:'area_mapping',title:'Mapeamento de áreas',page:'agro',manual_page:'produtores',mode:'mapping'},
  CALCULATORS:{tool:'calculators',title:'Calculadoras agronômicas',page:'agro',manual_page:'calculadoras',mode:'calculator'},
  SOIL_ANALYSIS:{tool:'soil_analysis',title:'Análise de solo',page:'agro',manual_page:'solo',mode:'soil'},
@@ -134,8 +135,9 @@ const unexpectedKeys=(value,allowed)=>value&&typeof value==='object'&&!Array.isA
 function validateGeneralGuidanceSource(item,message){
  const tool=item?.tool_result
  const allowedTool=new Set(['status','capability','tool','title','summary','page','manual_page','mode','context'])
- const allowedContext=new Set(['client_id','private_memory_used'])
- if(!tool||clean(item?.source_ref,240)!=='system:general-guidance:v1'||clean(tool.capability,80).toUpperCase()!=='GENERAL_GUIDANCE'||clean(tool.summary,1200)!==clean(generalAnswer(message),1200)||unexpectedKeys(tool,allowedTool).length||unexpectedKeys(tool.context,allowedContext).length||tool.context?.client_id!=null||tool.context?.private_memory_used!==false)throw capabilityScopeViolation('GENERAL_SOURCE_CONTENT_MISMATCH')
+ const allowedContext=new Set(['client_id','private_memory_used','knowledge_item_id','knowledge_match'])
+ const expected=generalGuidance(message)
+ if(!tool||clean(item?.source_ref,240)!=='system:general-guidance:v1'||clean(tool.capability,80).toUpperCase()!=='GENERAL_GUIDANCE'||clean(tool.summary,1200)!==clean(expected.summary,1200)||unexpectedKeys(tool,allowedTool).length||unexpectedKeys(tool.context,allowedContext).length||tool.context?.client_id!=null||tool.context?.private_memory_used!==false||(tool.context?.knowledge_item_id??null)!==expected.knowledge_item_id||(tool.context?.knowledge_match??null)!==expected.knowledge_match)throw capabilityScopeViolation('GENERAL_SOURCE_CONTENT_MISMATCH')
  return true
 }
 
@@ -539,7 +541,7 @@ function fastContextResult({capability,message,context,clientId,scope}){
   const memoryEntry=scopedMemories.find(item=>String(item.record?.status||'').toLowerCase()==='verified'&&String(item.record?.memory_state||item.record?.memoryState||'FACT').toUpperCase()==='FACT'&&(/decis|quem decide/i.test(String(item.record?.key||''))||confirmedMemoryValue(item.record)))
   const memory=memoryEntry?.record
   const value=memory&&confirmedMemoryValue(memory)
-  const status=value?'EXECUTED':'NO_DATA';const summary=value?`Decisor confirmado: ${value}.`:'Nenhum decisor confirmado foi localizado para este produtor.'
+  const status=value?'EXECUTED':'NO_DATA';const summary=value?`Quem decide (decisor confirmado): ${value}.`:'Nenhum decisor confirmado foi localizado para este produtor.'
   const sourceScope=memoryEntry?.scope||scope
   return result(capability,status,descriptor(capability,{status,summary,context:{client_id:clientId,...(value?{tenant_id:sourceScope.tenantId,context_owner_id:sourceScope.ownerId}:{}),confirmed_memory_only:true,source_type:clean(memory?.source_type??memory?.sourceType,120)||'confirmed_memory',epistemic_type:clean(memory?.epistemic_type??memory?.epistemicType??memory?.memory_state??memory?.memoryState,40).toUpperCase()||'FACT',observed_at:memory?.observed_at??memory?.observedAt??memory?.updated_at??memory?.updatedAt??memory?.created_at??memory?.createdAt??null,valid_until:memory?.valid_until??memory?.validUntil??null}}),value?idOf(memory):null)
  }
@@ -558,7 +560,10 @@ function fastContextResult({capability,message,context,clientId,scope}){
   validateNestedRecords(context.visits,scope,{kind:'visit'})
   validateNestedRecords(context.opportunities,scope,{kind:'opportunity'})
   const clientName=clean(context?.client?.name,180)||'Produtor';const visits=list(context.visits).length;const opportunities=list(context.opportunities).filter(item=>String(item?.stage||'').toLowerCase()!=='fechado').length
-  return result(capability,'EXECUTED',descriptor(capability,{summary:`${clientName}: ${visits} visita(s) e ${opportunities} oportunidade(s) aberta(s) no contexto autorizado.`,context:{client_id:clientId,...(scope.tenantId?{tenant_id:scope.tenantId}:{}),...(scope.ownerId?{context_owner_id:scope.ownerId}:{})}}),context?.contextSnapshot?.context_snapshot_id||null)
+  // Mesmo contrato de fonte do ramo de identidade: o binding de CLIENT_CONTEXT exige
+  // `client:<produtor>` e current_client_only. Com o id do snapshot como fonte, "resume a conta"
+  // montava o resumo e morria em CLIENT_SOURCE_REF_MISMATCH (422) em todos os casos.
+  return result(capability,'EXECUTED',descriptor(capability,{summary:`${clientName}: ${visits} visita(s) e ${opportunities} oportunidade(s) aberta(s) no contexto autorizado.`,context:{client_id:clientId,...(scope.tenantId?{tenant_id:scope.tenantId}:{}),...(scope.ownerId?{context_owner_id:scope.ownerId}:{}),current_client_only:true,context_snapshot_id:context?.contextSnapshot?.context_snapshot_id||null}}),`client:${clientId}`)
  }
  return result(capability,'PLANNED',null,null)
 }
@@ -611,22 +616,35 @@ const noKnowledgeCoverageStub='Posso tratar esta dúvida sem selecionar um produ
 // Knowledge Library — o retriever de lá sempre devolve algum item mesmo sem relação real
 // com a pergunta (não tem piso de relevância), e esse item aleatório é que falhava o
 // grounding, não o cumprimento em si. Resolvido com resposta fixa antes da busca.
-const greetingOnlyRequest=/^\s*(oi+|ol[aá]|opa|e\s*a[ií]|eae|hey|hi|hello|bom\s*dia|boa\s*tarde|boa\s*noite|tudo\s*bem|tudo\s*bom|como\s*vai|como\s*voc[eê]\s*est[aá]|beleza)[\s!.,?]*$/i
+const greetingOnlyRequest=/^\s*(?:val[, ]+)?(oi+|ol[aá]|opa|e\s*a[ií]|eae|hey|hi|hello|bom\s*dia|boa\s*tarde|boa\s*noite|tudo\s*bem|tudo\s*bom|como\s*vai|como\s*voc[eê]\s*est[aá]|beleza)(?:[\s!.,]*(?:val|viu|hein))?[\s!.,?]*$/i
+// Agradecimento ou fechamento ("obrigado", "valeu", "perfeito") tambem nao e pergunta: sem esta
+// resposta fixa, "Obrigado!" caia na Biblioteca e terminava em bloqueio de evidencia.
+const thanksOnlyRequest=/^\s*(?:val[, ]+)?(?:(?:muito\s+)?(?:obrigad[oa]s?|valeu|show|perfeito|entendi|certo|ok|okay|blz|t[aá]\s*bom|combinado|legal|beleza)[\s!.,?]*){1,3}(?:(?:val|viu|hein|demais|mesmo)[\s!.,?]*)?$/i
 
-function generalAnswer(message=''){
+// Resposta geral com a sua proveniência: de onde veio o texto (definição fixa, item da Biblioteca
+// ou ausência de cobertura) e, quando veio da Biblioteca, como o item foi selecionado. O mesmo
+// objeto é recomputado em validateGeneralGuidanceSource, byte a byte, para que um envelope forjado
+// não ganhe a confiança do item curado.
+const curatedGuidance=(summary,coverage='CURATED')=>Object.freeze({summary,knowledge_item_id:null,knowledge_match:null,coverage})
+function generalGuidance(message=''){
  const source=String(message).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
- if(isCurrentClientIdentityRequest(source))return 'Nenhum produtor está selecionado nesta conversa.'
+ if(isCurrentClientIdentityRequest(source))return curatedGuidance('Nenhum produtor está selecionado nesta conversa.')
  const greetingMatch=greetingOnlyRequest.exec(String(message||''))
- if(greetingMatch){const greetingText=greetingMatch[1];return `${greetingText.charAt(0).toUpperCase()}${greetingText.slice(1)}, posso ajudar com dúvidas gerais, agronomia, mercado ou sobre um produtor específico.`}
- if(/\bmargem\b/.test(source))return 'Margem é a diferença entre receita e custos. Em percentual, divida a margem em valor pela receita e multiplique por 100; confirme quais custos entram na comparação.'
- if(/\broi\b|retorno sobre investimento/.test(source))return 'ROI compara o ganho líquido com o investimento: (retorno menos investimento) dividido pelo investimento. Informe período, custos e premissas para evitar uma precisão falsa.'
- if(/\bcusto\s*\/\s*ha|custo por hectare/.test(source))return 'Custo por hectare é o custo total dividido pela área efetivamente considerada. Informe ambos com unidade e período para a VAL calcular.'
- if(/\bctc\b/.test(source))return 'CTC representa a capacidade do solo de reter e trocar cátions. Sua interpretação depende do método, da camada amostrada, do pH e das demais medições do laudo.'
- if(/\bph\b/.test(source))return 'O pH indica a acidez ou alcalinidade do solo e influencia disponibilidade de nutrientes e manejo de correção. A interpretação prática depende do método, da camada, da cultura e das demais medições do laudo.'
+ if(greetingMatch){const greetingText=greetingMatch[1];return curatedGuidance(`${greetingText.charAt(0).toUpperCase()}${greetingText.slice(1)}, posso ajudar com dúvidas gerais, agronomia, mercado ou sobre um produtor específico.`)}
+ if(thanksOnlyRequest.test(String(message||'')))return curatedGuidance('Disponha. Posso ajudar com dúvidas gerais, agronomia, mercado ou sobre um produtor específico.')
+ // "qual a margem da soja" e trigger curado da Biblioteca (KI-108); o atalho fixo de definicao
+ // so vale para a pergunta conceitual sem cultura ou produto.
+ const cropMention=/\b(?:soja|milho|trigo|sorgo|cevada|feijao|arroz|algodao|cafe|cana|graos?|safra)\b/.test(source)
+ if(!cropMention&&/\bmargem\b/.test(source))return curatedGuidance('Margem é a diferença entre receita e custos. Em percentual, divida a margem em valor pela receita e multiplique por 100; confirme quais custos entram na comparação.')
+ if(!cropMention&&(/\broi\b|retorno sobre investimento/.test(source)))return curatedGuidance('ROI compara o ganho líquido com o investimento: (retorno menos investimento) dividido pelo investimento. Informe período, custos e premissas para evitar uma precisão falsa.')
+ if(/\bcusto\s*\/\s*ha|custo por hectare/.test(source))return curatedGuidance('Custo por hectare é o custo total dividido pela área efetivamente considerada. Informe ambos com unidade e período para a VAL calcular.')
+ if(/\bctc\b/.test(source))return curatedGuidance('CTC representa a capacidade do solo de reter e trocar cátions. Sua interpretação depende do método, da camada amostrada, do pH e das demais medições do laudo.')
+ if(/\bph\b/.test(source))return curatedGuidance('O pH indica a acidez ou alcalinidade do solo e influencia disponibilidade de nutrientes e manejo de correção. A interpretação prática depende do método, da camada, da cultura e das demais medições do laudo.')
  const governed=governedGeneralAnswer(message)
- if(governed)return governed
- return noKnowledgeCoverageStub
+ if(governed)return Object.freeze({summary:governed.text,knowledge_item_id:governed.knowledge_item_id,knowledge_match:governed.knowledge_match,coverage:'LIBRARY'})
+ return curatedGuidance(noKnowledgeCoverageStub,'NONE')
 }
+function generalAnswer(message=''){return generalGuidance(message).summary}
 
 // Bloqueia o fallback de IA nao verificada para qualquer pergunta com cheiro de decisao
 // prescritiva ou de dado vivo: dose/produto/defensivo (mesmo padrao de explicitAgronomyRequest
@@ -676,15 +694,19 @@ function governedGeneralAnswer(message){
  const now=new Date(Math.floor(Date.now()/60_000)*60_000)
  let selection
  try{selection=selectKnowledge({query:String(message||''),modules:['MCTX','MDI','MVV','MIA','MIC'],geography:'General',limit:1,now})}
- catch{return ''}
+ catch{return null}
  const item=selection?.items?.[0]
- if(!item?.statement)return ''
+ if(!item?.statement)return null
  // application_val é nota interna de engenharia (ex.: "MDI usa X para separar Y pago na
  // praça do produtor") e menciona "produtor" genericamente; incluí-la aqui já disparou
  // GLOBAL_PRODUCER_SPECIFIC_CLAIM no grounding por parecer uma afirmação individual.
  // Só o princípio (statement) é apropriado para fala/exibição direta ao usuário.
  const caveat=item.requires_human_review?' A execução prática continua exigindo responsável técnico habilitado.':''
- return `${item.statement}`.replace(/\s+/g,' ').trim()+caveat
+ // Frase inteira de trigger contida na pergunta, ou termo discriminante/maioria do título, é o
+ // curador dizendo "este item responde sobre X": relevância atestada pela seleção. Casamento
+ // apenas lexical continua sujeito ao overlap do grounding a jusante.
+ const match=describeSelectionMatch({query:String(message||''),item}).match
+ return {text:`${item.statement}`.replace(/\s+/g,' ').trim()+caveat,knowledge_item_id:clean(item.knowledge_item_id,80)||null,knowledge_match:match}
 }
 
 // Reconhece perguntas conceituais gen\u00e9ricas (agronomia, comercial, etc.) pelo formato
@@ -732,9 +754,10 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
   const live=['MARKET_COMMODITY','WEATHER','LABELS'].includes(capability)
   const globalSource=explicitlyGlobalContext(context)
   const globalOrigin=globalSource?validateGlobalLiveScope({...context,source_ref:item.source_ref},{tenantId:clean(organizationId,180),ownerId:clean(ownerId,180)},`response_${capability.toLowerCase()}`):null
-  const sourceType=live?'market_snapshot':capability==='AGRONOMIC_WORKSPACE'?'official_product_catalog':capability==='SESSION_COMMAND'?'conversation_turn':capability==='CLIENT_CONTEXT'?'client_registration':capability==='CONFIRMED_MEMORY'?clean(context.source_type,120).toLowerCase()||'confirmed_memory':capability==='COMMERCIAL_HISTORY'?'commitment':capability==='SOIL_ANALYSIS'?'soil_analysis':['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?'attachment_analysis':capability==='AREA_MAPPING'?'context_snapshot':capability==='CALCULATORS'?'calculation':capability==='AI_GENERAL_KNOWLEDGE'?'model_general_knowledge':'system_capability'
+  const sourceType=live?'market_snapshot':capability==='AGRONOMIC_WORKSPACE'?'official_product_catalog':capability==='SESSION_COMMAND'?'conversation_turn':capability==='CLIENT_CONTEXT'?'client_registration':capability==='CONFIRMED_MEMORY'?clean(context.source_type,120).toLowerCase()||'confirmed_memory':capability==='COMMERCIAL_HISTORY'?'commitment':capability==='SOIL_ANALYSIS'?'soil_analysis':['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?'attachment_analysis':capability==='AREA_MAPPING'?'context_snapshot':capability==='CALCULATORS'?'calculation':capability==='AI_GENERAL_KNOWLEDGE'?'model_general_knowledge':capability==='GENERAL_GUIDANCE'?'general_knowledge':'system_capability'
   const sourceEpistemic=capability==='SESSION_COMMAND'?'INFERENCE':capability==='CONFIRMED_MEMORY'?clean(context.epistemic_type,40).toUpperCase()||'FACT':['SOIL_ANALYSIS','IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?'OBSERVATION':'FACT'
-  const sourceObservedAt=capability==='SESSION_COMMAND'?context.source_turn_created_at:live?context.observed_at:capability==='CONFIRMED_MEMORY'||capability==='COMMERCIAL_HISTORY'?context.observed_at:capability==='SOIL_ANALYSIS'?item.tool_result?.facts?.sampled_at:['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?item.tool_result?.facts?.result_created_at:createdAt
+  // Comando local da sessao ("por escrito") nao tem turno anterior: a observacao e o proprio momento.
+  const sourceObservedAt=capability==='SESSION_COMMAND'?context.source_turn_created_at||(route?.session_command?.local_only?createdAt:null):live?context.observed_at:capability==='CONFIRMED_MEMORY'||capability==='COMMERCIAL_HISTORY'?context.observed_at:capability==='SOIL_ANALYSIS'?item.tool_result?.facts?.sampled_at:['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?item.tool_result?.facts?.result_created_at:createdAt
   const sourceValidUntil=context.valid_until??null
   return {
    id:item.source_ref,source_ref:item.source_ref,source_type:sourceType,
@@ -767,6 +790,32 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  const evaluatedGrounding=evaluateReasoningGrounding({question:message,domain:selectedDomain,evidence:sourceRefs,activeProducerId:clientId,tenantId:String(organizationId),ownerId:String(ownerId||''),blocks:groundingBlocks,now:new Date(createdAt)})
  const scopedSessionCommand=Boolean(route?.session_command?.requires_previous_turn&&sourceRefs.length&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  const trustedGeneralGuidance=Boolean(!clientId&&sourceRefs.length===1&&sourceRefs[0].id==='system:general-guidance:v1'&&sourceRefs[0].capability==='GENERAL_GUIDANCE'&&tool?.capability==='GENERAL_GUIDANCE'&&evaluatedGrounding.question_relevance==='PASS'&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
+ // Pedido de esclarecimento por falta de cobertura curada: texto fixo do servidor, sem fonte e
+ // sem claim factual; e o que o consultor deve ler quando nao ha item nem modelo disponivel.
+ const noCoverageGuidance=Boolean(!sourceRefs.length&&tool?.capability==='GENERAL_GUIDANCE'&&tool?.status==='NO_DATA'&&tool?.mode==='no_coverage'&&summary===clean(noKnowledgeCoverageStub,1200))
+ // Comando local da sessao ("por escrito", "nao registra"): a resposta e a confirmacao fixa da
+ // preferencia, sem afirmacao factual; nao precisa de turno anterior nem de overlap com a frase.
+ const localSessionCommand=Boolean(route?.session_command?.local_only&&sourceRefs.length===1&&sourceRefs[0].capability==='SESSION_COMMAND'&&tool?.capability==='SESSION_COMMAND'&&tool?.status==='EXECUTED'&&trustedCapabilityExecutions.has(execution)&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
+ // "resume"/"repete" numa conversa sem leitura anterior: a resposta é a frase fixa do sistema pedindo
+ // uma pergunta primeiro (INPUT_REQUIRED, sem fonte). Sem esta exceção a frase virava claim sem
+ // evidência e o consultor lia a mensagem genérica de "sem evidência verificável".
+ const sessionCommandInputRequired=Boolean(!sourceRefs.length&&tool?.capability==='SESSION_COMMAND'&&tool?.status==='INPUT_REQUIRED'&&trustedCapabilityExecutions.has(execution)&&isPureAbsenceOrInputSummary(summary)&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
+ // Resumo determinístico do contexto do produtor ("resume a conta"): a fonte é o próprio contexto
+ // autorizado (client:<produtor>, current_client_only) e a contagem de visitas/oportunidades não tem
+ // overlap lexical com o pedido nem claim a sustentar por evidência externa.
+ const clientContextSummary=Boolean(clientId&&sourceRefs.length===1&&sourceRefs[0].capability==='CLIENT_CONTEXT'&&sourceRefs[0].id===`client:${clientId}`&&tool?.capability==='CLIENT_CONTEXT'&&tool?.status==='EXECUTED'&&tool?.context?.current_client_only===true&&trustedCapabilityExecutions.has(execution)&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
+ // Navegacao direta (WORKSPACE_NAVIGATION): a resposta e o eco determinístico da acao de interface
+ // ("Abrindo Visitas."), construida pelo servidor; nao ha claim factual a sustentar nem relevancia
+ // lexical a medir entre "abre a agenda" e o rotulo do modulo.
+ const workspaceNavigation=Boolean(route?.path==='FAST'&&list(route?.capabilities).length===1&&route.capabilities[0]==='WORKSPACE_NAVIGATION'&&sourceRefs.length===1&&sourceRefs[0].capability==='WORKSPACE_NAVIGATION'&&/^workspace:[a-z0-9_-]+$/.test(sourceRefs[0].id)&&tool?.capability==='WORKSPACE_NAVIGATION'&&tool?.status==='EXECUTED'&&clean(tool?.summary,500)===summary)
+ // Resultado de calculadora: entradas e resultado já foram validados numericamente claim a claim
+ // (unsupported_claims vazio) e a fonte é a própria execução determinística. O overlap lexical
+ // entre "gastei 750 mil reais em 300 hectares" e "Custo calculado: R$ 2.500,00/ha" não mede nada.
+ const calculatorResultGuidance=Boolean(sourceRefs.length===1&&sourceRefs[0].source_type==='calculation'&&sourceRefs[0].capability==='CALCULATORS'&&tool?.capability==='CALCULATORS'&&tool?.status==='EXECUTED'&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
+ // Item da Biblioteca selecionado por frase inteira de trigger: a relevância foi atestada pelo
+ // curador na seleção, e o overlap lexical do grounding não pode derrubar a resposta ("janela de
+ // plantio da soja" respondida pelo item do ZARC). Todas as outras barreiras seguem obrigatórias.
+ const libraryTriggerGuidance=Boolean(!clientId&&sourceRefs.length===1&&sourceRefs[0].id==='system:general-guidance:v1'&&sourceRefs[0].capability==='GENERAL_GUIDANCE'&&tool?.capability==='GENERAL_GUIDANCE'&&['TRIGGER_PHRASE','TITLE_PHRASE'].includes(tool?.context?.knowledge_match)&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  const safeAbsence=Boolean(
   !sourceRefs.length
   &&['CONTEXT_REQUIRED','NO_DATA','INPUT_REQUIRED','SOURCE_UNAVAILABLE'].includes(String(tool?.status||''))
@@ -781,6 +830,20 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
   ?{...evaluatedGrounding,passed:true,question_relevance:'SCOPED_TURN_CONTENT'}
   :trustedGeneralGuidance&&!evaluatedGrounding.passed
    ?{...evaluatedGrounding,passed:true,question_relevance:'TRUSTED_GENERAL_GUIDANCE'}
+  :libraryTriggerGuidance&&!evaluatedGrounding.passed
+   ?{...evaluatedGrounding,passed:true,question_relevance:'LIBRARY_SELECTION_MATCH'}
+  :calculatorResultGuidance&&!evaluatedGrounding.passed
+   ?{...evaluatedGrounding,passed:true,question_relevance:'CALCULATOR_RESULT'}
+  :localSessionCommand&&!evaluatedGrounding.passed
+   ?{...evaluatedGrounding,passed:true,question_relevance:'LOCAL_SESSION_COMMAND'}
+  :clientContextSummary&&!evaluatedGrounding.passed
+   ?{...evaluatedGrounding,passed:true,question_relevance:'CLIENT_CONTEXT_SUMMARY'}
+  :sessionCommandInputRequired&&!evaluatedGrounding.passed
+   ?{...evaluatedGrounding,passed:true,question_relevance:'SESSION_COMMAND_INPUT_REQUIRED'}
+  :workspaceNavigation&&!evaluatedGrounding.passed
+   ?{...evaluatedGrounding,passed:true,question_relevance:'WORKSPACE_ACTION'}
+  :noCoverageGuidance&&!evaluatedGrounding.passed
+   ?{...evaluatedGrounding,passed:true,question_relevance:'SAFE_NO_COVERAGE'}
   :safeAbsence
    ?{...evaluatedGrounding,passed:true,question_relevance:'SAFE_NO_DATA'}
    :evaluatedGrounding
@@ -806,16 +869,24 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  const catalog=route?.tool_hint==='AGRONOMIC_TOOL_CATALOG'&&list(route.capabilities).includes('AGRONOMIC_WORKSPACE')
  const contextRequired=!catalog&&route?.client_context_required===true&&!isGeneralConceptRequest(message)
  const catalogExecution=catalog?agronomicToolCatalogResult():null
+ const guidance=catalog||contextRequired?null:generalGuidance(message)
  const curatedSummary=catalog
   ?catalogExecution.tool_result.summary
   :contextRequired
    ?isCurrentClientIdentityRequest(message)?'Nenhum produtor está selecionado nesta conversa.':'Nenhum produtor está selecionado nesta conversa. Selecione um produtor autorizado para continuar.'
-   :generalAnswer(message)
+   :guidance.summary
+ // Sem cobertura na Biblioteca e sem definicao fixa: o texto e um pedido de esclarecimento, nao
+ // uma resposta factual. Entra como NO_DATA para nao passar por grounding de claims e nunca ser
+ // trocado pela mensagem de bloqueio de integridade. Tambem e o que o consultor le quando o item
+ // recuperado foi bloqueado a jusante e nao ha modelo disponivel para o fallback.
+ const noCoverageExecution=()=>deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'NO_DATA',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:'Orientação geral',summary:noKnowledgeCoverageStub,page:'copilot',manual_page:null,mode:'no_coverage',context:{client_id:null,private_memory_used:false},required_inputs:['topic']},active_context:null})
  const curatedExecution=deepFreeze(catalog
   ?{path:route.path,capabilities_planned:[...list(route.capabilities)],capabilities_used:['AGRONOMIC_WORKSPACE'],capability_results:[catalogExecution],tool_result:catalogExecution.tool_result,active_context:null}
   :contextRequired
    ?{path:route.path,capabilities_planned:[...list(route.capabilities)],capabilities_used:[],capability_results:[{capability:'CLIENT_CONTEXT',status:'CONTEXT_REQUIRED',source_ref:null,tool_result:null},...list(route.capabilities).filter(capability=>capability!=='CLIENT_CONTEXT').map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null}))],tool_result:{status:'CONTEXT_REQUIRED',capability:'CLIENT_CONTEXT',tool:'client_selector',title:'Produtor necessário',summary:curatedSummary,page:'clients',manual_page:null,mode:'select_client',context:{client_id:null,private_memory_used:false},required_inputs:['client_id']},active_context:null}
-   :{path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'EXECUTED',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:'Orientação geral',summary:curatedSummary,page:'copilot',manual_page:null,mode:'general',context:{client_id:null,private_memory_used:false}},active_context:null})
+   :guidance.coverage==='NONE'
+    ?noCoverageExecution()
+    :{path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'EXECUTED',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:'Orientação geral',summary:curatedSummary,page:'copilot',manual_page:null,mode:'general',context:{client_id:null,private_memory_used:false,...(guidance?.knowledge_item_id?{knowledge_item_id:guidance.knowledge_item_id,knowledge_match:guidance.knowledge_match}:{})}},active_context:null})
  const finalize=(execution,{unverified=false}={})=>{
   trustedCapabilityExecutions.add(execution)
   const built=buildCapabilityExecutionResponse({execution,route,message,organizationId,ownerId,conversationId,contextEpoch,contextDomain,now,executionCounts:{entityResolutions:0,dataLookups:0,toolCalls:catalog?1:0,hops:catalog?1:0}})
@@ -829,18 +900,22 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   return built
  }
  const curatedResponse=finalize(curatedExecution)
- // A Knowledge Library quase sempre devolve algum item (o retriever não tem piso de
- // relevância), então "nada encontrado" raramente chega como stub puro — na prática, o
- // sinal real de "esta pergunta não tem cobertura real" é o próprio grounding bloqueando
- // a resposta a jusante (item errado, sem overlap real com a pergunta). Só aí tentamos o
- // modelo sem fonte; perguntas de alto risco continuam bloqueadas dentro de
- // unverifiedModelKnowledgeAnswer independentemente do motivo do bloqueio aqui.
- if(catalog||contextRequired||curatedResponse.advice.ai_reasoning.grounding?.blocked!==true)return curatedResponse
+ // Dois sinais de "esta pergunta nao tem cobertura curada": o retriever nao devolveu item nem
+ // definicao fixa (coverage NONE, flag explicita), ou devolveu um item que o grounding bloqueou
+ // a jusante (item errado, sem overlap real com a pergunta). Nos dois casos tentamos o modelo
+ // sem fonte; perguntas de alto risco continuam bloqueadas dentro de
+ // unverifiedModelKnowledgeAnswer. Sem modelo, o pedido de esclarecimento e o que o usuario le.
+ const noCoverage=guidance?.coverage==='NONE'
+ if(catalog||contextRequired||!noCoverage&&curatedResponse.advice.ai_reasoning.grounding?.blocked!==true)return curatedResponse
  const {text:aiAnswer,costUsd:aiCostUsd}=await unverifiedModelKnowledgeAnswer({message,aiClient,model:aiModel})
- if(!aiAnswer)return curatedResponse
+ if(!aiAnswer)return curatedResponse.advice.ai_reasoning.grounding?.blocked===true?finalize(noCoverageExecution()):curatedResponse
  const aiToolResult={status:'EXECUTED',capability:'AI_GENERAL_KNOWLEDGE',tool:'ai_general_knowledge',title:'Conhecimento geral do modelo (não verificado)',summary:aiAnswer,page:'copilot',manual_page:null,mode:'general_unverified',context:{client_id:null,private_memory_used:false}}
  const aiExecution=deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['AI_GENERAL_KNOWLEDGE'],capability_results:[{capability:'AI_GENERAL_KNOWLEDGE',status:'EXECUTED',source_ref:aiUnverifiedSourceRef,tool_result:aiToolResult}],tool_result:aiToolResult,active_context:null})
  const aiResponse=finalize(aiExecution,{unverified:true})
- aiResponse.responseMetadata={...aiResponse.responseMetadata,aiGeneralKnowledgeCostUsd:aiCostUsd}
- return aiResponse
+ // Resposta do modelo barrada pelo grounding (afirmacao que soa individual, numero sem fonte): o
+ // consultor le o pedido de esclarecimento, nao "sem evidencia verificavel nesta execucao". O custo
+ // da chamada fica registrado do mesmo jeito.
+ const delivered=aiResponse.advice.ai_reasoning.grounding?.blocked===true?finalize(noCoverageExecution()):aiResponse
+ delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:aiCostUsd}
+ return delivered
 }

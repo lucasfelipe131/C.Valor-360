@@ -14,7 +14,10 @@ export default function ValContextualPanel({open,tab='context',onTab,onClose,cli
  const reasoning=latestPayload?.advice?.ai_reasoning||{}
  const clientVisits=list(visits).filter(item=>client&&clientIdOf(item)===String(client.id)).sort((a,b)=>new Date(b.completedAt||b.updatedAt||b.scheduledAt||b.date||0)-new Date(a.completedAt||a.updatedAt||a.scheduledAt||a.date||0))
  const clientOpportunities=list(opportunities).filter(item=>client&&clientIdOf(item)===String(client.id))
- const lastVisit=clientVisits[0]
+ // "Ultima visita" e a ultima concluida; uma visita futura agendada aparecia aqui como se ja tivesse
+ // acontecido.
+ const completedVisit=item=>/COMPLETED|realizad|conclu|done/i.test(String(item?.lifecycleStatus??item?.status??''))||Boolean(item?.completedAt??item?.occurredAt)
+ const lastVisit=clientVisits.find(completedVisit)||null
  const activeOpportunity=clientOpportunities.find(item=>!/fechado|perdido|cancelado/i.test(String(item.stage||'')))||clientOpportunities[0]
  const facts=list(reasoning.facts_used)
  const knowledge=list(reasoning.knowledge_refs)

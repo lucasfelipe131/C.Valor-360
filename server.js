@@ -72,7 +72,13 @@ function readStore(){try{return JSON.parse(readFileSync(storePath,'utf8'))}catch
 function saveStore(store){const temporary=`${storePath}.tmp`;writeFileSync(temporary,JSON.stringify(store,null,2));renameSync(temporary,storePath)}
 function json(response,status,payload){response.writeHead(status,{...securityHeaders,'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify(payload))}
 function rawBody(request){return new Promise((resolve,reject)=>{let raw='';let size=0;let settled=false;const tooLarge=()=>Object.assign(new Error('Arquivo ou requisição muito grande.'),{statusCode:413,code:'request_too_large'});const fail=error=>{if(settled)return;settled=true;raw='';reject(error)};const drain=()=>{request.off('data',onData);request.resume()};const onData=chunk=>{size+=chunk.length;if(size>config.maxBodyBytes){drain();fail(tooLarge());return}raw+=chunk};const declared=Number(request.headers['content-length']);request.on('end',()=>{if(settled)return;settled=true;resolve(raw)});request.on('error',fail);if(Number.isFinite(declared)&&declared>config.maxBodyBytes){drain();fail(tooLarge());return}request.on('data',onData)})}
-async function body(request){const raw=await rawBody(request);try{return raw?JSON.parse(raw):{}}catch{throw new Error('Conteúdo inválido.')}}
+async function body(request){
+ const raw=await rawBody(request);let parsed
+ try{parsed=raw?JSON.parse(raw):{}}catch{throw Object.assign(new Error('Conteúdo inválido.'),{statusCode:400,code:'invalid_body'})}
+ // JSON valido que nao e objeto (null, lista, numero) virava TypeError com a mensagem interna exposta ao usuario.
+ if(!parsed||typeof parsed!=='object'||Array.isArray(parsed))throw Object.assign(new Error('Conteúdo inválido: envie um objeto JSON.'),{statusCode:400,code:'invalid_body'})
+ return parsed
+}
 const requestCancellationError=signal=>signal?.reason instanceof Error?signal.reason:Object.assign(new Error('A requisição foi cancelada.'),{name:'AbortError',statusCode:499,code:'val_request_cancelled',safeToRetry:true})
 const throwIfRequestAborted=signal=>{if(signal?.aborted)throw requestCancellationError(signal)}
 async function withOperationTimeout(operation,{timeoutMs,code='val_operation_timeout',message='A operação excedeu o tempo seguro.',signal}={}){
@@ -193,7 +199,12 @@ const realtimeVoice=createRealtimeVoiceService({runtimeConfig:config,client:voic
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
 function consumeRateLimit(scope,key,limit){const now=Date.now();const bucketKey=`${scope}:${key}`;const current=rateBuckets.get(bucketKey);if(!current||current.resetAt<=now){rateBuckets.set(bucketKey,{count:1,resetAt:now+600_000});return true}if(current.count>=limit)return false;current.count+=1;return true}
-const requestIdentity=request=>String(request.socket.remoteAddress||'unknown')
+// Atrás do proxy da Railway todos os usuários compartilham o remoteAddress: com VAL_TRUST_PROXY=true a
+// chave de limite de tentativas passa a ser o último salto de X-Forwarded-For (acrescentado pelo edge).
+const requestIdentity=request=>{
+ if(config.trustProxy){const forwarded=String(request.headers['x-forwarded-for']||'').split(',').map(item=>item.trim()).filter(Boolean);const hop=forwarded.at(-1);if(hop)return hop}
+ return String(request.socket.remoteAddress||'unknown')
+}
 const progressOwnerKey=(identity,request)=>String(identity?.id||identity?.email||requestIdentity(request))
 const demoIdentity=()=>({id:null,email:'demo@valor360.local',name:'Demonstração',role:'admin',tenantId:config.defaultTenantId,mustChangePassword:false,demo:true})
 async function sessionIdentity(request){
@@ -352,53 +363,53 @@ async function handleApi(request,response,url){
  }
  if(url.pathname==='/api/v1/voice-interactions'&&request.method==='POST'){
   const actorId=String(identity?.id||identity?.email||'demo@valor360.local');if(!consumeRateLimit('voice-create',actorId,config.voiceRequestsPerTenMinutes*2))return json(response,429,{error:'Limite temporário de capturas atingido. Aguarde alguns minutos.',code:'voice_rate_limit'});const payload=await body(request)
-  const result=await voiceCapture.create({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,actorId,input:payload,requestId:currentRequestContext()?.requestId})
+  const result=await voiceCapture.create({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,actorId,input:payload,requestId:currentRequestContext()?.requestId})
   await accessRepository.recordUsage(identity,{eventType:'voice_interaction_created',page:'val',entityType:'voice_interaction',entityId:result.voice_interaction.voice_interaction_id,metadata:{interactionType:result.voice_interaction.interaction_type,captureMode:result.voice_interaction.source_context?.capture_mode}}).catch(()=>null)
   return json(response,201,result)
  }
  const voiceInteractionMatch=url.pathname.match(/^\/api\/v1\/voice-interactions\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})(?:\/(audio|process|confirm|cancel))?$/i)
  if(voiceInteractionMatch){
   const actorId=String(identity?.id||identity?.email||'demo@valor360.local');const tenantId=identity?.tenantId||config.defaultTenantId;const id=voiceInteractionMatch[1];const action=voiceInteractionMatch[2]||''
-  if(!action&&request.method==='GET')return json(response,200,await voiceCapture.get({tenantId,ownerId:identity?.id,actorId,id}))
+  if(!action&&request.method==='GET')return json(response,200,await voiceCapture.get({tenantId,ownerId:identity?.id||identity?.email,actorId,id}))
   if(action==='audio'&&request.method==='POST'){
    if(!consumeRateLimit('voice-upload',actorId,config.voiceRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de uploads de áudio atingido. Aguarde alguns minutos.',code:'voice_rate_limit'})
-   const result=await voiceCapture.uploadAudio({tenantId,ownerId:identity?.id,actorId,id,input:await body(request)})
+   const result=await voiceCapture.uploadAudio({tenantId,ownerId:identity?.id||identity?.email,actorId,id,input:await body(request)})
    await accessRepository.recordUsage(identity,{eventType:'voice_audio_uploaded',page:'val',entityType:'voice_interaction',entityId:id,metadata:{interactionType:result.voice_interaction.interaction_type,durationSeconds:result.voice_interaction.duration_seconds}}).catch(()=>null)
    return json(response,200,result)
   }
   if(action==='process'&&request.method==='POST'){
    if(!consumeRateLimit('voice',actorId,config.voiceRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de processamentos de áudio atingido. Aguarde alguns minutos.',code:'voice_rate_limit'})
-   await body(request);const result=await voiceCapture.process({tenantId,ownerId:identity?.id,actorId,id,requestId:currentRequestContext()?.requestId})
+   await body(request);const result=await voiceCapture.process({tenantId,ownerId:identity?.id||identity?.email,actorId,id,requestId:currentRequestContext()?.requestId})
    await accessRepository.recordUsage(identity,{eventType:'voice_interaction_processed',page:'val',entityType:'voice_interaction',entityId:id,metadata:{interactionType:result.voice_interaction.interaction_type,status:result.voice_interaction.state,candidateCount:result.voice_interaction.candidates?.length||0}}).catch(()=>null)
    return json(response,200,result)
   }
   if(action==='confirm'&&request.method==='POST'){
    if(!consumeRateLimit('voice-confirm',actorId,config.voiceRequestsPerTenMinutes*2))return json(response,429,{error:'Limite temporário de confirmações atingido. Aguarde alguns minutos.',code:'voice_rate_limit'})
-   const result=await voiceCapture.confirm({tenantId,ownerId:identity?.id,actorId,id,input:await body(request),requestId:currentRequestContext()?.requestId})
+   const result=await voiceCapture.confirm({tenantId,ownerId:identity?.id||identity?.email,actorId,id,input:await body(request),requestId:currentRequestContext()?.requestId})
    const confirmedClientId=clean(result.voice_interaction?.client_id||result.voice_interaction?.clientId||result.voice_interaction?.source_context?.client_id)
    if(confirmedClientId)invalidateValContextScope({tenantId,ownerId:identity?.id||identity?.email,clientId:confirmedClientId})
    await accessRepository.recordUsage(identity,{eventType:'voice_interaction_confirmed',page:'val',entityType:'voice_interaction',entityId:id,metadata:{interactionType:result.voice_interaction.interaction_type,status:result.voice_interaction.state,confirmedCandidates:result.voice_interaction.reviewed_candidates?.filter(item=>item.review_status==='CONFIRMED').length||0}}).catch(()=>null)
    return json(response,200,result)
   }
   if(action==='cancel'&&request.method==='POST'){
-   await body(request);const result=await voiceCapture.cancel({tenantId,ownerId:identity?.id,actorId,id})
+   await body(request);const result=await voiceCapture.cancel({tenantId,ownerId:identity?.id||identity?.email,actorId,id})
    await accessRepository.recordUsage(identity,{eventType:'voice_interaction_cancelled',page:'val',entityType:'voice_interaction',entityId:id,metadata:{interactionType:result.voice_interaction.interaction_type,status:result.voice_interaction.state}}).catch(()=>null)
    return json(response,200,result)
   }
  }
  if(url.pathname==='/api/grains/bootstrap'&&request.method==='GET'){
-  const workspace=await grainRepository.getWorkspace(identity?.id)
+  const workspace=await grainRepository.getWorkspace(identity?.id||identity?.email)
   return json(response,200,workspace)
  }
  if(url.pathname==='/api/grains/profiles'&&request.method==='PUT'){
-  const profile=normalizeGrainProfile(await body(request));const saved=await grainRepository.saveProfile(profile,identity?.id)
+  const profile=normalizeGrainProfile(await body(request));const saved=await grainRepository.saveProfile(profile,identity?.id||identity?.email)
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:profile.clientId})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,grains:true})
   await accessRepository.recordUsage(identity,{eventType:'sog_profile_saved',page:'val',entityType:'client',entityId:profile.clientId,metadata:{confirmed:profile.confirmed,source:profile.source}})
   return json(response,200,{saved:true,profile:saved})
  }
  if(url.pathname==='/api/grains/intents'&&request.method==='POST'){
-  const intention=normalizeGrainIntent(await body(request));const saved=await grainRepository.saveIntent(intention,identity?.id)
+  const intention=normalizeGrainIntent(await body(request));const saved=await grainRepository.saveIntent(intention,identity?.id||identity?.email)
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:intention.clientId})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,grains:true})
   await accessRepository.recordUsage(identity,{eventType:'sog_intent_saved',page:'val',entityType:'client',entityId:intention.clientId,metadata:{commodity:intention.commodity,status:intention.status,source:intention.source}})
@@ -408,21 +419,21 @@ async function handleApi(request,response,url){
  if(grainIntentMatch&&request.method==='PATCH'){
   const payload=await body(request);const status=clean(payload.status)
   if(!intentStatuses.has(status))return json(response,400,{error:'O estado da intenção é inválido.'})
-  const intention=await grainRepository.updateIntentStatus(grainIntentMatch[1],status,identity?.id)
+  const intention=await grainRepository.updateIntentStatus(grainIntentMatch[1],status,identity?.id||identity?.email)
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:mutationClientId(intention)})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,grains:true})
   await accessRepository.recordUsage(identity,{eventType:'sog_intent_status',page:'val',entityType:'grain_intent',entityId:grainIntentMatch[1],metadata:{status}})
   return json(response,200,{saved:true,intention})
  }
  if(url.pathname==='/api/grains/market'&&request.method==='POST'){
-  const snapshot=normalizeGrainMarketSnapshot(await body(request));const saved=await grainRepository.saveMarketSnapshot(snapshot,identity?.id)
+  const snapshot=normalizeGrainMarketSnapshot(await body(request));const saved=await grainRepository.saveMarketSnapshot(snapshot,identity?.id||identity?.email)
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,grains:true})
   await accessRepository.recordUsage(identity,{eventType:'sog_market_saved',page:'val',entityType:'grain_market',entityId:saved.id,metadata:{commodity:snapshot.commodity,source:snapshot.sourceName}})
   return json(response,201,{saved:true,marketSnapshot:saved})
  }
  if(url.pathname==='/api/technical/bootstrap'&&request.method==='GET'){
-  const clients=await repository.getTechnicalBootstrap(identity?.id)
+  const clients=await repository.getTechnicalBootstrap(identity?.id||identity?.email)
   const bootstrap=technicalBootstrapFromValClients(clients,{organizationId:identity?.tenantId||config.defaultTenantId})
   return json(response,200,{...bootstrap,source:'valor360',syncedAt:new Date().toISOString()})
  }
@@ -435,13 +446,13 @@ async function handleApi(request,response,url){
  }
  if(url.pathname==='/api/val/attachments'&&request.method==='GET'){
   const clientId=clean(url.searchParams.get('clientId'));const association=clean(url.searchParams.get('association')).toUpperCase();if(!clientId&&association!=='UNLINKED')return json(response,400,{error:'Selecione um produtor ou informe explicitamente association=UNLINKED.'})
-  const attachments=await repository.listAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,limit:30})
+  const attachments=await repository.listAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,limit:30})
   return json(response,200,{attachments})
  }
  if(url.pathname==='/api/val/attachments'&&request.method==='POST'){
   const payload=await body(request);const clientId=clean(payload.clientId);const association=clean(payload.association).toUpperCase()||'LINKED_CLIENT';if(!['LINKED_CLIENT','UNLINKED'].includes(association))return json(response,400,{error:'Associação de arquivo inválida.'});if(association==='LINKED_CLIENT'&&!clientId)return json(response,400,{error:'Selecione um produtor antes de anexar.'});if(association==='UNLINKED'&&clientId)return json(response,400,{error:'Um attachment UNLINKED não pode declarar produtor.'})
   const normalized=normalizedAttachment(payload)
-  const attachment=await repository.createAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId:clientId||null,association,...normalized})
+  const attachment=await repository.createAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:clientId||null,association,...normalized})
   if(clientId)invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId})
   await accessRepository.recordUsage(identity,{eventType:'val_attachment_uploaded',page:'val',entityType:clientId?'client':'attachment',entityId:clientId||attachment.id,metadata:{attachmentId:attachment.id,association,mimeType:normalized.mimeType,sizeBytes:normalized.sizeBytes}})
   return json(response,201,{attachment})
@@ -449,7 +460,7 @@ async function handleApi(request,response,url){
  if(url.pathname==='/api/val/attachments'&&request.method==='PATCH'){
   const scope=browserAttachmentScope(url)
   const {id,status,fieldPhoto}=normalizePublicAttachmentPatch(await body(request))
-  const current=await repository.getAttachmentInScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id,...scope})
+  const current=await repository.getAttachmentInScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,id,...scope})
   if(!current)return json(response,404,{error:'Arquivo não encontrado neste escopo.',code:'attachment_scope_not_found'})
   let analysis
   if(fieldPhoto){
@@ -458,7 +469,7 @@ async function handleApi(request,response,url){
   }
   const effectiveStatus=status||(current.status==='received'?'stored':current.status)
   const statusTransitioned=Boolean(status)||current.status==='received'
-  const attachment=await repository.updateAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id,status:effectiveStatus,analysis,...scope,preserveConfirmedAt:!statusTransitioned})
+  const attachment=await repository.updateAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,id,status:effectiveStatus,analysis,...scope,preserveConfirmedAt:!statusTransitioned})
   if(attachment.clientId)invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:attachment.clientId})
   if(statusTransitioned)await accessRepository.recordUsage(identity,{eventType:'val_attachment_'+effectiveStatus,page:'val',entityType:attachment.clientId?'client':'attachment',entityId:attachment.clientId||attachment.id,metadata:{attachmentId:id,association:attachment.association}})
   return json(response,200,{attachment})
@@ -466,7 +477,7 @@ async function handleApi(request,response,url){
  const attachmentContentMatch=url.pathname.match(/^\/api\/val\/attachments\/([0-9a-f-]{36})$/i)
  if(attachmentContentMatch&&request.method==='GET'){
   const scope=browserAttachmentScope(url)
-  const attachment=await repository.getAttachmentInScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id:attachmentContentMatch[1],...scope})
+  const attachment=await repository.getAttachmentInScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,id:attachmentContentMatch[1],...scope})
   if(!attachment)return json(response,404,{error:'Arquivo não encontrado neste escopo.',code:'attachment_scope_not_found'})
   const binary=Buffer.from(attachment.dataBase64||'','base64')
   response.writeHead(200,{...securityHeaders,'Content-Type':attachment.mimeType,'Content-Length':binary.length,'Content-Disposition':"inline; filename*=UTF-8''"+encodeURIComponent(attachment.originalName),'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'})
@@ -477,7 +488,7 @@ async function handleApi(request,response,url){
   throwIfRequestAborted(requestController.signal)
   const rateIdentity=identity?.id||identity?.email||requestIdentity(request)
   if(!consumeRateLimit('val',rateIdentity,config.aiRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de análises atingido. Aguarde alguns minutos.'})
-  const payload=await body(request);throwIfRequestAborted(requestController.signal);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const message=String(payload.message||payload.question||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).trim().slice(0,3000)
+  const payload=await body(request);throwIfRequestAborted(requestController.signal);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const requestedMessage=String(payload.message??payload.question??'').trim();const message=(requestedMessage||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).slice(0,3000)
   const tenantId=identity?.tenantId||config.defaultTenantId;const scopedOwnerId=identity?.id||identity?.email
   const rawClarificationSelection=payload.clarificationSelection
   let clarificationSelection=null
@@ -488,6 +499,7 @@ async function handleApi(request,response,url){
   const conversationId=conversationIdValue(payload.conversationId)
   valRequestClaim=valConversationRequests.begin({tenantId,ownerId:scopedOwnerId,conversationId},requestController)
   let clientId=clean(payload.clientId||payload.client?.id)
+  const requestedClientId=clientId
   const storedConversation=valConversationSessions.get({tenantId,ownerId:scopedOwnerId,conversationId})
   const storedClientId=clean(storedConversation?.current_client?.id)
   if(!clientId&&storedClientId)clientId=storedClientId
@@ -538,7 +550,11 @@ async function handleApi(request,response,url){
    if(conversationResolution.status==='AMBIGUOUS')return json(response,409,{error:`Encontrei mais de um produtor para “${conversationResolution.reference}”. Qual deles você quer?`,code:'val_client_reference_ambiguous',conversationId,clarification:{contractVersion:'val.client_clarification.v1',reference:conversationResolution.reference,question:'Qual produtor você quer usar nesta conversa?',options:conversationResolution.options}})
    if(conversationResolution.status==='NOT_FOUND')return json(response,422,{error:`Não encontrei “${conversationResolution.reference}” na sua carteira autorizada. Confirme o nome do produtor.`,code:'val_client_reference_not_found',conversationId,clarification:{question:'Qual é o nome do produtor na sua carteira?'}})
    if(conversationResolution.status==='RESOLVED'){
-    turnOnlyClientOverride=naturalClientReference.kind==='FACT_OWNER'&&Boolean(storedClientId)&&storedClientId!==conversationResolution.client.id
+    // O produtor de referencia do turno e o da thread ou, numa conversa nova, o que o browser
+    // enviou: "Mostre a ultima visita do Matheus" com Bruno aberto e consulta pontual nos dois casos,
+    // nao troca de sessao so porque a thread ainda nao tinha sido persistida.
+    const referenceClientId=storedClientId||requestedClientId
+    turnOnlyClientOverride=naturalClientReference.kind==='FACT_OWNER'&&Boolean(referenceClientId)&&referenceClientId!==conversationResolution.client.id
     clientId=conversationResolution.client.id
     if(turnOnlyClientOverride)conversationResolution=Object.freeze({...conversationResolution,changed_client:false,request_override:true})
    }
@@ -546,6 +562,15 @@ async function handleApi(request,response,url){
   if(clarificationSelection&&!clarificationSelectionConsumed)return json(response,409,{error:'A desambiguação expirou ou não corresponde mais à pergunta atual.',code:'val_client_clarification_stale',conversationId})
   const entityResolutionMs=performance.now()-entityResolutionStartedAt
   if(clientId&&storedClientId&&clientId!==storedClientId&&conversationResolution?.status!=='RESOLVED')return json(response,409,{error:'Esta conversa já está vinculada a outro produtor. Confirme a troca ou inicie uma nova conversa.',code:'val_conversation_client_mismatch',conversationId,currentClient:storedConversation.current_client})
+  // O clientId enviado pelo browser so entra na sessao se estiver na carteira autorizada. O FAST ja
+  // negava (404 em getFastClientFacts), mas CONTEXT, navegacao e pergunta geral vinculavam um id
+  // desconhecido ao estado da conversa com o rotulo vindo do browser.
+  const boundClientId=turnOnlyClientOverride?(storedClientId||requestedClientId):clientId
+  if(boundClientId&&!(conversationResolution?.status==='RESOLVED'&&!turnOnlyClientOverride)&&boundClientId!==storedClientId){
+   const authorizedClients=await repository.listAuthorizedClientReferences({tenantId,ownerId:scopedOwnerId,timeoutMs:config.databaseQueryTimeoutMs})
+   throwIfRequestAborted(requestController.signal)
+   if(!authorizedClients.some(item=>String(item?.id||'')===boundClientId))return json(response,404,{error:'Produtor não encontrado na carteira autorizada.',code:'val_client_not_authorized',conversationId})
+  }
   const requestedIntent=payload.intent==null?'':String(payload.intent)
   const requestedSessionCommand=payload.sessionCommand==null?'':String(payload.sessionCommand)
   if(requestedSessionCommand&&!normalizeSessionCommand(requestedSessionCommand))return json(response,400,{error:'O comando de conversa informado não é reconhecido.',code:'val_session_command_invalid'})
@@ -553,7 +578,7 @@ async function handleApi(request,response,url){
   if(conversationResolution?.changed_client||turnOnlyClientOverride)activeContext=null
   if(requestedIntent&&!normalizeValIntent(requestedIntent))return json(response,400,{error:'A intenção informada não é reconhecida pela VAL.',code:'val_intent_invalid'})
   if(attachmentIds.length&&!clientId)return json(response,422,{error:'Escolha o produtor antes de anexar uma evidência à conta.',code:'val_attachment_client_required'})
-  const requestedAttachments=attachmentIds.length?await repository.getAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,ids:attachmentIds,signal:requestController.signal,timeoutMs:config.databaseQueryTimeoutMs}):[]
+  const requestedAttachments=attachmentIds.length?await repository.getAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,ids:attachmentIds,signal:requestController.signal,timeoutMs:config.databaseQueryTimeoutMs}):[]
   throwIfRequestAborted(requestController.signal)
   const requestedAttachmentIds=new Set(requestedAttachments.map(item=>String(item.id)))
   if(attachmentIds.some(id=>!requestedAttachmentIds.has(String(id))))return json(response,404,{error:'Um ou mais arquivos não pertencem ao produtor selecionado ou não estão mais disponíveis.',code:'val_attachment_scope_invalid'})
@@ -561,11 +586,24 @@ async function handleApi(request,response,url){
   const requestedAttachmentTypes=requestedAttachments.map(item=>String(item.mimeType||'').toLowerCase()).filter(Boolean)
   const intentResolutionStartedAt=performance.now()
   const routedIntent=routeValIntent({message,intentHint:requestedIntent,sessionCommandHint:requestedSessionCommand,hasClient:Boolean(clientId),attachmentTypes:requestedAttachmentTypes})
-  const workspaceRoute=routeGlobalIntent({message,client:conversationResolution?.client||storedConversation?.current_client||null,workspaceContext:payload.workspaceContext})
+  // O produtor armazenado na conversa carrega `label`; o roteador lê `name` para nomear a troca
+  // ('Agora falando de Antônio Silva') em vez de 'o produtor'.
+  const storedRouteClient=storedConversation?.current_client?.id?{id:storedConversation.current_client.id,name:storedConversation.current_client.name||storedConversation.current_client.label||null}:null
+  const workspaceRoute=routeGlobalIntent({message,client:conversationResolution?.client||storedRouteClient,workspaceContext:payload.workspaceContext})
   const intentResolutionMs=performance.now()-intentResolutionStartedAt
   if(routedIntent.persistence_mode!=='NONE'){
    if(clientId)invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId})
    return json(response,409,{error:'Use Registrar informação para revisar e confirmar qualquer atualização de memória.',code:'val_confirmation_required'})
+  }
+  // Pedido de escrita (atualizar, criar, concluir) não vira consulta vazia: a VAL não persiste por
+  // conversa e diz onde a alteração é feita e confirmada.
+  if(workspaceRoute.requires_confirmation&&['UPDATE','CREATE','MARK_COMPLETE'].includes(workspaceRoute.intent)){
+   const guidance={
+    UPDATE:'A VAL não altera cadastro ou registros por conversa. Abra o produtor no Cliente 360 para atualizar e confirmar a mudança.',
+    CREATE:'A VAL não cria visitas, oportunidades ou compromissos por conversa. Abra o módulo correspondente para criar e confirmar o registro.',
+    MARK_COMPLETE:'A conclusão exige confirmação no módulo canônico antes de persistir. Abra Visitas ou Compromissos para concluir o item.'
+   }
+   return json(response,409,{error:guidance[workspaceRoute.intent],code:'val_canonical_module_required',globalIntent:workspaceRoute})
   }
   const requestId=normalizeValProgressRequestId(payload.requestId)||randomUUID()
   const preferences=conversationPreferences(payload,requestedAttachmentTypes)
@@ -574,8 +612,8 @@ async function handleApi(request,response,url){
   // reconciliado com o contexto autorizado do produtor.
   const storedSessionClient=storedConversation?.current_client?.id===clientId?storedConversation.current_client:null
   const suppliedSessionClient=clientId?{id:clientId,name:clean(payload.client?.name)||null}:null
-  const sessionClient=turnOnlyClientOverride?storedConversation?.current_client:conversationResolution?.client||storedSessionClient||suppliedSessionClient
-  const sessionScope={tenantId,ownerId:scopedOwnerId,conversationId,clientId:turnOnlyClientOverride?storedClientId:clientId,client:sessionClient,activeContext:null}
+  const sessionClient=turnOnlyClientOverride?storedConversation?.current_client||(requestedClientId?{id:requestedClientId,name:clean(payload.client?.name)||null}:null):conversationResolution?.client||storedSessionClient||suppliedSessionClient
+  const sessionScope={tenantId,ownerId:scopedOwnerId,conversationId,clientId:turnOnlyClientOverride?storedClientId||requestedClientId:clientId,client:sessionClient,activeContext:null}
   let sessionState=storedConversation||createConversationState(sessionScope)
   if(!turnOnlyClientOverride&&storedConversation&&conversationResolution?.changed_client&&clientId!==storedClientId)sessionState=switchConversationClient(storedConversation,sessionClient,{tenantId,ownerId:scopedOwnerId,conversationId,clientId,client:sessionClient,activeContext:null})
   if(!turnOnlyClientOverride)sessionState=prepareConversationTurnState(sessionState,{message,intent:routedIntent.intent,sessionCommand:routedIntent.session_command,scope:sessionScope})
@@ -617,7 +655,11 @@ async function handleApi(request,response,url){
   }
   if(workspaceRoute.direct&&workspaceRoute.workspace_action){
    if(preferences.inputModality!=='voice')valRequestServiceClass='FAST'
-   const actionClient=conversationResolution?.client||storedConversation?.current_client||null
+   // O produtor da acao e o mesmo que ficara na sessao: o resolvido pela frase, ou o que o
+   // browser enviou nesta requisicao (sessionState ja o incorporou), nao apenas o ja armazenado.
+   // Sem isto, "abre a agenda" com produtor selecionado numa conversa nova declarava produtor
+   // nulo na resposta e o contrato de escopo bloqueava a navegacao com 500.
+   const actionClient=conversationResolution?.client||(sessionState.current_client?.id?{id:sessionState.current_client.id,name:sessionState.current_client.label||sessionState.current_client.name||null}:null)
    const workspaceToolResult={status:'EXECUTED',capability:'WORKSPACE_NAVIGATION',tool:'workspace_action',title:workspaceRoute.workspace_action.label,summary:workspaceRoute.summary,page:workspaceRoute.workspace_action.page,context:{client_id:actionClient?.id||null},source_ref:`workspace:${workspaceRoute.workspace_action.page}`}
    const execution={path:'FAST',capabilities_planned:['WORKSPACE_NAVIGATION'],capabilities_used:['WORKSPACE_NAVIGATION'],capability_results:[{capability:'WORKSPACE_NAVIGATION',status:'EXECUTED',source_ref:`workspace:${workspaceRoute.workspace_action.page}`,tool_result:workspaceToolResult}],tool_result:workspaceToolResult,active_context:null}
    const actionRoute={path:'FAST',intent:workspaceRoute.intent,capabilities:['WORKSPACE_NAVIGATION']}
@@ -635,11 +677,19 @@ async function handleApi(request,response,url){
    if(activeContext)validateActiveContext({activeContext,context:{},clientId:''})
    if(capability.current_data_required&&capability.capabilities.some(item=>['WEATHER','LABELS'].includes(item)))return json(response,422,{error:'A fonte atual autorizada não está conectada neste ambiente. A VAL não usará memória ou conteúdo antigo como dado atual.',code:'val_current_source_unavailable',intent:routedIntent.intent,reasoningPath:capability.path,capabilitiesPlanned:capability.capabilities})
    if(capability.capabilities.includes('MARKET_COMMODITY')){
-    const startedAt=Date.now();latency.start('TOOL');const workspace=await withOperationTimeout(()=>grainRepository.getMarketReferences(identity?.id),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
+    const startedAt=Date.now();latency.start('TOOL');const workspace=await withOperationTimeout(()=>grainRepository.getMarketReferences(scopedOwnerId),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
     const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),latencyMs:Date.now()-startedAt,executionCounts:{entityResolutions:entityLookupCount,dataLookups:1,toolCalls:1,hops:entityLookupCount+1}})
     const final=complete(fast)
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'portfolio',entityId:null,metadata:{mode:capability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:capability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
     return json(response,200,final)
+   }
+   // Aritmética pura ("quanto é 300 mil plantas por hectare em 45 cm?") não depende de produtor:
+   // a calculadora executa sem contexto privado e o resultado é evidência determinística própria.
+   if(capability.path==='TOOL'&&capability.direct&&capability.capabilities.includes('CALCULATORS')){
+    latency.start('TOOL');const execution=await withOperationTimeout(signal=>executeCapabilityPlan({route:capability,message,context:{},clientId:'',tenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,signal}),{timeoutMs:config.toolRequestTimeoutMs,code:'val_tool_timeout',message:'A ferramenta excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
+    const direct=buildCapabilityExecutionResponse({execution,route:capability,message,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),executionCounts:{entityResolutions:entityLookupCount,dataLookups:0,toolCalls:1,hops:entityLookupCount+1}})
+    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'portfolio',entityId:null,metadata:{mode:'tool',engineMode:'rules',intent:routedIntent.intent,reasoningPath:'TOOL',toolStatus:execution.tool_result?.status}})
+    return json(response,200,complete(direct,execution))
    }
    if(capability.session_command){
     if(capability.session_command.requires_current_client)return json(response,422,{error:'Este comando precisa de um produtor ativo na conversa.',code:'val_session_command_client_required',conversationId,clarification:{question:'Qual produtor deve permanecer ativo?'}})
@@ -678,6 +728,27 @@ async function handleApi(request,response,url){
    latency.end('CONTEXT');return authorizedContext
   }
   const completeClient=(payloadResult,execution=toolExecution)=>{latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(payloadResult,{latency:values,path:clientCapability.path,intent:routedIntent.intent,toolExecution:execution});const measuredLatency=enriched?.responseMetadata?.performance?.latency||values;valLatencyMetrics.record({path:clientCapability.path,intent:routedIntent.intent,latency:measuredLatency});observe('val.answer.completed',{mode:clientCapability.path.toLowerCase(),engineMode:payloadResult?.engineMode||'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,capability:execution?.tool_result?.capability||clientCapability.capabilities[0],capabilityStatus:execution?.tool_result?.status,materialityScore:clientCapability.materiality.score,engineRequired:clientCapability.materiality.engine_required,ttfrMs:measuredLatency.TTFR,outcome:'ok'});const responseClient=authorizedContext?.client||enriched?.advice?.ai_reasoning?.client||{id:clientId};return completeSession(enriched,{client:{id:clientId,name:responseClient?.name||responseClient?.label},active:activeContextRef})}
+  // Pergunta conceitual ou cumprimento com produtor selecionado: responde pelo mesmo caminho geral
+  // de quem nao tem produtor (Biblioteca governada, definicoes fixas, IA nao verificada com
+  // orcamento), sem ler contexto privado nem acionar a engine, e mantem o produtor ativo na sessao.
+  // Antes, "oi" e "O que e WASDE?" com produtor ativo terminavam em "Nao ha evidencia selecionada
+  // suficiente".
+  if(routedIntent.intent==='ASK_GENERAL'&&clientCapability.path==='CONTEXT'&&!clientCapability.session_command&&!attachmentIds.length&&clientCapability.capabilities.every(item=>item==='KNOWLEDGE_LIBRARY')){
+   // O raciocinio desta resposta nao le contexto privado (fontes em escopo GENERAL_KNOWLEDGE, client
+   // 'portfolio'), mas a resposta pertence a conversa do produtor ativo: o browser e o contrato de
+   // escopo (createValResponseScope) exigem que context_scope.producer_id, session_context e
+   // responseScope apontem para o mesmo produtor, senao "oi" com produtor aberto e rejeitado na tela.
+   const generalDomain=requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent)
+   const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
+   const general=await buildGeneralNoClientResponse({message,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:generalDomain,aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast})
+   const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
+   if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})
+   latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(general,{latency:values,path:clientCapability.path,intent:routedIntent.intent,toolExecution:null});valLatencyMetrics.record({path:clientCapability.path,intent:routedIntent.intent,latency:enriched?.responseMetadata?.performance?.latency||values})
+   observe('val.answer.completed',{mode:'general',engineMode:'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,capability:general?.advice?.ai_reasoning?.run?.tool_result?.capability||'GENERAL_GUIDANCE',outcome:'ok'})
+   const generalReasoning=enriched.advice.ai_reasoning
+   const scopedGeneral={...enriched,advice:{...enriched.advice,ai_reasoning:{...generalReasoning,premises:{...generalReasoning.premises,context_scope:{...generalReasoning.premises.context_scope,producer_id:clientId}}}}}
+   return json(response,200,completeSession(scopedGeneral,{client:{id:clientId,name:clean(payload.client?.name||requestConversationState.current_client?.label||sessionState.current_client?.label)||null},active:activeContextRef}))
+  }
   if(activeContext&&!ignoresActiveContext){
    const scoped=await loadAuthorizedContext();activeContextRef=validateActiveContext({activeContext,context:scoped,clientId})
    sessionState=advanceConversationState(sessionState,{activeContext:activeContextRef,turnPrepared:true,scope:{...sessionScope,activeContext:activeContextRef}})
@@ -708,7 +779,7 @@ async function handleApi(request,response,url){
   if(clientCapability.capabilities.includes('MARKET_COMMODITY')){
    const startedAt=Date.now()
    if(!attachmentIds.length&&['FAST','LIVE_DATA'].includes(clientCapability.path)&&clientCapability.direct){
-    latency.start('TOOL');const workspace=await withOperationTimeout(()=>grainRepository.getMarketReferences(identity?.id),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
+    latency.start('TOOL');const workspace=await withOperationTimeout(()=>grainRepository.getMarketReferences(scopedOwnerId),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
     const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,clientName:requestConversationState.current_client?.name||payload.client?.name||'',conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent),latencyMs:Date.now()-startedAt,executionCounts:{entityResolutions:entityLookupCount,dataLookups:1,toolCalls:1,hops:entityLookupCount+1}})
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:clientCapability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
     return json(response,200,completeClient(fast,null))
@@ -716,7 +787,7 @@ async function handleApi(request,response,url){
    latency.start('DATABASE')
    const [context,workspace,facts]=await withOperationTimeout(()=>Promise.all([
     loadAuthorizedContext(),
-    grainRepository.getWorkspace(identity?.id),
+    grainRepository.getWorkspace(scopedOwnerId),
     repository.getFastClientFacts({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,timeoutMs:config.databaseQueryTimeoutMs})
    ]),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_context_timeout',message:'A composição de mercado excedeu o tempo seguro.',signal:requestController.signal})
    latency.end('DATABASE')
@@ -766,7 +837,7 @@ async function handleApi(request,response,url){
    const finalizeRecommendation=attachmentIds.length?draft=>finalizeAttachmentRecommendation({draft,attachmentIds,attachmentTypes:requestedAttachmentTypes,marketResponse:marketAttachmentBase}):undefined
    const deepContext=authorizedContext||await loadAuthorizedContext()
    latency.start('MODEL')
-   const coreResponse=await valCore.execute(requestEnvelope,{engineInput:{tenantId:organizationId,ownerId:scopedOwnerId,clientId,client:deepContext.client||{...(payload.client||{}),id:clientId},message,attachmentIds,mode:requestMode,requestedStage:clean(payload.requestedStage),intent:routedIntent.intent,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent),sessionState:requestConversationState,preloadedContext:{scope:{tenantId:organizationId,ownerId:scopedOwnerId,clientId},context:deepContext},finalizeRecommendation,signal:controller.signal,onProgress:stage=>valProgress.update({requestId,tenantId,ownerId:ownerKey,stage})}})
+   const coreResponse=await valCore.execute(requestEnvelope,{engineInput:{tenantId:organizationId,ownerId:scopedOwnerId,clientId,client:deepContext.client||{...(payload.client||{}),id:clientId},message,attachmentIds,mode:requestMode,deadlineAt:Date.now()+Math.max(1_000,config.valChatRequestTimeoutMs-Math.round(performance.now()-requestStartedAt)),requestedStage:clean(payload.requestedStage),intent:routedIntent.intent,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent),sessionState:requestConversationState,preloadedContext:{scope:{tenantId:organizationId,ownerId:scopedOwnerId,clientId},context:deepContext},finalizeRecommendation,signal:controller.signal,onProgress:stage=>valProgress.update({requestId,tenantId,ownerId:ownerKey,stage})}})
    // A recomendação persistida passa a compor o contexto do produtor em todas
    // as threads do mesmo owner. Invalide o produtor inteiro, não só esta conversa.
    invalidateValContextScope({tenantId,ownerId:scopedOwnerId,clientId})
@@ -795,7 +866,7 @@ async function handleApi(request,response,url){
   if(!Number.isInteger(rating)||rating<1||rating>5)return json(response,400,{error:'Avalie de 1 a 5.'})
   const requestedOutcome=clean(payload.outcome);const normalizedOutcome=requestedOutcome?feedbackOutcomes[requestedOutcome]:null
   if(requestedOutcome&&!normalizedOutcome)return json(response,400,{error:'Resultado de feedback inválido.'})
-  const id=await repository.recordFeedback({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,recommendationId,rating,outcome:normalizedOutcome,value:Number.isFinite(Number(payload.value))?Number(payload.value):null,reason:clean(payload.reason)||null,notes:String(payload.notes||'').slice(0,2000)})
+  const id=await repository.recordFeedback({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,recommendationId,rating,outcome:normalizedOutcome,value:Number.isFinite(Number(payload.value))?Number(payload.value):null,reason:clean(payload.reason)||null,notes:String(payload.notes||'').slice(0,2000)})
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email})
   await accessRepository.recordUsage(identity,{eventType:'val_feedback',page:'val',entityType:'recommendation',entityId:recommendationId})
   return json(response,201,{saved:true,id})
@@ -820,11 +891,11 @@ async function handleApi(request,response,url){
   if(!result.duplicate)await accessRepository.recordUsage(ownerId,{eventType:'manual_sync',page:'agro',entityType:'client',entityId:event.clientExternalKey||null,metadata:{eventType:event.type}})
   return json(response,result.duplicate?200:202,{accepted:true,...result,eventType:event.type,externalId:event.externalId})
  }
- if(url.pathname==='/api/surveys'&&request.method==='GET')return json(response,200,await repository.listSurveys(identity?.id))
+ if(url.pathname==='/api/surveys'&&request.method==='GET')return json(response,200,await repository.listSurveys(identity?.id||identity?.email))
  if(url.pathname==='/api/surveys/invitations'&&request.method==='POST'){
   const payload=await body(request);const token=randomBytes(24).toString('base64url')
   const createdAt=new Date();const invitation={token,producerName:clean(payload.producerName),consultantName:clean(payload.consultantName)||'Equipe VALOR 360',status:'aguardando',createdAt:createdAt.toISOString(),expiresAt:new Date(createdAt.getTime()+30*86_400_000).toISOString()}
-  const survey=await repository.createSurvey(invitation,identity?.id);await accessRepository.recordUsage(identity,{eventType:'survey_created',page:'questionnaire'});return json(response,201,survey)
+  const survey=await repository.createSurvey(invitation,identity?.id||identity?.email);await accessRepository.recordUsage(identity,{eventType:'survey_created',page:'questionnaire'});return json(response,201,survey)
  }
  const surveyMatch=url.pathname.match(/^\/api\/surveys\/([a-zA-Z0-9_-]+)$/)
  if(surveyMatch&&request.method==='GET'){
@@ -840,43 +911,50 @@ async function handleApi(request,response,url){
  }
  const integrateMatch=url.pathname.match(/^\/api\/surveys\/([a-zA-Z0-9_-]+)\/integrate$/)
  if(integrateMatch&&request.method==='POST'){
-  const survey=await repository.integrateSurvey(integrateMatch[1],identity?.id);repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email});invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email});await accessRepository.recordUsage(identity,{eventType:'survey_integrated',page:'questionnaire'});return json(response,200,{saved:true,status:survey.status})
+  const survey=await repository.integrateSurvey(integrateMatch[1],identity?.id||identity?.email);repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email});invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email});await accessRepository.recordUsage(identity,{eventType:'survey_integrated',page:'questionnaire'});return json(response,200,{saved:true,status:survey.status})
  }
  if(url.pathname==='/api/intelligence'&&request.method==='GET'){
-  const intelligence=await repository.getIntelligence(identity?.id,{role:identity?.role||'consultant'})
-  repository.listAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id}).catch(error=>observe('val.producer_index.preload',{outcome:'error',errorCode:error?.code||'producer_index_preload_failed'}))
+  const intelligence=await repository.getIntelligence(identity?.id||identity?.email,{role:identity?.role||'consultant'})
+  repository.listAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email}).catch(error=>observe('val.producer_index.preload',{outcome:'error',errorCode:error?.code||'producer_index_preload_failed'}))
   return json(response,200,intelligence)
  }
  if(url.pathname==='/api/visits'&&request.method==='POST'){
   const payload=await body(request);const clientId=clean(payload.clientId);const objective=String(payload.objective||'').trim().slice(0,2000)
   if(!clientId||!objective)return json(response,400,{error:'Selecione o produtor e informe o objetivo da visita.'})
-  const visit=await repository.saveVisit({clientId,scheduledAt:payload.scheduledAt,objective,status:'Agendada'},identity?.id);invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId});await accessRepository.recordUsage(identity,{eventType:'visit_saved',page:'visits',entityType:'client',entityId:clientId});return json(response,201,{saved:true,visit})
+  const visit=await repository.saveVisit({clientId,scheduledAt:payload.scheduledAt,objective,status:'Agendada'},identity?.id||identity?.email);invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId});await accessRepository.recordUsage(identity,{eventType:'visit_saved',page:'visits',entityType:'client',entityId:clientId});return json(response,201,{saved:true,visit})
  }
  const visitStartMatch=url.pathname.match(/^\/api\/v1\/visits\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/start$/i)
  if(visitStartMatch&&request.method==='POST'){
-  const actorId=String(identity?.id||identity?.email||'demo@valor360.local');const result=await repository.startVisit({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,actorId,visitId:visitStartMatch[1],requestId:currentRequestContext()?.requestId})
+  const actorId=String(identity?.id||identity?.email||'demo@valor360.local');const result=await repository.startVisit({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,actorId,visitId:visitStartMatch[1],requestId:currentRequestContext()?.requestId})
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:mutationClientId(result)})
   await accessRepository.recordUsage(identity,{eventType:'visit_started',page:'visits',entityType:'visit',entityId:visitStartMatch[1],metadata:{lifecycleStatus:result.visit.lifecycleStatus}}).catch(()=>null)
   return json(response,200,{contract_version:'val.visit_lifecycle.response.v1',...result})
  }
+ const visitCancelMatch=url.pathname.match(/^\/api\/v1\/visits\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/cancel$/i)
+ if(visitCancelMatch&&request.method==='POST'){
+  const actorId=String(identity?.id||identity?.email||'demo@valor360.local');const result=await repository.cancelVisit({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,actorId,visitId:visitCancelMatch[1],requestId:currentRequestContext()?.requestId})
+  invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:mutationClientId(result)})
+  await accessRepository.recordUsage(identity,{eventType:'visit_cancelled',page:'visits',entityType:'visit',entityId:visitCancelMatch[1],metadata:{lifecycleStatus:result.visit.lifecycleStatus}}).catch(()=>null)
+  return json(response,200,{contract_version:'val.visit_lifecycle.response.v1',...result})
+ }
  const visitPreparationMatch=url.pathname.match(/^\/api\/v1\/visits\/([0-9a-f-]{36})\/preparation$/i)
  if(visitPreparationMatch&&request.method==='GET'){
-  const result=await repository.getVisitPreparation({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,visitId:visitPreparationMatch[1]})
+  const result=await repository.getVisitPreparation({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,visitId:visitPreparationMatch[1]})
   if(!result)return json(response,404,{error:'A visita ainda não possui preparação registrada.'})
   return json(response,200,{contract_version:'val.prepare_visit.response.v1',...result})
  }
  if(visitPreparationMatch&&request.method==='POST'){
   const actorId=String(identity?.id||identity?.email||'demo@valor360.local')
-  const result=await prepareVisitExecution({repository,tenantId:identity?.tenantId||config.defaultTenantId,actor:{id:actorId,ownerId:identity?.id,role:identity?.role||'consultant'},visitId:visitPreparationMatch[1],requestId:currentRequestContext()?.requestId})
+  const result=await prepareVisitExecution({repository,tenantId:identity?.tenantId||config.defaultTenantId,actor:{id:actorId,ownerId:identity?.id||identity?.email,role:identity?.role||'consultant'},visitId:visitPreparationMatch[1],requestId:currentRequestContext()?.requestId})
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:mutationClientId(result)})
   await accessRepository.recordUsage(identity,{eventType:'visit_prepared',page:'visits',entityType:'visit',entityId:visitPreparationMatch[1],metadata:{actionPlanId:result.action_plan.action_plan_id}})
   return json(response,201,{contract_version:'val.prepare_visit.response.v1',...result})
  }
  const visitReportMatch=url.pathname.match(/^\/api\/v1\/visits\/([0-9a-f-]{36})\/report$/i)
- if(visitReportMatch&&request.method==='GET')return json(response,200,await visitLoop.getReport({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,visitId:visitReportMatch[1]}))
+ if(visitReportMatch&&request.method==='GET')return json(response,200,await visitLoop.getReport({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,visitId:visitReportMatch[1]}))
  if(visitReportMatch&&request.method==='POST'){
   const actorId=String(identity?.id||identity?.email||'demo@valor360.local');const payload=await body(request)
-  const result=await visitLoop.createReport({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,actorId,visitId:visitReportMatch[1],input:payload,requestId:currentRequestContext()?.requestId,now:payload.occurred_at})
+  const result=await visitLoop.createReport({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,actorId,visitId:visitReportMatch[1],input:payload,requestId:currentRequestContext()?.requestId,now:payload.occurred_at})
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:mutationClientId(result.visit_report||result)})
   await accessRepository.recordUsage(identity,{eventType:'visit_report_created',page:'visits',entityType:'visit',entityId:visitReportMatch[1],metadata:{sourceType:result.visit_report.source_type,confirmationStatus:result.visit_report.confirmation_status}})
   return json(response,201,result)
@@ -884,15 +962,15 @@ async function handleApi(request,response,url){
  const visitConfirmMatch=url.pathname.match(/^\/api\/v1\/visits\/([0-9a-f-]{36})\/confirm$/i)
  if(visitConfirmMatch&&request.method==='POST'){
   const actorId=String(identity?.id||identity?.email||'demo@valor360.local');const payload=await body(request)
-  const result=await visitLoop.confirmReport({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,actorId,visitId:visitConfirmMatch[1],input:payload,requestId:currentRequestContext()?.requestId})
+  const result=await visitLoop.confirmReport({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,actorId,visitId:visitConfirmMatch[1],input:payload,requestId:currentRequestContext()?.requestId})
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:mutationClientId(result)})
   await accessRepository.recordUsage(identity,{eventType:'visit_report_confirmed',page:'visits',entityType:'visit',entityId:visitConfirmMatch[1],metadata:{outcomeType:result.outcome?.outcome_type,commitments:result.commitments?.length||0}})
   return json(response,200,result)
  }
  const visitLearningMatch=url.pathname.match(/^\/api\/v1\/visits\/([0-9a-f-]{36})\/learning-context$/i)
- if(visitLearningMatch&&request.method==='GET')return json(response,200,await visitLoop.learningContext({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,visitId:visitLearningMatch[1]}))
+ if(visitLearningMatch&&request.method==='GET')return json(response,200,await visitLoop.learningContext({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,visitId:visitLearningMatch[1]}))
  if(url.pathname==='/api/v1/outcomes'&&request.method==='POST'){
-  const actorId=String(identity?.id||identity?.email||'demo@valor360.local');const result=await visitLoop.recordOutcome({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,actorId,input:await body(request),requestId:currentRequestContext()?.requestId})
+  const actorId=String(identity?.id||identity?.email||'demo@valor360.local');const result=await visitLoop.recordOutcome({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,actorId,input:await body(request),requestId:currentRequestContext()?.requestId})
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:mutationClientId(result)})
   await accessRepository.recordUsage(identity,{eventType:'visit_outcome_recorded',page:'visits',entityType:'visit',entityId:result.outcome.visit_id,metadata:{outcomeType:result.outcome.outcome_type}})
   return json(response,201,result)
@@ -900,27 +978,27 @@ async function handleApi(request,response,url){
  if(url.pathname==='/api/v1/action-plans'&&request.method==='POST'){
   const payload=await body(request);const plan=payload.action_plan||payload.plan;const clientId=clean(payload.client_id||payload.clientId)
   if(!plan||!clientId)return json(response,400,{error:'Informe ActionPlan e produtor.'})
-  const snapshot=await repository.getContextSnapshot({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id:plan.context_snapshot_id})
+  const snapshot=await repository.getContextSnapshot({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,id:plan.context_snapshot_id})
   if(!snapshot)return json(response,404,{error:'ContextSnapshot não encontrado no escopo autorizado.'})
-  const saved=await repository.saveActionPlan({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId,visitId:payload.visit_id||payload.visitId||null,plan,preparation:payload.preparation||null,contextSnapshot:snapshot,decisionThesisVersion:payload.decision_thesis_version, valuePlanVersion:payload.value_plan_version})
+  const saved=await repository.saveActionPlan({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,visitId:payload.visit_id||payload.visitId||null,plan,preparation:payload.preparation||null,contextSnapshot:snapshot,decisionThesisVersion:payload.decision_thesis_version, valuePlanVersion:payload.value_plan_version})
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId})
   return json(response,201,{contract_version:'val.action_plan.response.v1',action_plan:saved})
  }
  if(url.pathname==='/api/v1/commitments'&&request.method==='GET'){
-  const commitments=await repository.listCommitments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,clientId:clean(url.searchParams.get('clientId'))||null,status:clean(url.searchParams.get('status'))||null})
+  const commitments=await repository.listCommitments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:clean(url.searchParams.get('clientId'))||null,status:clean(url.searchParams.get('status'))||null})
   return json(response,200,{contract_version:'val.commitment.collection.v1',commitments})
  }
  if(url.pathname==='/api/v1/commitments'&&request.method==='POST'){
   const payload=await body(request);const actorId=String(identity?.id||identity?.email||'demo@valor360.local')
   const actionPlanId=payload.action_plan_id??payload.actionPlanId??null
-  const commitment=await repository.saveCommitment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,actorId,input:{...payload,organization_id:identity?.tenantId||config.defaultTenantId,owner_type:'USER',owner_id:actorId,created_by:actorId,request_id:currentRequestContext()?.requestId,source_ref:payload.source_ref||payload.sourceRef||(actionPlanId?`action-plan:${actionPlanId}`:'manual:commitment')}})
+  const commitment=await repository.saveCommitment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,actorId,input:{...payload,organization_id:identity?.tenantId||config.defaultTenantId,owner_type:'USER',owner_id:actorId,created_by:actorId,request_id:currentRequestContext()?.requestId,source_ref:payload.source_ref||payload.sourceRef||(actionPlanId?`action-plan:${actionPlanId}`:'manual:commitment')}})
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:mutationClientId(commitment)})
   await accessRepository.recordUsage(identity,{eventType:'commitment_created',page:'visits',entityType:'client',entityId:commitment.client_id,metadata:{commitmentId:commitment.commitment_id}})
   return json(response,201,{contract_version:'val.commitment.response.v1',commitment})
  }
  const commitmentMatch=url.pathname.match(/^\/api\/v1\/commitments\/([0-9a-f-]{36})$/i)
  if(commitmentMatch&&request.method==='PATCH'){
-  const commitment=await repository.updateCommitment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id,id:commitmentMatch[1],input:{...await body(request),request_id:currentRequestContext()?.requestId}})
+  const commitment=await repository.updateCommitment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,id:commitmentMatch[1],input:{...await body(request),request_id:currentRequestContext()?.requestId}})
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:mutationClientId(commitment)})
   await accessRepository.recordUsage(identity,{eventType:'commitment_updated',page:'visits',entityType:'client',entityId:commitment.client_id,metadata:{commitmentId:commitment.commitment_id,status:commitment.status}})
   return json(response,200,{contract_version:'val.commitment.response.v1',commitment})
@@ -932,29 +1010,29 @@ async function handleApi(request,response,url){
  if(url.pathname==='/api/opportunities'&&request.method==='POST'){
   const payload=await body(request);const clientId=clean(payload.clientId);const title=String(payload.title||'').trim().slice(0,220);const stage=String(payload.stage||'Diagnóstico')
   if(!clientId||!title||!pipelineStages.has(stage))return json(response,400,{error:'Oportunidade, produtor ou etapa inválida.'})
-  const opportunity=await repository.saveOpportunity({...payload,clientId,title,stage},identity?.id);invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId});await accessRepository.recordUsage(identity,{eventType:'opportunity_saved',page:'opportunities',entityType:'client',entityId:clientId,metadata:{stage}});return json(response,201,{saved:true,opportunity})
+  const opportunity=await repository.saveOpportunity({...payload,clientId,title,stage},identity?.id||identity?.email);invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId});await accessRepository.recordUsage(identity,{eventType:'opportunity_saved',page:'opportunities',entityType:'client',entityId:clientId,metadata:{stage}});return json(response,201,{saved:true,opportunity})
  }
  if(url.pathname==='/api/clients/from-survey'&&request.method==='POST'){
-  const payload=await body(request);const answers=validatedSurveyAnswers(payload.answers);const result=calculateProfile(answers,profileMatrix,'Aplicação assistida validada no servidor');const client=await repository.saveSurveyProfile({answers,result},identity?.id);repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id});invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:mutationClientId(client)});return json(response,201,{saved:true,client})
+  const payload=await body(request);const answers=validatedSurveyAnswers(payload.answers);const result=calculateProfile(answers,profileMatrix,'Aplicação assistida validada no servidor');const client=await repository.saveSurveyProfile({answers,result},identity?.id||identity?.email);repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email});invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:mutationClientId(client)});return json(response,201,{saved:true,client})
  }
  if(url.pathname==='/api/clients/from-survey/batch'&&request.method==='POST'){
   const payload=await body(request);const batch=compileSurveyImportBatch(payload,{profileMatrix,surveyOptions})
   const clients=[]
-  for(const profile of batch.profiles)clients.push(await repository.saveSurveyProfile(profile,identity?.id))
-  repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id})
+  for(const profile of batch.profiles)clients.push(await repository.saveSurveyProfile(profile,identity?.id||identity?.email))
+  repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email})
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email})
   await accessRepository.recordUsage(identity,{eventType:'survey_integrated',page:'questionnaire',metadata:{clientCount:clients.length,source:'questionnaire_import',duplicateCount:batch.duplicateCount}})
   return json(response,201,{saved:true,clientCount:clients.length,receivedCount:batch.receivedCount,duplicateCount:batch.duplicateCount,clients})
  }
  const clientMatch=url.pathname.match(/^\/api\/clients\/([^/]+)$/)
  if(clientMatch&&request.method==='PUT'){
-  const clientId=decodeURIComponent(clientMatch[1]);const client=await repository.updateClient(clientId,await body(request),identity?.id);repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id});invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,resetConversation:true});await accessRepository.recordUsage(identity,{eventType:'client_updated',page:'client360',entityType:'client',entityId:clientId});return json(response,200,{saved:true,client})
+  const clientId=decodeURIComponent(clientMatch[1]);const client=await repository.updateClient(clientId,await body(request),identity?.id||identity?.email);repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email});invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,resetConversation:true});await accessRepository.recordUsage(identity,{eventType:'client_updated',page:'client360',entityType:'client',entityId:clientId});return json(response,200,{saved:true,client})
  }
- if(clientMatch&&request.method==='DELETE'){const clientId=decodeURIComponent(clientMatch[1]);const archived=await repository.archiveClient(clientId,identity?.id);repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id});invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,resetConversation:true});return json(response,200,{saved:true,archived})}
+ if(clientMatch&&request.method==='DELETE'){const clientId=decodeURIComponent(clientMatch[1]);const archived=await repository.archiveClient(clientId,identity?.id||identity?.email);repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email});invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,resetConversation:true});return json(response,200,{saved:true,archived})}
  const contextMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/context$/)
- if(contextMatch&&request.method==='GET')return json(response,200,{context:await repository.getTechnicalContext(decodeURIComponent(contextMatch[1]),identity?.id)})
+ if(contextMatch&&request.method==='GET')return json(response,200,{context:await repository.getTechnicalContext(decodeURIComponent(contextMatch[1]),identity?.id||identity?.email)})
  if(contextMatch&&request.method==='PUT'){
-  const clientId=decodeURIComponent(contextMatch[1]);const context=await repository.saveTechnicalContext(clientId,await body(request),identity?.id);invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId});await accessRepository.recordUsage(identity,{eventType:'memory_saved',page:'client360',entityType:'client',entityId:clientId});return json(response,200,{saved:true,context})
+  const clientId=decodeURIComponent(contextMatch[1]);const context=await repository.saveTechnicalContext(clientId,await body(request),identity?.id||identity?.email);invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId});await accessRepository.recordUsage(identity,{eventType:'memory_saved',page:'client360',entityType:'client',entityId:clientId});return json(response,200,{saved:true,context})
  }
  const propertyMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/property$/)
  if(propertyMatch&&request.method==='GET')return json(response,200,await repository.getPropertyProfile(decodeURIComponent(propertyMatch[1]),identity?.id))
@@ -962,16 +1040,16 @@ async function handleApi(request,response,url){
   const clientId=decodeURIComponent(propertyMatch[1]);const profile=await repository.savePropertyProfile(clientId,await body(request),identity?.id);invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId});await accessRepository.recordUsage(identity,{eventType:'property_saved',page:'client360',entityType:'client',entityId:clientId,metadata:{fields:profile.fields.length,located:Boolean(profile.property?.location)}});return json(response,200,profile)
  }
  const overviewMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/overview$/)
- if(overviewMatch&&request.method==='GET')return json(response,200,await repository.getClientOverview(decodeURIComponent(overviewMatch[1]),identity?.id))
+ if(overviewMatch&&request.method==='GET')return json(response,200,await repository.getClientOverview(decodeURIComponent(overviewMatch[1]),identity?.id||identity?.email))
  if(url.pathname==='/api/intelligence/imports'&&request.method==='POST'){
   const payload=await body(request);const rows=Array.isArray(payload.rows)?payload.rows.slice(0,5000):[];const mapping=payload.mapping||{};if(!rows.length||!mapping.client||!payload.summary)return json(response,400,{error:'Importação inválida ou sem linhas para validação no servidor.'})
   const clients=buildCommercialIntelligence(rows,mapping);const learned=summarizeLearning(clients,rows.length,clean(payload.summary.fileName)||'importação comercial');const summary={...learned,id:randomUUID(),rawRowCount:rows.length,rawRowsSent:rows.length,truncated:Boolean(payload.summary.truncated)}
-  const persistence=await repository.ingestCommercialImport({tenantId:config.defaultTenantId,ownerId:identity?.id,summary,clients,rows,mapping})
-  if(!database.configured){const store=readStore();store.imports.push({...summary,tenantId:config.defaultTenantId,ownerId:identity?.id,clients:clients.slice(0,500)});store.imports=store.imports.slice(-20);saveStore(store)}
-  repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id})
+  const persistence=await repository.ingestCommercialImport({tenantId:config.defaultTenantId,ownerId:identity?.id||identity?.email,summary,clients,rows,mapping})
+  if(!database.configured){const store=readStore();store.imports.push({...summary,tenantId:config.defaultTenantId,ownerId:identity?.id||identity?.email,clients:clients.slice(0,500)});store.imports=store.imports.slice(-20);saveStore(store)}
+  repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email})
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,objections:true})
-  await accessRepository.recordUsage(identity,{eventType:'commercial_import',page:'datahub',metadata:{clientCount:clients.length,rowCount:rows.length}});return json(response,201,{saved:true,clientCount:clients.length,database:persistence.persisted,clients,summary})
+  await accessRepository.recordUsage(identity,{eventType:'commercial_import',page:'datahub',metadata:{clientCount:clients.length,rowCount:rows.length}});return json(response,201,{saved:true,clientCount:clients.length,database:persistence.persisted,clients,summary,...(persistence.clientsTruncated?{clientsTruncated:true,persistedClientCount:persistence.persistedClientCount}:{}),...(persistence.archivedSkipped?.length?{archivedSkipped:persistence.archivedSkipped}:{})})
  }
  if(url.pathname==='/api/import/google-sheet'&&request.method==='POST'){
   const payload=await body(request);const source=clean(payload.url);const match=source.match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)
@@ -998,10 +1076,10 @@ createServer((request,response)=>{
  response.once('finish',()=>observe('api.completed',{status:response.statusCode,durationMs:Date.now()-started,outcome:response.statusCode>=500?'error':'ok'}))
  if(!url)return json(response,400,{error:'URL inválida.'})
  if(isTechnicalWorkspaceRequest(url.pathname)){
-  try{if(technicalWorkspace.handle(request,response,url,await sessionIdentity(request)))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
+  try{if(technicalWorkspace.handle(request,response,url,await sessionIdentity(request),{demoAllowed:!auth.configured&&config.demoMode}))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
  }
  if(url.pathname==='/live'||url.pathname==='/ready'||url.pathname==='/health'||url.pathname.startsWith('/api/')){
-  try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){const status=Number(exception.statusCode)||400;const safeMessage=status<500||exception.safeToRetry===true?exception.message:'Não foi possível processar a solicitação.';return json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception.code?{code:String(exception.code).slice(0,100)}:{}),...(exception.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{})})}
+  try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){const programmingError=exception instanceof TypeError||exception instanceof RangeError||exception instanceof ReferenceError||exception instanceof SyntaxError;const status=Number(exception.statusCode)||(programmingError?500:400);const safeMessage=status<500||exception.safeToRetry===true||exception.exposeMessage===true?exception.message:'Não foi possível processar a solicitação.';return json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception.code?{code:String(exception.code).slice(0,100)}:{}),...(exception.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{})})}
   return json(response,404,{error:'Rota não encontrada.'})
  }
  const relative=normalize(url.pathname==='/'?'index.html':url.pathname.replace(/^\/+/,''))
@@ -1022,7 +1100,7 @@ createServer((request,response)=>{
   observe('api.unhandled',{outcome:'error',errorCode:String(exception?.code||'unhandled_error')})
   if(response.headersSent){response.destroy(exception);return}
   const status=Number(exception?.statusCode)||500
-  const safeMessage=status<500||exception?.safeToRetry===true?exception?.message:'Não foi possível processar a solicitação.'
+  const safeMessage=status<500||exception?.safeToRetry===true||exception?.exposeMessage===true?exception?.message:'Não foi possível processar a solicitação.'
   json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception?.code?{code:String(exception.code).slice(0,100)}:{}),...(exception?.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{})})
  })
 }).listen(port,'0.0.0.0',()=>console.log(`VALOR 360 disponível na porta ${port}`))

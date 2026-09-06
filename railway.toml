@@ -3,8 +3,8 @@ builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile"
 
 [deploy]
-preDeployCommand = "npm run db:migrate"
-startCommand = "npm run start"
+preDeployCommand = "node server/migrate.js"
+startCommand = "node server/start.js"
 healthcheckPath = "/live"
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 10

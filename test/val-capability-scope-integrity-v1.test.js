@@ -131,7 +131,11 @@ test('live data produtor-específico não atravessa producer/tenant/owner e glob
   await assert.rejects(executeCapabilityPlan({route,message:'Qual o dado atual?',context:context({}),liveData:{[capability]:record},...baseScope}),error=>error.code==='CONTEXT_SCOPE_VIOLATION')
  }
  const route={path:'LIVE_DATA',intent:'ASK_MARKET',capabilities:['MARKET_COMMODITY'],materiality:{engine_required:false}}
- const globalRecord={scope:'MARKET',tenant_id:tenant,context_owner_id:owner,status:'CURRENT',source:'Mercado global',source_ref:'market:global',observed_at:'2026-08-30T00:00:00Z',summary:'Mercado da soja: cotação regional observada.'}
+ // market_snapshot vale por 3 dias no grounding (response-grounding.js). A data precisa ser
+ // relativa ao relógio da execução: uma data fixa passa hoje e falha quando o teste envelhece.
+ const now=new Date()
+ const observedAt=new Date(now.getTime()-60*60*1000).toISOString()
+ const globalRecord={scope:'MARKET',tenant_id:tenant,context_owner_id:owner,status:'CURRENT',source:'Mercado global',source_ref:'market:global',observed_at:observedAt,summary:'Mercado da soja: cotação regional observada.'}
  for(const [candidate,reason] of [
   [{...globalRecord,scope:undefined},'MISSING_GLOBAL_SCOPE'],
   [{...globalRecord,tenant_id:undefined},'MISSING_TENANT_SCOPE'],
@@ -143,7 +147,9 @@ test('live data produtor-específico não atravessa producer/tenant/owner e glob
  const global=await executeCapabilityPlan({route,message:'Como está o mercado da soja?',context:context({}),liveData:{MARKET_COMMODITY:globalRecord},...baseScope})
  assert.deepEqual(global.capabilities_used,['MARKET_COMMODITY'])
  assert.equal(global.tool_result.context.scope,'MARKET')
- const response=buildCapabilityExecutionResponse({execution:global,route,message:'Como está o mercado da soja?',organizationId:tenant,ownerId:owner,clientId:producer,conversationId:'market-global',contextDomain:'GRAINS'})
+ const response=buildCapabilityExecutionResponse({execution:global,route,message:'Como está o mercado da soja?',organizationId:tenant,ownerId:owner,clientId:producer,conversationId:'market-global',contextDomain:'GRAINS',now})
+ assert.equal(response.advice.ai_reasoning.grounding.passed,true)
+ assert.deepEqual(response.advice.ai_reasoning.grounding.temporal_violations,[])
  const evidence=response.advice.ai_reasoning.facts_used[0]
  assert.equal(evidence.scope,'MARKET')
  assert.equal(evidence.producer_id,null)

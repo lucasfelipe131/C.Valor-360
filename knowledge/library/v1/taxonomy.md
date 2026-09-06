@@ -11,11 +11,13 @@
 - learning_coaching
 - ai_governance
 - val_operating
+- commodity_markets
 
 ## Mapeamento para motores
 - MVV: consultative_selling, negotiation, value_economics
 - MIC: adaptive_behavior, agribusiness_buying
-- MDI: value_economics, negotiation, decision_support
+- MDI: value_economics, negotiation, decision_support, commodity_markets
+- MCA: commodity_markets (leitura de mercado; itens com MDI/MVV também chegam ao chat)
 - MIA: agronomic_decision, onfarm_evidence
 - MDP: learning_coaching
 - MGO/MSP: ai_governance, privacy

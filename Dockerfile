@@ -53,4 +53,4 @@ RUN mkdir -p /app/.data \
 USER node
 
 EXPOSE 8080
-CMD ["npm", "start"]
+CMD ["node", "server/start.js"]

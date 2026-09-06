@@ -3,11 +3,10 @@
 Pacote inicial de conhecimento externo curado para alimentar o MCA/MAO/MVV/MIA/MDP/MGO da VAL.
 
 ## Conteúdo
-- `100` KnowledgeItems em `knowledge_items.jsonl`
-- `30` fontes em `source_registry.json`
+- `198` KnowledgeItems em `knowledge_items.jsonl`
+- `66` fontes em `source_registry.json`
 - `30` cenários de teste/aplicação em `scenario_bank.jsonl`
 - `taxonomy.md` com taxonomia e regras de ingestão
-- `VAL_Biblioteca_Mestre_v1.docx` com versão humana de leitura
 
 ## Regra de ingestão
 1. Esta biblioteca NÃO deve ser despejada diretamente em prompt de sistema.

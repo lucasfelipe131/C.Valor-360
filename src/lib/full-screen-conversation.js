@@ -139,7 +139,10 @@ export function normalizeCompletedAssistantTurn(turn){
  const rawQuestions=Array.isArray(turn.goldenQuestions)?turn.goldenQuestions:Array.isArray(reasoning.golden_questions)?reasoning.golden_questions:[]
  return markVerifiedCompletedAssistantTurn({
   role:turn.role,status:'completed',serverGrounded:true,grounding:clean(turn.grounding,80)||'SERVER_GROUNDED',text,answer:text,responseId:clean(turn.responseId??reasoning.reasoning_id,180)||null,
-  conversationId:clean(conversation.value,180),producerId:clean(producer.value,180),contextEpoch,
+  // Conversa sem produtor: o turno concluido carrega producerId null e o escopo ativo tambem
+  // (completeActiveScope). Com clean() aqui o turno virava '' e "resume pra mim" sem produtor
+  // falhava sempre com producerId mismatch.
+  conversationId:clean(conversation.value,180),producerId:producerScopeValue(producer.value)||null,contextEpoch,
   tenantId:canonical?.tenantId||null,ownerId:canonical?.ownerId||null,domain:canonical?.domain||null,
   scopePresence:{conversationId:conversation.present,producerId:producer.present,contextEpoch:epoch.present,tenantId:Boolean(canonical),ownerId:Boolean(canonical),domain:Boolean(canonical)},
   goldenQuestions:rawQuestions.slice(0,3),sourceTurn:turn,canonicalResponseId:clean(turn.responseId??reasoning.reasoning_id,180)||null,provenanceDepth:0
@@ -207,6 +210,9 @@ export function assertCompletedAssistantTurnScope(turn,scope={}){
 
 const userTurnScopeStatus=(turn,scope={})=>{
  if(turn?.role!=='user')return 'not_user'
+ // Pergunta que terminou em erro (422, timeout, comando bloqueado) nao esta pendente de resposta:
+ // sem esta excecao, "resume pra mim" ficava bloqueado ate uma nova resposta bem-sucedida.
+ if(String(turn?.status||'').toLowerCase()==='failed')return 'not_user'
  const dimensions=[
   ['tenantId',['tenantId','tenant_id'],clean],['ownerId',['ownerId','owner_id'],clean],['conversationId',['conversationId','conversation_id'],clean],
   ['producerId',['producerId','producer_id','clientId','client_id'],producerScopeValue],['contextEpoch',['contextEpoch','context_epoch'],exactEpoch],['domain',['domain','contextDomain','context_domain'],domainScopeValue]
@@ -501,6 +507,18 @@ export function writeConversationWorkspace(storage,storageScope,{threads={},meta
  }catch{return false}
 }
 
+// Rotulo legivel do intent no cabecalho do copiloto: o codigo interno ("ASK GENERAL",
+// "CHECK OPPORTUNITY") nao e linguagem do consultor.
+const intentLabels=Object.freeze({
+ ASK_GENERAL:'Pergunta geral',ASK_CLIENT:'Sobre o produtor',ASK_AGRONOMIC:'Agronomia',ASK_MARKET:'Mercado',ASK_COMMODITY:'Mercado',
+ CHECK_WEATHER:'Clima',CHECK_LABEL:'Bula / rótulo',CHECK_OPPORTUNITY:'Oportunidade',PREPARE_VISIT:'Preparar visita',POST_VISIT:'Pós-visita',
+ REGISTER_INFORMATION:'Registro de informação',OBJECTION_HELP:'Objeção',FOLLOW_UP_HELP:'Follow-up',CALCULATE:'Cálculo',ANALYZE_SOIL:'Análise de solo',IMAGE_DIAGNOSIS:'Diagnóstico por imagem'
+})
+export function valIntentLabel(intent){
+ const key=clean(intent,60).toUpperCase()
+ if(!key)return ''
+ return intentLabels[key]||key.toLowerCase().replaceAll('_',' ').replace(/^\p{L}/u,letter=>letter.toUpperCase())
+}
 export function contextStatusLabel({client=null,context=null}={}){
  if(context?.type==='opportunity')return 'Oportunidade ativa'
  if(context?.type==='visit'||context?.type==='visit_draft')return 'Visita ativa'

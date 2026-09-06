@@ -42,7 +42,7 @@ async function stop(child){
 }
 
 const storedAttachment=({id,clientId=null,name,analysis={},status='interpreted',confirmedAt=null})=>({
- id,tenantId,tenant_id:tenantId,ownerId:null,clientId,client_id:clientId,client_external_key:clientId,
+ id,tenantId,tenant_id:tenantId,ownerId:'demo@valor360.local',clientId,client_id:clientId,client_external_key:clientId,
  original_name:name,mime_type:'image/jpeg',size_bytes:3,content_base64:'YWJj',sha256:'a'.repeat(64),
  status,analysis:{association:{state:clientId?'LINKED_CLIENT':'UNLINKED'},...analysis},confirmed_at:confirmedAt,
  created_at:'2026-08-28T12:00:00.000Z',updated_at:'2026-08-28T12:00:00.000Z'

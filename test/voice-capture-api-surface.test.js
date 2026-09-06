@@ -33,7 +33,7 @@ test('Voice API — autenticação, tenant e ator são derivados da sessão ante
  const route=section(server,"if(url.pathname==='/api/v1/voice-interactions'", "if(url.pathname==='/api/grains/bootstrap'")
  assert.match(route,/actorId=String\(identity\?\.id\|\|identity\?\.email\|\|'demo@valor360\.local'\)/)
  assert.match(route,/tenantId:identity\?\.tenantId\|\|config\.defaultTenantId/)
- assert.match(route,/ownerId:identity\?\.id,actorId/)
+ assert.match(route,/ownerId:identity\?\.id\|\|identity\?\.email,actorId/)
  assert.match(server,/if\(protectedPath&&identity\?\.mustChangePassword\)return json\(response,403/)
 })
 

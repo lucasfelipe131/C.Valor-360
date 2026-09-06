@@ -4,7 +4,9 @@ export const clientReferenceResolutionVersion='val.client_reference_resolution.v
 const clean=(value,max=500)=>String(value??'').replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,max)
 export const normalizeClientReference=value=>clean(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR').replace(/[^a-z0-9]+/g,' ').trim()
 
-const currentClientReference=/^(?:ele|ela|dele|dela|nele|nela|esse|essa|este|esta|esse cliente|essa cliente|este cliente|esta cliente|esse produtor|essa produtora|este produtor|esta produtora)$/i
+// "mostra o perfil dele": o complemento do verbo termina no pronome do produtor atual; nao e um
+// nome a procurar na carteira.
+const currentClientReference=/^(?:ele|ela|dele|dela|nele|nela|esse|essa|este|esta|esse cliente|essa cliente|este cliente|esta cliente|esse produtor|essa produtora|este produtor|esta produtora)$|\b(?:dele|dela|nele|nela)$/i
 const temporalOnly=/^(?:amanh[ãa]|hoje|agora|depois|mais tarde|segunda|ter[cç]a|quarta|quinta|sexta|s[áa]bado|domingo)$/i
 const contextualFactOwner=/^(?:(?:[úu]ltim[oa]|mais recente)\s+(?:visita|compra|obje[cç][ãa]o|compromisso|safra)|propriedade atual|cadastro atual)$/iu
 const trailingContext=/\s+(?:amanh[ãa]|hoje|depois|mais tarde|na pr[óo]xima semana|esta semana|para (?:uma|a|o)|pra (?:uma|a|o)|porque\b|pois\b|e (?:quero|preciso|vou|vamos|quanto|qual|quais|como|o que|por que)\b).*$/iu
@@ -22,8 +24,14 @@ const naturalReferencePatterns=Object.freeze([
  {kind:'EXPLICIT_NAME',pattern:/\b(?:vou|vamos|iremos?)\s+(?:no|na|ao|[àa])\s+(?<reference>[^,.!?;]+)/iu},
  {kind:'EXPLICIT_NAME',pattern:/\b(?:visitar|ver|encontrar)\s+(?<reference>[^,.!?;]+)/iu},
  {kind:'EXPLICIT_NAME',pattern:/\b(?:volta|volte|voltar|retoma|retome|retomar)\s+(?:para|pro|pra|ao|[àa]|no|na|com)\s+(?<reference>[^,.!?;]+)/iu},
- {kind:'EXPLICIT_NAME',pattern:/\b(?:troca|troque|muda|mude|alterar|mudar)\s+(?:o\s+cliente\s+)?(?:para|pro|pra|ao|[àa])\s+(?<reference>[^,.!?;]+)/iu},
+ // Troca de produtor exige preposicao de destino ("muda para o Joao", "troca pro Antonio"). O "a"
+ // atono nao serve de preposicao: "isso muda a negociacao com ele?" e pergunta sobre o produtor
+ // atual, nao pedido para abrir um produtor chamado "negociacao com ele".
+ {kind:'EXPLICIT_NAME',pattern:/\b(?:troca|troque|muda|mude|alterar|mudar)\s+(?:(?:o|a)\s+(?:cliente|produtor|produtora|conta)\s+)?(?:para|pro|pra|ao|à)\s+(?<reference>[^,.!?;]+)/iu},
  {kind:'EXPLICIT_NAME',pattern:/\bagora\s+(?:com\s+)?(?<reference>(?:o|a)\s+[^,.!?;]+)/iu},
+ // "e o Matheus?", "e a Maria, como esta?": forma mais natural de trocar de produtor numa conversa.
+ // Candidato, nao nome explicito: "e o clima hoje?" nao encontra ninguem e segue como pergunta.
+ {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/^\s*(?:val[, ]+)?e\s+(?:o|a)\s+(?!(?:que|qual|quais|quanto|quantos|quantas|como|onde|quando|por)\b)(?<reference>[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,2})\s*(?:[,.!?;]|$)/iu},
 ])
 
 const stripReference=value=>{

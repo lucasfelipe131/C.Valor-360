@@ -11,7 +11,7 @@ import {AgronomicInsightCard,CalculationCard,CommitmentCard,DecisionCard,Diagnos
 import {canonicalVoiceChange} from '../lib/copilot-view-model'
 import {readConsultantExperiencePreference,writeConsultantExperiencePreference} from '../lib/consultant-experience-preference'
 import {buildMarketContinuationMessage,buildRegisterPrefill,buildSessionReplyMessage,limitValChatMessage,normalizeValChatPayload,selectMarketContinuation,sessionRepliesForAsk} from '../lib/global-val-conversation'
-import {assertResponseScopeForRequest,behavioralProfileViewModel,buildConversationHistory,contextStatusLabel,conversationContextEpoch,conversationScopeKey,conversationScopeLabel,conversationTurnVisibleInScope,createConversationThreadKey,createScopedRegistrationDraft,debugContextTraceView,isBehavioralProfileResponse,lastCompletedAssistantTurn,readConversationWorkspace,realtimeTurnMatchesScope,rehomeResolvedProducerExchange,rehomeResolvedProducerQuestion,registrationDraftTextForScope,responseCardActionMatchesScope,writeConversationWorkspace} from '../lib/full-screen-conversation'
+import {assertResponseScopeForRequest,behavioralProfileViewModel,buildConversationHistory,contextStatusLabel,conversationContextEpoch,conversationScopeKey,conversationScopeLabel,conversationTurnVisibleInScope,createConversationThreadKey,createScopedRegistrationDraft,debugContextTraceView,isBehavioralProfileResponse,lastCompletedAssistantTurn,readConversationWorkspace,realtimeTurnMatchesScope,rehomeResolvedProducerExchange,rehomeResolvedProducerQuestion,registrationDraftTextForScope,responseCardActionMatchesScope,writeConversationWorkspace,valIntentLabel} from '../lib/full-screen-conversation'
 import {shouldAutoSubmitCopilotSeed} from '../lib/copilot-context'
 import {resolveAgroHeroFileMime,validateAgroHeroFile} from '../lib/agro-hero-actions'
 import {createValProgressRequestId,initialValProgress,startValProgressPolling} from '../lib/val-progress-client'
@@ -95,7 +95,12 @@ function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onRe
  const knowledge=Array.isArray(reasoning.knowledge_refs)?reasoning.knowledge_refs:[]
  const quality=advice.val_response_quality||reasoning.quality||{}
  const toolResult=reasoning.run?.tool_result||null
- const degraded=quality.status==='REASONING_DEGRADED'||reasoning.run?.status==='REASONING_DEGRADED'
+ // Bloqueio de grounding (grounding.passed false) também é resposta degradada: sem isto os cards
+ // de cálculo/agronômico e a ação boilerplate montavam sobre uma leitura barrada.
+ const degraded=quality.status==='REASONING_DEGRADED'||reasoning.run?.status==='REASONING_DEGRADED'||reasoning.grounding?.passed===false
+ // Orientação geral (cumprimento, conceito da Biblioteca) já é a própria leitura: não há
+ // ferramenta executada nem ação a abrir, e o card 'FERRAMENTA EXECUTADA' repetia o texto.
+ const generalGuidance=toolResult?.tool==='general_guidance'
  const answer=strategy.reading||advice.answer||'A orientação chegou sem uma leitura principal.'
  const intent=String(reasoning.intent||'ASK_CLIENT').toUpperCase()
  const isBehavioralProfile=isBehavioralProfileResponse(reasoning)
@@ -108,19 +113,19 @@ function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onRe
  const openWithSources=target=>onOpenModule?.(scopedTarget(target,{sourceAttachments}))
  return <article className={`global-val-answer is-${density}`}>
   {isBehavioralProfile?<ProfileResponse reasoning={reasoning} answer={answer} facts={facts} outputMode={outputMode} audioNode={audioNode}/>:<>
-  <DecisionCard reasoning={reasoning} answer={answer} action={degraded?'':strategy.action} audioNode={audioNode}/>
-  {toolResult?<GenericToolCard title={toolResult.title} summary={toolResult.summary} status={toolResult.status} onOpen={()=>openWithSources({page:toolResult.page||'agro',tool:toolResult.tool,manualPage:toolResult.manual_page,mode:toolResult.mode,context:toolResult.context})}/>:null}
-  {!degraded&&intent==='PREPARE_VISIT'&&<PrepareVisitCard reasoning={reasoning} questions={questions} onOpen={openScoped}/>}
+  <DecisionCard reasoning={reasoning} answer={answer} action={degraded||generalGuidance?'':strategy.action} audioNode={audioNode}/>
+  {toolResult&&!generalGuidance?<GenericToolCard title={toolResult.title} summary={toolResult.summary} status={toolResult.status} onOpen={toolResult.page==='copilot'?undefined:()=>openWithSources({page:toolResult.page||'agro',tool:toolResult.tool,manualPage:toolResult.manual_page,mode:toolResult.mode,context:toolResult.context})}/>:null}
+  {!degraded&&intent==='PREPARE_VISIT'&&toolResult?.status!=='CONTEXT_REQUIRED'&&<PrepareVisitCard reasoning={reasoning} questions={questions} onOpen={openScoped}/>}
   {!degraded&&toolResult?.status!=='CATALOG'&&['ASK_AGRONOMIC','ANALYZE_SOIL'].includes(intent)&&<AgronomicInsightCard reasoning={reasoning} onOpen={openScoped}/>}
   {!degraded&&intent==='IMAGE_DIAGNOSIS'&&<DiagnosisCard reasoning={reasoning} onOpen={openWithSources}/>}
   {!degraded&&intent==='CHECK_OPPORTUNITY'&&<OpportunityCard reasoning={reasoning} onOpen={openScoped}/>}
   {!degraded&&['ASK_MARKET','ASK_COMMODITY','CHECK_MARKET','CHECK_WEATHER','CHECK_LABEL'].includes(intent)&&<MarketCard reasoning={reasoning} onOpen={openScoped}/>}
-  {!degraded&&intent==='CALCULATE'&&<CalculationCard reasoning={reasoning} onOpen={openScoped}/>}
+  {!degraded&&!toolResult&&intent==='CALCULATE'&&<CalculationCard reasoning={reasoning} onOpen={openScoped}/>}
   {!degraded&&['FOLLOW_UP_HELP','POST_VISIT'].includes(intent)&&<CommitmentCard reasoning={reasoning} onOpen={openScoped}/>}
   <DecisionInterviewCard interview={reasoning.decision_interview} onReply={question=>onReply?.({...question,intent:reasoning.intent,objective:reasoning.objective,commodity:reasoning.commercial_context?.commodity||reasoning.premises?.current_data?.source?.commodity||'',season:reasoning.commercial_context?.season||''},responseScope)} onRegister={()=>onRegister?.(responseScope)}/>
   {intent!=='PREPARE_VISIT'&&questions.length>0&&<section className="global-val-questions"><small>PERGUNTAS QUE MUDAM A DECISÃO</small>{questions.map((item,index)=><div key={`${item.question}-${index}`}><b>{item.question}</b>{item.reason&&<span>{item.reason}</span>}</div>)}</section>}
   {density==='analytical'&&<div className="val-inline-evidence-grid"><EvidenceCard facts={facts} onOpen={()=>onOpenEvidence?.(responseScope)}/><KnowledgeCard items={knowledge}/></div>}
-  {density!=='simple'&&<details className="global-val-layer"><summary><Sparkles/>Por que a VAL disse isso?<ChevronDown/></summary><div><p><b>Situação:</b> {thesis.CURRENT_SITUATION}</p><p><b>O que importa:</b> {thesis.WHAT_MATTERS}</p><p><b>Incerteza-chave:</b> {thesis.KEY_UNCERTAINTY}</p><p><b>O que mudaria a leitura:</b> {thesis.WHAT_WOULD_CHANGE_MY_VIEW}</p>{facts.length>0&&<ul>{facts.slice(0,density==='analytical'?8:4).map(item=><li key={item.id}><span>{item.source_type}</span>{item.statement}</li>)}</ul>}</div></details>}
+  {density!=='simple'&&<details className="global-val-layer"><summary><Sparkles/>Por que a VAL disse isso?<ChevronDown/></summary><div>{thesis.CURRENT_SITUATION&&thesis.CURRENT_SITUATION!==answer&&<p><b>Situação:</b> {thesis.CURRENT_SITUATION}</p>}<p><b>O que importa:</b> {thesis.WHAT_MATTERS}</p><p><b>Incerteza-chave:</b> {thesis.KEY_UNCERTAINTY}</p><p><b>O que mudaria a leitura:</b> {thesis.WHAT_WOULD_CHANGE_MY_VIEW}</p>{facts.length>0&&<ul>{facts.slice(0,density==='analytical'?8:4).map(item=><li key={item.id}><span>{item.source_type}</span>{item.statement}</li>)}</ul>}</div></details>}
   {density==='analytical'&&<details className="global-val-layer"><summary><ShieldCheck/>Fontes, segurança e premissas<ChevronDown/></summary><div><p><b>ContextSnapshot:</b> {reasoning.context_snapshot?.id||'não informado'}</p><p><b>Confiança:</b> {reasoning.confidence?.level||'não calibrada'} • {Math.round(Number(reasoning.confidence?.score||0)*100)}%</p>{reasoning.reasoning_confidence&&<p><b>Confiança dimensional:</b> contexto {Math.round(Number(reasoning.reasoning_confidence.context||0)*100)}% • tese {Math.round(Number(reasoning.reasoning_confidence.thesis||0)*100)}% • pergunta {Math.round(Number(reasoning.reasoning_confidence.question||0)*100)}%{reasoning.reasoning_confidence.agronomy!=null?` • agronomia ${Math.round(Number(reasoning.reasoning_confidence.agronomy)*100)}%`:''}.</p>}<p><b>Caminho:</b> {reasoning.run?.path||'não informado'} • executado: {(reasoning.run?.capabilities_used||[]).join(', ')||'nenhuma capacidade'}{reasoning.run?.capabilities_planned?.length?` • planejado: ${reasoning.run.capabilities_planned.join(', ')}`:''}.</p><p><b>Qualidade da resposta:</b> {quality.status||'não informada'} • teste de troca de nome {qualityTestLabel(quality.automatic_tests?.name_swap)} • teste sem contexto {qualityTestLabel(quality.automatic_tests?.context_removal)}.</p><p><b>Memória:</b> esta conversa não promove fatos automaticamente. As premissas são recalculadas com contexto confirmado + respostas desta sessão em cada solicitação.</p></div></details>}
   </>}
   {density==='analytical'&&contextTrace?<SafeContextTrace trace={contextTrace}/>:null}
@@ -360,7 +365,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   const naturalCommand=!turnAttachments.length?requestedNaturalCommand:null
   if(naturalCommand?.local&&!naturalCommandMatchesClient(naturalCommand,client)){
    cancelChatRun();cancelRealtimeClarification()
-   append({role:'user',text:prompt,intent:'SESSION_COMMAND',command:naturalCommand.action,persistence:'NONE',at:new Date().toISOString()},activeThreadKey)
+   append({role:'user',text:prompt,intent:'SESSION_COMMAND',command:naturalCommand.action,persistence:'NONE',status:'failed',at:new Date().toISOString()},activeThreadKey)
    append({role:'system',command:naturalCommand.action,text:`O produtor citado (${naturalCommand.expectedClientReference||'outro produtor'}) não é o produtor atual desta conversa. Abra esse produtor antes de resumir para eu não misturar contextos.`,persistence:'NONE',at:new Date().toISOString()},activeThreadKey)
    setMessage('');setReplyingTo(null);return {responseText:'',suppressSpeech:true}
   }
@@ -371,7 +376,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   if(naturalCommandNeedsSettledResponse(naturalCommand)){
    try{sourceTurn=lastCompletedAssistantTurn(activeThread,currentScope)}catch(scopeError){
     const blockedMessage=scopeError?.code==='val_follow_up_scope_mismatch'?scopeError.message:'Não encontrei uma resposta concluída e verificada neste contexto para executar o follow-up.'
-    append({role:'user',text:prompt,intent:'SESSION_COMMAND',command:naturalCommand.action,persistence:'NONE',at:new Date().toISOString()},activeThreadKey)
+    append({role:'user',text:prompt,intent:'SESSION_COMMAND',command:naturalCommand.action,persistence:'NONE',status:'failed',at:new Date().toISOString()},activeThreadKey)
     append({role:'system',command:naturalCommand.action,text:blockedMessage,persistence:'NONE',at:new Date().toISOString()},activeThreadKey)
     setError(blockedMessage);setMessage('');setReplyingTo(null);return {responseText:'',suppressSpeech:true,blocked:true}
    }
@@ -429,7 +434,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
    const rawPayload=await response.json().catch(()=>null)
    if(!isCurrent())return {responseText:'',suppressSpeech:true,cancelled:true}
    if(timedOut){const timeoutError=new Error('A análise ultrapassou 30 segundos. Tente novamente.');timeoutError.name='TimeoutError';throw timeoutError}
-   if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok){const requestFailure=new Error(rawPayload?.error||'A VAL não respondeu agora.');requestFailure.payload=rawPayload;throw requestFailure}
+   if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok){const requestFailure=new Error(rawPayload?.error||'A VAL não respondeu agora.');requestFailure.payload=rawPayload;requestFailure.status=response.status;throw requestFailure}
    const payload=normalizeValChatPayload(rawPayload);if(!payload)throw new Error('A resposta chegou fora do contrato esperado. Tente novamente; nenhuma memória foi alterada.')
    if(!isCurrent())return {responseText:'',suppressSpeech:true,cancelled:true}
    setError('')
@@ -456,6 +461,9 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
    return {payload,responseText:reasoning.voice_output?.speakable_text||reasoning.recommended_strategy?.reading||payload?.advice?.answer||'',suppressSpeech:turnOptions.conversationMode===true&&turnOptions.responseMode==='text'}
  }catch(requestError){
   if(!isCurrent()||(requestError?.name==='AbortError'&&!timedOut))return {responseText:'',suppressSpeech:true,cancelled:true}
+  // A pergunta que terminou em erro nao fica "pendente de resposta": sem esta marca, "resume pra mim"
+  // logo depois era bloqueado ate uma nova resposta bem-sucedida.
+  setThreads(current=>({...current,[activeThreadKey]:(current[activeThreadKey]||[]).map(item=>item?.role==='user'&&item.turnId===turnId?{...item,status:'failed'}:item)}))
   if(timedOut&&requestError?.name!=='TimeoutError'){const timeoutError=new Error('A análise ultrapassou 30 segundos. Tente novamente.');timeoutError.name='TimeoutError';requestError=timeoutError}
   const pending=requestError.payload?.clarification
   const clarificationTurn=pending?{...pending,prompt,intent:effectiveIntent||'',turnOptions:{...turnOptions,turnId},activeThreadKey,conversationId:currentConversationId,contextEpoch:currentContextEpoch}:null
@@ -472,7 +480,13 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
     previous?.resolve({responseText:'',suppressSpeech:true,cancelled:true})
    })
   }
+  const serviceCode=String(requestError.payload?.code||'')
+  // Resposta de política do serviço (409 confirmação/módulo canônico, 422 fonte atual exigida, 404
+  // produtor fora da carteira) entra na conversa como linha do sistema: a faixa de erro sumia na
+  // pergunta seguinte e a pergunta ficava no histórico sem nenhuma resposta.
+  if(serviceCode&&requestError.payload?.error&&[404,409,422].includes(Number(requestError.status||0)))append({role:'system',command:serviceCode,text:requestError.message,persistence:'NONE',at:new Date().toISOString()},activeThreadKey)
   setError(requestError.name==='TimeoutError'?'A análise ultrapassou 30 segundos. Tente novamente.':requestError.message)
+  if(serviceCode==='val_confirmation_required'&&client&&!turnOptions.conversationMode){setMode('REGISTER');clientSelectRef.current?.focus()}
   if(turnOptions.conversationMode===true)throw requestError
   return null
  }finally{stopProgress();window.clearTimeout(timeoutId);controller.abort();if(isCurrent()){chatRunRef.current={generation,controller:null,threadKey:activeThreadKey};setProgress(null);setBusy(false)}}
@@ -580,6 +594,9 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   const descriptor=target&&typeof target==='object'?target:{page:target}
   if((descriptor.responseCardAction===true||descriptor.responseScope)&&!responseCardActionAllowed(descriptor.responseScope))return
   const {responseCardAction:_responseCardAction,responseScope:_responseScope,...moduleDescriptor}=descriptor
+  // 'Selecionar produtor' pertence a esta conversa: foca o seletor de contexto em vez de trocar de
+  // página e fechar o copiloto (mesmo comportamento da ação rápida PICK_CLIENT).
+  if(moduleDescriptor.mode==='select_client'||(moduleDescriptor.page==='clients'&&!client)){setError('Escolha um produtor no campo de contexto para começar com os dados corretos.');clientSelectRef.current?.focus();return}
   if(moduleDescriptor.page==='visits'&&client){onPrepareVisit?.(client);return}
   const sourceAttachments=Array.isArray(moduleDescriptor.sourceAttachments)?moduleDescriptor.sourceAttachments.slice(0,3):[]
   if(moduleDescriptor.page==='agro'&&sourceAttachments.length){
@@ -608,7 +625,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   <header className="val-fs-header">
    <button type="button" className="val-fs-back" aria-label="Voltar" onClick={onClose} disabled={uploading}><ArrowLeft/></button>
    <div className="val-fs-brand"><span><Logo variant="icon-only" surface="dark" decorative/></span><div><small>VAL • COPILOTO DE DECISÃO</small><h1 id="global-val-title">VAL</h1>{client&&<b>{client.name}</b>}</div></div>
-   <div className="val-fs-status"><span>{activeContext?.label||latestReasoning.intent?.replaceAll('_',' ')||'Conversa de decisão'}</span><em>{contextStatusLabel({client,context:activeContext})}</em>{latestReasoning.run?.path&&<i className={`is-${String(latestReasoning.run.path).toLowerCase()}`}>{latestReasoning.run.path}</i>}</div>
+   <div className="val-fs-status"><span>{activeContext?.label||valIntentLabel(latestReasoning.intent)||'Conversa de decisão'}</span><em>{contextStatusLabel({client,context:activeContext})}</em>{latestReasoning.run?.path&&<i className={`is-${String(latestReasoning.run.path).toLowerCase()}`}>{latestReasoning.run.path}</i>}</div>
    <div className="val-fs-header-actions"><button type="button" aria-label="Abrir histórico de conversas" onClick={()=>setHistoryOpen(true)} disabled={uploading}><History aria-hidden="true"/><span>Histórico</span></button><button type="button" aria-label="Iniciar nova conversa" onClick={()=>newConversation()} disabled={uploading}><Plus aria-hidden="true"/><span>Nova conversa</span></button><button type="button" className={contextPanelOpen?'active':''} aria-label={contextPanelOpen?'Fechar contexto':'Abrir contexto'} aria-pressed={contextPanelOpen} onClick={()=>setContextPanelOpen(value=>!value)}><PanelRightOpen aria-hidden="true"/><span>Contexto</span></button></div>
   </header>
   <div className="val-fs-workspace">
@@ -633,7 +650,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
      onRealtimeAssistantTranscript={(transcript,callbackScope)=>{if(!realtimeTurnMatchesScope(callbackScope,realtimeScope))return;append({role:'assistant_text',status:'incomplete',serverGrounded:false,grounding:'UNVERIFIED_BROWSER_TRANSCRIPT',followUpEligible:false,text:transcript,intent:'REALTIME_CONVERSATION',conversationId:realtimeConversationId,producerId:client?.id||null,contextEpoch:realtimeContextEpoch,realtimeSessionId:callbackScope.sessionId||null,persistence:'NONE'},threadKey)}}
      onRealtimeToolCall={async({request,reason})=>{const result=await ask(request,undefined,{inputModality:'voice',responseMode:'text',conversationMode:true,governedTool:true,skipUserAppend:true});return {status:result?.responseText?'COMPLETED':'UNAVAILABLE',reason,result:result?.responseText||'A capacidade governada não devolveu resultado.'}}}
      onRealtimeMemoryReview={({candidate})=>{if(!client)return {status:'CLIENT_REQUIRED',message:'Escolha o produtor antes de revisar uma informação.'};append({role:'assistant_text',status:'incomplete',serverGrounded:false,grounding:'UNVERIFIED_BROWSER_TRANSCRIPT',followUpEligible:false,text:'Encontrei algo que parece valer a pena registrar. Abri a revisão abaixo — confirme ou descarte para voltar à conversa por voz.',intent:'REALTIME_CONVERSATION',conversationId:realtimeConversationId,producerId:client?.id||null,contextEpoch:realtimeContextEpoch,persistence:'NONE'},threadKey);setRegistrationDraft(createScopedRegistrationDraft({text:candidate,clientId:client.id,threadKey}));setRegistrationAutoOpenKey(`realtime-register-${Date.now()}-${threadKey}`);setMode('REGISTER');return {status:'REVIEW_REQUIRED',message:'A revisão humana foi aberta. Nada foi registrado ainda.'}}}
-     onError={message=>setError(message)}
+     onError={message=>setError(typeof message==='string'?message:message?.message||'')}
      onMetrics={recordConversationMetrics}
      onExit={cancelRealtimeClarification}
      onFallbackPushToTalk={requestPushToTalk}

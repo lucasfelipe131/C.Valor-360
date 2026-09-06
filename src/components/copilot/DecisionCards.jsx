@@ -89,7 +89,7 @@ export function ConfirmationCard({title='Informação para confirmar',children,a
 }
 
 export function CalculationCard({reasoning={},onOpen}){
- return <Card className="val-calculation-card" icon={CircleDollarSign} label="VALOR / ROI" title="Leitura econômica" actionLabel="Abrir ferramentas de cálculo" onAction={()=>onOpen?.({page:'agro',tool:'calculators',manualPage:'calculadoras'})}><p>{reasoning.recommended_strategy?.reading||reasoning.situation_summary}</p><small>Hipóteses e unidades devem ser confirmadas antes de usar o resultado em proposta.</small></Card>
+ return <Card className="val-calculation-card" icon={CircleDollarSign} label="CÁLCULO" title="Leitura do cálculo" actionLabel="Abrir ferramentas de cálculo" onAction={()=>onOpen?.({page:'agro',tool:'calculators',manualPage:'calculadoras'})}><p>{reasoning.recommended_strategy?.reading||reasoning.situation_summary}</p><small>Hipóteses e unidades devem ser confirmadas antes de usar o resultado em proposta.</small></Card>
 }
 
 export function DiagnosisCard({reasoning={},onOpen}){
@@ -106,5 +106,5 @@ export function GenericToolCard({title,summary,status='EXECUTED',onOpen}){
   CONTEXT_REQUIRED:{label:'CONTEXTO NECESSÁRIO',action:'Selecionar produtor',detail:'Selecione explicitamente um produtor autorizado; a VAL não consultou memória privada sem esse contexto.'},
   NO_DATA:{label:'FONTE NÃO DISPONÍVEL',action:'Abrir módulo',detail:'Nenhum dado atual foi presumido; conecte ou consulte uma fonte autorizada.'}
  }[normalized]||{label:'RESULTADO DA FERRAMENTA',action:'Abrir módulo',detail:'Estado informado pelo orquestrador; nenhuma autorização foi delegada ao modelo.'}
- return <Card className="val-tool-result-card" icon={ClipboardCheck} label={presentation.label} title={title||'Resultado estruturado'} actionLabel={presentation.action} onAction={onOpen}><p>{summary}</p><small>{presentation.detail}</small></Card>
+ return <Card className="val-tool-result-card" icon={ClipboardCheck} label={presentation.label} title={title||'Resultado estruturado'} actionLabel={onOpen?presentation.action:null} onAction={onOpen}><p>{summary}</p><small>{presentation.detail}</small></Card>
 }

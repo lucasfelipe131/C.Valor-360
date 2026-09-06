@@ -246,7 +246,7 @@ test('vNext — provenance original é materializada sem timestamp ou tipo sint�
  },{
   id:'memory-decider',sourceRef:'memory-decider',sourceType:'visit_report',epistemicType:'FACT',evidenceType:'FACT',
   producerId:'client-a',tenantId:'tenant-a',ownerId:'owner-a',observedAt:'2026-08-20T10:00:00.000Z',validUntil:'2027-08-20T10:00:00.000Z',
-  statement:'Decisor confirmado: Maria.',capability:'CONFIRMED_MEMORY'
+  statement:'Quem decide (decisor confirmado): Maria.',capability:'CONFIRMED_MEMORY'
  })
 })
 

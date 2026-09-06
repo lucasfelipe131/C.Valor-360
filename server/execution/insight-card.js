@@ -134,17 +134,24 @@ function visitCandidates(context,now){
  const name=clientName(context)
  return list(context.visits).flatMap(visit=>{
   const scheduled=timestamp(visit.scheduled_at??visit.scheduledAt)
-  if(scheduled==null||scheduled<now.getTime()||/realizada|cancelada/i.test(text(visit.status)))return []
-  const days=(scheduled-now.getTime())/DAY
+  // Ciclo de vida antes da data (mesmo critério da agenda): visita em andamento ou planejada com data
+  // passada continua candidata; a data não encerra a visita.
+  const lifecycle=text(visit.lifecycleStatus??visit.lifecycle_status).toUpperCase()
+  const openLifecycle=['IN_PROGRESS','PLANNED','PREPARED'].includes(lifecycle)
+  if(scheduled==null||(scheduled<now.getTime()&&!openLifecycle)||/realizada|cancelada/i.test(text(visit.status))||['COMPLETED','COMPLETED_PENDING_REVIEW','CANCELLED'].includes(lifecycle))return []
+  const days=Math.max(0,(scheduled-now.getTime())/DAY)
   if(days>14)return []
   const id=text(visit.id,180)
+  const inProgress=lifecycle==='IN_PROGRESS'
   return [{
-   subject_id:subjectId,category:'PREPARE',title:`Preparar visita com ${name}`,
+   subject_id:subjectId,category:'PREPARE',title:inProgress?`Registrar visita em andamento com ${name}`:`Preparar visita com ${name}`,
    summary:text(visit.objective||'Visita futura registrada.'),
-   why_now:`A visita está agendada para ${new Date(scheduled).toLocaleDateString('pt-BR',{timeZone:'UTC'})}.`,
-   recommended_action:'Revisar contexto, lacunas, perguntas e compromisso-alvo antes da visita.',
-   due_at:new Date(scheduled).toISOString(),urgency:days<=1?.9:.6,impact:.75,confidence:.9,risk:.35,relationship_signal:.6,
-   evidence_refs:[{id:`visit:${id}`,type:'visit'}],expires_at:new Date(scheduled+DAY).toISOString()
+   why_now:inProgress?'A visita foi iniciada e ainda não tem relato registrado.':`A visita está agendada para ${new Date(scheduled).toLocaleDateString('pt-BR',{timeZone:'UTC'})}.`,
+   recommended_action:inProgress?'Encerrar a visita com o relato para confirmar compromissos e aprendizado.':'Revisar contexto, lacunas, perguntas e compromisso-alvo antes da visita.',
+   due_at:new Date(scheduled).toISOString(),urgency:inProgress||days<=1?.9:.6,impact:.75,confidence:.9,risk:.35,relationship_signal:.6,
+   // Visita aberta com data passada não pode expirar no próprio horário agendado: o card vale
+   // enquanto ela estiver em aberto (um dia a partir de agora ou da data, o que for maior).
+   evidence_refs:[{id:`visit:${id}`,type:'visit'}],expires_at:new Date(Math.max(scheduled,now.getTime())+DAY).toISOString()
   }]
  })
 }

@@ -23,7 +23,7 @@ export function createDatabase(runtimeConfig,{PoolClass=Pool}={}){
   }
 
   async function execute(executor,text,params=[],options={}){
-    if(!pool)throw new Error('DATABASE_URL não configurada.')
+    if(!pool)throw Object.assign(new Error('O PostgreSQL não está configurado neste ambiente (DATABASE_URL).'),{statusCode:503,code:'database_unavailable',exposeMessage:true})
     throwIfCancelled(options?.signal)
     const started=Date.now()
     try{
@@ -45,7 +45,7 @@ export function createDatabase(runtimeConfig,{PoolClass=Pool}={}){
   }
 
   async function transaction(work,{signal,timeoutMs=runtimeConfig.databaseQueryTimeoutMs}={}){
-    if(!pool)throw new Error('DATABASE_URL não configurada.')
+    if(!pool)throw Object.assign(new Error('O PostgreSQL não está configurado neste ambiente (DATABASE_URL).'),{statusCode:503,code:'database_unavailable',exposeMessage:true})
     throwIfCancelled(signal)
     const client=await pool.connect()
     try{
