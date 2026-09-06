@@ -18,7 +18,7 @@ export function realtimeRetryDelay(payload={},headers=null,now=Date.now()){
 }
 
 export function realtimeFailureMessage(error={}){
- const code=String(error.code||error.name||'')
+ const code=String(typeof error.code==='string'&&error.code||error.name||'')
  if(code==='NotAllowedError')return 'O microfone não foi liberado. Permita o acesso ao microfone nas configurações deste site para conversar.'
  if(code==='NotFoundError')return 'Não encontrei um microfone. Conecte um microfone ou continue digitando.'
  if(code==='NotReadableError')return 'Não consegui acessar o microfone. Verifique se outro aplicativo está usando o dispositivo.'

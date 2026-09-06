@@ -57,3 +57,9 @@ test('pause suppresses incoming state activations while allowing final usage and
  for(const type of ['input_audio_buffer.speech_started','input_audio_buffer.speech_stopped','response.created','output_audio_buffer.started'])assert.equal(realtimeEventSuppressedWhilePaused(type),true,type)
  for(const type of ['response.done','output_audio_buffer.stopped','output_audio_buffer.cleared','conversation.item.input_audio_transcription.completed','error'])assert.equal(realtimeEventSuppressedWhilePaused(type),false,type)
 })
+
+test('native DOMException numeric codes do not hide microphone names',()=>{
+ assert.match(realtimeFailureMessage(new DOMException('Requested device not found','NotFoundError')),/Conecte um microfone/)
+ assert.match(realtimeFailureMessage(new DOMException('Permission denied','NotAllowedError')),/Permita o acesso ao microfone/)
+ assert.match(realtimeFailureMessage(new DOMException('Aborted','AbortError')),/demorou demais/)
+})

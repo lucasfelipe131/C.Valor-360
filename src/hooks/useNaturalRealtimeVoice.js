@@ -86,7 +86,7 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   return true
  },[cleanup])
  const fail=useCallback(async(error,{fallback=true,eventScope=null}={})=>{
-  const code=String(error?.code||error?.name||'realtime_voice_failed')
+  const code=String(typeof error?.code==='string'&&error.code||error?.name||'realtime_voice_failed')
   const message=realtimeFailureMessage(error)
   if(eventScope&&!eventIsCurrent(eventScope))return {ok:false,reason:'REALTIME_STALE_EVENT',error:message}
   const finishing=cleanup({final:true,reason:code,nextStatus:fallback?STATES.FALLBACK:STATES.ERROR})

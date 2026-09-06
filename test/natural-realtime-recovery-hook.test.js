@@ -152,3 +152,14 @@ test('real voice hook defers speaking a completed tool result until resume',asyn
   assert.equal(app.voice.state.status,'LISTENING')
  }finally{await app.dispose()}
 })
+
+test('real voice hook translates a native missing-device DOMException before fallback',async()=>{
+ const app=await mountVoice({getMedia:()=>{throw new DOMException('Requested device not found','NotFoundError')}})
+ try{
+  const result=await app.start()
+  assert.equal(result.reason,'NotFoundError')
+  assert.equal(app.voice.state.microphonePermission,'UNAVAILABLE')
+  assert.match(app.voice.state.error,/Conecte um microfone/)
+  assert.equal(app.sessionCount,0)
+ }finally{await app.dispose()}
+})
