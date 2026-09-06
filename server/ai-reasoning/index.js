@@ -4,7 +4,7 @@ import {routeValIntent} from './intent-router.js'
 import {ComposedAdviceReasoningProvider} from './provider.js'
 import {evaluateValResponseQuality,questionSimilarity} from './quality.js'
 import {buildDecisionInterview,buildReasoningConfidence,decisionInterviewVersion,reasoningConfidenceVersion} from './decision-interview.js'
-import {routeSystemCapability} from '../decision-copilot/capability-router.js'
+import {profileApproach,routeSystemCapability} from '../decision-copilot/capability-router.js'
 import {evaluateConversationalNaturalness} from './conversational-naturalness.js'
 import {evaluateReasoningGrounding,evaluateResponseGrounding} from '../decision-copilot/response-grounding.js'
 import {observe} from '../observability.js'
@@ -37,11 +37,23 @@ const statementOf=item=>clean([item?.claim_supported,item?.statement,item?.summa
 const stable=value=>Array.isArray(value)?value.map(stable):value&&typeof value==='object'?Object.fromEntries(Object.keys(value).sort().map(key=>[key,stable(value[key])])):value
 const digest=value=>createHash('sha256').update(JSON.stringify(stable(value))).digest('hex')
 
+// Sinais comportamentais do snapshot ({key,value}) não tinham enunciado e eram descartados: o caminho
+// DEEP/CONTEXT ficava sem qualquer evidência de perfil. Viram evidência auditável (behavioral_profile,
+// INFERENCE) com a abordagem derivada do rótulo, como a inferência do caminho FAST.
+const behavioralSignalLabels={primary_profile:'Perfil principal',secondary_profile:'Perfil secundário',service_preference:'Preferência de atendimento'}
+function behavioralSignalEvidence(signal={}){
+ const key=clean(signal?.key,80);const value=clean(signal?.value,300)
+ if(!value)return signal
+ const label=behavioralSignalLabels[key]
+ const statement=clean(signal?.statement)||(label?`${label}: ${value}.${key==='primary_profile'?` Abordagem derivada do perfil registrado: ${profileApproach(value)}.`:''}`:value)
+ return {...signal,id:clean(signal?.id,180)||`behavioral:${key||'signal'}:${clean(signal?.source_ref,120)||'unknown'}`,source_type:clean(signal?.source_type,120)||'behavioral_profile',evidence_type:clean(signal?.evidence_type,40)||'INFERENCE',statement}
+}
+
 function factsUsed(advice={},context={}){
  const snapshot=context.contextSnapshot||{}
  const producerId=clean(snapshot.context_scope?.producer_id||snapshot.subject?.id||context.client?.id,180)
  const tenantId=clean(snapshot.context_scope?.tenant_id||snapshot.organization_id||context.organizationId,180)
- const snapshotEvidence=[...list(snapshot.facts),...list(snapshot.inferences),...list(snapshot.hypotheses),...list(snapshot.validated_knowledge),...list(snapshot.behavioral_signals)]
+ const snapshotEvidence=[...list(snapshot.facts),...list(snapshot.inferences),...list(snapshot.hypotheses),...list(snapshot.validated_knowledge),...list(snapshot.behavioral_signals).map(behavioralSignalEvidence)]
  const wrappers=[...list(snapshot.commercial_context?.business_history),...list(snapshot.commercial_context?.opportunities),...list(snapshot.agronomic_context?.properties),...list(snapshot.agronomic_context?.field_reports),...list(snapshot.agronomic_context?.soil_analyses),...list(snapshot.agronomic_context?.ndvi_observations),...list(snapshot.relationship_context?.interactions),...list(snapshot.relationship_context?.visits),...list(snapshot.relationship_context?.commitments)]
  const wrapperBySource=new Map()
  for(const wrapper of wrappers){
@@ -386,7 +398,13 @@ function groundedInterviewAfterFallback(interview,scope,evidence){
 // genérica quando passa integralmente no grounding (suporte literal e relevância à pergunta);
 // caso contrário a leitura segura permanece.
 function applyFactualFallbackReading(result,scope){
- const statements=list(result?.facts_used).map(item=>clean(item?.statement,900)).filter(Boolean).slice(0,2)
+ const primaryProfile=list(result?.facts_used).find(item=>/^behavioral:primary_profile:/.test(clean(item?.id,180)))
+ const primaryLabel=primaryProfile?clean(String(primaryProfile.statement).replace(/^Perfil principal:\s*/,'').split('.')[0],120):''
+ // Perfil: a leitura segue o contrato do perfil (perfil principal, confiança, como abordar, o que
+ // ainda não sabemos), a única forma que a relevância aceita para o domínio PROFILE.
+ const statements=scope.domain==='PROFILE'
+  ?(primaryLabel?[`Perfil principal: ${primaryLabel}. Confiança: baixa. Como abordar: ${profileApproach(primaryLabel)}. O que ainda não sabemos: validar se essas preferências continuam atuais.`]:[])
+  :list(result?.facts_used).map(item=>clean(item?.statement,900)).filter(Boolean).slice(0,2)
  if(!statements.length)return result
  const reading=statements.join(' ')
  const candidate=structuredClone(result)
@@ -494,7 +512,7 @@ export function composeAIReasoning({advice={},context={},message='',run={},conve
  const groundingFallbackApplied=!initialGrounding.passed
  const retainedFacts=groundingFallbackApplied&&!safetyPreserved?selfSupportedFacts(result,groundingScope):[]
  if(groundingFallbackApplied)result=safetyPreserved?applySafetyGroundingFallback(result):applyGroundingFallback(result,context,selectedDomain,message,retainedFacts)
- if(groundingFallbackApplied&&!safetyPreserved&&selectedDomain!=='PROFILE'&&retainedFacts.length)result=applyFactualFallbackReading(result,groundingScope)
+ if(groundingFallbackApplied&&!safetyPreserved&&retainedFacts.length)result=applyFactualFallbackReading(result,groundingScope)
  result.reasoning_confidence=buildReasoningConfidence({context,result})
  result.decision_interview=buildDecisionInterview({intent:result.intent,message,context,result})
  // As perguntas materiais da entrevista (campos `question`) não afirmam nada e continuam válidas

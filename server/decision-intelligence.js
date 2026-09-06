@@ -86,6 +86,16 @@ function buildEvidence(context){
     items.push(evidence('latest-visit',`${parts.join('; ')}.`,'visit',visit.id||'visit:unknown',{observed:field(visit,'occurred_at','occurredAt','completed_at','completedAt','updated_at','updatedAt','scheduled_at','scheduledAt','created_at','createdAt'),uncertainty:'O registro da visita não prova que o compromisso continua prioritário para o produtor.'}))
   }
 
+  // O compromisso aberto é a resposta de 'qual o compromisso pendente?'/'o que ficou pendente?':
+  // sem ele na evidência, nenhuma frase sobre o compromisso passa no grounding.
+  const openCommitment=latest(array(context.commitments).filter(item=>!/COMPLETED|CANCELLED|REJECTED|DONE|CONCLUID|CANCELAD/i.test(clean(item?.status))),['updated_at','updatedAt','created_at','createdAt'])
+  if(openCommitment){
+    const description=clean(field(openCommitment,'description','action'),300)
+    const due=field(openCommitment,'due_at','dueAt')
+    const status=clean(openCommitment.status,40)
+    if(description)items.push(evidence('open-commitment',`Compromisso aberto: ${description}${timestamp(due)!==null?`; prazo ${dateLabel(due)}`:''}${status?`; status ${status}`:''}.`,'commitment',field(openCommitment,'commitment_id','commitmentId','id')||'commitment:unknown',{observed:field(openCommitment,'updated_at','updatedAt','created_at','createdAt'),uncertainty:'O compromisso registrado precisa de confirmação do status atual com o produtor.'}))
+  }
+
   const interaction=latest(context.interactions,['occurred_at','occurredAt','created_at','createdAt'])
   if(interaction){
     const parts=[`Interação por ${firstText(interaction.channel,'canal não informado')}`]
