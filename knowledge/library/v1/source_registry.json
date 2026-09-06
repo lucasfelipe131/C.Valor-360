@@ -603,5 +603,115 @@
     "geography": "Brazil",
     "domain": "agronomic_decision",
     "notes": "Tratamento de sementes com fungicida e inseticida representou cerca de 1,48% do custo total de produção de soja na safra 2018/2019 (Embrapa), sem efeito negativo observado sobre a qualidade fisiológica da semente durante o armazenamento."
+  },
+  {
+    "source_id": "SRC-056",
+    "title": "Canola: panorama atual e tecnologias de produção (Documentos 40)",
+    "publisher": "Embrapa Trigo",
+    "year": 2022,
+    "url": "https://www.infoteca.cnptia.embrapa.br/infoteca/bitstream/doc/1140176/1/DOC40-.pdf",
+    "authority": "A",
+    "geography": "BR-South",
+    "domain": "agronomic_decision",
+    "notes": "Adubação, população, extração de nutrientes e panorama da cultura. Referência técnica principal de canola no Brasil."
+  },
+  {
+    "source_id": "SRC-057",
+    "title": "Indicações de cultivo de canola",
+    "publisher": "Tomm et al. / Embrapa Trigo (via CanolaBR)",
+    "year": 2023,
+    "url": "https://canolabr.com/storage/artigos/arquivo-143-20231214154026657b4c1a97aae.pdf",
+    "authority": "A",
+    "geography": "BR-South",
+    "domain": "agronomic_decision",
+    "notes": "Janela de semeadura, nitrogênio, enxofre e híbridos."
+  },
+  {
+    "source_id": "SRC-058",
+    "title": "Enleiramento e colheita de canola (Documentos 89)",
+    "publisher": "Portella & Tomm / Embrapa Trigo",
+    "year": 2007,
+    "url": "https://www.infoteca.cnptia.embrapa.br/bitstream/doc/852546/1/pdo89.pdf",
+    "authority": "A",
+    "geography": "BR-South",
+    "domain": "agronomic_decision",
+    "notes": "Ponto de colheita, perdas e regulagem de colhedora."
+  },
+  {
+    "source_id": "SRC-059",
+    "title": "Como evitar perdas na colheita da canola",
+    "publisher": "Embrapa",
+    "year": 2016,
+    "url": "https://www.embrapa.br/en/busca-de-noticias/-/noticia/16665834/como-evitar-perdas-na-colheita-da-canola",
+    "authority": "A",
+    "geography": "BR-South",
+    "domain": "agronomic_decision",
+    "notes": "Perdas podem superar 30% do rendimento; regra de campo de grãos por metro quadrado."
+  },
+  {
+    "source_id": "SRC-060",
+    "title": "Danos de geada no período reprodutivo da canola",
+    "publisher": "Kovaleski / UFSM (tese)",
+    "year": 2019,
+    "url": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1137104/1/TESE-Samuel-Kovaleski-2019-VERSAO-FINAL.pdf",
+    "authority": "B",
+    "geography": "BR-South",
+    "domain": "agronomic_decision",
+    "notes": "Morte de óvulos inicia com temperatura do ar ainda positiva. Tese individual: tratar como evidência dirigida, não consenso."
+  },
+  {
+    "source_id": "SRC-061",
+    "title": "Resposta a nitrogênio e enxofre em canola, Giruá/RS",
+    "publisher": "Wietholter, Tomm & De Bona / Embrapa",
+    "year": 2014,
+    "url": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1038964/1/ID435762014SLACPoster6.pdf",
+    "authority": "A",
+    "geography": "BR-South",
+    "domain": "agronomic_decision",
+    "notes": "Dose de máxima eficiência econômica de 96 kg N/ha em ensaio local. Resultado de sítio específico."
+  },
+  {
+    "source_id": "SRC-062",
+    "title": "Teor de óleo e época de semeadura da canola, Augusto Pestana/RS",
+    "publisher": "Souza / UNIJUÍ",
+    "year": 2017,
+    "url": "https://bibliodigital.unijui.edu.br:8443/server/api/core/bitstreams/a440713a-0bab-4d37-ade7-24b940fdbacf/content",
+    "authority": "B",
+    "geography": "BR-South",
+    "domain": "agronomic_decision",
+    "notes": "Queda de produtividade e de teor de óleo por atraso de semeadura. Trabalho acadêmico local."
+  },
+  {
+    "source_id": "SRC-063",
+    "title": "Anais do 1º Simpósio Brasileiro de Canola",
+    "publisher": "Embrapa Trigo",
+    "year": 2017,
+    "url": "https://www.alice.cnptia.embrapa.br/alice/bitstream/doc/1083954/1/CNPTID44230.pdf",
+    "authority": "A",
+    "geography": "BR-South",
+    "domain": "agronomic_decision",
+    "notes": "Efeito de rotação: ganho no milho subsequente superior ao da soja."
+  },
+  {
+    "source_id": "SRC-064",
+    "title": "AGROFIT — sistema de agrotóxicos fitossanitários",
+    "publisher": "MAPA",
+    "year": null,
+    "url": "https://www.gov.br/agricultura/pt-br/acesso-a-informacao/acoes-e-programas/cartas-de-servico/defesa-agropecuaria-agrotoxicos",
+    "authority": "A",
+    "geography": "BR",
+    "domain": "agronomic_decision",
+    "notes": "Consulta oficial de registro por cultura. Fonte regulatória: prevalece sobre bula de marca e sobre prática regional."
+  },
+  {
+    "source_id": "SRC-065",
+    "title": "Portaria SPA/MAPA nº 26, de 07/01/2025 — ZARC Canola/RS",
+    "publisher": "MAPA",
+    "year": 2025,
+    "url": "https://www.gov.br/agricultura/pt-br/assuntos/riscos-seguro/programa-nacional-de-zoneamento-agricola-de-risco-climatico/portarias",
+    "authority": "A",
+    "geography": "BR-RS",
+    "domain": "agronomic_decision",
+    "notes": "Janela de semeadura por município e grupo de ciclo. Condição de acesso a seguro e Proagro."
   }
 ]
