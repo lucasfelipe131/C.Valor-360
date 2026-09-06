@@ -230,7 +230,7 @@ test('Biblioteca: itens de mercado novos chegam ao chat e gatilhos específicos 
  assert.ok(byId.get('KI-054').triggers.includes('limiar econômico'))
  assert.ok(byId.get('KI-096').triggers.includes('excesso de informação'))
  const readme=read('knowledge/library/v1/README.md')
- assert.match(readme,/`164` KnowledgeItems/)
+ assert.match(readme,/`188` KnowledgeItems/)
  assert.doesNotMatch(readme,/VAL_Biblioteca_Mestre_v1\.docx/)
  assert.doesNotMatch(read('knowledge/library/v1/ingestion_manifest.json'),/VAL_Biblioteca_Mestre_v1\.docx/)
  assert.match(read('knowledge/library/v1/taxonomy.md'),/commodity_markets/)
