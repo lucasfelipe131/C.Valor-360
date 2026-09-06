@@ -32,7 +32,9 @@ export function resolveValNaturalCommand(input){
  if(exact(normalized,'agora por escrito','responda por escrito','me manda isso escrito','agora me manda isso por escrito','por escrito')||new RegExp(String.raw`^(?:agora\s+)?(?:(?:me\s+)?(?:manda|mande|envia|envie)(?:\s+isso)?\s+(?:por\s+)?escrito|responde(?:r)?\s+por\s+escrito|por escrito|so texto|apenas texto|em texto|so por escrito)${tail}$`).test(normalized))return {action:'OUTPUT_TEXT',local:true,outputMode:'text',persistence:'NONE'}
  if(exact(normalized,'agora fala comigo','agora fala elas pra mim','agora fala isso pra mim','fale comigo','responda em audio','fala de novo'))return {action:'OUTPUT_AUDIO',local:true,outputMode:'audio',persistence:'NONE'}
  if(exact(normalized,'texto e audio','agora texto e audio'))return {action:'OUTPUT_BOTH',local:true,outputMode:'both',persistence:'NONE'}
- if(exact(normalized,'registra','registre'))return {action:'OPEN_REGISTER',local:true,persistence:'CONFIRM_REQUIRED'}
+ // Espelha o roteador de comandos de sessão do servidor: 'registra isso', 'salva isso', 'anote',
+ // 'registra isso pra mim' abrem o fluxo Registrar informação em vez de voltar como 409.
+ if(exact(normalized,'registra','registre')||/^(?:registra|registre|salva|grave|anota|anote)(?:\s+isso)?(?:\s+(?:pra|para)\s+mim)?$/.test(normalized))return {action:'OPEN_REGISTER',local:true,persistence:'CONFIRM_REQUIRED'}
  if(exact(normalized,'nao registra','nao registre'))return {action:'KEEP_SESSION_ONLY',local:true,persistence:'NONE'}
  if(exact(normalized,'so o essencial','somente o essencial'))return {action:'SET_SIMPLE',local:true,density:'simple',persistence:'NONE'}
  if(exact(normalized,'aprofunda','aprofunde')||new RegExp(String.raw`^(?:(?:se\s+)?aprofunda|aprofunde|va mais fundo)${tail}$`).test(normalized))return {action:'DEEPEN',local:false,density:'analytical',persistence:'NONE'}
