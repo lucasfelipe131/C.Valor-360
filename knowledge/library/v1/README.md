@@ -3,8 +3,8 @@
 Pacote inicial de conhecimento externo curado para alimentar o MCA/MAO/MVV/MIA/MDP/MGO da VAL.
 
 ## Conteúdo
-- `164` KnowledgeItems em `knowledge_items.jsonl`
-- `55` fontes em `source_registry.json`
+- `177` KnowledgeItems em `knowledge_items.jsonl`
+- `65` fontes em `source_registry.json`
 - `30` cenários de teste/aplicação em `scenario_bank.jsonl`
 - `taxonomy.md` com taxonomia e regras de ingestão
 
