@@ -65,10 +65,12 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
  // "volta pro Antonio", "agora o Matheus", "troca pro Bruno": o resolvedor ja trocou o produtor da
  // sessao; sem esta acao a frase seguia para o raciocinio do novo produtor e a resposta era a
  // frase generica de evidencia insuficiente, como se a troca tivesse falhado.
- const switchVerb=/^\s*(?:val\s+)?(?:(?:volta|volte|voltar|retoma|retome|retomar|troca|troque|trocar|muda|mude|mudar)\b|agora\s+(?:com\s+)?(?:o|a)\b)/.test(source)
+ // So e troca quando ha destino: "volta pro Antonio", "muda para o Bruno", "agora o Matheus", "volta
+ // pro produtor anterior". "Muda o telefone dele" e pedido de alteracao de dado, nao troca de produtor.
+ const switchVerb=/^\s*(?:val\s+)?(?:(?:volta|volte|voltar|retoma|retome|retomar|troca|troque|trocar|muda|mude|mudar)\s+(?:(?:o|a)\s+(?:cliente|produtor|produtora|conta)\s+)?(?:para|pro|pra|ao|a)\s+\S|(?:volta|volte|voltar|retoma|retome|retomar)\b.*\banterior\b|agora\s+(?:com\s+)?(?:o|a)\s+[^\s?]+\s*[.!]?\s*$)/.test(source)
  if(!factualLookup&&!prepareVisit&&switchVerb&&authorizedClient&&!modules.some(module=>module.pattern.test(source))){
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
-  return result({intent:'OPEN',reason:'SWITCH_RESOLVED_CLIENT',direct:true,workspaceAction,summary:`Agora falando de ${authorizedClient.name||'o produtor'}. Abrindo no Cliente 360.`})
+  return result({intent:'OPEN',reason:'SWITCH_RESOLVED_CLIENT',direct:true,workspaceAction,summary:authorizedClient.name?`Agora falando de ${authorizedClient.name}. Abrindo no Cliente 360.`:'Agora falando do produtor selecionado. Abrindo no Cliente 360.'})
  }
  if(!factualLookup&&openVerb&&authorizedClient&&/\b(?:cliente|produtor|produtora)\b/.test(source)){
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
@@ -89,9 +91,16 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'SEARCH',reason:'SEARCH_RESOLVED_CLIENT',direct:true,workspaceAction,summary:`Localizei ${authorizedClient.name||'o produtor'} na sua carteira autorizada.`})
  }
- if(/\b(?:marca|marque|conclui|concluir|finaliza|finalize)\b.*\b(?:compromisso|tarefa|visita)\b/.test(source))return result({intent:'MARK_COMPLETE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A conclusão exige confirmação no módulo canônico antes de persistir.'})
- if(/\b(?:cria|crie|agende|agenda|nova)\b.*\b(?:visita|oportunidade|compromisso)\b/.test(source))return result({intent:'CREATE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A criação exige revisão e confirmação antes de persistir.'})
- if(/\b(?:registra|registre|anota|anote|atualiza|atualize)\b/.test(source))return result({intent:/\b(?:atualiza|atualize)\b/.test(source)?'UPDATE':'REGISTER',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A alteração exige revisão e confirmação antes de persistir.'})
+ // Escrita é imperativo no início da frase, com objeto explícito e sem interrogação: "Marque o
+ // compromisso como concluído", "Cria uma visita para amanhã", "Atualiza o telefone dele". Uma
+ // pergunta que cita esses verbos ("quando foi a nova visita?") segue para o raciocínio.
+ const writeHead=String.raw`^\s*(?:val[, ]+)?(?:agora\s+)?(?:por favor[, ]+)?`
+ const writeTurn=!/\?\s*$/.test(source)
+ const writeField=String.raw`(?:telefone|celular|whatsapp|e-?mail|municipio|cidade|endereco|area|nome|estagio|status|valor|data|cultura|safra|perfil|cadastro|hectares)`
+ if(writeTurn&&new RegExp(writeHead+String.raw`(?:marca|marque|marcar|conclui|conclua|concluir|finaliza|finalize|finalizar|encerra|encerre|encerrar)\b(?:\s+\S+){0,4}?\s+(?:(?:o|a|os|as|esse|essa|este|esta)\s+)?(?:compromisso|tarefa|visita)s?\b`).test(source))return result({intent:'MARK_COMPLETE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A conclusão exige confirmação no módulo canônico antes de persistir.'})
+ if(writeTurn&&new RegExp(writeHead+String.raw`(?:cria|crie|criar|agenda|agende|agendar|cadastra|cadastre|cadastrar|adiciona|adicione|adicionar|remarca|remarque|remarcar|cancela|cancele|cancelar)\b.*\b(?:visita|oportunidade|compromisso|tarefa|propriedade|produtor|cliente)s?\b`).test(source))return result({intent:'CREATE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A criação exige revisão e confirmação antes de persistir.'})
+ if(writeTurn&&(new RegExp(writeHead+String.raw`(?:atualiza|atualize|atualizar|corrige|corrija|corrigir|altera|altere|alterar|edita|edite|editar|apaga|apague|apagar|remove|remova|remover|exclui|exclua|excluir)\b(?!-?\s*me\b)`).test(source)||new RegExp(writeHead+String.raw`(?:muda|mude|mudar|troca|troque|trocar)\s+(?:o|a)\s+`+writeField+String.raw`\b`).test(source)||new RegExp(writeHead+String.raw`(?:fecha|feche|fechar)\s+(?:a|o|essa|esse|esta|este)\s+(?:oportunidade|negocio|negociacao|proposta)\b`).test(source)))return result({intent:'UPDATE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A alteração exige revisão e confirmação antes de persistir.'})
+ if(writeTurn&&new RegExp(writeHead+String.raw`(?:registra|registre|registrar|anota|anote|anotar|salva|salve|salvar)\b`).test(source))return result({intent:'REGISTER',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A alteração exige revisão e confirmação antes de persistir.'})
  if(/\b(?:calcula|calcule|calcular|simula|simule)\b/.test(source))return result({intent:'CALCULATE',reason:'CANONICAL_CALCULATOR'})
  if(/\b(?:quanto|cotacao|preco)\b.*\b(?:soja|milho|trigo|sorgo|feijao|arroz|cevada)\b|\b(?:soja|milho|trigo|sorgo|feijao|arroz|cevada)\b.*\b(?:hoje|cotacao|preco|mercado)\b/.test(source))return result({intent:'SHOW',reason:'LIVE_MARKET_DATA'})
  if(/\b(?:analisa|analise|interpretar|interpreta)\b/.test(source))return result({intent:'ANALYZE',reason:'CANONICAL_ANALYSIS'})
