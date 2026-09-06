@@ -1,0 +1,99 @@
+/* ============================================================ MAPA DA VAL
+   Satélite com a paleta da VAL: pino esmeralda, talhão lima, rota tracejada.
+   Este arquivo é importado pelos componentes de mapa; o Leaflet traz o CSS
+   base dele por conta própria. */
+.val-map-shell{position:relative;border-radius:16px;overflow:hidden;border:1px solid var(--val-line,#dce8e4);background:#0e3530;isolation:isolate}
+.val-map-canvas{width:100%;height:var(--val-map-height,280px);min-height:160px;background:#0e3530}
+.val-map-canvas.leaflet-container{font:inherit;font-size:12px}
+.val-map-shell.is-editing{box-shadow:0 0 0 3px rgba(45,140,255,.35)}
+.val-map-shell.is-editing .leaflet-container{cursor:crosshair}
+.val-map-canvas .leaflet-control-attribution{background:rgba(7,27,25,.66);color:rgba(226,250,243,.8);font-size:9.5px;padding:2px 6px}
+.val-map-canvas .leaflet-control-attribution a{color:#72e6c5}
+.val-map-canvas .leaflet-bar{border:0;box-shadow:0 6px 16px rgba(7,27,25,.35)}
+.val-map-canvas .leaflet-bar a{width:34px;height:34px;line-height:34px;color:#071b19;background:#fff}
+
+/* Pino: gota com número dentro. */
+.val-map-pin{background:transparent;border:0}
+.val-map-pin b{
+ display:grid;place-items:center;width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);
+ background:linear-gradient(135deg,#009f78,#00c896);color:#04231d;border:2px solid #fff;
+ box-shadow:0 8px 18px rgba(7,27,25,.45);font-size:12px;font-weight:800;font-style:normal;
+}
+.val-map-pin b:empty::after{content:'';width:8px;height:8px;border-radius:50%;background:#04231d}
+.val-map-pin b>*{transform:rotate(45deg)}
+.val-map-pin.is-missing b{background:#c9d7d2;color:#3f5a53}
+.val-map-label{background:rgba(7,27,25,.74);color:#fff;border:0;border-radius:8px;padding:2px 8px;font-size:11px;font-weight:700;box-shadow:none;white-space:nowrap}
+.val-map-label::before{display:none}
+
+/* ------------------------------------------------ Propriedade e talhões */
+.property-fields{display:grid;gap:12px}
+.property-fields-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
+.property-fields-head small{display:block;color:var(--val-muted,#5b7a72);font-size:10px;letter-spacing:.12em;font-weight:850}
+.property-fields-name{display:grid;gap:3px;margin-top:4px;font-size:11.5px;font-weight:700;color:var(--val-muted,#5b7a72)}
+.property-fields-name input{min-width:240px;min-height:38px;padding:0 10px;border:1px solid var(--val-line,#dce8e4);border-radius:10px;background:#fff;color:var(--val-text,#0e2622);font:inherit;font-size:15px;font-weight:750}
+.property-fields-head p{display:flex;align-items:center;gap:6px;margin:6px 0 0;color:var(--val-muted,#5b7a72);font-size:12.5px}
+.property-fields-tools{display:flex;gap:8px;flex-wrap:wrap}
+.property-fields-tools button,.property-fields-draw button,.property-fields-list-head button,.property-fields-foot button{
+ display:inline-flex;align-items:center;gap:7px;min-height:42px;padding:0 14px;border:1px solid var(--val-line,#dce8e4);border-radius:12px;
+ background:#fff;color:var(--val-text,#0e2622);font:inherit;font-size:12.5px;font-weight:700;cursor:pointer;
+}
+.property-fields-tools button:hover,.property-fields-draw button:hover,.property-fields-list-head button:hover{border-color:rgba(0,200,150,.5);background:#f2fbf7}
+.property-fields-tools button.active{border-color:#2d8cff;background:#e9f2ff;color:#0b4fa8}
+.property-fields button.is-primary{border-color:transparent;background:linear-gradient(135deg,#009f78,#00c896);color:#04231d;font-weight:800}
+.property-fields button.is-ghost{border-color:transparent;background:transparent;color:var(--val-muted,#5b7a72)}
+.property-fields button:disabled{opacity:.55;cursor:not-allowed}
+.property-fields-hint{margin:0;padding:10px 12px;border-radius:10px;background:#e9f2ff;color:#0b4fa8;font-size:12.5px;font-weight:600}
+.property-fields-draw{display:flex;gap:8px;flex-wrap:wrap}
+.property-fields-list{display:grid;gap:8px}
+.property-fields-list-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.property-fields-list-head h5{margin:0;font-size:13.5px;font-weight:800}
+.property-field-row{
+ display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,.7fr) minmax(0,1fr) minmax(0,.7fr) auto auto;gap:8px;align-items:end;
+ padding:10px;border:1px solid var(--val-line,#dce8e4);border-radius:12px;background:#fff;
+}
+.property-field-row label{display:grid;gap:3px;min-width:0;color:var(--val-muted,#5b7a72);font-size:11px;font-weight:700}
+.property-field-row input{min-height:38px;padding:0 9px;border:1px solid var(--val-line,#dce8e4);border-radius:9px;font:inherit;font-size:13px;color:var(--val-text,#0e2622);background:#fff;min-width:0}
+.property-field-geo{align-self:center;padding:5px 9px;border-radius:999px;background:#eef2f1;color:#5b7a72;font-size:10.5px;font-weight:750;white-space:nowrap}
+.property-field-geo.is-mapped{background:#e6fbf3;color:#0f6b52}
+.property-field-remove{display:grid;place-items:center;width:38px;height:38px;border:1px solid var(--val-line,#dce8e4);border-radius:10px;background:#fff;color:#8b2f2f;cursor:pointer}
+.property-field-remove:hover{background:#fff1f1}
+.property-fields-empty,.route-map-empty,.property-preview-note{display:flex;align-items:center;gap:8px;margin:0;padding:12px 13px;border:1px dashed var(--val-line,#dce8e4);border-radius:12px;color:var(--val-muted,#5b7a72);font-size:12.5px;line-height:1.45}
+.property-preview-note.is-error{border-style:solid;border-color:#f1c0c0;color:#8b2f2f;background:#fff6f6}
+.property-fields-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.property-fields-foot small{color:var(--val-muted,#5b7a72);font-size:11.5px;max-width:520px;line-height:1.45}
+.property-fields-foot>div{display:flex;gap:8px}
+.property-fields-error{margin:0;padding:10px 12px;border-radius:10px;background:#fff1f1;color:#8b2f2f;font-size:12.5px}
+.property-fields-notice{margin:0;padding:10px 12px;border-radius:10px;background:#e6fbf3;color:#0f6b52;font-size:12.5px}
+
+/* Chip no herói do Produtor 360. */
+.client-located{display:inline-flex;align-items:center;gap:5px}
+.client-located.is-off{opacity:.75}
+
+/* ------------------------------------------------------ Rota das visitas */
+.route-map{display:grid;gap:10px;margin:12px 0}
+.route-map-stops{list-style:none;margin:0;padding:0;display:grid;gap:6px}
+.route-map-stops li{display:flex;align-items:center;gap:10px;min-height:40px}
+.route-map-stops b{display:grid;place-items:center;width:28px;height:28px;flex:none;border-radius:50%;background:linear-gradient(135deg,#009f78,#00c896);color:#04231d;font-size:12px;font-weight:800}
+.route-map-stops li.is-missing b{background:#c9d7d2;color:#3f5a53}
+.route-map-stops div{display:grid;min-width:0}
+.route-map-stops strong{font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.route-map-stops span{color:var(--val-muted,#5b7a72);font-size:11.5px}
+
+/* ------------------------------------------------- Preparar visita: ONDE */
+.property-preview{display:grid;gap:6px}
+.property-preview-caption{margin:0;color:var(--val-muted,#5b7a72);font-size:12px}
+.prepare-map .property-preview-note{border:0;padding:0}
+
+@media(max-width:760px){
+ .val-map-canvas{height:min(var(--val-map-height,280px),58vh)}
+ .property-fields-name input{min-width:0;width:100%}
+ .property-fields-tools{width:100%}
+ .property-fields-tools button{flex:1 1 auto;justify-content:center;min-height:46px}
+ .property-fields-draw button{flex:1 1 auto;justify-content:center;min-height:46px}
+ .property-field-row{grid-template-columns:1fr 1fr}
+ .property-field-row label:first-child{grid-column:1/-1}
+ .property-field-geo{grid-column:1;justify-self:start}
+ .property-field-remove{grid-column:2;justify-self:end}
+ .property-fields-foot>div{width:100%}
+ .property-fields-foot .is-primary{flex:1;justify-content:center;min-height:48px}
+}

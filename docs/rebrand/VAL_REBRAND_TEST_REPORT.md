@@ -15,6 +15,7 @@ Resultado dos gates do rebrand.
 | **Baseline (antes do rebrand)** | 1291 | 1263 | **28** |
 | **Entrega final** | 1364 | **1359** | **5** |
 | **r16 — dois níveis + voz no celular** | 1370 | **1365** | **5** |
+| **r17 — sede, talhões e rota no satélite** | 1376 | **1373** | **3** |
 
 **+36 testes, +38 passando, −2 falhas.** Nenhum teste que passava passou a falhar.
 (O ganho de 38 supera os 36 novos porque duas falhas do baseline foram resolvidas por trabalho do próprio usuário incorporado nesta branch.)

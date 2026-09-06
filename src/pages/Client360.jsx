@@ -3,6 +3,7 @@ import {ArrowLeft,BadgeDollarSign,BrainCircuit,CalendarClock,ChevronDown,Fish,Ga
 import ProducerProfileEditor from '../components/ProducerProfileEditor'
 import ProducerBusinessOverview from '../components/ProducerBusinessOverview'
 import ProducerFieldGallery from '../components/ProducerFieldGallery'
+import PropertyFields from '../components/PropertyFields'
 import VoiceCapture from '../components/voice/VoiceCapture'
 import ContextPanel from '../components/ContextPanel'
 import {compactBRL,commercialMetrics,metricValue} from '../lib/commercial-metrics'
@@ -83,7 +84,7 @@ export default function Client360({client,visits=[],opportunities=[],storageScop
   <div className="producer-split-main page-stack client-memory-page">
   <button className="back-btn" onClick={onBack}><ArrowLeft size={17}/>Voltar</button>
   <section className="client-hero">
-   <div><span className="eyebrow">MEMÓRIA DO PRODUTOR</span><h2>{client.name}</h2><p><MapPin size={15}/>{client.municipality} • {client.area} • {client.cultures}</p><div className="tag-row"><span>{metrics.profileMeasured?client.primaryProfile:'Perfil a medir'}</span><span>IRT {metricValue(client.irt,metrics.irtKnown)}</span><span>NPS {metricValue(client.nps,metrics.npsKnown)}</span></div></div>
+   <div><span className="eyebrow">MEMÓRIA DO PRODUTOR</span><h2>{client.name}</h2><p><MapPin size={15}/>{client.municipality} • {client.area} • {client.cultures}</p><div className="tag-row"><span>{metrics.profileMeasured?client.primaryProfile:'Perfil a medir'}</span><span>IRT {metricValue(client.irt,metrics.irtKnown)}</span><span>NPS {metricValue(client.nps,metrics.npsKnown)}</span><span className={`client-located ${client.location?'is-on':'is-off'}`}><MapPin size={12}/>{client.location?'Sede no mapa':'Sem sede no mapa'}</span></div></div>
    <div className="hero-actions"><button onClick={onAsk}><MessageSquareText size={17}/>Perguntar à VAL</button><button onClick={onPrepare}><BrainCircuit size={17}/>Preparar visita</button><VoiceCapture clientId={client.id} interactionType="CLIENT_NOTE" label="Registrar áudio" description="Conte o que mudou" sourceContext={{page:'CLIENT_360'}} onConfirmed={async payload=>{const canonical=canonicalVoiceChange(payload);setVoiceChange(canonical);setMemoryRefreshError('');setOverviewRevision(value=>value+1);try{await onRefreshPortfolio?.()}catch{setMemoryRefreshError('A informação foi confirmada, mas esta visão não conseguiu recarregar a carteira agora.')}onSaved?.(canonical?'Áudio confirmado e incorporado ao contexto futuro deste produtor.':'Revisão concluída sem nova informação consolidada.')}}/></div>
   </section>
 
@@ -97,6 +98,10 @@ export default function Client360({client,visits=[],opportunities=[],storageScop
    </div>
    {memoryRefreshError&&<p className="client-memory-refresh-error" role="status">{memoryRefreshError}</p>}
   </section>
+
+  <Drilldown eyebrow="PROPRIEDADE E TALHÕES" title="Ver mapa, sede e talhões">
+   <PropertyFields client={client} onSaved={onSaved} onRefreshPortfolio={onRefreshPortfolio}/>
+  </Drilldown>
 
   <Drilldown eyebrow="NEGÓCIO" title="Ver negócio, oportunidades e indicadores">
    <section className="four-grid"><div className="mini-stat producer-canonical-stat"><HeartHandshake/><small>IRT / NPS</small><b>{metricValue(client.irt,metrics.irtKnown)} <em>/</em> {metricValue(client.nps,metrics.npsKnown)}</b><span>Relacionamento e recomendação</span></div><div className="mini-stat producer-canonical-stat is-highlight"><BadgeDollarSign/><small>Potencial em aberto</small><b>{compactBRL(metrics.openPotential,{known:metrics.openPotentialKnown})}</b><span>Potencial total menos compras atuais</span></div><div className="mini-stat producer-canonical-stat"><Target/><small>Pipeline aberto</small><b>{compactBRL(metrics.openPipeline,{known:metrics.pipelineKnown})}</b><span>Oportunidades ainda não fechadas</span></div><div className="mini-stat producer-canonical-stat"><Percent/><small>Share realizado</small><b>{metricValue(metrics.realizedShare,metrics.shareKnown,'%')}</b><span>Compras atuais sobre o potencial</span></div></section>

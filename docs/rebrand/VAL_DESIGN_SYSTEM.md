@@ -110,6 +110,15 @@ do recolhível perde a moldura (`.val-disclosure .copilot-talk`, `.pipeline-roi`
 Produtor 360 já seguia a regra com `client-drilldown`; Oportunidades passou a seguir com
 o simulador de cenário.
 
+### Mapa de satélite (`.val-map-shell`)
+
+Leaflet sob demanda com tiles Esri World Imagery (mesma atribuição do Manual). Pino em
+`divIcon` esmeralda, talhão em lima (`#c8f25e`, 18% de preenchimento), rota tracejada
+esmeralda, rascunho de desenho em azul. Sem sede registrada o mapa abre no Brasil
+inteiro — nunca num pino aproximado. Usado em `PropertyFields` (Produtor 360),
+`RouteMap` (Visitas) e `PropertyPreview` (Preparar visita). CSP libera só
+`https://server.arcgisonline.com` em `img-src`.
+
 ### Painel contextual (`.context-panel`)
 
 Split View do Produtor 360: Timeline · Contexto · Copiloto. Sticky no desktop, empilhado

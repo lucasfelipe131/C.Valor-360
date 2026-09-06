@@ -18,6 +18,7 @@ Branch: `rebrand/val-global-hybrid-workspace-v1` · Base: `2bed57c` · `main` n�
 | **R9** | Fronteira do iframe | `rebrand(r9)` |
 | **R12** | Correção pela referência: paleta restaurada, marca corrigida, navegação e Home refeitas segundo a Mescla 09 | `rebrand(r12)` |
 | **R16** | Dois níveis em toda tela (primeiro plano visível, segundo plano em `Disclosure`); no celular a VAL em evidência, com "Falar com a VAL" abrindo o Copiloto já em modo conversa por voz | `rebrand(r16)` |
+| **R17** | Sede no mapa e talhões no Produtor 360; rota das visitas sobre satélite; "ONDE" na preparação da visita. Estende `properties`/`fields` e o envelope canônico de geometria que o Manual já lê — spec em `VAL_PROPERTY_MAP_v1.md` | `feat(r17)` |
 
 **Não entregues: R6, R7 (parcial), R8, R10 (parcial), R11.** Detalhe na seção 5.
 
