@@ -180,15 +180,15 @@
   .mobile-more-sheet>div>button{min-width:0!important;min-height:64px!important;padding:9px!important;border-radius:13px!important}
   .mobile-more-sheet>div>button b{font-size:10.5px!important;line-height:1.15;text-align:left}
 
-  /* Barra inferior: quatro decisões, sem excesso de módulos. */
-  .mobile-nav{position:fixed!important;z-index:100!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;height:calc(64px + env(safe-area-inset-bottom))!important;padding:5px max(8px,env(safe-area-inset-right)) env(safe-area-inset-bottom) max(8px,env(safe-area-inset-left))!important;display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;align-items:start!important;gap:3px!important;background:rgba(255,255,255,.98)!important;border-top:1px solid rgba(8,63,53,.10)!important;box-shadow:0 -8px 26px rgba(5,39,33,.08)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
+  /* Barra inferior: inicio, produtor, criar, copiloto e mais. */
+  .mobile-nav{position:fixed!important;z-index:100!important;left:0!important;right:0!important;bottom:0!important;width:100%!important;height:calc(64px + env(safe-area-inset-bottom))!important;padding:5px max(8px,env(safe-area-inset-right)) env(safe-area-inset-bottom) max(8px,env(safe-area-inset-left))!important;display:grid!important;grid-template-columns:repeat(5,minmax(0,1fr))!important;align-items:start!important;gap:3px!important;background:rgba(255,255,255,.98)!important;border-top:1px solid rgba(8,63,53,.10)!important;box-shadow:0 -8px 26px rgba(5,39,33,.08)!important;backdrop-filter:none!important;-webkit-backdrop-filter:none!important}
   .mobile-nav>button{position:relative!important;min-width:0!important;width:100%!important;height:54px!important;min-height:54px!important;margin:0!important;padding:5px 2px!important;display:flex!important;flex-direction:column!important;align-items:center!important;justify-content:center!important;gap:2px!important;border:0!important;border-radius:12px!important;background:transparent!important;color:#71817c!important;box-shadow:none!important}
   .mobile-nav>button>svg{width:20px!important;height:20px!important}
   .mobile-nav>button>span,.mobile-nav>button>b{font-size:9.5px!important;font-weight:720!important;line-height:1!important;white-space:nowrap}
   .mobile-nav>button.active{color:#087d61!important;background:#edfaf6!important}
-  .mobile-nav .mobile-val-button>span{width:30px!important;height:30px!important;display:grid!important;place-items:center!important;border-radius:10px!important;background:linear-gradient(135deg,#0b67d8,#00a978)!important;color:#fff!important;box-shadow:0 5px 12px rgba(0,125,97,.18)!important}
-  .mobile-nav .mobile-val-button>span svg{width:18px!important;height:18px!important}
-  .mobile-nav .mobile-val-button>b{color:#087d61!important}
+  .mobile-nav .mobile-val-button>span,.mobile-nav .mobile-create-button>span{width:30px!important;height:30px!important;display:grid!important;place-items:center!important;border-radius:10px!important;background:linear-gradient(135deg,#0b67d8,#00a978)!important;color:#fff!important;box-shadow:0 5px 12px rgba(0,125,97,.18)!important}
+  .mobile-nav .mobile-val-button>span svg,.mobile-nav .mobile-create-button>span svg{width:18px!important;height:18px!important}
+  .mobile-nav .mobile-val-button>b,.mobile-nav .mobile-create-button>b{color:#087d61!important}
 }
 
 @media (max-width: 390px) {

@@ -1,139 +1,91 @@
+/* Marca oficial da VAL — dimensionamento do ativo original.
+   As peças são PNG com proporção própria: símbolo 1900x1507 (1,26), wordmark
+   3320x779 (4,26) e assinatura 3258x132 (24,7). O tamanho é dado pela ALTURA
+   do símbolo e o resto acompanha — travar largura e altura deformaria a marca. */
+
 .val-final-brand{
+ --val-mark-height:38px;
+ display:inline-flex;
+ flex-direction:column;
+ align-items:flex-start;
+ gap:5px;
+ min-width:0;
+}
+
+.val-final-brand .brand-lockup{
  display:inline-flex;
  align-items:center;
- gap:9px;
+ gap:11px;
  min-width:0;
- color:var(--val-logo-word,#082c57);
 }
 
-.val-final-brand .brand-mark{
+.val-final-brand .brand-mark{display:block;flex:0 0 auto}
+.val-final-brand .brand-word{display:block;min-width:0;flex:0 1 auto}
+
+.val-final-brand .brand-mark img{
  display:block;
- width:48px;
- height:48px;
- flex:0 0 auto;
- filter:drop-shadow(0 8px 14px rgba(7,73,125,.15));
+ width:auto;
+ height:var(--val-mark-height);
+ object-fit:contain;
+ user-select:none;
 }
 
-.val-final-brand.is-surface-dark .brand-mark,
-[data-val-surface="dark"] .val-final-brand.is-surface-auto .brand-mark,
-.sidebar .val-final-brand.is-surface-auto .brand-mark,
-.public-welcome .val-final-brand.is-surface-auto .brand-mark,
-.login-story .val-final-brand.is-surface-auto .brand-mark,
-.val-fs-header .val-final-brand.is-surface-auto .brand-mark{
- filter:drop-shadow(0 9px 16px rgba(0,0,0,.2));
+/* O wordmark alinha pela caixa alta do "VAL", não pela altura do símbolo. */
+.val-final-brand .brand-word img{
+ display:block;
+ width:auto;
+ max-width:100%;
+ height:calc(var(--val-mark-height) * .52);
+ object-fit:contain;
+ user-select:none;
 }
 
-.val-final-brand .brand-mark svg,
-.val-final-brand .val-wordmark{
+/* A assinatura fica sob o conjunto, como no ativo oficial — e é dimensionada
+   pela LARGURA do lockup, senão vira um fio ilegível. */
+.val-final-brand .brand-signature{display:block;width:100%;min-width:0}
+.val-final-brand .brand-signature img{
  display:block;
  width:100%;
- height:100%;
- overflow:visible;
-}
-
-.val-final-brand .brand-word{
- display:flex;
- width:104px;
- min-width:0;
- height:34px;
- margin:0;
- flex:0 0 auto;
- flex-direction:column;
- justify-content:center;
-}
-
-.val-final-brand.is-full{
- gap:11px;
-}
-
-.val-final-brand.is-full .brand-mark{
- width:52px;
- height:52px;
-}
-
-.val-final-brand.is-full .brand-word{
- width:118px;
  height:auto;
- min-height:42px;
+ max-width:100%;
+ user-select:none;
 }
 
-.val-final-brand.is-full .val-wordmark{
- height:auto;
- aspect-ratio:220/72;
+/* A marca foi desenhada para fundo escuro. Em superfície clara o traço de
+   pedra ganha um halo mínimo para não sumir no branco. */
+.val-final-brand.is-surface-light img{filter:drop-shadow(0 1px 1px rgba(16,35,31,.3))}
+.val-final-brand.is-surface-dark .brand-mark img,
+[data-val-surface="dark"] .val-final-brand.is-surface-auto .brand-mark img,
+.sidebar .val-final-brand.is-surface-auto .brand-mark img,
+.public-welcome .val-final-brand.is-surface-auto .brand-mark img,
+.login-story .val-final-brand.is-surface-auto .brand-mark img,
+.val-fs-header .val-final-brand.is-surface-auto .brand-mark img{
+ filter:drop-shadow(0 6px 14px rgba(0,0,0,.32));
 }
 
-.val-final-brand.is-compact .brand-word,
-.val-final-brand.is-monochrome .brand-word{
- width:104px;
- height:34px;
-}
+/* Monocromática: derivada do ativo, nunca redesenhada. */
+.val-final-brand.is-monochrome img{filter:grayscale(1) contrast(1.15)}
 
 .val-final-brand.is-icon-only,
-.val-final-brand.compact{
- gap:0;
-}
+.val-final-brand.compact{gap:0}
+.val-final-brand.is-icon-only .brand-lockup,
+.val-final-brand.compact .brand-lockup{gap:0}
 
-.val-final-brand.is-icon-only .brand-mark,
-.val-final-brand.compact .brand-mark{
- width:46px;
- height:46px;
-}
-
-.sidebar .val-final-brand{
- gap:8px;
-}
-
-.sidebar .val-final-brand .brand-mark{
- width:44px;
- height:44px;
-}
-
-.sidebar .val-final-brand .brand-word{
- width:98px;
- height:32px;
-}
-
-.val-login-shell .login-story>.val-final-brand .brand-mark{
- width:58px;
- height:58px;
-}
-
-.val-login-shell .login-story>.val-final-brand .brand-word{
- width:126px;
- height:42px;
-}
-
-.password-change-card>.val-final-brand .brand-word,
-.public-welcome>.val-final-brand .brand-word,
-.public-survey-header>.val-final-brand .brand-word{
- width:108px;
- height:35px;
-}
-
-.signal-core .val-final-brand .brand-mark{
- width:72px!important;
- height:72px!important;
-}
+/* ------------------------------------------------------------- superfícies */
+.val-final-brand.is-full{--val-mark-height:52px}
+.sidebar .val-final-brand{--val-mark-height:44px;gap:6px}
+.val-login-shell .login-story>.val-final-brand{--val-mark-height:70px;gap:9px}
+.password-change-card>.val-final-brand,
+.public-welcome>.val-final-brand,
+.public-survey-header>.val-final-brand{--val-mark-height:46px}
+.signal-core .val-final-brand{--val-mark-height:70px}
 
 @media(max-width:760px){
- .topbar-mobile-logo .val-final-brand.is-icon-only .brand-mark,
- .topbar-mobile-logo .val-final-brand.compact .brand-mark{
-  width:38px!important;
-  height:38px!important;
- }
- .mobile-more-sheet .val-final-brand .brand-word{
-  width:88px;
-  height:29px;
- }
+ .topbar-mobile-logo .val-final-brand.is-icon-only,
+ .topbar-mobile-logo .val-final-brand.compact{--val-mark-height:32px}
+ .mobile-more-sheet .val-final-brand{--val-mark-height:30px}
 }
 
 @media(max-width:420px){
- .val-login-shell .login-story>.val-final-brand .brand-mark{
-  width:50px;
-  height:50px;
- }
- .val-login-shell .login-story>.val-final-brand .brand-word{
-  width:108px;
-  height:36px;
- }
+ .val-login-shell .login-story>.val-final-brand{--val-mark-height:56px}
 }

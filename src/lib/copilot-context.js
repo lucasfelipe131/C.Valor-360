@@ -90,6 +90,7 @@ export function resolveCopilotLaunch({input={},implicitContext=null,page='',stor
   mode:requested.mode||'ASK',
   intent:rejectedClient?'':identifier(requested.intent),
   capture:rejectedClient?'':attachedFile?'':requested.capture||'',
+  conversation:!rejectedClient&&requested.conversation===true,
   source:requested.source||page||'global',
   context:rejectedClient?null:requestedContext,
   files:rejectedClient?[]:Array.isArray(requested.files)?requested.files.slice(0,3):attachedFile&&!voiceFile?[attachedFile]:[],

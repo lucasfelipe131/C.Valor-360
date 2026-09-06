@@ -5,15 +5,17 @@ import test from 'node:test'
 const agro=readFileSync(new URL('../src/pages/Agro.jsx',import.meta.url),'utf8')
 const css=readFileSync(new URL('../src/agro-workspace.css',import.meta.url),'utf8')
 const main=readFileSync(new URL('../src/main.jsx',import.meta.url),'utf8')
+const agroTools=readFileSync(new URL('../src/lib/agro-tools.js',import.meta.url),'utf8')
 
 test('Inteligência Agronômica combina hub nativo e ferramenta técnica em área útil ampla',()=>{
  assert.match(agro,/agro-decision-page/)
  assert.match(agro,/agro-capability-groups/)
  assert.match(agro,/agro-tool-workspace/)
  assert.match(agro,/agro-minimal-header/)
- assert.match(agro,/CAMPO E SOLO/)
- assert.match(agro,/DECISÃO TÉCNICA/)
- assert.match(agro,/CONHECIMENTO/)
+ // Os cinco domínios saíram de Agro.jsx e viraram registro compartilhado
+ // (lib/agro-tools), para que a busca global também os enxergue.
+ assert.match(agro,/AGRO_GROUPS/)
+ for(const dominio of ['CAMPO E SOLO','DECISÃO TÉCNICA','CONHECIMENTO'])assert.match(agroTools,new RegExp(dominio))
  assert.match(css,/\.agro-decision-page\{/)
  assert.match(css,/\.agro-tool-workspace\{[\s\S]*min-height:calc\(100dvh - 150px\)/)
  assert.match(css,/\.agro-tool-workspace iframe\{[\s\S]*height:calc\(100dvh - 215px\)/)

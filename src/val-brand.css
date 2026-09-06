@@ -13,20 +13,6 @@
  --val-text:#10231f;
  --val-muted:#6c7f78;
  --val-line:#dce8e4;
- --val-logo-blue-start:#2d8cff;
- --val-logo-blue-mid:#167fe8;
- --val-logo-blue-end:#0757b6;
- --val-logo-fold-start:#0b67d8;
- --val-logo-fold-end:#063a8c;
- --val-logo-green-start:#00c896;
- --val-logo-green-mid:#009f78;
- --val-logo-green-end:#006e5e;
- --val-logo-leaf-start:#00c896;
- --val-logo-leaf-mid:#00c896;
- --val-logo-leaf-end:#007a5c;
- --val-logo-word:#082c57;
- --val-logo-accent:#009f78;
- --val-logo-highlight:#fff;
  --navy:var(--val-ink);
  --navy2:var(--val-forest);
  --blue:var(--val-emerald-dark);
@@ -50,63 +36,18 @@ body{background:radial-gradient(circle at 86% 0,rgba(45,140,255,.07),transparent
 
 /* Assinatura VAL — a superfície controla contraste; a geometria permanece única. */
 .val-brand{
- --val-logo-blue-start:#2d8cff;
- --val-logo-blue-mid:#167fe8;
- --val-logo-blue-end:#0757b6;
- --val-logo-fold-start:#0b67d8;
- --val-logo-fold-end:#063a8c;
- --val-logo-green-start:#00c896;
- --val-logo-green-mid:#009f78;
- --val-logo-green-end:#006e5e;
- --val-logo-leaf-start:#00c896;
- --val-logo-leaf-mid:#00c896;
- --val-logo-leaf-end:#007a5c;
- --val-logo-word:#082c57;
- --val-logo-accent:#009f78;
- --val-logo-highlight:#fff;
  display:flex;
  align-items:center;
- color:var(--val-logo-word);
  isolation:isolate;
 }
-.val-brand.is-surface-light{color:#082c57}
+.val-brand.is-surface-light{color:#12291b}
 .val-brand.is-surface-dark,
 [data-val-surface="dark"] .val-brand.is-surface-auto,
 .sidebar .val-brand.is-surface-auto,
 .public-welcome .val-brand.is-surface-auto,
 .login-story .val-brand.is-surface-auto,
 .val-fs-header .val-brand.is-surface-auto{
- --val-logo-blue-start:#72b8ff;
- --val-logo-blue-mid:#2d8cff;
- --val-logo-blue-end:#167fe8;
- --val-logo-fold-start:#9bd2ff;
- --val-logo-fold-end:#2d8cff;
- --val-logo-green-start:#c8f25e;
- --val-logo-green-mid:#00c896;
- --val-logo-green-end:#009f78;
- --val-logo-leaf-start:#d9ff80;
- --val-logo-leaf-mid:#72e6c5;
- --val-logo-leaf-end:#00c896;
- --val-logo-word:#f4f8f6;
- --val-logo-accent:#72e6c5;
- --val-logo-highlight:#fff;
  color:#f4f8f6;
-}
-.val-brand.is-monochrome{
- --val-logo-blue-start:currentColor;
- --val-logo-blue-mid:currentColor;
- --val-logo-blue-end:currentColor;
- --val-logo-fold-start:currentColor;
- --val-logo-fold-end:currentColor;
- --val-logo-green-start:currentColor;
- --val-logo-green-mid:currentColor;
- --val-logo-green-end:currentColor;
- --val-logo-leaf-start:currentColor;
- --val-logo-leaf-mid:currentColor;
- --val-logo-leaf-end:currentColor;
- --val-logo-word:currentColor;
- --val-logo-accent:currentColor;
- --val-logo-highlight:currentColor;
 }
 .val-brand.is-surface-dark.is-monochrome,
 [data-val-surface="dark"] .val-brand.is-surface-auto.is-monochrome,
@@ -115,13 +56,7 @@ body{background:radial-gradient(circle at 86% 0,rgba(45,140,255,.07),transparent
 .login-story .val-brand.is-surface-auto.is-monochrome,
 .val-fs-header .val-brand.is-surface-auto.is-monochrome{color:#f4f8f6}
 .val-brand .brand-mark{display:block;flex:none}
-.val-brand .brand-mark svg{display:block;width:100%;height:100%}
-.val-brand .brand-word{display:flex;min-width:0;flex-direction:column;justify-content:center}
-.val-brand .val-brand-signature{display:block;margin-top:3px;color:currentColor;font-size:6px;font-weight:800;line-height:1.1;letter-spacing:.145em;opacity:.68;white-space:nowrap}
-.val-brand.is-icon-only .val-logo-detail,
-.val-brand.compact .val-logo-detail{display:none}
-.val-brand.is-icon-only .val-logo-fold,
-.val-brand.compact .val-logo-fold{fill-opacity:.48}
+.val-brand .brand-word{display:block;min-width:0}
 
 /* Estrutura principal */
 .app-shell{background:transparent}
@@ -129,7 +64,6 @@ body{background:radial-gradient(circle at 86% 0,rgba(45,140,255,.07),transparent
 .sidebar:before{content:"";position:absolute;inset:0;background-image:linear-gradient(rgba(255,255,255,.018) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.018) 1px,transparent 1px);background-size:34px 34px;mask-image:linear-gradient(to bottom,#000,transparent 82%);pointer-events:none}
 .sidebar>*{position:relative;z-index:1}
 .sidebar .val-brand{color:#f4f8f6}
-.sidebar .val-brand .brand-word small{color:rgba(215,242,234,.58)}
 .sidebar nav{margin-top:34px;gap:6px}
 .sidebar nav button{border:1px solid transparent;color:rgba(220,239,233,.67);font-weight:620;letter-spacing:-.01em;transition:background .18s ease,border-color .18s ease,color .18s ease,transform .18s ease,box-shadow .18s ease}
 .sidebar nav button:hover{background:rgba(255,255,255,.055);border-color:rgba(255,255,255,.07);color:#fff;transform:translateX(2px)}
@@ -236,17 +170,6 @@ body{background:radial-gradient(circle at 86% 0,rgba(45,140,255,.07),transparent
 @media(max-width:760px){
  body{background:var(--val-canvas)}
  .topbar-mobile-logo .val-brand.is-surface-auto{
-  --val-logo-blue-start:#72b8ff;
-  --val-logo-blue-mid:#2d8cff;
-  --val-logo-blue-end:#167fe8;
-  --val-logo-fold-start:#9bd2ff;
-  --val-logo-fold-end:#2d8cff;
-  --val-logo-green-start:#c8f25e;
-  --val-logo-green-mid:#00c896;
-  --val-logo-green-end:#009f78;
-  --val-logo-leaf-start:#d9ff80;
-  --val-logo-leaf-mid:#72e6c5;
-  --val-logo-leaf-end:#00c896;
   color:#f4f8f6;
  }
  .topbar{background:radial-gradient(circle at 88% 0,rgba(45,140,255,.28),transparent 37%),linear-gradient(145deg,#071b19,#0a433a);border-bottom-color:rgba(255,255,255,.06)}

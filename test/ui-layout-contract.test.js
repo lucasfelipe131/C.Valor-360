@@ -10,10 +10,10 @@ const read=relative=>readFileSync(join(root,relative),'utf8')
 test('brand mark exposes the VAL identity and reuses the real logo on mobile',()=>{
  const logo=read('src/components/Logo.jsx')
  const topbar=read('src/components/Topbar.jsx')
- assert.match(logo,/aria-label="VAL — inteligência que gera valor"/)
- assert.match(logo,/val-signal-/)
- assert.match(logo,/circle cx="31\.4" cy="45\.2"/)
- assert.match(logo,/useId/)
+ assert.match(logo,/VAL — inteligência que gera valor/)
+ // A marca e o ativo oficial, nao um desenho: img em vez de svg/useId.
+ assert.match(logo,/val-symbol-official\.png/)
+ assert.match(logo,/<img/)
  assert.match(topbar,/<Logo compact\/>/)
  assert.doesNotMatch(topbar,/topbar-mobile-mark|>C</)
 })
@@ -149,8 +149,11 @@ test('global overview, usage metrics and administration stay protected by login 
  assert.match(overview,/PostgreSQL por login/)
  assert.match(overview,/Manual do Agrônomo • mesmo login/i)
  assert.match(admin,/Somente a administração/)
- assert.match(sidebar,/currentUser\?\.role===['"]admin['"]/)
- assert.match(mobile,/currentUser\?\.role===['"]admin['"]/)
+ // A permissao passou a ser declarada no modelo de navegacao e aplicada pelas duas
+ // superficies, em vez de repetida em dois arquivos.
+ const workspaces=read('src/lib/val-workspaces.js')
+ assert.match(workspaces,/admin:\{[^}]*role:'admin'\}/)
+ for(const source of [sidebar,mobile])assert.match(source,/workspaceModules\((?:workspace|id),role\)/)
 })
 
 test('commercial cache is scoped and technical drafts expire with the browser session',()=>{
@@ -181,7 +184,11 @@ test('production bundle receives the protected portfolio only from the server',(
  assert.match(dashboard,/reconcilePipeline\(clients,\[\.\.\.cachedItems,\.\.\.opportunities\]\)/)
  assert.doesNotMatch(dashboard,/nextVisit\?\.time\|\|['"]14:00/)
  assert.match(dashboard,/const scheduled=scheduledAtOf\(visit\)/)
- assert.match(dashboard,/recentVisits\.length\?recentVisits\.map/)
+ // As atividades recentes migraram para a coluna direita do cockpit, mas
+ // continuam vindo da carteira carregada do servidor.
+ assert.match(dashboard,/const recentVisits=\[\.\.\.\(visits\|\|\[\]\)\]/)
+ assert.match(dashboard,/recentVisits\.length/)
+ assert.match(dashboard,/recentVisits\.map/)
 })
 
 test('long portfolio guides use progressive disclosure and visits reject incomplete commitments',()=>{

@@ -63,7 +63,7 @@ const storePath=join(dataRoot,'valor360-store.json')
 const profileMatrix=JSON.parse(readFileSync(join(appRoot,'src','data','profile-matrix.json'),'utf8'))
 const surveyOptions=buildSurveyOptions(profileMatrix)
 const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp','.woff2':'font/woff2'}
-const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(self), microphone=(self), geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://api.openai.com wss://api.openai.com; font-src 'self'; worker-src 'self' blob:; media-src 'self' blob: data:; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"}
+const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(self), microphone=(self), geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://server.arcgisonline.com; connect-src 'self' https://api.openai.com wss://api.openai.com; font-src 'self'; worker-src 'self' blob:; media-src 'self' blob: data:; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"}
 
 mkdirSync(dataRoot,{recursive:true})
 if(!existsSync(storePath))writeFileSync(storePath,JSON.stringify({surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[]}},null,2))
@@ -1033,6 +1033,11 @@ async function handleApi(request,response,url){
  if(contextMatch&&request.method==='GET')return json(response,200,{context:await repository.getTechnicalContext(decodeURIComponent(contextMatch[1]),identity?.id||identity?.email)})
  if(contextMatch&&request.method==='PUT'){
   const clientId=decodeURIComponent(contextMatch[1]);const context=await repository.saveTechnicalContext(clientId,await body(request),identity?.id||identity?.email);invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId});await accessRepository.recordUsage(identity,{eventType:'memory_saved',page:'client360',entityType:'client',entityId:clientId});return json(response,200,{saved:true,context})
+ }
+ const propertyMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/property$/)
+ if(propertyMatch&&request.method==='GET')return json(response,200,await repository.getPropertyProfile(decodeURIComponent(propertyMatch[1]),identity?.id))
+ if(propertyMatch&&request.method==='PUT'){
+  const clientId=decodeURIComponent(propertyMatch[1]);const profile=await repository.savePropertyProfile(clientId,await body(request),identity?.id);invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId});await accessRepository.recordUsage(identity,{eventType:'property_saved',page:'client360',entityType:'client',entityId:clientId,metadata:{fields:profile.fields.length,located:Boolean(profile.property?.location)}});return json(response,200,profile)
  }
  const overviewMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/overview$/)
  if(overviewMatch&&request.method==='GET')return json(response,200,await repository.getClientOverview(decodeURIComponent(overviewMatch[1]),identity?.id||identity?.email))

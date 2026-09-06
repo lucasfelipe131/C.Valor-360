@@ -10,6 +10,7 @@ import {opportunityCacheKey} from './lib/opportunity-pipeline'
 import {resolveCopilotLaunch} from './lib/copilot-context'
 import {clearCopilotSessionStorage} from './lib/copilot-session-storage'
 import {createValWorkspaceContext,validateValWorkspaceAction} from './lib/val-workspace-context'
+import {resolveActiveWorkspace,workspaceEntryPoint,workspaceHoldsPage} from './lib/val-workspaces'
 
 const GlobalValCopilot=lazy(()=>import('./components/GlobalValCopilot'))
 const Dashboard=lazy(()=>import('./pages/Dashboard'))
@@ -70,6 +71,7 @@ export default function App(){
  const [portfolioReady,setPortfolioReady]=useState(false)
  const [authNotice,setAuthNotice]=useState('')
  const [page,setPage]=useState('dashboard')
+ const [workspace,setWorkspace]=useState('comercial')
  const [valMode,setValMode]=useState(null)
  const [selected,setSelected]=useState(null)
  const [prepareVisitClientId,setPrepareVisitClientId]=useState('')
@@ -119,11 +121,15 @@ export default function App(){
     },
     initialFiles:Array.isArray(descriptor.files)?descriptor.files.slice(0,3):[]
    })
-    setSelected(agroClient||null)
+    if(agroClient)setSelected(agroClient)
   }else{
    setAgroLaunch(current=>current.initialFiles.length?{...current,initialFiles:[]}:current)
-   if(next!=='client360'&&next!=='copilot')setSelected(null)
   }
+  // Workspace Contextual Híbrido: mudar de módulo não descarta o produtor em
+  // foco. Antes, sair de client360 zerava a seleção e o efeito de fallback
+  // reativava o primeiro da carteira — um contexto que o usuário nunca
+  // escolheu. A troca explícita de produtor continua sendo o único caminho
+  // para trocar o contexto, e o logout continua limpando tudo.
   if(next!=='visits')setPrepareVisitClientId('')
   if(next==='val')setValMode(null)
   if(next!=='copilot')setCopilotOpen(false)
@@ -181,6 +187,23 @@ export default function App(){
  const logout=async()=>{try{const response=await fetch('/api/auth/logout',{method:'POST',signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error();clearSessionPortfolioCache(currentUser?.storageScope);setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setValMode(null);setAgroLaunch(createEmptyAgroLaunch());setAuthNotice('');setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}catch{notify('Não foi possível encerrar a sessão no servidor. Tente novamente.')}}
  const invalidateSession=notice=>{clearSessionPortfolioCache(currentUser?.storageScope);setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setValMode(null);setAgroLaunch(createEmptyAgroLaunch());setAuthNotice(notice);setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}
  const expireSession=()=>invalidateSession('Sua sessão expirou. Entre novamente.')
+ // Módulos transversais (Hoje, Copiloto) herdam o workspace ativo em vez de
+ // zerá-lo: o usuário abre a VAL e volta para onde estava trabalhando.
+ useEffect(()=>{setWorkspace(current=>workspaceHoldsPage(current,page,currentUser?.role)?current:resolveActiveWorkspace(page,current))},[page,currentUser?.role])
+ const changeWorkspace=id=>{setWorkspace(id);navigate(workspaceEntryPoint(id,currentUser?.role))}
+ // Ferramenta agronomica ativa: e o que diferencia Manual, Calculadoras e
+ // Mapas na subnavegacao, ja que todas moram na mesma rota.
+ const activeTool=page==='agro'?String(agroLaunch.initialTool?.tool||agroLaunch.initialTool?.id||''):''
+ // Um item de navegacao pode ser uma rota, uma ferramenta dentro do ambiente
+ // tecnico ou um gesto do produto que depende do produtor ativo.
+ const selectNav=entry=>{
+  if(!entry)return
+  if(entry.action==='copilot')return openCopilot()
+  if(entry.action==='prepare')return selected?.id?prepareClient(selected):navigate('visits')
+  if(entry.action==='producer')return selected?.id?openClient(selected):navigate('clients')
+  if(entry.tool)return navigate({page:'agro',tool:entry.tool,label:entry.label,context:{tool:entry.tool,label:entry.label}})
+  return navigate(entry.page)
+ }
  useEffect(()=>{if(!selected&&clientList.length)setSelected(clientList[0])},[clientList,selected])
  useEffect(()=>{setCopilotPageContext(null);setCopilotSeed(null);setCopilotOpen(false);setCopilotLoaded(false);setAgroLaunch(createEmptyAgroLaunch())},[copilotOwnerScope])
  useEffect(()=>{fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(session?.authenticated)rememberStorageScope(session.user);else clearSessionPortfolioCache();setCurrentUser(session?.user||null);setPortfolioReady(Boolean(session?.user?.demo));setAuthenticated(Boolean(session?.authenticated));if(!session?.authenticated&&session?.misconfigured)setAuthNotice('O acesso seguro do servidor ainda não foi configurado.')}).catch(()=>{clearSessionPortfolioCache();setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setCurrentUser(null);setAuthNotice('Não foi possível validar o servidor. O acesso permaneceu bloqueado.');setPortfolioReady(false);setAuthenticated(false)})},[])
@@ -196,7 +219,14 @@ export default function App(){
   return()=>controller.abort()
  },[page,selected?.id,authenticated,portfolioReady,currentUser?.id,currentUser?.demo])
  const valMeta=valMode==='insumos'?['VAL Insumos','Inteligência comercial, técnica e consultiva para gerar valor']:valMode==='graos'?['VAL Grãos','Ambiente dedicado à originação e às operações de grãos']:meta.val
- const [title,subtitle]=page==='val'?valMeta:(meta[page]||['VAL',''])
+ // Na Home o cabeçalho É a saudação, como na referência. Um título "VAL" acima
+ // de um cartão "Bom dia" era um cabeçalho em cima do outro.
+ const hour=new Date().getHours()
+ const greeting=hour<12?'Bom dia':hour<18?'Boa tarde':'Boa noite'
+ const firstName=String(currentUser?.name||currentUser?.email?.split('@')[0]||'Equipe').trim().split(/\s+/)[0]
+ const [title,subtitle]=page==='dashboard'
+  ?[`${greeting}, ${firstName}! 👋`,'Aqui está o que preparamos para você hoje.']
+  :page==='val'?valMeta:(meta[page]||['VAL',''])
  if(publicSurveyToken)return <Suspense fallback={<RouteFallback/>}><PublicSurvey token={publicSurveyToken}/></Suspense>
  if(authenticated===null)return <main className="auth-loading" role="status"><BrainCircuit/><span>Validando acesso seguro…</span></main>
  if(!authenticated)return <Login onLogin={login} notice={authNotice}/>
@@ -204,9 +234,9 @@ export default function App(){
  if(!portfolioReady)return <main className="auth-loading" role="status"><BrainCircuit/><span>Carregando carteira protegida…</span></main>
  return <div className="app-shell">
   <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-  <Sidebar page={page} currentUser={currentUser} setPage={navigate} onOpenVal={()=>openCopilot()}/>
+  <Sidebar page={page} tool={activeTool} currentUser={currentUser} workspace={workspace} onWorkspaceChange={changeWorkspace} onSelect={selectNav} onOpenVal={()=>openCopilot()}/>
   <main className="main" id="main-content" tabIndex="-1">
-   {page!=='copilot'&&<Topbar title={title} subtitle={subtitle} onNavigate={navigate} onOpenVal={()=>openCopilot()}/>}
+   {page!=='copilot'&&<Topbar title={title} subtitle={subtitle} onNavigate={navigate} onOpenVal={()=>openCopilot()} workspace={workspace} page={page} client={selected} clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onOpenClient={openClient}/>}
    <div className={`content ${page==='copilot'?'content-copilot-fullscreen':''}`}>
     <Suspense fallback={<RouteFallback/>}>
     {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient} onRefreshPortfolio={refreshPortfolio} onOpenCopilot={openCopilot}/>}
@@ -216,7 +246,7 @@ export default function App(){
      key={selected.id} client={selected} visits={visits} opportunities={opportunities}
      storageScope={currentUser?.storageScope} onBack={()=>navigate('clients')}
      onPrepare={()=>prepareClient(selected)} onUpdate={updateClient} onRefreshPortfolio={refreshPortfolio}
-     onAsk={()=>openCopilot({client:selected})}
+     onAsk={input=>openCopilot(input&&typeof input==='object'&&!input.nativeEvent?{...input,client:input.client||selected}:{client:selected})}
      onSaved={message=>notify(message||'Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}
     />}
     {page==='val'&&<ValWorkspace mode={valMode} onModeChange={setValMode} clients={clientList} selectedClient={selected} onSelect={openClient} onPrepareVisit={prepareClient}/>}
@@ -236,7 +266,7 @@ export default function App(){
     </Suspense>
    </div>
   </main>
-  {page!=='copilot'&&<MobileNav page={page} setPage={navigate} currentUser={currentUser} onOpenVal={()=>openCopilot()}/>}
+  {page!=='copilot'&&<MobileNav page={page} tool={activeTool} currentUser={currentUser} workspace={workspace} onWorkspaceChange={changeWorkspace} onSelect={selectNav} onOpenVal={()=>openCopilot()}/>}
   {toast&&<div className="toast" role="status">{toast}</div>}
  </div>
 }

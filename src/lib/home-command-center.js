@@ -1,0 +1,144 @@
+// Home como Central Operacional do Agrônomo (Mescla 09, slide 05).
+//
+// Responde, nesta ordem: o que tenho hoje, quem precisa de mim, o que está
+// pendente e qual é o próximo passo.
+//
+// Tudo é contado a partir do que a sessão já carregou — agenda, funil e
+// carteira. Nenhuma chamada nova, nenhum número estimado, nenhum alerta
+// inventado. Se um contador não tem base registrada, ele vale zero e a
+// interface diz o que isso significa.
+
+const text=value=>String(value??'').trim()
+
+export const visitLifecycle=visit=>{
+ const explicit=text(visit?.lifecycleStatus||visit?.lifecycle_status).toUpperCase()
+ if(['PLANNED','PREPARED','IN_PROGRESS','COMPLETED_PENDING_REVIEW','COMPLETED','CANCELLED'].includes(explicit))return explicit
+ const legacy=text(visit?.status).toLocaleLowerCase('pt-BR')
+ if(/cancelad/.test(legacy))return 'CANCELLED'
+ if(/realizad|conclu[ií]d/.test(legacy))return 'COMPLETED'
+ if(/revis[aã]o/.test(legacy))return 'COMPLETED_PENDING_REVIEW'
+ if(/andamento|iniciad/.test(legacy))return 'IN_PROGRESS'
+ if(/preparad/.test(legacy))return 'PREPARED'
+ return 'PLANNED'
+}
+
+export const visitMoment=visit=>{
+ const raw=visit?.scheduledAt||visit?.occurredAt||visit?.completedAt||(visit?.date?`${visit.date}T${text(visit.time)||'00:00'}`:'')
+ if(!raw)return null
+ const parsed=new Date(raw)
+ return Number.isNaN(parsed.getTime())?null:parsed
+}
+
+const sameDay=(a,b)=>a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate()
+const isOpenStage=stage=>!/fechad|ganho|perdid|cancelad|closed|won|lost/i.test(text(stage))
+const ownerOf=item=>text(item?.clientId??item?.client_id)
+const AWAITING=['IN_PROGRESS','COMPLETED_PENDING_REVIEW']
+
+export function buildDayBriefing({visits=[],opportunities=[],clients=[],now=new Date()}={}){
+ const live=visits.filter(visit=>visitLifecycle(visit)!=='CANCELLED')
+ const dated=live.map(visit=>({visit,at:visitMoment(visit),lifecycle:visitLifecycle(visit)}))
+
+ const today=dated.filter(entry=>entry.at&&sameDay(entry.at,now))
+ const concluded=today.filter(entry=>entry.lifecycle==='COMPLETED').length
+ const prepared=dated.filter(entry=>entry.lifecycle==='PREPARED').length
+ // "Pendência" é estado real do ciclo de vida, não alerta inventado.
+ const pending=dated.filter(entry=>AWAITING.includes(entry.lifecycle))
+ const openOpportunities=opportunities.filter(item=>isOpenStage(item?.stage))
+
+ const upcoming=dated
+  .filter(entry=>entry.at&&entry.at.getTime()>=now.getTime()&&!['COMPLETED','COMPLETED_PENDING_REVIEW'].includes(entry.lifecycle))
+  .sort((a,b)=>a.at-b.at)
+  .slice(0,4)
+  .map(({visit,at,lifecycle})=>{
+   const client=clients.find(item=>String(item.id)===ownerOf(visit))||null
+   return {
+    id:text(visit.id)||at.toISOString(),
+    at,lifecycle,
+    clientId:ownerOf(visit),
+    clientName:client?.name||'Produtor não vinculado',
+    place:text(client?.commercial?.property)||text(client?.municipality),
+    objective:text(visit.objective)||'Objetivo ainda não registrado.'
+   }
+  })
+
+ return {
+  cards:[
+   {id:'today',label:'Visitas de hoje',value:today.length,hint:today.length?`${concluded} concluída${concluded===1?'':'s'}`:'Nenhuma na agenda de hoje',page:'visits'},
+   {id:'prepared',label:'Preparadas',value:prepared,hint:prepared?'Prontas para a conversa':'Nenhuma preparada ainda',page:'visits'},
+   {id:'opportunities',label:'Oportunidades',value:openOpportunities.length,hint:openOpportunities.length?'Em acompanhamento':'Nenhuma em aberto',page:'opportunities'},
+   {id:'pending',label:'Pendências',value:pending.length,hint:pending.length?'Aguardam seu registro':'Nada aguardando registro',page:'visits'}
+  ],
+  upcoming,
+  undatedVisits:live.length-dated.filter(entry=>entry.at).length
+ }
+}
+
+// Produtores em foco: quem, na carteira carregada, tem um sinal registrado que
+// justifica atenção. Sem sinal, o produtor não entra — a VAL não cria foco.
+export function buildFocusProducers({clients=[],visits=[],opportunities=[],now=new Date(),limit=3}={}){
+ const live=visits.filter(visit=>visitLifecycle(visit)!=='CANCELLED')
+ const focus=[]
+
+ for(const client of clients){
+  const id=String(client?.id??'')
+  if(!id)continue
+  const own=live.filter(visit=>ownerOf(visit)===id)
+  const awaiting=own.filter(visit=>AWAITING.includes(visitLifecycle(visit))).length
+  const open=opportunities.filter(item=>ownerOf(item)===id&&isOpenStage(item?.stage)).length
+  const moments=own.map(visitMoment).filter(Boolean).map(date=>date.getTime())
+  const last=moments.length?Math.max(...moments):null
+  const days=last===null?null:Math.floor((now.getTime()-last)/86400000)
+
+  let signal=null
+  if(awaiting)signal={tone:'attention',label:'Aguarda registro',reason:`${awaiting} visita${awaiting>1?'s':''} sem relato confirmado.`,weight:3}
+  else if(open)signal={tone:'opportunity',label:'Oportunidade aberta',reason:`${open} oportunidade${open>1?'s':''} em acompanhamento.`,weight:2}
+  else if(days!==null&&days>=45)signal={tone:'attention',label:'Sem contato recente',reason:`Última visita há ${days} dias.`,weight:2}
+  else if(last===null&&own.length===0)signal={tone:'develop',label:'Sem visita registrada',reason:'Nenhuma visita na agenda deste produtor.',weight:1}
+  if(!signal)continue
+
+  focus.push({
+   id,name:text(client.name)||'Produtor',
+   place:[text(client.municipality),text(client.cultures)].filter(Boolean).join(' • '),
+   ...signal,client
+  })
+ }
+
+ return focus.sort((a,b)=>b.weight-a.weight||a.name.localeCompare(b.name,'pt-BR')).slice(0,limit)
+}
+
+// Pendências e alertas: cada linha é um estado verificável, com o destino que
+// resolve. Nenhuma delas é contagem decorativa.
+export function buildPendencies({clients=[],visits=[],opportunities=[]}={}){
+ const live=visits.filter(visit=>visitLifecycle(visit)!=='CANCELLED')
+ const awaiting=live.filter(visit=>AWAITING.includes(visitLifecycle(visit))).length
+ const withoutVisit=clients.filter(client=>!live.some(visit=>ownerOf(visit)===String(client?.id??''))).length
+ const unmeasured=clients.filter(client=>!text(client?.primaryProfile)||/classificar/i.test(text(client?.primaryProfile))).length
+ const earlyStage=opportunities.filter(item=>isOpenStage(item?.stage)&&/diagn/i.test(text(item?.stage))).length
+
+ return [
+  {id:'awaiting',value:awaiting,label:'visitas aguardando registro',detail:'Relato por voz ou texto ainda não confirmado.',page:'visits'},
+  {id:'without-visit',value:withoutVisit,label:'produtores sem visita registrada',detail:'Nenhum compromisso na agenda deles.',page:'clients'},
+  {id:'unmeasured',value:unmeasured,label:'produtores sem perfil medido',detail:'A VAL adapta a abordagem quando o perfil existe.',page:'questionnaire'},
+  {id:'early',value:earlyStage,label:'oportunidades ainda em diagnóstico',detail:'Sem avanço registrado para a próxima etapa.',page:'opportunities'}
+ ].filter(entry=>entry.value>0)
+}
+
+// Top culturas da carteira: agrupa o potencial em aberto por cultura declarada.
+// Só entra cultura que algum produtor declarou — a VAL não estima carteira.
+export function buildTopCultures({clients=[],metricsOf=null,limit=5}={}){
+ const byCulture=new Map()
+ for(const client of clients){
+  const raw=text(client?.cultures)
+  if(!raw)continue
+  const potential=metricsOf?Number(metricsOf(client)||0):0
+  for(const culture of raw.split(/[•,;/]+/).map(item=>item.trim()).filter(Boolean)){
+   const current=byCulture.get(culture)||{culture,producers:0,potential:0}
+   current.producers+=1
+   current.potential+=potential
+   byCulture.set(culture,current)
+  }
+ }
+ return [...byCulture.values()]
+  .sort((a,b)=>b.producers-a.producers||b.potential-a.potential)
+  .slice(0,limit)
+}

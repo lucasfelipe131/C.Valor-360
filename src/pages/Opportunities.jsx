@@ -2,6 +2,7 @@ import React,{useEffect,useMemo,useState} from 'react'
 import {ArrowRight,BarChart3,BrainCircuit,Calculator,CheckCircle2,ChevronRight,FileText,Handshake,Search,Sparkles,Target,TrendingUp} from 'lucide-react'
 import {advancePipelineItem,opportunityCacheKey,parseOpportunityCache,reconcilePipeline} from '../lib/opportunity-pipeline'
 import {buildOpportunityCopilotContext} from '../lib/copilot-context'
+import Disclosure from '../components/Disclosure'
 
 const stageConfig=[
  {name:'Diagnóstico',label:'Entender',hint:'Dor e impacto',progress:25,icon:Search},
@@ -121,8 +122,9 @@ export default function Opportunities({clients,storageScope,persistedItems=[],on
    </div>
   </section>
 
+  <Disclosure id="opportunities-roi" title="Simulador de cenário financeiro" hint="Venda de valor: investimento e retorno informados por você">
   <article className="pipeline-roi">
-   <div className="pipeline-roi-copy"><span className="pipeline-roi-icon"><Calculator/></span><div><span className="eyebrow">VENDA DE VALOR</span><h2>Simulador de cenário financeiro</h2><p>Compare investimento e retorno informados pelo consultor. O cálculo é uma hipótese comercial, não recomendação agronômica nem previsão garantida.</p></div></div>
+   <div className="pipeline-roi-copy"><span className="pipeline-roi-icon"><Calculator/></span><div><p>Compare investimento e retorno informados pelo consultor. O cálculo é uma hipótese comercial, não recomendação agronômica nem previsão garantida.</p></div></div>
    <div className="pipeline-roi-inputs">
     <label><span>Área</span><div><input aria-label="Área em hectares" type="number" value={roi.area} onChange={event=>setRoi({...roi,area:event.target.value})}/><b>ha</b></div></label>
     <label><span>Investimento por hectare</span><div><b>R$</b><input aria-label="Investimento por hectare" type="number" value={roi.investment} onChange={event=>setRoi({...roi,investment:event.target.value})}/></div></label>
@@ -130,5 +132,6 @@ export default function Opportunities({clients,storageScope,persistedItems=[],on
    </div>
    <div className="pipeline-roi-result"><TrendingUp/><small>VALOR LÍQUIDO DO CENÁRIO</small><b>{money(result)}</b><span>Relação retorno bruto/investimento de <strong>{ratio}x</strong></span></div>
   </article>
+  </Disclosure>
  </div>
 }

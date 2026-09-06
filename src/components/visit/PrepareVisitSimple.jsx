@@ -1,6 +1,7 @@
 import React,{useEffect,useMemo,useState} from 'react'
-import {ArrowLeft,BarChart3,BrainCircuit,CheckCircle2,ChevronRight,Clock3,Lightbulb,LoaderCircle,Mic,Target} from 'lucide-react'
+import {ArrowLeft,BarChart3,BrainCircuit,CheckCircle2,ChevronRight,Clock3,Lightbulb,LoaderCircle,MapPin,Mic,Target} from 'lucide-react'
 import VoiceCapture from '../voice/VoiceCapture'
+import PropertyPreview from '../map/PropertyPreview'
 import {readConsultantExperiencePreference,writeConsultantExperiencePreference} from '../../lib/consultant-experience-preference.js'
 import {buildPrepareVisitPresentation} from '../../lib/prepare-visit-presentation.js'
 import {buildVisitCopilotContext} from '../../lib/copilot-context.js'
@@ -43,6 +44,7 @@ export default function PrepareVisitSimple({visit,client,prepared,storageScope,o
 
   <main className="prepare-essential" aria-label="Essencial para a visita">
    <article className="prepare-objective"><span><Target size={18}/>OBJETIVO</span><p>{model.essential.objective}</p></article>
+   <article className="prepare-map"><span><MapPin size={17}/>ONDE</span><PropertyPreview client={client}/></article>
    {model.essential.whyNow&&<article className="prepare-why-now"><span>POR QUE AGORA</span><p>{model.essential.whyNow}</p></article>}
    {model.essential.attention.length>0&&<article className="prepare-attention"><span>LEMBRE</span>{model.essential.attention.map(item=><p key={item}>{item}</p>)}</article>}
    <article className="prepare-questions"><span>PERGUNTE</span>{model.essential.questions.length?<ol>{model.essential.questions.map((question,index)=><li key={`${index}-${question}`}><b>{index+1}</b><p>{question}</p></li>)}</ol>:<p>Tenho pouco histórico deste produtor. Descubra qual é a principal prioridade dele para esta safra.</p>}</article>

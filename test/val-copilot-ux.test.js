@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {workspaceEntryPoint,workspaceOf} from '../src/lib/val-workspaces.js'
 import {readFileSync} from 'node:fs'
 import test from 'node:test'
 import {
@@ -93,7 +94,7 @@ test('Home e Cliente 360 conectam os view models e o refetch protegido',()=>{
  assert.match(dashboard,/fetch\('\/api\/val\/chat'/)
  assert.match(dashboard,/buildHomeCopilotAnswer\(result\)/)
  assert.ok(dashboard.indexOf('try{await onRefreshPortfolio?.()}catch{portfolioRefreshFailed=true}')<dashboard.indexOf("fetch('/api/val/chat'"))
- assert.ok(dashboard.indexOf('Até 3 prioridades para agir')<dashboard.indexOf('Ver carteira, radar e números'))
+ assert.ok(dashboard.indexOf('Insights para você')<dashboard.indexOf('Carteira, radar e estúdio de oportunidades'))
  assert.match(client360,/resolveCommitmentResource\(commitmentResource\)/)
  assert.match(client360,/selectLatestEvidenceVisit\(visits,client\.id\)/)
  assert.match(client360,/canonicalVoiceChange\(payload\)/)
@@ -113,26 +114,20 @@ test('Cliente 360 mantém dossiê em drill-down sem chamar agendamento de intera
  assert.match(client360,/ProducerFieldGallery/)
 })
 
-test('navegação expõe a Inteligência Agronômica como jornada principal e deixa o workspace técnico como aprofundamento',()=>{
- assert.match(sidebar,/\['dashboard','Hoje',LayoutDashboard\]/)
- assert.match(sidebar,/Perguntar à VAL/)
- assert.doesNotMatch(sidebar,/\['val','Ambientes VAL'/)
- assert.match(sidebar,/\['questionnaire','Coletar preferências'/)
- // A agronomia nativa é um destino de primeira classe: entra na jornada principal, antes da
- // entrada da VAL, com o rótulo institucional. O rótulo antigo não pode voltar em lugar nenhum.
- const primaryBlock=sidebar.slice(sidebar.indexOf('const primary='),sidebar.indexOf('const secondary='))
- const secondaryBlock=sidebar.slice(sidebar.indexOf('const secondary='),sidebar.indexOf('export default function Sidebar'))
- assert.match(primaryBlock,/\['agro','Inteligência Agronômica',Sprout\]/)
- assert.ok(primaryBlock.indexOf("['agro'")<primaryBlock.indexOf("['copilot'"))
- assert.doesNotMatch(secondaryBlock,/\['agro'/)
- assert.doesNotMatch(sidebar,/Ferramentas agronômicas|Manual agronômico/)
- assert.match(mobile,/onClick=\{onOpenVal\} aria-label="Abrir a VAL"/)
- assert.match(mobile,/\['dashboard','Hoje',CalendarDays\]/)
- // No celular a barra fixa tem quatro posições (Hoje, Clientes, VAL, Mais); a agronomia abre a
- // lista de módulos como primeira opção, sem perder o nome institucional.
- const mobileSecondary=mobile.slice(mobile.indexOf('const secondary='),mobile.indexOf('export default function MobileNav'))
- assert.match(mobileSecondary,/const secondary=\[\s*\['agro','Inteligência Agronômica',Sprout\]/)
- assert.doesNotMatch(mobile,/Ferramentas agronômicas/)
+test('navegação preserva agronomia nativa e deixa o workspace como aprofundamento',()=>{
+ // A lista de módulos saiu de dentro de Sidebar/MobileNav e virou modelo
+ // único em lib/val-workspaces. O contrato agora é verificado lá; aqui fica
+ // o que continua sendo responsabilidade das duas superfícies.
+ assert.match(sidebar,/from '\.\.\/lib\/val-workspaces'/)
+ assert.match(sidebar,/Acessar Copiloto/)
+ assert.match(sidebar,/onSelect\?\.\(\{id:'dashboard',page:'dashboard'\}\)/)
+ assert.doesNotMatch(sidebar,/Manual agronômico/)
+ assert.match(mobile,/from '\.\.\/lib\/val-workspaces'/)
+ assert.match(mobile,/aria-label="Abrir o Copiloto VAL" onClick=\{onOpenVal\}/)
+ assert.match(mobile,/go\(\{id:'dashboard',page:'dashboard'\}\)/)
+ // Agronomia continua nativa: é um workspace inteiro, não um item de accordion.
+ assert.equal(workspaceOf('agro'),'campo')
+ assert.equal(workspaceEntryPoint('campo','admin'),'agro')
 })
 
 test('pós-visita tem um Voice Capture operacional e legado explicitamente inacessível',()=>{
@@ -151,5 +146,5 @@ test('copiloto e memória viva mantêm leitura mobile e foco de teclado',()=>{
  assert.match(styles,/\.copilot-welcome p\{font-size:14px\}/)
  assert.match(styles,/\.copilot-advanced>summary:focus-visible/)
  assert.match(styles,/\.client-memory-grid\{grid-template-columns:1fr\}/)
- assert.match(styles,/\.mobile-nav\{grid-template-columns:repeat\(4,1fr\)!important\}/)
+ assert.match(styles,/\.mobile-nav\{grid-template-columns:repeat\(5,1fr\)!important\}/)
 })

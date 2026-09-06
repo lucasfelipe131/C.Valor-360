@@ -1,23 +1,30 @@
 import React,{useEffect,useMemo,useState} from 'react'
 import {
+ AlertTriangle,
  ArrowUpRight,
+ BarChart3,
  BrainCircuit,
+ Calculator,
  CalendarCheck2,
  CalendarDays,
+ CheckCircle2,
  ChevronRight,
- Clock3,
- Percent,
+ ClipboardList,
+ DatabaseZap,
+ LandPlot,
+ Mic,
  Send,
  Sparkles,
- Target,
- Users
+ Sprout,
+ Target
 } from 'lucide-react'
-import KpiCard from '../components/KpiCard'
 import ConversionRadar from '../components/ConversionRadar'
 import ConversionOpportunityStudio from '../components/ConversionOpportunityStudio'
 import VoiceCapture from '../components/voice/VoiceCapture'
+import Disclosure from '../components/Disclosure'
 import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
 import {buildHomeCopilotAnswer,buildLocalHomePriorities,canonicalVoiceChange} from '../lib/copilot-view-model'
+import {buildDayBriefing,buildFocusProducers,buildPendencies,buildTopCultures} from '../lib/home-command-center'
 import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline,resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
 const greeting=()=>{
@@ -117,47 +124,237 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
   return {...stage,count:stageItems.length,value:stageItems.reduce((sum,item)=>sum+Number(item.value||0),0)}
  })
  const recentVisits=[...(visits||[])].sort((a,b)=>(scheduledAtOf(b)?.getTime()||0)-(scheduledAtOf(a)?.getTime()||0)).slice(0,4)
+ // Centro operacional: o que precisa de atenção agora, contado a partir do que
+ // já está na sessão. Nenhum número estimado, nenhum alerta inventado.
+ const briefing=useMemo(()=>buildDayBriefing({visits,opportunities,clients}),[visits,opportunities,clients])
+ const focus=useMemo(()=>buildFocusProducers({clients,visits,opportunities}),[clients,visits,opportunities])
+ const pendencies=useMemo(()=>buildPendencies({clients,visits,opportunities}),[clients,visits,opportunities])
+ const topCultures=useMemo(()=>buildTopCultures({clients,metricsOf:client=>commercialMetrics(client).openPotential}),[clients])
+ const coverage={total:clients.length,measured:relationships.irtKnown,share:clients.length?Math.round(relationships.irtKnown/clients.length*100):0}
+ const openVisit=entry=>{const client=clients.find(item=>String(item.id)===String(entry.clientId));if(client)onPrepare(client);else setPage('visits')}
+ const quickActions=[
+  ['Preparar visita',CalendarCheck2,()=>selectedVoiceClient?onPrepare(selectedVoiceClient):setPage('visits')],
+  ['Perguntar à VAL',BrainCircuit,()=>onOpenCopilot?.({})],
+  ['Novo produtor',ClipboardList,()=>setPage('questionnaire')],
+  ['Inteligência agronômica',Sprout,()=>setPage('agro')],
+  ['Calculadoras',Calculator,()=>setPage({page:'agro',tool:'calculadoras',label:'Calculadoras',context:{tool:'calculadoras'}})],
+  ['Mapas e talhões',LandPlot,()=>setPage({page:'agro',tool:'produtores',label:'Mapas e talhões',context:{tool:'produtores'}})],
+  ['Relatórios',BarChart3,()=>setPage('reports')],
+  ['Base Inteligente',DatabaseZap,()=>setPage('datahub')]
+ ]
 
+
+ // Dois níveis, sem exceção. Nível 1 responde "o que faço agora": o dia, quem
+ // precisa de mim, o Copiloto e as ações. Nível 2 é o que interessa às vezes —
+ // números, pergunta longa, radar — e fica a um toque, no desktop e no celular.
  return <div className="page-stack val-copilot-home">
-  <section className="copilot-welcome">
-   <div><span className="eyebrow">VAL • SEU COPILOTO</span><h2>{greeting()}, {firstName}.</h2><p>Estas são as decisões que merecem sua atenção agora.</p></div>
-   <button type="button" onClick={()=>setPage('visits')}><CalendarDays/>Abrir agenda</button>
-  </section>
+  <div className="home-cockpit">
+   <div className="home-cockpit-main">
 
-  <section className="copilot-priorities" aria-labelledby="copilot-priorities-title">
-   <header><div><span className="eyebrow">AGORA</span><h3 id="copilot-priorities-title">Até 3 prioridades para agir</h3></div><small>Somente sinais registrados na sua carteira.</small></header>
-   {priorities.length?<div className="copilot-priority-grid">{priorities.slice(0,3).map((priority,index)=>{
-    const client=clients.find(item=>String(item.id)===String(priority.subject_id))
-    return <article key={`${priority.insight_id||priority.subject_id||'priority'}-${index}`}>
-     <span>{String(index+1).padStart(2,'0')}</span>
-     <div><small>{priority.category==='PREPARE'?'PREPARAR':priority.category==='ACT_NOW'?'AGIR AGORA':'ACOMPANHAR'}</small><h4>{priority.title}</h4><p>{priority.summary}</p>{priority.why_now&&<em><Clock3/>{priority.why_now}</em>}<b>{priority.recommended_action}</b></div>
-     <button type="button" disabled={!client} onClick={()=>openPriority(priority)}>{priority.category==='PREPARE'?'Preparar visita':'Abrir produtor'}<ChevronRight/></button>
-    </article>
-   })}</div>:<div className="copilot-empty"><Sparkles/><div><h4>Nenhuma prioridade comprovada agora.</h4><p>A VAL não cria urgência sem um sinal registrado. Use a voz para adicionar contexto ou abra a agenda.</p></div></div>}
-   {insightsError&&<p className="copilot-data-note" role="status">Prioridades locais exibidas. {insightsError}</p>}
-  </section>
-
-  <section className="copilot-talk" aria-label="Perguntar ou falar com a VAL">
-   <div><BrainCircuit/><div><span className="eyebrow">PERGUNTE OU FALE</span><h3>Converse com a VAL</h3><p>Escolha o produtor e pergunte sem abrir uma visita. Registrar informação continua exigindo sua confirmação.</p></div></div>
-   <div className="copilot-talk-controls"><label>Produtor<select value={voiceClientId} onChange={event=>{setVoiceClientId(event.target.value);setVoiceNotice('');setVoiceAnswer(null);setVoiceAnswerState({loading:false,error:''})}} disabled={!clients.length}><option value="">Selecione um produtor</option>{clients.map(client=><option key={client.id} value={client.id}>{client.name}</option>)}</select></label><form className="copilot-home-question" onSubmit={event=>{event.preventDefault();if(selectedVoiceClient)onOpenCopilot?.({client:selectedVoiceClient,prompt:homeQuestion});setHomeQuestion('')}}><input value={homeQuestion} onChange={event=>setHomeQuestion(event.target.value)} placeholder="O que você precisa decidir?" disabled={!selectedVoiceClient}/><button type="submit" disabled={!selectedVoiceClient}><Send/>Perguntar</button></form><button className="copilot-open-voice" type="button" disabled={!selectedVoiceClient} onClick={()=>onOpenCopilot?.({client:selectedVoiceClient})}><BrainCircuit/>Abrir voz, foto ou arquivo</button><VoiceCapture clientId={selectedVoiceClient?.id||''} interactionType="GENERAL_CONTEXT" label="Registrar informação" description="Revisar antes de salvar" sourceContext={{page:'VAL_HOME'}} onConfirmed={answerAfterVoice}/></div>
-   {voiceNotice&&<p className="copilot-confirmed" role="status">{voiceNotice}</p>}
-   {voiceAnswerState.loading&&<p className="copilot-answer-loading" role="status">Relacionando memória, contexto, decisão e próximo passo…</p>}
-   {voiceAnswerState.error&&<p className="copilot-answer-error" role="alert">{voiceAnswerState.error}</p>}
-   {voiceAnswer&&<article className="copilot-answer" aria-live="polite"><small>O QUE IMPORTA AGORA</small><h4>{voiceAnswer.headline}</h4>{voiceAnswer.reason&&<p>{voiceAnswer.reason}</p>}{voiceAnswer.action&&<b>{voiceAnswer.action}</b>}{voiceAnswer.question&&<blockquote>{voiceAnswer.question}</blockquote>}<button type="button" onClick={()=>{onClient(selectedVoiceClient);setVoiceAnswer(null)}}>Abrir memória do produtor<ChevronRight/></button></article>}
-  </section>
-
-  <details className="copilot-advanced">
-   <summary><span><small>QUERO APROFUNDAR</small><b>Ver carteira, radar e números</b></span><ChevronRight/></summary>
-   <div className="copilot-advanced-content">
-    <div className="copilot-advanced-shortcuts"><button type="button" onClick={()=>setPage('val')}><BrainCircuit/>Análise avançada da VAL<ArrowUpRight/></button><button type="button" onClick={()=>setPage('opportunities')}><Target/>Pipeline<ArrowUpRight/></button></div>
-    <section className="kpi-grid home-kpis"><KpiCard icon={Users} label="Clientes ativos" value={clients.length} delta="Carteira consolidada"/><KpiCard icon={CalendarCheck2} label="Visitas na agenda" value={upcomingVisits.length} delta="Compromissos futuros"/><KpiCard icon={Target} label="Potencial mapeado" value={compactBRL(totalPotential,{known:potentialKnown})} delta={`${portfolioPriorities.length} ${portfolioPriorities.length===1?'prioridade registrada':'prioridades registradas'}`} tone="cyan"/><KpiCard icon={Percent} label="IRT médio" value={irt} delta={`${relationships.irtKnown} de ${relationships.total} perfis medidos`} tone="green"/></section>
-    <ConversionRadar clients={clients} onClient={onClient} onPrepare={onPrepare}/>
-    <ConversionOpportunityStudio clients={clients} onClient={onClient} onPrepare={onPrepare}/>
-    <section className="dashboard-grid home-analysis">
-     <article className="panel funnel-panel"><div className="panel-head"><div><span className="eyebrow">PIPELINE</span><h3>Oportunidades por etapa</h3></div><button type="button" onClick={()=>setPage('opportunities')}>Abrir pipeline</button></div><ol className="funnel">{pipelineSummary.map((stage,index)=><li className={`f-step f${index+1}`} key={stage.name}><span>{stage.name}</span><b>{stage.count} • {compactMoney(stage.value)}</b></li>)}</ol></article>
-     <article className="panel recent-panel"><div className="panel-head"><div><span className="eyebrow">ATIVIDADES</span><h3>Atividades recentes</h3></div><button onClick={()=>setPage('visits')}>Ver todas</button></div>{recentVisits.length?recentVisits.map(visit=>{const client=clients.find(item=>item.id===visit.clientId);return <div className="activity" key={visit.id}><CalendarDays className="purple"/><div><b>{visit.status==='Realizada'?'Visita realizada':'Visita agendada'}</b><span>{client?.name||'Produtor'} • {compactDate(visit)}</span></div></div>}):<div className="activity"><CalendarDays className="purple"/><div><b>Nenhuma atividade registrada</b><span>As visitas salvas aparecerão aqui.</span></div></div>}</article>
+    <section className="home-day-strip" aria-label="Resumo do dia">
+     {briefing.cards.map(card=>{
+      const Icon=({today:CalendarDays,prepared:CheckCircle2,opportunities:Target,pending:AlertTriangle})[card.id]||Sparkles
+      return <button type="button" key={card.id} className={`home-day-card is-${card.id}`} onClick={()=>setPage(card.page)}>
+       <span className="home-day-head"><Icon size={17}/><small>{card.label}</small></span>
+       <strong>{String(card.value).padStart(2,'0')}</strong>
+       <span className="home-day-hint">{card.hint}</span>
+      </button>
+     })}
     </section>
+
+    <div className="home-operational">
+     <section className="home-panel home-next-visits" aria-labelledby="home-next-visits-title">
+      <header>
+       <h3 id="home-next-visits-title">Próximas visitas</h3>
+       <button type="button" onClick={()=>setPage('visits')}>Ver agenda<ChevronRight size={14}/></button>
+      </header>
+      {briefing.upcoming.length
+       ?<ul>{briefing.upcoming.map(entry=>
+         <li key={entry.id}>
+          <time dateTime={entry.at.toISOString()}>{entry.at.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</time>
+          <div>
+           <b>{entry.clientName}</b>
+           <span>{entry.place||'Local não informado'}</span>
+          </div>
+          <button type="button" aria-label={`Preparar visita de ${entry.clientName}`} onClick={()=>openVisit(entry)}>{entry.lifecycle==='PREPARED'?'Abrir':'Preparar'}</button>
+         </li>
+        )}</ul>
+       :<p className="home-panel-empty">Nenhum compromisso futuro na agenda. Agende uma visita para a VAL montar a próxima rota.</p>}
+      {briefing.undatedVisits>0&&<p className="home-panel-note" role="status">{briefing.undatedVisits} visita{briefing.undatedVisits>1?'s':''} sem data registrada ficaram fora desta lista.</p>}
+     </section>
+
+     <section className="home-panel home-focus" aria-labelledby="home-focus-title">
+      <header>
+       <h3 id="home-focus-title">Produtores em foco</h3>
+       <button type="button" onClick={()=>setPage('clients')}>Ver todos<ChevronRight size={14}/></button>
+      </header>
+      {focus.length
+       ?<ul>{focus.map(entry=>
+         <li key={entry.id}>
+          <div>
+           <b>{entry.name}</b>
+           <span>{entry.place||'Localização não informada'}</span>
+           <p>{entry.reason}</p>
+          </div>
+          <button type="button" className={`focus-tag is-${entry.tone}`} onClick={()=>onClient(entry.client)}>{entry.label}</button>
+         </li>
+        )}</ul>
+       :<p className="home-panel-empty">Nenhum produtor com sinal registrado que peça atenção agora. A VAL não cria foco sem evidência.</p>}
+     </section>
+
+     <section className="home-panel home-insights" aria-labelledby="home-insights-title">
+      <header>
+       <h3 id="home-insights-title">Insights para você</h3>
+      </header>
+      {priorities.length
+       ?<ul>{priorities.slice(0,3).map((priority,index)=>{
+         const client=clients.find(item=>String(item.id)===String(priority.subject_id))
+         return <li key={`${priority.insight_id||priority.subject_id||'priority'}-${index}`}>
+          <span className="home-insight-mark"><Sparkles size={14}/></span>
+          <div>
+           <b>{priority.title}</b>
+           <p>{priority.summary}</p>
+          </div>
+          <button type="button" disabled={!client} onClick={()=>openPriority(priority)} aria-label={priority.category==='PREPARE'?'Preparar visita':'Abrir produtor'}>
+           <ChevronRight size={15}/>
+          </button>
+         </li>
+        })}</ul>
+       :<p className="home-panel-empty">Nenhuma prioridade comprovada agora. A VAL não cria urgência sem um sinal registrado.</p>}
+      {insightsError&&<p className="home-panel-note" role="status">Prioridades locais exibidas. {insightsError}</p>}
+     </section>
+    </div>
+
+    <section className="home-copilot-banner" aria-label="Copiloto VAL">
+     <div>
+      <span className="home-copilot-mark"><BrainCircuit size={20}/></span>
+      <div><b>Copiloto VAL</b><p>Fale ou escreva. A VAL responde com o contexto da sua carteira.</p></div>
+     </div>
+     <div className="home-copilot-actions">
+      <button type="button" className="is-voice" onClick={()=>onOpenCopilot?.({conversation:true})}><Mic size={18}/>Falar com a VAL</button>
+      <button type="button" onClick={()=>onOpenCopilot?.({capture:'text'})}>Perguntar<ChevronRight size={16}/></button>
+     </div>
+    </section>
+
+    <section className="home-quick-actions" aria-label="Ações rápidas">
+     <h3>Ações rápidas</h3>
+     <div>
+      {quickActions.map(([label,Icon,run])=>
+       <button type="button" key={label} onClick={run}><Icon size={16}/><span>{label}</span></button>
+      )}
+     </div>
+    </section>
+
+    <Disclosure id="home-numbers" title="Números da carteira" hint="Funil, culturas, cobertura e indicadores">
+     <section className="home-analytics">
+      <article className="home-panel">
+       <header>
+        <h3>Oportunidades por etapa</h3>
+        <button type="button" onClick={()=>setPage('opportunities')}>Abrir pipeline<ChevronRight size={14}/></button>
+       </header>
+       <ol className="home-funnel">{pipelineSummary.map((stage,index)=>{
+        const total=pipelineSummary.reduce((sum,item)=>sum+item.count,0)
+        const share=total?Math.round(stage.count/total*100):0
+        return <li key={stage.name} className={`is-stage-${index+1}`}>
+         <div><b>{stage.name}</b><span>{stage.detail}</span></div>
+         <i style={{width:`${share}%`}} aria-hidden="true"/>
+         <em>{stage.count} <small>{compactMoney(stage.value)}</small></em>
+        </li>
+       })}</ol>
+      </article>
+
+      <article className="home-panel">
+       <header><h3>Top culturas da carteira</h3></header>
+       {topCultures.length
+        ?<ol className="home-bars">{topCultures.map(entry=>{
+          const maior=Math.max(...topCultures.map(item=>item.producers))
+          return <li key={entry.culture}>
+           <div><b>{entry.culture}</b><em>{entry.producers}</em></div>
+           <i style={{width:`${Math.round(entry.producers/maior*100)}%`}} aria-hidden="true"/>
+           <span>{entry.potential>0?`${compactBRL(entry.potential,{known:true})} em potencial`:'Potencial não informado'}</span>
+          </li>
+         })}</ol>
+        :<p className="home-panel-empty">Nenhuma cultura declarada na carteira ainda.</p>}
+      </article>
+
+      <article className="home-panel">
+       <header><h3>Cobertura da carteira</h3></header>
+       {clients.length
+        ?<div className="home-coverage">
+          <div className="home-donut" style={{'--val-share':`${coverage.share}%`}} role="img" aria-label={`${coverage.measured} de ${coverage.total} produtores com perfil medido`}>
+           <b>{coverage.share}%</b>
+           <small>perfis</small>
+          </div>
+          <ul>
+           <li><i className="is-measured" aria-hidden="true"/><span>{coverage.measured} com perfil medido</span></li>
+           <li><i aria-hidden="true"/><span>{coverage.total-coverage.measured} ainda a medir</span></li>
+          </ul>
+         </div>
+        :<p className="home-panel-empty">Carteira vazia. A cobertura aparece quando houver produtor registrado.</p>}
+      </article>
+
+      <article className="home-panel">
+       <header><h3>Indicadores da carteira</h3></header>
+       <div className="home-analytics-kpis">
+        <div><small>Produtores</small><b>{clients.length}</b><span>Carteira consolidada</span></div>
+        <div><small>Visitas na agenda</small><b>{upcomingVisits.length}</b><span>Compromissos futuros</span></div>
+        <div><small>Potencial mapeado</small><b>{compactBRL(totalPotential,{known:potentialKnown})}</b><span>{portfolioPriorities.length} {portfolioPriorities.length===1?'prioridade registrada':'prioridades registradas'}</span></div>
+        <div><small>IRT médio</small><b>{irt}</b><span>{relationships.irtKnown} de {relationships.total} perfis medidos</span></div>
+       </div>
+      </article>
+     </section>
+    </Disclosure>
+
+    <Disclosure id="home-ask" title="Perguntar à VAL daqui" hint="Escolha o produtor e pergunte sem abrir uma visita">
+     <section className="copilot-talk" aria-label="Perguntar ou falar com a VAL">
+      <div className="copilot-talk-controls"><label>Produtor<select value={voiceClientId} onChange={event=>{setVoiceClientId(event.target.value);setVoiceNotice('');setVoiceAnswer(null);setVoiceAnswerState({loading:false,error:''})}} disabled={!clients.length}><option value="">Selecione um produtor</option>{clients.map(client=><option key={client.id} value={client.id}>{client.name}</option>)}</select></label><form className="copilot-home-question" onSubmit={event=>{event.preventDefault();if(selectedVoiceClient)onOpenCopilot?.({client:selectedVoiceClient,prompt:homeQuestion});setHomeQuestion('')}}><input value={homeQuestion} onChange={event=>setHomeQuestion(event.target.value)} placeholder="O que você precisa decidir?" disabled={!selectedVoiceClient}/><button type="submit" disabled={!selectedVoiceClient}><Send/>Perguntar</button></form><button className="copilot-open-voice" type="button" disabled={!selectedVoiceClient} onClick={()=>onOpenCopilot?.({client:selectedVoiceClient})}><BrainCircuit/>Abrir voz, foto ou arquivo</button><VoiceCapture clientId={selectedVoiceClient?.id||''} interactionType="GENERAL_CONTEXT" label="Registrar informação" description="Revisar antes de salvar" sourceContext={{page:'VAL_HOME'}} onConfirmed={answerAfterVoice}/></div>
+      <p className="copilot-talk-note">Registrar informação continua exigindo sua confirmação.</p>
+      {voiceNotice&&<p className="copilot-confirmed" role="status">{voiceNotice}</p>}
+      {voiceAnswerState.loading&&<p className="copilot-answer-loading" role="status">Relacionando memória, contexto, decisão e próximo passo…</p>}
+      {voiceAnswerState.error&&<p className="copilot-answer-error" role="alert">{voiceAnswerState.error}</p>}
+      {voiceAnswer&&<article className="copilot-answer" aria-live="polite"><small>O QUE IMPORTA AGORA</small><h4>{voiceAnswer.headline}</h4>{voiceAnswer.reason&&<p>{voiceAnswer.reason}</p>}{voiceAnswer.action&&<b>{voiceAnswer.action}</b>}{voiceAnswer.question&&<blockquote>{voiceAnswer.question}</blockquote>}<button type="button" onClick={()=>{onClient(selectedVoiceClient);setVoiceAnswer(null)}}>Abrir memória do produtor<ChevronRight/></button></article>}
+     </section>
+    </Disclosure>
+
+    <Disclosure id="home-deep-dive" title="Carteira, radar e estúdio de oportunidades" hint="Análise avançada e conversão">
+     <div className="copilot-advanced-content">
+      <div className="copilot-advanced-shortcuts"><button type="button" onClick={()=>setPage('val')}><BrainCircuit/>Análise avançada da VAL<ArrowUpRight/></button><button type="button" onClick={()=>setPage('opportunities')}><Target/>Pipeline<ArrowUpRight/></button></div>
+      <ConversionRadar clients={clients} onClient={onClient} onPrepare={onPrepare}/>
+      <ConversionOpportunityStudio clients={clients} onClient={onClient} onPrepare={onPrepare}/>
+     </div>
+    </Disclosure>
+
    </div>
-  </details>
+
+   <aside className="home-rail" aria-label="Pendências e atividades">
+    <section className="home-rail-card home-pendencies">
+     <h3>Pendências e alertas</h3>
+     {pendencies.length
+      ?<ul>{pendencies.map(entry=>
+        <li key={entry.id}>
+         <button type="button" onClick={()=>setPage(entry.page)}>
+          <b>{String(entry.value).padStart(2,'0')}</b>
+          <span>{entry.label}<small>{entry.detail}</small></span>
+          <ChevronRight size={15}/>
+         </button>
+        </li>
+       )}</ul>
+      :<p className="home-panel-empty">Nada pendente com o que já está registrado na carteira.</p>}
+    </section>
+
+    <section className="home-rail-card">
+     <h3>Atividades recentes</h3>
+     {recentVisits.length
+      ?<ul className="home-rail-activity">{recentVisits.map(visit=>{
+        const client=clients.find(item=>String(item.id)===String(visit.clientId))
+        return <li key={visit.id}>
+         <b>{visit.status==='Realizada'?'Visita realizada':'Visita agendada'}</b>
+         <span>{client?.name||'Produtor'} • {compactDate(visit)}</span>
+        </li>
+       })}</ul>
+      :<p className="home-panel-empty">Nenhuma atividade registrada ainda.</p>}
+    </section>
+   </aside>
+  </div>
  </div>
 }

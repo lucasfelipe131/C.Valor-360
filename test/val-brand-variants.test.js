@@ -1,95 +1,127 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {existsSync,readFileSync} from 'node:fs'
-import {createHash} from 'node:crypto'
+import {existsSync,readFileSync,statSync} from 'node:fs'
 import {dirname,join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 
+// Contrato da MARCA OFICIAL da VAL.
+//
+// A logo é um ativo raster entregue pelo cliente: V com textura de pedra, duas
+// lâminas de folha sobrepostas, wordmark com contorno próprio e assinatura.
+// Uma tentativa anterior redesenhou tudo em SVG — o briefing proíbe
+// explicitamente ("NÃO redesenhar, NÃO aproximar por CSS, usar o asset oficial
+// fornecido") e o desenho foi recusado.
+//
+// Este arquivo existe para impedir que a aproximação volte.
+
 const root=join(dirname(fileURLToPath(import.meta.url)),'..')
 const read=relative=>readFileSync(join(root,relative),'utf8')
-const hash=relative=>createHash('sha256').update(read(relative)).digest('hex')
+const size=relative=>statSync(join(root,relative)).size
 
-const brandAssets=[
- 'public/brand/val-logo-on-light.svg',
- 'public/brand/val-logo-on-dark.svg',
- 'public/brand/val-logo-monochrome.svg',
- 'public/brand/val-logo-monochrome-light.svg',
- 'public/brand/val-logo-compact.svg',
- 'public/brand/val-icon-only.svg',
- 'public/brand/val-icon-only-on-dark.svg',
- 'public/brand/val-icon-only-monochrome.svg',
- 'public/brand/val-icon-maskable.svg'
+const PIECES=[
+ 'public/brand/val-logo-official.png',
+ 'public/brand/val-symbol-official.png',
+ 'public/brand/val-wordmark-official.png',
+ 'public/brand/val-wordmark-only-official.png',
+ 'public/brand/val-signature-official.png'
 ]
 
-const luminance=hex=>{
- const channels=hex.slice(1).match(/../g).map(value=>parseInt(value,16)/255).map(value=>value<=.03928?value/12.92:((value+.055)/1.055)**2.4)
- return .2126*channels[0]+.7152*channels[1]+.0722*channels[2]
-}
-const contrast=(first,second)=>{
- const values=[luminance(first),luminance(second)].sort((a,b)=>b-a)
- return (values[0]+.05)/(values[1]+.05)
-}
+// Geometria da marca anterior e da minha aproximação: nenhuma pode voltar.
+const DESENHOS_PROIBIDOS=[
+ 'M12.5 10.1',      // traço azul da marca antiga
+ 'M40.8 28.8',      // folha verde-água da marca antiga
+ 'M3.6 5.2H17.8',   // braço do V redesenhado
+ 'M30.6 61C32.8'    // folha redesenhada
+]
 
-test('componente da marca oferece variantes e mantém o compact legado',()=>{
+test('as peças oficiais existem e têm massa de imagem real',()=>{
+ for(const piece of PIECES){
+  assert.equal(existsSync(join(root,piece)),true,`${piece} ausente`)
+  assert.ok(size(piece)>8000,`${piece} é pequeno demais para ser o recorte do ativo`)
+ }
+})
+
+test('o componente usa o arquivo oficial, não um desenho',()=>{
+ const logo=read('src/components/Logo.jsx')
+ assert.match(logo,/\/brand\/val-symbol-official\.png/)
+ assert.match(logo,/\/brand\/val-wordmark-only-official\.png/)
+ assert.match(logo,/\/brand\/val-signature-official\.png/)
+ assert.match(logo,/<img/)
+ // Nenhum path vetorial: se voltar `<path d="…">`, é redesenho.
+ assert.ok(!/<path\s/.test(logo),'a marca voltou a ser desenhada em SVG')
+ assert.ok(!/<svg/.test(logo),'a marca voltou a ser desenhada em SVG')
+ for(const desenho of DESENHOS_PROIBIDOS)
+  assert.ok(!logo.includes(desenho),`geometria proibida "${desenho}" voltou ao componente`)
+})
+
+test('o componente mantém a API que o produto inteiro já usa',()=>{
  const logo=read('src/components/Logo.jsx')
  assert.match(logo,/new Set\(\['full','compact','icon-only','monochrome'\]\)/)
  assert.match(logo,/compact\?'icon-only'/)
  assert.match(logo,/data-logo-variant=\{resolvedVariant\}/)
  assert.match(logo,/data-logo-surface=\{resolvedSurface\}/)
  assert.match(logo,/is-surface-\$\{resolvedSurface\}/)
- assert.match(logo,/resolvedVariant==='full'/)
- assert.match(logo,/INTELIGÊNCIA QUE GERA VALOR/)
+ assert.match(logo,/const accessibility=decorative/)
+ assert.match(logo,/'aria-hidden':true/)
  assert.match(logo,/aria-label/)
- assert.match(logo,/decorative\?\{role:'presentation','aria-label':undefined,'aria-hidden':true\}/)
 })
 
-test('superfícies clara e escura usam wordmarks com contraste forte',()=>{
- const css=read('src/val-brand.css')
- assert.match(css,/--val-logo-word:#082c57/)
- assert.match(css,/--val-logo-word:#f4f8f6/)
- assert.match(css,/\[data-val-surface="dark"\]/)
- assert.match(css,/\.sidebar \.val-brand\.is-surface-auto/)
- assert.match(css,/\.public-welcome \.val-brand\.is-surface-auto/)
- assert.ok(contrast('#082C57','#FFFFFF')>=4.5)
- assert.ok(contrast('#F4F8F6','#071B19')>=4.5)
-})
-
-test('folha refinada é orgânica, simplificável e sem a cunha rígida antiga',()=>{
+test('a assinatura fica sob o conjunto, como no ativo oficial',()=>{
  const logo=read('src/components/Logo.jsx')
- const css=read('src/val-brand.css')
- assert.match(logo,/M40\.8 28\.8C41\.8 17\.4 48\.5 8\.9 58\.2 6\.2/)
- assert.match(logo,/val-logo-detail/)
- assert.match(css,/is-icon-only \.val-logo-detail/)
- assert.doesNotMatch(logo,/leafShade|val-leaf-shade|M42\.1 28\.5/)
+ // Espremida ao lado do wordmark ela ficaria com 4px e ilegível.
+ assert.match(logo,/const withSignature=resolvedVariant==='full'/)
+ assert.match(logo,/className="brand-lockup"/)
+ const css=read('src/val-logo-final.css')
+ assert.match(css,/\.val-final-brand\{[^}]*flex-direction:column/)
+ assert.match(css,/\.val-final-brand \.brand-signature img\{[^}]*width:100%/)
 })
 
-test('catálogo vetorial contém dark, light, mono, compact, icon-only e maskable',()=>{
- for(const relative of brandAssets){
-  assert.equal(existsSync(join(root,relative)),true,`${relative} ausente`)
-  const source=read(relative)
-  assert.match(source,/^<svg[\s\S]*<\/svg>\s*$/)
-  assert.match(source,/viewBox=/)
-  assert.doesNotMatch(source,/leafShade|65ED22|58E21A/)
- }
- assert.match(read('public/brand/val-logo-on-light.svg'),/#082C57/)
- assert.match(read('public/brand/val-logo-on-dark.svg'),/#F4F8F6/)
- assert.match(read('public/brand/val-logo-monochrome.svg'),/currentColor/)
- assert.match(read('public/brand/val-logo-compact.svg'),/width="420" height="128"/)
+test('o dimensionamento respeita a proporção do ativo',()=>{
+ const css=read('src/val-logo-final.css')
+ // Altura manda, largura acompanha: travar as duas deformaria a marca.
+ assert.match(css,/--val-mark-height/)
+ assert.match(css,/\.val-final-brand \.brand-mark img\{[^}]*width:auto/)
+ assert.match(css,/\.val-final-brand \.brand-mark img\{[^}]*height:var\(--val-mark-height\)/)
+ for(const superficie of ['.sidebar .val-final-brand','.val-login-shell .login-story>.val-final-brand'])
+  assert.ok(css.includes(superficie),`superfície "${superficie}" perdeu o tamanho declarado`)
 })
 
-test('aliases públicos permanecem estáveis e sincronizados',()=>{
- assert.equal(hash('logo.svg'),hash('public/val-logo.svg'))
- assert.match(read('public/val-logo.svg'),/M40\.8 28\.8C41\.8 17\.4/)
- assert.match(read('public/icon.svg'),/fill="url\(#surface\)"/)
- assert.match(read('public/icon.svg'),/transform="translate\(7 7\) scale\(\.78\)"/)
+test('o extrator recorta o original em vez de imitá-lo',()=>{
+ const script=read('scripts/extract-brand-asset.mjs')
+ assert.match(script,/getImageData/)
+ assert.match(script,/val-symbol-official\.png/)
+ assert.match(script,/val-signature-official\.png/)
+ // Nenhuma coordenada chumbada: os recortes vêm da medição do alfa.
+ assert.ok(!/\bcrop\(\s*\{x:\s*\d+/.test(script),'o recorte voltou a ser posição fixa em vez de medida')
 })
 
-test('manifesto separa ícones any, maskable e monochrome',()=>{
+test('nenhum SVG redesenhado da marca sobrou no repositório',()=>{
+ const mortos=[
+  'public/brand/val-logo-on-light.svg','public/brand/val-logo-on-dark.svg',
+  'public/brand/val-icon-only.svg','public/brand/val-icon-maskable.svg',
+  'public/icon.svg','public/val-logo.svg','logo.svg','scripts/build-brand-assets.mjs'
+ ]
+ for(const morto of mortos)
+  assert.equal(existsSync(join(root,morto)),false,`${morto} é a marca redesenhada e deveria ter saído`)
+})
+
+test('favicon, PWA e app embutido apontam para o ativo oficial',()=>{
+ const html=read('index.html')
+ assert.match(html,/rel="icon" href="\/brand\/val-symbol-official\.png"/)
+ assert.ok(!/icon\.svg/.test(html),'o favicon ainda aponta para o SVG desenhado')
+
  const manifest=JSON.parse(read('public/manifest.webmanifest'))
- const byPurpose=Object.fromEntries(manifest.icons.map(icon=>[icon.purpose,icon]))
- assert.equal(byPurpose.any.src,'/icon.svg')
- assert.equal(byPurpose.maskable.src,'/brand/val-icon-maskable.svg')
- assert.equal(byPurpose.monochrome.src,'/brand/val-icon-only-monochrome.svg')
- assert.notEqual(byPurpose.any.src,byPurpose.maskable.src)
- assert.match(read('index.html'),/rel="mask-icon" href="\/brand\/val-icon-only-monochrome\.svg" color="#071B19"/)
+ for(const icon of manifest.icons)assert.match(icon.src,/-official\.png$/)
+ assert.equal(manifest.theme_color,'#071B19')
+
+ const embedded=read('manual/app/val-embedded-brand.css')
+ assert.match(embedded,/\/brand\/val-wordmark-official\.png/)
+})
+
+test('a paleta da VAL foi preservada — a troca foi de marca, não de cor',()=>{
+ const brand=read('src/val-brand.css')
+ for(const token of ['--val-ink:#071b19','--val-emerald:#00c896','--val-emerald-dark:#009f78','--val-mint:#72e6c5','--val-lime:#c8f25e'])
+  assert.ok(brand.includes(token),`o token "${token}" da paleta VAL foi perdido`)
+ // Os tokens que existiam só para colorir o desenho não fazem mais sentido.
+ assert.ok(!/--val-logo-(stem|leaf|vein|blue|fold|green)/.test(brand),'sobraram tokens do desenho da marca')
 })

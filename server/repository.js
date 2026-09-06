@@ -8,6 +8,7 @@ import {buildCommitmentCandidate,transitionCommitment} from './execution/commitm
 import {legacyVisitLifecycle,transitionVisitLifecycle} from './visit-loop/lifecycle.js'
 import {additionalNeedState,hasIndependentOpportunity,isQ27Opportunity,normalizeText,opportunityFromAdditionalNeed,q27OpportunityProvenance} from '../src/lib/profile.js'
 import {encodeCanonicalGeometryRef,manualToCanonicalValGeometry} from '../src/lib/agronomic-geometry-adapter.js'
+import {emptyPropertyProfile,fieldPointsFromGeometryRef,locationFromMetadata,locationRecord,normalizePropertyProfileInput} from './property-profile.js'
 import {buildAgronomicScanProvenance} from './agronomic-scan-provenance.js'
 import {resolveAuthorizedClientReference as reconcileAuthorizedClientReference} from './decision-copilot/client-reference-resolver.js'
 import {createProducerEntityIndexCache} from './decision-copilot/producer-entity-index-cache.js'
@@ -226,6 +227,7 @@ const clientFromRow=(row,{defaults=false}={})=>{
     profileSource:snapshot.profileSource||snapshot.source||null,
     profileUpdatedAt:iso(row.profile_assessed_at)||snapshot.profileUpdatedAt||null,
     profileValidUntil:iso(row.profile_valid_until)||null,
+    location:row.property_location===undefined?null:locationFromMetadata({location:row.property_location}),
     source:'Banco VALOR 360'
   }
 }
@@ -239,6 +241,9 @@ const exactScope=(value,tenantId,ownerId,parent={})=>{
   const itemOwner=scopedOwner(value)??scopedOwner(parent)
   return itemTenant!==undefined&&itemTenant!==null&&itemOwner!==undefined&&itemOwner!==null&&String(itemTenant)===String(tenantId)&&String(itemOwner)===String(ownerId)
 }
+// Sem PostgreSQL a sede vive no arquivo local; a carteira ganha `location`
+// do mesmo jeito que ganharia da coluna properties.metadata.
+const withFallbackLocation=(store,tenantId,ownerId,client)=>{const record=(store.val?.propertyProfiles||[]).find(item=>exactScope(item,tenantId,ownerId)&&String(item.clientId)===String(client?.id));return {...client,location:record?.property?.location||null}}
 const fallbackTechnicalContextKey=(tenantId,ownerId,clientId)=>JSON.stringify([String(tenantId||''),String(ownerId||''),String(clientId||'')])
 const fallbackTechnicalContext=(contexts,tenantId,ownerId,clientId)=>{
   const scoped=contexts?.[fallbackTechnicalContextKey(tenantId,ownerId,clientId)]
@@ -711,7 +716,7 @@ export class ValRepository{
   constructor({db,readStore,saveStore,tenantId}){this.db=db;this.readStore=readStore;this.saveStore=saveStore;this.tenantId=tenantId;this.producerEntityIndex=createProducerEntityIndexCache()}
 
   fallback(){
-    const store=this.readStore();store.val||={};for(const key of ['recommendations','feedback','integrationEvents','signals','conversations','modelRuns','memories','attachments','contextSnapshots','actionPlans','commitments','visitPreparations','visitTranscripts','visitReports','voiceInteractions','voiceTranscripts','outcomes','learningCandidates','visitLifecycleEvents'])store.val[key]||=[];store.val.technicalContexts||={};store.interactions||=[];store.opportunities||=[];store.visits||=[];return store
+    const store=this.readStore();store.val||={};for(const key of ['recommendations','feedback','integrationEvents','signals','conversations','modelRuns','memories','attachments','contextSnapshots','actionPlans','commitments','visitPreparations','visitTranscripts','visitReports','voiceInteractions','voiceTranscripts','outcomes','learningCandidates','visitLifecycleEvents','propertyProfiles'])store.val[key]||=[];store.val.technicalContexts||={};store.interactions||=[];store.opportunities||=[];store.visits||=[];return store
   }
 
   async listSurveys(ownerId){
@@ -768,7 +773,7 @@ export class ValRepository{
   }
 
   async getIntelligence(ownerId){
-    if(!this.db.configured){if(!ownerId)throw domainError('O proprietário da carteira é obrigatório para consultar a inteligência.',403,'owner_scope_required');const store=this.readStore();const scopedImports=(store.imports||[]).filter(record=>exactScope(record,this.tenantId,ownerId));const clients=new Map();scopedImports.forEach(record=>record.clients?.forEach(client=>{if(exactScope(client,this.tenantId,ownerId,record))clients.set(normalize(client.name),client)}));return {imports:scopedImports.map(({clients:ignored,...summary})=>summary),clients:[...clients.values()],visits:(store.visits||[]).filter(item=>exactScope(item,this.tenantId,ownerId)),opportunities:(store.opportunities||[]).filter(item=>exactScope(item,this.tenantId,ownerId)).map(fallbackOpportunityRecord)}}
+    if(!this.db.configured){if(!ownerId)throw domainError('O proprietário da carteira é obrigatório para consultar a inteligência.',403,'owner_scope_required');const store=this.readStore();const scopedImports=(store.imports||[]).filter(record=>exactScope(record,this.tenantId,ownerId));const clients=new Map();scopedImports.forEach(record=>record.clients?.forEach(client=>{if(exactScope(client,this.tenantId,ownerId,record))clients.set(normalize(client.name),client)}));return {imports:scopedImports.map(({clients:ignored,...summary})=>summary),clients:[...clients.values()].map(client=>withFallbackLocation(store,this.tenantId,ownerId,client)),visits:(store.visits||[]).filter(item=>exactScope(item,this.tenantId,ownerId)),opportunities:(store.opportunities||[]).filter(item=>exactScope(item,this.tenantId,ownerId)).map(fallbackOpportunityRecord)}}
     try{
       const [importResult,clientResult,visitResult,opportunityResult]=await Promise.all([
         this.db.query('SELECT summary FROM import_jobs WHERE tenant_id=$1 AND owner_user_id=$2 ORDER BY created_at DESC LIMIT 20',[this.tenantId,ownerId]),
@@ -777,6 +782,7 @@ export class ValRepository{
             COALESCE((SELECT COUNT(*) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won'),0) purchase_count,
             (SELECT MAX(occurred_at) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won') last_purchase_at,
             COALESCE((SELECT SUM(estimated_value) FROM opportunities opportunity WHERE opportunity.tenant_id=c.tenant_id AND opportunity.client_id=c.id AND opportunity.stage<>'Fechado'),0) open_pipeline,
+            (SELECT property.metadata->'location' FROM properties property WHERE property.tenant_id=c.tenant_id AND property.client_id=c.id AND property.metadata ? 'location' ORDER BY property.updated_at DESC LIMIT 1) property_location,
             COALESCE(NULLIF(p.profile_snapshot,'{}'::jsonb),survey.result,'{}'::jsonb) profile_snapshot
           FROM clients c LEFT JOIN LATERAL (SELECT * FROM client_profiles WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY assessed_at DESC LIMIT 1) p ON true
           LEFT JOIN survey_invitations survey ON survey.tenant_id=c.tenant_id AND survey.id=p.source_survey_id
@@ -979,6 +985,121 @@ export class ValRepository{
   async archiveClient(clientId,ownerId){
     if(!this.db.configured)throw serviceError('O PostgreSQL é obrigatório para excluir produtores.')
     try{const result=await this.db.query(`UPDATE clients SET status='archived',updated_at=NOW() WHERE tenant_id=$1 AND consultant_id=$2 AND (id::text=$3 OR external_key=$3) AND status='active' RETURNING id,name`,[this.tenantId,ownerId,clientId]);if(!result.rowCount)throw domainError('Produtor não encontrado na sua carteira.',404);await this.db.query(`INSERT INTO audit_events (tenant_id,actor_id,action,entity_type,entity_id,before_data,created_at) VALUES ($1,$2,'client_archived','client',$3,$4,NOW())`,[this.tenantId,ownerId,result.rows[0].id,jsonbParameter({name:result.rows[0].name})]);return {id:clientId,name:result.rows[0].name,archived:true}}catch(error){if(error.statusCode)throw error;throw serviceError('O produtor não pôde ser removido da carteira.')}
+  }
+
+  // Propriedade e talhões: a sede vira properties.metadata.location e o
+  // contorno vira fields.geometry_ref no envelope canônico que o Manual do
+  // Agrônomo já lê. Sem PostgreSQL, tudo vive no arquivo local por escopo.
+  async getPropertyProfile(clientId,ownerId){
+    if(!ownerId)throw domainError('O proprietário da carteira é obrigatório para consultar a propriedade.',403,'owner_scope_required')
+    if(!this.db.configured){
+      const record=(this.fallback().val.propertyProfiles||[]).find(item=>exactScope(item,this.tenantId,ownerId)&&String(item.clientId)===String(clientId))
+      if(!record)return emptyPropertyProfile(clientId,'arquivo-local')
+      return {clientId:String(clientId),property:structuredClone(record.property),properties:record.property?[{id:record.property.id,name:record.property.name}]:[],fields:structuredClone(record.fields||[]),source:'arquivo-local'}
+    }
+    try{
+      const client=await this.db.query(`SELECT id FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND (id::text=$3 OR external_key=$3) AND status='active' LIMIT 1`,[this.tenantId,ownerId,clientId])
+      if(!client.rowCount)throw domainError('Produtor não encontrado na sua carteira.',404)
+      return await this.readPropertyProfile(this.db,client.rows[0].id,clientId)
+    }catch(error){if(error.statusCode)throw error;throw serviceError('A propriedade não pôde ser lida no PostgreSQL configurado.')}
+  }
+
+  async readPropertyProfile(connection,clientRowId,clientId){
+    const properties=await connection.query(`SELECT id,external_key,name,municipality,area_ha,metadata,updated_at FROM properties WHERE tenant_id=$1 AND client_id=$2 ORDER BY (metadata ? 'location') DESC,updated_at DESC LIMIT 50`,[this.tenantId,clientRowId])
+    const primary=properties.rows[0]||null
+    if(!primary)return emptyPropertyProfile(clientId,'postgresql')
+    const fields=await connection.query(`SELECT field.id,field.name,field.area_ha,field.geometry_ref,field.updated_at,
+        (SELECT jsonb_build_object('season',season.season,'crop',season.crop) FROM crop_seasons season WHERE season.tenant_id=$1 AND season.field_id=field.id ORDER BY season.created_at DESC LIMIT 1) latest_season
+      FROM fields field WHERE field.tenant_id=$1 AND field.property_id=$2 ORDER BY field.created_at ASC,field.name ASC LIMIT 200`,[this.tenantId,primary.id])
+    return {
+      clientId:String(clientId),
+      property:{id:String(primary.id),name:primary.name,municipality:primary.municipality||null,areaHa:primary.area_ha==null?null:Number(primary.area_ha),location:locationFromMetadata(jsonObject(primary.metadata)),updatedAt:iso(primary.updated_at)},
+      properties:properties.rows.map(row=>({id:String(row.id),name:row.name})),
+      fields:fields.rows.map(row=>{
+        const geometry=fieldPointsFromGeometryRef(row.geometry_ref,{organizationId:this.tenantId});const season=jsonObject(row.latest_season)
+        return {id:String(row.id),name:row.name,areaHa:row.area_ha==null?geometry.calculatedAreaHa:Number(row.area_ha),crop:String(season.crop||''),season:String(season.season||''),points:geometry.points,geometryStatus:geometry.geometryStatus,updatedAt:iso(row.updated_at)}
+      }),
+      source:'postgresql'
+    }
+  }
+
+  async savePropertyProfile(clientId,input,ownerId){
+    if(!ownerId)throw domainError('O proprietário da carteira é obrigatório para editar a propriedade.',403,'owner_scope_required')
+    const profile=normalizePropertyProfileInput(input)
+    const now=new Date().toISOString()
+    if(!this.db.configured){
+      const store=this.fallback()
+      const client=(await this.getIntelligence(ownerId)).clients.find(item=>String(item.id)===String(clientId))
+      if(!client)throw domainError('Produtor não encontrado na sua carteira.',404)
+      const existing=store.val.propertyProfiles.find(item=>exactScope(item,this.tenantId,ownerId)&&String(item.clientId)===String(clientId))||null
+      const previous=existing?.property||null
+      const property={
+        id:previous?.id||`local-property:${clientId}`,
+        name:profile.propertyName||previous?.name||String(client.commercial?.property||'').trim().slice(0,180)||'Propriedade principal',
+        municipality:client.municipality||null,areaHa:previous?.areaHa??null,
+        location:profile.location===undefined?(previous?.location||null):locationRecord(profile.location,{updatedAt:now}),
+        updatedAt:now
+      }
+      const kept=(existing?.fields||[]).filter(field=>!profile.removedFieldIds.includes(String(field.id)))
+      const fields=profile.fields.map(field=>{
+        const stored=field.id?kept.find(item=>String(item.id)===String(field.id)):null
+        const points=field.points.length?field.points:field.clearGeometry?[]:(stored?.points||[])
+        return {id:stored?.id||randomUUID(),name:field.name,areaHa:field.areaHa??stored?.areaHa??null,crop:field.crop||stored?.crop||'',season:field.season||stored?.season||'',points,geometryStatus:points.length?'CANONICAL':'NOT_MAPPED',updatedAt:now}
+      })
+      store.val.propertyProfiles=store.val.propertyProfiles.filter(item=>item!==existing)
+      store.val.propertyProfiles.push({tenantId:this.tenantId,ownerId,clientId:String(clientId),property,fields,updatedAt:now})
+      this.saveStore(store)
+      return this.getPropertyProfile(clientId,ownerId)
+    }
+    try{
+      await this.db.transaction(async connection=>{
+        const selected=await connection.query(`SELECT id,external_key,name,municipality,commercial_profile FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND (id::text=$3 OR external_key=$3) AND status='active' LIMIT 1 FOR UPDATE`,[this.tenantId,ownerId,clientId])
+        if(!selected.rowCount)throw domainError('Produtor não encontrado na sua carteira.',404)
+        const client=selected.rows[0]
+        const current=await connection.query(`SELECT id,external_key,name,metadata FROM properties WHERE tenant_id=$1 AND client_id=$2 ORDER BY (metadata ? 'location') DESC,updated_at DESC LIMIT 1 FOR UPDATE`,[this.tenantId,client.id])
+        let property=current.rows[0]||null
+        const propertyName=profile.propertyName||property?.name||String(jsonObject(client.commercial_profile).property||'').trim().slice(0,180)||'Propriedade principal'
+        const metadata={...jsonObject(property?.metadata)}
+        if(profile.location===null)delete metadata.location
+        else if(profile.location)metadata.location=locationRecord(profile.location,{updatedAt:now})
+        if(property){
+          await connection.query(`UPDATE properties SET name=$4,metadata=$5,updated_at=NOW() WHERE tenant_id=$1 AND client_id=$2 AND id=$3`,[this.tenantId,client.id,property.id,propertyName,jsonbParameter(metadata)])
+        }else{
+          const inserted=await connection.query(`INSERT INTO properties (tenant_id,client_id,external_key,name,municipality,metadata,updated_at) VALUES ($1,$2,$3,$4,$5,$6,NOW()) RETURNING id,external_key,name,metadata`,[this.tenantId,client.id,relatedExternalKey(client.external_key,propertyName),propertyName,client.municipality||null,jsonbParameter(metadata)])
+          property=inserted.rows[0]
+        }
+        if(profile.removedFieldIds.length)await connection.query(`DELETE FROM fields WHERE tenant_id=$1 AND property_id=$2 AND id::text=ANY($3::text[])`,[this.tenantId,property.id,profile.removedFieldIds])
+        const propertyKey=property.external_key||String(property.id)
+        for(const field of profile.fields){
+          const stored=field.id?await connection.query(`SELECT id,external_key FROM fields WHERE tenant_id=$1 AND property_id=$2 AND id::text=$3 LIMIT 1 FOR UPDATE`,[this.tenantId,property.id,field.id]):{rows:[]}
+          let fieldRow=stored.rows[0]||null
+          if(fieldRow){
+            await connection.query(`UPDATE fields SET name=$4,area_ha=COALESCE($5,area_ha),updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id,field.name,field.areaHa])
+          }else{
+            const created=await connection.query(`INSERT INTO fields (tenant_id,property_id,external_key,name,area_ha,updated_at) VALUES ($1,$2,$3,$4,$5,NOW()) RETURNING id,external_key`,[this.tenantId,property.id,propertyScopedFieldExternalKey(propertyKey,`${field.name}:${randomUUID().slice(0,8)}`),field.name,field.areaHa])
+            fieldRow=created.rows[0]
+          }
+          if(field.points.length){
+            try{
+              const canonical=manualToCanonicalValGeometry({
+                organizationId:this.tenantId,clientId:String(client.id),clientExternalKey:client.external_key,
+                propertyId:String(property.id),propertyExternalKey:property.external_key,propertyName,
+                fieldId:String(fieldRow.id),fieldExternalKey:fieldRow.external_key,sourceFieldId:fieldRow.external_key||String(fieldRow.id),fieldName:field.name,
+                points:field.points,areaHa:field.areaHa,
+                provenance:{source:'valor360-produtor-360',method:'consultant-map-draw',observedAt:now,capturedBy:ownerId}
+              })
+              await connection.query(`UPDATE fields SET geometry_ref=$4,geometry_version=$5,area_ha=$6,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id,encodeCanonicalGeometryRef(canonical),canonical.geometryVersion,field.areaHa??canonical.measurements.calculatedAreaHa])
+            }catch(error){throw domainError(`O contorno do talhão ${field.name} foi rejeitado: ${error.message}`,422,error.code||'agronomic_geometry_invalid')}
+          }else if(field.clearGeometry){
+            await connection.query(`UPDATE fields SET geometry_ref=NULL,geometry_version=NULL,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id])
+          }
+          if(field.crop&&field.season)await connection.query(`INSERT INTO crop_seasons (tenant_id,field_id,season,crop,area_ha)
+            SELECT $1,$2,$3,$4,$5 WHERE NOT EXISTS (SELECT 1 FROM crop_seasons WHERE tenant_id=$1 AND field_id=$2 AND season=$3 AND crop=$4)`,[this.tenantId,fieldRow.id,field.season,field.crop,field.areaHa])
+        }
+        await connection.query(`INSERT INTO audit_events (tenant_id,actor_id,action,entity_type,entity_id,after_data,created_at) VALUES ($1,$2,'property_profile_updated','client',$3,$4,NOW())`,[this.tenantId,ownerId,client.id,jsonbParameter({propertyId:String(property.id),located:Boolean(metadata.location),fields:profile.fields.length,removed:profile.removedFieldIds.length})])
+      })
+      return await this.getPropertyProfile(clientId,ownerId)
+    }catch(error){if(error.statusCode)throw error;throw serviceError('A propriedade não pôde ser salva no PostgreSQL configurado.')}
   }
 
   async saveVisit(input,ownerId){

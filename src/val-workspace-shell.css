@@ -1,0 +1,951 @@
+/* VAL — Mescla 09: shell, cockpit e Split View
+   Sidebar hierárquica, Home como central operacional e painel contextual do
+   produtor. Escopo visual e de navegação: nenhuma regra de negócio.
+   A paleta é a da VAL — verde profundo, esmeralda e menta. */
+
+/* ---------------------------------------------------------------- sidebar */
+.val-workspace-sidebar{
+ display:flex;
+ flex-direction:column;
+ gap:0;
+ transition:width .2s ease;
+}
+
+.val-workspace-sidebar .sidebar-brand{
+ display:flex;
+ align-items:flex-start;
+ justify-content:space-between;
+ gap:8px;
+ padding-bottom:4px;
+}
+.val-workspace-sidebar .sidebar-brand .val-final-brand{min-width:0}
+
+.sidebar-collapse{
+ display:grid;
+ place-items:center;
+ width:26px;
+ height:26px;
+ flex:none;
+ margin-top:6px;
+ border:1px solid rgba(255,255,255,.1);
+ border-radius:8px;
+ background:rgba(255,255,255,.05);
+ color:rgba(214,240,232,.68);
+ cursor:pointer;
+ transition:background .18s ease,color .18s ease;
+}
+.sidebar-collapse:hover{background:rgba(255,255,255,.12);color:#fff}
+
+.sidebar-rail-title{
+ margin:18px 0 6px;
+ padding:0 12px;
+ color:rgba(190,222,212,.42);
+ font-size:9px;
+ font-weight:820;
+ letter-spacing:.18em;
+ text-transform:uppercase;
+}
+.sidebar-rail-title.is-context{color:var(--val-mint)}
+
+.val-workspace-sidebar nav{margin-top:0;display:flex;flex-direction:column;gap:2px}
+.val-workspace-sidebar nav button{
+ display:flex;
+ align-items:center;
+ gap:10px;
+ width:100%;
+ min-height:40px;
+ padding:0 12px;
+ border:1px solid transparent;
+ border-radius:11px;
+ background:transparent;
+ color:rgba(219,240,233,.72);
+ font-size:12.5px;
+ font-weight:600;
+ text-align:left;
+ cursor:pointer;
+ transition:background .16s ease,color .16s ease;
+}
+.val-workspace-sidebar nav button:hover{background:rgba(255,255,255,.06);color:#fff;transform:none}
+.val-workspace-sidebar nav button .nav-icon{
+ display:grid;
+ place-items:center;
+ width:27px;
+ height:27px;
+ flex:none;
+ border-radius:8px;
+ background:rgba(255,255,255,.05);
+ transition:background .16s ease;
+}
+
+/* Workspace ativo: pílula sólida, como na referência. */
+.val-workspace-sidebar .workspace-rail button.active,
+.val-workspace-sidebar .workspace-home button.active{
+ background:linear-gradient(135deg,var(--val-emerald-dark),#12b48c);
+ border-color:transparent;
+ color:#fff;
+ box-shadow:0 10px 22px rgba(0,159,120,.26);
+}
+.val-workspace-sidebar .workspace-rail button.active .nav-icon,
+.val-workspace-sidebar .workspace-home button.active .nav-icon{background:rgba(255,255,255,.18)}
+
+/* Subnavegação: subordinada ao workspace que a abriu. */
+.val-workspace-sidebar .workspace-modules button,
+.val-workspace-sidebar .workspace-settings button{
+ min-height:37px;
+ font-size:12px;
+ font-weight:560;
+}
+.val-workspace-sidebar .workspace-modules button.active,
+.val-workspace-sidebar .workspace-settings button.active{
+ background:rgba(0,200,150,.14);
+ border-color:rgba(114,230,197,.24);
+ color:#fff;
+}
+.val-workspace-sidebar .workspace-modules button.active .nav-icon,
+.val-workspace-sidebar .workspace-settings button.active .nav-icon{background:rgba(114,230,197,.2);color:var(--val-mint)}
+.val-workspace-sidebar .workspace-modules .nav-icon,
+.val-workspace-sidebar .workspace-settings .nav-icon{width:25px;height:25px;background:transparent}
+
+.sidebar-foot{margin-top:auto;padding-top:16px;display:flex;flex-direction:column;gap:9px}
+.val-workspace-sidebar .user-card{margin-top:0}
+
+/* Copiloto: atalho permanente, não item de menu. */
+.sidebar-copilot{
+ display:flex;
+ align-items:center;
+ gap:10px;
+ width:100%;
+ padding:10px 11px;
+ border:1px solid rgba(114,230,197,.22);
+ border-radius:13px;
+ background:linear-gradient(135deg,rgba(0,200,150,.16),rgba(45,140,255,.1));
+ color:#eafff8;
+ text-align:left;
+ cursor:pointer;
+ transition:border-color .18s ease,background .18s ease;
+}
+.sidebar-copilot:hover,.sidebar-copilot.active{
+ border-color:rgba(114,230,197,.45);
+ background:linear-gradient(135deg,rgba(0,200,150,.28),rgba(45,140,255,.16));
+}
+.sidebar-copilot .nav-icon{
+ display:grid;
+ place-items:center;
+ width:29px;
+ height:29px;
+ flex:none;
+ border-radius:9px;
+ background:rgba(255,255,255,.13);
+}
+.sidebar-copilot b{display:block;font-size:12.5px;font-weight:720;line-height:1.25}
+.sidebar-copilot small{display:block;color:rgba(207,238,229,.6);font-size:10px;line-height:1.3}
+
+/* Recolhida: só ícones, rótulo pelo title nativo. */
+.val-workspace-sidebar.is-collapsed{width:78px;padding-left:11px;padding-right:11px}
+.val-workspace-sidebar.is-collapsed .sidebar-brand{flex-direction:column;align-items:center;gap:9px}
+.val-workspace-sidebar.is-collapsed .sidebar-rail-title{display:none}
+.val-workspace-sidebar.is-collapsed nav button>span:last-child,
+.val-workspace-sidebar.is-collapsed .sidebar-copilot>span:last-child{
+ position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;
+}
+.val-workspace-sidebar.is-collapsed nav button,
+.val-workspace-sidebar.is-collapsed .sidebar-copilot{justify-content:center;gap:0;padding-left:0;padding-right:0}
+.val-workspace-sidebar.is-collapsed .user-card>div:last-child{display:none}
+.val-workspace-sidebar.is-collapsed .user-card{justify-content:center}
+
+/* -------------------------------------------------------- cabeçalho global */
+.val-global-header{position:relative}
+.context-trail{display:flex;align-items:center;gap:5px;margin-bottom:3px;min-width:0;flex-wrap:wrap}
+.context-trail svg{flex:none;color:var(--val-muted);opacity:.55}
+.context-step{
+ color:var(--val-muted);
+ font-size:10.5px;
+ font-weight:700;
+ letter-spacing:.06em;
+ text-transform:uppercase;
+ white-space:nowrap;
+ overflow:hidden;
+ text-overflow:ellipsis;
+ max-width:220px;
+}
+.context-step.is-entity{
+ padding:1px 8px;
+ border:1px solid var(--val-line);
+ border-radius:999px;
+ background:var(--val-surface);
+ color:var(--val-emerald-dark);
+ letter-spacing:.02em;
+ text-transform:none;
+}
+
+/* -------------------------------------------------------------- busca global */
+.global-search{
+ position:absolute;
+ z-index:40;
+ top:calc(100% - 6px);
+ right:clamp(12px,3vw,34px);
+ width:min(520px,calc(100vw - 32px));
+ padding:12px;
+ border:1px solid var(--val-line);
+ border-radius:18px;
+ background:var(--val-surface);
+ box-shadow:0 26px 60px rgba(7,42,36,.16);
+}
+.global-search-field{
+ display:flex;align-items:center;gap:9px;padding:0 12px;height:44px;
+ border:1px solid var(--val-line);border-radius:12px;background:var(--val-canvas);
+}
+.global-search-field svg{flex:none;color:var(--val-muted)}
+.global-search-field input{width:100%;border:0;background:transparent;color:var(--val-text);font-size:13.5px;outline:0}
+.global-search-results{list-style:none;margin:10px 0 0;padding:0;display:flex;flex-direction:column;gap:2px}
+.global-search-results button{
+ display:grid;grid-template-columns:78px minmax(0,1fr);align-items:baseline;gap:10px;
+ width:100%;padding:9px 11px;border:0;border-radius:11px;background:transparent;text-align:left;cursor:pointer;
+}
+.global-search-results button:hover,.global-search-results button:focus-visible{background:var(--val-canvas)}
+.global-search-results small{color:var(--val-emerald-dark);font-size:9px;font-weight:820;letter-spacing:.13em;text-transform:uppercase}
+.global-search-results b{color:var(--val-text);font-size:13px;font-weight:670;overflow-wrap:anywhere}
+.global-search-results span{grid-column:2;color:var(--val-muted);font-size:11px}
+.global-search-empty{margin:12px 4px 4px;color:var(--val-muted);font-size:11.5px;line-height:1.5}
+
+/* ============================================ HOME — CENTRAL OPERACIONAL */
+
+/* Resumo do dia: ícone, rótulo, número grande e leitura. */
+.home-day-strip{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+.home-day-card{
+ display:flex;flex-direction:column;gap:6px;padding:16px 17px;
+ border:1px solid var(--val-line);border-radius:17px;background:var(--val-surface);
+ box-shadow:var(--shadow);text-align:left;cursor:pointer;
+ transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease;
+}
+.home-day-card:hover{transform:translateY(-2px);border-color:rgba(0,200,150,.4);box-shadow:0 18px 44px rgba(7,42,36,.1)}
+.home-day-head{display:flex;align-items:center;gap:8px}
+.home-day-head svg{color:var(--val-emerald-dark)}
+.home-day-card.is-pending .home-day-head svg{color:#c2751f}
+.home-day-head small{color:var(--val-text);font-size:11.5px;font-weight:700;letter-spacing:.01em}
+.home-day-card strong{
+ color:var(--val-text);font-size:36px;font-weight:780;line-height:1;
+ letter-spacing:-.045em;font-variant-numeric:tabular-nums;
+}
+.home-day-hint{color:var(--val-muted);font-size:11px;line-height:1.4}
+
+/* Linha operacional: próximas visitas · produtores em foco · pendências. */
+.home-operational{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;align-items:start}
+.home-panel{
+ padding:17px;border:1px solid var(--val-line);border-radius:19px;
+ background:var(--val-surface);box-shadow:var(--shadow);
+}
+.home-panel>header{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:12px}
+.home-panel h3{margin:0;font-size:15.5px;font-weight:750;letter-spacing:-.02em}
+.home-panel>header>button{
+ display:inline-flex;align-items:center;gap:4px;min-height:30px;padding:0 9px;
+ border:0;border-radius:9px;background:transparent;color:var(--val-emerald-dark);
+ font-size:11px;font-weight:700;cursor:pointer;
+}
+.home-panel>header>button:hover{background:var(--val-canvas)}
+.home-panel ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.home-panel-empty,.home-panel-note{margin:0;color:var(--val-muted);font-size:11.5px;line-height:1.55}
+.home-panel-note{margin-top:11px;padding-top:10px;border-top:1px dashed var(--val-line);font-size:10.5px}
+
+.home-next-visits li{
+ display:grid;grid-template-columns:46px minmax(0,1fr) auto;align-items:center;gap:10px;
+ padding:10px 0;border-top:1px solid var(--val-line);
+}
+.home-next-visits li:first-child{border-top:0;padding-top:0}
+.home-next-visits time{color:var(--val-text);font-size:12.5px;font-weight:760;font-variant-numeric:tabular-nums}
+.home-next-visits li>div{min-width:0}
+.home-next-visits li b{display:block;color:var(--val-text);font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-next-visits li span{display:block;color:var(--val-muted);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.home-next-visits li>button{
+ min-height:32px;padding:0 11px;border:1px solid var(--val-line);border-radius:9px;
+ background:var(--val-canvas);color:var(--val-emerald-dark);font-size:11px;font-weight:700;
+ white-space:nowrap;cursor:pointer;
+}
+.home-next-visits li>button:hover{background:var(--val-emerald-dark);border-color:transparent;color:#fff}
+
+.home-focus li{
+ display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:start;gap:10px;
+ padding:11px 0;border-top:1px solid var(--val-line);
+}
+.home-focus li:first-child{border-top:0;padding-top:0}
+.home-focus b{display:block;color:var(--val-text);font-size:13px;font-weight:700}
+.home-focus li>div>span{display:block;color:var(--val-muted);font-size:11px}
+.home-focus p{margin:4px 0 0;color:var(--val-muted);font-size:11px;line-height:1.45}
+.focus-tag{
+ padding:4px 10px;border:1px solid transparent;border-radius:999px;
+ font-size:10px;font-weight:750;white-space:nowrap;cursor:pointer;
+}
+.focus-tag.is-opportunity{background:#eafff8;border-color:rgba(0,200,150,.24);color:#087d61}
+.focus-tag.is-attention{background:#fff5e6;border-color:rgba(194,117,31,.24);color:#a3601a}
+.focus-tag.is-develop{background:var(--val-canvas);border-color:var(--val-line);color:var(--val-muted)}
+.focus-tag:hover{filter:brightness(.97)}
+
+.home-pendencies li{border-top:1px solid var(--val-line)}
+.home-pendencies li:first-child{border-top:0}
+.home-pendencies li>button{
+ display:grid;grid-template-columns:34px minmax(0,1fr) 16px;align-items:center;gap:10px;
+ width:100%;padding:11px 4px;border:0;background:transparent;text-align:left;cursor:pointer;border-radius:10px;
+}
+.home-pendencies li>button:hover{background:var(--val-canvas)}
+.home-pendencies li b{
+ color:var(--val-emerald-dark);font-size:17px;font-weight:780;font-variant-numeric:tabular-nums;
+}
+.home-pendencies li span{color:var(--val-text);font-size:12px;font-weight:640;line-height:1.35}
+.home-pendencies li small{display:block;color:var(--val-muted);font-size:10.5px;font-weight:500;line-height:1.4}
+.home-pendencies li svg{color:var(--val-muted)}
+
+/* Faixa do Copiloto: a inteligência como camada, não como destino de menu. */
+.home-copilot-banner{
+ display:flex;align-items:center;justify-content:space-between;gap:18px;
+ padding:18px 22px;border-radius:19px;
+ background:radial-gradient(circle at 88% 0,rgba(45,140,255,.28),transparent 42%),linear-gradient(135deg,#071b19,#0b3b34 58%,#096d63);
+ box-shadow:0 20px 48px rgba(7,49,42,.2);
+}
+.home-copilot-banner>div:first-child{display:flex;align-items:center;gap:14px;min-width:0}
+.home-copilot-mark{
+ display:grid;place-items:center;width:44px;height:44px;flex:none;border-radius:14px;
+ background:rgba(114,230,197,.16);color:var(--val-mint);
+}
+.home-copilot-banner b{display:block;color:#fff;font-size:16px;font-weight:750}
+.home-copilot-banner p{margin:2px 0 0;color:rgba(226,250,243,.74);font-size:12.5px}
+.home-copilot-banner>.home-copilot-actions{display:flex;gap:10px;flex:none}
+.home-copilot-actions button{
+ display:inline-flex;align-items:center;gap:8px;min-height:44px;padding:0 18px;flex:none;
+ border:1px solid rgba(255,255,255,.16);border-radius:13px;background:rgba(255,255,255,.08);
+ color:#fff;font-size:13px;font-weight:720;cursor:pointer;
+}
+.home-copilot-actions button:hover{background:rgba(255,255,255,.14)}
+/* A voz é a porta principal: é o botão que mais chama. */
+.home-copilot-actions .is-voice{
+ border-color:transparent;background:linear-gradient(135deg,var(--val-emerald-dark),var(--val-emerald));
+ color:#04231d;font-weight:800;
+}
+.home-copilot-actions .is-voice:hover{filter:brightness(1.05);background:linear-gradient(135deg,var(--val-emerald-dark),var(--val-emerald))}
+
+/* Ações rápidas: só o que o produto já faz. */
+.home-quick-actions{
+ padding:16px 17px;border:1px solid var(--val-line);border-radius:19px;
+ background:var(--val-surface);box-shadow:var(--shadow);
+}
+.home-quick-actions h3{margin:0 0 12px;font-size:13px;font-weight:750;letter-spacing:-.01em}
+.home-quick-actions>div{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+.home-quick-actions button{
+ display:flex;align-items:center;gap:9px;min-height:46px;padding:0 13px;
+ border:1px solid var(--val-line);border-radius:12px;background:var(--val-canvas);
+ color:var(--val-text);font-size:12px;font-weight:640;text-align:left;cursor:pointer;
+ transition:border-color .16s ease,background .16s ease;
+}
+.home-quick-actions button:hover{border-color:rgba(0,200,150,.4);background:#eafff8}
+.home-quick-actions button svg{flex:none;color:var(--val-emerald-dark)}
+.home-quick-actions button span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+@media(max-width:1180px){
+ .home-operational{grid-template-columns:1fr}
+ .home-quick-actions>div{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:900px){
+ .home-day-strip{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .home-quick-actions>div{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:640px){
+ .home-day-card{padding:13px 14px}
+ .home-day-card strong{font-size:29px}
+ .home-copilot-banner{flex-direction:column;align-items:stretch;padding:16px}
+ .home-copilot-banner>.home-copilot-actions{display:grid;grid-template-columns:1fr 1fr}
+ .home-copilot-actions button{width:100%;justify-content:center}
+ .home-quick-actions>div{grid-template-columns:1fr}
+}
+
+/* ------------------------------------------------- Split View contextual */
+.producer-split{display:grid;grid-template-columns:minmax(0,1fr) 366px;align-items:start;gap:20px}
+.producer-split:has(.context-panel.is-collapsed){grid-template-columns:minmax(0,1fr) 52px}
+.producer-split-main{min-width:0}
+
+.context-panel{
+ position:sticky;top:104px;display:flex;flex-direction:column;
+ max-height:calc(100vh - 128px);border:1px solid var(--val-line);border-radius:19px;
+ background:var(--val-surface);box-shadow:var(--shadow);overflow:hidden;
+}
+.context-panel.is-collapsed{align-items:center;padding:10px 0;max-height:none}
+.context-panel-head{
+ display:flex;align-items:center;justify-content:space-between;gap:6px;
+ padding:9px 9px 9px 10px;border-bottom:1px solid var(--val-line);background:var(--val-canvas);
+}
+.context-panel-head [role="tablist"]{display:flex;gap:3px;min-width:0}
+.context-panel-head [role="tab"]{
+ display:inline-flex;align-items:center;gap:6px;min-height:34px;padding:0 10px;
+ border:0;border-radius:10px;background:transparent;color:var(--val-muted);
+ font-size:11.5px;font-weight:680;cursor:pointer;transition:background .16s ease,color .16s ease;
+}
+.context-panel-head [role="tab"]:hover{background:var(--val-surface);color:var(--val-text)}
+.context-panel-head [role="tab"].active{background:var(--val-surface);color:var(--val-emerald-dark);box-shadow:0 2px 8px rgba(7,42,36,.07)}
+.context-panel-toggle{
+ display:grid;place-items:center;width:34px;height:34px;flex:none;
+ border:1px solid var(--val-line);border-radius:10px;background:var(--val-surface);
+ color:var(--val-muted);cursor:pointer;
+}
+.context-panel-toggle:hover{color:var(--val-emerald-dark);border-color:var(--val-emerald)}
+.context-pane{padding:14px;overflow-y:auto;scrollbar-width:thin}
+.context-note{margin:0 0 12px;color:var(--val-muted);font-size:11.5px;line-height:1.5}
+.context-note.is-warning{margin:12px 0 0;padding-top:10px;border-top:1px dashed var(--val-line)}
+.context-empty{margin:0;color:var(--val-muted);font-size:12px;line-height:1.55}
+
+.context-timeline{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+.context-timeline li{display:grid;grid-template-columns:14px minmax(0,1fr);gap:12px;padding:0 0 16px 0;position:relative}
+.context-timeline li:before{content:"";position:absolute;left:5px;top:16px;bottom:0;width:1px;background:var(--val-line)}
+.context-timeline li:last-child:before{display:none}
+.context-timeline li:after{
+ content:"";position:absolute;left:1px;top:6px;width:9px;height:9px;border-radius:50%;
+ border:2px solid var(--val-surface);background:var(--val-muted);
+}
+.context-timeline li.is-visit:after{background:var(--val-emerald-dark)}
+.context-timeline li.is-opportunity:after{background:var(--val-emerald)}
+.context-timeline li.is-commitment:after{background:var(--val-lime)}
+.context-timeline time{grid-column:2;color:var(--val-muted);font-size:10px;font-weight:750;letter-spacing:.06em;text-transform:uppercase}
+.context-timeline li>div{grid-column:2}
+.context-timeline small{display:block;margin-top:3px;color:var(--val-emerald-dark);font-size:9px;font-weight:820;letter-spacing:.13em;text-transform:uppercase}
+.context-timeline b{display:block;margin-top:2px;color:var(--val-text);font-size:12.5px;font-weight:700;line-height:1.35}
+.context-timeline p{margin:3px 0 0;color:var(--val-muted);font-size:11.5px;line-height:1.5}
+.context-timeline em{display:block;margin-top:4px;color:var(--val-muted);font-size:10px;font-style:normal;opacity:.72}
+
+.context-block{padding-bottom:14px;margin-bottom:14px;border-bottom:1px solid var(--val-line)}
+.context-block:last-child{padding-bottom:0;margin-bottom:0;border-bottom:0}
+.context-block>small{display:block;margin-bottom:6px;color:var(--val-emerald-dark);font-size:9px;font-weight:820;letter-spacing:.14em}
+.context-block>b{display:block;color:var(--val-text);font-size:15px;font-weight:750}
+.context-block>p{margin:4px 0 0;color:var(--val-muted);font-size:12px;line-height:1.55}
+.context-list{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+.context-list li{display:grid;grid-template-columns:14px minmax(0,1fr);gap:8px;align-items:start;color:var(--val-text);font-size:12px;line-height:1.45}
+.context-list svg{margin-top:2px;color:var(--val-emerald-dark)}
+.context-list em{display:block;color:var(--val-muted);font-size:10.5px;font-style:normal;letter-spacing:.04em;text-transform:uppercase}
+
+.context-prompts{display:flex;flex-direction:column;gap:7px}
+.context-prompts button{
+ display:grid;grid-template-columns:16px minmax(0,1fr);gap:9px;padding:11px;
+ border:1px solid var(--val-line);border-radius:13px;background:var(--val-surface);
+ text-align:left;cursor:pointer;transition:border-color .16s ease,background .16s ease;
+}
+.context-prompts button:hover{border-color:var(--val-emerald);background:var(--val-canvas)}
+.context-prompts svg{margin-top:2px;color:var(--val-emerald-dark)}
+.context-prompts b{grid-column:2;color:var(--val-text);font-size:12.5px;font-weight:700}
+.context-prompts small{grid-column:2;color:var(--val-muted);font-size:10.5px;line-height:1.4}
+.context-open-copilot{
+ display:flex;align-items:center;justify-content:center;gap:8px;width:100%;min-height:44px;margin-top:12px;
+ border:0;border-radius:13px;background:linear-gradient(135deg,var(--val-emerald-dark),var(--val-emerald));
+ color:#04231d;font-weight:760;cursor:pointer;
+}
+
+@media(max-width:1180px){
+ .producer-split,.producer-split:has(.context-panel.is-collapsed){grid-template-columns:minmax(0,1fr)}
+ .context-panel{position:static;max-height:none}
+ .context-panel.is-collapsed{align-items:stretch;padding:0}
+ .context-panel.is-collapsed .context-panel-toggle{width:100%;border-radius:14px;min-height:46px}
+ .context-pane{max-height:none}
+}
+
+/* --------------------------------------------------------- mobile: barra e sheets */
+@media(max-width:760px){
+ .mobile-nav{display:grid;grid-template-columns:repeat(5,1fr);align-items:center}
+ .mobile-create-button{display:grid;place-items:center;border:0;background:transparent;cursor:pointer}
+ .mobile-create-button>span{
+  display:grid;place-items:center;width:50px;height:50px;border-radius:17px;
+  background:linear-gradient(140deg,var(--val-emerald),var(--val-emerald-dark));
+  color:#04231d;box-shadow:0 10px 24px rgba(0,159,120,.32);
+ }
+ .mobile-create-button>span svg{width:23px;height:23px;stroke-width:2.4}
+
+ .mobile-quick-actions{display:flex;flex-direction:column;gap:8px}
+ .mobile-quick-actions button{
+  display:grid;grid-template-columns:42px minmax(0,1fr);align-items:center;gap:12px;
+  width:100%;padding:12px;border:1px solid var(--val-line);border-radius:15px;
+  background:var(--val-surface);text-align:left;cursor:pointer;
+ }
+ .mobile-quick-actions button>span{
+  display:grid;place-items:center;width:42px;height:42px;border-radius:13px;
+  background:var(--val-canvas);color:var(--val-emerald-dark);
+ }
+ .mobile-quick-actions b{grid-column:2;color:var(--val-text);font-size:13.5px;font-weight:700}
+ .mobile-quick-actions small{grid-column:2;color:var(--val-muted);font-size:11px;line-height:1.4}
+
+ .mobile-workspace-list{display:flex;flex-direction:column;gap:14px}
+ .mobile-workspace-list>section>div{display:flex;flex-direction:column;gap:4px;margin-top:6px;padding-left:14px;border-left:1px solid var(--val-line)}
+ .mobile-workspace-head{
+  display:grid;grid-template-columns:38px minmax(0,1fr);align-items:center;gap:11px;
+  width:100%;padding:9px 10px;border:0;border-radius:13px;background:var(--val-canvas);
+  text-align:left;cursor:pointer;
+ }
+ .mobile-workspace-list>section.is-active .mobile-workspace-head{background:linear-gradient(135deg,rgba(0,200,150,.18),rgba(45,140,255,.1))}
+ .mobile-workspace-head>span{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:var(--val-surface);color:var(--val-emerald-dark)}
+ .mobile-workspace-head b{grid-column:2;color:var(--val-text);font-size:13px;font-weight:750}
+ .mobile-workspace-head small{grid-column:2;color:var(--val-muted);font-size:10.5px}
+ .mobile-workspace-settings-title{
+  margin:0 0 6px;padding:0 10px;color:var(--val-muted);
+  font-size:9px;font-weight:820;letter-spacing:.16em;text-transform:uppercase;
+ }
+ .mobile-workspace-list>section>div button{
+  display:flex;align-items:center;gap:10px;width:100%;min-height:42px;padding:0 10px;
+  border:0;border-radius:11px;background:transparent;color:var(--val-text);text-align:left;cursor:pointer;
+ }
+ .mobile-workspace-list>section>div button.active{background:var(--val-canvas);color:var(--val-emerald-dark)}
+ .mobile-workspace-list>section>div button svg{width:17px;height:17px;flex:none;color:var(--val-muted)}
+ .mobile-workspace-list>section>div button.active svg{color:var(--val-emerald-dark)}
+ .mobile-workspace-list>section>div b{font-size:12.5px;font-weight:620}
+
+ .mobile-more-sheet{max-height:80svh;overflow-y:auto}
+ .global-search{right:12px;left:12px;width:auto}
+ .context-step{max-width:150px}
+}
+
+/* Workspace carregado mas não ativo (usuário está no Início): marcado, não cheio. */
+.val-workspace-sidebar .workspace-rail button.is-loaded{
+ background:rgba(255,255,255,.05);
+ color:#fff;
+}
+.val-workspace-sidebar .workspace-rail button.is-loaded .nav-icon{background:rgba(114,230,197,.16);color:var(--val-mint)}
+
+/* A assinatura da marca precisa ser lida, não adivinhada. */
+.sidebar .val-final-brand .val-brand-signature{font-size:6.6px;letter-spacing:.115em;opacity:.78}
+.sidebar .val-final-brand.is-full .brand-mark{width:46px;height:46px}
+.sidebar .val-final-brand.is-full .brand-word{width:106px;min-height:38px}
+
+/* Busca inline no cabeçalho, como na referência: campo visível, não ícone. */
+.global-search-inline{
+ display:flex;
+ align-items:center;
+ gap:9px;
+ width:clamp(240px,26vw,380px);
+ height:40px;
+ padding:0 13px;
+ border:1px solid var(--val-line);
+ border-radius:12px;
+ background:var(--val-surface);
+ box-shadow:0 8px 24px rgba(11,48,41,.045);
+}
+.global-search-inline svg{flex:none;color:var(--val-muted)}
+.global-search-inline input{
+ width:100%;
+ min-width:0;
+ border:0;
+ background:transparent;
+ color:var(--val-text);
+ font-size:12.5px;
+ outline:0;
+}
+.global-search-inline input::placeholder{color:var(--val-muted)}
+.global-search-inline>button{
+ display:grid;place-items:center;width:22px;height:22px;flex:none;
+ border:0;border-radius:7px;background:var(--val-canvas);color:var(--val-muted);cursor:pointer;
+}
+.icon-btn.is-search-compact{display:none}
+/* O painel não repete o campo enquanto ele está no cabeçalho. */
+.global-search .global-search-field{display:none}
+
+@media(max-width:1080px){
+ .global-search-inline{display:none}
+ .icon-btn.is-search-compact{display:flex}
+ .global-search .global-search-field{display:flex}
+}
+
+/* ------------------------------- Cockpit em duas colunas (Mescla 09, slide 05)
+   A decisão do dia ocupa a coluna larga; o resumo, as pendências e o contexto
+   da carteira ficam à direita, sempre visíveis, sem competir com a ação. */
+.home-cockpit{
+ display:grid;
+ grid-template-columns:minmax(0,1fr) 320px;
+ gap:16px;
+ align-items:start;
+}
+.home-cockpit-main{
+ display:flex;
+ flex-direction:column;
+ gap:16px;
+ min-width:0;
+}
+.home-rail{
+ display:flex;
+ flex-direction:column;
+ gap:12px;
+ position:sticky;
+ top:104px;
+}
+.home-rail-card{
+ padding:15px 16px;
+ border:1px solid var(--val-line);
+ border-radius:18px;
+ background:var(--val-surface);
+ box-shadow:var(--shadow);
+}
+.home-rail-card h3{
+ margin:0 0 11px;
+ font-size:12.5px;
+ font-weight:780;
+ letter-spacing:.01em;
+}
+.home-rail-card ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column}
+
+/* Resumo do dia: os mesmos quatro números, em leitura compacta. */
+
+/* Top culturas: leitura de carteira, não gráfico decorativo. */
+.home-rail-cultures li{
+ display:grid;
+ grid-template-columns:minmax(0,1fr) auto;
+ gap:4px 10px;
+ padding:9px 0;
+ border-top:1px solid var(--val-line);
+}
+.home-rail-cultures li:first-child{border-top:0;padding-top:0}
+.home-rail-cultures b{color:var(--val-text);font-size:12.5px;font-weight:700}
+.home-rail-cultures span{color:var(--val-muted);font-size:10.5px}
+.home-rail-cultures em{
+ grid-row:1/3;
+ grid-column:2;
+ align-self:center;
+ color:var(--val-emerald-dark);
+ font-size:11.5px;
+ font-style:normal;
+ font-weight:750;
+ white-space:nowrap;
+}
+
+.home-rail-activity li{padding:8px 0;border-top:1px solid var(--val-line)}
+.home-rail-activity li:first-child{border-top:0;padding-top:0}
+.home-rail-activity b{display:block;color:var(--val-text);font-size:12px;font-weight:700}
+.home-rail-activity span{display:block;color:var(--val-muted);font-size:10.5px}
+
+@media(max-width:1240px){
+ .home-cockpit{grid-template-columns:minmax(0,1fr)}
+ .home-rail{position:static;display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:760px){
+ .home-rail{grid-template-columns:1fr}
+}
+
+/* ------------------------------ Faixa analítica visível (Mescla 09, slide 05)
+   Os números da carteira estavam dentro do accordion "quero aprofundar" — que
+   é justamente o que fazia a Home parecer a versão anterior. Sobem para uma
+   faixa própria, sem competir com a decisão do dia. */
+.home-analytics{
+ display:grid;
+ grid-template-columns:minmax(0,1.15fr) minmax(0,.85fr);
+ gap:14px;
+ align-items:start;
+}
+.home-analytics-kpis{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.home-analytics-kpis>div{
+ padding:12px 13px;
+ border:1px solid var(--val-line);
+ border-radius:14px;
+ background:var(--val-canvas);
+}
+.home-analytics-kpis small{
+ display:block;
+ color:var(--val-muted);
+ font-size:10px;
+ font-weight:750;
+ letter-spacing:.06em;
+ text-transform:uppercase;
+}
+.home-analytics-kpis b{
+ display:block;
+ margin:4px 0 2px;
+ color:var(--val-text);
+ font-size:21px;
+ font-weight:770;
+ line-height:1.1;
+ letter-spacing:-.03em;
+ font-variant-numeric:tabular-nums;
+}
+.home-analytics-kpis span{display:block;color:var(--val-muted);font-size:10.5px;line-height:1.35}
+
+.home-analytics .funnel{margin-top:2px;gap:7px}
+.home-analytics .f-step{height:38px;font-size:11px}
+.home-analytics .f-step b{font-size:11px}
+
+@media(max-width:1240px){
+ .home-analytics{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:640px){
+ .home-analytics-kpis{grid-template-columns:1fr}
+}
+
+/* Funil da Home: leitura, não decoração. O funil legado usa clip-path com
+   larguras fixas e, num painel estreito, o nome da etapa colidia com o valor. */
+.home-funnel{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:2px}
+.home-funnel li{
+ display:grid;
+ grid-template-columns:minmax(0,1fr) auto;
+ grid-template-rows:auto auto;
+ gap:6px 12px;
+ padding:11px 0;
+ border-top:1px solid var(--val-line);
+}
+.home-funnel li:first-child{border-top:0;padding-top:2px}
+.home-funnel b{display:block;color:var(--val-text);font-size:12.5px;font-weight:700}
+.home-funnel span{display:block;color:var(--val-muted);font-size:10.5px;line-height:1.35}
+.home-funnel em{
+ grid-column:2;
+ grid-row:1;
+ align-self:start;
+ color:var(--val-text);
+ font-size:15px;
+ font-style:normal;
+ font-weight:770;
+ text-align:right;
+ font-variant-numeric:tabular-nums;
+ white-space:nowrap;
+}
+.home-funnel em small{
+ display:block;
+ color:var(--val-muted);
+ font-size:10px;
+ font-weight:600;
+}
+.home-funnel i{
+ grid-column:1/-1;
+ grid-row:2;
+ display:block;
+ height:5px;
+ min-width:3px;
+ border-radius:99px;
+ background:var(--val-emerald-dark);
+}
+.home-funnel .is-stage-2 i{background:var(--val-emerald)}
+.home-funnel .is-stage-3 i{background:var(--val-mint)}
+.home-funnel .is-stage-4 i{background:var(--val-lime)}
+
+/* ------------------------------------- Linha operacional com três leituras */
+.home-operational{grid-template-columns:repeat(3,minmax(0,1fr))}
+
+.home-insights li{
+ display:grid;
+ grid-template-columns:26px minmax(0,1fr) 20px;
+ gap:9px;
+ align-items:start;
+ padding:11px 0;
+ border-top:1px solid var(--val-line);
+}
+.home-insights li:first-child{border-top:0;padding-top:0}
+.home-insight-mark{
+ display:grid;place-items:center;width:26px;height:26px;
+ border-radius:9px;background:var(--val-canvas);color:var(--val-emerald-dark);
+}
+.home-insights b{display:block;color:var(--val-text);font-size:12.5px;font-weight:700;line-height:1.35}
+.home-insights p{margin:3px 0 0;color:var(--val-muted);font-size:11px;line-height:1.45}
+.home-insights li>button{
+ display:grid;place-items:center;width:20px;height:20px;
+ border:0;border-radius:6px;background:transparent;color:var(--val-muted);cursor:pointer;
+}
+.home-insights li>button:hover:not(:disabled){background:var(--val-canvas);color:var(--val-emerald-dark)}
+.home-insights li>button:disabled{opacity:.35;cursor:default}
+
+/* -------------------------------------- Faixa analítica: quatro leituras */
+.home-analytics{grid-template-columns:repeat(4,minmax(0,1fr))}
+
+/* Barras horizontais — o formato da referência para "top" de alguma coisa. */
+.home-bars{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:11px}
+.home-bars li{display:grid;gap:4px}
+.home-bars li>div{display:flex;align-items:baseline;justify-content:space-between;gap:8px}
+.home-bars b{color:var(--val-text);font-size:12.5px;font-weight:700}
+.home-bars em{
+ color:var(--val-text);font-size:13px;font-style:normal;font-weight:770;
+ font-variant-numeric:tabular-nums;
+}
+.home-bars i{
+ display:block;height:6px;min-width:4px;border-radius:99px;
+ background:linear-gradient(90deg,var(--val-emerald-dark),var(--val-emerald));
+}
+.home-bars span{color:var(--val-muted);font-size:10.5px}
+
+/* Rosca de cobertura: conic-gradient, sem biblioteca de gráfico. */
+.home-coverage{display:flex;align-items:center;gap:16px}
+.home-donut{
+ --val-share:0%;
+ position:relative;
+ display:grid;
+ place-content:center;
+ justify-items:center;
+ width:96px;
+ height:96px;
+ flex:none;
+ border-radius:50%;
+ background:conic-gradient(var(--val-emerald-dark) 0 var(--val-share),var(--val-line) var(--val-share) 100%);
+}
+.home-donut:before{
+ content:"";
+ position:absolute;
+ inset:11px;
+ border-radius:50%;
+ background:var(--val-surface);
+}
+.home-donut b,.home-donut small{position:relative;z-index:1}
+.home-donut b{color:var(--val-text);font-size:20px;font-weight:780;line-height:1;font-variant-numeric:tabular-nums}
+.home-donut small{color:var(--val-muted);font-size:10px}
+.home-coverage ul{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;min-width:0}
+.home-coverage li{display:flex;align-items:center;gap:8px;color:var(--val-text);font-size:11.5px;line-height:1.35}
+.home-coverage i{width:9px;height:9px;flex:none;border-radius:50%;background:var(--val-line)}
+.home-coverage i.is-measured{background:var(--val-emerald-dark)}
+
+.home-analytics-kpis{grid-template-columns:1fr 1fr}
+
+/* ------------------------------------------- Ações rápidas em uma linha só */
+.home-quick-actions{display:grid;grid-template-columns:auto minmax(0,1fr);align-items:center;gap:18px}
+.home-quick-actions h3{margin:0;white-space:nowrap}
+.home-quick-actions>div{
+ display:flex;
+ gap:9px;
+ overflow-x:auto;
+ padding-bottom:2px;
+ scrollbar-width:none;
+}
+.home-quick-actions>div::-webkit-scrollbar{display:none}
+.home-quick-actions button{flex:0 0 auto;border-radius:999px;padding:0 15px}
+
+@media(max-width:1420px){
+ .home-analytics{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:1180px){
+ .home-operational{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .home-insights{grid-column:1/-1}
+}
+@media(max-width:860px){
+ .home-operational,.home-analytics{grid-template-columns:minmax(0,1fr)}
+ .home-insights{grid-column:auto}
+ .home-quick-actions{grid-template-columns:minmax(0,1fr);gap:11px}
+}
+
+/* Uma regra herdada aplica overflow-wrap:anywhere em tudo, o que parte
+   "Oportunidades" no meio quando o cartão é estreito. Título e rótulo curto
+   nunca devem quebrar dentro da palavra. */
+.home-panel h3,
+.home-rail-card h3,
+.home-analytics-kpis small,
+.home-day-head small,
+.home-bars b,
+.home-funnel b{overflow-wrap:normal;word-break:keep-all;hyphens:manual}
+
+/* A faixa analítica são painéis densos: quatro colunas só cabem em tela larga.
+   Abaixo disso, duas — senão o título quebra e o número perde a leitura. */
+.home-analytics{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
+.home-analytics>.home-panel{display:flex;flex-direction:column}
+.home-analytics>.home-panel>ol,
+.home-analytics>.home-panel>div{flex:1}
+
+@media(min-width:1700px){
+ .home-analytics{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+
+/* Cartão vazio não deve esticar para acompanhar o vizinho cheio: vira uma
+   caixa oca enorme. Alturas independentes é o comportamento certo aqui. */
+.home-analytics{align-items:start}
+.home-analytics>.home-panel>ol,
+.home-analytics>.home-panel>div{flex:0 1 auto}
+
+/* Cabeçalho de painel: o título segura a linha e a ação encolhe primeiro. */
+.home-panel>header{gap:8px}
+.home-panel>header h3{min-width:0;font-size:14.5px;line-height:1.25}
+.home-panel>header>button{flex:0 0 auto;white-space:nowrap;padding:0 7px;font-size:10.5px}
+
+/* Ações rápidas: mais itens visíveis antes de precisar rolar. */
+.home-quick-actions button{min-height:42px;padding:0 13px;font-size:11.5px;gap:7px}
+
+/* ============================================================ MOBILE — FINAL
+   Este bloco fica no fim do arquivo de propósito. As regras de densidade do
+   desktop foram sendo acrescentadas depois dos breakpoints e passaram a
+   sobrescrevê-los — "Cobertura" e "Indicadores" voltaram a ficar lado a lado
+   em 375px, com metade do conteúdo cortada. Aqui o celular tem a última
+   palavra, e o que vale é uma coluna, alvo grande e leitura curta. */
+@media(max-width:860px){
+ .home-cockpit{grid-template-columns:minmax(0,1fr);gap:12px}
+ .home-cockpit-main{gap:12px}
+ .home-rail{position:static;grid-template-columns:minmax(0,1fr);display:flex}
+ .home-operational,
+ .home-analytics,
+ .home-analytics-kpis,
+ .home-analytics>.home-panel{display:block}
+ .home-insights{grid-column:auto}
+}
+
+@media(max-width:760px){
+ /* O dia continua em dois por dois: é a leitura mais rápida com uma mão. */
+ .home-day-strip{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+ .home-day-card{padding:13px 14px;gap:4px}
+ .home-day-card strong{font-size:27px}
+ .home-day-hint{font-size:10.5px}
+
+ /* Alvos de toque: nada abaixo de 44px no caminho principal. */
+ .home-panel>header>button,
+ .home-next-visits li>button,
+ .home-pendencies li>button,
+ .home-quick-actions button{min-height:44px}
+ .home-panel>header>button{padding:0 11px;font-size:11.5px}
+
+ /* No celular a VAL vem primeiro e a fala é o gesto principal: painel
+    simples, um botão grande para falar e um menor para escrever. */
+ .home-copilot-banner{order:-1;gap:14px;padding:18px 16px 16px}
+ .home-copilot-banner b{font-size:18px}
+ .home-copilot-banner p{font-size:13px}
+ .home-copilot-banner>.home-copilot-actions{display:grid;grid-template-columns:minmax(0,1fr);gap:9px}
+ .home-copilot-actions button{min-height:50px;font-size:14px}
+ .home-copilot-actions .is-voice{min-height:62px;font-size:16.5px;border-radius:16px;gap:10px}
+ .home-copilot-actions .is-voice svg{width:22px;height:22px}
+
+
+ /* Ações rápidas: rolagem horizontal com alvo confortável. */
+ .home-quick-actions>div{gap:8px;padding:2px 0 4px}
+ .home-quick-actions button{padding:0 15px;font-size:12px}
+
+ /* Os painéis perdem moldura dupla e ganham respiro. */
+ .home-panel,.home-rail-card{padding:15px;border-radius:17px}
+ .home-panel>header{margin-bottom:10px}
+ .home-panel h3,.home-rail-card h3{font-size:14.5px}
+}
+
+/* ============================================================ SEGUNDO PLANO
+   Dois níveis em qualquer tela. O que importa fica visível; o que interessa
+   às vezes — números, pergunta longa, radar — mora num recolhível que nasce
+   fechado e lembra a escolha de quem abriu. É o mesmo componente no desktop
+   e no celular: a rolagem encurta nos dois. */
+.val-disclosure{
+ border:1px solid var(--val-line);border-radius:19px;
+ background:var(--val-surface);box-shadow:var(--shadow);overflow:hidden;
+}
+.val-disclosure>summary{
+ display:flex;align-items:center;justify-content:space-between;gap:12px;
+ min-height:56px;padding:10px 18px;list-style:none;cursor:pointer;
+ color:var(--val-text);
+}
+.val-disclosure>summary::-webkit-details-marker{display:none}
+.val-disclosure>summary:hover{background:var(--val-canvas)}
+.val-disclosure>summary:focus-visible{outline:3px solid rgba(0,200,150,.35);outline-offset:-3px}
+.val-disclosure-title{display:grid;gap:2px;min-width:0}
+.val-disclosure-title b{font-size:14px;font-weight:750;letter-spacing:-.01em}
+.val-disclosure-title small{color:var(--val-muted);font-size:12px}
+.val-disclosure>summary>svg{flex:none;color:var(--val-muted);transition:transform .18s ease}
+.val-disclosure[open]>summary>svg{transform:rotate(90deg)}
+.val-disclosure[open]>summary{border-bottom:1px solid var(--val-line)}
+.val-disclosure-body{padding:16px;background:var(--val-canvas)}
+.val-disclosure .home-analytics{margin:0}
+
+/* Blocos que já eram cartões perdem a moldura dentro do recolhível. */
+.val-disclosure .copilot-talk{
+ display:grid;grid-template-columns:minmax(0,1fr);gap:10px;
+ padding:0;border:0;border-radius:0!important;background:transparent;box-shadow:none;
+}
+.val-disclosure .copilot-talk-controls{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.val-disclosure .copilot-talk-note{margin:0;color:var(--val-muted);font-size:12px}
+.val-disclosure .copilot-advanced-content{padding:0;border-top:0;background:transparent!important}
+.val-disclosure .copilot-advanced-shortcuts{padding-top:0}
+.val-disclosure .pipeline-roi{padding:0;border:0;border-radius:0;background:transparent;box-shadow:none}
+
+@media(max-width:760px){
+ .val-disclosure{border-radius:17px}
+ .val-disclosure>summary{min-height:52px;padding:8px 15px}
+ .val-disclosure-title b{font-size:13.5px}
+ .val-disclosure-title small{font-size:11.5px}
+ .val-disclosure-body{padding:13px}
+ .val-disclosure .home-analytics{gap:11px}
+ /* Dentro do recolhível os painéis perdem a moldura: já estão numa. */
+ .val-disclosure .home-panel{border:0;box-shadow:none;padding:0 0 13px;border-radius:0;border-bottom:1px solid var(--val-line)}
+ .val-disclosure .home-panel:last-child{padding-bottom:0;border-bottom:0}
+ .val-disclosure .copilot-talk-controls{grid-template-columns:minmax(0,1fr)}
+ .val-disclosure .copilot-advanced-shortcuts{display:grid}
+}
