@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import {spawn} from 'node:child_process'
-import {mkdtemp,rm} from 'node:fs/promises'
+import {mkdtemp,rm,writeFile} from 'node:fs/promises'
 import {createServer} from 'node:net'
 import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
@@ -8,6 +8,15 @@ import {fileURLToPath} from 'node:url'
 
 const repositoryRoot=resolve(fileURLToPath(new URL('..',import.meta.url)))
 const dataRoot=await mkdtemp(join(tmpdir(),'val-phase2-smoke-'))
+const tenantId='00000000-0000-4000-8000-000000000001'
+const ownerId='demo@valor360.local'
+// Recommendation requests now resolve the producer against the stored authorized
+// portfolio. A client object in the request body cannot create that authority.
+const fixtureClient={id:'demo-1',name:'Fazenda Teste',tenantId,ownerId}
+await writeFile(join(dataRoot,'valor360-store.json'),JSON.stringify({surveys:[],imports:[
+  {id:'phase2-authorized-import',tenantId,ownerId,clients:[fixtureClient]},
+  {id:'phase2-other-portfolio',tenantId,ownerId:'other-consultant@example.test',clients:[{id:'demo-private',name:'Produtor de outra carteira',tenantId,ownerId:'other-consultant@example.test'}]}
+],visits:[],businessEvents:[],val:{}}))
 
 async function availablePort(){
   const server=createServer()
@@ -37,7 +46,7 @@ async function requestJson(url,options){
 const port=await availablePort()
 const child=spawn(process.execPath,['server/start.js'],{
   cwd:repositoryRoot,
-  env:{...process.env,PORT:String(port),VAL_DEMO_MODE:'true',VAL_DEFAULT_TENANT_ID:'00000000-0000-4000-8000-000000000001',AUTO_MIGRATE:'false',DATA_DIR:dataRoot,DATABASE_URL:'',OPENAI_API_KEY:'',VAL_ADMIN_EMAIL:'',VAL_ADMIN_PASSWORD:'',VAL_SESSION_SECRET:''},
+  env:{...process.env,PORT:String(port),VAL_DEMO_MODE:'true',VAL_DEFAULT_TENANT_ID:tenantId,AUTO_MIGRATE:'false',DATA_DIR:dataRoot,DATABASE_URL:'',OPENAI_API_KEY:'',VAL_ADMIN_EMAIL:'',VAL_ADMIN_PASSWORD:'',VAL_SESSION_SECRET:''},
   stdio:['ignore','pipe','pipe']
 })
 
@@ -62,12 +71,25 @@ try{
   assert.equal(canonical.payload.audit.module_runs[0].module_id,'LEGACY_VAL_ENGINE')
   assert.ok(canonical.payload.recommendation)
 
+  // Keep the authorization gate visible in the smoke: neither endpoint may
+  // accept an unknown producer or a producer from another consultant's import.
+  const denied=[]
+  for(const endpoint of ['/api/val/recommendations','/api/v1/val/recommendations']){
+    for(const deniedClientId of ['demo-missing','demo-private']){
+      const result=await requestJson(`${base}${endpoint}`,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({clientId:deniedClientId,client:{id:deniedClientId,name:'Nome informado no browser'},message:'Prepare o roteiro da próxima visita.',mode:'daily'})})
+      assert.equal(result.status,404)
+      assert.equal(result.payload.code,'val_client_not_authorized')
+      denied.push({endpoint,clientId:deniedClientId,status:result.status})
+    }
+  }
+
   console.log(JSON.stringify({
     live:live.status,
     status:status.status,
     legacy:{status:legacy.status,requestId:Boolean(legacy.payload.requestId),contractVersion:legacy.payload.contract_version??null,engineMode:legacy.payload.engineMode},
     canonical:{status:canonical.status,contractVersion:canonical.payload.contract_version,requestId:canonical.payload.request_id,routeId:canonical.payload.audit.route_id,module:canonical.payload.audit.module_runs[0].module_id,engineMode:canonical.payload.recommendation.engineMode},
-    composition:status.payload.composition
+    composition:status.payload.composition,
+    authorizationChecks:denied
   },null,2))
 }finally{
   if(child.exitCode===null){child.kill('SIGTERM');await new Promise(resolve=>{const timer=setTimeout(()=>{child.kill('SIGKILL');resolve()},3_000);child.once('exit',()=>{clearTimeout(timer);resolve()})})}
