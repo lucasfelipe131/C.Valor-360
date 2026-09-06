@@ -303,7 +303,7 @@ function collectionItems(items,type,{domain,dateKeys=['updated_at','updatedAt','
       ?{status:'CURRENT',metadata:{...evaluated.metadata,strategy:'OBSERVED_AS_OF',reason_code:'OBSERVED_AT_VERIFIED'}}
       :evaluated
     let selectedData=item
-    const visitContentRequested=/\b(?:o que|resum\w*|detalh\w*|assunto\w*|falad\w*|discut\w*|relat\w*|observ\w*|aconteceu|resultado\w*)\b/i.test(text(query).normalize('NFD').replace(/[\u0300-\u036f]/g,''))
+    const visitContentRequested=/\b(?:o que|resum\w*|detalh\w*|assunto\w*|falad\w*|discut\w*|relat\w*|observ\w*|aconteceu|resultado\w*|compromiss\w*|pendente\w*|combinad\w*|ficou)\b/i.test(text(query).normalize('NFD').replace(/[\u0300-\u036f]/g,''))
     // Em MULTI_DOMAIN que inclui VISIT ('como abordar ele na próxima visita?') a mesma redução
     // vale: o resumo narrado (adubação, preço) não pode vetar a própria visita por DOMAIN_MISMATCH.
     const visitIdentityOnly=contextDomain==='VISIT'||contextDomain==='MULTI_DOMAIN'&&matchedValContextDomains(query).includes('VISIT')
@@ -667,7 +667,12 @@ export function buildContextSnapshot(context={},input={}){
   const soilAll=collectionPolicy.agronomic?scopeCollectionToActiveEntity(collectionItems(context.soilAnalyses,'soil_analysis',{...collectionScope,domain:'AGRONOMIC',dateKeys:['sampled_at','sampledAt','observed_at','observedAt','created_at','createdAt'],limit:12,now}),'soil_analysis',activeEntity,rejectCollection):[]
   const ndviItems=collectionPolicy.agronomic?scopeCollectionToActiveEntity(collectionItems(context.ndviObservations,'ndvi_observation',{...collectionScope,domain:'AGRONOMIC',dateKeys:['observed_at','observedAt','created_at','createdAt'],limit:8,now}),'ndvi_observation',activeEntity,rejectCollection):[]
   const interactionItems=collectionPolicy.relationship?scopeCollectionToActiveEntity(collectionItems(context.interactions,'interaction',{...collectionScope,domain:'RELATIONSHIP',dateKeys:['occurred_at','occurredAt','created_at','createdAt'],limit:10,now}),'interaction',activeEntity,rejectCollection):[]
-  const visitItems=collectionPolicy.relationship?scopeCollectionToActiveEntity(collectionItems(context.visits,'visit',{...collectionScope,domain:'RELATIONSHIP',dateKeys:['updated_at','updatedAt','occurred_at','occurredAt','completed_at','completedAt','scheduled_at','scheduledAt','created_at','createdAt'],limit:latestVisitOnly?1:10,now}),'visit',activeEntity,rejectCollection):[]
+  // 'última visita/conversa' é a última visita CONCLUÍDA: uma planejada com updated_at mais recente
+  // tomava a única vaga e o fallback afirmava 'ainda não há visita concluída'. A data observada da
+  // visita é quando ela ocorreu, não quando o registro foi editado.
+  const completedVisit=item=>/COMPLETED|realizad|conclu/i.test(String(item?.lifecycleStatus??item?.lifecycle_status??item?.status??''))||Boolean(item?.completedAt??item?.completed_at??item?.occurredAt??item?.occurred_at)
+  const scopedVisitItems=collectionPolicy.relationship?scopeCollectionToActiveEntity(collectionItems(context.visits,'visit',{...collectionScope,domain:'RELATIONSHIP',dateKeys:['occurred_at','occurredAt','completed_at','completedAt','updated_at','updatedAt','scheduled_at','scheduledAt','created_at','createdAt'],limit:10,now}),'visit',activeEntity,rejectCollection):[]
+  const visitItems=latestVisitOnly?(()=>{const completed=scopedVisitItems.filter(item=>completedVisit(item.data));const kept=completed.slice(0,1);for(const item of scopedVisitItems)if(!kept.includes(item))rejectCollection(item,'LOWER_RELEVANCE');return kept})():scopedVisitItems
   const commitmentItems=collectionPolicy.relationship?scopeCollectionToActiveEntity(collectionItems(context.commitments,'commitment',{...collectionScope,domain:'RELATIONSHIP',dateKeys:['updated_at','updatedAt','created_at','createdAt'],validUntilKeys:['due_at','dueAt'],limit:12,now}),'commitment',activeEntity,rejectCollection):[]
   const manualRecordItems=collectionPolicy.agronomic?collectionItems(context.manualRecords,'manual_record',{...collectionScope,domain:'AGRONOMIC',dateKeys:['occurred_at','occurredAt','ingested_at','ingestedAt','updated_at','updatedAt','created_at','createdAt'],limit:8,now}):[]
   const attachmentItems=collectionPolicy.agronomic?collectionItems(context.attachments,'attachment',{...collectionScope,domain:'AGRONOMIC',dateKeys:['updated_at','updatedAt','confirmed_at','confirmedAt','created_at','createdAt'],limit:8,now}):[]

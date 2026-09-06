@@ -67,8 +67,21 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
  // frase generica de evidencia insuficiente, como se a troca tivesse falhado.
  // So e troca quando ha destino: "volta pro Antonio", "muda para o Bruno", "agora o Matheus", "volta
  // pro produtor anterior". "Muda o telefone dele" e pedido de alteracao de dado, nao troca de produtor.
- const switchVerb=/^\s*(?:val\s+)?(?:(?:volta|volte|voltar|retoma|retome|retomar|troca|troque|trocar|muda|mude|mudar)\s+(?:(?:o|a)\s+(?:cliente|produtor|produtora|conta)\s+)?(?:para|pro|pra|ao|a)\s+\S|(?:volta|volte|voltar|retoma|retome|retomar)\b.*\banterior\b|agora\s+(?:com\s+)?(?:o|a)\s+[^\s?]+\s*[.!]?\s*$)/.test(source)
- if(!factualLookup&&!prepareVisit&&switchVerb&&authorizedClient&&!modules.some(module=>module.pattern.test(source))){
+ // "quero falar sobre o Genor", "fala do Genor", "sobre o Genor Brum" ou só o nome do produtor
+ // (frequente por voz) também abrem o produtor resolvido.
+ const clientNameText=authorizedClient?.name?` ${fold(authorizedClient.name).replace(/[^\p{L}\s'-]/gu,' ').replace(/\s+/g,' ').trim()} `:''
+ // 'Matheus Jaeger' nomeia 'Matheus Nascimento Jaeger': basta cada palavra citada existir no nome.
+ const clientNameTokens=new Set(clientNameText.trim().split(' ').filter(Boolean))
+ const namesClient=reference=>{const text=fold(reference).replace(/^(?:(?:o|a)\s+)?(?:(?:cliente|produtor|produtora)\s+)?/,'').replace(/[.!?\s]+$/,'').trim();const tokens=text.split(/\s+/).filter(Boolean);return Boolean(clientNameText)&&text.length>=3&&tokens.length<=4&&(clientNameText.includes(` ${text} `)||tokens.every(token=>token.length>=3&&clientNameTokens.has(token)))}
+ const topicMatch=source.match(/^\s*(?:val[, ]+)?(?:(?:(?:eu\s+)?(?:quero|queria|preciso|gostaria de)\s+(?:falar|conversar)|vamos\s+(?:falar|conversar)|me\s+fal[ae]|fal[ae]|falar|conversar)\s+(?:sobre|do|da|de|com)|sobre)\s+(.+)$/)
+ const topicSwitch=Boolean(topicMatch)&&namesClient(topicMatch[1])
+ const bareName=namesClient(source.replace(/^\s*(?:val[, ]+)?/,''))
+ // "e o Matheus?" resolve o produtor; sem esta troca explícita a frase ia ao raciocínio e voltava
+ // como evidência insuficiente, como se a troca tivesse falhado.
+ const eName=source.match(/^\s*(?:val[, ]+)?e\s+(?:o|a)\s+(.+?)\s*[?.!]*$/)
+ const eNameSwitch=Boolean(eName)&&namesClient(eName[1])
+ const switchVerb=bareName||topicSwitch||/^\s*(?:val\s+)?(?:(?:volta|volte|voltar|retoma|retome|retomar|troca|troque|trocar|muda|mude|mudar)\s+(?:(?:o|a)\s+(?:cliente|produtor|produtora|conta)\s+)?(?:para|pro|pra|ao|a)\s+\S|(?:volta|volte|voltar|retoma|retome|retomar)\b.*\banterior\b|agora\s+(?:com\s+)?(?:o|a)\s+[^\s?]+\s*[.!]?\s*$)/.test(source)
+ if(!prepareVisit&&(eNameSwitch||(!factualLookup&&switchVerb))&&authorizedClient&&!modules.some(module=>module.pattern.test(source))){
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'OPEN',reason:'SWITCH_RESOLVED_CLIENT',direct:true,workspaceAction,summary:authorizedClient.name?`Agora falando de ${authorizedClient.name}. Abrindo no Cliente 360.`:'Agora falando do produtor selecionado. Abrindo no Cliente 360.'})
  }

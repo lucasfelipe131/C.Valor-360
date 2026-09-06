@@ -6,7 +6,7 @@ import {evaluateValResponseQuality,questionSimilarity} from './quality.js'
 import {buildDecisionInterview,buildReasoningConfidence,decisionInterviewVersion,reasoningConfidenceVersion} from './decision-interview.js'
 import {profileApproach,routeSystemCapability} from '../decision-copilot/capability-router.js'
 import {evaluateConversationalNaturalness} from './conversational-naturalness.js'
-import {evaluateReasoningGrounding,evaluateResponseGrounding} from '../decision-copilot/response-grounding.js'
+import {evaluateReasoningGrounding,evaluateResponseGrounding,factMatchesQuestionFacet} from '../decision-copilot/response-grounding.js'
 import {observe} from '../observability.js'
 
 export {aiReasoningResultVersion,goldenQuestionQualityVersion,valResponseQualityVersion} from './contracts.js'
@@ -40,6 +40,25 @@ const digest=value=>createHash('sha256').update(JSON.stringify(stable(value))).d
 // Sinais comportamentais do snapshot ({key,value}) não tinham enunciado e eram descartados: o caminho
 // DEEP/CONTEXT ficava sem qualquer evidência de perfil. Viram evidência auditável (behavioral_profile,
 // INFERENCE) com a abordagem derivada do rótulo, como a inferência do caminho FAST.
+// Memória verificada do snapshot ({key,value}) também não tinha enunciado: o decisor confirmado e a
+// objeção registrada nunca viravam fato no DEEP/CONTEXT, e qualquer frase do modelo sobre eles caía.
+const memoryLabels={decision_maker:'Decisor confirmado',objection:'Objeção registrada',consultant_technical_context:'Contexto técnico registrado'}
+const humanizeKey=key=>{const text=clean(key,80).replace(/^visit_report\./,'').replace(/[_.]+/g,' ').trim();return text?text.charAt(0).toUpperCase()+text.slice(1):''}
+const flattenMemoryValue=(value,depth=0)=>{
+ if(value===null||value===undefined)return ''
+ if(typeof value!=='object')return clean(value,300)
+ if(Array.isArray(value))return value.map(item=>flattenMemoryValue(item,depth+1)).filter(Boolean).slice(0,3).join('; ')
+ for(const preferred of ['statement','summary','description','decision_maker','value','text'])if(clean(value[preferred]))return clean(value[preferred],300)
+ if(depth>=2)return ''
+ return Object.entries(value).slice(0,4).map(([key,item])=>{const rendered=flattenMemoryValue(item,depth+1);return rendered?`${humanizeKey(key)}: ${rendered}`:''}).filter(Boolean).join('; ')
+}
+function memoryEvidence(item={}){
+ if(statementOf(item))return item
+ const key=clean(item?.key,80);const value=flattenMemoryValue(item?.value)
+ if(!value)return item
+ const label=memoryLabels[key]||humanizeKey(key)||'Memória verificada'
+ return {...item,statement:`${label}: ${value}.`}
+}
 const behavioralSignalLabels={primary_profile:'Perfil principal',secondary_profile:'Perfil secundário',service_preference:'Preferência de atendimento'}
 function behavioralSignalEvidence(signal={}){
  const key=clean(signal?.key,80);const value=clean(signal?.value,300)
@@ -53,7 +72,7 @@ function factsUsed(advice={},context={}){
  const snapshot=context.contextSnapshot||{}
  const producerId=clean(snapshot.context_scope?.producer_id||snapshot.subject?.id||context.client?.id,180)
  const tenantId=clean(snapshot.context_scope?.tenant_id||snapshot.organization_id||context.organizationId,180)
- const snapshotEvidence=[...list(snapshot.facts),...list(snapshot.inferences),...list(snapshot.hypotheses),...list(snapshot.validated_knowledge),...list(snapshot.behavioral_signals).map(behavioralSignalEvidence)]
+ const snapshotEvidence=[...list(snapshot.facts),...list(snapshot.inferences),...list(snapshot.hypotheses),...list(snapshot.validated_knowledge)].map(memoryEvidence).concat(list(snapshot.behavioral_signals).map(behavioralSignalEvidence))
  const wrappers=[...list(snapshot.commercial_context?.business_history),...list(snapshot.commercial_context?.opportunities),...list(snapshot.agronomic_context?.properties),...list(snapshot.agronomic_context?.field_reports),...list(snapshot.agronomic_context?.soil_analyses),...list(snapshot.agronomic_context?.ndvi_observations),...list(snapshot.relationship_context?.interactions),...list(snapshot.relationship_context?.visits),...list(snapshot.relationship_context?.commitments)]
  const wrapperBySource=new Map()
  for(const wrapper of wrappers){
@@ -397,6 +416,15 @@ function groundedInterviewAfterFallback(interview,scope,evidence){
 // ...") em vez da frase genérica de evidência insuficiente. O candidato só substitui a frase
 // genérica quando passa integralmente no grounding (suporte literal e relevância à pergunta);
 // caso contrário a leitura segura permanece.
+// Os fatos que compartilham vocabulário com a pergunta vêm primeiro na leitura ('quais compras ele
+// fez?' lê a compra registrada antes da oportunidade); sem overlap, mantém a ordem original.
+const questionTokens=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().split(/[^a-z0-9]+/).filter(token=>token.length>3).map(token=>token.replace(/s$/,''))
+function rankFactsForQuestion(facts,question){
+ const tokens=new Set(questionTokens(question))
+ const overlap=fact=>questionTokens(fact?.statement).filter(token=>tokens.has(token)).length
+ return facts.map((fact,index)=>({fact,index,score:overlap(fact)})).sort((left,right)=>right.score-left.score||left.index-right.index).map(item=>item.fact)
+}
+
 function applyFactualFallbackReading(result,scope){
  const primaryProfile=list(result?.facts_used).find(item=>/^behavioral:primary_profile:/.test(clean(item?.id,180)))
  const primaryLabel=primaryProfile?clean(String(primaryProfile.statement).replace(/^Perfil principal:\s*/,'').split('.')[0],120):''
@@ -404,7 +432,7 @@ function applyFactualFallbackReading(result,scope){
  // ainda não sabemos), a única forma que a relevância aceita para o domínio PROFILE.
  const statements=scope.domain==='PROFILE'
   ?(primaryLabel?[`Perfil principal: ${primaryLabel}. Confiança: baixa. Como abordar: ${profileApproach(primaryLabel)}. O que ainda não sabemos: validar se essas preferências continuam atuais.`]:[])
-  :list(result?.facts_used).map(item=>clean(item?.statement,900)).filter(Boolean).slice(0,2)
+  :rankFactsForQuestion(list(result?.facts_used).filter(item=>factMatchesQuestionFacet({domain:scope.domain,question:scope.question,statement:item?.statement,sourceType:item?.source_type})),scope.question).map(item=>clean(item?.statement,900)).filter(Boolean).slice(0,2)
  if(!statements.length)return result
  const reading=statements.join(' ')
  const candidate=structuredClone(result)
