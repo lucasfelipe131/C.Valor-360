@@ -73,16 +73,16 @@ export function buildHomeCopilotAnswer(payload={}){
 
 export function buildLocalHomePriorities({upcomingVisits=[],opportunities=[],clients=[]}={}){
  const clientNames=new Map(list(clients).map(client=>[String(client?.id),text(client?.name)||'produtor']))
- const visitCards=list(upcomingVisits).map(visit=>({
+ const visitCards=list(upcomingVisits).map(visit=>{const inProgress=String(visit.lifecycleStatus??visit.lifecycle_status??'').toUpperCase()==='IN_PROGRESS';return {
   insight_id:`visit-${visit.id}`,
   subject_id:visit.clientId??visit.client_id,
   category:'PREPARE',
-  title:`Preparar visita com ${clientNames.get(String(visit.clientId??visit.client_id))||'produtor'}`,
+  title:inProgress?`Registrar visita em andamento com ${clientNames.get(String(visit.clientId??visit.client_id))||'produtor'}`:`Preparar visita com ${clientNames.get(String(visit.clientId??visit.client_id))||'produtor'}`,
   summary:text(visit.objective)||'Visita futura registrada.',
-  why_now:`Visita agendada para ${dateLabel(visit.scheduledAt??visit.scheduled_at??visit.date)}.`,
-  recommended_action:'Revisar a preparação e definir o compromisso-alvo.',
-  sort_at:timeOf(visit.scheduledAt??visit.scheduled_at??visit.date)??Number.POSITIVE_INFINITY
- }))
+  why_now:inProgress?'A visita foi iniciada e ainda não tem relato registrado.':`Visita agendada para ${dateLabel(visit.scheduledAt??visit.scheduled_at??visit.date)}.`,
+  recommended_action:inProgress?'Encerrar a visita com o relato.':'Revisar a preparação e definir o compromisso-alvo.',
+  sort_at:inProgress?Number.NEGATIVE_INFINITY:timeOf(visit.scheduledAt??visit.scheduled_at??visit.date)??Number.POSITIVE_INFINITY
+ }})
  const opportunityCards=list(opportunities).flatMap((item,index)=>{
   const nextAction=text(item?.nextAction??item?.next_action)
   const subjectId=item?.clientId??item?.client_id

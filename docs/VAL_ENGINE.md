@@ -194,7 +194,7 @@ VAL_MAX_OUTPUT_TOKENS=26000
 VAL_STRATEGIC_MAX_OUTPUT_TOKENS=32000
 ```
 
-O pre-deploy roda `npm run db:migrate`. Sem `DATABASE_URL`, ele falha fora do modo demonstrativo. JSON só é permitido quando `VAL_DEMO_MODE=true` foi ativado explicitamente; a IA real permanece bloqueada.
+O pre-deploy roda `node server/migrate.js` (o mesmo que `npm run db:migrate`, sem o npm como processo pai para os avisos dele não saírem como erro no log da Railway). Sem `DATABASE_URL`, ele falha fora do modo demonstrativo. JSON só é permitido quando `VAL_DEMO_MODE=true` foi ativado explicitamente; a IA real permanece bloqueada.
 
 Antes da primeira migração de um banco 0.3, restaure uma cópia em staging e valide a contagem de usuários, clientes, perfis, visitas, oportunidades, recomendações e contexto técnico. A migração usa lock e marcador de versão para não ressuscitar registros antigos, mas não oferece compatibilidade de rollback para um binário anterior; faça snapshot e janela controlada de deploy.
 

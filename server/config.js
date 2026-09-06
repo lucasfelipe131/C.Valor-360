@@ -39,7 +39,6 @@ export const config=Object.freeze({
   databaseSsl:readBoolean(process.env.PG_SSL,false),
   demoMode:readBoolean(process.env.VAL_DEMO_MODE,false),
   trustProxy:readBoolean(process.env.VAL_TRUST_PROXY,false),
-  autoMigrate:readBoolean(process.env.AUTO_MIGRATE,false),
   defaultTenantId:validateDefaultTenantId(process.env.VAL_DEFAULT_TENANT_ID),
   openaiApiKey:String(process.env.OPENAI_API_KEY||''),
   openaiProject:String(process.env.OPENAI_PROJECT||''),

@@ -284,6 +284,9 @@ const attachmentInTenant=(row,tenantId)=>String(row?.tenantId||row?.tenant_id||'
 // avançam juntas no pipeline.
 const derivedOpportunityKey=/^(?:visit-report|voice):/
 const opportunityRecordId=row=>{const clientKey=row.client_external_key||row.client_id;const externalKey=String(row.external_key||'');return derivedOpportunityKey.test(externalKey)?`o-${clientKey}:${externalKey}`:`o-${clientKey}`}
+// O fallback em arquivo entrega o mesmo contrato do PostgreSQL (value, probability, stage, candidateKey,
+// nextAction, nextActionAt, updatedAt) sem perder os campos originais do registro.
+const fallbackOpportunityRecord=item=>({...item,value:Number.isFinite(Number(item.value??item.estimatedValue))?Number(item.value??item.estimatedValue):0,probability:item.probability==null?null:Number(item.probability),stage:item.stage||'Diagnóstico',candidateKey:item.candidateKey||'',nextAction:item.nextAction||'',nextActionAt:item.nextActionAt||null,updatedAt:item.updatedAt||item.createdAt||null})
 const opportunityRecord=row=>({id:opportunityRecordId(row),databaseId:row.id,clientId:row.client_external_key||row.client_id,title:row.title,value:row.estimated_value==null?0:Number(row.estimated_value),probability:row.probability==null?null:Number(row.probability),stage:row.stage||'Diagnóstico',candidateKey:row.evidence?.find?.(item=>item?.candidateKey)?.candidateKey||row.external_key||'',stageEvidence:row.evidence?.find?.(item=>item?.type==='manual_advance'||item?.type==='manual_set'||item?.type==='won'),nextAction:row.next_action||'',nextActionAt:iso(row.next_action_at),updatedAt:iso(row.updated_at)})
 const actionPlanRecord=row=>({
   contract_version:row.contract_version,version:row.contract_version,action_plan_id:String(row.id),organization_id:String(row.tenant_id),
@@ -765,7 +768,7 @@ export class ValRepository{
   }
 
   async getIntelligence(ownerId){
-    if(!this.db.configured){if(!ownerId)throw domainError('O proprietário da carteira é obrigatório para consultar a inteligência.',403,'owner_scope_required');const store=this.readStore();const scopedImports=(store.imports||[]).filter(record=>exactScope(record,this.tenantId,ownerId));const clients=new Map();scopedImports.forEach(record=>record.clients?.forEach(client=>{if(exactScope(client,this.tenantId,ownerId,record))clients.set(normalize(client.name),client)}));return {imports:scopedImports.map(({clients:ignored,...summary})=>summary),clients:[...clients.values()],visits:(store.visits||[]).filter(item=>exactScope(item,this.tenantId,ownerId)),opportunities:(store.opportunities||[]).filter(item=>exactScope(item,this.tenantId,ownerId))}}
+    if(!this.db.configured){if(!ownerId)throw domainError('O proprietário da carteira é obrigatório para consultar a inteligência.',403,'owner_scope_required');const store=this.readStore();const scopedImports=(store.imports||[]).filter(record=>exactScope(record,this.tenantId,ownerId));const clients=new Map();scopedImports.forEach(record=>record.clients?.forEach(client=>{if(exactScope(client,this.tenantId,ownerId,record))clients.set(normalize(client.name),client)}));return {imports:scopedImports.map(({clients:ignored,...summary})=>summary),clients:[...clients.values()],visits:(store.visits||[]).filter(item=>exactScope(item,this.tenantId,ownerId)),opportunities:(store.opportunities||[]).filter(item=>exactScope(item,this.tenantId,ownerId)).map(fallbackOpportunityRecord)}}
     try{
       const [importResult,clientResult,visitResult,opportunityResult]=await Promise.all([
         this.db.query('SELECT summary FROM import_jobs WHERE tenant_id=$1 AND owner_user_id=$2 ORDER BY created_at DESC LIMIT 20',[this.tenantId,ownerId]),
@@ -1015,6 +1018,26 @@ export class ValRepository{
       await connection.query(`INSERT INTO val_visit_lifecycle_events (tenant_id,visit_id,actor_id,contract_version,from_status,to_status,reason_code,request_id,revision,metadata,occurred_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'{}'::jsonb,$10)`,[tenantId,visitId,actorId,lifecycle.version,lifecycle.transition.from_status,lifecycle.status,lifecycle.transition.reason_code,lifecycle.transition.request_id,lifecycle.revision,lifecycle.updated_at])
       return {visit:visitRecord({...updated.rows[0],client_external_key:selected.rows[0].client_external_key}),idempotent:false}
     })}catch(error){if(error.statusCode)throw error;throw serviceError('A visita não pôde ser iniciada no PostgreSQL configurado.')}
+  }
+
+  // Cancelamento segue o mesmo contrato do início: idempotente quando já cancelada; visita concluída
+  // responde 409 pela transição negada (estado terminal).
+  async cancelVisit({tenantId=this.tenantId,ownerId,actorId=ownerId,visitId,requestId,now=new Date().toISOString()}={}){
+    tenantId=assertTenantScope(this.tenantId,tenantId)
+    if(ownerId!=null&&String(actorId)!==String(ownerId))throw domainError('A visita pertence a outro usuário.',403)
+    if(!this.db.configured){
+      const store=this.fallback();const visit=store.visits.find(item=>String(item.id)===String(visitId)&&String(item.tenantId||tenantId)===String(tenantId)&&String(item.ownerId??ownerId)===String(ownerId));if(!visit)throw domainError('Visita não encontrada na carteira autorizada.',404)
+      if(legacyVisitLifecycle(visit)==='CANCELLED')return {visit:structuredClone(visit),idempotent:true}
+      const lifecycle=transitionVisitLifecycle(visit,'CANCELLED',{organizationId:tenantId,actorId,reasonCode:'VISIT_CANCELLED',requestId,now});Object.assign(visit,{status:'Cancelada',lifecycleStatus:lifecycle.status,lifecycleVersion:lifecycle.version,lifecycleRevision:lifecycle.revision,lifecycleUpdatedAt:lifecycle.updated_at,lifecycleUpdatedBy:lifecycle.updated_by,occurredAt:lifecycle.occurred_at,completedAt:lifecycle.completed_at,cancelledAt:lifecycle.cancelled_at,updatedAt:lifecycle.updated_at});store.val.visitLifecycleEvents.push({id:randomUUID(),tenantId,visitId:visit.id,actorId,contractVersion:lifecycle.version,fromStatus:lifecycle.transition.from_status,toStatus:lifecycle.status,reasonCode:lifecycle.transition.reason_code,requestId:lifecycle.transition.request_id,revision:lifecycle.revision,occurredAt:lifecycle.updated_at});this.saveStore(store);return {visit:structuredClone(visit),idempotent:false}
+    }
+    try{return await this.db.transaction(async connection=>{
+      const selected=await connection.query(`SELECT visit.*,client.external_key client_external_key FROM visits visit JOIN clients client ON client.tenant_id=visit.tenant_id AND client.id=visit.client_id WHERE visit.tenant_id=$1 AND visit.id=$2 AND visit.consultant_id=$3 AND client.consultant_id=$3 LIMIT 1 FOR UPDATE OF visit`,[tenantId,visitId,ownerId]);if(!selected.rowCount)throw domainError('Visita não encontrada na carteira autorizada.',404)
+      const current=visitRecord(selected.rows[0]);if(legacyVisitLifecycle(current)==='CANCELLED')return {visit:current,idempotent:true}
+      const lifecycle=transitionVisitLifecycle(current,'CANCELLED',{organizationId:tenantId,actorId,reasonCode:'VISIT_CANCELLED',requestId,now})
+      const updated=await connection.query(`UPDATE visits SET status='Cancelada',lifecycle_status=$3,lifecycle_version=$4,lifecycle_revision=$5,lifecycle_updated_at=$6,lifecycle_updated_by=$7,occurred_at=$8,completed_at=$9,cancelled_at=$10,updated_at=NOW() WHERE tenant_id=$1 AND id=$2 AND consultant_id=$7 RETURNING *`,[tenantId,visitId,lifecycle.status,lifecycle.version,lifecycle.revision,lifecycle.updated_at,actorId,lifecycle.occurred_at,lifecycle.completed_at,lifecycle.cancelled_at])
+      await connection.query(`INSERT INTO val_visit_lifecycle_events (tenant_id,visit_id,actor_id,contract_version,from_status,to_status,reason_code,request_id,revision,metadata,occurred_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,'{}'::jsonb,$10)`,[tenantId,visitId,actorId,lifecycle.version,lifecycle.transition.from_status,lifecycle.status,lifecycle.transition.reason_code,lifecycle.transition.request_id,lifecycle.revision,lifecycle.updated_at])
+      return {visit:visitRecord({...updated.rows[0],client_external_key:selected.rows[0].client_external_key}),idempotent:false}
+    })}catch(error){if(error.statusCode)throw error;throw serviceError('A visita não pôde ser cancelada no PostgreSQL configurado.')}
   }
 
   async createVoiceInteraction({tenantId=this.tenantId,ownerId,actorId=ownerId,clientId,visitId=null,interactionType,sourceContext={},id=randomUUID(),now=new Date().toISOString()}={}){
@@ -1940,14 +1963,17 @@ export class ValRepository{
   async ingestCommercialImport({tenantId=this.tenantId,ownerId,summary,clients,rows=[],mapping={}}){
     tenantId=assertTenantScope(this.tenantId,tenantId)
     if(!this.db.configured)return {persisted:false}
+    const archivedSkipped=[]
     try{
       await this.db.transaction(async connection=>{
         await connection.query(`INSERT INTO import_jobs (id,tenant_id,owner_user_id,source_type,file_name,status,row_count,recognized_count,summary,completed_at) VALUES ($1,$2,$3,'commercial_history',$4,'completed',$5,$6,$7,NOW()) ON CONFLICT (id) DO NOTHING`,[summary.id,tenantId,ownerId,summary.fileName,summary.rowCount,clients.length,jsonbParameter(summary)])
         const clientInternalIds=new Map()
+        // Produtor arquivado não é reativado nem recebe compras invisíveis pela importação: a linha é
+        // pulada e devolvida em archivedSkipped para o DataHub avisar.
         const importedClients=clients.slice(0,2000)
         const lockKeys=[...new Set(importedClients.map(item=>String(item.id||'').slice(0,180)))].sort()
         for(const externalKey of lockKeys)await connection.query(`SELECT pg_advisory_xact_lock(hashtextextended($1::text||':'||$2::text||':'||$3::text,0))`,[tenantId,ownerId,externalKey])
-        for(const item of importedClients){const area=parseCultivatedArea(item.area);const externalKey=String(item.id||'').slice(0,180);const upserted=await connection.query(`INSERT INTO clients (tenant_id,consultant_id,external_key,name,municipality,total_area_ha,area_band,commercial_profile,status,source,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active','commercial_import',NOW()) ON CONFLICT (tenant_id,consultant_id,external_key) DO UPDATE SET name=EXCLUDED.name,municipality=COALESCE(EXCLUDED.municipality,clients.municipality),total_area_ha=COALESCE(EXCLUDED.total_area_ha,clients.total_area_ha),area_band=COALESCE(EXCLUDED.area_band,clients.area_band),commercial_profile=(clients.commercial_profile||EXCLUDED.commercial_profile)||CASE WHEN clients.commercial_profile?'property' THEN jsonb_build_object('property',clients.commercial_profile->'property') ELSE '{}'::jsonb END,updated_at=NOW() RETURNING id,external_key`,[tenantId,ownerId,externalKey,String(item.name||'').slice(0,180),item.municipality||null,area.totalAreaHa,area.areaBand,jsonbParameter(derivedCommercial(item.commercial||{}))]);clientInternalIds.set(upserted.rows[0].external_key,upserted.rows[0].id)}
+        for(const item of importedClients){const area=parseCultivatedArea(item.area);const externalKey=String(item.id||'').slice(0,180);const upserted=await connection.query(`INSERT INTO clients (tenant_id,consultant_id,external_key,name,municipality,total_area_ha,area_band,commercial_profile,status,source,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active','commercial_import',NOW()) ON CONFLICT (tenant_id,consultant_id,external_key) DO UPDATE SET name=EXCLUDED.name,municipality=COALESCE(EXCLUDED.municipality,clients.municipality),total_area_ha=COALESCE(EXCLUDED.total_area_ha,clients.total_area_ha),area_band=COALESCE(EXCLUDED.area_band,clients.area_band),commercial_profile=(clients.commercial_profile||EXCLUDED.commercial_profile)||CASE WHEN clients.commercial_profile?'property' THEN jsonb_build_object('property',clients.commercial_profile->'property') ELSE '{}'::jsonb END,updated_at=NOW() RETURNING id,external_key,status`,[tenantId,ownerId,externalKey,String(item.name||'').slice(0,180),item.municipality||null,area.totalAreaHa,area.areaBand,jsonbParameter(derivedCommercial(item.commercial||{}))]);if(String(upserted.rows[0].status||'active')==='archived'){archivedSkipped.push(upserted.rows[0].external_key);continue}clientInternalIds.set(upserted.rows[0].external_key,upserted.rows[0].id)}
         const clientKeys=new Map(clients.map(item=>[normalize(item.name),item.id]))
         // external_id derivado do conteúdo (não do id do job): reenviar a mesma planilha atualiza os
         // eventos pelo ON CONFLICT em vez de duplicar as compras a cada importação.
@@ -1958,6 +1984,7 @@ export class ValRepository{
           if(!eventOutcome||!occurredAt)continue
           const safeRow={client:name.slice(0,180),value:row[mapping.value]??null,date:row[mapping.date]??null,product:String(row[mapping.product]||'').slice(0,180)||null,status:String(status||'').slice(0,240)||null,municipality:String(row[mapping.municipality]||'').slice(0,140)||null,culture:String(row[mapping.culture]||'').slice(0,160)||null,area:row[mapping.area]??null}
           const externalKey=clientKeys.get(normalize(name))||normalize(name).replace(/\s+/g,'-').slice(0,180)
+          if(archivedSkipped.includes(externalKey))continue
           const occurredIso=new Date(occurredAt).toISOString()
           const fingerprint=createHash('sha256').update(JSON.stringify([tenantId,ownerId,externalKey,occurredIso,safeRow.product||'',String(safeRow.value??''),eventOutcome,safeRow.status||''])).digest('hex').slice(0,40)
           const ordinal=(fingerprints.get(fingerprint)||0)+1;fingerprints.set(fingerprint,ordinal)
@@ -1966,7 +1993,7 @@ export class ValRepository{
             VALUES ($1,$2,$3,'commercial_import',$4,$5,$6,$7,$8,$9,'BRL',$10,$11) ON CONFLICT (tenant_id,source,external_id) DO UPDATE SET client_id=EXCLUDED.client_id,client_external_key=EXCLUDED.client_external_key,occurred_at=EXCLUDED.occurred_at,outcome=EXCLUDED.outcome,category=EXCLUDED.category,product=EXCLUDED.product,value=EXCLUDED.value,loss_reason=EXCLUDED.loss_reason,payload=EXCLUDED.payload`,[tenantId,clientInternalIds.get(externalKey)||null,externalKey,eventExternalId,occurredAt,eventOutcome,String(row[mapping.product]||'').trim()||null,String(row[mapping.product]||'').trim()||null,parseMoney(row[mapping.value]),eventOutcome==='lost'?String(status||'').slice(0,240):null,jsonbParameter(safeRow)])
         }
       })
-      return {persisted:true,rawRows:Math.min(rows.length,5000),truncated:Boolean(summary.truncated),persistedClientCount:Math.min(clients.length,2000),clientsTruncated:clients.length>2000}
+      return {persisted:true,rawRows:Math.min(rows.length,5000),truncated:Boolean(summary.truncated),persistedClientCount:Math.min(clients.length,2000)-archivedSkipped.length,clientsTruncated:clients.length>2000,archivedSkipped}
     }catch{throw serviceError('A importação não pôde ser persistida no PostgreSQL configurado.')}
   }
 }

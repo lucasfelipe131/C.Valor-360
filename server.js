@@ -930,6 +930,13 @@ async function handleApi(request,response,url){
   await accessRepository.recordUsage(identity,{eventType:'visit_started',page:'visits',entityType:'visit',entityId:visitStartMatch[1],metadata:{lifecycleStatus:result.visit.lifecycleStatus}}).catch(()=>null)
   return json(response,200,{contract_version:'val.visit_lifecycle.response.v1',...result})
  }
+ const visitCancelMatch=url.pathname.match(/^\/api\/v1\/visits\/([0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\/cancel$/i)
+ if(visitCancelMatch&&request.method==='POST'){
+  const actorId=String(identity?.id||identity?.email||'demo@valor360.local');const result=await repository.cancelVisit({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,actorId,visitId:visitCancelMatch[1],requestId:currentRequestContext()?.requestId})
+  invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:mutationClientId(result)})
+  await accessRepository.recordUsage(identity,{eventType:'visit_cancelled',page:'visits',entityType:'visit',entityId:visitCancelMatch[1],metadata:{lifecycleStatus:result.visit.lifecycleStatus}}).catch(()=>null)
+  return json(response,200,{contract_version:'val.visit_lifecycle.response.v1',...result})
+ }
  const visitPreparationMatch=url.pathname.match(/^\/api\/v1\/visits\/([0-9a-f-]{36})\/preparation$/i)
  if(visitPreparationMatch&&request.method==='GET'){
   const result=await repository.getVisitPreparation({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,visitId:visitPreparationMatch[1]})
@@ -1037,7 +1044,7 @@ async function handleApi(request,response,url){
   repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email})
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,objections:true})
-  await accessRepository.recordUsage(identity,{eventType:'commercial_import',page:'datahub',metadata:{clientCount:clients.length,rowCount:rows.length}});return json(response,201,{saved:true,clientCount:clients.length,database:persistence.persisted,clients,summary,...(persistence.clientsTruncated?{clientsTruncated:true,persistedClientCount:persistence.persistedClientCount}:{})})
+  await accessRepository.recordUsage(identity,{eventType:'commercial_import',page:'datahub',metadata:{clientCount:clients.length,rowCount:rows.length}});return json(response,201,{saved:true,clientCount:clients.length,database:persistence.persisted,clients,summary,...(persistence.clientsTruncated?{clientsTruncated:true,persistedClientCount:persistence.persistedClientCount}:{}),...(persistence.archivedSkipped?.length?{archivedSkipped:persistence.archivedSkipped}:{})})
  }
  if(url.pathname==='/api/import/google-sheet'&&request.method==='POST'){
   const payload=await body(request);const source=clean(payload.url);const match=source.match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)

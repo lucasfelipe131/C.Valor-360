@@ -17,6 +17,8 @@ import {routeValIntent} from '../server/ai-reasoning/intent-router.js'
 import {canTransitionVisit} from '../server/visit-loop/lifecycle.js'
 import {opportunityFromAdditionalNeed} from '../src/lib/profile.js'
 import {buildCommercialIntelligence} from '../src/lib/commercial-intelligence.js'
+import {buildInsightFeed} from '../server/execution/insight-card.js'
+import {buildLocalHomePriorities} from '../src/lib/copilot-view-model.js'
 
 const repositoryRoot=join(dirname(fileURLToPath(import.meta.url)),'..')
 const read=path=>readFileSync(join(repositoryRoot,path),'utf8')
@@ -257,4 +259,61 @@ test('voz contínua: erro sem áudio chega como texto, pausa não é desfeita pe
  assert.match(technical,/function scheduleRestart\(\)/)
  assert.match(read('server.js'),/technicalWorkspace\.handle\(request,response,url,await sessionIdentity\(request\),\{demoAllowed:!auth\.configured&&config\.demoMode\}\)/)
  assert.match(read('server.js'),/if\(config\.trustProxy\)\{const forwarded=String\(request\.headers\['x-forwarded-for'\]/)
+})
+
+test('visita pode ser cancelada: idempotente quando já cancelada e 409 sobre visita concluída',async()=>{
+ const tenant='00000000-0000-4000-8000-000000000401',owner='00000000-0000-4000-8000-000000000403'
+ const planned='00000000-0000-4000-8000-000000000601',completed='00000000-0000-4000-8000-000000000602'
+ let store={surveys:[],imports:[],opportunities:[],businessEvents:[],visits:[
+  {id:planned,tenantId:tenant,ownerId:owner,clientId:'producer-a',scheduledAt:ahead(3),objective:'Negociar.',status:'Agendada',lifecycleStatus:'PLANNED',createdAt:ago(1),updatedAt:ago(1)},
+  {id:completed,tenantId:tenant,ownerId:owner,clientId:'producer-a',scheduledAt:ago(5),objective:'Concluída.',status:'Realizada',lifecycleStatus:'COMPLETED',occurredAt:ago(5),completedAt:ago(5),createdAt:ago(6),updatedAt:ago(5)}
+ ]}
+ const repository=new ValRepository({db:{configured:false},readStore:()=>store,saveStore:value=>{store=structuredClone(value)},tenantId:tenant})
+ const cancelled=await repository.cancelVisit({tenantId:tenant,ownerId:owner,actorId:owner,visitId:planned,requestId:'req-cancel-1'})
+ assert.equal(cancelled.idempotent,false)
+ assert.equal(cancelled.visit.lifecycleStatus,'CANCELLED')
+ assert.equal(cancelled.visit.status,'Cancelada')
+ assert.ok(cancelled.visit.cancelledAt)
+ const again=await repository.cancelVisit({tenantId:tenant,ownerId:owner,actorId:owner,visitId:planned,requestId:'req-cancel-2'})
+ assert.equal(again.idempotent,true)
+ await assert.rejects(()=>repository.cancelVisit({tenantId:tenant,ownerId:owner,actorId:owner,visitId:completed,requestId:'req-cancel-3'}),error=>error.statusCode===409)
+ assert.ok(store.val.visitLifecycleEvents.some(event=>event.visitId===planned&&event.toStatus==='CANCELLED'||event.to_status==='CANCELLED'))
+ assert.match(read('server.js'),/const visitCancelMatch=url\.pathname\.match\(\/\^\\\/api\\\/v1\\\/visits\\\/\(/)
+ assert.match(read('server.js'),/repository\.cancelVisit\(/)
+ const visits=read('src/pages/Visits.jsx')
+ assert.match(visits,/const canCancel=preVisitVoiceLifecycle\.has\(lifecycle\);/)
+ assert.match(visits,/\{canCancel&&<button className="soft-btn is-quiet" type="button" onClick=\{\(\)=>cancelVisit\(visit\)\}/)
+ assert.match(read('src/App.jsx'),/onCancelled=\{cancelVisitResult\}/)
+})
+
+test('próxima visita: em andamento com data passada continua candidata na Home e no feed do servidor',()=>{
+ const now=new Date('2026-08-26T12:00:00.000Z')
+ const tenant='00000000-0000-4000-8000-000000000401'
+ const context={client:{id:'producer-a',name:'Ana Ribeiro'},contextSnapshot:{organization_id:tenant,context_scope:{tenant_id:tenant,producer_id:'producer-a'}},visits:[
+  {id:'visit-progress',scheduledAt:'2026-08-25T12:00:00.000Z',objective:'Negociar fertilizante',status:'Em andamento',lifecycleStatus:'IN_PROGRESS'},
+  {id:'visit-late',scheduledAt:'2026-08-24T12:00:00.000Z',objective:'Planejada atrasada',status:'Agendada',lifecycleStatus:'PLANNED'},
+  {id:'visit-done',scheduledAt:'2026-08-27T12:00:00.000Z',objective:'Concluída',status:'Realizada',lifecycleStatus:'COMPLETED'}
+ ],commitments:[],learning:{}}
+ const feed=buildInsightFeed({organizationId:tenant,actor:{id:'actor',role:'consultant'},contexts:[context],now})
+ const titles=(feed.items||feed.cards||feed).map?.(item=>item.title)||[]
+ assert.ok(titles.some(title=>/Registrar visita em andamento com Ana Ribeiro/.test(title)),JSON.stringify(titles))
+ assert.ok(titles.some(title=>/Preparar visita com Ana Ribeiro/.test(title)),JSON.stringify(titles))
+ assert.ok(!JSON.stringify(feed).includes('visit:visit-done'))
+ const local=buildLocalHomePriorities({upcomingVisits:[{id:'v2',clientId:'p1',scheduledAt:'2026-08-24T12:00:00.000Z',lifecycleStatus:'PLANNED'},{id:'v1',clientId:'p1',scheduledAt:'2026-08-25T12:00:00.000Z',lifecycleStatus:'IN_PROGRESS'}],clients:[{id:'p1',name:'Ana'}]})
+ const first=(Array.isArray(local)?local:local.items||[])[0]
+ assert.match(first.title,/Registrar visita em andamento com Ana/)
+})
+
+test('fallback em arquivo entrega o contrato de oportunidade do PostgreSQL',async()=>{
+ const tenant='00000000-0000-4000-8000-000000000401',owner='owner-x'
+ const store={surveys:[],imports:[{id:'imp',tenantId:tenant,ownerId:owner,clients:[{id:'c1',name:'Cliente Um',tenantId:tenant,ownerId:owner}]}],visits:[],opportunities:[{id:'o-c1',tenantId:tenant,ownerId:owner,clientId:'c1',title:'Semente',category:'Semente',stage:'Proposta',estimatedValue:5000,createdAt:ago(3)}]}
+ const repository=new ValRepository({db:{configured:false},readStore:()=>store,saveStore:()=>{},tenantId:tenant})
+ const intelligence=await repository.getIntelligence(owner)
+ const [opportunity]=intelligence.opportunities
+ assert.equal(opportunity.value,5000)
+ assert.equal(opportunity.estimatedValue,5000)
+ assert.equal(opportunity.category,'Semente')
+ assert.equal(opportunity.candidateKey,'')
+ assert.equal(opportunity.probability,null)
+ assert.ok(opportunity.updatedAt)
 })

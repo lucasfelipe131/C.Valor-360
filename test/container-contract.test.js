@@ -31,14 +31,14 @@ test('imagem final contém os artefatos exigidos por migrate e start',()=>{
  ])assert.ok(dockerfile.includes(required),`COPY ausente: ${required}`)
  assert.match(dockerfile,/mkdir -p \/app\/\.data/)
  assert.match(dockerfile,/^EXPOSE 8080$/m)
- assert.match(dockerfile,/CMD \["npm", "start"\]/)
+ assert.match(dockerfile,/CMD \["node", "server\/start.js"\]/)
 })
 
 test('contexto Docker exclui segredos e Railway usa o Dockerfile',()=>{
  for(const ignored of ['.env','.env.*','.npmrc','*.key','*.pem'])assert.match(dockerignore,new RegExp(`^${ignored.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}$`,'m'))
  assert.deepEqual(railway.build,{builder:'DOCKERFILE',dockerfilePath:'Dockerfile'})
- assert.equal(railway.deploy.preDeployCommand,'npm run db:migrate')
- assert.equal(railway.deploy.startCommand,'npm run start')
+ assert.equal(railway.deploy.preDeployCommand,'node server/migrate.js')
+ assert.equal(railway.deploy.startCommand,'node server/start.js')
  assert.equal(railway.deploy.healthcheckPath,'/live')
  assert.match(readFileSync(new URL('../server.js',import.meta.url),'utf8'),/url\.pathname==='\/live'.*return json\(response,200,/)
 })
