@@ -713,5 +713,16 @@
     "geography": "BR-RS",
     "domain": "agronomic_decision",
     "notes": "Janela de semeadura por município e grupo de ciclo. Condição de acesso a seguro e Proagro."
+  },
+  {
+    "source_id": "SRC-066",
+    "title": "Custos de Insumos Agrícolas no Rio Grande do Sul — Fertilizantes, Sementes e Defensivos",
+    "publisher": "Consultoria interna (Lucas) — relatório técnico",
+    "year": 2026,
+    "url": null,
+    "authority": "C",
+    "geography": "BR-RS",
+    "domain": "value_economics",
+    "notes": "Documento interno de setembro de 2026. A própria ficha técnica declara pesquisa e redação assistidas por IA sob supervisão humana, compilando fontes públicas (Embrapa, Conab, Emater/RS, Cepea, CNA, Abrasem, Sindiveg, MAPA, Banco Central) com atribuição por dado e lista explícita de lacunas. Autoridade C: compilação supervisionada, não fonte primária. Para elevar a evidência de um item, anexar a fonte primária correspondente."
   }
 ]
