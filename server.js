@@ -199,7 +199,12 @@ const realtimeVoice=createRealtimeVoiceService({runtimeConfig:config,client:voic
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
 function consumeRateLimit(scope,key,limit){const now=Date.now();const bucketKey=`${scope}:${key}`;const current=rateBuckets.get(bucketKey);if(!current||current.resetAt<=now){rateBuckets.set(bucketKey,{count:1,resetAt:now+600_000});return true}if(current.count>=limit)return false;current.count+=1;return true}
-const requestIdentity=request=>String(request.socket.remoteAddress||'unknown')
+// Atrás do proxy da Railway todos os usuários compartilham o remoteAddress: com VAL_TRUST_PROXY=true a
+// chave de limite de tentativas passa a ser o último salto de X-Forwarded-For (acrescentado pelo edge).
+const requestIdentity=request=>{
+ if(config.trustProxy){const forwarded=String(request.headers['x-forwarded-for']||'').split(',').map(item=>item.trim()).filter(Boolean);const hop=forwarded.at(-1);if(hop)return hop}
+ return String(request.socket.remoteAddress||'unknown')
+}
 const progressOwnerKey=(identity,request)=>String(identity?.id||identity?.email||requestIdentity(request))
 const demoIdentity=()=>({id:null,email:'demo@valor360.local',name:'Demonstração',role:'admin',tenantId:config.defaultTenantId,mustChangePassword:false,demo:true})
 async function sessionIdentity(request){
@@ -1032,7 +1037,7 @@ async function handleApi(request,response,url){
   repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email})
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,objections:true})
-  await accessRepository.recordUsage(identity,{eventType:'commercial_import',page:'datahub',metadata:{clientCount:clients.length,rowCount:rows.length}});return json(response,201,{saved:true,clientCount:clients.length,database:persistence.persisted,clients,summary})
+  await accessRepository.recordUsage(identity,{eventType:'commercial_import',page:'datahub',metadata:{clientCount:clients.length,rowCount:rows.length}});return json(response,201,{saved:true,clientCount:clients.length,database:persistence.persisted,clients,summary,...(persistence.clientsTruncated?{clientsTruncated:true,persistedClientCount:persistence.persistedClientCount}:{})})
  }
  if(url.pathname==='/api/import/google-sheet'&&request.method==='POST'){
   const payload=await body(request);const source=clean(payload.url);const match=source.match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)
@@ -1059,7 +1064,7 @@ createServer((request,response)=>{
  response.once('finish',()=>observe('api.completed',{status:response.statusCode,durationMs:Date.now()-started,outcome:response.statusCode>=500?'error':'ok'}))
  if(!url)return json(response,400,{error:'URL inválida.'})
  if(isTechnicalWorkspaceRequest(url.pathname)){
-  try{if(technicalWorkspace.handle(request,response,url,await sessionIdentity(request)))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
+  try{if(technicalWorkspace.handle(request,response,url,await sessionIdentity(request),{demoAllowed:!auth.configured&&config.demoMode}))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
  }
  if(url.pathname==='/live'||url.pathname==='/ready'||url.pathname==='/health'||url.pathname.startsWith('/api/')){
   try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){const programmingError=exception instanceof TypeError||exception instanceof RangeError||exception instanceof ReferenceError||exception instanceof SyntaxError;const status=Number(exception.statusCode)||(programmingError?500:400);const safeMessage=status<500||exception.safeToRetry===true||exception.exposeMessage===true?exception.message:'Não foi possível processar a solicitação.';return json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception.code?{code:String(exception.code).slice(0,100)}:{}),...(exception.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{})})}
