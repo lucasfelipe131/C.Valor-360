@@ -6,9 +6,12 @@ import PrepareVisitSimple from '../components/visit/PrepareVisitSimple'
 import {buildVisitCopilotContext} from '../lib/copilot-context'
 
 const today=()=>{const date=new Date();const offset=date.getTimezoneOffset()*60_000;return new Date(date.getTime()-offset).toISOString().slice(0,10)}
-const visitDate=visit=>visit.scheduledAt?new Date(visit.scheduledAt):new Date(`${visit.date}T${visit.time||'12:00'}:00`)
-const pretty=visit=>new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'short'}).format(visitDate(visit))
-const time=visit=>new Intl.DateTimeFormat('pt-BR',{hour:'2-digit',minute:'2-digit'}).format(visitDate(visit))
+// Visita sem data (scheduled_at nulo no banco, registro legado) não pode derrubar a página inteira:
+// Intl.DateTimeFormat lança RangeError em Invalid Date e não há ErrorBoundary.
+const visitDate=visit=>{const raw=visit.scheduledAt||visit.occurredAt||visit.completedAt||(visit.date?`${visit.date}T${visit.time||'12:00'}:00`:'');const date=new Date(raw||'');return Number.isNaN(date.getTime())?null:date}
+const visitTime=visit=>visitDate(visit)?.getTime()??Number.POSITIVE_INFINITY
+const pretty=visit=>{const date=visitDate(visit);return date?new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'short'}).format(date):'Sem data'}
+const time=visit=>{const date=visitDate(visit);return date?new Intl.DateTimeFormat('pt-BR',{hour:'2-digit',minute:'2-digit'}).format(date):'--:--'}
 const lifecycleOf=visit=>{const explicit=String(visit.lifecycleStatus||visit.lifecycle_status||'').toUpperCase();if(['PLANNED','PREPARED','IN_PROGRESS','COMPLETED_PENDING_REVIEW','COMPLETED','CANCELLED'].includes(explicit))return explicit;const legacy=String(visit.status||'').toLocaleLowerCase('pt-BR');if(/cancelad/.test(legacy))return 'CANCELLED';if(/realizad|conclu[ií]d/.test(legacy))return 'COMPLETED';if(/revis[aã]o/.test(legacy))return 'COMPLETED_PENDING_REVIEW';if(/andamento|iniciad/.test(legacy))return 'IN_PROGRESS';if(/preparad/.test(legacy))return 'PREPARED';return 'PLANNED'}
 const preVisitVoiceLifecycle=new Set(['PLANNED','PREPARED'])
 const fieldVoiceLifecycle=new Set(['IN_PROGRESS'])
@@ -50,7 +53,7 @@ export default function Visits({clients,visits,storageScope,initialClientId='',o
  // Estado antes da data: visita em andamento ou aguardando revisao vem primeiro; planejadas (inclusive
  // atrasadas, que a data nao encerra) por data; so entao o historico encerrado. Antes uma visita
  // IN_PROGRESS iniciada no horario afundava abaixo de todas as futuras e sumia da "Proxima rota".
- const {ordered,upcoming}=useMemo(()=>{const scheduled=[...visits].sort((a,b)=>visitDate(a)-visitDate(b));const open=scheduled.filter(visit=>!historyLifecycle.has(lifecycleOf(visit)));const active=open.filter(visit=>['IN_PROGRESS','COMPLETED_PENDING_REVIEW'].includes(lifecycleOf(visit)));const pending=open.filter(visit=>!active.includes(visit));const history=scheduled.filter(visit=>historyLifecycle.has(lifecycleOf(visit))).reverse();const queue=[...active,...pending];return {ordered:[...queue,...history],upcoming:queue.slice(0,3)}},[visits])
+ const {ordered,upcoming}=useMemo(()=>{const scheduled=[...visits].sort((a,b)=>visitTime(a)-visitTime(b));const open=scheduled.filter(visit=>!historyLifecycle.has(lifecycleOf(visit)));const active=open.filter(visit=>['IN_PROGRESS','COMPLETED_PENDING_REVIEW'].includes(lifecycleOf(visit)));const pending=open.filter(visit=>!active.includes(visit));const history=scheduled.filter(visit=>historyLifecycle.has(lifecycleOf(visit))).reverse();const queue=[...active,...pending];return {ordered:[...queue,...history],upcoming:queue.slice(0,3)}},[visits])
  const formValid=Boolean(form.clientId&&form.date&&form.time&&form.objective.trim())
  const save=async event=>{event.preventDefault();if(!formValid){setError('Preencha produtor, data, horário e objetivo antes de salvar.');return}setSaving(true);setError('');try{await onSave?.({clientId:form.clientId,scheduledAt:new Date(`${form.date}T${form.time}:00`).toISOString(),objective:form.objective.trim()});setShowForm(false);setForm({...form,objective:''})}catch(exception){setError(exception.message||'Não foi possível salvar a visita.')}finally{setSaving(false)}}
  const prepareVisit=async visit=>{setPreparingId(visit.id);setExecutionError(current=>({...current,[visit.id]:''}));try{const response=await fetch(`/api/v1/visits/${visit.id}/preparation`,{method:'POST',headers:{'Content-Type':'application/json'}});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível preparar a visita.');setPreparations(current=>({...current,[visit.id]:payload}));setActivePreparationId(visit.id);if(payload.visit?.id)onStarted?.(payload.visit)}catch(exception){setExecutionError(current=>({...current,[visit.id]:exception.message||'Não foi possível preparar a visita.'}))}finally{setPreparingId('')}}

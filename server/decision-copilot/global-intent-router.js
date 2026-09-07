@@ -80,8 +80,11 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
  // como evidência insuficiente, como se a troca tivesse falhado.
  const eName=source.match(/^\s*(?:val[, ]+)?e\s+(?:o|a)\s+(.+?)\s*[?.!]*$/)
  const eNameSwitch=Boolean(eName)&&namesClient(eName[1])
+ // "Agora o Antônio Silva": nome composto depois de 'agora' também é troca quando nomeia o produtor.
+ const agoraName=source.match(/^\s*(?:val[, ]+)?agora\s+(?:com\s+)?(?:o|a)\s+(.+?)\s*[.!]*$/)
+ const agoraSwitch=Boolean(agoraName)&&namesClient(agoraName[1])
  const switchVerb=bareName||topicSwitch||/^\s*(?:val\s+)?(?:(?:volta|volte|voltar|retoma|retome|retomar|troca|troque|trocar|muda|mude|mudar)\s+(?:(?:o|a)\s+(?:cliente|produtor|produtora|conta)\s+)?(?:para|pro|pra|ao|a)\s+\S|(?:volta|volte|voltar|retoma|retome|retomar)\b.*\banterior\b|agora\s+(?:com\s+)?(?:o|a)\s+[^\s?]+\s*[.!]?\s*$)/.test(source)
- if(!prepareVisit&&(eNameSwitch||(!factualLookup&&switchVerb))&&authorizedClient&&!modules.some(module=>module.pattern.test(source))){
+ if(!prepareVisit&&(eNameSwitch||agoraSwitch||(!factualLookup&&switchVerb))&&authorizedClient&&!modules.some(module=>module.pattern.test(source))){
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'OPEN',reason:'SWITCH_RESOLVED_CLIENT',direct:true,workspaceAction,summary:authorizedClient.name?`Agora falando de ${authorizedClient.name}. Abrindo no Cliente 360.`:'Agora falando do produtor selecionado. Abrindo no Cliente 360.'})
  }
@@ -107,11 +110,13 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
  // Escrita é imperativo no início da frase, com objeto explícito e sem interrogação: "Marque o
  // compromisso como concluído", "Cria uma visita para amanhã", "Atualiza o telefone dele". Uma
  // pergunta que cita esses verbos ("quando foi a nova visita?") segue para o raciocínio.
- const writeHead=String.raw`^\s*(?:val[, ]+)?(?:agora\s+)?(?:por favor[, ]+)?`
+ // Prefixos em qualquer ordem e pedido com modal ("vamos criar", "pode marcar", "preciso atualizar",
+ // "por favor val atualiza") continuam escrita.
+ const writeHead=String.raw`^\s*(?:(?:val|agora|por favor)[, ]+)*(?:(?:pode|poderia|consegue|vamos|quero|queria|preciso|precisa|precisamos)\s+(?:me\s+)?)?`
  const writeTurn=!/\?\s*$/.test(source)
  const writeField=String.raw`(?:telefone|celular|whatsapp|e-?mail|municipio|cidade|endereco|area|nome|estagio|status|valor|data|cultura|safra|perfil|cadastro|hectares)`
- if(writeTurn&&new RegExp(writeHead+String.raw`(?:marca|marque|marcar|conclui|conclua|concluir|finaliza|finalize|finalizar|encerra|encerre|encerrar)\b(?:\s+\S+){0,4}?\s+(?:(?:o|a|os|as|esse|essa|este|esta)\s+)?(?:compromisso|tarefa|visita)s?\b`).test(source))return result({intent:'MARK_COMPLETE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A conclusão exige confirmação no módulo canônico antes de persistir.'})
- if(writeTurn&&new RegExp(writeHead+String.raw`(?:cria|crie|criar|agenda|agende|agendar|cadastra|cadastre|cadastrar|adiciona|adicione|adicionar|remarca|remarque|remarcar|cancela|cancele|cancelar)\b.*\b(?:visita|oportunidade|compromisso|tarefa|propriedade|produtor|cliente)s?\b`).test(source))return result({intent:'CREATE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A criação exige revisão e confirmação antes de persistir.'})
+ if(writeTurn&&new RegExp(writeHead+String.raw`(?:marca|marque|marcar|conclui|conclua|concluir|finaliza|finalize|finalizar|encerra|encerre|encerrar)\b(?!\s+que\b)(?:\s+\S+){0,4}?\s+(?:(?:o|a|os|as|esse|essa|este|esta)\s+)?(?:compromisso|tarefa|visita)s?\b`).test(source))return result({intent:'MARK_COMPLETE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A conclusão exige confirmação no módulo canônico antes de persistir.'})
+ if(writeTurn&&new RegExp(writeHead+String.raw`(?:cria|crie|criar|agenda|agende|agendar|cadastra|cadastre|cadastrar|adiciona|adicione|adicionar|remarca|remarque|remarcar|cancela|cancele|cancelar)\s+(?:(?:uma|um|a|o|nova|novo|outra|outro|mais\s+uma|mais\s+um|essa|esse|esta|este)\s+)?(?:visita|oportunidade|compromisso|tarefa|propriedade|produtor|cliente)s?\b`).test(source))return result({intent:'CREATE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A criação exige revisão e confirmação antes de persistir.'})
  if(writeTurn&&(new RegExp(writeHead+String.raw`(?:atualiza|atualize|atualizar|corrige|corrija|corrigir|altera|altere|alterar|edita|edite|editar|apaga|apague|apagar|remove|remova|remover|exclui|exclua|excluir)\b(?!-?\s*me\b)`).test(source)||new RegExp(writeHead+String.raw`(?:muda|mude|mudar|troca|troque|trocar)\s+(?:o|a)\s+`+writeField+String.raw`\b`).test(source)||new RegExp(writeHead+String.raw`(?:fecha|feche|fechar)\s+(?:a|o|essa|esse|esta|este)\s+(?:oportunidade|negocio|negociacao|proposta)\b`).test(source)))return result({intent:'UPDATE',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A alteração exige revisão e confirmação antes de persistir.'})
  if(writeTurn&&new RegExp(writeHead+String.raw`(?:registra|registre|registrar|anota|anote|anotar|salva|salve|salvar)\b`).test(source))return result({intent:'REGISTER',reason:'WRITE_CONFIRMATION_REQUIRED',requiresConfirmation:true,summary:'A alteração exige revisão e confirmação antes de persistir.'})
  if(/\b(?:calcula|calcule|calcular|simula|simule)\b/.test(source))return result({intent:'CALCULATE',reason:'CANONICAL_CALCULATOR'})

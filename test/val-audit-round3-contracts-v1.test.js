@@ -15,6 +15,8 @@ import {classifyStructuredClientFact} from '../server/decision-copilot/capabilit
 import {classifyValContextDomain,collectionMatchesContextDomain} from '../server/decision-copilot/context-selector.js'
 import {extractNaturalClientReference} from '../server/decision-copilot/producer-entity-resolver.js'
 import {ValRepository} from '../server/repository.js'
+import {routeSessionCommand} from '../server/decision-copilot/session-command-router.js'
+import {reconcilePipeline} from '../src/lib/opportunity-pipeline.js'
 import {resolveValNaturalCommand} from '../src/lib/val-natural-commands.js'
 import {routeValIntent} from '../server/ai-reasoning/intent-router.js'
 import {canTransitionVisit} from '../server/visit-loop/lifecycle.js'
@@ -430,4 +432,46 @@ test('evidência comercial nomeia a compra e o fato literal só vira leitura na 
  assert.equal(factMatchesQuestionFacet({domain:'VISIT',question:'tem visita marcada?',statement:'Visita Realizada em 27/08/2026.',sourceType:'visit'}),false)
  assert.equal(factMatchesQuestionFacet({domain:'VISIT',question:'o que discutimos na última visita?',statement:'Visita Realizada em 27/08/2026; compromisso: Levar orçamento na próxima semana.',sourceType:'visit'}),true)
  assert.equal(factMatchesQuestionFacet({domain:'COMMERCIAL',question:'o que ele comprou?',statement:purchase.claim_supported,sourceType:'business_history'}),true)
+})
+
+test('rodada 4: troca com nome composto, pedidos de escrita com modal, falsos positivos e vocativo nos comandos de sessão',()=>{
+ const antonio={id:'antonio',name:'Antônio Silva'}
+ for(const message of ['Agora o Antônio Silva','agora com a Antônio Silva','Agora o Antônio']){const route=routeGlobalIntent({message,client:antonio});assert.equal(route.reason,'SWITCH_RESOLVED_CLIENT',message)}
+ const intent=message=>routeGlobalIntent({message,client:antonio}).intent
+ assert.equal(intent('vamos criar uma visita amanhã'),'CREATE')
+ assert.equal(intent('pode marcar a visita como concluída'),'MARK_COMPLETE')
+ assert.equal(intent('preciso atualizar o telefone dele'),'UPDATE')
+ assert.equal(intent('por favor val atualiza o telefone dele'),'UPDATE')
+ assert.equal(intent('salva o telefone dele: 51 99999-0000'),'REGISTER')
+ for(const message of ['Agenda de visitas do Antônio','agenda dele tem visita','Cria um roteiro de visita para amanhã','cria uma visão geral do produtor','conclui que ele prefere conversa presencial']){
+  const route=routeGlobalIntent({message,client:antonio})
+  assert.ok(!['CREATE','MARK_COMPLETE'].includes(route.intent),`${message} -> ${route.intent}`)
+ }
+ assert.equal(routeSessionCommand('Val, resume isso')?.command,'SUMMARIZE')
+ assert.equal(routeSessionCommand('Val, repete')?.command,'REPEAT')
+ assert.equal(routeSessionCommand('val salva isso')?.command,'REGISTER_LAST')
+ assert.equal(routeValIntent({message:'salva a informação de que ele prefere pagamento na safra',hasClient:true}).intent,'REGISTER_INFORMATION')
+ assert.match(read('server.js'),/workspaceRoute\.requires_confirmation&&workspaceRoute\.intent==='REGISTER'/)
+})
+
+test('rodada 4: agenda tolera visita sem data, Home rotula pelo ciclo de vida, pipeline aceita voz e avanço de derivada mantém a linha',async()=>{
+ const visits=read('src/pages/Visits.jsx')
+ assert.match(visits,/return Number\.isNaN\(date\.getTime\(\)\)\?null:date\}/)
+ assert.match(visits,/const scheduled=\[\.\.\.visits\]\.sort\(\(a,b\)=>visitTime\(a\)-visitTime\(b\)\)/)
+ assert.match(read('src/styles.css'),/\.visit-actions \.soft-btn\.is-quiet\{/)
+ const dashboard=read('src/pages/Dashboard.jsx')
+ assert.match(dashboard,/CANCELLED:'Visita cancelada'/)
+ assert.match(dashboard,/entry\.at\.toDateString\(\)===new Date\(\)\.toDateString\(\)/)
+ assert.match(read('src/components/GlobalValCopilot.jsx'),/useEffect\(\(\)=>\{if\(conversationAutoStartKey\)setConversationAutoStartKey\(''\)\},\[conversationAutoStartKey\]\)/)
+ const items=reconcilePipeline([{id:'joao',name:'João',commercial:{}}],[{id:'o-joao:voice:abc',clientId:'joao',candidateKey:'voice:abc',title:'Inoculante',stage:'Proposta',value:0}])
+ assert.ok(items.some(item=>item.id==='o-joao:voice:abc'&&item.stage==='Proposta'),JSON.stringify(items))
+ const captured=[]
+ const db={configured:true,query:async(sql,params)=>{captured.push({sql,params});if(/INSERT INTO opportunities/.test(sql))return {rows:[{id:9,client_external_key:'joao',external_key:params[2],title:params[3],stage:params[7],evidence:[],updated_at:new Date().toISOString()}],rowCount:1};return {rows:[],rowCount:0}}}
+ const repository=new ValRepository({db,readStore:()=>({}),saveStore:()=>{},tenantId})
+ const advanced=await repository.saveOpportunity({clientId:'joao',candidateKey:'visit-report:abc',title:'Inoculante',stage:'Proposta'},'owner-1')
+ const insert=captured.find(item=>/INSERT INTO opportunities/.test(item.sql))
+ assert.equal(insert.params[2],'visit-report:abc')
+ assert.equal(advanced.id,'o-joao:visit-report:abc')
+ const visitLookup=new ValRepository({db:{configured:true,query:async()=>{throw new Error('nao deveria consultar')}},readStore:()=>({}),saveStore:()=>{},tenantId})
+ assert.equal(await visitLookup.getVisit({tenantId,ownerId:'owner-1',id:'visit-done'}),null)
 })

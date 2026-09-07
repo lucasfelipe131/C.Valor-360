@@ -146,6 +146,9 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  const [pendingCapture,setPendingCapture]=useState('')
  const [voiceAutoOpenKey,setVoiceAutoOpenKey]=useState('')
  const [conversationAutoStartKey,setConversationAutoStartKey]=useState('')
+ // A chave de auto-início vale para uma única montagem do modo conversa: sem limpar, cada remontagem
+ // do componente (troca de modo, produtor, thread) religava microfone e sessão realtime sozinha.
+ useEffect(()=>{if(conversationAutoStartKey)setConversationAutoStartKey('')},[conversationAutoStartKey])
  const [sessionReplyOffer,setSessionReplyOffer]=useState(null)
  const [sessionReplies,setSessionReplies]=useState({})
  const [threads,setThreads]=useState(storedWorkspace.threads)

@@ -33,7 +33,8 @@ const cleanEvidence=(value,key,stage)=>{
 // Oportunidade confirmada num relato de visita (candidateKey "visit-report:...") e um registro
 // canonico do servidor, nao um cache de etapa: entra no pipeline como item proprio, com a etapa
 // que o servidor gravou. Antes era descartada e as telas de Oportunidades e Cliente 360 divergiam.
-const visitReportItem=item=>String(item?.candidateKey||'').startsWith('visit-report:')
+// Oportunidade derivada de relato de visita ou de captura de voz é registro canônico do servidor.
+const visitReportItem=item=>/^(?:visit-report|voice):/.test(String(item?.candidateKey||''))
 export function reconcilePipeline(clients=[],cachedItems=[]){
  const persisted=(Array.isArray(cachedItems)?cachedItems:[]).filter(item=>item&&item.clientId)
  const cacheByClient=new Map(persisted.filter(item=>!visitReportItem(item)).map(item=>[String(item.clientId),item]))

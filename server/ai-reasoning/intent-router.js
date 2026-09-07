@@ -126,7 +126,8 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
  // "Registra que a cotacao da soja subiu" e um pedido de registro, nao uma consulta de mercado:
  // o prefixo explicito de registro decide antes de qualquer leitura semantica do conteudo, porque
  // o conteudo de uma nota quase sempre tem lexema de safra, praga, cotacao ou objecao.
- const explicitRegister=/^(?:val[, ]+)?(?:registra|registre|anota|anote)\s+que\b/i.test(source)?'REGISTER_INFORMATION':''
+ // "salva a informacao de que ..." e "anota a nota ..." tambem sao registro explicito, mesmo com safra/praga no conteudo.
+ const explicitRegister=/^(?:val[, ]+)?(?:(?:registra|registre|anota|anote)\s+que\b|(?:registra|registre|registrar|anota|anote|anotar|salva|salve|salvar|grava|grave|gravar)\s+(?:(?:a|o|uma|um|essa|esse|esta|este)\s+)?(?:informa[cç][aã]o|nota|mem[oó]ria|fato|dado|observa[cç][aã]o)\b)/i.test(source)?'REGISTER_INFORMATION':''
  let intent=sessionCommand?.command==='REGISTER_LAST'?'REGISTER_INFORMATION':persistenceIntents.has(hinted)?hinted:explicitRegister||semanticCurrent||semanticCommand||semanticClientIdentity||semanticGeneral||calculatorToolOverride||genericAgroToolOverride||hinted
  if(!intent){
   if(/\b(?:mercado|commodity|commodities|not[ií]cia econ[oô]mica)\b/i.test(source))intent='ASK_MARKET'
@@ -137,7 +138,7 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
   else if(toolHint==='AREA_MAPPING')intent='ASK_AGRONOMIC'
   else if(/\b(?:agron[oô]mic|praga|doen[cç]a|daninha|manejo|talh[aã]o|safra|cultiv)/i.test(source))intent='ASK_AGRONOMIC'
   else if(/\b(?:prepar|roteiro|antes da)\w*\b.*\bvisit\w*\b|\bvisit\w*\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))intent='PREPARE_VISIT'
-  else if(/^(?:val[, ]+)?(?:registra|registre|anota|anote)\s+que\b/i.test(source)||/\b(?:registr|salv|grave|anote|memorize)\b.*\b(?:informa[cç][aã]o|nota|hist[oó]rico|mem[oó]ria|fato)\b/i.test(source))intent='REGISTER_INFORMATION'
+  else if(/^(?:val[, ]+)?(?:registra|registre|anota|anote)\s+que\b/i.test(source)||/\b(?:registr|salv|grav|anot|memoriz)\w*\b.*\b(?:informa[cç][aã]o|nota|hist[oó]rico|mem[oó]ria|fato)\b/i.test(source))intent='REGISTER_INFORMATION'
   else if(/\b(?:p[oó]s[- ]?visita|depois da visita|resultado da visita)\b/i.test(source))intent='POST_VISIT'
   else if(individual&&/\b(?:obje[cç][aã]o|resist[eê]ncia|discord|recus|n[aã]o quer)\b/i.test(source))intent='OBJECTION_HELP'
   else if(individual&&/\b(?:oportunidades?|pipeline|neg[oó]cios?|propostas?)\b/i.test(source))intent='CHECK_OPPORTUNITY'

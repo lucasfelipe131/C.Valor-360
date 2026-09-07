@@ -5,9 +5,10 @@ export const sessionCommands=Object.freeze([
  'SHOW_NUMBERS','REGISTER_LAST','DO_NOT_REGISTER','DEEPEN','BRIEF'
 ])
 
+// "Val, resume isso" e "Val, repete" são os mesmos comandos: o vocativo inicial sai antes das regras.
 const normalize=value=>String(value??'')
  .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
- .toLocaleLowerCase('pt-BR').replace(/\s+/g,' ').trim().slice(0,500)
+ .toLocaleLowerCase('pt-BR').replace(/\s+/g,' ').trim().replace(/^(?:val[, ]+)+/,'').trim().slice(0,500)
 
 // Complementos vazios ("pra mim", "isso", "disso", "ai", "por favor") nao mudam o comando. Sem
 // esta tolerancia, "resume pra mim", "me manda escrito" e "aprofunda isso" viravam nova pergunta.

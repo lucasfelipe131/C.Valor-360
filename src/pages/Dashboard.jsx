@@ -24,7 +24,7 @@ import VoiceCapture from '../components/voice/VoiceCapture'
 import Disclosure from '../components/Disclosure'
 import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
 import {buildHomeCopilotAnswer,buildLocalHomePriorities,canonicalVoiceChange} from '../lib/copilot-view-model'
-import {buildDayBriefing,buildFocusProducers,buildPendencies,buildTopCultures} from '../lib/home-command-center'
+import {buildDayBriefing,buildFocusProducers,buildPendencies,buildTopCultures,visitLifecycle} from '../lib/home-command-center'
 import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline,resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
 const greeting=()=>{
@@ -171,7 +171,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
       {briefing.upcoming.length
        ?<ul>{briefing.upcoming.map(entry=>
          <li key={entry.id}>
-          <time dateTime={entry.at.toISOString()}>{entry.at.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}</time>
+          <time dateTime={entry.at.toISOString()}>{entry.at.toDateString()===new Date().toDateString()?entry.at.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):entry.at.toLocaleString('pt-BR',{weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).replace('.','')}</time>
           <div>
            <b>{entry.clientName}</b>
            <span>{entry.place||'Local não informado'}</span>
@@ -348,7 +348,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
       ?<ul className="home-rail-activity">{recentVisits.map(visit=>{
         const client=clients.find(item=>String(item.id)===String(visit.clientId))
         return <li key={visit.id}>
-         <b>{visit.status==='Realizada'?'Visita realizada':'Visita agendada'}</b>
+         <b>{({COMPLETED:'Visita realizada',CANCELLED:'Visita cancelada',IN_PROGRESS:'Visita em andamento',COMPLETED_PENDING_REVIEW:'Visita aguardando confirmação'})[visitLifecycle(visit)]||'Visita agendada'}</b>
          <span>{client?.name||'Produtor'} • {compactDate(visit)}</span>
         </li>
        })}</ul>

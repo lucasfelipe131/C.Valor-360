@@ -597,6 +597,11 @@ async function handleApi(request,response,url){
   }
   // Pedido de escrita (atualizar, criar, concluir) não vira consulta vazia: a VAL não persiste por
   // conversa e diz onde a alteração é feita e confirmada.
+  // "salva o telefone dele", "anota o telefone novo dele": registro com objeto abre Registrar informação.
+  if(workspaceRoute.requires_confirmation&&workspaceRoute.intent==='REGISTER'){
+   if(clientId)invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId})
+   return json(response,409,{error:'Use Registrar informação para revisar e confirmar qualquer atualização de memória.',code:'val_confirmation_required',globalIntent:workspaceRoute})
+  }
   if(workspaceRoute.requires_confirmation&&['UPDATE','CREATE','MARK_COMPLETE'].includes(workspaceRoute.intent)){
    const guidance={
     UPDATE:'A VAL não altera cadastro ou registros por conversa. Abra o produtor no Cliente 360 para atualizar e confirmar a mudança.',
