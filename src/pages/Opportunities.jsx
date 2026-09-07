@@ -30,7 +30,7 @@ function OpportunityCard({item,selected,onSelect,onEdit,now,timeZone}){
   <button className="opp-card-menu" aria-label={'Editar '+item.title+' — '+item.client.name} onClick={onEdit}><MoreHorizontal size={17}/></button>
  </article>
 }
-export default function Opportunities({clients=[],persistedItems=[],storageScope,currentUser={},onPersist,onClient,onContextChange,onSaved,onRefreshPortfolio,visits=[],workspaceContext=null,onNavigate,onPrepare,externalCopilotSeed,loadError='',preview=false,initialSelection='',nowOverride=null}){
+export default function Opportunities({clients=[],persistedItems=[],storageScope,currentUser={},onPersist,onClient,onAsk,onContextChange,onSaved,onRefreshPortfolio,visits=[],workspaceContext=null,onNavigate,onPrepare,externalCopilotSeed,loadError='',preview=false,initialSelection='',nowOverride=null}){
  const [filters,setFilters]=useState(defaultFilters),[view,setView]=useState('board'),[mobileStage,setMobileStage]=useState('Diagnóstico')
  const [selectedId,setSelectedId]=useState(initialSelection),[panelOpen,setPanelOpen]=useState(()=>typeof window==='undefined'||window.matchMedia('(min-width:1400px)').matches),[chatOpen,setChatOpen]=useState(false)
  const [editor,setEditor]=useState(null),[reports,setReports]=useState(false),[refreshing,setRefreshing]=useState(false),[error,setError]=useState('')
@@ -48,9 +48,9 @@ export default function Opportunities({clients=[],persistedItems=[],storageScope
  const context=useMemo(()=>selected?buildOpportunityCopilotContext({opportunity:{...selected,id:selected.databaseId||selected.candidateKey||selected.id},client:selected.client}):null,[selected])
  useEffect(()=>{onContextChange?.(context);return()=>onContextChange?.(null)},[context,onContextChange])
  useEffect(()=>{if(!selected){setChatOpen(false);if(selectedId)setSelectedId('')}},[selected,selectedId])
- useEffect(()=>{if(externalCopilotSeed?.source==='opportunities'){setPanelOpen(true);if(selected)setChatOpen(true)}},[externalCopilotSeed?.nonce])
+ useEffect(()=>{if(!onAsk&&externalCopilotSeed?.source==='opportunities'){setPanelOpen(true);if(selected)setChatOpen(true)}},[externalCopilotSeed?.nonce])
  const pick=item=>{setSelectedId(item.id);setPanelOpen(true);setChatOpen(false);setChatSeed(null)}
- const ask=()=>{if(selected){setChatSeed({...context,nonce:Date.now()});setChatOpen(true)}}
+ const ask=()=>{if(selected){if(onAsk){onAsk({...context,client:selected.client});setPanelOpen(false);return}setChatSeed({...context,nonce:Date.now()});setChatOpen(true)}}
  const edit=(item=null,stage='Diagnóstico',mode='edit')=>setEditor({item,stage,mode,key:crypto.randomUUID()})
  const save=async input=>{
   if(typeof onPersist!=='function')throw new Error('A gravação está indisponível neste ambiente.')
@@ -125,7 +125,7 @@ export default function Opportunities({clients=[],persistedItems=[],storageScope
       <footer><button className="opp-text-button" onClick={()=>edit(selected)}><FileText size={15}/>Abrir detalhes da oportunidade</button>{onClient&&<button className="opp-text-button" onClick={()=>onClient(selected.client)}>Ver perfil do produtor<ChevronRight size={14}/></button>}</footer>
      </>}
     </>}
-    {chatOpen&&selected&&<div className="opp-chat">
+    {chatOpen&&selected&&!onAsk&&<div className="opp-chat">
      <CopilotBoundary key={selected.id} onClose={()=>setChatOpen(false)}><Suspense fallback={<div className="opp-empty" role="status"><LoaderCircle/>Abrindo VAL…</div>}>
       <GlobalValCopilot key={String(storageScope)+':'+selected.id} open embedded onClose={()=>setChatOpen(false)} contextClient={selected.client} clients={[selected.client]}
        seed={chatSeed||{...context,nonce:externalCopilotSeed?.nonce||1}} workspaceContext={workspaceContext} storageScope={storageScope}

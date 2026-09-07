@@ -71,3 +71,11 @@
 .p360-report-new-season{margin-bottom:16px;border:1px solid #e1ebe6;border-radius:10px;padding:12px;background:#fbfdfc}
 .p360-report-new-season summary{color:#006c55;cursor:pointer;font-size:12px;font-weight:600}
 .p360-report-new-season .season-form-head{margin-top:12px}
+/* A single owner-scoped conversation accompanies every routed workspace. */
+.app-shell .content.val-with-copilot{position:relative;padding-right:370px}
+.app-shell:has(.val-persistent-copilot.is-compact) .content.val-with-copilot{padding-right:92px}
+.opp-shell:has(.val-persistent-copilot:not(.is-compact)) .opp-workspace{grid-template-columns:minmax(0,1fr)}
+.opp-shell:has(.val-persistent-copilot:not(.is-compact)) .opp-workspace>.opp-copilot{display:none}
+@media(max-width:1350px) and (min-width:1051px){.app-shell .content.val-with-copilot{padding-right:350px}.app-shell:has(.val-persistent-copilot.is-compact) .content.val-with-copilot{padding-right:92px}}
+@media(max-width:1050px){.app-shell .content.val-with-copilot{padding-right:20px}}
+@media(max-width:650px){.app-shell .content.val-with-copilot,.app-shell:has(.val-persistent-copilot.is-compact) .content.val-with-copilot{padding-right:12px}}

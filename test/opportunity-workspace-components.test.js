@@ -69,3 +69,15 @@ test('falha e retry mantêm campos e mutationId; duplo submit só faz uma grava�
   assert.equal(closed,1)
  }finally{await act(async()=>renderer.unmount());globalThis.document=previousDocument}
 })
+
+test('preparing an opportunity uses the persistent host without mounting a second conversation',async()=>{
+ let renderer;const asks=[]
+ await act(async()=>{renderer=TestRenderer.create(React.createElement(Opportunities,{...props,onAsk:value=>asks.push(value)}))})
+ try{
+  await act(async()=>cardButtons(renderer.root)[0].props.onClick())
+  await act(async()=>byLabel(renderer.root,'Preparar conversa').props.onClick())
+  assert.equal(asks.length,1);assert.equal(asks[0].clientId,asks[0].client.id)
+  assert.equal(asks[0].context.type,'opportunity');assert.equal(asks[0].persistenceMode,'NONE')
+  assert.equal(renderer.root.findAll(node=>typeof node.type==='function'&&node.type.name==='GlobalValCopilot').length,0)
+ }finally{await act(async()=>renderer.unmount())}
+})
