@@ -185,3 +185,20 @@ test('a failed selected-property load cannot leave an editable blank form that s
   globalThis.fetch=savedFetch
  }
 })
+
+test('editing a property preserves an existing yield in another unit until an explicit sc/ha edit',async()=>{
+ const PropertyFields=await loadPropertyFields(),savedFetch=globalThis.fetch
+ let renderer;const writes=[]
+ const profile={property:{id:'p1',name:'Norte'},properties:[{id:'p1',name:'Norte'}],fields:[{id:'f1',name:'Área',crop:'Soja',season:'2627V',areaHa:10,points:[],productivityTarget:null,productivityUnit:'kg/ha'}]}
+ globalThis.fetch=async(url,options={})=>{if(options.method==='PUT')writes.push(JSON.parse(options.body));return new Response(JSON.stringify(profile))}
+ try{
+  await act(async()=>{renderer=TestRenderer.create(React.createElement(PropertyFields,{client:{id:'c1'}}))})
+  await act(async()=>renderer.root.findAllByType('input')[0].props.onChange({target:{value:'Nome atualizado'}}))
+  const save=()=>renderer.root.findAllByType('button').find(button=>button.props.className==='is-primary')
+  await act(async()=>save().props.onClick())
+  assert.equal(Object.hasOwn(writes[0].fields[0],'productivityTarget'),false)
+  await act(async()=>renderer.root.findAllByType('input').find(input=>input.props.type==='number').props.onChange({target:{value:'60'}}))
+  await act(async()=>save().props.onClick())
+  assert.equal(writes[1].fields[0].productivityTarget,60)
+ }finally{if(renderer)await act(async()=>renderer.unmount());globalThis.fetch=savedFetch}
+})

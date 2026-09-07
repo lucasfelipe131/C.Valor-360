@@ -17,7 +17,7 @@ const fromProfile=profile=>({
  propertyId:profile?.property?.id,
  propertyName:profile?.property?.name||'',
  location:validLocation(profile?.property?.location),
- fields:(profile?.fields||[]).map(field=>({key:field.id,id:field.id,name:field.name,areaHa:field.areaHa==null?'':String(field.areaHa),crop:field.crop||'',season:field.season||'',points:field.points||[],productivityTarget:field.productivityTarget??'',clearGeometry:false}))
+ fields:(profile?.fields||[]).map(field=>({key:field.id,id:field.id,name:field.name,areaHa:field.areaHa==null?'':String(field.areaHa),crop:field.crop||'',season:field.season||'',points:field.points||[],productivityTarget:field.productivityTarget??'',productivityUnit:field.productivityUnit||(field.productivityTarget!=null?'sc/ha':''),productivityTargetTouched:false,clearGeometry:false}))
 })
 
 export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
@@ -66,7 +66,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
   setSelection({clientId:client.id,propertyId})
  }
  const update=patch=>{if(busy)return;setForm(current=>({...current,...patch}));setDirty(true);setState(current=>({...current,error:'',notice:''}))}
- const updateField=(key,patch)=>update({fields:form.fields.map(field=>field.key===key?{...field,...patch}:field)})
+ const updateField=(key,patch)=>update({fields:form.fields.map(field=>field.key===key?{...field,...patch,...(Object.hasOwn(patch,'productivityTarget')?{productivityTargetTouched:true}:{})}:field)})
  const addField=(extra={})=>update({fields:[...form.fields,{key:fieldKey(form.fields.length),id:null,name:`Talhão ${form.fields.length+1}`,areaHa:'',crop:'',season:'',points:[],productivityTarget:'',clearGeometry:false,...extra}]})
  const removeField=field=>{
   if(!window.confirm(`Remover o talhão "${field.name}"? Análises ligadas a ele perdem o vínculo.`))return
@@ -105,7 +105,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
   try{
    const response=await fetch(`/api/clients/${encodeURIComponent(client.id)}/property`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     propertyId:form.propertyId,propertyName:form.propertyName,location:form.location||null,removedFieldIds:removed,
-    fields:form.fields.map(field=>({id:field.id,name:field.name,areaHa:numberOrNull(field.areaHa),crop:field.crop,season:field.season,productivityTarget:numberOrNull(field.productivityTarget),points:field.points,clearGeometry:field.clearGeometry}))
+    fields:form.fields.map(field=>({id:field.id,name:field.name,areaHa:numberOrNull(field.areaHa),crop:field.crop,season:field.season,...((!field.id||field.productivityTargetTouched||field.productivityUnit==='sc/ha')?{productivityTarget:numberOrNull(field.productivityTarget)}:{}),points:field.points,clearGeometry:field.clearGeometry}))
    }),signal:controller.signal})
    if(controller.signal.aborted||version!==requestVersion.current)return
    if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}

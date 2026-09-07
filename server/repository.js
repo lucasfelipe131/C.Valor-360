@@ -1026,7 +1026,7 @@ export class ValRepository{
       properties:properties.rows.map(row=>({id:String(row.id),name:row.name})),
       fields:fields.rows.map(row=>{
         const geometry=fieldPointsFromGeometryRef(row.geometry_ref,{organizationId:this.tenantId});const season=jsonObject(row.latest_season)
-        return {id:String(row.id),name:row.name,areaHa:row.area_ha==null?geometry.calculatedAreaHa:Number(row.area_ha),crop:String(season.crop||''),season:String(season.season||''),productivityTarget:season.unit==='sc/ha'&&season.productivityTarget!=null?Number(season.productivityTarget):null,points:geometry.points,geometryStatus:geometry.geometryStatus,updatedAt:iso(row.updated_at)}
+        return {id:String(row.id),name:row.name,areaHa:row.area_ha==null?geometry.calculatedAreaHa:Number(row.area_ha),crop:String(season.crop||''),season:String(season.season||''),productivityUnit:String(season.unit||''),productivityTarget:season.unit==='sc/ha'&&season.productivityTarget!=null?Number(season.productivityTarget):null,points:geometry.points,geometryStatus:geometry.geometryStatus,updatedAt:iso(row.updated_at)}
       }),
       source:'postgresql'
     }
