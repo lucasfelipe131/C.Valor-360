@@ -70,7 +70,7 @@ export default function SatelliteMap({
   const bounds=localityBounds(row)
   if(!bounds){setPlaceNotice('Limite municipal indisponível nesta base. Escolha o estado para navegar.');return}
   mapRef.current?.fitBounds(bounds,{padding:[25,25],maxZoom:12})
-  setPlaceQuery(`${row[1]} — ${row[2]}`);setPlaceOpen(false);setPlaceNotice(`Visualizando ${row[1]} — ${row[2]}. Marque a sede para definir a propriedade.`)
+  setPlaceUf(row[2]);setPlaceQuery(`${row[1]} — ${row[2]}`);setPlaceOpen(false);setPlaceNotice(`Visualizando ${row[1]} — ${row[2]}. Marque a sede para definir a propriedade.`)
  }
  const chooseState=uf=>{
   setPlaceUf(uf);setPlaceQuery('');setPlaceOpen(false)
@@ -248,7 +248,7 @@ export default function SatelliteMap({
    <button type="button" aria-pressed={showStates} onClick={()=>setShowStates(value=>!value)}>Divisas estaduais</button>
    <div className="val-map-place-notice" role="status">{placeStatus==='loading'?'Carregando municípios e divisas…':placeStatus==='error'?<>Referência indisponível. <button type="button" onClick={()=>setPlaceAttempt(value=>value+1)}>Recarregar municípios</button></>:placeNotice||'Busque um município ou escolha um estado para aproximar.'} <span>Limites de referência • IBGE</span></div>
   </div>}
-  <div className="val-map-stage">{controls&&interactive&&<div className="val-map-worktools">{editorTools}<CadastralLayers onChange={setReferenceLayers}/></div>}<div ref={container} className="val-map-canvas" role={interactive?'region':'img'} aria-label={label} aria-busy={loading}/>
+  <div className="val-map-stage">{controls&&interactive&&<div className="val-map-worktools">{editorTools}<CadastralLayers onChange={setReferenceLayers} getPoint={()=>{const point=mapRef.current?.getCenter();return point?{lat:point.lat,lng:point.lng,uf:placeUf}:null}}/></div>}<div ref={container} className="val-map-canvas" role={interactive?'region':'img'} aria-label={label} aria-busy={loading}/>
   {controls&&interactive&&<div className="val-map-controls" role="group" aria-label="Controles do mapa">
    <div className="val-map-basemaps" role="group" aria-label="Imagem de fundo">
     <button type="button" aria-pressed={basemap==='satellite'} onClick={()=>setBasemap('satellite')}>Satélite</button>

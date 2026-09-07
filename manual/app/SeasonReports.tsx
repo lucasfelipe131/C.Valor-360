@@ -11,6 +11,7 @@ import { listRecords, saveRecord } from "./records";
 type ReportField = {
   id: string;
   name: string;
+  property?: string;
   crop: string;
   season: string;
   area: number;
@@ -267,20 +268,20 @@ const reportCatalogs: Partial<
   ),
 };
 
-function blankReport(producer?: ReportProducer): SeasonReport {
+function blankReport(producer?: ReportProducer, strictData = false): SeasonReport {
   return {
     id: crypto.randomUUID(),
     producerId: producer?.id ?? "",
     property: producer?.properties ?? "",
-    fieldId: producer?.fields?.[0]?.id ?? "",
-    crop: producer?.fields?.[0]?.crop || "Soja",
+    fieldId: strictData ? "" : producer?.fields?.[0]?.id ?? "",
+    crop: strictData ? "" : producer?.fields?.[0]?.crop || "Soja",
     season: producer?.fields?.[0]?.season || "",
-    area: producer?.fields?.[0]?.area || producer?.area || 0,
+    area: strictData ? Number.NaN : producer?.fields?.[0]?.area || producer?.area || 0,
     plantingDate: "",
     harvestDate: "",
-    yieldScHa: 0,
-    salePrice: 0,
-    grainPrices: emptyGrainPrices(),
+    yieldScHa: strictData ? Number.NaN : 0,
+    salePrice: strictData ? Number.NaN : 0,
+    grainPrices: strictData ? Object.fromEntries(grainCrops.map(crop=>[crop,Number.NaN])) as GrainPrices : emptyGrainPrices(),
     notes: "",
     watermark: true,
     items: [],
@@ -292,13 +293,17 @@ function blankReport(producer?: ReportProducer): SeasonReport {
 function normalizeReport(report: SeasonReport): SeasonReport {
   return {
     ...report,
-    grainPrices: { ...emptyGrainPrices(), ...(report.grainPrices ?? {}) },
-    items: Array.isArray(report.items) ? report.items : [],
+    area: report.area == null ? Number.NaN : report.area,
+    yieldScHa: report.yieldScHa == null ? Number.NaN : report.yieldScHa,
+    salePrice: report.salePrice == null ? Number.NaN : report.salePrice,
+    grainPrices: Object.fromEntries(grainCrops.map(crop=>[crop,report.grainPrices?.[crop]==null?Number.NaN:report.grainPrices[crop]])) as GrainPrices,
+    items: Array.isArray(report.items) ? report.items.map(item=>({...item,dose:item.dose==null?Number.NaN:item.dose,unitPrice:item.unitPrice==null?Number.NaN:item.unitPrice})) : [],
     photos: Array.isArray(report.photos) ? report.photos : [],
   };
 }
 
 function decimal(value: number, digits = 2) {
+  if (!Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("pt-BR", {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
@@ -306,6 +311,7 @@ function decimal(value: number, digits = 2) {
 }
 
 function money(value: number) {
+  if (!Number.isFinite(value)) return "—";
   return new Intl.NumberFormat("pt-BR", {
     style: "currency",
     currency: "BRL",
@@ -350,6 +356,7 @@ function quantityForPrice(item: CostItem) {
 }
 
 function costPerHa(item: CostItem) {
+  if (!Number.isFinite(item.dose) || (item.unit !== "R$/ha" && !Number.isFinite(item.unitPrice))) return Number.NaN;
   if (item.unit === "R$/ha") return Math.max(item.dose, 0);
   const value = quantityForPrice(item) * item.unitPrice;
   return Number.isFinite(value) ? Math.max(value, 0) : 0;
@@ -401,11 +408,11 @@ function DecimalInput({
   onChange: (value: number) => void;
   ariaLabel: string;
 }) {
-  const [draft, setDraft] = useState(String(value).replace(".", ","));
+  const [draft, setDraft] = useState(Number.isFinite(value) ? String(value).replace(".", ",") : "");
   const [editing, setEditing] = useState(false);
 
   useEffect(() => {
-    if (!editing) setDraft(String(value).replace(".", ","));
+    if (!editing) setDraft(Number.isFinite(value) ? String(value).replace(".", ",") : "");
   }, [editing, value]);
 
   return (
@@ -428,9 +435,9 @@ function DecimalInput({
       onBlur={() => {
         setEditing(false);
         const parsed = Number(draft.replace(",", "."));
-        const normalized = Number.isFinite(parsed) && parsed >= 0 ? parsed : 0;
+        const normalized = draft.trim() && Number.isFinite(parsed) && parsed >= 0 ? parsed : Number.NaN;
         onChange(normalized);
-        setDraft(String(normalized).replace(".", ","));
+        setDraft(Number.isFinite(normalized) ? String(normalized).replace(".", ",") : "");
       }}
     />
   );
@@ -459,13 +466,13 @@ function normalizeLabel(value: unknown) {
     .trim();
 }
 
-function parseNumber(value: unknown) {
-  if (typeof value === "number") return Number.isFinite(value) ? value : 0;
+function parseNumber(value: unknown, missing = 0) {
+  if (typeof value === "number") return Number.isFinite(value) ? value : missing;
   const raw = String(value ?? "")
     .trim()
     .replace(/\s/g, "")
     .replace(/[^\d,.-]/g, "");
-  if (!raw) return 0;
+  if (!raw) return missing;
 
   const comma = raw.lastIndexOf(",");
   const dot = raw.lastIndexOf(".");
@@ -488,7 +495,7 @@ function parseNumber(value: unknown) {
   }
 
   const parsed = Number(normalized);
-  return Number.isFinite(parsed) ? Math.max(parsed, 0) : 0;
+  return Number.isFinite(parsed) ? Math.max(parsed, 0) : missing;
 }
 
 function inferCategory(value: string): CostCategory {
@@ -574,7 +581,8 @@ function matchHeader(label: string, aliases: string[]) {
   );
 }
 
-function rowsToImportedItems(rows: unknown[][], area: number) {
+function rowsToImportedItems(rows: unknown[][], area: number, strictData = false) {
+  const missing = strictData ? Number.NaN : 0;
   const cleaned = rows
     .map((row) => row.map((cell) => String(cell ?? "").trim()))
     .filter((row) => row.some(Boolean));
@@ -625,11 +633,11 @@ function rowsToImportedItems(rows: unknown[][], area: number) {
       const category = inferCategory(
         `${row[categoryColumn] ?? ""} ${name}`,
       );
-      const importedDose = doseColumn >= 0 ? parseNumber(row[doseColumn]) : 0;
+      const importedDose = doseColumn >= 0 ? parseNumber(row[doseColumn], missing) : missing;
       let dose = importedDose;
       const unit = inferUnit(String(row[unitColumn] ?? ""), category);
       let unitPrice =
-        priceColumn >= 0 ? parseNumber(row[priceColumn]) : 0;
+        priceColumn >= 0 ? parseNumber(row[priceColumn], missing) : missing;
       let priceBasis = defaultPriceBasis(category, unit);
       if (unit === "kg/ha" || unit === "t/ha" || unit === "g/ha") {
         if (/\b(?:t|ton|tonelada)\b/.test(priceHeader)) priceBasis = "R$/t";
@@ -734,7 +742,7 @@ function rowsToImportedItems(rows: unknown[][], area: number) {
           };
         }
       }
-      if (!dose && !unitPrice && !targetCostHa) return null;
+      if (!strictData && !dose && !unitPrice && !targetCostHa) return null;
       return {
         id: crypto.randomUUID(),
         category,
@@ -864,14 +872,20 @@ export default function SeasonReports({
   profile,
   subscriberId,
   allowLegacyMigration = false,
+  strictData = false,
+  demoData = false,
+  recordsApi,
 }: {
   producers: ReportProducer[];
   profile: ReportProfile;
   subscriberId: string;
   allowLegacyMigration?: boolean;
+  strictData?: boolean;
+  demoData?: boolean;
+  recordsApi?: { list: () => Promise<Array<{payload: Record<string, unknown>}>>; save: (input: Parameters<typeof saveRecord>[0]) => Promise<unknown> };
 }) {
   const [report, setReport] = useState<SeasonReport>(() =>
-    blankReport(producers[0]),
+    blankReport(producers[0], strictData),
   );
   const [savedReports, setSavedReports] = useState<SeasonReport[]>([]);
   const [reportSearch, setReportSearch] = useState("");
@@ -888,6 +902,11 @@ export default function SeasonReports({
   });
 
   useEffect(() => {
+    if (recordsApi) {
+      let active = true;
+      recordsApi.list().then(records => { if(active)setSavedReports(records.map(record => normalizeReport(record.payload as unknown as SeasonReport))); }).catch(error=>{if(active)setMessage(error instanceof Error?error.message:"Não foi possível carregar o histórico.");});
+      return ()=>{active=false};
+    }
     let localReports: SeasonReport[] = [];
     try {
       const storageKey = `mp-season-reports:${subscriberId}`;
@@ -924,7 +943,7 @@ export default function SeasonReports({
       .catch(() => {
         // A cópia de edição continua disponível no próprio dispositivo.
       });
-  }, [allowLegacyMigration, subscriberId]);
+  }, [allowLegacyMigration, subscriberId, recordsApi]);
 
   const producer = producers.find((item) => item.id === report.producerId);
   const field = producer?.fields?.find((item) => item.id === report.fieldId);
@@ -938,7 +957,7 @@ export default function SeasonReports({
     report.items.forEach((item) => {
       byCategory[item.category] += costPerHa(item);
     });
-    const costHa = Object.values(byCategory).reduce(
+    const costHa = strictData && !report.items.length ? Number.NaN : Object.values(byCategory).reduce(
       (total, value) => total + value,
       0,
     );
@@ -953,7 +972,7 @@ export default function SeasonReports({
       marginHa,
       totalMargin: marginHa * report.area,
       breakEven:
-        report.salePrice > 0 ? costHa / report.salePrice : 0,
+        report.salePrice > 0 ? costHa / report.salePrice : Number.NaN,
       costInBags: Object.fromEntries(
         grainCrops.map((crop) => [
           crop,
@@ -963,7 +982,7 @@ export default function SeasonReports({
         ]),
       ) as Record<GrainCrop, number>,
     };
-  }, [report]);
+  }, [report, strictData]);
   const composition = useMemo(() => {
     const entries = categories
       .map((category, index) => ({
@@ -1042,9 +1061,10 @@ export default function SeasonReports({
     const next = producer?.fields?.find((item) => item.id === fieldId);
     update({
       fieldId,
-      crop: next?.crop || report.crop,
-      season: next?.season || report.season,
-      area: next?.area || report.area,
+      property: next?.property ?? report.property,
+      crop: next?.crop ?? (strictData ? "" : report.crop),
+      season: next?.season ?? report.season,
+      area: next?.area ?? (strictData ? Number.NaN : report.area),
     });
   }
 
@@ -1056,7 +1076,7 @@ export default function SeasonReports({
           id: crypto.randomUUID(),
           category,
           name: "",
-          dose: 0,
+          dose: strictData ? Number.NaN : 0,
           unit:
             category === "mao-de-obra" || category === "equipamentos"
               ? "h/ha"
@@ -1065,7 +1085,7 @@ export default function SeasonReports({
                 : category === "outros" || category === "colheita"
                   ? "R$/ha"
                   : "kg/ha",
-          unitPrice: 0,
+          unitPrice: strictData ? Number.NaN : 0,
           priceBasis: defaultPriceBasis(
             category,
             category === "mao-de-obra" || category === "equipamentos"
@@ -1193,7 +1213,7 @@ export default function SeasonReports({
           rows.push(...sheetRows);
         });
       }
-      let parsed = rowsToImportedItems(rows, report.area);
+      let parsed = rowsToImportedItems(rows, report.area, strictData);
       if (
         !parsed.length &&
         (extension === "pdf" || file.type === "application/pdf")
@@ -1210,7 +1230,7 @@ export default function SeasonReports({
             fileName: file.name,
           }),
         );
-        parsed = rowsToImportedItems(rows, report.area);
+        parsed = rowsToImportedItems(rows, report.area, strictData);
       }
       if (!parsed.length) {
         throw new Error(
@@ -1275,6 +1295,12 @@ export default function SeasonReports({
       saved,
       ...savedReports.filter((item) => item.id !== saved.id),
     ];
+    if (recordsApi) {
+      setMessage("Salvando relatório…");
+      try {await recordsApi.save({id:saved.id,type:"season_report",title:`${producer?.name||"Produtor"} · ${saved.crop} · ${saved.season}`,producerName:producer?.name,payload:saved as unknown as Record<string,unknown>});setSavedReports(next);setReport(saved);setMessage("Relatório salvo no histórico do produtor.");}
+      catch(error){setMessage(error instanceof Error?error.message:"Não foi possível salvar. Mantenha a tela aberta e tente novamente.");}
+      return;
+    }
     setSavedReports(next);
     localStorage.setItem(`mp-season-reports:${subscriberId}`, JSON.stringify(next));
     setReport(saved);
@@ -1553,6 +1579,7 @@ export default function SeasonReports({
       doc.setPage(page);
       doc.setTextColor(107, 126, 119);
       doc.setFontSize(7);
+      if (demoData) doc.text("DEMONSTRATIVO — dados fictícios, sem validade como evidência real.", 16, 285);
       doc.text(
         `${profile.company || profile.name || "Responsável técnico"} · Página ${page}/${pages}`,
         16,
@@ -1635,7 +1662,7 @@ export default function SeasonReports({
           <button
             className="button primary"
             onClick={() => {
-              setReport(blankReport(producers[0]));
+              setReport(blankReport(producers[0], strictData));
               setMessage("");
               document
                 .getElementById("season-report-form")
@@ -1722,7 +1749,7 @@ export default function SeasonReports({
             <button
               className="button secondary"
               onClick={() => {
-                setReport(blankReport(producers[0]));
+                setReport(blankReport(producers[0], strictData));
                 setMessage("");
               }}
             >
@@ -1775,14 +1802,14 @@ export default function SeasonReports({
                 update({
                   crop,
                   ...(grainCrops.includes(crop as GrainCrop)
-                    ? { salePrice: report.grainPrices?.[crop as GrainCrop] ?? 0 }
+                    ? { salePrice: report.grainPrices?.[crop as GrainCrop] ?? (strictData ? Number.NaN : 0) }
                     : {}),
                 });
               }}
             >
-              {["Soja", "Milho", "Trigo", "Canola", "Arroz", "Outra"].map(
+              {(strictData ? ["", "Soja", "Milho", "Trigo", "Canola", "Arroz", "Outra"] : ["Soja", "Milho", "Trigo", "Canola", "Arroz", "Outra"]).map(
                 (item) => (
-                  <option key={item}>{item}</option>
+                  <option key={item} value={item}>{item||"Selecionar cultura"}</option>
                 ),
               )}
             </select>

@@ -15,7 +15,7 @@ export async function readProducerWorkspace(repository,clientId,ownerId){
   const properties=profiles.flatMap(item=>item.property?[{...item.property}]:[])
   const fields=profiles.flatMap(item=>(item.fields||[]).map(field=>({...field,propertyId:item.property?.id})))
   const plans=(store.val?.actionPlans||[]).filter(item=>matches(item,tenantId,ownerId,clientId)&&['PROPOSED','ACCEPTED','IN_PROGRESS'].includes(item.status)).sort((a,b)=>String(b.updated_at).localeCompare(String(a.updated_at)))
-  return {clientId,properties,property:properties[0]||null,fields,seasons:[],plan:plans[0]||null,complete:true,source:'arquivo-local',isDemo:client.isDemo===true||client.demo?.synthetic===true||client.profileSource==='val-demo-synthetic-v1'}
+  return {clientId,properties,property:properties[0]||null,fields,seasons:fields.flatMap(field=>(field.seasons||[]).map(season=>({...season,fieldId:field.id}))),plan:plans[0]||null,complete:true,source:'arquivo-local',isDemo:client.isDemo===true||client.demo?.synthetic===true||client.profileSource==='val-demo-synthetic-v1'}
  }
  const db=repository.db
  const scoped=await db.query(`SELECT id,source FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND (id::text=$3 OR external_key=$3) AND status='active' LIMIT 1`,[tenantId,ownerId,clientId])

@@ -1,0 +1,26 @@
+'use client';
+import {useEffect,useMemo,useState} from 'react';
+import SeasonReports from '../SeasonReports';
+import './producer-report.css';
+type Workspace={isDemo?:boolean;properties:Array<{id:string;name:string}>;fields:Array<{id:string;name:string;propertyId:string;areaHa:number|null}>;seasons:Array<{fieldId:string;season:string;crop:string;areaHa:number|null}>};
+type Profile={name:string;profession:string;council:string;registration:string;company:string;phone:string;watermark:string;watermarkOpacity:number};
+const emptyProfile:Profile={name:'',profession:'',council:'',registration:'',company:'',phone:'',watermark:'',watermarkOpacity:10};
+async function jsonFetch(url:string,init?:RequestInit){const response=await fetch(url,{...init,cache:'no-store',signal:AbortSignal.timeout(20000)});const data=await response.json();if(!response.ok)throw new Error(data.error||'Não foi possível acessar o núcleo técnico.');return data;}
+export default function ProducerReport({clientId,season}:{clientId:string;season:string}){
+ const [state,setState]=useState<{status:string;error:string;workspace:Workspace|null;profile:Profile;name:string;producerId:string}>({status:'loading',error:'',workspace:null,profile:emptyProfile,name:'',producerId:clientId});
+ const [attempt,setAttempt]=useState(0);
+ useEffect(()=>{let active=true;setState(current=>({...current,status:'loading',error:''}));
+ Promise.all([jsonFetch(`/api/clients/${encodeURIComponent(clientId)}/workspace`),jsonFetch('/api/profile'),jsonFetch('/api/intelligence')]).then(([workspace,profile,intelligence])=>{
+  const client=(intelligence.clients||[]).find((c:{id:string})=>String(c.id)===clientId);if(!client)throw new Error('Produtor não encontrado na carteira.');
+  if(active)setState({status:'ready',error:'',workspace,profile:{...emptyProfile,...profile.profile},name:client.name,producerId:clientId});
+ }).catch(error=>{if(active)setState(current=>({...current,status:'error',error:error.message}));});return()=>{active=false};},[clientId,attempt]);
+ useEffect(()=>{const root=document.querySelector('.producer-report-embed');if(!root)return;const send=()=>window.parent.postMessage({type:'val:technical-report-height',clientId,height:Math.ceil(root.scrollHeight)+20},window.location.origin);const observer=new ResizeObserver(send);observer.observe(root);send();return()=>observer.disconnect();},[clientId,state.status]);
+ const recordsApi=useMemo(()=>({
+  list:async()=>{const data=await jsonFetch(`/api/records?type=season_report&scope=producer-profile&clientId=${encodeURIComponent(clientId)}`);return (data.records||[]).filter((r:{payload?:{clientExternalKey?:string;producerId?:string;isDemo?:boolean}})=>{const p=r.payload;return p&&(p.clientExternalKey===clientId||p.producerId===clientId)&&(state.workspace?.isDemo||p.isDemo!==true);});},
+  save:async(input:{id?:string;type:string;title:string;producerName?:string;payload:Record<string,unknown>})=>{const result=await jsonFetch('/api/records?scope=producer-profile',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({...input,producerName:state.name,payload:{...input.payload,clientExternalKey:clientId,isDemo:state.workspace?.isDemo===true}})});if(!result.integration?.demoIsolated&&(result.integration?.configured===false||result.integration?.failed>0||result.integration?.skipped>0))throw new Error('Relatório salvo no Manual; sincronização com a VAL pendente. Tente salvar novamente.');return result;}
+ }),[clientId,state.name,state.workspace?.isDemo]);
+ const producers=useMemo(()=>[{id:clientId,name:state.name,properties:state.workspace?.properties.map(p=>p.name).join(' · ')||'',area:Number.NaN,fields:(state.workspace?.fields||[]).flatMap(field=>{const assignments=(state.workspace?.seasons||[]).filter(s=>s.fieldId===field.id&&(!season||s.season===season));return assignments.slice(0,1).map(s=>({id:field.id,name:field.name,property:state.workspace?.properties.find(p=>p.id===field.propertyId)?.name||'',crop:s.crop,season:s.season,area:s.areaHa??field.areaHa??Number.NaN}));})}],[clientId,state.name,state.workspace,season]);
+ if(state.status==='loading')return <div className="producer-report-embed" role="status">Carregando relatório técnico…</div>;
+ if(state.status==='error')return <div className="producer-report-embed" role="alert"><p>{state.error}</p><button onClick={()=>setAttempt(v=>v+1)}>Tentar novamente</button></div>;
+ return <main className="producer-report-embed"><p className="producer-report-context">{state.name} · {season||'Selecione a safra no relatório'}{state.workspace?.isDemo?' · DEMONSTRATIVO':''}</p><p>Campos vazios permanecem não informados. Custos e resultados são calculados somente com os valores preenchidos. O relatório não comprova entrega de grãos.</p><SeasonReports key={`${clientId}:${season}`} producers={producers} profile={state.profile} subscriberId={clientId} demoData={state.workspace?.isDemo===true} strictData recordsApi={recordsApi}/></main>;
+}

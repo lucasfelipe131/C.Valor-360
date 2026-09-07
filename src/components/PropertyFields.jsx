@@ -13,22 +13,31 @@ import {formatCoordinates,formatHectares,polygonAreaHa,validLocation} from '../l
 
 const fieldKey=index=>`new-${Date.now().toString(36)}-${index}`
 const numberOrNull=value=>{const parsed=Number(String(value??'').replace(',','.'));return value===''||value===null||value===undefined||!Number.isFinite(parsed)?null:parsed}
-const fromProfile=profile=>({
+export const fromProfile=(profile,selectedSeason='')=>({
  propertyId:profile?.property?.id,
  propertyName:profile?.property?.name||'',
  location:validLocation(profile?.property?.location),
- fields:(profile?.fields||[]).map(field=>({key:field.id,id:field.id,name:field.name,areaHa:field.areaHa==null?'':String(field.areaHa),crop:field.crop||'',season:field.season||'',points:field.points||[],productivityTarget:field.productivityTarget??'',productivityUnit:field.productivityUnit||(field.productivityTarget!=null?'sc/ha':''),productivityTargetTouched:false,clearGeometry:false}))
+ fields:(profile?.fields||[]).map(field=>{
+  const history=field.seasons?.length?field.seasons:(field.season?[{season:field.season,crop:field.crop,areaHa:field.areaHa,productivityTarget:field.productivityTarget,unit:field.productivityUnit||(field.productivityTarget!=null?'sc/ha':'')}]:[])
+  const assignment=selectedSeason?history.find(row=>row.season===selectedSeason):history[0]
+  const yieldValue=assignment?.unit==='sc/ha'?assignment.productivityTarget:null
+  return {key:field.id,id:field.id,name:field.name,areaHa:(assignment?.areaHa??field.areaHa)==null?'':String(assignment?.areaHa??field.areaHa),crop:assignment?.crop||'',season:selectedSeason||assignment?.season||'',points:field.points||[],productivityTarget:yieldValue??'',productivityUnit:assignment?.unit||'',productivityTargetTouched:false,clearGeometry:false}
+ })
 })
 
 export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
  const [form,setForm]=useState(fromProfile(null))
+ const savedProfile=useRef(null)
+ const [mapSeason,setMapSeason]=useState('2627V')
+ const mapSeasonRef=useRef(mapSeason);mapSeasonRef.current=mapSeason
+ const [newMapSeason,setNewMapSeason]=useState('')
  const [removed,setRemoved]=useState([])
  const [mode,setMode]=useState('')
  const [draft,setDraft]=useState([])
  const [editKey,setEditKey]=useState(null)
  const [toolsOpen,setToolsOpen]=useState(true)
  const [drawing,setDrawing]=useState({crop:'',season:'2627V',productivityTarget:''})
- const [cropFilter,setCropFilter]=useState(''),[seasonFilter,setSeasonFilter]=useState('')
+ const [cropFilter,setCropFilter]=useState('')
  const [dirty,setDirty]=useState(false)
  const [loaded,setLoaded]=useState(false)
  const [properties,setProperties]=useState([])
@@ -41,7 +50,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
 
  useEffect(()=>{
   const version=++requestVersion.current
-  setEditKey(null);setCropFilter('');setSeasonFilter('');setForm(fromProfile(null));setLoaded(false);setMode('');setDraft([]);setRemoved([]);setDirty(false)
+  setEditKey(null);setCropFilter('');setForm(fromProfile(null));setLoaded(false);setMode('');setDraft([]);setRemoved([]);setDirty(false)
   if(!client?.id){setProperties([]);setState({loading:false,saving:false,error:'',notice:''});return}
   const controller=new AbortController()
   setState({loading:true,saving:false,error:'',notice:''})
@@ -54,7 +63,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
    return payload
   }).then(payload=>{
    if(controller.signal.aborted||version!==requestVersion.current)return
-   if(payload){setForm(fromProfile(payload));setProperties(payload.properties||[]);setLoaded(true)}
+   if(payload){savedProfile.current=payload;setForm(fromProfile(payload,mapSeasonRef.current));setProperties(payload.properties||[]);setLoaded(true)}
    setState(current=>({...current,loading:false}))
   }).catch(error=>{if(!controller.signal.aborted&&version===requestVersion.current)setState(current=>({...current,loading:false,error:error.message}))})
   return()=>{controller.abort();saveRequest.current?.abort();requestVersion.current++}
@@ -67,9 +76,9 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
  }
  const update=patch=>{if(busy)return;setForm(current=>({...current,...patch}));setDirty(true);setState(current=>({...current,error:'',notice:''}))}
  const updateField=(key,patch)=>update({fields:form.fields.map(field=>field.key===key?{...field,...patch,...(Object.hasOwn(patch,'productivityTarget')?{productivityTargetTouched:true}:{})}:field)})
- const addField=(extra={})=>update({fields:[...form.fields,{key:fieldKey(form.fields.length),id:null,name:`Talhão ${form.fields.length+1}`,areaHa:'',crop:'',season:'',points:[],productivityTarget:'',clearGeometry:false,...extra}]})
+ const addField=(extra={})=>update({fields:[...form.fields,{key:fieldKey(form.fields.length),id:null,name:`Talhão ${form.fields.length+1}`,areaHa:'',crop:'',season:mapSeason,points:[],productivityTarget:'',clearGeometry:false,...extra}]})
  const removeField=field=>{
-  if(!window.confirm(`Remover o talhão "${field.name}"? Análises ligadas a ele perdem o vínculo.`))return
+  if(!window.confirm(`Remover o talhão "${field.name}"? Isso remove a área física de todas as safras; análises ligadas a ela perdem o vínculo.`))return
   if(field.id)setRemoved(current=>[...current,field.id])
   update({fields:form.fields.filter(item=>item.key!==field.key)})
  }
@@ -81,7 +90,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
  const finishDraft=()=>{
   if(!validProductiveRing(draft)){setState(current=>({...current,error:'O contorno precisa de pelo menos três cantos distintos e não pode cruzar sobre si mesmo.'}));return}
   if(!drawing.crop||!validSeasonCode(drawing.season)){setState(current=>({...current,error:'Escolha a cultura e informe uma safra válida (2627V ou 2727I).'}));return}
-  const values={...drawing,points:draft,areaHa:polygonAreaHa(draft).toFixed(2)}
+  const values={...drawing,season:mapSeason,points:draft,areaHa:polygonAreaHa(draft).toFixed(2)}
   if(editKey)updateField(editKey,values);else addField(values)
   setEditKey(null)
   setDraft([]);setMode('')
@@ -112,7 +121,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
    const payload=await response.json().catch(()=>({}))
    if(controller.signal.aborted||version!==requestVersion.current)return
    if(!response.ok)throw new Error(payload.error||'A propriedade não pôde ser salva.')
-   setForm(fromProfile(payload));setProperties(payload.properties||[]);setRemoved([]);setDirty(false)
+   savedProfile.current=payload;setForm(fromProfile(payload,mapSeasonRef.current));setProperties(payload.properties||[]);setRemoved([]);setDirty(false)
    setState({loading:false,saving:false,error:'',notice:'Propriedade e talhões salvos.'})
    onSaved?.('Propriedade e talhões salvos na memória do produtor.')
    await onRefreshPortfolio?.()
@@ -120,10 +129,16 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
   finally{clearTimeout(timeout);if(saveRequest.current===controller)saveRequest.current=null}
  }
 
- const visible=form.fields.filter(field=>(!cropFilter||field.crop===cropFilter)&&(!seasonFilter||field.season===seasonFilter))
+ const visible=form.fields.filter(field=>!cropFilter||field.crop===cropFilter)
  const mapped=visible.filter(field=>field.points.length>=3&&field.key!==editKey)
  const draftArea=draft.length>=3?formatHectares(polygonAreaHa(draft)):''
 
+ const seasonCodes=[...new Set(['2627V','2727I',mapSeason,...(savedProfile.current?.fields||[]).flatMap(f=>(f.seasons||[]).map(row=>row.season)),...(savedProfile.current?.fields||[]).map(f=>f.season)].filter(Boolean))].sort().reverse()
+ const changeMapSeason=code=>{
+  if(busy||!validSeasonCode(code)&&!seasonCodes.includes(code))return
+  if((dirty||draft.length)&&!window.confirm('Descartar alterações não salvas e trocar de safra?'))return
+  setMapSeason(code);setDrawing(current=>({...current,season:code,crop:'',productivityTarget:''}));setForm(fromProfile(savedProfile.current,code));setDirty(false);setDraft([]);setEditKey(null);setMode('');setRemoved([]);setState(current=>({...current,error:'',notice:''}))
+ }
  const editorTools=<div className="productive-map-tools">
  <button type="button" aria-expanded={toolsOpen} onClick={()=>setToolsOpen(value=>!value)}><PencilRuler size={16}/>{toolsOpen?'Recolher ferramentas':'Abrir ferramentas'}</button>
  {!toolsOpen&&mode==='draw'&&<button type="button" disabled={busy||draft.length<3} onClick={finishDraft}><Check size={16}/>Concluir área</button>}
@@ -133,8 +148,8 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
     <button type="button" disabled={busy} onClick={useGps}><LocateFixed size={16}/>Usar meu GPS</button>
     <button type="button" disabled={busy} className={mode==='draw'?'active':''} onClick={()=>{setEditKey(null);setMode(mode==='draw'?'':'draw');setDraft([])}}><PencilRuler size={16}/>{mode==='draw'?'Desenhando…':'Circular área produtiva'}</button>
    </div>
- <div className="productive-map-filters"><label>Cultura no mapa<select value={cropFilter} onChange={e=>setCropFilter(e.target.value)}><option value="">Todas</option>{[...new Set(form.fields.map(f=>f.crop).filter(Boolean))].map(crop=><option key={crop}>{crop}</option>)}</select></label><label>Safra no mapa<select value={seasonFilter} onChange={e=>setSeasonFilter(e.target.value)}><option value="">Todas</option>{[...new Set(form.fields.map(f=>f.season).filter(Boolean))].map(season=><option key={season}>{season}</option>)}</select></label></div>
- {mode==='draw'&&<div className="productive-drawing"><label>Cultura<select disabled={busy} value={drawing.crop} onChange={e=>setDrawing(current=>({...current,crop:e.target.value}))}><option value="">Selecionar</option>{SEASON_CROPS.map(crop=><option key={crop}>{crop}</option>)}</select></label><label>Safra<input disabled={busy} value={drawing.season} maxLength={5} onChange={e=>setDrawing(current=>({...current,season:e.target.value.toUpperCase()}))}/></label><label>Produtividade projetada (sc/ha)<input disabled={busy} type="number" min="0" max="1000" step="any" value={drawing.productivityTarget} placeholder="Não informada" onChange={e=>setDrawing(current=>({...current,productivityTarget:e.target.value}))}/></label><p>{draft.length} pontos · Área aproximada: {draftArea||'—'} · Potencial: {formatNumber(validProductiveRing(draft)?fieldProduction({...drawing,areaHa:polygonAreaHa(draft)}):null)} sc. Toque em um ponto azul para apagá-lo.</p><div className="property-fields-draw"><button type="button" disabled={busy||draft.length<3} onClick={finishDraft}><Check size={16}/>Concluir área</button><button type="button" disabled={busy||!draft.length} onClick={()=>setDraft(current=>current.slice(0,-1))}><Undo2 size={16}/>Desfazer ponto</button><button type="button" disabled={busy} onClick={()=>{setDraft([]);setEditKey(null);setMode('')}}><X size={16}/>Cancelar desenho</button></div></div>}
+ <div className="productive-map-filters"><label>Cultura no mapa<select value={cropFilter} onChange={e=>setCropFilter(e.target.value)}><option value="">Todas</option>{[...new Set(form.fields.map(f=>f.crop).filter(Boolean))].map(crop=><option key={crop}>{crop}</option>)}</select></label><label>Safra no mapa<select disabled={busy} value={mapSeason} onChange={e=>changeMapSeason(e.target.value)}>{seasonCodes.map(season=><option key={season}>{season}</option>)}</select></label><label>Outra safra<input value={newMapSeason} maxLength={5} placeholder="2526V" onChange={e=>setNewMapSeason(e.target.value.toUpperCase())}/></label><button type="button" disabled={busy||!validSeasonCode(newMapSeason)} onClick={()=>{changeMapSeason(newMapSeason);setNewMapSeason('')}}>Abrir safra</button></div>
+ {mode==='draw'&&<div className="productive-drawing"><label>Cultura<select disabled={busy} value={drawing.crop} onChange={e=>setDrawing(current=>({...current,crop:e.target.value}))}><option value="">Selecionar</option>{SEASON_CROPS.map(crop=><option key={crop}>{crop}</option>)}</select></label><label>Safra<input readOnly value={mapSeason}/></label><label>Produtividade projetada (sc/ha)<input disabled={busy} type="number" min="0" max="1000" step="any" value={drawing.productivityTarget} placeholder="Não informada" onChange={e=>setDrawing(current=>({...current,productivityTarget:e.target.value}))}/></label><p>{draft.length} pontos · Área aproximada: {draftArea||'—'} · Potencial: {formatNumber(validProductiveRing(draft)?fieldProduction({...drawing,areaHa:polygonAreaHa(draft)}):null)} sc. Toque em um ponto azul para apagá-lo.</p><div className="property-fields-draw"><button type="button" disabled={busy||draft.length<3} onClick={finishDraft}><Check size={16}/>Concluir área</button><button type="button" disabled={busy||!draft.length} onClick={()=>setDraft(current=>current.slice(0,-1))}><Undo2 size={16}/>Desfazer ponto</button><button type="button" disabled={busy} onClick={()=>{setDraft([]);setEditKey(null);setMode('')}}><X size={16}/>Cancelar desenho</button></div></div>}
  <button type="button" className="is-primary" disabled={busy||!dirty||mode==='draw'} onClick={save}><Save size={16}/>Salvar propriedade</button>
  </>}
  {state.error&&<p role="alert">{state.error}</p>}{state.notice&&<p role="status">{state.notice}</p>}
@@ -181,7 +196,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
       <label>Nome<input disabled={busy} value={field.name} onChange={event=>updateField(field.key,{name:event.target.value})}/></label>
       <label>Área (ha)<input disabled={busy} inputMode="decimal" value={field.areaHa} placeholder={field.points.length>=3?formatHectares(polygonAreaHa(field.points)):'Ex.: 42,5'} onChange={event=>updateField(field.key,{areaHa:event.target.value})}/></label>
       <label>Cultura<select disabled={busy} value={field.crop} onChange={event=>updateField(field.key,{crop:event.target.value})}><option value="">Não informada</option>{[...new Set([...SEASON_CROPS,field.crop].filter(Boolean))].map(crop=><option key={crop}>{crop}</option>)}</select></label>
-      <label>Safra<input disabled={busy} value={field.season} placeholder="2627V ou 2727I" onChange={event=>updateField(field.key,{season:event.target.value})}/></label>
+      <label>Safra<input readOnly value={mapSeason}/></label>
       <label>Produtividade projetada (sc/ha)<input disabled={busy} type="number" min="0" max="1000" step="any" value={field.productivityTarget} placeholder="Não informada" onChange={event=>updateField(field.key,{productivityTarget:event.target.value})}/></label>
       <span className="property-field-potential">Potencial {field.crop||'da cultura'}: <b>{formatNumber(fieldProduction(field))} sc</b></span>
       <button type="button" disabled={busy||mode==='draw'} aria-label={`Editar contorno ${field.name}`} onClick={()=>{setEditKey(field.key);setDraft(field.points);setDrawing({crop:field.crop,season:field.season,productivityTarget:field.productivityTarget});setMode('draw')}}><PencilRuler size={15}/>Editar pontos</button>
@@ -191,7 +206,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
     :<p className="property-fields-empty">Nenhum talhão cadastrado. Desenhe no mapa ou adicione pelo nome.</p>}
   </div>
 
-  <p className="property-fields-hint">Áreas desenhadas são aproximações. Potencial por talhão = área × produtividade projetada (sacas de 60 kg). Não soma culturas nem presume que toda a propriedade é produtiva. As camadas cadastrais são apenas referências.</p>
+  <p className="property-fields-hint">O mesmo talhão é reutilizado entre safras; cultura e produtividade pertencem à safra selecionada. Áreas desenhadas são aproximações. Potencial por talhão = área × produtividade projetada (sacas de 60 kg). Não soma culturas nem presume que toda a propriedade é produtiva. As camadas cadastrais são apenas referências.</p>
   <footer className="property-fields-foot">
    <small>{state.loading?'Carregando o que já está registrado…':'Sede e talhões ficam na memória do produtor e alimentam o Manual do Agrônomo e a rota das visitas.'}</small>
    <div>
