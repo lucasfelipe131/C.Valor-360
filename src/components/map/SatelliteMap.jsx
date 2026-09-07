@@ -73,7 +73,7 @@ export default function SatelliteMap({
    if(ring.length<3)continue
    const coordinates=ring.map(point=>[point.lat,point.lng])
    everything.push(...coordinates)
-   const shape=L.polygon(coordinates,{color:'#c8f25e',weight:2,fillColor:'#c8f25e',fillOpacity:.18}).addTo(group)
+   const shape=L.polygon(coordinates,{color:polygon.color||'#c8f25e',weight:2,fillColor:polygon.color||'#c8f25e',fillOpacity:.18}).addTo(group)
    if(polygon.label)shape.bindTooltip(escapeHtml(polygon.label),{permanent:true,direction:'center',className:'val-map-label'})
   }
   const routeLayers=[...(route.length?[{points:route,kind:'planned',color:'#00c896'}]:[]),...routes]

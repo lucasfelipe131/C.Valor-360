@@ -16,7 +16,7 @@ const read=path=>readFileSync(new URL(path,import.meta.url),'utf8')
 const component=read('../src/components/voice/VoiceCapture.jsx')
 const recorder=read('../src/hooks/useVoiceRecorder.js')
 const styles=read('../src/voice-capture.css')
-const client360=read('../src/pages/Client360.jsx')
+const client360=read('../src/pages/Client360.jsx')+read('../src/pages/Client360Details.jsx')
 const visits=read('../src/pages/Visits.jsx')
 const prepareVisitSimple=read('../src/components/visit/PrepareVisitSimple.jsx')
 

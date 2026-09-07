@@ -12,7 +12,7 @@ import {
 
 const read=path=>readFileSync(new URL(`../${path}`,import.meta.url),'utf8')
 const dashboard=read('src/pages/Dashboard.jsx')
-const client360=read('src/pages/Client360.jsx')
+const client360=read('src/pages/Client360.jsx')+read('src/pages/Client360Details.jsx')
 const visits=read('src/pages/Visits.jsx')
 const sidebar=read('src/components/Sidebar.jsx')
 const mobile=read('src/components/MobileNav.jsx')

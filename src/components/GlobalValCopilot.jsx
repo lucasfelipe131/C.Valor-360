@@ -1,5 +1,5 @@
 import React,{useEffect,useMemo,useRef,useState} from 'react'
-import {ArrowLeft,BrainCircuit,Camera,CheckCircle2,ChevronDown,Clock3,FileText,History,ImagePlus,LoaderCircle,MessageSquareText,PanelRightOpen,Paperclip,Plus,Search,Send,Settings2,ShieldCheck,Sparkles,UserRound,Volume2,X} from 'lucide-react'
+import {Maximize2,Minimize2,Pin,ArrowLeft,BrainCircuit,Camera,CheckCircle2,ChevronDown,Clock3,FileText,History,ImagePlus,LoaderCircle,MessageSquareText,PanelRightOpen,Paperclip,Plus,Search,Send,Settings2,ShieldCheck,Sparkles,UserRound,Volume2,X} from 'lucide-react'
 import VoiceCapture from './voice/VoiceCapture'
 import Logo from './Logo'
 import DecisionInterviewCard from './copilot/DecisionInterviewCard'
@@ -132,7 +132,9 @@ function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onRe
  </article>
 }
 
-export default function GlobalValCopilot({open,onClose,clients=[],contextClient=null,seed,workspaceContext=null,onRefreshPortfolio,onOpenClient,onPrepareVisit,onNavigate,onWorkspaceAction,visits=[],opportunities=[],storageScope='session',identityScope=null}){
+export default function GlobalValCopilot({open,onClose,embedded=false,clients=[],contextClient=null,seed,workspaceContext=null,onRefreshPortfolio,onOpenClient,onPrepareVisit,onNavigate,onWorkspaceAction,visits=[],opportunities=[],storageScope='session',identityScope=null}){
+ const [panelExpanded,setPanelExpanded]=useState(false)
+ const [panelPinned,setPanelPinned]=useState(true)
  const storedWorkspace=useMemo(()=>readConversationWorkspace(typeof sessionStorage==='undefined'?null:sessionStorage,storageScope),[storageScope])
  const [selectedId,setSelectedId]=useState(contextClient?.id||'')
  const [activeContext,setActiveContext]=useState(null)
@@ -212,7 +214,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   chatRunRef.current={generation,controller,threadKey:activeThreadKey}
   return {generation,controller}
  }
- useEffect(()=>{if(contextClient?.id&&!uploading&&String(contextClient.id)!==String(selectedId)){cancelChatRun();cancelRealtimeClarification();setSelectedId(contextClient.id)}},[contextClient?.id,uploading])
+ useEffect(()=>{if(contextClient?.id&&String(contextClient.id)!==String(selectedId)){cancelUploadRun();cancelChatRun();cancelRealtimeClarification();setThreadOverride('');setActiveContext(null);setPendingFiles([]);setMessage('');setSelectedId(contextClient.id)}},[contextClient?.id,uploading])
  useEffect(()=>{
   if(!seed?.nonce)return
   cancelUploadRun();cancelChatRun();cancelRealtimeClarification()
@@ -249,9 +251,9 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  },[open,pendingCapture])
  useEffect(()=>{
   if(!open){cancelUploadRun();cancelChatRun();cancelRealtimeClarification();setSeedFiles([]);setSeedAttachmentIntent('');return}
-  document.body.classList.add('val-fullscreen-open');requestAnimationFrame(()=>pageRef.current?.focus())
+  if(!embedded||panelExpanded){document.body.classList.add('val-fullscreen-open');requestAnimationFrame(()=>pageRef.current?.focus())}
   return()=>document.body.classList.remove('val-fullscreen-open')
- },[open])
+ },[open,embedded,panelExpanded])
  useEffect(()=>{setAttachments([]);setError('');setReplyingTo(null);setSessionReplyOffer(null);setRegistrationDraft(null);setRegistrationAutoOpenKey('')},[selectedId,threadKey])
 
  const append=(item,key=threadKey)=>{
@@ -264,7 +266,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
   realtimeClarificationRef.current=null
   pending?.resolve({responseText:'',suppressSpeech:true,cancelled:true})
  }
- const chooseClient=id=>{if(uploading)return;cancelChatRun();cancelRealtimeClarification();if(!id){newConversation({general:true});return}setThreadOverride('');setSelectedId(id);setActiveContext(null);setMode('ASK');setRegistrationDraft(null);setRegistrationAutoOpenKey('');setError('');setClarification(null);setHistoryOpen(false)}
+ const chooseClient=id=>{if(uploading)return;cancelChatRun();cancelRealtimeClarification();if(embedded){const target=clients.find(item=>String(item.id)===String(id));if(!target)return;onOpenClient?.(target);}if(!id){newConversation({general:true});return}setThreadOverride('');setSelectedId(id);setActiveContext(null);setMode('ASK');setRegistrationDraft(null);setRegistrationAutoOpenKey('');setError('');setClarification(null);setHistoryOpen(false)}
  const requestPushToTalk=()=>{
   voiceActivationSequence.current+=1
   setVoiceAutoOpenKey(`push-to-talk-${Date.now()}-${voiceActivationSequence.current}`)
@@ -273,13 +275,14 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  const newConversation=({general=false}={})=>{
   if(uploading)return
   cancelChatRun();cancelRealtimeClarification()
+  if(embedded)general=false
   const nextClientId=general?'':selectedId
   const nextKey=createConversationThreadKey({clientId:nextClientId})
   setThreadOverride(nextKey);if(general){setSelectedId('');setActiveContext(null)}
   setThreads(current=>({...current,[nextKey]:[]}));setSessionReplies(current=>({...current,[nextKey]:[]}));resetConversationId(nextKey,storageScope);setMessage('');setMode('ASK');setRegistrationDraft(null);setRegistrationAutoOpenKey('');setReplyingTo(null);setSessionReplyOffer(null);setAttachments([]);setPendingFiles([]);setSeedFiles([]);setSeedText(null);setSeedAttachmentIntent('');setPendingCapture('');setVoiceAutoOpenKey('');setError('');setClarification(null);setHistoryOpen(false)
   requestAnimationFrame(()=>messageInput.current?.focus())
  }
- const selectHistory=item=>{if(uploading)return;cancelChatRun();cancelRealtimeClarification();setSelectedId(item.clientId||'');setActiveContext(item.context||null);setThreadOverride(item.key||'');setRegistrationDraft(null);setRegistrationAutoOpenKey('');setHistoryOpen(false);setMode('ASK')}
+ const selectHistory=item=>{if(uploading)return;cancelChatRun();cancelRealtimeClarification();if(embedded&&String(item.clientId)!==String(contextClient?.id)){const target=clients.find(entry=>String(entry.id)===String(item.clientId));if(!target)return;onOpenClient?.(target);}setSelectedId(item.clientId||'');setActiveContext(item.context||null);setThreadOverride(item.key||'');setRegistrationDraft(null);setRegistrationAutoOpenKey('');setHistoryOpen(false);setMode('ASK')}
 
  const uploadFiles=async(files,targetClient)=>{
   const slots=Math.max(0,3-attachments.length);if(!slots){setError('Envie no máximo 3 arquivos por pergunta.');return false}
@@ -624,8 +627,9 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  const historyGroups=history.reduce((map,item)=>{const values=map.get(item.group)||[];values.push(item);map.set(item.group,values);return map},new Map())
 
  if(!open)return null
- return <section ref={pageRef} className={`val-fullscreen-page ${contextPanelOpen?'has-context-panel':''}`} aria-labelledby="global-val-title" tabIndex="-1">
+ return <section ref={pageRef} className={`val-fullscreen-page ${contextPanelOpen?'has-context-panel':''} ${embedded?'p360-copilot':''} ${embedded&&panelExpanded?'p360-copilot-expanded':''} ${panelPinned?'is-pinned':''}`} aria-labelledby="global-val-title" tabIndex="-1">
   {historyOpen&&<><button type="button" className="val-history-backdrop" aria-label="Fechar histórico" onClick={()=>setHistoryOpen(false)}/><aside className="val-history-drawer" aria-label="Histórico de conversas"><header><div><small>VAL</small><h2>Conversas</h2></div><button type="button" aria-label="Fechar histórico" onClick={()=>setHistoryOpen(false)}><X/></button></header><button type="button" className="val-new-thread" onClick={()=>newConversation({general:true})}><Plus/>Nova conversa geral</button><label className="val-history-search"><Search/><input value={historyQuery} onChange={event=>setHistoryQuery(event.target.value)} placeholder="Buscar produtor ou conversa"/></label>{[...historyGroups].map(([group,items])=><section key={group}><h3>{group}</h3>{items.map(item=><button type="button" key={item.key} onClick={()=>selectHistory(item)}><Clock3/><span><b>{item.label}</b><small>{item.preview}</small></span></button>)}</section>)}{visibleClients.length>0&&<section><h3>Produtores</h3>{visibleClients.map(item=><button type="button" key={item.id} onClick={()=>chooseClient(item.id)}><UserRound/><span><b>{item.name}</b><small>Abrir conversa por produtor</small></span></button>)}</section>}</aside></>}
+  {embedded&&<header className="p360-copilot-header"><Logo variant="icon-only" decorative/><div><b>VAL Copiloto</b><small>{client?.name||'Contexto do produtor'}</small></div><button aria-label="Fixar Copiloto" aria-pressed={panelPinned} onClick={()=>setPanelPinned(value=>!value)}><Pin size={15}/></button><button aria-label={panelExpanded?'Recolher tela cheia':'Expandir Copiloto'} onClick={()=>setPanelExpanded(value=>!value)}>{panelExpanded?<Minimize2 size={15}/>:<Maximize2 size={15}/>}</button><button aria-label="Fechar Copiloto" onClick={()=>{setPanelExpanded(false);onClose?.()}}><X size={16}/></button></header>}
   <header className="val-fs-header">
    <button type="button" className="val-fs-back" aria-label="Voltar" onClick={onClose} disabled={uploading}><ArrowLeft/></button>
    <div className="val-fs-brand"><span><Logo variant="icon-only" surface="dark" decorative/></span><div><small>VAL • COPILOTO DE DECISÃO</small><h1 id="global-val-title">VAL</h1>{client&&<b>{client.name}</b>}</div></div>

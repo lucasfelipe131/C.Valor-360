@@ -86,14 +86,14 @@ export default function App(){
  const [copilotPageContext,setCopilotPageContext]=useState(null)
  const [agroLaunch,setAgroLaunch]=useState(createEmptyAgroLaunch)
  const copilotOwnerScope=currentUser?.storageScope||currentUser?.id||''
- const openClient=c=>{setSelected(c);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
+ const openClient=c=>{setCopilotSeed({clientId:c.id,nonce:Date.now()});setSelected(c);setCopilotLoaded(true);setCopilotOpen(true);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
  const notify=message=>{const text=typeof message==='string'?message:String(message?.message||'Ação concluída.');setToast(text);window.clearTimeout(window.__valorToast);window.__valorToast=window.setTimeout(()=>setToast(''),2800)}
  const prepareClient=c=>{if(!c?.id)return;setSelected(c);setPrepareVisitClientId(c.id);setPage('visits');if(page==='visits')window.requestAnimationFrame(resetPageViewport)}
  const openValClient=c=>{setSelected(c);setValMode('insumos');setPage('val');if(page==='val')window.requestAnimationFrame(resetPageViewport)}
  const updateCopilotPageContext=useCallback(input=>setCopilotPageContext(input?{...input,storageScope:copilotOwnerScope}:null),[copilotOwnerScope])
  const consumeAgroInitialFile=useCallback(file=>setAgroLaunch(current=>{let removed=false;const initialFiles=current.initialFiles.filter(item=>{const candidate=item?.file||item;const match=candidate===file||(!removed&&candidate?.name===file?.name&&candidate?.type===file?.type&&Number(candidate?.size||0)===Number(file?.size||0));if(match&&!removed){removed=true;return false}return true});return initialFiles.length===current.initialFiles.length?current:{...current,initialFiles}}),[])
- const openCopilot=(input={})=>{const launch=resolveCopilotLaunch({input,implicitContext:copilotPageContext,page,storageScope:copilotOwnerScope,clients:clientList,selectedClient:selected});setCopilotSeed({...launch,nonce:Date.now()});if(page!=='copilot')setCopilotReturnPage(page);setCopilotLoaded(true);setCopilotOpen(true);setPage('copilot')}
- const closeCopilot=()=>{setCopilotOpen(false);setPage(copilotReturnPage&&copilotReturnPage!=='copilot'?copilotReturnPage:'dashboard')}
+ const openCopilot=(input={})=>{if(page==='client360'&&copilotLoaded&&!input.prompt&&!input.capture&&!input.files&&!input.conversation){setCopilotOpen(true);return}const launch=resolveCopilotLaunch({input,implicitContext:copilotPageContext,page,storageScope:copilotOwnerScope,clients:clientList,selectedClient:selected});setCopilotSeed({...launch,nonce:Date.now()});if(page!=='copilot')setCopilotReturnPage(page);setCopilotLoaded(true);setCopilotOpen(true);if(page!=='client360')setPage('copilot')}
+ const closeCopilot=()=>{setCopilotOpen(false);if(page==='client360')return;setPage(copilotReturnPage&&copilotReturnPage!=='copilot'?copilotReturnPage:'dashboard')}
  const navigate=target=>{
   const descriptor=target&&typeof target==='object'?target:{page:target}
   const next=String(descriptor.page||'dashboard')
@@ -232,23 +232,24 @@ export default function App(){
  if(!authenticated)return <Login onLogin={login} notice={authNotice}/>
  if(currentUser?.mustChangePassword)return <PasswordChange user={currentUser} onChange={changePassword} onLogout={logout}/>
  if(!portfolioReady)return <main className="auth-loading" role="status"><BrainCircuit/><span>Carregando carteira protegida…</span></main>
- return <div className="app-shell">
+ return <div className={`app-shell ${page==='client360'?'p360-shell':''}`}>
   <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
   <Sidebar page={page} tool={activeTool} currentUser={currentUser} workspace={workspace} onWorkspaceChange={changeWorkspace} onSelect={selectNav} onOpenVal={()=>openCopilot()}/>
   <main className="main" id="main-content" tabIndex="-1">
    {page!=='copilot'&&<Topbar title={title} subtitle={subtitle} onNavigate={navigate} onOpenVal={()=>openCopilot()} workspace={workspace} page={page} client={selected} clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onOpenClient={openClient}/>}
-   <div className={`content ${page==='copilot'?'content-copilot-fullscreen':''}`}>
+   <div className={`content ${page==='copilot'?'content-copilot-fullscreen':''} ${page==='client360'&&copilotOpen?'p360-with-copilot':''}`}>
     <Suspense fallback={<RouteFallback/>}>
     {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient} onRefreshPortfolio={refreshPortfolio} onOpenCopilot={openCopilot}/>}
     {page==='clients'&&<Clients clients={clientList} opportunities={opportunities} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
     {page==='datahub'&&<DataHub clients={clientList} onImport={importClients} onProfileImport={addClients} onUpdate={updateClient} onDelete={deleteClient} onNotify={notify}/>}
     {page==='client360'&&selected&&<Client360
      key={selected.id} client={selected} visits={visits} opportunities={opportunities}
-     storageScope={currentUser?.storageScope} onBack={()=>navigate('clients')}
+     currentUser={currentUser} onNewOpportunity={()=>{setSelected(selected);navigate('opportunities')}} storageScope={currentUser?.storageScope} onBack={()=>navigate('clients')}
      onPrepare={()=>prepareClient(selected)} onUpdate={updateClient} onRefreshPortfolio={refreshPortfolio}
      onAsk={input=>openCopilot(input&&typeof input==='object'&&!input.nativeEvent?{...input,client:input.client||selected}:{client:selected})}
      onSaved={message=>notify(message||'Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}
     />}
+    {page==='client360'&&!copilotOpen&&<button className="p360-reopen" onClick={()=>openCopilot({client:selected})}>Abrir VAL</button>}
     {page==='val'&&<ValWorkspace mode={valMode} onModeChange={setValMode} clients={clientList} selectedClient={selected} onSelect={openClient} onPrepareVisit={prepareClient}/>}
     {page==='agro'&&<Agro key={agroLaunch.nonce||'agro'} onAsk={openCopilot} onCapture={openCopilot} onTelemetry={recordAgroHeroTelemetry} onContextChange={updateCopilotPageContext} onInitialFileConsumed={consumeAgroInitialFile} client={agroLaunch.client} property={agroLaunch.property} field={agroLaunch.field} analysis={agroLaunch.analysis} context={agroLaunch.context} initialTool={agroLaunch.initialTool} initialFiles={agroLaunch.initialFiles}/>}
     {page==='questionnaire'&&<Questionnaire onCreate={addClient} onCreateMany={addClients} onOpen={openClient} onNotify={notify}/>}
@@ -258,7 +259,7 @@ export default function App(){
     {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
     {page==='admin'&&currentUser?.role==='admin'&&<Admin currentUser={currentUser} onNotify={notify}/>}
 	    {copilotLoaded&&<GlobalValCopilot key={copilotOwnerScope||'session'}
-	     open={page==='copilot'&&copilotOpen} onClose={closeCopilot}
+	     open={(page==='copilot'||page==='client360')&&copilotOpen} onClose={closeCopilot} embedded={page==='client360'} contextClient={page==='client360'?selected:null}
 	     clients={clientList} seed={copilotSeed} workspaceContext={workspaceContext} storageScope={currentUser?.storageScope} identityScope={{tenantId:currentUser?.tenantId||'',ownerId:currentUser?.ownerId||''}}
      visits={visits} opportunities={opportunities} onRefreshPortfolio={refreshPortfolio}
      onOpenClient={openClient} onPrepareVisit={prepareClient} onNavigate={navigate} onWorkspaceAction={executeValWorkspaceAction}
