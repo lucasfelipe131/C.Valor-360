@@ -1,3 +1,4 @@
+import {saveWorkspaceOpportunity,workspaceDetails} from './opportunity-workspace.js'
 import {createHash,randomUUID} from 'node:crypto'
 import {hasTechnicalApproval} from './ingestion.js'
 import {assertTenantScope} from './tenant-scope.js'
@@ -291,8 +292,8 @@ const derivedOpportunityKey=/^(?:visit-report|voice):/
 const opportunityRecordId=row=>{const clientKey=row.client_external_key||row.client_id;const externalKey=String(row.external_key||'');return derivedOpportunityKey.test(externalKey)?`o-${clientKey}:${externalKey}`:`o-${clientKey}`}
 // O fallback em arquivo entrega o mesmo contrato do PostgreSQL (value, probability, stage, candidateKey,
 // nextAction, nextActionAt, updatedAt) sem perder os campos originais do registro.
-const fallbackOpportunityRecord=item=>({...item,value:Number.isFinite(Number(item.value??item.estimatedValue))?Number(item.value??item.estimatedValue):0,probability:item.probability==null?null:Number(item.probability),stage:item.stage||'Diagnóstico',candidateKey:item.candidateKey||'',nextAction:item.nextAction||'',nextActionAt:item.nextActionAt||null,updatedAt:item.updatedAt||item.createdAt||null})
-const opportunityRecord=row=>({id:opportunityRecordId(row),databaseId:row.id,clientId:row.client_external_key||row.client_id,title:row.title,value:row.estimated_value==null?0:Number(row.estimated_value),probability:row.probability==null?null:Number(row.probability),stage:row.stage||'Diagnóstico',candidateKey:row.evidence?.find?.(item=>item?.candidateKey)?.candidateKey||row.external_key||'',stageEvidence:row.evidence?.find?.(item=>item?.type==='manual_advance'||item?.type==='manual_set'||item?.type==='won'),nextAction:row.next_action||'',nextActionAt:iso(row.next_action_at),updatedAt:iso(row.updated_at)})
+const fallbackOpportunityRecord=item=>({...item,valueKnown:item.valueKnown??(item.value!=null||item.estimatedValue!=null),workspaceDetails:workspaceDetails(item.evidence),value:Number.isFinite(Number(item.value??item.estimatedValue))?Number(item.value??item.estimatedValue):0,probability:item.probability==null?null:Number(item.probability),stage:item.stage||'Diagnóstico',candidateKey:item.candidateKey||'',nextAction:item.nextAction||'',nextActionAt:item.nextActionAt||null,updatedAt:item.updatedAt||item.createdAt||null})
+const opportunityRecord=row=>({id:workspaceDetails(row.evidence).candidateKey?'o-'+row.id:opportunityRecordId(row),databaseId:row.id,externalKey:row.external_key,clientId:row.client_external_key||row.client_id,title:row.title,category:row.category||'',hypothesis:row.hypothesis||'',value:row.estimated_value==null?0:Number(row.estimated_value),valueKnown:row.estimated_value!=null,probability:row.probability==null?null:Number(row.probability),stage:row.stage||'Diagnóstico',candidateKey:workspaceDetails(row.evidence).candidateKey||row.evidence?.find?.(item=>item?.candidateKey)?.candidateKey||row.external_key||'',stageEvidence:[...(row.evidence||[])].reverse().find(item=>item?.type==='manual_advance'||item?.type==='manual_set'||item?.type==='won'),evidence:row.evidence||[],workspaceDetails:workspaceDetails(row.evidence),nextAction:row.next_action||'',nextActionAt:iso(row.next_action_at),createdAt:iso(row.created_at),updatedAt:iso(row.updated_at)})
 const actionPlanRecord=row=>({
   contract_version:row.contract_version,version:row.contract_version,action_plan_id:String(row.id),organization_id:String(row.tenant_id),
   subject_id:String(row.client_external_key||row.client_id),decision_thesis_id:row.decision_thesis_id,value_plan_id:row.value_plan_id,
@@ -1514,6 +1515,7 @@ export class ValRepository{
   }
 
   async saveOpportunity(input,ownerId){
+    if(input.workspaceVersion===1)return saveWorkspaceOpportunity(this,input,ownerId,opportunityRecord)
     const candidateKey=String(input.candidateKey||input.title||'').trim().slice(0,300);if(!candidateKey)throw domainError('A oportunidade precisa de uma origem identificável.',400)
     // Oportunidade derivada de relato/voz avança sobre a própria linha (external_key visit-report:/voice:);
     // antes o avanço criava uma segunda linha pipeline: com id o-<produtor>, colidindo com a principal.
