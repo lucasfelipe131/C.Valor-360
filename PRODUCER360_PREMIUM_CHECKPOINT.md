@@ -82,7 +82,49 @@ columns; missing yield gives missing potential. No cross-crop volume sum.
 CAR, SIGEF and matrícula reference files can be imported as GeoJSON WGS84,
 toggled and filtered by their supplied attributes. These overlays are temporary,
 labelled user-provided references, and never become producer ownership evidence
-or productive hectares. Live cadastral services are not connected: the official
-Acervo Fundiário currently requires gov.br authentication and CAR lookup was
-unavailable during verification. Official lookup links are exposed in the panel.
+or productive hectares. The existing Manual official-boundaries endpoint is now
+exposed as a center-point CAR/SIGEF query after UF/municipality selection. Provider
+unavailability and no-match states are explicit. Matricula attributes can be
+filtered where returned by SIGEF or imported; there is no universal registry lookup.
 No cadastral coverage or document validity is implied by the imported label.
+
+### Rotation and embedded technical report (latest user request)
+
+The map selects 2627V, 2727I and additional season codes. Physical field IDs and
+polygons are reused; each season retains its crop, hectares and projected yield.
+Season switching alone does not persist or duplicate physical hectares.
+
+A tenth tab, Relatório técnico, follows Documentos. A same-origin Manual route
+reuses SeasonReports (costs, imports, photos, history, PDF) in the current green
+profile design. Records are scoped to the authenticated account and owned
+producer. Missing numeric inputs survive JSON as null and render as missing.
+DEMO status is resolved from the canonical producer, is printed on the PDF, and
+demonstrative records are not published to VAL intelligence events.
+
+The staging source was concurrently moved to claude/continuacao-correcao-val-wiogh7.
+Its separate corrections are retained in the combined release; no force updates,
+main, production or PR95 changes are part of this task.
+
+### Responsive mapping and freely named seasons (2026-09-07 follow-up)
+
+Producer navigation can collapse to icons using the existing navigation preference.
+The mapping canvas fills available viewport height; fullscreen lifts the main
+stacking context so the sidebar cannot cover it. A vertical icon toolbar exposes
+navigation, headquarters, productive fields, crop/season filters, GPS, cadastral
+layers, administrative borders, fit and help; saving remains within the map.
+
+Selecting a municipality loads that municipality's actual simplified IBGE mesh
+through a bounded, cached same-origin adapter. Municipal/state boundaries can be
+shown separately. Missing provider results never turn into a rectangular boundary
+or producer location. The endpoint only accepts an IBGE code and returns reference
+geometry; no producer data is transmitted to IBGE or persisted by this lookup.
+
+Migration 010 expands season identifiers from the former fixed five-character
+codes to manually entered labels (2–30 characters). Existing codes and histories
+are unchanged. User-defined periods are not inferred for historical averages.
+The map, consolidated crop budget and technical report accept the same labels.
+
+Validation includes scoped HTTP persistence across restart, free-name form entry,
+municipality ID matching, provider failures, bounded responses, border toggles,
+existing map interactions and production builds. Browser preview on the local
+port was unavailable; no claim of visual or authenticated staging UAT is made.

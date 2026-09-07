@@ -3,7 +3,7 @@ const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{st
 const demo=client=>client?.isDemo===true||client?.demo?.synthetic===true||client?.profileSource==='val-demo-synthetic-v1'||client?.source==='val-demo-synthetic-v1'
 export function normalizeSeasonInput(input){
  const season=seasonCode(input?.season)
- if(!validSeasonCode(season))fail('Informe a safra no formato 2627V ou 2727I (V: verão; I: inverno).')
+ if(!validSeasonCode(season))fail('Informe um nome de safra com 2 a 30 caracteres, como 2627V ou Verão 2028/29.')
  if(!Number.isInteger(input?.revision)||input.revision<0)fail('Recarregue a safra antes de salvar.')
  const sourceNote=String(input.sourceNote||'').trim();if(!sourceNote||sourceNote.length>500)fail('Informe a origem dos dados (até 500 caracteres).')
  const observedOn=String(input.observedOn||'');if(!/^\d{4}-\d{2}-\d{2}$/.test(observedOn)||Number.isNaN(Date.parse(observedOn))||new Date(observedOn).toISOString().slice(0,10)!==observedOn||observedOn>new Date().toISOString().slice(0,10))fail('Informe uma data de referência válida, até hoje.')

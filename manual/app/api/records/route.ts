@@ -4,6 +4,7 @@ import { ensureRecordsSchema, hasDatabase } from "../../lib/db";
 import { sessionFromRequest } from "../../lib/access";
 import { publishManualRecordToValor, valor360Configured } from "../../lib/valor360";
 import { authenticatedValor360OwnerForWorkspace } from "../../lib/valor360-workspace-owner";
+import { authorizeProducerReport, ProducerReportAccessError } from "../../lib/producer-report-scope";
 import { containsInlineImage, sanitizePhotoDiagnosisPayload } from "../../lib/photo-diagnosis-record";
 
 export const runtime = "nodejs";
@@ -25,6 +26,7 @@ const recordTypes = new Set([
 ]);
 
 function workspaceId(request: NextRequest, user: { id: string; role: string }) {
+  if (request.nextUrl.searchParams.get("scope") === "producer-profile") return user.id;
   if (user.role !== "admin") return user.id;
   const current = request.cookies.get("mp_workspace")?.value;
   return /^[0-9a-f-]{36}$/i.test(current ?? "") ? current! : user.id;
@@ -73,6 +75,14 @@ export async function GET(request: NextRequest) {
       params.push(type);
       filter = " AND record_type = $3";
     }
+    if (request.nextUrl.searchParams.get("scope") === "producer-profile") {
+      const owner = authenticatedValor360OwnerForWorkspace(session, workspace);
+      const producer = await authorizeProducerReport(pool, session.tenantId, owner, request.nextUrl.searchParams.get("clientId"));
+      params.push(producer.id, producer.external_key || producer.id);
+      const a = params.length - 1, b = params.length;
+      filter += ` AND (payload->>'clientExternalKey' IN ($${a}, $${b}) OR payload->>'producerId' IN ($${a}, $${b}))`;
+      if (!producer.isDemo) filter += " AND COALESCE(payload->>'isDemo', 'false') <> 'true'";
+    }
     const result = await pool.query(
       `SELECT id, record_type AS type, title, producer_name AS "producerName",
               payload, created_at AS "createdAt", updated_at AS "updatedAt"
@@ -88,6 +98,7 @@ export async function GET(request: NextRequest) {
       workspace,
     );
   } catch (error) {
+    if (error instanceof ProducerReportAccessError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("records:get", error);
     return NextResponse.json(
       { error: "Não foi possível consultar os registros salvos." },
@@ -124,11 +135,22 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
-    const recordPayload = body.type === "photo_diagnosis"
+    let recordPayload: Record<string, unknown> = body.type === "photo_diagnosis"
       ? sanitizePhotoDiagnosisPayload(body.payload)
-      : body.payload;
+      : body.payload as Record<string, unknown>;
     const id = /^[0-9a-f-]{36}$/i.test(body.id ?? "") ? body.id! : randomUUID();
     const pool = await ensureRecordsSchema();
+    const producerScope = request.nextUrl.searchParams.get("scope") === "producer-profile";
+    if (producerScope) {
+      if (body.type !== "season_report") return NextResponse.json({error: "Este espaço aceita somente relatórios técnicos."}, {status: 400});
+      const producer = await authorizeProducerReport(pool, session.tenantId, valor360OwnerId, recordPayload.clientExternalKey);
+      recordPayload = {...recordPayload, canonicalProducerId: producer.id, isDemo: producer.isDemo};
+      const previous = await pool.query("SELECT payload FROM app_records WHERE id=$1 AND tenant_id=$2 AND workspace_id=$3", [id, session.tenantId, workspace]);
+      const old = previous.rows[0]?.payload;
+      if (old && ![producer.id, producer.external_key].filter(Boolean).includes(old.clientExternalKey || old.producerId)) {
+        return NextResponse.json({error: "Este relatório pertence a outro produtor."}, {status: 409});
+      }
+    }
     const result = await pool.query(
       `INSERT INTO app_records
         (id, tenant_id, workspace_id, record_type, title, producer_name, payload)
@@ -160,7 +182,8 @@ export async function POST(request: NextRequest) {
       );
     }
     const record = result.rows[0];
-    const integration = valor360OwnerId
+    const demoIsolated = recordPayload.isDemo === true;
+    const integration = demoIsolated ? [] : valor360OwnerId
       ? await publishManualRecordToValor(
           record,
           valor360OwnerId,
@@ -176,6 +199,7 @@ export async function POST(request: NextRequest) {
         }];
     const integrationSummary = {
       configured: valor360Configured(),
+      demoIsolated,
       delivered: integration.filter((item) => item.ok).length,
       failed: integration.filter((item) => !item.ok && !item.skipped).length,
       skipped: integration.filter((item) => item.skipped).length,
@@ -190,9 +214,9 @@ export async function POST(request: NextRequest) {
           error: item.error ?? "Falha de integração não detalhada.",
         })),
     };
-    const integrationNeedsAttention = !integrationSummary.configured ||
+    const integrationNeedsAttention = !demoIsolated && (!integrationSummary.configured ||
       integrationSummary.failed > 0 ||
-      integrationSummary.skipped > 0;
+      integrationSummary.skipped > 0);
     return withWorkspaceCookie(
       NextResponse.json({
         record,
@@ -203,6 +227,7 @@ export async function POST(request: NextRequest) {
       workspace,
     );
   } catch (error) {
+    if (error instanceof ProducerReportAccessError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("records:post", error);
     return NextResponse.json(
       { error: "Não foi possível salvar o registro no banco." },
@@ -234,6 +259,7 @@ export async function DELETE(request: NextRequest) {
       workspace,
     );
   } catch (error) {
+    if (error instanceof ProducerReportAccessError) return NextResponse.json({error: error.message}, {status: error.status});
     console.error("records:delete", error);
     return NextResponse.json(
       { error: "Não foi possível excluir o registro da conta." },

@@ -10,6 +10,7 @@ import {transformWithEsbuild} from 'vite'
 const source=readFileSync(new URL('../src/components/map/SatelliteMap.jsx',import.meta.url),'utf8')
  .replace(/import '[^']+\.css'\n/g,'')
  .replace("import CadastralLayers from './CadastralLayers'",'const CadastralLayers=()=>null')
+ .replace("from 'lucide-react'",`from '${import.meta.resolve('lucide-react')}'`)
  .replace("from 'react'",`from '${import.meta.resolve('react')}'`)
  .replace("from '../../lib/property-map'",`from '${new URL('../src/lib/property-map.js',import.meta.url).href}'`)
  .replace("from '../../lib/map-localities'",`from '${new URL('../src/lib/map-localities.js',import.meta.url).href}'`)
@@ -55,7 +56,7 @@ async function mountMap(initialProps={},loader=null){
  return {
   L,state,renderer,
   layers(kind){return [...(state.group?.layers||[])].filter(layer=>layer.kind===kind)},
-  button(text){return renderer.root.findAllByType('button').find(button=>button.children.join('')===text)},
+  button(text){const label=node=>typeof node==='string'?node:(node.children||[]).map(label).join('');return renderer.root.findAllByType('button').find(button=>label(button)===text)},
   async update(changes){props={...props,...changes};await act(async()=>{renderer.update(React.createElement(SatelliteMap,props))})},
   async dispose(){await act(async()=>renderer.unmount());if(saved===undefined)delete globalThis.__valSatelliteTestLeaflet;else globalThis.__valSatelliteTestLeaflet=saved}
  }
@@ -169,7 +170,7 @@ test('municipality navigation loads state boundaries by default and never assign
  const originalFetch=globalThis.fetch
  const cities=JSON.parse(readFileSync(new URL('../public/geo/municipalities.json',import.meta.url),'utf8'))
  const geo=JSON.parse(readFileSync(new URL('../public/geo/states.geojson',import.meta.url),'utf8'))
- globalThis.fetch=async url=>({ok:true,json:async()=>url.endsWith('states.geojson')?geo:cities})
+ globalThis.fetch=async url=>({ok:true,json:async()=>url.includes('/boundary')?{code:'4318903',geojson:{type:'FeatureCollection',features:[geo.features[0]]}}:url.endsWith('states.geojson')?geo:cities})
  let app;const assigned=[]
  try{
   app=await mountMap({onClick:point=>assigned.push(point)})
@@ -183,7 +184,12 @@ test('municipality navigation loads state boundaries by default and never assign
   assert.deepEqual(map.fits.at(-1).bounds,[[city[3][0],city[3][1]],[city[3][2],city[3][3]]])
   assert.deepEqual(assigned,[])
   assert.equal(app.layers('marker').length,0)
-  await act(async()=>app.button('Divisas estaduais').props.onClick())
+  assert.equal([...map.layers].filter(l=>l.kind==='states').length,2)
+  await act(async()=>app.button('Divisas').props.onClick())
+  const toggles=app.renderer.root.findAllByProps({type:'checkbox'})
+  await act(async()=>toggles[0].props.onChange({target:{checked:false}}))
+  assert.equal([...map.layers].filter(l=>l.kind==='states').length,1)
+  await act(async()=>toggles[1].props.onChange({target:{checked:false}}))
   assert.equal([...map.layers].filter(l=>l.kind==='states').length,0)
  }finally{if(app)await app.dispose();globalThis.fetch=originalFetch}
 })

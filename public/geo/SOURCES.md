@@ -10,3 +10,8 @@ Entries without a corresponding boundary have null bounds and cannot be centered
 These generalized boundaries are navigation references, not cadastral boundaries,
 property ownership, field geometry, area measurements or producer evidence.
 Municipality rows: [IBGE code, name, UF, [south, west, north, east] or null].
+
+Municipal polygons on selection: IBGE API v3 `/malhas/municipios/{codigo}` with
+`formato=application/vnd.geo+json&qualidade=minima`, queried through the protected
+VAL reference adapter. Responses identify the source and query time. Geometry
+is never replaced by the stored navigation bounding box when unavailable.

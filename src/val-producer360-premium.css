@@ -31,3 +31,19 @@
 
 .val-fullscreen-page.p360-copilot .p360-copilot-header .brand-lockup,.val-fullscreen-page.p360-copilot .p360-copilot-header .brand-mark{width:30px;height:36px;min-width:0;display:flex;align-items:center;margin:0;padding:0;transform:none}
 .val-fullscreen-page.p360-copilot .p360-copilot-header .brand-mark img{position:static;max-width:30px;transform:none}
+
+/* Keep the original navigation and offer a compact icon rail. */
+.p360-nav-logo{position:relative;padding-bottom:38px}
+.p360-nav-collapse{position:absolute;right:12px;bottom:6px;display:grid;place-items:center;width:30px;height:28px;background:#ffffff12;border:1px solid #ffffff24;border-radius:6px;color:#c4dcda;cursor:pointer}
+.p360-nav-collapse:focus-visible,.p360-navigation nav button:focus-visible{outline:3px solid #72e6c5;outline-offset:2px}
+.p360-navigation.is-collapsed{width:68px}
+.p360-navigation.is-collapsed .p360-nav-logo{padding:15px 12px 40px}
+.p360-navigation.is-collapsed .val-final-brand{min-width:0;justify-content:center}
+.p360-navigation.is-collapsed .p360-nav-collapse{right:19px}
+.p360-navigation.is-collapsed nav{padding:0 8px}
+.p360-navigation.is-collapsed nav button{justify-content:center;padding:11px;min-height:42px}
+.p360-navigation.is-collapsed nav button span,.p360-navigation.is-collapsed .p360-favorites>small,.p360-navigation.is-collapsed footer>div{display:none}
+.p360-navigation.is-collapsed nav button svg{flex:none}
+.p360-navigation.is-collapsed footer{flex-direction:column;padding:12px 8px}
+.p360-shell:has(>.p360-navigation.is-collapsed) .main{margin-left:68px}
+@media(max-width:760px){.p360-shell:has(>.p360-navigation.is-collapsed) .main{margin-left:0}}

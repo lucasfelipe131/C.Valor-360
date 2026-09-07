@@ -133,3 +133,18 @@ test('as telas ligam o mapa onde a decisão acontece, sem pino inventado',()=>{
  assert.match(repository,/'propertyProfiles'\]\)store\.val\[key\]\|\|=\[\]/)
  assert.match(repository,/property\.metadata->'location'/)
 })
+
+test('winter and summer reuse the physical field and preserve independent crop/yield history',async()=>{
+ let store={imports:[{tenantId,ownerId:ownerA,clients:[{id:'rotation',name:'Rotação de teste'}]}],visits:[],opportunities:[],val:{}}
+ const repository=new ValRepository({db:{configured:false},tenantId,readStore:()=>store,saveStore:next=>{store=structuredClone(next)}})
+ const summer=await repository.savePropertyProfile('rotation',{fields:[{name:'Área produtiva',areaHa:1,crop:'Soja',season:'2627V',productivityTarget:60,points:square}]},ownerA)
+ const field=summer.fields[0]
+ const winter=await repository.savePropertyProfile('rotation',{propertyId:summer.property.id,fields:[{id:field.id,name:field.name,areaHa:1,crop:'Trigo',season:'2727I',productivityTarget:40,points:square}]},ownerA)
+ assert.equal(winter.fields.length,1);assert.equal(winter.fields[0].id,field.id)
+ assert.equal(winter.fields[0].seasons.length,2)
+ assert.deepEqual(winter.fields[0].seasons.map(s=>[s.season,s.crop,s.productivityTarget]),[['2727I','Trigo',40],['2627V','Soja',60]])
+ const correction=await repository.savePropertyProfile('rotation',{propertyId:summer.property.id,fields:[{id:field.id,name:field.name,areaHa:1,crop:'Canola',season:'2727I',productivityTarget:30,points:square}]},ownerA)
+ assert.equal(correction.fields[0].seasons.length,2)
+ assert.equal(correction.fields[0].seasons.find(s=>s.season==='2627V').crop,'Soja')
+ assert.equal(correction.fields[0].seasons.find(s=>s.season==='2727I').crop,'Canola')
+})
