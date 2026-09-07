@@ -6,6 +6,7 @@ import {prepareVisitExecution} from '../server/execution/service.js'
 import {ValRepository} from '../server/repository.js'
 import {createMockTranscriptionProvider} from '../server/visit-loop/audio.js'
 import {createVisitLoopService} from '../server/visit-loop/service.js'
+import {semanticIndexDefinition} from './lib/postgres-catalog.js'
 
 const tenantA='00000000-0000-4000-8000-000000000001'
 const tenantB='00000000-0000-4000-8000-000000000002'
@@ -103,13 +104,15 @@ async function catalogEvidence(){
  for(const name of expectedConstraints)assert.ok(constraintNames.includes(name),`Constraint ausente: ${name}`)
  for(const name of expectedIndexes)assert.ok(indexNames.includes(name),`Índice ausente: ${name}`)
  const semanticConstraints=constraints.rows.map(row=>({...row,definition:semanticConstraintDefinition(row.definition)}))
+ const semanticIndexes=indexes.rows.map(row=>({...row,indexdef:semanticIndexDefinition(row.indexdef)}))
  return {
   tables:tables.rows.map(row=>row.tablename),
   columns:columns.rows,
   constraints:constraints.rows,
   semantic_constraints:semanticConstraints,
   indexes:indexes.rows,
-  fingerprint:hash({tables:tables.rows,columns:columns.rows,constraints:semanticConstraints,indexes:indexes.rows})
+  semantic_indexes:semanticIndexes,
+  fingerprint:hash({tables:tables.rows,columns:columns.rows,constraints:semanticConstraints,indexes:semanticIndexes})
  }
 }
 

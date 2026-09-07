@@ -1,8 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {deterministicVoiceCandidateExtraction} from '../server/voice-capture/extraction.js'
-import {isForbiddenPrepareVisitLanguage,prepareVisitQualityVersion} from '../server/execution/prepare-visit-quality.js'
-import {costaBeberFixture,newProducerFixture,soyFungicideFixture} from './support/prepare-visit-quality-context.js'
+import {buildPrepareVisitDecisionModel,isForbiddenPrepareVisitLanguage,prepareVisitQualityVersion} from '../server/execution/prepare-visit-quality.js'
+import {buildPrepareVisit} from '../server/execution/prepare-visit.js'
+import {costaBeberFixture,newProducerFixture,qualityActor,qualityTenant,runPrepareQualityFixture,soyFungicideFixture} from './support/prepare-visit-quality-context.js'
 
 const allDisplay=preparation=>[
  preparation.objective,preparation.why_now,preparation.val_thesis,preparation.objection_guidance,preparation.avoid_guidance,preparation.commitment_target,
@@ -124,4 +125,54 @@ test('Voice Capture PRE_VISIT classifica intenção, timing e fricção sem prom
  assert.equal(semantic.get('AGRONOMIC_STAGE').epistemic_status,'FACT_CANDIDATE')
  assert.equal(semantic.get('AGRONOMIC_TIMING').epistemic_status,'FACT_CANDIDATE')
  assert.equal(semantic.get('COMMERCIAL_SIGNAL').epistemic_status,'HYPOTHESIS')
+})
+
+function additionalParticipantFixture(){
+ return runPrepareQualityFixture({
+  id:1004,
+  client:{id:'producer-shared-decision',name:'Produtor com decisão compartilhada',commercial:{currentPurchases:100000,potential:200000}},
+  profile:{answers:{},evidence:[]},
+  objective:'Preparar a decisão sobre fertilizante no milho antes da primeira aplicação próxima, com atenção ao preço.',
+  memoryHistory:[
+   {key:'visit_report.producer_signal',statement:'O produtor ficou de falar com o sócio para decidir.',sourceType:'confirmed_visit_report'},
+   {key:'visit_report.objection',statement:'O produtor declarou que o preço está caro.',sourceType:'confirmed_visit_report'},
+   {key:'visit_report.expectation',statement:'O produtor pediu comparativo de custo por hectare.',sourceType:'confirmed_visit_report'}
+  ]
+ })
+}
+
+test('preparação reserva uma das três perguntas ao critério do decisor confirmado sem perder timing e preço',()=>{
+ const fixture=additionalParticipantFixture()
+ const {preparation,commercial}=fixture
+ assert.equal(commercial.decision_thesis.decision_context.participant_known,true)
+ assert.equal(preparation.golden_questions.length,3)
+ assert.ok(preparation.golden_questions.some(question=>/participa.*decisão.*validar/i.test(question)))
+ assert.ok(preparation.golden_questions.some(question=>/primeira aplicação.*milho.*fertilizante/i.test(question)))
+ assert.ok(preparation.golden_questions.some(question=>/diferença de valor/i.test(question)))
+})
+
+test('reparo de qualidade mantém a pergunta sobre o critério do decisor confirmado',()=>{
+ const fixture=additionalParticipantFixture()
+ const preparation=buildPrepareVisit({
+  organizationId:qualityTenant,contextSnapshot:fixture.snapshot,context:fixture.context,visit:fixture.visit,
+  behavioralProfile:fixture.commercial.behavioral_profile,
+  decisionThesis:{...fixture.commercial.decision_thesis,objective:'Valide o contexto.',recommended_action:'Valide o contexto.'},
+  valuePlan:{...fixture.commercial.value_plan,decision_questions:[],questions:[],commitment_target:'Registre o próximo passo.'},
+  actionPlan:fixture.actionPlan,actor:{type:'USER',id:qualityActor},now:new Date('2026-08-24T12:00:00.000Z')
+ })
+ assert.equal(preparation.quality_audit.regeneration_attempted,true)
+ assert.equal(preparation.quality_audit.passed,true)
+ assert.equal(preparation.golden_questions.length,3)
+ assert.ok(preparation.golden_questions.some(question=>/participa.*decisão.*validar/i.test(question)))
+})
+
+for(const hypothesis of [false,true])test(`participante não confirmado gera pergunta aberta sem presumir sócio (${hypothesis})`,()=>{
+ const model=buildPrepareVisitDecisionModel({
+  visitObjective:'Escolher fertilizante no milho com atenção ao preço e primeira aplicação próxima.',
+  contextSnapshot:hypothesis?{hypotheses:[{key:'voice.hypothesis',value:{statement:'Talvez um sócio participe da decisão.'}}]}:{}
+ })
+ assert.equal(model.participant_known,false)
+ assert.equal(model.decision_questions.length,3)
+ assert.ok(model.decision_questions.some(question=>/^Quem participa desta decisão/i.test(question)))
+ assert.ok(model.decision_questions.every(question=>!/sócio|a outra pessoa/i.test(question)))
 })

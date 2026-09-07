@@ -34,6 +34,8 @@ export function normalizeFieldPoints(value,label){
 // `location` ausente = manter; null = remover; objeto = marcar.
 export function normalizePropertyProfileInput(input={}){
  const source=input&&typeof input==='object'&&!Array.isArray(input)?input:{}
+ if(source.propertyId!==undefined&&(typeof source.propertyId!=='string'||!source.propertyId.trim()||source.propertyId.length>180))fail('Selecione uma propriedade válida.','property_id_invalid')
+ const propertyId=source.propertyId===undefined?undefined:source.propertyId.trim()
  const propertyName=text(source.propertyName)
  const location=source.location===undefined?undefined:normalizeLocation(source.location)
  const fields=(Array.isArray(source.fields)?source.fields:[]).slice(0,MAX_FIELDS).map((item,index)=>{
@@ -45,7 +47,7 @@ export function normalizePropertyProfileInput(input={}){
   return {id:text(field.id)||null,name,areaHa:area===null||area<0?null:round(area,4),crop,season,points:normalizeFieldPoints(field.points,name),clearGeometry:field.clearGeometry===true}
  })
  const removedFieldIds=[...new Set((Array.isArray(source.removedFieldIds)?source.removedFieldIds:[]).map(id=>text(id)).filter(Boolean))].slice(0,MAX_FIELDS)
- return {propertyName,location,fields,removedFieldIds}
+ return {propertyId,propertyName,location,fields,removedFieldIds}
 }
 
 export function locationRecord(value,{source='consultant_pin',updatedAt=null}={}){

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import {semanticIndexDefinition} from './lib/postgres-catalog.js'
 import {createHash} from 'node:crypto'
 import {readFile,writeFile} from 'node:fs/promises'
 import {createDatabase} from '../server/db.js'
@@ -163,12 +164,14 @@ async function catalogEvidence(){
  const latest=constraints.rows.find(row=>row.conname==='val_voice_interactions_latest_transcript_same_tenant_fkey')
  assert.equal(latest.convalidated,false,'O FK circular expand-only deve permanecer NOT VALID nesta migration.')
  const semanticConstraints=constraints.rows.map(row=>({...row,definition:normalizedConstraint(row.definition)}))
+ const semanticIndexes=indexes.rows.map(row=>({...row,indexdef:semanticIndexDefinition(row.indexdef)}))
  return {
   tables:tables.rows.map(row=>row.tablename),
   columns:columns.rows,
   constraints:semanticConstraints,
   indexes:indexes.rows,
-  fingerprint:hash({tables:tables.rows,columns:columns.rows,constraints:semanticConstraints,indexes:indexes.rows})
+  semantic_indexes:semanticIndexes,
+  fingerprint:hash({tables:tables.rows,columns:columns.rows,constraints:semanticConstraints,indexes:semanticIndexes})
  }
 }
 

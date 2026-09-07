@@ -12,6 +12,8 @@ import {deriveSignals,normalizeIntegrationEvent,requiresTechnicalSignature,verif
 import {normalizeGrainIntent,normalizeGrainMarketSnapshot,normalizeGrainProfile,intentStatuses} from './server/grain-intelligence.js'
 import {GrainRepository} from './server/grain-repository.js'
 import {ValRepository} from './server/repository.js'
+import {createVisitRouteService} from './server/visit-route-service.js'
+import {seedDemoProducer,DEMO_PRODUCER_KEY} from './server/demo-producer.js'
 import {currentRequestContext,observe,requestIdFrom,runWithRequestContext,updateRequestContext} from './server/observability.js'
 import {publicStorageScope} from './server/storage-policy.js'
 import {ValEngine} from './server/val-engine.js'
@@ -163,6 +165,9 @@ const database=createDatabase(config)
 const auth=createAuth(config)
 const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,tenantId:session.tenantId||config.defaultTenantId,ownerId:session.id||session.sub||session.email,storageScope:auth.storageScope(session)}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,tenantId:config.defaultTenantId,ownerId:'demo@valor360.local',storageScope:'demo'}
 const repository=new ValRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
+const visitRouteService=createVisitRouteService({repository})
+const demoProducerEnvironment=String(process.env.VAL_DEMO_ENVIRONMENT||'').toLowerCase()
+const demoProducerEnabled=['staging','test'].includes(demoProducerEnvironment)
 const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const accessRepository=new AccessRepository({db:database,tenantId:config.defaultTenantId,runtimeConfig:config})
 const valEngine=new ValEngine({runtimeConfig:config,repository})
@@ -272,7 +277,7 @@ async function handleApi(request,response,url){
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
  const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
- const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview|property))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const requestStartedAt=performance.now()
  let valRequestController=null
@@ -920,6 +925,25 @@ async function handleApi(request,response,url){
   repository.listAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email}).catch(error=>observe('val.producer_index.preload',{outcome:'error',errorCode:error?.code||'producer_index_preload_failed'}))
   return json(response,200,intelligence)
  }
+ if(url.pathname==='/api/demo/producer'&&request.method==='GET'){
+  return json(response,200,{enabled:demoProducerEnabled,externalKey:DEMO_PRODUCER_KEY})
+ }
+ if(url.pathname==='/api/demo/producer'&&request.method==='POST'){
+  if(!demoProducerEnabled)return json(response,404,{error:'Demonstração disponível apenas no ambiente de testes.'})
+  if(!identity?.id)return json(response,401,{error:'Entre na sua conta para criar o produtor de demonstração.'})
+  const seeded=await seedDemoProducer({database:repository.db,tenantId:repository.tenantId,ownerId:identity.id,environment:demoProducerEnvironment})
+  repository.invalidateAuthorizedClientReferences({tenantId:repository.tenantId,ownerId:identity.id})
+  invalidateValContextScope({tenantId:repository.tenantId,ownerId:identity.id,clientId:seeded.externalKey})
+  return json(response,seeded.created?201:200,seeded)
+ }
+ if(url.pathname.startsWith('/api/visit-routes/')){
+  if(!identity?.id)return json(response,401,{error:'Entre na sua conta para acessar o roteiro.'})
+  response.setHeader('Cache-Control','private, no-store')
+  if(url.pathname==='/api/visit-routes/driving'&&request.method==='POST')return json(response,200,await visitRouteService.driving({ownerId:identity.id,input:await body(request)}))
+  const date=url.searchParams.get('date')
+  if(url.pathname==='/api/visit-routes/day'&&request.method==='GET')return json(response,200,await visitRouteService.getDay({ownerId:identity.id,date,timeZone:url.searchParams.get('timeZone')||undefined}))
+  if(url.pathname==='/api/visit-routes/day'&&request.method==='PUT')return json(response,200,await visitRouteService.saveDay({ownerId:identity.id,date,input:await body(request)}))
+ }
  if(url.pathname==='/api/visits'&&request.method==='POST'){
   const payload=await body(request);const clientId=clean(payload.clientId);const objective=String(payload.objective||'').trim().slice(0,2000)
   if(!clientId||!objective)return json(response,400,{error:'Selecione o produtor e informe o objetivo da visita.'})
@@ -1037,7 +1061,7 @@ async function handleApi(request,response,url){
   const clientId=decodeURIComponent(contextMatch[1]);const context=await repository.saveTechnicalContext(clientId,await body(request),identity?.id||identity?.email);invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId});await accessRepository.recordUsage(identity,{eventType:'memory_saved',page:'client360',entityType:'client',entityId:clientId});return json(response,200,{saved:true,context})
  }
  const propertyMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/property$/)
- if(propertyMatch&&request.method==='GET')return json(response,200,await repository.getPropertyProfile(decodeURIComponent(propertyMatch[1]),identity?.id))
+ if(propertyMatch&&request.method==='GET')return json(response,200,await repository.getPropertyProfile(decodeURIComponent(propertyMatch[1]),identity?.id,{propertyId:url.searchParams.has('propertyId')?url.searchParams.get('propertyId'):undefined}))
  if(propertyMatch&&request.method==='PUT'){
   const clientId=decodeURIComponent(propertyMatch[1]);const profile=await repository.savePropertyProfile(clientId,await body(request),identity?.id);invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId});await accessRepository.recordUsage(identity,{eventType:'property_saved',page:'client360',entityType:'client',entityId:clientId,metadata:{fields:profile.fields.length,located:Boolean(profile.property?.location)}});return json(response,200,profile)
  }

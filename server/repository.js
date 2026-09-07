@@ -990,23 +990,32 @@ export class ValRepository{
   // Propriedade e talhões: a sede vira properties.metadata.location e o
   // contorno vira fields.geometry_ref no envelope canônico que o Manual do
   // Agrônomo já lê. Sem PostgreSQL, tudo vive no arquivo local por escopo.
-  async getPropertyProfile(clientId,ownerId){
+  async getPropertyProfile(clientId,ownerId,{propertyId:requestedPropertyId}={}){
     if(!ownerId)throw domainError('O proprietário da carteira é obrigatório para consultar a propriedade.',403,'owner_scope_required')
+    const {propertyId}=normalizePropertyProfileInput({propertyId:requestedPropertyId})
     if(!this.db.configured){
-      const record=(this.fallback().val.propertyProfiles||[]).find(item=>exactScope(item,this.tenantId,ownerId)&&String(item.clientId)===String(clientId))
+      const records=(this.fallback().val.propertyProfiles||[]).filter(item=>exactScope(item,this.tenantId,ownerId)&&String(item.clientId)===String(clientId))
+      const record=propertyId?records.find(item=>String(item.property?.id)===propertyId):records[0]
+      if(propertyId&&(!record||!(await this.getIntelligence(ownerId)).clients.some(item=>String(item.id)===String(clientId))))throw domainError('Propriedade não encontrada na sua carteira.',404,'property_not_found')
       if(!record)return emptyPropertyProfile(clientId,'arquivo-local')
-      return {clientId:String(clientId),property:structuredClone(record.property),properties:record.property?[{id:record.property.id,name:record.property.name}]:[],fields:structuredClone(record.fields||[]),source:'arquivo-local'}
+      return {clientId:String(clientId),property:structuredClone(record.property),properties:records.filter(item=>item.property).map(item=>({id:String(item.property.id),name:item.property.name})),fields:structuredClone(record.fields||[]),source:'arquivo-local'}
     }
     try{
       const client=await this.db.query(`SELECT id FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND (id::text=$3 OR external_key=$3) AND status='active' LIMIT 1`,[this.tenantId,ownerId,clientId])
       if(!client.rowCount)throw domainError('Produtor não encontrado na sua carteira.',404)
-      return await this.readPropertyProfile(this.db,client.rows[0].id,clientId)
+      return await this.readPropertyProfile(this.db,client.rows[0].id,clientId,{propertyId})
     }catch(error){if(error.statusCode)throw error;throw serviceError('A propriedade não pôde ser lida no PostgreSQL configurado.')}
   }
 
-  async readPropertyProfile(connection,clientRowId,clientId){
+  async readPropertyProfile(connection,clientRowId,clientId,{propertyId}={}){
     const properties=await connection.query(`SELECT id,external_key,name,municipality,area_ha,metadata,updated_at FROM properties WHERE tenant_id=$1 AND client_id=$2 ORDER BY (metadata ? 'location') DESC,updated_at DESC LIMIT 50`,[this.tenantId,clientRowId])
-    const primary=properties.rows[0]||null
+    let primary=propertyId?properties.rows.find(row=>String(row.id)===propertyId):properties.rows[0]||null
+    if(propertyId&&!primary){
+      const selected=await connection.query(`SELECT id,external_key,name,municipality,area_ha,metadata,updated_at FROM properties WHERE tenant_id=$1 AND client_id=$2 AND id::text=$3 LIMIT 1`,[this.tenantId,clientRowId,propertyId])
+      primary=selected.rows[0]||null
+      if(!primary)throw domainError('Propriedade não encontrada na sua carteira.',404,'property_not_found')
+      properties.rows.push(primary)
+    }
     if(!primary)return emptyPropertyProfile(clientId,'postgresql')
     const fields=await connection.query(`SELECT field.id,field.name,field.area_ha,field.geometry_ref,field.updated_at,
         (SELECT jsonb_build_object('season',season.season,'crop',season.crop) FROM crop_seasons season WHERE season.tenant_id=$1 AND season.field_id=field.id ORDER BY season.created_at DESC LIMIT 1) latest_season
@@ -1031,7 +1040,8 @@ export class ValRepository{
       const store=this.fallback()
       const client=(await this.getIntelligence(ownerId)).clients.find(item=>String(item.id)===String(clientId))
       if(!client)throw domainError('Produtor não encontrado na sua carteira.',404)
-      const existing=store.val.propertyProfiles.find(item=>exactScope(item,this.tenantId,ownerId)&&String(item.clientId)===String(clientId))||null
+      const existing=store.val.propertyProfiles.find(item=>exactScope(item,this.tenantId,ownerId)&&String(item.clientId)===String(clientId)&&(!profile.propertyId||String(item.property?.id)===profile.propertyId))||null
+      if(profile.propertyId&&!existing)throw domainError('Propriedade não encontrada na sua carteira.',404,'property_not_found')
       const previous=existing?.property||null
       const property={
         id:previous?.id||`local-property:${clientId}`,
@@ -1046,18 +1056,21 @@ export class ValRepository{
         const points=field.points.length?field.points:field.clearGeometry?[]:(stored?.points||[])
         return {id:stored?.id||randomUUID(),name:field.name,areaHa:field.areaHa??stored?.areaHa??null,crop:field.crop||stored?.crop||'',season:field.season||stored?.season||'',points,geometryStatus:points.length?'CANONICAL':'NOT_MAPPED',updatedAt:now}
       })
-      store.val.propertyProfiles=store.val.propertyProfiles.filter(item=>item!==existing)
-      store.val.propertyProfiles.push({tenantId:this.tenantId,ownerId,clientId:String(clientId),property,fields,updatedAt:now})
+      const saved={tenantId:this.tenantId,ownerId,clientId:String(clientId),property,fields,updatedAt:now}
+      if(existing)store.val.propertyProfiles.splice(store.val.propertyProfiles.indexOf(existing),1,saved)
+      else store.val.propertyProfiles.push(saved)
       this.saveStore(store)
-      return this.getPropertyProfile(clientId,ownerId)
+      return this.getPropertyProfile(clientId,ownerId,{propertyId:property.id})
     }
     try{
+      let savedPropertyId
       await this.db.transaction(async connection=>{
         const selected=await connection.query(`SELECT id,external_key,name,municipality,commercial_profile FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND (id::text=$3 OR external_key=$3) AND status='active' LIMIT 1 FOR UPDATE`,[this.tenantId,ownerId,clientId])
         if(!selected.rowCount)throw domainError('Produtor não encontrado na sua carteira.',404)
         const client=selected.rows[0]
-        const current=await connection.query(`SELECT id,external_key,name,metadata FROM properties WHERE tenant_id=$1 AND client_id=$2 ORDER BY (metadata ? 'location') DESC,updated_at DESC LIMIT 1 FOR UPDATE`,[this.tenantId,client.id])
+        const current=await connection.query(`SELECT id,external_key,name,metadata FROM properties WHERE tenant_id=$1 AND client_id=$2 AND ($3::text IS NULL OR id::text=$3) ORDER BY (metadata ? 'location') DESC,updated_at DESC LIMIT 1 FOR UPDATE`,[this.tenantId,client.id,profile.propertyId??null])
         let property=current.rows[0]||null
+        if(profile.propertyId&&!property)throw domainError('Propriedade não encontrada na sua carteira.',404,'property_not_found')
         const propertyName=profile.propertyName||property?.name||String(jsonObject(client.commercial_profile).property||'').trim().slice(0,180)||'Propriedade principal'
         const metadata={...jsonObject(property?.metadata)}
         if(profile.location===null)delete metadata.location
@@ -1068,6 +1081,7 @@ export class ValRepository{
           const inserted=await connection.query(`INSERT INTO properties (tenant_id,client_id,external_key,name,municipality,metadata,updated_at) VALUES ($1,$2,$3,$4,$5,$6,NOW()) RETURNING id,external_key,name,metadata`,[this.tenantId,client.id,relatedExternalKey(client.external_key,propertyName),propertyName,client.municipality||null,jsonbParameter(metadata)])
           property=inserted.rows[0]
         }
+        savedPropertyId=String(property.id)
         if(profile.removedFieldIds.length)await connection.query(`DELETE FROM fields WHERE tenant_id=$1 AND property_id=$2 AND id::text=ANY($3::text[])`,[this.tenantId,property.id,profile.removedFieldIds])
         const propertyKey=property.external_key||String(property.id)
         for(const field of profile.fields){
@@ -1094,11 +1108,11 @@ export class ValRepository{
             await connection.query(`UPDATE fields SET geometry_ref=NULL,geometry_version=NULL,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id])
           }
           if(field.crop&&field.season)await connection.query(`INSERT INTO crop_seasons (tenant_id,field_id,season,crop,area_ha)
-            SELECT $1,$2,$3,$4,$5 WHERE NOT EXISTS (SELECT 1 FROM crop_seasons WHERE tenant_id=$1 AND field_id=$2 AND season=$3 AND crop=$4)`,[this.tenantId,fieldRow.id,field.season,field.crop,field.areaHa])
+            SELECT $1::uuid,$2::uuid,$3::varchar,$4::varchar,$5::numeric WHERE NOT EXISTS (SELECT 1 FROM crop_seasons WHERE tenant_id=$1 AND field_id=$2 AND season=$3 AND crop=$4)`,[this.tenantId,fieldRow.id,field.season,field.crop,field.areaHa])
         }
         await connection.query(`INSERT INTO audit_events (tenant_id,actor_id,action,entity_type,entity_id,after_data,created_at) VALUES ($1,$2,'property_profile_updated','client',$3,$4,NOW())`,[this.tenantId,ownerId,client.id,jsonbParameter({propertyId:String(property.id),located:Boolean(metadata.location),fields:profile.fields.length,removed:profile.removedFieldIds.length})])
       })
-      return await this.getPropertyProfile(clientId,ownerId)
+      return await this.getPropertyProfile(clientId,ownerId,{propertyId:savedPropertyId})
     }catch(error){if(error.statusCode)throw error;throw serviceError('A propriedade não pôde ser salva no PostgreSQL configurado.')}
   }
 
@@ -1633,9 +1647,13 @@ export class ValRepository{
       const publicClientId=String(row.external_key||clientId)
       const rawProfileEvidence=Array.isArray(row.profile_evidence)?row.profile_evidence:[]
       const canonicalClientMemory=item=>{
+        // O SELECT comprova o vínculo deste UUID com o produtor autorizado.
+        // Memórias de visita/propriedade/talhão também carregam esse client_id;
+        // seus sujeitos continuam intactos e passam pela autorização própria.
+        if(String(item?.client_id||'')!==String(row.id))return item
         const type=String(item?.subject_type||item?.subjectType||'client').toLowerCase()
-        if(type!=='client')return item
-        return {...item,client_id:publicClientId,subject_id:publicClientId}
+        const subjectId=String(item?.subject_id??item?.subjectId??'').trim()
+        return {...item,client_id:publicClientId,...(type==='client'&&(!subjectId||subjectId===String(row.id))?{subject_id:publicClientId}:{})}
       }
       const memories=(row.memories||[]).map(canonicalClientMemory)
       const memoryHistory=(row.memory_history||row.memories||[]).map(canonicalClientMemory)
@@ -1941,7 +1959,7 @@ export class ValRepository{
                 await client.query(`UPDATE fields SET geometry_ref=NULL,geometry_version=NULL,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[tenantId,propertyId,fieldId])
               }
               if(fieldId&&season&&crop)await client.query(`INSERT INTO crop_seasons (tenant_id,field_id,season,crop,area_ha)
-                SELECT $1,$2,$3,$4,$5 WHERE NOT EXISTS (SELECT 1 FROM crop_seasons WHERE tenant_id=$1 AND field_id=$2 AND season=$3 AND crop=$4)`,[tenantId,fieldId,season,crop,fieldArea])
+                SELECT $1::uuid,$2::uuid,$3::varchar,$4::varchar,$5::numeric WHERE NOT EXISTS (SELECT 1 FROM crop_seasons WHERE tenant_id=$1 AND field_id=$2 AND season=$3 AND crop=$4)`,[tenantId,fieldId,season,crop,fieldArea])
             }
             return {propertyId,propertyExternalKey}
           }
@@ -1977,7 +1995,7 @@ export class ValRepository{
             const sourceAttachments=Array.isArray(event.payload.sourceAttachments)?event.payload.sourceAttachments.slice(0,3):[]
             const attachmentIds=[...new Set(sourceAttachments.map(item=>String(item?.attachmentId||'')))].filter(Boolean)
             const sourceById=new Map(sourceAttachments.map(item=>[String(item?.attachmentId||''),item]))
-            const sourceRows=attachmentIds.length?await client.query(`SELECT attachment.*,account.external_key client_external_key FROM val_attachments attachment LEFT JOIN clients account ON account.id=attachment.client_id AND account.tenant_id=attachment.tenant_id WHERE attachment.tenant_id=$1 AND attachment.consultant_id=$2 AND attachment.id=ANY($3::uuid[]) AND attachment.status<>'rejected' ORDER BY attachment.created_at FOR UPDATE`,[tenantId,ownerId,attachmentIds]):{rows:[]}
+            const sourceRows=attachmentIds.length?await client.query(`SELECT attachment.*,account.external_key client_external_key FROM val_attachments attachment LEFT JOIN clients account ON account.id=attachment.client_id AND account.tenant_id=attachment.tenant_id WHERE attachment.tenant_id=$1 AND attachment.consultant_id=$2 AND attachment.id=ANY($3::uuid[]) AND attachment.status<>'rejected' ORDER BY attachment.created_at FOR UPDATE OF attachment`,[tenantId,ownerId,attachmentIds]):{rows:[]}
             if(sourceRows.rows.length!==attachmentIds.length)throw domainError('Um ou mais attachments de origem não pertencem ao tenant e responsável autenticados.',404,'scan_attachment_scope_invalid')
             const requestedProperty=String(event.payload.context?.propertyId||event.propertyExternalKey||'').trim()
             const requestedField=String(event.payload.context?.fieldId||event.fieldExternalKey||'').trim()

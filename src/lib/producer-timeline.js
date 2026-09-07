@@ -87,7 +87,7 @@ export function buildProducerTimeline({client,visits=[],opportunities=[],commitm
    id:`commitment:${text(commitment.id)||at.toISOString()}`,
    kind:'commitment',
    at,
-   title:'Compromisso combinado',
+   title:({PROPOSED:'Compromisso proposto',ACCEPTED:'Compromisso combinado',IN_PROGRESS:'Compromisso em andamento',DONE:'Compromisso concluído',BLOCKED:'Compromisso bloqueado',CANCELLED:'Compromisso cancelado'})[text(commitment.status).toUpperCase()]||'Compromisso registrado',
    detail:text(commitment.description)||text(commitment.statement)||'Compromisso sem descrição.',
    status:text(commitment.status),
    source:'Compromissos'

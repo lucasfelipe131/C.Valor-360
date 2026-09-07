@@ -783,6 +783,86 @@ test('VoiceCaptureService — report confirmado fora da Voice não confirma cand
   assert.equal(context.visitLoop.confirmCalls.length,0)
 })
 
+for(const reportRead of ['create','lookup'])test(`VoiceCaptureService — confirmação concorrente reconhece o commit da mesma interação durante ${reportRead}`,async()=>{
+  const context=harness({extractorFactory:()=>[{category:'FACT_CANDIDATE',statement:'O produtor pediu um comparativo.'}]})
+  const flow=await processAudio(context,{interactionType:'POST_VISIT'})
+  let firstConfirmation
+  let reads=0
+  if(reportRead==='create'){
+    const create=context.visitLoop.createReportFromTranscript.bind(context.visitLoop)
+    context.visitLoop.createReportFromTranscript=async input=>{
+      if(++reads===1)return create(input)
+      const first=await firstConfirmation
+      const report=context.repository.reports.get(first.voice_interaction.related_artifacts.visit_report_id)
+      return {visit_report:clone(report)}
+    }
+  }else{
+    const reportId='visit-report-pending-race'
+    context.repository.interactions.get(flow.id).related_artifacts.visit_report_id=reportId
+    context.repository.reports.set(reportId,{visit_report_id:reportId,organization_id:tenantId,owner_id:actorId,visit_id:visitId,confirmation_status:'PENDING_REVIEW'})
+    const get=context.repository.getVisitReport.bind(context.repository)
+    context.repository.getVisitReport=async input=>{
+      if(++reads===2)await firstConfirmation
+      return get(input)
+    }
+  }
+  const confirm=()=>context.service.confirm({tenantId,ownerId:actorId,actorId,id:flow.id,requestId,now:later,input:confirmAll(flow.processed,{outcome_type:'NO_DECISION',no_action:true})})
+  firstConfirmation=confirm()
+  const [first,second]=await Promise.all([firstConfirmation,confirm()])
+  assert.equal(reads,2,'As duas chamadas precisam atravessar a leitura pendente para reproduzir a corrida.')
+  assert.equal(first.voice_interaction.state,'CONFIRMED')
+  assert.equal(second.voice_interaction.state,'CONFIRMED')
+  assert.equal(second.idempotent,true)
+  assert.equal(second.voice_interaction.related_artifacts.visit_report_id,first.voice_interaction.related_artifacts.visit_report_id)
+  assert.equal(second.result.outcomes.length,1)
+  assert.equal(context.visitLoop.confirmCalls.length,1)
+  assert.equal(context.repository.reports.size,1)
+  assert.equal(context.repository.learningByVisit.get(visitId).outcomes.length,1)
+  assert.equal(context.repository.learningByVisit.get(visitId).learning_candidates.length,1)
+})
+
+test('VoiceCaptureService — interação confirmada em outro report não legitima a leitura concorrente',async()=>{
+  const context=harness({extractorFactory:()=>[{category:'FACT_CANDIDATE',statement:'Informação exclusiva desta interação de voz.'}]})
+  const flow=await processAudio(context,{interactionType:'POST_VISIT'})
+  const create=context.visitLoop.createReportFromTranscript.bind(context.visitLoop)
+  context.visitLoop.createReportFromTranscript=async input=>{
+    const created=await create(input)
+    const interaction=context.repository.interactions.get(flow.id)
+    context.repository.interactions.set(flow.id,transitionVoiceInteraction(interaction,'CONFIRMED',{related_artifacts:{visit_report_id:'another-confirmed-report'},now:later}))
+    created.visit_report.confirmation_status='CONFIRMED'
+    return created
+  }
+  await assert.rejects(
+    ()=>context.service.confirm({tenantId,ownerId:actorId,actorId,id:flow.id,requestId,now:later,input:confirmAll(flow.processed,{outcome_type:'NO_DECISION',no_action:true})}),
+    error=>error.code==='voice_visit_report_already_confirmed'&&error.statusCode===409
+  )
+  assert.equal(context.repository.memories.length,0)
+  assert.equal(context.visitLoop.confirmCalls.length,0)
+})
+
+for(const sameReport of [true,false])test(`VoiceCaptureService — conflito atômico só retorna idempotência com o mesmo report (${sameReport})`,async()=>{
+  const context=harness({extractorFactory:()=>[{category:'FACT_CANDIDATE',statement:'O produtor pediu um comparativo.'}]})
+  const flow=await processAudio(context,{interactionType:'POST_VISIT'})
+  const confirm=context.visitLoop.confirmReport.bind(context.visitLoop)
+  context.visitLoop.confirmReport=async input=>{
+    await confirm(input)
+    const interaction=context.repository.interactions.get(flow.id)
+    context.repository.interactions.set(flow.id,transitionVoiceInteraction(interaction,'CONFIRMED',{
+      related_artifacts:{visit_report_id:sameReport?input.input.visit_report_id:'another-confirmed-report'},now:later
+    }))
+    throw Object.assign(new Error('Report changed after the pending read.'),{code:'voice_atomic_conflict',statusCode:409})
+  }
+  const operation=()=>context.service.confirm({tenantId,ownerId:actorId,actorId,id:flow.id,requestId,now:later,input:confirmAll(flow.processed,{outcome_type:'NO_DECISION',no_action:true})})
+  if(sameReport){
+    const result=await operation()
+    assert.equal(result.idempotent,true)
+    assert.equal(result.voice_interaction.state,'CONFIRMED')
+    assert.equal(result.result.outcomes.length,1)
+  }else await assert.rejects(operation,error=>error.code==='voice_atomic_conflict'&&error.statusCode===409)
+  assert.equal(context.visitLoop.confirmCalls.length,1)
+  assert.equal(context.repository.reports.size,1)
+})
+
 test('VoiceCaptureService — PRE_VISIT confirma memória e recalcula preparação uma única vez',async()=>{
   const context=harness({
     extractorFactory:()=>[
