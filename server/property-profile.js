@@ -5,6 +5,7 @@
 // cada talhão vive em fields.geometry_ref, no mesmo envelope canônico que o
 // Manual do Agrônomo já lê. Nada aqui inventa coordenada: sem pino registrado
 // a resposta diz "sem localização", e a interface mostra isso.
+import {validProductiveRing} from '../src/lib/productive-map.js'
 import {canonicalValToManualGeometry,decodeCanonicalGeometryRef} from '../src/lib/agronomic-geometry-adapter.js'
 
 const text=(value,max=180)=>String(value??'').trim().slice(0,max)
@@ -28,6 +29,7 @@ export function normalizeFieldPoints(value,label){
  if(value.length>MAX_FIELD_POINTS)fail(`O talhão "${label}" tem pontos demais (máximo ${MAX_FIELD_POINTS}).`,'field_points_too_many')
  const points=value.map(point=>normalizeLocation(point)).filter(Boolean)
  if(points.length<3)fail(`O talhão "${label}" precisa de pelo menos três pontos para fechar o contorno.`,'field_points_incomplete')
+ if(!validProductiveRing(points))fail(`O contorno do talhão "${label}" tem pontos repetidos, cruzamentos ou área nula.`,'field_points_invalid')
  return points
 }
 
@@ -44,7 +46,13 @@ export function normalizePropertyProfileInput(input={}){
   const area=finite(field.areaHa??field.area)
   const crop=text(field.crop,80);const season=text(field.season,30)
   if(crop&&!season)fail(`Informe a safra da cultura do talhão "${name}" (ex.: 2025/26).`,'field_season_required')
-  return {id:text(field.id)||null,name,areaHa:area===null||area<0?null:round(area,4),crop,season,points:normalizeFieldPoints(field.points,name),clearGeometry:field.clearGeometry===true}
+  let productivityTarget=undefined
+  if(Object.hasOwn(field,'productivityTarget')){
+   const raw=field.productivityTarget;productivityTarget=raw===null||raw===''?null:Number(raw)
+   if(productivityTarget!==null&&(!['string','number'].includes(typeof raw)||!Number.isFinite(productivityTarget)||productivityTarget<0||productivityTarget>1000))fail('Produtividade projetada inválida (sc/ha).')
+   if(productivityTarget!==null&&(!crop||!season))fail('Informe cultura e safra para a produtividade projetada.')
+  }
+  return {productivityTarget,id:text(field.id)||null,name,areaHa:area===null||area<0?null:round(area,4),crop,season,points:normalizeFieldPoints(field.points,name),clearGeometry:field.clearGeometry===true}
  })
  const removedFieldIds=[...new Set((Array.isArray(source.removedFieldIds)?source.removedFieldIds:[]).map(id=>text(id)).filter(Boolean))].slice(0,MAX_FIELDS)
  return {propertyId,propertyName,location,fields,removedFieldIds}

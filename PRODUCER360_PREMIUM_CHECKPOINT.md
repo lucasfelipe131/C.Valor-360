@@ -44,3 +44,45 @@ This is an implementation delivery with local validation, not production accepta
 Grain balance/commercialized quantities and credit need remain explicit empty states where an evidenced, reconciled read model is absent. Intentions do not establish executed sales. The existing intelligence engines were not rewritten, and the presentation provenance contract is not a retrospective audit or retrofit of all backend provenance.
 
 The header's opportunity action opens the existing opportunities module; this change does not add a new opportunity-creation engine. Existing canonical workflows and their confirmation requirements remain authoritative.
+
+## Municipality navigation and producer season goals — 2026-09-07
+
+User-requested extension on the same authorized staging target. Adds bundled
+IBGE state boundaries (visible by default), UF filtering and municipality
+search that changes viewport only; no automatic property assignment.
+
+Producer profile > Safra / Mapa e talhões now supports 2627V, 2727I and prior
+season codes, with Milho, Soja, Trigo and Canola inputs. Declared consolidated
+areas are never added to field areas. Actual historical yields and projected
+yields are separate; adopting the area-weighted historical yield requires a
+user action. Available volume requires explicit reserve and other-buyer
+amounts, including confirmed zero. Goals are per crop, with a printable PDF
+report available after saving. Unit: 60 kg sacks.
+
+Additive migration 20260907_009 creates a scoped season-input table with
+optimistic revision checks and client-row locking. No seed or example values
+are inserted. Missing inputs remain null; demo status comes from the client,
+not the request. Estimates and goals do not create opportunities or feed
+ContextSnapshot, memory, Copilot, Grains Intelligence or Credit Intelligence.
+
+Validation includes actual HTTP save/read/restart, unauthorized/foreign scope,
+revision conflict, retained nulls, report escaping and municipality navigation
+without producer-location mutation. Main, production and frozen PR95 remain
+outside this release.
+
+### Additional user-requested productive map editor
+
+Drawing tools now remain inside fullscreen, with a collapsible icon toolbar.
+A productive polygon has crop, season, approximate hectares and projected
+yield (sc/ha). Existing field points can be reopened and removed by one touch;
+map bubbling is disabled on vertices. Invalid, repeated or self-crossing
+vertices are rejected before persistence. Yield uses the existing crop_seasons
+columns; missing yield gives missing potential. No cross-crop volume sum.
+
+CAR, SIGEF and matrícula reference files can be imported as GeoJSON WGS84,
+toggled and filtered by their supplied attributes. These overlays are temporary,
+labelled user-provided references, and never become producer ownership evidence
+or productive hectares. Live cadastral services are not connected: the official
+Acervo Fundiário currently requires gov.br authentication and CAR lookup was
+unavailable during verification. Official lookup links are exposed in the panel.
+No cadastral coverage or document validity is implied by the imported label.

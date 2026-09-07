@@ -49,7 +49,7 @@ test('o contrato de entrada rejeita contorno aberto e cultura sem safra',()=>{
  assert.throws(()=>normalizePropertyProfileInput({fields:[{name:'Norte',points:[{lat:-12,lng:-55},{lat:-12.1,lng:-55}]}]}),/três pontos/)
  assert.throws(()=>normalizePropertyProfileInput({fields:[{name:'Norte',crop:'soja'}]}),/safra/)
  assert.throws(()=>normalizePropertyProfileInput({location:{lat:95,lng:0}}),/intervalo/)
- const normalized=normalizePropertyProfileInput({propertyName:'  Fazenda Norte ',location:{lat:-12.5450001234,lng:-55.72},fields:[{id:'f1',name:'Talhão 1',areaHa:'42.5',crop:'Soja',season:'2025/26',points:square},{}],removedFieldIds:['x','x','']})
+ const normalized=normalizePropertyProfileInput({propertyName:'  Fazenda Norte ',location:{lat:-12.5450001234,lng:-55.72},fields:[{id:'f1',name:'Talhão 1',areaHa:'42.5',crop:'Soja',season:'2025/26',productivityTarget:60,points:square},{}],removedFieldIds:['x','x','']})
  assert.equal(normalized.propertyName,'Fazenda Norte')
  assert.deepEqual(normalized.location,{lat:-12.545,lng:-55.72})
  assert.equal(normalized.fields[0].areaHa,42.5)
@@ -82,11 +82,12 @@ test('sem PostgreSQL a sede e os talhões vivem no arquivo local, por dono, e a 
  assert.deepEqual(await repository.getPropertyProfile('c1',ownerA),{clientId:'c1',property:null,properties:[],fields:[],source:'arquivo-local'})
  assert.equal((await repository.getIntelligence(ownerA)).clients[0].location,null)
 
- const saved=await repository.savePropertyProfile('c1',{location:{lat:-12.545,lng:-55.72},fields:[{name:'Norte',crop:'Soja',season:'2025/26',points:square},{name:'Sem contorno',areaHa:12}]},ownerA)
+ const saved=await repository.savePropertyProfile('c1',{location:{lat:-12.545,lng:-55.72},fields:[{name:'Norte',crop:'Soja',season:'2025/26',productivityTarget:60,points:square},{name:'Sem contorno',areaHa:12}]},ownerA)
  assert.equal(saved.property.name,'Fazenda Norte')
  assert.deepEqual([saved.property.location.lat,saved.property.location.lng],[-12.545,-55.72])
  assert.equal(saved.fields.length,2)
  assert.equal(saved.fields[0].geometryStatus,'CANONICAL')
+ assert.equal(saved.fields[0].productivityTarget,60)
  assert.equal(saved.fields[1].geometryStatus,'NOT_MAPPED')
  assert.equal((await repository.getIntelligence(ownerA)).clients[0].location.lat,-12.545)
 

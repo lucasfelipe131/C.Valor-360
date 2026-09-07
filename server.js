@@ -1,3 +1,4 @@
+import {readProducerSeasons,saveProducerSeason} from './server/producer-seasons.js'
 import {createReadStream,existsSync,mkdirSync,readFileSync,renameSync,statSync,writeFileSync} from 'node:fs'
 import {randomBytes,randomUUID} from 'node:crypto'
 import {createServer} from 'node:http'
@@ -65,8 +66,8 @@ const dataRoot=process.env.DATA_DIR||join(appRoot,'.data')
 const storePath=join(dataRoot,'valor360-store.json')
 const profileMatrix=JSON.parse(readFileSync(join(appRoot,'src','data','profile-matrix.json'),'utf8'))
 const surveyOptions=buildSurveyOptions(profileMatrix)
-const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp','.woff2':'font/woff2'}
-const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(self), microphone=(self), geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://server.arcgisonline.com; connect-src 'self' https://api.openai.com wss://api.openai.com; font-src 'self'; worker-src 'self' blob:; media-src 'self' blob: data:; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"}
+const mime={'.geojson':'application/geo+json','.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp','.woff2':'font/woff2'}
+const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(self), microphone=(self), geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://server.arcgisonline.com https://tile.openstreetmap.org; connect-src 'self' https://api.openai.com wss://api.openai.com; font-src 'self'; worker-src 'self' blob:; media-src 'self' blob: data:; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"}
 
 mkdirSync(dataRoot,{recursive:true})
 if(!existsSync(storePath))writeFileSync(storePath,JSON.stringify({surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[]}},null,2))
@@ -278,7 +279,7 @@ async function handleApi(request,response,url){
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
  const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
- const protectedPath=url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview|property|workspace))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview|property|workspace|season-plans))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const requestStartedAt=performance.now()
  let valRequestController=null
@@ -1065,6 +1066,12 @@ async function handleApi(request,response,url){
  if(contextMatch&&request.method==='GET')return json(response,200,{context:await repository.getTechnicalContext(decodeURIComponent(contextMatch[1]),identity?.id||identity?.email)})
  if(contextMatch&&request.method==='PUT'){
   const clientId=decodeURIComponent(contextMatch[1]);const context=await repository.saveTechnicalContext(clientId,await body(request),identity?.id||identity?.email);invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId});await accessRepository.recordUsage(identity,{eventType:'memory_saved',page:'client360',entityType:'client',entityId:clientId});return json(response,200,{saved:true,context})
+ }
+ const seasonPlanMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/season-plans$/)
+ if(seasonPlanMatch&&request.method==='GET')return json(response,200,await readProducerSeasons(repository,decodeURIComponent(seasonPlanMatch[1]),identity?.id||identity?.email))
+ if(seasonPlanMatch&&request.method==='PUT'){
+  const clientId=decodeURIComponent(seasonPlanMatch[1]);const season=await saveProducerSeason(repository,clientId,identity?.id||identity?.email,await body(request))
+  return json(response,200,{season})
  }
  const workspaceMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/workspace$/)
  if(workspaceMatch&&request.method==='GET')return json(response,200,await readProducerWorkspace(repository,decodeURIComponent(workspaceMatch[1]),identity?.id||identity?.email))

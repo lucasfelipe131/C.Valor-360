@@ -63,7 +63,7 @@ test('rotas, demonstração e propriedade recusam acesso sem sessão autenticada
  try{
   await waitForStartup(child)
   const base=`http://127.0.0.1:${port}`
-  for(const [path,method] of [['/api/demo/producer','GET'],['/api/demo/producer','POST'],['/api/visit-routes/day?date=2026-09-06','GET'],['/api/visit-routes/day?date=2026-09-06','PUT'],['/api/visit-routes/driving','POST'],['/api/clients/foreign/property','GET'],['/api/clients/foreign/property','PUT']]){
+  for(const [path,method] of [['/api/demo/producer','GET'],['/api/demo/producer','POST'],['/api/visit-routes/day?date=2026-09-06','GET'],['/api/visit-routes/day?date=2026-09-06','PUT'],['/api/visit-routes/driving','POST'],['/api/clients/foreign/season-plans','GET'],['/api/clients/foreign/season-plans','PUT'],['/api/clients/foreign/property','GET'],['/api/clients/foreign/property','PUT']]){
    const denied=await fetch(base+path,{method,headers:{'Content-Type':'application/json'},...(method!=='GET'?{body:'{}'}:{})})
    assert.equal(denied.status,401,`${method} ${path}`)
   }
