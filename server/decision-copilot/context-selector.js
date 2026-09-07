@@ -49,7 +49,10 @@ export function matchedValContextDomains(value=''){
 }
 
 export function conversationReferenceKind(message=''){
- const source=normalize(message)
+ // O vocativo sai antes das regras, como no roteador de comandos de sessao: sem isto "Val, repete"
+ // nao era reconhecido como continuacao, o dominio mudava e a conversa inteira era zerada (turnos,
+ // fatos e tese), entao nem os comandos sem vocativo se recuperavam.
+ const source=normalize(message).replace(/^(?:val[, ]+)+/,'').trim()
  if(!source)return 'NONE'
  if(/\b(?:novo assunto|mudar de assunto|desconsidere o anterior|ignore a conversa anterior)\b/.test(source))return 'RESET'
  if(/^(?:pode\s+)?(?:seguir|continue|continuar|prossiga|avance|e agora|entao|como sigo|faca isso|monte|aprofunde|resume|resuma|repete|repita|explica|explique|por que|porque|mostra(?:r)?(?:\s+(?:os\s+)?numeros)?|so(?:\s+o)?\s+essencial)\b|^(?:explique|mostre)\b.*\b(?:ultima (?:leitura|resposta|recomendacao)|resposta anterior|contexto atual)\b|\b(?:isso|o que voce falou|a resposta anterior|essas perguntas|a segunda|a primeira)\b/.test(source))return 'TURN_CONTENT'

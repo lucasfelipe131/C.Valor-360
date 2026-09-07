@@ -6,10 +6,13 @@ export const normalizeClientReference=value=>clean(value).normalize('NFD').repla
 
 // "mostra o perfil dele": o complemento do verbo termina no pronome do produtor atual; nao e um
 // nome a procurar na carteira.
-const currentClientReference=/^(?:ele|ela|dele|dela|nele|nela|esse|essa|este|esta|esse cliente|essa cliente|este cliente|esta cliente|esse produtor|essa produtora|este produtor|esta produtora)$|\b(?:dele|dela|nele|nela)$/i
+// Pronome no inicio da referencia e o produtor atual, mesmo com complemento adverbial
+// ("ele de novo", "ele semana que vem"): antes virava busca por um produtor chamado "ele de novo"
+// e o consultor recebia 422 dizendo que o pronome nao esta na carteira autorizada.
+const currentClientReference=/^(?:ele|ela|dele|dela|nele|nela)\b|^(?:esse|essa|este|esta|esse cliente|essa cliente|este cliente|esta cliente|esse produtor|essa produtora|este produtor|esta produtora)$|\b(?:dele|dela|nele|nela)$/i
 const temporalOnly=/^(?:amanh[ãa]|hoje|agora|depois|mais tarde|segunda|ter[cç]a|quarta|quinta|sexta|s[áa]bado|domingo)$/i
 const contextualFactOwner=/^(?:(?:[úu]ltim[oa]|mais recente)\s+(?:visita|compra|obje[cç][ãa]o|compromisso|safra)|propriedade atual|cadastro atual)$/iu
-const trailingContext=/\s+(?:amanh[ãa]|hoje|depois|mais tarde|na pr[óo]xima semana|esta semana|para (?:uma|a|o)|pra (?:uma|a|o)|porque\b|pois\b|e (?:quero|preciso|vou|vamos|quanto|qual|quais|como|o que|por que)\b).*$/iu
+const trailingContext=/\s+(?:amanh[ãa]|hoje|depois|mais tarde|de novo|outra vez|novamente|(?:na\s+)?(?:pr[óo]xima\s+)?semana(?:\s+que\s+vem)?|(?:no\s+)?(?:pr[óo]ximo\s+)?m[êe]s(?:\s+que\s+vem)?|esta semana|para (?:uma|a|o)|pra (?:uma|a|o)|porque\b|pois\b|e (?:quero|preciso|vou|vamos|quanto|qual|quais|como|o que|por que)\b).*$/iu
 
 const naturalReferencePatterns=Object.freeze([
  {kind:'EXPLICIT_NAME',pattern:/\bcomo\s+(?:est[aá]|t[aá]|anda)\s+(?:(?:o|a)\s+)?(?:cliente|produtor|produtora)\s+(?<reference>[^,.!?;]+)/iu},

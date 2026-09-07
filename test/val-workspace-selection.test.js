@@ -35,10 +35,12 @@ test('grain environment opens the operational SOG without mixing the inputs jour
 test('direct producer preparation opens the focused visit journey while VAL navigation opens the selector',()=>{
  const app=read('src/App.jsx')
  assert.match(app,/const \[valMode,setValMode\]=useState\(null\)/)
- assert.match(app,/const prepareClient=c=>\{if\(!c\?\.id\)return;setSelected\(c\);setPrepareVisitClientId\(c\.id\);setPage\('visits'\)/)
+ // A preparacao direta agora carrega a visita escolhida no gesto (options.visitId); sem isso duas
+ // visitas futuras do mesmo produtor faziam qualquer linha abrir o roteiro da mais proxima.
+ assert.match(app,/const prepareClient=\(c,options=\{\}\)=>\{if\(!c\?\.id\)return;setSelected\(c\);setPrepareVisitClientId\(c\.id\);setPrepareVisitId\(String\(options\?\.visitId\|\|''\)\);setPage\('visits'\)/)
  assert.match(app,/if\(next==='val'\)setValMode\(null\)/)
  assert.match(app,/<ValWorkspace mode=\{valMode\} onModeChange=\{setValMode\}[^>]*onPrepareVisit=\{prepareClient\}/)
- assert.match(app,/<Visits[^>]*initialClientId=\{prepareVisitClientId\}/)
+ assert.match(app,/<Visits[^>]*initialClientId=\{prepareVisitClientId\} initialVisitId=\{prepareVisitId\}/)
  assert.match(app,/valMode==='graos'\?\['VAL Grãos'/)
 })
 

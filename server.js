@@ -461,8 +461,12 @@ async function handleApi(request,response,url){
  }
  if(url.pathname==='/api/val/attachments'&&request.method==='GET'){
   const clientId=clean(url.searchParams.get('clientId'));const association=clean(url.searchParams.get('association')).toUpperCase();if(!clientId&&association!=='UNLINKED')return json(response,400,{error:'Selecione um produtor ou informe explicitamente association=UNLINKED.'})
-  const attachments=await repository.listAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,limit:30})
-  return json(response,200,{attachments})
+  const requestedLimit=Number(url.searchParams.get('limit'))
+  const limit=Number.isFinite(requestedLimit)&&requestedLimit>0?Math.min(200,Math.round(requestedLimit)):60
+  const mimePrefix=clean(url.searchParams.get('mimePrefix')).slice(0,40)
+  const attachments=await repository.listAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,limit,mimePrefix})
+  // `truncated` deixa a tela distinguir "nada registrado" de "nada nesta pagina".
+  return json(response,200,{attachments,limit,truncated:attachments.length>=limit})
  }
  if(url.pathname==='/api/val/attachments'&&request.method==='POST'){
   const payload=await body(request);const clientId=clean(payload.clientId);const association=clean(payload.association).toUpperCase()||'LINKED_CLIENT';if(!['LINKED_CLIENT','UNLINKED'].includes(association))return json(response,400,{error:'Associação de arquivo inválida.'});if(association==='LINKED_CLIENT'&&!clientId)return json(response,400,{error:'Selecione um produtor antes de anexar.'});if(association==='UNLINKED'&&clientId)return json(response,400,{error:'Um attachment UNLINKED não pode declarar produtor.'})

@@ -902,10 +902,14 @@ export class ValRepository{
       ])
       const business=businessResult.rows[0]||{}
       const commercial=derivedCommercial(client.commercial_profile)
-      const currentPurchases=parseMoney(commercial.purchaseCurrentSeason)??0
-      const previousPurchases=parseMoney(commercial.purchasePreviousSeason)??0
-      const potentialTotal=parseMoney(commercial.potentialTotal)??0
-      const openPotential=potentialTotal>0?Math.max(0,potentialTotal-currentPurchases):0
+      // Campo ausente no cadastro continua desconhecido: virar 0 fazia o painel afirmar
+      // "Potencial em aberto R$ 0,00" ao lado do tile "A medir" da mesma tela, para o estado padrao
+      // logo apos a importacao. money() ja renderiza "—" quando o valor e null.
+      const currentPurchases=parseMoney(commercial.purchaseCurrentSeason)??null
+      const previousPurchases=parseMoney(commercial.purchasePreviousSeason)??null
+      const potentialTotal=parseMoney(commercial.potentialTotal)??null
+      const currentValue=currentPurchases??0
+      const openPotential=potentialTotal===null?null:Math.max(0,potentialTotal-currentValue)
       const openStages=pipelineResult.rows.filter(item=>String(item.stage||'').toLowerCase()!=='fechado')
       const openPipeline=openStages.reduce((sum,item)=>sum+Number(item.value||0),0)
       const weightedPipeline=openStages.reduce((sum,item)=>sum+Number(item.weighted_value||0),0)
@@ -939,15 +943,15 @@ export class ValRepository{
         cloud:{storage:'postgresql',ownerScoped:true,workspaceUpdatedAt:iso(workspace.updated_at)||null},
         business:{
           purchaseTotal,purchaseCount,currentPurchases,previousPurchases,potentialTotal,openPotential,
-          openPipeline,weightedPipeline,forecast:currentPurchases+weightedPipeline,
+          openPipeline,weightedPipeline,forecast:currentPurchases===null?null:currentPurchases+weightedPipeline,
           averageTicket:purchaseCount?purchaseTotal/purchaseCount:0,
           wins,losses:Number(business.losses||0),knownOutcomes,conversionRate:knownOutcomes?wins/knownOutcomes*100:null,
-          purchaseGrowthPercent:previousPurchases>0?(currentPurchases-previousPurchases)/previousPurchases*100:null,
-          potentialCoveragePercent:potentialTotal>0?Math.min(100,currentPurchases/potentialTotal*100):null,
+          purchaseGrowthPercent:previousPurchases>0&&currentPurchases!==null?(currentPurchases-previousPurchases)/previousPurchases*100:null,
+          potentialCoveragePercent:potentialTotal>0&&currentPurchases!==null?Math.min(100,currentPurchases/potentialTotal*100):null,
           pipelineCoveragePercent:openPotential>0?openPipeline/openPotential*100:null,
-          marginTotal:Number(business.margin_total||0),estimatedMargin:grossMarginPercent===null?null:currentPurchases*(grossMarginPercent/100),
+          marginTotal:business.margin_total==null?null:Number(business.margin_total),estimatedMargin:grossMarginPercent===null||currentPurchases===null?null:currentPurchases*(grossMarginPercent/100),
           lastPurchaseAt:iso(business.last_purchase_at)||null,
-          creditLimit:Number(commercial.creditLimit||0),creditUsed:Number(commercial.creditUsed||0),creditAvailable:Number(commercial.creditAvailable||0),
+          creditLimit:parseMoney(commercial.creditLimit)??null,creditUsed:parseMoney(commercial.creditUsed)??null,creditAvailable:parseMoney(commercial.creditAvailable)??null,
           walletShare:commercial.walletShare??null,targetShare:commercial.targetShare??null,grossMarginPercent:grossMarginPercent,
           paymentTerms:commercial.paymentTerms||'',decisionWindow:commercial.decisionWindow||'',commercialRisk:commercial.commercialRisk||''
         },
@@ -957,7 +961,9 @@ export class ValRepository{
         technical:{
           properties:Math.max(Number(technical.properties||0),manualProperties,Number(Boolean(manualProducer))),fields:Math.max(Number(technical.fields||0),manualFields.length),cropSeasons:Math.max(Number(technical.crop_seasons||0),manualSeasons.size),fieldReports:Number(technical.field_reports||0),
           soilAnalyses:Math.max(Number(technical.soil_analyses||0),workspaceSoil.length),ndvi:Math.max(Number(technical.ndvi||0),manualNdvi),manualEvents:Number(technical.manual_events||0),
-          directRecords:directRecords.length,lastSyncAt:iso(technical.last_manual_sync)||iso(workspace.updated_at)||null,
+          // workspace.updated_at e o carimbo do Manual do CONSULTOR (blob unico com todos os produtores):
+          // sem vinculo com este produtor ele fazia a tela afirmar sincronizacao que nunca aconteceu aqui.
+          directRecords:directRecords.length,lastSyncAt:iso(technical.last_manual_sync)||(manualProducer||workspaceSoil.length||directRecords.length||Number(technical.manual_events||0)>0?iso(workspace.updated_at):null)||null,
           producer:manualProducer?{name:String(manualProducer.name||manualProducer.producerName||client.name).slice(0,180),city:String(manualProducer.city||manualProducer.municipality||'').slice(0,140),area:Number(manualProducer.area||0),cultures:Array.isArray(manualProducer.cultures)?manualProducer.cultures.slice(0,20):String(manualProducer.cultures||'').split(/[,;/|]+/).map(item=>item.trim()).filter(Boolean).slice(0,20),propertyLabel:String(manualProducer.properties||manualProducer.property||'').slice(0,500),fieldCount:Array.isArray(manualProducer.fields)?manualProducer.fields.length:0,mappingStatus:String(manualProducer.mappingStatus||'').slice(0,60)}:null,
           recentRecords:directRecords.slice(0,6).map(item=>({id:String(item.id),type:String(item.record_type||''),title:String(item.title||'Registro técnico').slice(0,240),updatedAt:iso(item.updated_at)}))
         }
@@ -1740,12 +1746,15 @@ export class ValRepository{
     }catch(error){if(error.statusCode)throw error;throw serviceError('O arquivo não pôde ser salvo na nuvem.')}
   }
 
-  async listAttachments({tenantId=this.tenantId,ownerId,clientId,limit=20,signal,timeoutMs}){
+  // mimePrefix filtra no servidor, ANTES do corte: sem isso bastavam 30 documentos recentes para a
+  // galeria de fotos ficar vazia e a tela afirmar "Nenhuma foto registrada" com foto gravada.
+  async listAttachments({tenantId=this.tenantId,ownerId,clientId,limit=20,mimePrefix='',signal,timeoutMs}){
     throwIfPersistenceCancelled(signal)
     tenantId=assertTenantScope(this.tenantId,tenantId)
     const normalizedClientId=clientId?String(clientId):null
-    if(!this.db.configured){const result=this.fallback().val.attachments.filter(item=>attachmentInTenant(item,tenantId)&&item.ownerId===ownerId&&(item.clientId||null)===(normalizedClientId||null)&&item.status!=='rejected').slice(-limit).reverse().map(attachmentMetadataRecord);throwIfPersistenceCancelled(signal);return result}
-    try{const result=await this.db.query("SELECT a.*,NULL::text content_base64,c.external_key client_external_key FROM val_attachments a LEFT JOIN clients c ON c.id=a.client_id AND c.tenant_id=a.tenant_id WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND (($3::text='' AND a.client_id IS NULL) OR ($3::text<>'' AND (c.id::text=$3 OR c.external_key=$3))) AND a.status<>'rejected' ORDER BY a.created_at DESC LIMIT $4",[tenantId,ownerId,normalizedClientId||'',Math.max(1,Math.min(100,Number(limit)||20))],{signal,timeoutMs});throwIfPersistenceCancelled(signal);return result.rows.map(attachmentRecord)}catch(error){if(signal?.aborted)throw persistenceCancellationError(signal);throw serviceError('Os arquivos deste escopo não puderam ser lidos.')}
+    const prefix=String(mimePrefix||'')
+    if(!this.db.configured){const result=this.fallback().val.attachments.filter(item=>attachmentInTenant(item,tenantId)&&item.ownerId===ownerId&&(item.clientId||null)===(normalizedClientId||null)&&item.status!=='rejected'&&(!prefix||String(item.mimeType||item.mime_type||'').startsWith(prefix))).slice(-limit).reverse().map(attachmentMetadataRecord);throwIfPersistenceCancelled(signal);return result}
+    try{const result=await this.db.query("SELECT a.*,NULL::text content_base64,c.external_key client_external_key FROM val_attachments a LEFT JOIN clients c ON c.id=a.client_id AND c.tenant_id=a.tenant_id WHERE a.tenant_id=$1 AND a.consultant_id=$2 AND (($3::text='' AND a.client_id IS NULL) OR ($3::text<>'' AND (c.id::text=$3 OR c.external_key=$3))) AND a.status<>'rejected' AND ($5::text='' OR a.mime_type LIKE $5||'%') ORDER BY a.created_at DESC LIMIT $4",[tenantId,ownerId,normalizedClientId||'',Math.max(1,Math.min(200,Number(limit)||20)),prefix],{signal,timeoutMs});throwIfPersistenceCancelled(signal);return result.rows.map(attachmentRecord)}catch(error){if(signal?.aborted)throw persistenceCancellationError(signal);throw serviceError('Os arquivos deste escopo não puderam ser lidos.')}
   }
 
   async getAttachments({tenantId=this.tenantId,ownerId,clientId,ids=[],signal,timeoutMs}){

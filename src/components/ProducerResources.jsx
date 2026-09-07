@@ -19,7 +19,7 @@ function ResourceState({state,empty,children}){
 }
 const date=value=>value?new Date(value).toLocaleDateString('pt-BR'):'Não informado'
 export function ProducerDocuments({client,onAsk}){
- const state=useResource(`/api/val/attachments?clientId=${encodeURIComponent(client.id)}`)
+ const state=useResource(`/api/val/attachments?clientId=${encodeURIComponent(client.id)}&limit=200`)
  const items=(state.data?.attachments||[]).filter(item=>attachmentMatchesBrowserScope(item,{clientId:client.id})&&(isDemoRecord(client)||!isDemoRecord(item))&&item.status!=='rejected')
  const [query,setQuery]=useState('')
  const visible=items.filter(item=>String(item.originalName||'').toLocaleLowerCase('pt-BR').includes(query.toLocaleLowerCase('pt-BR')))

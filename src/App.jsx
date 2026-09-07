@@ -77,6 +77,7 @@ export default function App(){
  const [selected,setSelected]=useState(null)
  const [producerTab,setProducerTab]=useState('overview')
  const [prepareVisitClientId,setPrepareVisitClientId]=useState('')
+ const [prepareVisitId,setPrepareVisitId]=useState('')
  const [clientList,setClientList]=useState([])
  const [visits,setVisits]=useState([])
  const [opportunities,setOpportunities]=useState([])
@@ -90,7 +91,7 @@ export default function App(){
  const copilotOwnerScope=currentUser?.storageScope||currentUser?.id||''
  const openClient=c=>{if(String(c.id)!==String(selected?.id)){setProducerTab('overview');setCopilotSeed({clientId:c.id,nonce:Date.now()});}setSelected(c);setCopilotLoaded(true);setCopilotOpen(window.matchMedia('(min-width:1051px)').matches);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
  const notify=message=>{const text=typeof message==='string'?message:String(message?.message||'Ação concluída.');setToast(text);window.clearTimeout(window.__valorToast);window.__valorToast=window.setTimeout(()=>setToast(''),2800)}
- const prepareClient=c=>{if(!c?.id)return;setSelected(c);setPrepareVisitClientId(c.id);setPage('visits');if(page==='visits')window.requestAnimationFrame(resetPageViewport)}
+ const prepareClient=(c,options={})=>{if(!c?.id)return;setSelected(c);setPrepareVisitClientId(c.id);setPrepareVisitId(String(options?.visitId||''));setPage('visits');if(page==='visits')window.requestAnimationFrame(resetPageViewport)}
  const openValClient=c=>{setSelected(c);setValMode('insumos');setPage('val');if(page==='val')window.requestAnimationFrame(resetPageViewport)}
  const updateCopilotPageContext=useCallback(input=>setCopilotPageContext(input?{...input,storageScope:copilotOwnerScope}:null),[copilotOwnerScope])
  const consumeAgroInitialFile=useCallback(file=>setAgroLaunch(current=>{let removed=false;const initialFiles=current.initialFiles.filter(item=>{const candidate=item?.file||item;const match=candidate===file||(!removed&&candidate?.name===file?.name&&candidate?.type===file?.type&&Number(candidate?.size||0)===Number(file?.size||0));if(match&&!removed){removed=true;return false}return true});return initialFiles.length===current.initialFiles.length?current:{...current,initialFiles}}),[])
@@ -256,7 +257,7 @@ export default function App(){
     {page==='val'&&<ValWorkspace mode={valMode} onModeChange={setValMode} clients={clientList} selectedClient={selected} onSelect={openClient} onPrepareVisit={prepareClient}/>}
     {page==='agro'&&<Agro key={agroLaunch.nonce||'agro'} onAsk={openCopilot} onCapture={openCopilot} onTelemetry={recordAgroHeroTelemetry} onContextChange={updateCopilotPageContext} onInitialFileConsumed={consumeAgroInitialFile} client={agroLaunch.client} property={agroLaunch.property} field={agroLaunch.field} analysis={agroLaunch.analysis} context={agroLaunch.context} initialTool={agroLaunch.initialTool} initialFiles={agroLaunch.initialFiles}/>}
     {page==='questionnaire'&&<Questionnaire onCreate={addClient} onCreateMany={addClients} onOpen={openClient} onNotify={notify}/>}
-    {page==='visits'&&<Visits clients={clientList} visits={visits} storageScope={currentUser?.storageScope} initialClientId={prepareVisitClientId} onInitialHandled={()=>setPrepareVisitClientId('')} onSave={saveVisit} onPrepare={openValClient} onAsk={openCopilot} onContextChange={updateCopilotPageContext} onStarted={startVisitResult} onCancelled={cancelVisitResult} onRegistered={registerVisitResult} onRefreshPortfolio={refreshPortfolio}/>}
+    {page==='visits'&&<Visits clients={clientList} visits={visits} storageScope={currentUser?.storageScope} initialClientId={prepareVisitClientId} initialVisitId={prepareVisitId} onInitialHandled={()=>{setPrepareVisitClientId('');setPrepareVisitId('')}} onSave={saveVisit} onPrepare={openValClient} onAsk={openCopilot} onContextChange={updateCopilotPageContext} onStarted={startVisitResult} onCancelled={cancelVisitResult} onRegistered={registerVisitResult} onRefreshPortfolio={refreshPortfolio}/>}
     {page==='opportunities'&&<Opportunities clients={clientList} storageScope={currentUser?.storageScope} persistedItems={opportunities} onPersist={saveOpportunity} onClient={openClient} onAsk={openCopilot} onContextChange={updateCopilotPageContext} onSaved={notify}/>}
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
     {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}

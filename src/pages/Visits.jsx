@@ -34,7 +34,7 @@ const fileDataUrl=file=>new Promise((resolve,reject)=>{const reader=new FileRead
 const uiCandidate=(statement,sourceRef)=>({item_id:globalThis.crypto?.randomUUID?.()||`ui-${Date.now()}`,epistemic_status:'FACT_CANDIDATE',statement,source_ref:sourceRef,confidence:1,requires_confirmation:true})
 const deadline=value=>value?new Date(`${value}T23:59:59.999-03:00`).toISOString():null
 
-export default function Visits({clients,visits,storageScope,initialClientId='',onInitialHandled,onSave,onPrepare,onAsk,onContextChange,onStarted,onCancelled,onRegistered,onRefreshPortfolio}){
+export default function Visits({clients,visits,storageScope,initialClientId='',initialVisitId='',onInitialHandled,onSave,onPrepare,onAsk,onContextChange,onStarted,onCancelled,onRegistered,onRefreshPortfolio}){
  const [showForm,setShowForm]=useState(false)
  const [historyOpen,setHistoryOpen]=useState(false)
  const [demoEnabled,setDemoEnabled]=useState(false)
@@ -71,8 +71,11 @@ export default function Visits({clients,visits,storageScope,initialClientId='',o
   if(!initialClientId){initialRequestRef.current='';return}
   if(initialRequestRef.current===initialClientId)return
   initialRequestRef.current=initialClientId
-  const candidates=[...visits].filter(item=>item.clientId===initialClientId&&preVisitVoiceLifecycle.has(lifecycleOf(item))).sort((a,b)=>visitDate(a)-visitDate(b))
-  const visit=candidates.find(item=>visitDate(item).getTime()>=Date.now())||candidates[0]
+  const candidates=[...visits].filter(item=>item.clientId===initialClientId&&preVisitVoiceLifecycle.has(lifecycleOf(item))).sort((a,b)=>visitTime(a)-visitTime(b))
+  // A visita pedida no gesto vem primeiro: sem ela, duas visitas futuras do mesmo produtor faziam
+  // qualquer linha da Home abrir o roteiro da mais proxima.
+  const requested=initialVisitId?candidates.find(item=>String(item.id)===String(initialVisitId)):null
+  const visit=requested||candidates.find(item=>visitTime(item)>=Date.now())||candidates[0]
   if(visit)prepareVisit(visit)
   else{
    setForm(current=>({...current,clientId:initialClientId,objective:''}))

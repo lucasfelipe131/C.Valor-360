@@ -126,12 +126,17 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  const recentVisits=[...(visits||[])].sort((a,b)=>(scheduledAtOf(b)?.getTime()||0)-(scheduledAtOf(a)?.getTime()||0)).slice(0,4)
  // Centro operacional: o que precisa de atenção agora, contado a partir do que
  // já está na sessão. Nenhum número estimado, nenhum alerta inventado.
- const briefing=useMemo(()=>buildDayBriefing({visits,opportunities,clients}),[visits,opportunities,clients])
- const focus=useMemo(()=>buildFocusProducers({clients,visits,opportunities}),[clients,visits,opportunities])
- const pendencies=useMemo(()=>buildPendencies({clients,visits,opportunities}),[clients,visits,opportunities])
+ // A faixa do dia, as pendencias e os produtores em foco contam pela MESMA fonte do funil
+ // (reconcilePipeline): com o array cru a Home dizia "Oportunidades 00" e o funil da mesma tela
+ // mostrava 1, e o card levava para uma pagina com outro numero.
+ const briefing=useMemo(()=>buildDayBriefing({visits,opportunities:pipelineItems,clients}),[visits,pipelineItems,clients])
+ const focus=useMemo(()=>buildFocusProducers({clients,visits,opportunities:pipelineItems}),[clients,visits,pipelineItems])
+ const pendencies=useMemo(()=>buildPendencies({clients,visits,opportunities:pipelineItems}),[clients,visits,pipelineItems])
  const topCultures=useMemo(()=>buildTopCultures({clients,metricsOf:client=>commercialMetrics(client).openPotential}),[clients])
  const coverage={total:clients.length,measured:relationships.irtKnown,share:clients.length?Math.round(relationships.irtKnown/clients.length*100):0}
- const openVisit=entry=>{const client=clients.find(item=>String(item.id)===String(entry.clientId));if(client)onPrepare(client);else setPage('visits')}
+ // A linha clicada identifica UMA visita: sem levar o id, Visitas escolhia sozinha a primeira futura
+ // do produtor e o consultor recebia o roteiro de outro compromisso.
+ const openVisit=entry=>{const client=clients.find(item=>String(item.id)===String(entry.clientId));if(client)onPrepare(client,{visitId:entry.id});else setPage('visits')}
  const quickActions=[
   ['Preparar visita',CalendarCheck2,()=>selectedVoiceClient?onPrepare(selectedVoiceClient):setPage('visits')],
   ['Perguntar à VAL',BrainCircuit,()=>onOpenCopilot?.({})],

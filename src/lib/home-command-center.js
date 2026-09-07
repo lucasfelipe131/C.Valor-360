@@ -125,6 +125,9 @@ export function buildPendencies({clients=[],visits=[],opportunities=[]}={}){
 
 // Top culturas da carteira: agrupa o potencial em aberto por cultura declarada.
 // Só entra cultura que algum produtor declarou — a VAL não estima carteira.
+// "A definir" e "A classificar" sao preenchimento que o proprio produto grava quando a Q4 fica em
+// branco: entravam no ranking como se fossem cultura declarada e, em carteira importada, lideravam.
+const placeholderCulture=/^a\s+(?:definir|classificar|confirmar)$|^aguardando/i
 export function buildTopCultures({clients=[],metricsOf=null,limit=5}={}){
  const byCulture=new Map()
  for(const client of clients){
@@ -132,6 +135,7 @@ export function buildTopCultures({clients=[],metricsOf=null,limit=5}={}){
   if(!raw)continue
   const potential=metricsOf?Number(metricsOf(client)||0):0
   for(const culture of raw.split(/[•,;/]+/).map(item=>item.trim()).filter(Boolean)){
+   if(placeholderCulture.test(culture))continue
    const current=byCulture.get(culture)||{culture,producers:0,potential:0}
    current.producers+=1
    current.potential+=potential

@@ -1,5 +1,7 @@
 export const SEASON_CROPS=['Milho','Soja','Trigo','Canola']
-export const seasonCode=value=>String(value||'').trim().toUpperCase()
+// O <option> do DOM colapsa espacos no value: gravar 'INVERNO  2029' (espaco duplo) deixava a safra
+// inalcancavel pela tela e permitia criar uma segunda linha visualmente identica.
+export const seasonCode=value=>String(value||'').trim().replace(/\s+/g,' ').toUpperCase()
 // Labels are user-defined. Only recognised codes participate in automatic historical averages.
 export function validSeasonCode(value){const label=seasonCode(value);return label.length>=2&&label.length<=30&&/^[\p{L}\p{N}][\p{L}\p{N} /_.()-]*$/u.test(label)}
 export function seasonPeriod(value){

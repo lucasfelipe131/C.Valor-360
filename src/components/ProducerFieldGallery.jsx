@@ -40,7 +40,7 @@ export default function ProducerFieldGallery({clientId,clientName,onSaved}){
 
  useEffect(()=>{
   const controller=new AbortController();setState(current=>({...current,loading:true,error:''}))
-  fetch(`/api/val/attachments?clientId=${encodeURIComponent(clientId)}`,{signal:controller.signal})
+  fetch(`/api/val/attachments?clientId=${encodeURIComponent(clientId)}&mimePrefix=${encodeURIComponent('image/')}&limit=120`,{signal:controller.signal})
    .then(async response=>{const payload=await response.json().catch(()=>({}));if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error(payload.error||'Não foi possível carregar as fotos.');return payload})
    .then(payload=>{setPhotos((payload.attachments||[]).filter(item=>item.mimeType?.startsWith('image/')));setState(current=>({...current,loading:false,error:''}))})
    .catch(error=>{if(error.name!=='AbortError')setState(current=>({...current,loading:false,error:error.message}))})

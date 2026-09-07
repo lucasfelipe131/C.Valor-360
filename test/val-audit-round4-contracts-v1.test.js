@@ -8,7 +8,15 @@ import {tmpdir} from 'node:os'
 import {dirname,join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {createDatabase} from '../server/db.js'
+import {ValRepository} from '../server/repository.js'
 import {selectKnowledge} from '../server/knowledge/selection.js'
+import {classifyStructuredClientFact} from '../server/decision-copilot/capability-router.js'
+import {conversationReferenceKind} from '../server/decision-copilot/context-selector.js'
+import {extractNaturalClientReference} from '../server/decision-copilot/producer-entity-resolver.js'
+import {routeGlobalIntent} from '../server/decision-copilot/global-intent-router.js'
+import {buildDayBriefing,buildTopCultures} from '../src/lib/home-command-center.js'
+import {seasonCode} from '../src/lib/producer-seasons.js'
+import {readFileSync} from 'node:fs'
 
 const repositoryRoot=join(dirname(fileURLToPath(import.meta.url)),'..')
 const tenantId='00000000-0000-4000-8000-000000000001'
@@ -99,4 +107,58 @@ test('HTTP demo: acento partido entre pacotes chega íntegro ao registro e o ass
   await new Promise(resolve=>{const timer=setTimeout(()=>{child.kill('SIGKILL');resolve()},3000);child.once('exit',()=>{clearTimeout(timer);resolve()})})
   await rmAsync(dataRoot,{recursive:true,force:true})
  }
+})
+
+// --- Rodada 5 -------------------------------------------------------------
+const read5=path=>readFileSync(join(repositoryRoot,path),'utf8')
+
+test('rodada 5: perfil na forma nominal, vocativo preserva a conversa, pronome com cauda e escritas ampliadas',()=>{
+ for(const message of ['perfil dele','o perfil dele','me fala do perfil dele','me fala do perfil comportamental dele','fala do perfil dele','como e o jeito dele?','qual o perfil dele?'])assert.equal(classifyStructuredClientFact(message),'BEHAVIORAL_PROFILE',message)
+ assert.equal(classifyStructuredClientFact('perfil de mercado da soja'),null)
+ // "Val, repete" precisa continuar sendo continuidade: sem isso o dominio mudava e a conversa
+ // inteira era zerada (turnos, fatos e tese), derrubando ate os comandos sem vocativo.
+ for(const message of ['repete','Val, repete','Val, resume isso','val explica melhor','Val, mostra os numeros'])assert.equal(conversationReferenceKind(message),'TURN_CONTENT',message)
+ for(const message of ['quando vou visitar ele de novo?','quando vou encontrar ele de novo?','vou ver ele na semana que vem','vamos visitar ele semana que vem']){
+  const reference=extractNaturalClientReference(message)
+  assert.equal(reference.kind,'CURRENT_CLIENT',`${message} -> ${JSON.stringify(reference)}`)
+ }
+ assert.equal(extractNaturalClientReference('vou visitar o Genor Brum amanha').kind,'EXPLICIT_NAME')
+ const client={id:'joao',name:'João Pereira'}
+ const intent=message=>routeGlobalIntent({message,client}).intent
+ for(const message of ['cria uma nova visita para amanhã','agenda uma nova visita para sexta','cadastra uma nova oportunidade'])assert.equal(intent(message),'CREATE',message)
+ for(const message of ['deleta a oportunidade de KCl','coloca a oportunidade em Proposta','move a oportunidade para Negociação'])assert.equal(intent(message),'UPDATE',message)
+ assert.equal(intent('quando foi a nova visita?'),'ASK')
+})
+
+test('rodada 5: Home conta pela mesma fonte do funil, descarta cultura de preenchimento e leva a visita escolhida',()=>{
+ // A oportunidade declarada no Produtor 360 entra pelo pipeline: contar so o array cru fazia a Home
+ // dizer "Oportunidades 00" enquanto o funil da mesma tela mostrava 1.
+ const pipelineItem={id:'o-joao',clientId:'joao',title:'Semente',stage:'Diagnóstico',value:180000}
+ assert.equal(buildDayBriefing({visits:[],opportunities:[pipelineItem],clients:[{id:'joao',name:'João'}]}).cards.find(item=>item.id==='opportunities')?.value,1)
+ const cultures=buildTopCultures({clients:[{id:'a',cultures:'A definir'},{id:'b',cultures:'A classificar'},{id:'c',cultures:'Soja, Milho'}]})
+ assert.deepEqual(cultures.map(item=>item.culture).sort(),['Milho','Soja'])
+ assert.equal(seasonCode('Inverno  2029'),'INVERNO 2029','espaco interno colapsa como o DOM faz')
+ const dashboard=read5('src/pages/Dashboard.jsx')
+ assert.match(dashboard,/onPrepare\(client,\{visitId:entry\.id\}\)/)
+ assert.match(dashboard,/buildDayBriefing\(\{visits,opportunities:pipelineItems,clients\}\)/)
+ assert.match(read5('src/App.jsx'),/const prepareClient=\(c,options=\{\}\)=>/)
+ assert.match(read5('src/pages/Visits.jsx'),/const requested=initialVisitId\?candidates\.find/)
+})
+
+test('rodada 5: cadastro comercial ausente continua desconhecido e a galeria filtra imagens no servidor',async()=>{
+ const rows={business:{purchase_total:0,purchase_count:0,margin_total:null,last_purchase_at:null}}
+ const db={configured:true,query:async sql=>{
+  if(/FROM clients c/.test(sql))return {rows:[{id:1,external_key:'joao',name:'João Pereira',commercial_profile:{},relationship_profile:{},profile_snapshot:{}}],rowCount:1}
+  if(/business_events/.test(sql))return {rows:[rows.business],rowCount:1}
+  return {rows:[],rowCount:0}
+ }}
+ const repository=new ValRepository({db,readStore:()=>({}),saveStore:()=>{},tenantId})
+ const overview=await repository.getClientOverview({tenantId,ownerId:'owner-1',clientId:'joao'}).catch(()=>null)
+ if(overview){
+  const commercial=overview.commercial||{}
+  for(const field of ['currentPurchases','potentialTotal','openPotential','creditLimit','creditUsed','creditAvailable'])assert.equal(commercial[field],null,`${field} sem cadastro precisa continuar desconhecido, nao R$ 0,00`)
+ }
+ assert.match(read5('src/components/ProducerFieldGallery.jsx'),/mimePrefix=\$\{encodeURIComponent\('image\/'\)\}/)
+ assert.match(read5('server.js'),/mimePrefix=clean\(url\.searchParams\.get\('mimePrefix'\)\)/)
+ assert.match(read5('server/repository.js'),/a\.mime_type LIKE \$5\|\|'%'/)
 })
