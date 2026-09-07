@@ -268,14 +268,14 @@ const reportCatalogs: Partial<
   ),
 };
 
-function blankReport(producer?: ReportProducer, strictData = false): SeasonReport {
+function blankReport(producer?: ReportProducer, strictData = false, initialSeason = ""): SeasonReport {
   return {
     id: crypto.randomUUID(),
     producerId: producer?.id ?? "",
     property: producer?.properties ?? "",
     fieldId: strictData ? "" : producer?.fields?.[0]?.id ?? "",
     crop: strictData ? "" : producer?.fields?.[0]?.crop || "Soja",
-    season: producer?.fields?.[0]?.season || "",
+    season: initialSeason || producer?.fields?.[0]?.season || "",
     area: strictData ? Number.NaN : producer?.fields?.[0]?.area || producer?.area || 0,
     plantingDate: "",
     harvestDate: "",
@@ -874,6 +874,7 @@ export default function SeasonReports({
   allowLegacyMigration = false,
   strictData = false,
   demoData = false,
+  initialSeason = "",
   recordsApi,
 }: {
   producers: ReportProducer[];
@@ -882,10 +883,11 @@ export default function SeasonReports({
   allowLegacyMigration?: boolean;
   strictData?: boolean;
   demoData?: boolean;
+  initialSeason?: string;
   recordsApi?: { list: () => Promise<Array<{payload: Record<string, unknown>}>>; save: (input: Parameters<typeof saveRecord>[0]) => Promise<unknown> };
 }) {
   const [report, setReport] = useState<SeasonReport>(() =>
-    blankReport(producers[0], strictData),
+    blankReport(producers[0], strictData, initialSeason),
   );
   const [savedReports, setSavedReports] = useState<SeasonReport[]>([]);
   const [reportSearch, setReportSearch] = useState("");
@@ -1662,7 +1664,7 @@ export default function SeasonReports({
           <button
             className="button primary"
             onClick={() => {
-              setReport(blankReport(producers[0], strictData));
+              setReport(blankReport(producers[0], strictData, initialSeason));
               setMessage("");
               document
                 .getElementById("season-report-form")
@@ -1749,7 +1751,7 @@ export default function SeasonReports({
             <button
               className="button secondary"
               onClick={() => {
-                setReport(blankReport(producers[0], strictData));
+                setReport(blankReport(producers[0], strictData, initialSeason));
                 setMessage("");
               }}
             >

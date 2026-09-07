@@ -1,4 +1,5 @@
 import React,{useEffect,useRef,useState} from 'react'
+import {MousePointer2,Layers,Map as MapIcon,Focus,HelpCircle,X,MapPin,Maximize,Minimize} from 'lucide-react'
 import {searchMunicipalities,localityBounds} from '../../lib/map-localities'
 import CadastralLayers from './CadastralLayers'
 import 'leaflet/dist/leaflet.css'
@@ -16,7 +17,7 @@ const routePoint=value=>validLocation(Array.isArray(value)?{lat:value[0],lng:val
 
 export default function SatelliteMap({
  center=null,zoom=15,pins=[],polygons=[],route=[],routes=[],draft=[],fit=true,onClick,onPinClick,selectedId=null,
- height=280,className='',label='Mapa de satélite',interactive=true,controls=true,editorTools=null,onDraftPointClick=null
+ height=280,className='',label='Mapa de satélite',interactive=true,controls=true,editorTools=null,editorActions=[],footerTools=null,adaptive=false,onNavigateMap,onPanelChange,onDraftPointClick=null
 }){
  const shell=useRef(null)
  const container=useRef(null)
@@ -32,6 +33,9 @@ export default function SatelliteMap({
  const selectionRef=useRef(null)
  const draftPointRef=useRef(onDraftPointClick);draftPointRef.current=onDraftPointClick
  const [referenceLayers,setReferenceLayers]=useState([])
+ const [railPanel,setRailPanel]=useState(null)
+ const [municipality,setMunicipality]=useState(null),[municipalData,setMunicipalData]=useState(null),[municipalStatus,setMunicipalStatus]=useState('idle'),[municipalAttempt,setMunicipalAttempt]=useState(0),[showMunicipality,setShowMunicipality]=useState(true)
+ const togglePanel=panel=>{onPanelChange?.();setRailPanel(current=>current===panel?null:panel)}
  const [mapStatus,setMapStatus]=useState('loading')
  const [tileStatus,setTileStatus]=useState('loading')
  const [mapAttempt,setMapAttempt]=useState(0)
@@ -66,14 +70,29 @@ export default function SatelliteMap({
   if(bounds.length){const combined=bounds[0];bounds.slice(1).forEach(b=>combined.extend(b));map.fitBounds(combined,{padding:[30,30],maxZoom:16})}
   return()=>layers.forEach(layer=>{if(map.hasLayer(layer))map.removeLayer(layer)})
  },[referenceLayers,mapStatus])
+ useEffect(()=>{
+  setMunicipalData(null)
+  if(!municipality){setMunicipalStatus('idle');return}
+  const controller=new AbortController();let active=true;const timer=setTimeout(()=>controller.abort(),15000)
+  setMunicipalStatus('loading')
+  fetch(`/api/geo/municipalities/${municipality[0]}/boundary`,{signal:controller.signal}).then(async response=>{if(!response.ok)throw new Error('boundary unavailable');const data=await response.json();if(data.code!==municipality[0]||data.geojson?.type!=='FeatureCollection')throw new Error('wrong boundary');return data}).then(data=>{if(active){setMunicipalData(data);setMunicipalStatus('ready')}}).catch(()=>{if(active)setMunicipalStatus('error')}).finally(()=>clearTimeout(timer))
+  return()=>{active=false;clearTimeout(timer);controller.abort()}
+ },[municipality,municipalAttempt])
+ useEffect(()=>{
+  const map=mapRef.current,L=leafletRef.current
+  if(mapStatus!=='ready'||!map||!L||!municipalData||!showMunicipality)return
+  const layer=L.geoJSON(municipalData.geojson,{interactive:false,style:{color:'#67e8f9',weight:3,opacity:1,fillColor:'#67e8f9',fillOpacity:.025},onEachFeature:(_feature,shape)=>shape.bindTooltip(escapeHtml(`${municipality?.[1]} • divisa municipal IBGE`),{sticky:true,className:'val-state-label'})}).addTo(map)
+  return()=>{if(map.hasLayer(layer))map.removeLayer(layer)}
+ },[mapStatus,municipalData,showMunicipality,municipality])
  const choosePlace=row=>{
+  setMunicipality(row);setShowMunicipality(true)
   const bounds=localityBounds(row)
   if(!bounds){setPlaceNotice('Limite municipal indisponível nesta base. Escolha o estado para navegar.');return}
   mapRef.current?.fitBounds(bounds,{padding:[25,25],maxZoom:12})
   setPlaceUf(row[2]);setPlaceQuery(`${row[1]} — ${row[2]}`);setPlaceOpen(false);setPlaceNotice(`Visualizando ${row[1]} — ${row[2]}. Marque a sede para definir a propriedade.`)
  }
  const chooseState=uf=>{
-  setPlaceUf(uf);setPlaceQuery('');setPlaceOpen(false)
+  setPlaceUf(uf);setPlaceQuery('');setPlaceOpen(false);setMunicipality(null)
   const feature=stateGeo?.features.find(item=>item.properties.uf===uf)
   if(feature&&leafletRef.current&&mapRef.current){const bounds=leafletRef.current.geoJSON(feature).getBounds();mapRef.current.fitBounds(bounds,{padding:[25,25]});setPlaceNotice(`Visualizando ${feature.properties.name}.`)}
   else if(!uf){mapRef.current?.setView(BRAZIL_VIEW.center,BRAZIL_VIEW.zoom);setPlaceNotice('Visão inicial do Brasil.')}
@@ -183,6 +202,7 @@ export default function SatelliteMap({
    layersRef.current=L.layerGroup().addTo(map)
    map.on('click',event=>clickRef.current?.({lat:Number(event.latlng.lat.toFixed(6)),lng:Number(event.latlng.lng.toFixed(6))}))
    mapRef.current=map
+   map.zoomControl?.setPosition('topright')
    // Dentro de um <details> fechado o mapa nasce com 0px; quando abre, o
    // Leaflet precisa ser avisado para buscar os tiles do tamanho real.
    if(typeof ResizeObserver!=='undefined'){observer=new ResizeObserver(()=>map.invalidateSize());observer.observe(container.current)}
@@ -222,7 +242,7 @@ export default function SatelliteMap({
   if(!expanded)return
   const previousOverflow=document.body.style.overflow
   const previousFocus=document.activeElement
-  document.body.style.overflow='hidden'
+  document.body.style.overflow='hidden';document.body.classList.add('val-map-expanded')
   const close=event=>{
    if(event.key==='Escape')setExpanded(false)
    if(event.key==='Tab'){
@@ -234,28 +254,44 @@ export default function SatelliteMap({
   }
   document.addEventListener('keydown',close)
   shell.current?.querySelector('.val-map-expand')?.focus()
-  return()=>{document.body.style.overflow=previousOverflow;document.removeEventListener('keydown',close);previousFocus?.focus?.()}
+  return()=>{document.body.style.overflow=previousOverflow;document.body.classList.remove('val-map-expanded');document.removeEventListener('keydown',close);previousFocus?.focus?.()}
  },[expanded])
 
  const loading=mapStatus==='loading'||(mapStatus==='ready'&&tileStatus==='loading')
  const tileError=mapStatus==='ready'&&tileStatus==='error'
- return <div ref={shell} role={expanded?'dialog':undefined} aria-modal={expanded?true:undefined} aria-label={expanded?label:undefined} className={`val-map-shell${expanded?' is-expanded':''}${className?` ${className}`:''}`} style={{'--val-map-height':`${height}px`}}>
+ return <div ref={shell} role={expanded?'dialog':undefined} aria-modal={expanded?true:undefined} aria-label={expanded?label:undefined} className={`val-map-shell${adaptive?' is-adaptive':''}${expanded?' is-expanded':''}${className?` ${className}`:''}`} style={{'--val-map-height':`${height}px`}}>
   {controls&&interactive&&<div className="val-map-placebar">
    <label>Estado<select aria-label="Estado para navegar no mapa" value={placeUf} disabled={placeStatus!=='ready'||mapStatus!=='ready'} onChange={event=>chooseState(event.target.value)}><option value="">Brasil • todos os estados</option>{(stateGeo?.features||[]).slice().sort((a,b)=>a.properties.name.localeCompare(b.properties.name,'pt-BR')).map(item=><option key={item.properties.uf} value={item.properties.uf}>{item.properties.name} — {item.properties.uf}</option>)}</select></label>
    <div className="val-map-place-search"><label>Buscar município<input aria-label="Buscar município no mapa" placeholder="Ex.: São Luiz Gonzaga" value={placeQuery} disabled={placeStatus!=='ready'||mapStatus!=='ready'} onFocus={()=>setPlaceOpen(true)} onChange={event=>{setPlaceQuery(event.target.value);setPlaceOpen(true)}} onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();setPlaceOpen(false)}if(event.key==='Enter'){event.preventDefault();if(matches.length===1)choosePlace(matches[0]);else setPlaceOpen(true)}}}/></label>
     {placeOpen&&placeQuery.trim()&&<div className="val-map-place-results" role="group" aria-label="Municípios encontrados">{matches.map(row=><button type="button" key={row[0]} onClick={()=>choosePlace(row)}>{row[1]} <b>{row[2]}</b></button>)}{!matches.length&&<p>Nenhum município encontrado. Confira o nome ou o estado.</p>}<button type="button" onClick={()=>setPlaceOpen(false)}>Fechar resultados</button></div>}
    </div>
-   <button type="button" aria-pressed={showStates} onClick={()=>setShowStates(value=>!value)}>Divisas estaduais</button>
-   <div className="val-map-place-notice" role="status">{placeStatus==='loading'?'Carregando municípios e divisas…':placeStatus==='error'?<>Referência indisponível. <button type="button" onClick={()=>setPlaceAttempt(value=>value+1)}>Recarregar municípios</button></>:placeNotice||'Busque um município ou escolha um estado para aproximar.'} <span>Limites de referência • IBGE</span></div>
+
+   <div className="val-map-place-notice" role="status">{placeStatus==='loading'?'Carregando municípios e divisas…':placeStatus==='error'?<>Referência indisponível. <button type="button" onClick={()=>setPlaceAttempt(value=>value+1)}>Recarregar municípios</button></>:placeNotice||'Busque um município ou escolha um estado para aproximar.'} <span>Limites de referência • IBGE</span>{municipality&&<span className="val-municipal-status">{municipalStatus==='loading'?'Carregando divisa municipal…':municipalStatus==='ready'?`${municipality[1]}: divisa ${showMunicipality?'visível':'oculta'}`:municipalStatus==='error'?<>Divisa municipal indisponível. <button type="button" onClick={()=>setMunicipalAttempt(value=>value+1)}>Tentar divisa novamente</button></>:''}</span>}</div>
   </div>}
-  <div className="val-map-stage">{controls&&interactive&&<div className="val-map-worktools">{editorTools}<CadastralLayers onChange={setReferenceLayers} getPoint={()=>{const point=mapRef.current?.getCenter();return point?{lat:point.lat,lng:point.lng,uf:placeUf}:null}}/></div>}<div ref={container} className="val-map-canvas" role={interactive?'region':'img'} aria-label={label} aria-busy={loading}/>
+  <div className="val-map-stage">
+  {controls&&interactive&&<>
+   <div className="val-map-toolrail" role="toolbar" aria-label="Ferramentas e filtros do mapa">
+    <button type="button" title="Navegar pelo mapa" aria-label="Navegar pelo mapa" onClick={()=>{setRailPanel(null);onNavigateMap?.()}}><MousePointer2 size={19}/><span>Navegar</span></button>
+    {editorActions.map(({id,label,Icon,onClick,disabled,active})=><button type="button" key={id} title={label} aria-label={label} aria-pressed={Boolean(active)} disabled={disabled} onClick={()=>{setRailPanel(null);onClick()}}><Icon size={19}/><span>{label}</span></button>)}
+    <button type="button" title="Camadas CAR, SIGEF e matrículas" aria-label="Camadas CAR, SIGEF e matrículas" aria-expanded={railPanel==='layers'} onClick={()=>togglePanel('layers')}><Layers size={19}/><span>Camadas</span></button>
+    <button type="button" title="Filtrar divisas" aria-label="Filtrar divisas" aria-expanded={railPanel==='boundaries'} onClick={()=>togglePanel('boundaries')}><MapIcon size={19}/><span>Divisas</span></button>
+    <button type="button" title="Mostrar todos os pontos e trajetos" disabled={mapStatus!=='ready'} onClick={()=>fitRef.current()}><Focus size={19}/><span>Enquadrar</span></button>
+    <button type="button" title="Como usar o mapa" aria-label="Como usar o mapa" aria-expanded={railPanel==='help'} onClick={()=>togglePanel('help')}><HelpCircle size={19}/><span>Ajuda</span></button>
+   </div>
+   <div className="val-map-worktools">
+    {editorTools}
+    <div hidden={railPanel!=='layers'}><CadastralLayers panelOnly onChange={setReferenceLayers} getPoint={()=>{const point=mapRef.current?.getCenter();return point?{lat:point.lat,lng:point.lng,uf:placeUf}:null}}/></div>
+    {railPanel==='boundaries'&&<section className="val-map-filter-panel"><header><strong>Divisas no mapa</strong><button type="button" aria-label="Fechar filtros de divisas" onClick={()=>setRailPanel(null)}><X size={16}/></button></header><label><input type="checkbox" checked={showStates} onChange={e=>setShowStates(e.target.checked)}/>Divisas estaduais</label><label><input type="checkbox" disabled={!municipality} checked={showMunicipality} onChange={e=>setShowMunicipality(e.target.checked)}/>Divisa do município selecionado</label><p>{municipality?`${municipality[1]} — ${municipality[2]}`:'Selecione um município na busca.'}</p><p>Referência administrativa IBGE; não define limites da propriedade.</p></section>}
+    {railPanel==='help'&&<section className="val-map-filter-panel"><header><strong>Como mapear</strong><button type="button" aria-label="Fechar ajuda" onClick={()=>setRailPanel(null)}><X size={16}/></button></header><p>1. Busque o município e escolha a safra.</p><p>2. Use Sede para marcar a localização ou Talhão / cultura para tocar nos cantos da área produtiva.</p><p>3. Toque em um ponto azul para apagá-lo. Conclua a área e salve.</p><p>Safras e culturas filtram o mesmo talhão físico. Camadas exibe CAR, SIGEF e arquivos de matrícula.</p></section>}
+   </div>
+  </>}
+  <div ref={container} className="val-map-canvas" role={interactive?'region':'img'} aria-label={label} aria-busy={loading}/>
   {controls&&interactive&&<div className="val-map-controls" role="group" aria-label="Controles do mapa">
    <div className="val-map-basemaps" role="group" aria-label="Imagem de fundo">
     <button type="button" aria-pressed={basemap==='satellite'} onClick={()=>setBasemap('satellite')}>Satélite</button>
     <button type="button" aria-pressed={basemap==='street'} onClick={()=>setBasemap('street')}>Mapa</button>
    </div>
-   <button type="button" className="val-map-fit" disabled={mapStatus!=='ready'} onClick={()=>fitRef.current()} title="Mostrar todos os pontos e trajetos">Enquadrar</button>
-   <button type="button" className="val-map-expand" aria-pressed={expanded} onClick={()=>setExpanded(value=>!value)}>{expanded?'Sair da tela cheia':'Tela cheia'}</button>
+   <button type="button" className="val-map-expand" aria-pressed={expanded} onClick={()=>setExpanded(value=>!value)}>{expanded?<Minimize size={16}/>:<Maximize size={16}/>}<span>{expanded?'Sair da tela cheia':'Tela cheia'}</span></button>
   </div>}
   {loading&&<div className="val-map-loading" role="status">{mapStatus==='loading'?'Abrindo mapa…':basemap==='satellite'?'Carregando satélite…':'Carregando mapa…'}</div>}
   {(mapStatus==='error'||tileError)&&<div className="val-map-error" role="alert">
@@ -265,5 +301,6 @@ export default function SatelliteMap({
     {tileError&&basemap==='satellite'&&<button type="button" onClick={()=>setBasemap('street')}>Usar mapa de ruas</button>}
    </div>
   </div>}
+  {footerTools&&<div className="val-map-footer">{footerTools}</div>}
  </div></div>
 }

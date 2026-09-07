@@ -55,9 +55,10 @@ test('HTTP season plans persist across restart, preserve missing values and reje
   const reloaded=await call(client.id);assert.equal(reloaded.status,200)
   assert.equal(reloaded.payload.seasons[0].crops[0].areaHa,100)
   assert.equal(reloaded.payload.seasons[0].crops[0].otherBuyersSc,null)
-  assert.equal((await call(client.id,'PUT',{...input,season:'2727I'})).status,200)
+  assert.equal((await call(client.id,'PUT',{...input,season:' Inverno 2029 '})).status,200)
   const persisted=JSON.parse(await readFile(storePath,'utf8'))
   assert.equal(persisted.val.producerSeasons.length,2)
+  assert.equal(persisted.val.producerSeasons[1].season,'INVERNO 2029')
   assert.equal(persisted.val.producerSeasons[0].crops[0].productionSc,undefined)
   assert.deepEqual(persisted.opportunities,[]);assert.deepEqual(persisted.imports,store.imports)
  }finally{await stop();await rm(dataRoot,{recursive:true,force:true})}
