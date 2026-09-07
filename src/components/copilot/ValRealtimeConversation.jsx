@@ -8,14 +8,16 @@ const countdownLabel=seconds=>`${Math.floor(seconds/60)}:${String(seconds%60).pa
 
 /** The voice stage presents the session state without opening a microphone. */
 export function ValRealtimeConversationStage({
- state,disabled=false,errorMessage='',retryAfterSeconds=0,canRetry=true,liveTranscript='',
+ state,disabled=false,processing=false,errorMessage='',retryAfterSeconds=0,canRetry=true,liveTranscript='',
  onRetry,onPause,onResume,onResumeAudio,onInterrupt,onExit,onFallbackPushToTalk,onFallbackText,className=''
 }){
  const transcriptRef=useRef(null)
  const unavailable=[REALTIME_CONVERSATION_STATES.ERROR,REALTIME_CONVERSATION_STATES.FALLBACK].includes(state.status)
  const paused=state.status===REALTIME_CONVERSATION_STATES.PAUSED
  const connecting=state.status==='CONNECTING'
- const thinking=[REALTIME_CONVERSATION_STATES.PROCESSING,REALTIME_CONVERSATION_STATES.TURN_DETECTED,'THINKING'].includes(state.status)
+ // `processing` e o trabalho do proprio copiloto (ferramenta governada em voo): o palco precisa
+ // dizer que esta preparando a resposta em vez de convidar o consultor a falar.
+ const thinking=processing||[REALTIME_CONVERSATION_STATES.PROCESSING,REALTIME_CONVERSATION_STATES.TURN_DETECTED,'THINKING'].includes(state.status)
  const speaking=state.status===REALTIME_CONVERSATION_STATES.SPEAKING
  const remaining=Math.max(0,Math.ceil(Number(state.retryAfterSeconds||retryAfterSeconds)||0))
  const retryDisabled=disabled||!canRetry||state.canRetry===false||remaining>0
@@ -88,5 +90,5 @@ export default function ValRealtimeConversation({
 
  if(state.status===REALTIME_CONVERSATION_STATES.IDLE)return <button type="button" className="val-conversation-opt-in" onClick={start} disabled={disabled} aria-label="Iniciar modo conversa por voz"><Mic/><span><b>Modo conversa</b><small>Fale e ouça a VAL sem enviar a cada turno</small></span></button>
 
- return <ValRealtimeConversationStage state={state} disabled={disabled} className={className} errorMessage={errorMessage} retryAfterSeconds={retryAfterSeconds} canRetry={canRetry} liveTranscript={liveTranscript} onRetry={start} onPause={conversation.pause} onResume={conversation.resume} onResumeAudio={conversation.resumeAudio} onInterrupt={conversation.bargeIn} onExit={leave} onFallbackPushToTalk={onFallbackPushToTalk?switchTo(onFallbackPushToTalk):undefined} onFallbackText={onFallbackText?switchTo(onFallbackText):undefined}/>
+ return <ValRealtimeConversationStage state={state} disabled={disabled} processing={processing} className={className} errorMessage={errorMessage} retryAfterSeconds={retryAfterSeconds} canRetry={canRetry} liveTranscript={liveTranscript} onRetry={start} onPause={conversation.pause} onResume={conversation.resume} onResumeAudio={conversation.resumeAudio} onInterrupt={conversation.bargeIn} onExit={leave} onFallbackPushToTalk={onFallbackPushToTalk?switchTo(onFallbackPushToTalk):undefined} onFallbackText={onFallbackText?switchTo(onFallbackText):undefined}/>
 }

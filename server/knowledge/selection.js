@@ -12,6 +12,10 @@ const stopWords=new Set([
  // Vocativo e saudacao colados a pergunta ("Oi val, o que e WASDE?") nao sao assunto: "val"
  // contava como termo nao coberto e derrubava a cobertura do item certo.
  'val','oi','oie','ola','opa','eai','hey','hello','hi','ei','obrigado','obrigada','valeu','favor',
+ // Cortesia e abertura de pergunta ('bom dia, o que e basis?', 'me tira uma duvida sobre calagem')
+ // tambem nao sao assunto: cada uma contava como termo fora do corpus e derrubava a maioria.
+ 'bom','boa','dia','tarde','noite','duvida','duvidas','tira','tirar','curiosidade','pergunta','perguntar',
+ 'ajuda','ajudar','ajude','direitinho','rapida','rapido','explicar','entender','saber','sobre','tenho','fiquei','queria','quero',
  'melhor','melhores','pior','piores','maior','menor','muito','muita','pouco','pouca','todo','toda','todos','todas',
  'ideal','ideais','otimo','otima','bom','boa','certo','certa','correto','correta','adequado','adequada','recomendado','recomendada','possivel','preciso',
  'fazer','faco','faz','ser','sou','estar','esta','ter','tem','pode','posso','deve','devo','vai','vou','quero','queria',

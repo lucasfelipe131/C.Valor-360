@@ -723,8 +723,11 @@ function isGeneralConceptRequest(message=''){
  const source=original.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
  const contextual=/\b(?:deste|desse|dessa|desta|daquele|daquela|daquilo|atual|selecionad[oa]|produtor|cliente|conta|oportunidade|visita|talhao|propriedade|laudo|analise|fazenda|dele|dela)\b/.test(source)
  if(contextual)return false
- const questionShape=/^(?:o que|que|qual|quais|como|por\s*que|quando|quanto|quantos|quantas|quem|onde|explique|defina|resuma|me\s+(?:explic[ae]|fal[ae]|conta)|(?:eu\s+)?(?:quero|queria|gostaria\s+de|preciso)\s+(?:saber|entender|aprender))\b/.test(source)
- return questionShape||/\?\s*$/.test(original)
+ // O assunto digitado como topico ("fosforo no solo", "lixiviacao de potassio") e a forma mais
+ // comum de perguntar no chat e nao cita produtor nenhum: exigir interrogativo da lista ou "?"
+ // mandava o consultor para o muro "Selecione um produtor" com o item da Biblioteca ja recuperado.
+ // A ausencia de referencia a produtor/cliente/dado especifico basta, como o contrato acima diz.
+ return Boolean(source)
 }
 
 function isPureAbsenceOrInputSummary(value=''){
