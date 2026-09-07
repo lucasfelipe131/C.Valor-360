@@ -1,4 +1,6 @@
 import React,{useEffect,useRef,useState} from 'react'
+import {searchMunicipalities,localityBounds} from '../../lib/map-localities'
+import CadastralLayers from './CadastralLayers'
 import 'leaflet/dist/leaflet.css'
 import '../../val-property-map.css'
 import {BRAZIL_VIEW,SATELLITE_TILES,validLocation} from '../../lib/property-map'
@@ -14,7 +16,7 @@ const routePoint=value=>validLocation(Array.isArray(value)?{lat:value[0],lng:val
 
 export default function SatelliteMap({
  center=null,zoom=15,pins=[],polygons=[],route=[],routes=[],draft=[],fit=true,onClick,onPinClick,selectedId=null,
- height=280,className='',label='Mapa de satélite',interactive=true,controls=true
+ height=280,className='',label='Mapa de satélite',interactive=true,controls=true,editorTools=null,onDraftPointClick=null
 }){
  const shell=useRef(null)
  const container=useRef(null)
@@ -28,12 +30,55 @@ export default function SatelliteMap({
  const initialFitRef=useRef(false)
  const previousFitRef=useRef(fit)
  const selectionRef=useRef(null)
+ const draftPointRef=useRef(onDraftPointClick);draftPointRef.current=onDraftPointClick
+ const [referenceLayers,setReferenceLayers]=useState([])
  const [mapStatus,setMapStatus]=useState('loading')
  const [tileStatus,setTileStatus]=useState('loading')
  const [mapAttempt,setMapAttempt]=useState(0)
  const [tileAttempt,setTileAttempt]=useState(0)
  const [basemap,setBasemap]=useState('satellite')
  const [expanded,setExpanded]=useState(false)
+ const [places,setPlaces]=useState([]),[stateGeo,setStateGeo]=useState(null)
+ const [placeStatus,setPlaceStatus]=useState('loading'),[placeAttempt,setPlaceAttempt]=useState(0)
+ const [placeQuery,setPlaceQuery]=useState(''),[placeUf,setPlaceUf]=useState(''),[placeOpen,setPlaceOpen]=useState(false)
+ const [showStates,setShowStates]=useState(true),[placeNotice,setPlaceNotice]=useState('')
+ const matches=searchMunicipalities(places,placeQuery,placeUf)
+ useEffect(()=>{
+  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),15000)
+  setPlaceStatus('loading')
+  Promise.all(['/geo/municipalities.json','/geo/states.geojson'].map(url=>fetch(url,{signal:controller.signal}).then(response=>{if(!response.ok)throw new Error('reference unavailable');return response.json()}))).then(([rows,geo])=>{
+   if(!Array.isArray(rows)||geo?.features?.length!==27)throw new Error('invalid reference')
+   setPlaces(rows);setStateGeo(geo);setPlaceStatus('ready')
+  }).catch(()=>{if(!controller.signal.aborted)setPlaceStatus('error');else if(controller.signal.reason?.name==='AbortError')setPlaceStatus('error')}).finally(()=>clearTimeout(timer))
+  return()=>{clearTimeout(timer);controller.abort('unmount')}
+ },[placeAttempt])
+ useEffect(()=>{
+  const map=mapRef.current,L=leafletRef.current
+  if(mapStatus!=='ready'||!map||!L||!stateGeo||!showStates)return
+  const layer=L.geoJSON(stateGeo,{interactive:false,style:{color:'#fff3a6',weight:1.5,opacity:.9,fill:false},onEachFeature:(feature,shape)=>shape.bindTooltip(escapeHtml(feature.properties.uf),{permanent:true,direction:'center',className:'val-state-label'})}).addTo(map)
+  return()=>{if(map.hasLayer(layer))map.removeLayer(layer)}
+ },[mapStatus,stateGeo,showStates])
+ useEffect(()=>{
+  const map=mapRef.current,L=leafletRef.current
+  if(mapStatus!=='ready'||!map||!L)return
+  const layers=referenceLayers.map(reference=>L.geoJSON(reference.geojson,{interactive:false,style:{color:reference.color,weight:2,fillOpacity:.04,dashArray:'6 3'},onEachFeature:(feature,shape)=>shape.bindTooltip(escapeHtml(`${reference.type} • ${Object.entries(feature.properties).filter(([key])=>key!=='_referenceIndex').slice(0,3).map(([key,value])=>`${key}: ${value}`).join(' • ')}`),{sticky:true})}).addTo(map))
+  const bounds=layers.filter(layer=>layer.getBounds().isValid()).map(layer=>layer.getBounds())
+  if(bounds.length){const combined=bounds[0];bounds.slice(1).forEach(b=>combined.extend(b));map.fitBounds(combined,{padding:[30,30],maxZoom:16})}
+  return()=>layers.forEach(layer=>{if(map.hasLayer(layer))map.removeLayer(layer)})
+ },[referenceLayers,mapStatus])
+ const choosePlace=row=>{
+  const bounds=localityBounds(row)
+  if(!bounds){setPlaceNotice('Limite municipal indisponível nesta base. Escolha o estado para navegar.');return}
+  mapRef.current?.fitBounds(bounds,{padding:[25,25],maxZoom:12})
+  setPlaceQuery(`${row[1]} — ${row[2]}`);setPlaceOpen(false);setPlaceNotice(`Visualizando ${row[1]} — ${row[2]}. Marque a sede para definir a propriedade.`)
+ }
+ const chooseState=uf=>{
+  setPlaceUf(uf);setPlaceQuery('');setPlaceOpen(false)
+  const feature=stateGeo?.features.find(item=>item.properties.uf===uf)
+  if(feature&&leafletRef.current&&mapRef.current){const bounds=leafletRef.current.geoJSON(feature).getBounds();mapRef.current.fitBounds(bounds,{padding:[25,25]});setPlaceNotice(`Visualizando ${feature.properties.name}.`)}
+  else if(!uf){mapRef.current?.setView(BRAZIL_VIEW.center,BRAZIL_VIEW.zoom);setPlaceNotice('Visão inicial do Brasil.')}
+ }
+
  clickRef.current=onClick
  pinClickRef.current=onPinClick
 
@@ -95,7 +140,7 @@ export default function SatelliteMap({
   if(draft.length){
    const coordinates=draft.map(validLocation).filter(Boolean).map(point=>[point.lat,point.lng])
    everything.push(...coordinates)
-   for(const coordinate of coordinates)L.circleMarker(coordinate,{radius:5,color:'#fff',weight:2,fillColor:'#2d8cff',fillOpacity:1}).addTo(group)
+   coordinates.forEach((coordinate,index)=>{const vertex=L.circleMarker(coordinate,{radius:10,color:'#fff',weight:2,fillColor:'#2d8cff',fillOpacity:1,bubblingMouseEvents:false}).addTo(group);vertex.bindTooltip(`Ponto ${index+1}${onDraftPointClick?' • toque para apagar':''}`);if(onDraftPointClick)vertex.on('click',()=>draftPointRef.current?.(index))})
    if(coordinates.length>1)L.polyline(coordinates,{color:'#2d8cff',weight:2}).addTo(group)
    if(coordinates.length>2)L.polygon(coordinates,{color:'#2d8cff',weight:1,fillColor:'#2d8cff',fillOpacity:.12,dashArray:'4 4'}).addTo(group)
   }
@@ -170,7 +215,7 @@ export default function SatelliteMap({
  },[basemap,tileAttempt,mapStatus])
 
  const signature=JSON.stringify({pins,polygons,route,routes,draft,center,fit,zoom,selectedId})
- useEffect(()=>{renderRef.current()},[signature,Boolean(onPinClick)])
+ useEffect(()=>{renderRef.current()},[signature,Boolean(onPinClick),Boolean(onDraftPointClick)])
 
  useEffect(()=>{
   mapRef.current?.invalidateSize({pan:false})
@@ -181,7 +226,7 @@ export default function SatelliteMap({
   const close=event=>{
    if(event.key==='Escape')setExpanded(false)
    if(event.key==='Tab'){
-    const elements=[...shell.current.querySelectorAll('button:not([disabled]),a[href],[tabindex="0"]')]
+    const elements=[...shell.current.querySelectorAll('button:not([disabled]),input:not([disabled]),select:not([disabled]),a[href],[tabindex="0"]')]
     const first=elements[0],last=elements.at(-1)
     if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus()}
     else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus()}
@@ -195,7 +240,15 @@ export default function SatelliteMap({
  const loading=mapStatus==='loading'||(mapStatus==='ready'&&tileStatus==='loading')
  const tileError=mapStatus==='ready'&&tileStatus==='error'
  return <div ref={shell} role={expanded?'dialog':undefined} aria-modal={expanded?true:undefined} aria-label={expanded?label:undefined} className={`val-map-shell${expanded?' is-expanded':''}${className?` ${className}`:''}`} style={{'--val-map-height':`${height}px`}}>
-  <div ref={container} className="val-map-canvas" role={interactive?'region':'img'} aria-label={label} aria-busy={loading}/>
+  {controls&&interactive&&<div className="val-map-placebar">
+   <label>Estado<select aria-label="Estado para navegar no mapa" value={placeUf} disabled={placeStatus!=='ready'||mapStatus!=='ready'} onChange={event=>chooseState(event.target.value)}><option value="">Brasil • todos os estados</option>{(stateGeo?.features||[]).slice().sort((a,b)=>a.properties.name.localeCompare(b.properties.name,'pt-BR')).map(item=><option key={item.properties.uf} value={item.properties.uf}>{item.properties.name} — {item.properties.uf}</option>)}</select></label>
+   <div className="val-map-place-search"><label>Buscar município<input aria-label="Buscar município no mapa" placeholder="Ex.: São Luiz Gonzaga" value={placeQuery} disabled={placeStatus!=='ready'||mapStatus!=='ready'} onFocus={()=>setPlaceOpen(true)} onChange={event=>{setPlaceQuery(event.target.value);setPlaceOpen(true)}} onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();setPlaceOpen(false)}if(event.key==='Enter'){event.preventDefault();if(matches.length===1)choosePlace(matches[0]);else setPlaceOpen(true)}}}/></label>
+    {placeOpen&&placeQuery.trim()&&<div className="val-map-place-results" role="group" aria-label="Municípios encontrados">{matches.map(row=><button type="button" key={row[0]} onClick={()=>choosePlace(row)}>{row[1]} <b>{row[2]}</b></button>)}{!matches.length&&<p>Nenhum município encontrado. Confira o nome ou o estado.</p>}<button type="button" onClick={()=>setPlaceOpen(false)}>Fechar resultados</button></div>}
+   </div>
+   <button type="button" aria-pressed={showStates} onClick={()=>setShowStates(value=>!value)}>Divisas estaduais</button>
+   <div className="val-map-place-notice" role="status">{placeStatus==='loading'?'Carregando municípios e divisas…':placeStatus==='error'?<>Referência indisponível. <button type="button" onClick={()=>setPlaceAttempt(value=>value+1)}>Recarregar municípios</button></>:placeNotice||'Busque um município ou escolha um estado para aproximar.'} <span>Limites de referência • IBGE</span></div>
+  </div>}
+  <div className="val-map-stage">{controls&&interactive&&<div className="val-map-worktools">{editorTools}<CadastralLayers onChange={setReferenceLayers}/></div>}<div ref={container} className="val-map-canvas" role={interactive?'region':'img'} aria-label={label} aria-busy={loading}/>
   {controls&&interactive&&<div className="val-map-controls" role="group" aria-label="Controles do mapa">
    <div className="val-map-basemaps" role="group" aria-label="Imagem de fundo">
     <button type="button" aria-pressed={basemap==='satellite'} onClick={()=>setBasemap('satellite')}>Satélite</button>
@@ -212,5 +265,5 @@ export default function SatelliteMap({
     {tileError&&basemap==='satellite'&&<button type="button" onClick={()=>setBasemap('street')}>Usar mapa de ruas</button>}
    </div>
   </div>}
- </div>
+ </div></div>
 }

@@ -1018,7 +1018,7 @@ export class ValRepository{
     }
     if(!primary)return emptyPropertyProfile(clientId,'postgresql')
     const fields=await connection.query(`SELECT field.id,field.name,field.area_ha,field.geometry_ref,field.updated_at,
-        (SELECT jsonb_build_object('season',season.season,'crop',season.crop) FROM crop_seasons season WHERE season.tenant_id=$1 AND season.field_id=field.id ORDER BY season.created_at DESC LIMIT 1) latest_season
+        (SELECT jsonb_build_object('season',season.season,'crop',season.crop,'productivityTarget',season.productivity_target,'unit',season.unit) FROM crop_seasons season WHERE season.tenant_id=$1 AND season.field_id=field.id ORDER BY season.created_at DESC LIMIT 1) latest_season
       FROM fields field WHERE field.tenant_id=$1 AND field.property_id=$2 ORDER BY field.created_at ASC,field.name ASC LIMIT 200`,[this.tenantId,primary.id])
     return {
       clientId:String(clientId),
@@ -1026,7 +1026,7 @@ export class ValRepository{
       properties:properties.rows.map(row=>({id:String(row.id),name:row.name})),
       fields:fields.rows.map(row=>{
         const geometry=fieldPointsFromGeometryRef(row.geometry_ref,{organizationId:this.tenantId});const season=jsonObject(row.latest_season)
-        return {id:String(row.id),name:row.name,areaHa:row.area_ha==null?geometry.calculatedAreaHa:Number(row.area_ha),crop:String(season.crop||''),season:String(season.season||''),points:geometry.points,geometryStatus:geometry.geometryStatus,updatedAt:iso(row.updated_at)}
+        return {id:String(row.id),name:row.name,areaHa:row.area_ha==null?geometry.calculatedAreaHa:Number(row.area_ha),crop:String(season.crop||''),season:String(season.season||''),productivityTarget:season.unit==='sc/ha'&&season.productivityTarget!=null?Number(season.productivityTarget):null,points:geometry.points,geometryStatus:geometry.geometryStatus,updatedAt:iso(row.updated_at)}
       }),
       source:'postgresql'
     }
@@ -1054,7 +1054,7 @@ export class ValRepository{
       const fields=profile.fields.map(field=>{
         const stored=field.id?kept.find(item=>String(item.id)===String(field.id)):null
         const points=field.points.length?field.points:field.clearGeometry?[]:(stored?.points||[])
-        return {id:stored?.id||randomUUID(),name:field.name,areaHa:field.areaHa??stored?.areaHa??null,crop:field.crop||stored?.crop||'',season:field.season||stored?.season||'',points,geometryStatus:points.length?'CANONICAL':'NOT_MAPPED',updatedAt:now}
+        return {id:stored?.id||randomUUID(),name:field.name,areaHa:field.areaHa??stored?.areaHa??null,crop:field.crop||stored?.crop||'',season:field.season||stored?.season||'',productivityTarget:field.productivityTarget===undefined?(stored?.productivityTarget??null):field.productivityTarget,points,geometryStatus:points.length?'CANONICAL':'NOT_MAPPED',updatedAt:now}
       })
       const saved={tenantId:this.tenantId,ownerId,clientId:String(clientId),property,fields,updatedAt:now}
       if(existing)store.val.propertyProfiles.splice(store.val.propertyProfiles.indexOf(existing),1,saved)
@@ -1107,8 +1107,10 @@ export class ValRepository{
           }else if(field.clearGeometry){
             await connection.query(`UPDATE fields SET geometry_ref=NULL,geometry_version=NULL,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id])
           }
-          if(field.crop&&field.season)await connection.query(`INSERT INTO crop_seasons (tenant_id,field_id,season,crop,area_ha)
-            SELECT $1::uuid,$2::uuid,$3::varchar,$4::varchar,$5::numeric WHERE NOT EXISTS (SELECT 1 FROM crop_seasons WHERE tenant_id=$1 AND field_id=$2 AND season=$3 AND crop=$4)`,[this.tenantId,fieldRow.id,field.season,field.crop,field.areaHa])
+          if(field.crop&&field.season){
+            const changed=await connection.query(`UPDATE crop_seasons SET area_ha=COALESCE($5,area_ha),productivity_target=CASE WHEN $7 THEN $6 ELSE productivity_target END,unit=CASE WHEN $7 THEN 'sc/ha' ELSE unit END WHERE tenant_id=$1 AND field_id=$2 AND season=$3 AND crop=$4 RETURNING id`,[this.tenantId,fieldRow.id,field.season,field.crop,field.areaHa,field.productivityTarget??null,field.productivityTarget!==undefined])
+            if(!changed.rows.length)await connection.query(`INSERT INTO crop_seasons (tenant_id,field_id,season,crop,area_ha,productivity_target,unit) VALUES($1,$2,$3,$4,$5,$6,'sc/ha')`,[this.tenantId,fieldRow.id,field.season,field.crop,field.areaHa,field.productivityTarget??null])
+          }
         }
         await connection.query(`INSERT INTO audit_events (tenant_id,actor_id,action,entity_type,entity_id,after_data,created_at) VALUES ($1,$2,'property_profile_updated','client',$3,$4,NOW())`,[this.tenantId,ownerId,client.id,jsonbParameter({propertyId:String(property.id),located:Boolean(metadata.location),fields:profile.fields.length,removed:profile.removedFieldIds.length})])
       })

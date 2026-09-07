@@ -1,5 +1,8 @@
 import React,{useEffect,useRef,useState} from 'react'
 import {Check,Crosshair,LocateFixed,MapPin,PencilRuler,Plus,Save,Trash2,Undo2,X} from 'lucide-react'
+import {cropColor,formatNumber} from '../lib/producer-display'
+import {SEASON_CROPS,validSeasonCode} from '../lib/producer-seasons'
+import {validProductiveRing,fieldProduction} from '../lib/productive-map'
 import SatelliteMap from './map/SatelliteMap'
 import {formatCoordinates,formatHectares,polygonAreaHa,validLocation} from '../lib/property-map'
 
@@ -14,7 +17,7 @@ const fromProfile=profile=>({
  propertyId:profile?.property?.id,
  propertyName:profile?.property?.name||'',
  location:validLocation(profile?.property?.location),
- fields:(profile?.fields||[]).map(field=>({key:field.id,id:field.id,name:field.name,areaHa:field.areaHa==null?'':String(field.areaHa),crop:field.crop||'',season:field.season||'',points:field.points||[],clearGeometry:false}))
+ fields:(profile?.fields||[]).map(field=>({key:field.id,id:field.id,name:field.name,areaHa:field.areaHa==null?'':String(field.areaHa),crop:field.crop||'',season:field.season||'',points:field.points||[],productivityTarget:field.productivityTarget??'',clearGeometry:false}))
 })
 
 export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
@@ -22,6 +25,10 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
  const [removed,setRemoved]=useState([])
  const [mode,setMode]=useState('')
  const [draft,setDraft]=useState([])
+ const [editKey,setEditKey]=useState(null)
+ const [toolsOpen,setToolsOpen]=useState(true)
+ const [drawing,setDrawing]=useState({crop:'',season:'2627V',productivityTarget:''})
+ const [cropFilter,setCropFilter]=useState(''),[seasonFilter,setSeasonFilter]=useState('')
  const [dirty,setDirty]=useState(false)
  const [loaded,setLoaded]=useState(false)
  const [properties,setProperties]=useState([])
@@ -34,7 +41,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
 
  useEffect(()=>{
   const version=++requestVersion.current
-  setForm(fromProfile(null));setLoaded(false);setMode('');setDraft([]);setRemoved([]);setDirty(false)
+  setEditKey(null);setCropFilter('');setSeasonFilter('');setForm(fromProfile(null));setLoaded(false);setMode('');setDraft([]);setRemoved([]);setDirty(false)
   if(!client?.id){setProperties([]);setState({loading:false,saving:false,error:'',notice:''});return}
   const controller=new AbortController()
   setState({loading:true,saving:false,error:'',notice:''})
@@ -60,7 +67,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
  }
  const update=patch=>{if(busy)return;setForm(current=>({...current,...patch}));setDirty(true);setState(current=>({...current,error:'',notice:''}))}
  const updateField=(key,patch)=>update({fields:form.fields.map(field=>field.key===key?{...field,...patch}:field)})
- const addField=(extra={})=>update({fields:[...form.fields,{key:fieldKey(form.fields.length),id:null,name:`Talhão ${form.fields.length+1}`,areaHa:'',crop:'',season:'',points:[],clearGeometry:false,...extra}]})
+ const addField=(extra={})=>update({fields:[...form.fields,{key:fieldKey(form.fields.length),id:null,name:`Talhão ${form.fields.length+1}`,areaHa:'',crop:'',season:'',points:[],productivityTarget:'',clearGeometry:false,...extra}]})
  const removeField=field=>{
   if(!window.confirm(`Remover o talhão "${field.name}"? Análises ligadas a ele perdem o vínculo.`))return
   if(field.id)setRemoved(current=>[...current,field.id])
@@ -72,8 +79,11 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
   else if(mode==='draw')setDraft(current=>[...current,point])
  }
  const finishDraft=()=>{
-  if(draft.length<3)return
-  addField({points:draft,areaHa:polygonAreaHa(draft).toFixed(2)})
+  if(!validProductiveRing(draft)){setState(current=>({...current,error:'O contorno precisa de pelo menos três cantos distintos e não pode cruzar sobre si mesmo.'}));return}
+  if(!drawing.crop||!validSeasonCode(drawing.season)){setState(current=>({...current,error:'Escolha a cultura e informe uma safra válida (2627V ou 2727I).'}));return}
+  const values={...drawing,points:draft,areaHa:polygonAreaHa(draft).toFixed(2)}
+  if(editKey)updateField(editKey,values);else addField(values)
+  setEditKey(null)
   setDraft([]);setMode('')
  }
  const useGps=()=>{
@@ -95,7 +105,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
   try{
    const response=await fetch(`/api/clients/${encodeURIComponent(client.id)}/property`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     propertyId:form.propertyId,propertyName:form.propertyName,location:form.location||null,removedFieldIds:removed,
-    fields:form.fields.map(field=>({id:field.id,name:field.name,areaHa:numberOrNull(field.areaHa),crop:field.crop,season:field.season,points:field.points,clearGeometry:field.clearGeometry}))
+    fields:form.fields.map(field=>({id:field.id,name:field.name,areaHa:numberOrNull(field.areaHa),crop:field.crop,season:field.season,productivityTarget:numberOrNull(field.productivityTarget),points:field.points,clearGeometry:field.clearGeometry}))
    }),signal:controller.signal})
    if(controller.signal.aborted||version!==requestVersion.current)return
    if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}
@@ -110,8 +120,25 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
   finally{clearTimeout(timeout);if(saveRequest.current===controller)saveRequest.current=null}
  }
 
- const mapped=form.fields.filter(field=>field.points.length>=3)
+ const visible=form.fields.filter(field=>(!cropFilter||field.crop===cropFilter)&&(!seasonFilter||field.season===seasonFilter))
+ const mapped=visible.filter(field=>field.points.length>=3&&field.key!==editKey)
  const draftArea=draft.length>=3?formatHectares(polygonAreaHa(draft)):''
+
+ const editorTools=<div className="productive-map-tools">
+ <button type="button" aria-expanded={toolsOpen} onClick={()=>setToolsOpen(value=>!value)}><PencilRuler size={16}/>{toolsOpen?'Recolher ferramentas':'Abrir ferramentas'}</button>
+ {!toolsOpen&&mode==='draw'&&<button type="button" disabled={busy||draft.length<3} onClick={finishDraft}><Check size={16}/>Concluir área</button>}
+ {toolsOpen&&<>
+   <div className="property-fields-tools" role="group" aria-label="Ferramentas do mapa">
+    <button type="button" disabled={busy} className={mode==='pin'?'active':''} onClick={()=>{setEditKey(null);setMode(mode==='pin'?'':'pin');setDraft([])}}><Crosshair size={16}/>{mode==='pin'?'Toque no mapa…':'Marcar sede'}</button>
+    <button type="button" disabled={busy} onClick={useGps}><LocateFixed size={16}/>Usar meu GPS</button>
+    <button type="button" disabled={busy} className={mode==='draw'?'active':''} onClick={()=>{setEditKey(null);setMode(mode==='draw'?'':'draw');setDraft([])}}><PencilRuler size={16}/>{mode==='draw'?'Desenhando…':'Circular área produtiva'}</button>
+   </div>
+ <div className="productive-map-filters"><label>Cultura no mapa<select value={cropFilter} onChange={e=>setCropFilter(e.target.value)}><option value="">Todas</option>{[...new Set(form.fields.map(f=>f.crop).filter(Boolean))].map(crop=><option key={crop}>{crop}</option>)}</select></label><label>Safra no mapa<select value={seasonFilter} onChange={e=>setSeasonFilter(e.target.value)}><option value="">Todas</option>{[...new Set(form.fields.map(f=>f.season).filter(Boolean))].map(season=><option key={season}>{season}</option>)}</select></label></div>
+ {mode==='draw'&&<div className="productive-drawing"><label>Cultura<select disabled={busy} value={drawing.crop} onChange={e=>setDrawing(current=>({...current,crop:e.target.value}))}><option value="">Selecionar</option>{SEASON_CROPS.map(crop=><option key={crop}>{crop}</option>)}</select></label><label>Safra<input disabled={busy} value={drawing.season} maxLength={5} onChange={e=>setDrawing(current=>({...current,season:e.target.value.toUpperCase()}))}/></label><label>Produtividade projetada (sc/ha)<input disabled={busy} type="number" min="0" max="1000" step="any" value={drawing.productivityTarget} placeholder="Não informada" onChange={e=>setDrawing(current=>({...current,productivityTarget:e.target.value}))}/></label><p>{draft.length} pontos · Área aproximada: {draftArea||'—'} · Potencial: {formatNumber(validProductiveRing(draft)?fieldProduction({...drawing,areaHa:polygonAreaHa(draft)}):null)} sc. Toque em um ponto azul para apagá-lo.</p><div className="property-fields-draw"><button type="button" disabled={busy||draft.length<3} onClick={finishDraft}><Check size={16}/>Concluir área</button><button type="button" disabled={busy||!draft.length} onClick={()=>setDraft(current=>current.slice(0,-1))}><Undo2 size={16}/>Desfazer ponto</button><button type="button" disabled={busy} onClick={()=>{setDraft([]);setEditKey(null);setMode('')}}><X size={16}/>Cancelar desenho</button></div></div>}
+ <button type="button" className="is-primary" disabled={busy||!dirty||mode==='draw'} onClick={save}><Save size={16}/>Salvar propriedade</button>
+ </>}
+ {state.error&&<p role="alert">{state.error}</p>}{state.notice&&<p role="status">{state.notice}</p>}
+ </div>
 
  return <section className="property-fields" aria-label="Propriedade e talhões no mapa">
   <header className="property-fields-head">
@@ -121,11 +148,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
     <label className="property-fields-name">Propriedade<input disabled={busy} value={form.propertyName} placeholder={client?.commercial?.property||'Propriedade principal'} onChange={event=>update({propertyName:event.target.value})}/></label>
     <p>{form.location?<><MapPin size={14}/>Sede em {formatCoordinates(form.location)}</>:'Sede ainda sem localização no mapa.'}</p>
    </div>
-   <div className="property-fields-tools" role="group" aria-label="Ferramentas do mapa">
-    <button type="button" disabled={busy} className={mode==='pin'?'active':''} onClick={()=>{setMode(mode==='pin'?'':'pin');setDraft([])}}><Crosshair size={16}/>{mode==='pin'?'Toque no mapa…':'Marcar sede'}</button>
-    <button type="button" disabled={busy} onClick={useGps}><LocateFixed size={16}/>Usar meu GPS</button>
-    <button type="button" disabled={busy} className={mode==='draw'?'active':''} onClick={()=>{setMode(mode==='draw'?'':'draw');setDraft([])}}><PencilRuler size={16}/>{mode==='draw'?'Desenhando…':'Desenhar talhão'}</button>
-   </div>
+
   </header>
 
   {mode==='pin'&&<p className="property-fields-hint" role="status">Toque no ponto da sede da propriedade. Use o zoom até enxergar a casa ou o barracão.</p>}
@@ -134,7 +157,9 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
   <SatelliteMap
    center={form.location}
    pins={form.location?[{...form.location,label:'',title:'Sede'}]:[]}
-   polygons={mapped.map(field=>({points:field.points,label:field.name}))}
+   polygons={mapped.map(field=>({points:field.points,color:cropColor(field.crop),label:`${field.name} • ${field.crop||'Cultura não informada'} • ${field.season||'Safra não informada'}`}))}
+   editorTools={editorTools}
+   onDraftPointClick={mode==='draw'?index=>setDraft(current=>current.filter((_,i)=>i!==index)):null}
    draft={draft}
    fit={!mode}
    onClick={onMapClick}
@@ -146,7 +171,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
   {mode==='draw'&&<div className="property-fields-draw">
    <button type="button" className="is-primary" disabled={busy||draft.length<3} onClick={finishDraft}><Check size={16}/>Concluir talhão</button>
    <button type="button" disabled={busy||!draft.length} onClick={()=>setDraft(current=>current.slice(0,-1))}><Undo2 size={16}/>Desfazer ponto</button>
-   <button type="button" disabled={busy} onClick={()=>{setDraft([]);setMode('')}}><X size={16}/>Cancelar</button>
+   <button type="button" disabled={busy} onClick={()=>{setDraft([]);setEditKey(null);setMode('')}}><X size={16}/>Cancelar</button>
   </div>}
 
   <div className="property-fields-list">
@@ -155,19 +180,23 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
     ?form.fields.map(field=><div className="property-field-row" key={field.key}>
       <label>Nome<input disabled={busy} value={field.name} onChange={event=>updateField(field.key,{name:event.target.value})}/></label>
       <label>Área (ha)<input disabled={busy} inputMode="decimal" value={field.areaHa} placeholder={field.points.length>=3?formatHectares(polygonAreaHa(field.points)):'Ex.: 42,5'} onChange={event=>updateField(field.key,{areaHa:event.target.value})}/></label>
-      <label>Cultura<input disabled={busy} value={field.crop} placeholder="Ex.: soja" onChange={event=>updateField(field.key,{crop:event.target.value})}/></label>
-      <label>Safra<input disabled={busy} value={field.season} placeholder="2025/26" onChange={event=>updateField(field.key,{season:event.target.value})}/></label>
+      <label>Cultura<select disabled={busy} value={field.crop} onChange={event=>updateField(field.key,{crop:event.target.value})}><option value="">Não informada</option>{[...new Set([...SEASON_CROPS,field.crop].filter(Boolean))].map(crop=><option key={crop}>{crop}</option>)}</select></label>
+      <label>Safra<input disabled={busy} value={field.season} placeholder="2627V ou 2727I" onChange={event=>updateField(field.key,{season:event.target.value})}/></label>
+      <label>Produtividade projetada (sc/ha)<input disabled={busy} type="number" min="0" max="1000" step="any" value={field.productivityTarget} placeholder="Não informada" onChange={event=>updateField(field.key,{productivityTarget:event.target.value})}/></label>
+      <span className="property-field-potential">Potencial {field.crop||'da cultura'}: <b>{formatNumber(fieldProduction(field))} sc</b></span>
+      <button type="button" disabled={busy||mode==='draw'} aria-label={`Editar contorno ${field.name}`} onClick={()=>{setEditKey(field.key);setDraft(field.points);setDrawing({crop:field.crop,season:field.season,productivityTarget:field.productivityTarget});setMode('draw')}}><PencilRuler size={15}/>Editar pontos</button>
       <span className={`property-field-geo${field.points.length>=3?' is-mapped':''}`}>{field.points.length>=3?'Contorno no mapa':'Sem contorno'}</span>
       <button type="button" disabled={busy} className="property-field-remove" aria-label={`Remover talhão ${field.name}`} onClick={()=>removeField(field)}><Trash2 size={15}/></button>
      </div>)
     :<p className="property-fields-empty">Nenhum talhão cadastrado. Desenhe no mapa ou adicione pelo nome.</p>}
   </div>
 
+  <p className="property-fields-hint">Áreas desenhadas são aproximações. Potencial por talhão = área × produtividade projetada (sacas de 60 kg). Não soma culturas nem presume que toda a propriedade é produtiva. As camadas cadastrais são apenas referências.</p>
   <footer className="property-fields-foot">
    <small>{state.loading?'Carregando o que já está registrado…':'Sede e talhões ficam na memória do produtor e alimentam o Manual do Agrônomo e a rota das visitas.'}</small>
    <div>
     {form.location&&<button type="button" disabled={busy} className="is-ghost" onClick={()=>update({location:null})}>Limpar sede</button>}
-    <button type="button" className="is-primary" disabled={state.saving||state.loading||!dirty} onClick={save}><Save size={16}/>{state.saving?'Salvando…':'Salvar propriedade'}</button>
+    <button type="button" className="is-primary" disabled={busy||!dirty||mode==='draw'} onClick={save}><Save size={16}/>{state.saving?'Salvando…':'Salvar propriedade'}</button>
    </div>
   </footer>
   {state.error&&<p className="property-fields-error" role="alert">{state.error}</p>}

@@ -9,8 +9,10 @@ import {transformWithEsbuild} from 'vite'
 // owns tile fetching and DOM layout; these checks cover our lifecycle behavior.
 const source=readFileSync(new URL('../src/components/map/SatelliteMap.jsx',import.meta.url),'utf8')
  .replace(/import '[^']+\.css'\n/g,'')
+ .replace("import CadastralLayers from './CadastralLayers'",'const CadastralLayers=()=>null')
  .replace("from 'react'",`from '${import.meta.resolve('react')}'`)
  .replace("from '../../lib/property-map'",`from '${new URL('../src/lib/property-map.js',import.meta.url).href}'`)
+ .replace("from '../../lib/map-localities'",`from '${new URL('../src/lib/map-localities.js',import.meta.url).href}'`)
  .replace("import('leaflet')",'globalThis.__valSatelliteTestLeaflet()')
 const compiled=await transformWithEsbuild(source,'SatelliteMap.jsx',{loader:'jsx',jsx:'transform'})
 const {default:SatelliteMap}=await import(`data:text/javascript;base64,${Buffer.from(compiled.code).toString('base64')}`)
@@ -35,6 +37,7 @@ function fakeLeaflet(){
    marker.element={attributes:{},events:{},setAttribute(key,value){this.attributes[key]=value},addEventListener(key,handler){this.events[key]=handler}}
    marker.getElement=()=>marker.element;return marker
   },
+  geoJSON:(features,options)=>({...layer('states',features,options),getBounds:()=>[[-34,-74],[6,-34]]}),
   divIcon:options=>options,latLngBounds:points=>points,
   polygon:(points,options)=>layer('polygon',points,options),
   polyline:(points,options)=>layer('polyline',points,options),
@@ -159,4 +162,35 @@ test('Leaflet import failure is visible and retry can initialize the map',async(
   assert.equal(app.state.tiles.length,1)
   assert.equal(app.renderer.root.findAllByProps({role:'alert'}).length,0)
  }finally{if(app)await app.dispose();console.error=previousError}
+})
+
+
+test('municipality navigation loads state boundaries by default and never assigns a producer location',async()=>{
+ const originalFetch=globalThis.fetch
+ const cities=JSON.parse(readFileSync(new URL('../public/geo/municipalities.json',import.meta.url),'utf8'))
+ const geo=JSON.parse(readFileSync(new URL('../public/geo/states.geojson',import.meta.url),'utf8'))
+ globalThis.fetch=async url=>({ok:true,json:async()=>url.endsWith('states.geojson')?geo:cities})
+ let app;const assigned=[]
+ try{
+  app=await mountMap({onClick:point=>assigned.push(point)})
+  const map=app.state.maps[0]
+  assert.equal([...map.layers].filter(l=>l.kind==='states').length,1)
+  const search=()=>app.renderer.root.findByProps({'aria-label':'Buscar município no mapa'})
+  assert.equal(search().props.disabled,false)
+  await act(async()=>search().props.onChange({target:{value:'sao luiz gonzaga'}}))
+  await act(async()=>search().props.onKeyDown({key:'Enter',preventDefault(){}}))
+  const city=cities.find(row=>row[1]==='São Luiz Gonzaga'&&row[2]==='RS')
+  assert.deepEqual(map.fits.at(-1).bounds,[[city[3][0],city[3][1]],[city[3][2],city[3][3]]])
+  assert.deepEqual(assigned,[])
+  assert.equal(app.layers('marker').length,0)
+  await act(async()=>app.button('Divisas estaduais').props.onClick())
+  assert.equal([...map.layers].filter(l=>l.kind==='states').length,0)
+ }finally{if(app)await app.dispose();globalThis.fetch=originalFetch}
+})
+
+
+test('touching a draft vertex removes that point without adding a new map point',async()=>{
+ const removed=[],added=[]
+ const app=await mountMap({draft:[{lat:-12,lng:-55},{lat:-12.01,lng:-55},{lat:-12,lng:-55.01}],onDraftPointClick:index=>removed.push(index),onClick:point=>added.push(point)})
+ try{const vertices=app.layers('circle');assert.equal(vertices.length,3);assert.equal(vertices[1].options.bubblingMouseEvents,false);vertices[1].emit('click');assert.deepEqual(removed,[1]);assert.deepEqual(added,[])}finally{await app.dispose()}
 })
