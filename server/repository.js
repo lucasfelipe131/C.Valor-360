@@ -1108,7 +1108,7 @@ export class ValRepository{
             await connection.query(`UPDATE fields SET geometry_ref=NULL,geometry_version=NULL,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id])
           }
           if(field.crop&&field.season)await connection.query(`INSERT INTO crop_seasons (tenant_id,field_id,season,crop,area_ha)
-            SELECT $1,$2,$3,$4,$5 WHERE NOT EXISTS (SELECT 1 FROM crop_seasons WHERE tenant_id=$1 AND field_id=$2 AND season=$3 AND crop=$4)`,[this.tenantId,fieldRow.id,field.season,field.crop,field.areaHa])
+            SELECT $1::uuid,$2::uuid,$3::varchar,$4::varchar,$5::numeric WHERE NOT EXISTS (SELECT 1 FROM crop_seasons WHERE tenant_id=$1 AND field_id=$2 AND season=$3 AND crop=$4)`,[this.tenantId,fieldRow.id,field.season,field.crop,field.areaHa])
         }
         await connection.query(`INSERT INTO audit_events (tenant_id,actor_id,action,entity_type,entity_id,after_data,created_at) VALUES ($1,$2,'property_profile_updated','client',$3,$4,NOW())`,[this.tenantId,ownerId,client.id,jsonbParameter({propertyId:String(property.id),located:Boolean(metadata.location),fields:profile.fields.length,removed:profile.removedFieldIds.length})])
       })
@@ -1647,9 +1647,13 @@ export class ValRepository{
       const publicClientId=String(row.external_key||clientId)
       const rawProfileEvidence=Array.isArray(row.profile_evidence)?row.profile_evidence:[]
       const canonicalClientMemory=item=>{
+        // O SELECT comprova o vínculo deste UUID com o produtor autorizado.
+        // Memórias de visita/propriedade/talhão também carregam esse client_id;
+        // seus sujeitos continuam intactos e passam pela autorização própria.
+        if(String(item?.client_id||'')!==String(row.id))return item
         const type=String(item?.subject_type||item?.subjectType||'client').toLowerCase()
-        if(type!=='client')return item
-        return {...item,client_id:publicClientId,subject_id:publicClientId}
+        const subjectId=String(item?.subject_id??item?.subjectId??'').trim()
+        return {...item,client_id:publicClientId,...(type==='client'&&(!subjectId||subjectId===String(row.id))?{subject_id:publicClientId}:{})}
       }
       const memories=(row.memories||[]).map(canonicalClientMemory)
       const memoryHistory=(row.memory_history||row.memories||[]).map(canonicalClientMemory)
@@ -1955,7 +1959,7 @@ export class ValRepository{
                 await client.query(`UPDATE fields SET geometry_ref=NULL,geometry_version=NULL,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[tenantId,propertyId,fieldId])
               }
               if(fieldId&&season&&crop)await client.query(`INSERT INTO crop_seasons (tenant_id,field_id,season,crop,area_ha)
-                SELECT $1,$2,$3,$4,$5 WHERE NOT EXISTS (SELECT 1 FROM crop_seasons WHERE tenant_id=$1 AND field_id=$2 AND season=$3 AND crop=$4)`,[tenantId,fieldId,season,crop,fieldArea])
+                SELECT $1::uuid,$2::uuid,$3::varchar,$4::varchar,$5::numeric WHERE NOT EXISTS (SELECT 1 FROM crop_seasons WHERE tenant_id=$1 AND field_id=$2 AND season=$3 AND crop=$4)`,[tenantId,fieldId,season,crop,fieldArea])
             }
             return {propertyId,propertyExternalKey}
           }
