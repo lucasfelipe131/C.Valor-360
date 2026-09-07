@@ -147,7 +147,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
   {id:'filters',label:'Safras e culturas',Icon:SlidersHorizontal,disabled:busy,active:toolsOpen,onClick:()=>setToolsOpen(value=>!value)},
   {id:'gps',label:'Meu GPS',Icon:LocateFixed,disabled:busy,onClick:useGps}
  ]
- const footerTools=<div><span><b>{mapSeason}</b> · {dirty?'Alterações não salvas':'Mapeamento cadastrado'}{mode==='draw'?` · ${draft.length} pontos em desenho`:''}</span><button type="button" className="is-primary" disabled={busy||!dirty||mode==='draw'} onClick={save}><Save size={16}/>{state.saving?'Salvando…':'Salvar mapeamento'}</button>{state.error&&<small role="alert">{state.error}</small>}{state.notice&&<small role="status">{state.notice}</small>}</div>
+ const footerTools=<div><span><b>{mapSeason}</b> · {dirty?'Alterações não salvas':form.fields.length?'Sem alterações pendentes':'Nenhum talhão cadastrado'}{mode==='draw'?` · ${draft.length} pontos em desenho`:''}</span><button type="button" className="is-primary" disabled={busy||!dirty||mode==='draw'} onClick={save}><Save size={16}/>{state.saving?'Salvando…':'Salvar mapeamento'}</button>{state.error&&<small role="alert">{state.error}</small>}{state.notice&&<small role="status">{state.notice}</small>}</div>
  const editorTools=toolsOpen&&<div className="productive-map-tools">
  <button type="button" aria-expanded={toolsOpen} onClick={()=>setToolsOpen(value=>!value)}><PencilRuler size={16}/>{toolsOpen?'Recolher ferramentas':'Abrir ferramentas'}</button>
  {!toolsOpen&&mode==='draw'&&<button type="button" disabled={busy||draft.length<3} onClick={finishDraft}><Check size={16}/>Concluir área</button>}
