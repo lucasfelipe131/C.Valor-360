@@ -47,3 +47,27 @@
 .p360-navigation.is-collapsed footer{flex-direction:column;padding:12px 8px}
 .p360-shell:has(>.p360-navigation.is-collapsed) .main{margin-left:68px}
 @media(max-width:760px){.p360-shell:has(>.p360-navigation.is-collapsed) .main{margin-left:0}}
+
+/* Compacting preserves the mounted conversation, inputs and live session. */
+.val-fullscreen-page.p360-copilot.is-compact{position:fixed;inset:100px 14px 18px auto;width:62px;height:auto;min-height:240px;border-radius:16px;background:#f8fcfa}
+.p360-copilot.is-compact>:not(.p360-copilot-rail){display:none!important}
+.p360-copilot-rail[hidden]{display:none!important}
+.p360-copilot-rail{display:flex;flex-direction:column;align-items:center;gap:10px;height:100%;padding:12px 6px}
+.p360-copilot-rail button{width:44px;height:44px;border:0;border-radius:11px;background:transparent;color:#006b55;display:grid;place-items:center;cursor:pointer}
+.p360-copilot-rail button:hover{background:#e5f3ed}
+.p360-copilot-rail .val-logo{width:31px!important;height:31px!important}
+.p360-copilot-rail-brand{margin-bottom:6px}
+.p360-copilot-rail-status{display:flex;flex-direction:column;align-items:center;gap:7px;color:#00866b;font-size:9px;margin-top:10px;text-align:center}
+.p360-copilot-rail-status i{width:7px;height:7px;border-radius:50%;background:#00866b}
+.p360-copilot-rail-client{margin-top:auto;width:32px;height:32px;display:grid;place-items:center;background:#e3f0ea;color:#00644e;border-radius:50%;font-size:12px;font-weight:700}
+.p360-shell:has(.p360-copilot.is-compact) .content.p360-with-copilot{padding-right:92px}
+@media(max-width:650px){.val-fullscreen-page.p360-copilot.is-compact{inset:auto 8px 82px auto;width:56px;height:258px;min-height:0;border-radius:16px;box-shadow:0 4px 24px #00342b20}.p360-shell:has(.p360-copilot.is-compact) .content.p360-with-copilot{padding-right:12px}.p360-copilot-rail{gap:5px}}
+.p360-technical-report>header{flex-wrap:wrap;gap:16px;align-items:center;border-bottom:1px solid #e4eeea;padding-bottom:18px}
+.p360-report-title{display:flex;gap:12px;align-items:center;flex:1;min-width:230px}
+.p360-report-title>span{width:42px;height:42px;display:grid;place-items:center;color:#007e61;background:#eaf6ef;border-radius:12px}
+.p360-report-title small{display:block;color:#728279;font-size:10px;margin-top:6px}
+.p360-report-toolbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.p360-report-toolbar a{display:flex;align-items:center;gap:6px;font-size:11px;color:#006e55;text-decoration:none;border:1px solid #dbe9e2;border-radius:8px;padding:10px}
+.p360-report-new-season{margin-bottom:16px;border:1px solid #e1ebe6;border-radius:10px;padding:12px;background:#fbfdfc}
+.p360-report-new-season summary{color:#006c55;cursor:pointer;font-size:12px;font-weight:600}
+.p360-report-new-season .season-form-head{margin-top:12px}

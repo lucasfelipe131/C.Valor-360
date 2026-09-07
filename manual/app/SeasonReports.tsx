@@ -1640,7 +1640,7 @@ export default function SeasonReports({
         </p>
       </div>
 
-      <section className="content-panel season-history season-saved-panel">
+      <section id="season-report-history" className="content-panel season-history season-saved-panel">
         <div className="panel-title">
           <div>
             <span className="eyebrow">RELATÓRIOS SALVOS</span>
@@ -1854,7 +1854,7 @@ export default function SeasonReports({
         </div>
       </section>
 
-      <section className="content-panel season-import">
+      <section id="season-report-import" className="content-panel season-import">
         <div className="panel-title">
           <div>
             <span className="eyebrow">IMPORTAÇÃO ASSISTIDA</span>
@@ -2059,7 +2059,7 @@ export default function SeasonReports({
         )}
       </section>
 
-      <section className="content-panel season-costs">
+      <section id="season-report-costs" className="content-panel season-costs">
         <div className="panel-title">
           <div>
             <span className="eyebrow">2 · MANEJOS E CUSTOS</span>
@@ -2207,7 +2207,7 @@ export default function SeasonReports({
         </div>
       </section>
 
-      <section className="content-panel season-composition-panel">
+      <section id="season-report-composition" className="content-panel season-composition-panel">
         <div className="panel-title">
           <div>
             <span className="eyebrow">COMPOSIÇÃO DOS CUSTOS</span>
@@ -2250,7 +2250,7 @@ export default function SeasonReports({
         )}
       </section>
 
-      <section className="content-panel season-grain-panel">
+      <section id="season-report-grains" className="content-panel season-grain-panel">
         <div className="panel-title">
           <div>
             <span className="eyebrow">CUSTO EM SACAS POR HECTARE</span>
@@ -2280,7 +2280,7 @@ export default function SeasonReports({
         </div>
       </section>
 
-      <section className="season-results-grid">
+      <section id="season-report-results" className="season-results-grid">
         <div className="content-panel">
           <div className="panel-title">
             <div>
@@ -2381,7 +2381,7 @@ export default function SeasonReports({
         </aside>
       </section>
 
-      <section className="content-panel season-photos-panel">
+      <section id="season-report-photos" className="content-panel season-photos-panel">
         <div className="panel-title">
           <div>
             <span className="eyebrow">REGISTRO FOTOGRÁFICO</span>

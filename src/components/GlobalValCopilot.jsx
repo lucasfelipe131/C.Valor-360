@@ -1,6 +1,6 @@
 import {isDemoRecord} from '../lib/producer-display'
 import React,{useEffect,useMemo,useRef,useState} from 'react'
-import {Maximize2,Minimize2,Pin,ArrowLeft,BrainCircuit,Camera,CheckCircle2,ChevronDown,Clock3,FileText,History,ImagePlus,LoaderCircle,MessageSquareText,PanelRightOpen,Paperclip,Plus,Search,Send,Settings2,ShieldCheck,Sparkles,UserRound,Volume2,X} from 'lucide-react'
+import {ChevronsLeft,ChevronsRight,Mic,Maximize2,Minimize2,Pin,ArrowLeft,BrainCircuit,Camera,CheckCircle2,ChevronDown,Clock3,FileText,History,ImagePlus,LoaderCircle,MessageSquareText,PanelRightOpen,Paperclip,Plus,Search,Send,Settings2,ShieldCheck,Sparkles,UserRound,Volume2,X} from 'lucide-react'
 import VoiceCapture from './voice/VoiceCapture'
 import Logo from './Logo'
 import DecisionInterviewCard from './copilot/DecisionInterviewCard'
@@ -135,6 +135,10 @@ function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onRe
 
 export default function GlobalValCopilot({open,onClose,embedded=false,clients=[],contextClient=null,seed,workspaceContext=null,onRefreshPortfolio,onOpenClient,onPrepareVisit,onNavigate,onWorkspaceAction,visits=[],opportunities=[],storageScope='session',identityScope=null}){
  const [panelExpanded,setPanelExpanded]=useState(false)
+ const [panelCompact,setPanelCompact]=useState(false)
+ const compactToggleRef=useRef(null)
+ useEffect(()=>{if(open)setPanelCompact(false)},[open,seed?.nonce])
+ useEffect(()=>{if(panelCompact)compactToggleRef.current?.focus()},[panelCompact])
  const [panelPinned,setPanelPinned]=useState(true)
  const storedWorkspace=useMemo(()=>readConversationWorkspace(typeof sessionStorage==='undefined'?null:sessionStorage,storageScope),[storageScope])
  const [selectedId,setSelectedId]=useState(contextClient?.id||'')
@@ -631,9 +635,16 @@ export default function GlobalValCopilot({open,onClose,embedded=false,clients=[]
  const historyGroups=history.reduce((map,item)=>{const values=map.get(item.group)||[];values.push(item);map.set(item.group,values);return map},new Map())
 
  if(!open)return null
- return <section ref={pageRef} className={`val-fullscreen-page ${contextPanelOpen?'has-context-panel':''} ${embedded?'p360-copilot':''} ${embedded&&panelExpanded?'p360-copilot-expanded':''} ${panelPinned?'is-pinned':''}`} aria-labelledby="global-val-title" tabIndex="-1">
+ return <section ref={pageRef} className={`val-fullscreen-page ${contextPanelOpen?'has-context-panel':''} ${embedded?'p360-copilot':''} ${embedded&&panelExpanded?'p360-copilot-expanded':''} ${panelPinned?'is-pinned':''} ${embedded&&panelCompact?'is-compact':''}`} aria-label={embedded&&panelCompact?'VAL Copiloto compacto':undefined} aria-labelledby={embedded&&panelCompact?undefined:'global-val-title'} tabIndex="-1">
+  {embedded&&<div className="p360-copilot-rail" hidden={!panelCompact}>
+   <button type="button" className="p360-copilot-rail-brand" title="Expandir VAL Copiloto" aria-label="Expandir VAL Copiloto" onClick={()=>setPanelCompact(false)}><Logo variant="icon-only" decorative/></button>
+   <button ref={compactToggleRef} type="button" aria-label="Restaurar painel da VAL" title="Restaurar painel da VAL" aria-expanded={!panelCompact} onClick={()=>setPanelCompact(false)}><ChevronsLeft size={20}/></button>
+   <button type="button" title="Retomar conversa" aria-label="Retomar conversa com a VAL" onClick={()=>{setPanelCompact(false);requestAnimationFrame(()=>messageInput.current?.focus())}}><MessageSquareText size={20}/></button>
+   <span className="p360-copilot-rail-status" role="status" title={voiceStageActive?'Conversa por voz ativa':busy||uploading?'Processando solicitação':'VAL disponível'}>{voiceStageActive?<Mic size={18}/>:busy||uploading?<LoaderCircle size={18}/>:<i/>}<small>{voiceStageActive?'Voz ativa':busy||uploading?'Aguarde':'VAL'}</small></span>
+   <span className="p360-copilot-rail-client" title={client?.name||'Conversa geral'}>{client?.name?.trim()?.[0]||'V'}</span>
+  </div>}
   {historyOpen&&<><button type="button" className="val-history-backdrop" aria-label="Fechar histórico" onClick={()=>setHistoryOpen(false)}/><aside className="val-history-drawer" aria-label="Histórico de conversas"><header><div><small>VAL</small><h2>Conversas</h2></div><button type="button" aria-label="Fechar histórico" onClick={()=>setHistoryOpen(false)}><X/></button></header><button type="button" className="val-new-thread" onClick={()=>newConversation({general:true})}><Plus/>Nova conversa geral</button><label className="val-history-search"><Search/><input value={historyQuery} onChange={event=>setHistoryQuery(event.target.value)} placeholder="Buscar produtor ou conversa"/></label>{[...historyGroups].map(([group,items])=><section key={group}><h3>{group}</h3>{items.map(item=><button type="button" key={item.key} onClick={()=>selectHistory(item)}><Clock3/><span><b>{item.label}</b><small>{item.preview}</small></span></button>)}</section>)}{visibleClients.length>0&&<section><h3>Produtores</h3>{visibleClients.map(item=><button type="button" key={item.id} onClick={()=>chooseClient(item.id)}><UserRound/><span><b>{item.name}</b><small>Abrir conversa por produtor</small></span></button>)}</section>}</aside></>}
-  {embedded&&<header className="p360-copilot-header"><Logo variant="icon-only" decorative/><div><b>VAL Copiloto</b><small>{client?.name||'Contexto do produtor'}</small></div><button aria-label="Fixar Copiloto" aria-pressed={panelPinned} onClick={()=>setPanelPinned(value=>!value)}><Pin size={15}/></button><button aria-label={panelExpanded?'Recolher tela cheia':'Expandir Copiloto'} onClick={()=>setPanelExpanded(value=>!value)}>{panelExpanded?<Minimize2 size={15}/>:<Maximize2 size={15}/>}</button><button aria-label="Fechar Copiloto" onClick={()=>{setPanelExpanded(false);onClose?.()}}><X size={16}/></button></header>}
+  {embedded&&<header className="p360-copilot-header"><Logo variant="icon-only" decorative/><div><b>VAL Copiloto</b><small>{client?.name||'Contexto do produtor'}</small></div><button type="button" title="Reduzir VAL para ícones" aria-label="Reduzir VAL para ícones" aria-expanded={!panelCompact} onClick={()=>{setPanelExpanded(false);setPanelCompact(true);setHistoryOpen(false)}}><ChevronsRight size={17}/></button><button aria-label="Fixar Copiloto" aria-pressed={panelPinned} onClick={()=>setPanelPinned(value=>!value)}><Pin size={15}/></button><button aria-label={panelExpanded?'Recolher tela cheia':'Expandir Copiloto'} onClick={()=>setPanelExpanded(value=>!value)}>{panelExpanded?<Minimize2 size={15}/>:<Maximize2 size={15}/>}</button><button aria-label="Fechar Copiloto" onClick={()=>{setPanelExpanded(false);onClose?.()}}><X size={16}/></button></header>}
   {embedded&&isDemoRecord(client)&&<p className="p360-copilot-demo" data-provenance="DEMO">DEMO • Contexto demonstrativo, sem validade para produtores reais.</p>}
   <header className="val-fs-header">
    <button type="button" className="val-fs-back" aria-label="Voltar" onClick={onClose} disabled={uploading}><ArrowLeft/></button>
