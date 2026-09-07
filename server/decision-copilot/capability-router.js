@@ -227,9 +227,15 @@ export function classifyStructuredClientFact(message=''){
  // advisory, aggregate or prospective request must remain contextual/deep even
  // when it contains one of the same nouns.
  if(/^(?:agora\s+)?(?:compara|compare)\s+(?:os dois|ambos|essas duas contas|esses dois produtores)$/.test(source))return 'CLIENT_COMPARISON'
- if(/\s+e\s+(?:o\s+que|como|por\s+que|qual|quais|quando|onde|se|devo|deveria|posso|poderia|abra|mostre|prepare|calcule|analise|registre)\b/.test(source))return null
  const owner='(?:\\s+(?:dele|dela)|\\s+(?:do|da)\\s+[a-z][a-z0-9 \'-]{0,120})?'
- if(new RegExp(`^(?:e\\s+)?(?:(?:qual|como)\\s+(?:e\\s+)?(?:o\\s+)?perfil${owner}|(?:mostre|mostra|me\\s+mostre)\\s+(?:o\\s+)?perfil${owner})$`).test(source))return 'BEHAVIORAL_PROFILE'
+ const profileQuestion=new RegExp(`^(?:e\\s+)?(?:(?:qual|como)\\s+(?:e\\s+)?(?:o\\s+)?perfil(?:\\s+comportamental)?${owner}|(?:mostre|mostra|me\\s+mostre)\\s+(?:o\\s+)?perfil(?:\\s+comportamental)?${owner})$`)
+ // The profile contract already supplies an evidence-based approach. Accept
+ // only these two complete profile clauses; additional domains/actions stay contextual.
+ const profileClauses=source.split(/\s+e\s+(?=como\b)/)
+ const profileApproachQuestion=/^como\s+(?:(?:eu\s+)?(?:devo|posso|deveria)\s+)?(?:abordar\s+(?:a\s+conversa|ele|ela|o\s+produtor|a\s+produtora)|(?:conversar|falar|lidar)\s+com\s+(?:ele|ela|o\s+produtor|a\s+produtora))$/
+ if(profileClauses.length===2&&!/\b(?:do|da)\s+.*\be\b/.test(profileClauses[0])&&profileQuestion.test(profileClauses[0])&&profileApproachQuestion.test(profileClauses[1])&&matchedValContextDomains(source).every(domain=>domain==='PROFILE'))return 'BEHAVIORAL_PROFILE'
+ if(/\s+e\s+(?:o\s+que|como|por\s+que|qual|quais|quando|onde|se|devo|deveria|posso|poderia|abra|mostre|prepare|calcule|analise|registre)\b/.test(source))return null
+ if(profileQuestion.test(source))return 'BEHAVIORAL_PROFILE'
  if(/^(?:e\s+)?como\s+(?:eu\s+)?devo\s+abordar\s+(?:ele|ela|o\s+produtor|a\s+produtora)$/.test(source))return 'BEHAVIORAL_PROFILE'
  // 'como abordar ele', 'como lidar com ela na próxima visita', 'como ele decide', 'qual o estilo dele':
  // perguntas de perfil comportamental em linguagem comum recebem a mesma resposta auditável do perfil.

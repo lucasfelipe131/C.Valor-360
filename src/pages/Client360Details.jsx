@@ -87,7 +87,7 @@ export default function Client360Details({section,client,visits=[],opportunities
    <div className="client-memory-grid">
     <article><MessageSquareText/><small>O QUE MUDOU</small><p>{changedText}</p></article>
     <article className="is-priority"><Lightbulb/><small>PRIORIDADE / OPORTUNIDADE</small><p>{opportunityText}</p></article>
-    <article><CalendarClock/><small>ÚLTIMA VISITA COMPROVADA</small><p>{lastVisitText}</p></article>
+    <article><CalendarClock/><small>ÚLTIMA VISITA REGISTRADA</small><p>{lastVisitText}</p></article>
     <article><Target/><small>PRÓXIMO COMPROMISSO</small><p>{nextCommitmentText}</p>{commitmentView.state==='error'&&<em className="client-memory-source-status" role="status">{commitmentResource.error}</em>}</article>
    </div>
    {memoryRefreshError&&<p className="client-memory-refresh-error" role="status">{memoryRefreshError}</p>}

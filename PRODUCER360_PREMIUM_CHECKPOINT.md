@@ -3,7 +3,17 @@
 Date: 2026-09-07. Branch: `feature/val-producer360-premium-v1`.
 Base: `a043a8725cc4f92cef9f203315233b8a8be5500c` (`feature/val-satellite-visit-routes-v1`).
 PR #95 remains frozen at `5848574f24c4ddbe628b125856d54d9500f7fce9`.
-No merge, deployment, production data write or Passo 07.
+Initial delivery had no deployment, production data write or Passo 07.
+
+## Authorized staging integration
+
+The user subsequently authorized staging deployment and integration of the newer
+staging fix `335df6d892b4cec03c22700ca98d7d42af014064`. Its profile/approach routing
+and regression tests are retained. The extracted dossier label is aligned with
+the existing registered-visit contract. Target: `val-web-staging` in project
+`VAL - STAGING INTEGRATION 01`, source branch `release/val-staging-validated`.
+No new migrations or seed records are introduced. Main, production and PR #95
+remain outside this deployment. Live status must be verified after publication.
 
 ## Delivered
 
