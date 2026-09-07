@@ -141,6 +141,10 @@ jobs:
         run: mkdir -p .gate/vnext-data
       - name: Apply schema and all versioned migrations in PostgreSQL 16
         run: npm run db:migrate | tee .gate/vnext-data/migrations.log
+      - name: Verify synthetic producer and visit route persistence in PostgreSQL 16
+        env:
+          VAL_DEMO_ENVIRONMENT: test
+        run: node scripts/demo-producer-postgres-verify.mjs | tee .gate/vnext-data/demo-route-runtime.log
       - name: Exercise geometry and scan provenance with isolated synthetic tenants
         env:
           VNEXT_VERIFY_MODE: source

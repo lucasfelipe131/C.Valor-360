@@ -109,7 +109,7 @@ test('as telas ligam o mapa onde a decisão acontece, sem pino inventado',()=>{
  assert.match(client360,/client\.location\?'Sede no mapa':'Sem sede no mapa'/)
 
  const visits=readFileSync('src/pages/Visits.jsx','utf8')
- assert.match(visits,/<RouteMap visits=\{upcoming\} clients=\{clients\}\/>/)
+ assert.match(visits,/<RouteMap visits=\{visits\} clients=\{clients\}[^>]*onOpenVisit=\{openVisitDetails\}/)
  assert.ok(!visits.includes('route-visual'),'a ilustração decorativa da rota voltou')
  assert.ok(!visits.includes('começar pelo maior potencial'),'a frase decorativa sobre a rota voltou')
 

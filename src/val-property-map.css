@@ -11,17 +11,45 @@
 .val-map-canvas .leaflet-control-attribution a{color:#72e6c5}
 .val-map-canvas .leaflet-bar{border:0;box-shadow:0 6px 16px rgba(7,27,25,.35)}
 .val-map-canvas .leaflet-bar a{width:34px;height:34px;line-height:34px;color:#071b19;background:#fff}
+.val-map-controls{position:absolute;z-index:500;top:10px;right:10px;display:flex;gap:6px;align-items:center;max-width:calc(100% - 66px);flex-wrap:wrap;justify-content:flex-end}
+.val-map-controls button,.val-map-error button{display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:0 11px;border:1px solid rgba(7,27,25,.16);border-radius:9px;background:#fff;color:#173c33;font:inherit;font-size:11.5px;font-weight:800;cursor:pointer;box-shadow:0 3px 10px rgba(7,27,25,.16)}
+.val-map-controls button:hover,.val-map-error button:hover{background:#ecf9f3}
+.val-map-controls button:disabled{opacity:.55;cursor:not-allowed}
+.val-map-controls button:focus-visible,.val-map-error button:focus-visible{outline:3px solid #83d7ff;outline-offset:3px}
+.val-map-basemaps{display:flex;background:#fff;border-radius:9px;overflow:hidden;box-shadow:0 3px 10px rgba(7,27,25,.16)}
+.val-map-basemaps button{border:0;border-radius:0;box-shadow:none}
+.val-map-basemaps button[aria-pressed=true]{background:#124d3e;color:#fff}
+.val-map-basemaps button:focus-visible{outline-offset:-3px}
+.val-map-loading{position:absolute;z-index:450;left:12px;bottom:28px;max-width:calc(100% - 24px);padding:7px 10px;border-radius:8px;background:rgba(7,27,25,.86);color:#fff;font-size:11.5px;pointer-events:none}
+.val-map-error{position:absolute;z-index:550;left:12px;right:12px;bottom:28px;max-width:430px;padding:12px;border:1px solid #e5c998;border-radius:12px;background:#fff9ec;color:#684615;box-shadow:0 6px 24px rgba(7,27,25,.18)}
+.val-map-error p{margin:0 0 9px;font-size:12px;line-height:1.45}
+.val-map-error>div{display:flex;gap:7px;flex-wrap:wrap}
+.val-map-error button{min-height:36px;box-shadow:none}
+.val-map-shell.is-expanded{position:fixed;inset:0;z-index:10000;border:0;border-radius:0;--val-map-height:100dvh!important}
+.val-map-shell.is-expanded .val-map-canvas{height:100dvh;max-height:none}
+.val-map-shell.is-expanded .val-map-controls{top:max(12px,env(safe-area-inset-top));right:max(12px,env(safe-area-inset-right))}
+.val-map-shell.is-expanded .leaflet-control-attribution{padding-bottom:max(2px,env(safe-area-inset-bottom))}
 
 /* Pino: gota com número dentro. */
 .val-map-pin{background:transparent;border:0}
 .val-map-pin b{
- display:grid;place-items:center;width:30px;height:30px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);
+ display:grid;place-items:center;box-sizing:border-box;width:34px;height:34px;border-radius:50% 50% 50% 0;transform:rotate(-45deg);
  background:linear-gradient(135deg,#009f78,#00c896);color:#04231d;border:2px solid #fff;
  box-shadow:0 8px 18px rgba(7,27,25,.45);font-size:12px;font-weight:800;font-style:normal;
 }
-.val-map-pin b:empty::after{content:'';width:8px;height:8px;border-radius:50%;background:#04231d}
+.val-map-pin b span:empty::after{content:'';display:block;width:8px;height:8px;border-radius:50%;background:currentColor}
 .val-map-pin b>*{transform:rotate(45deg)}
 .val-map-pin.is-missing b{background:#c9d7d2;color:#3f5a53}
+.val-map-pin.is-visited b{background:#1e745f;color:#fff}
+.val-map-pin.is-current b{background:#dbf880;color:#1e3e22;box-shadow:0 0 0 5px rgba(219,248,128,.28),0 8px 18px rgba(7,27,25,.45)}
+.val-map-pin.is-planned b{background:#fff;color:#225648;border-color:#88b9a7}
+.val-map-pin.is-suggested b{background:#f2c969;color:#523916;border-color:#fff1c7;border-radius:50%;font-size:23px;font-weight:650}
+.val-map-pin.is-position b{width:22px;height:22px;margin:6px;border-radius:50%;background:#398be9;color:#fff;box-shadow:0 0 0 6px rgba(57,139,233,.23),0 3px 10px rgba(0,0,0,.3)}
+.val-map-pin.is-position b span:empty::after{width:6px;height:6px}
+.val-map-pin.is-selected b{outline:3px solid #7ed7ff;outline-offset:3px}
+.val-map-pin:focus-visible{outline:none}
+.val-map-pin:focus-visible b{outline:3px solid #7ed7ff;outline-offset:4px}
+.val-map-pin[role=button]{cursor:pointer}
 .val-map-label{background:rgba(7,27,25,.74);color:#fff;border:0;border-radius:8px;padding:2px 8px;font-size:11px;font-weight:700;box-shadow:none;white-space:nowrap}
 .val-map-label::before{display:none}
 
@@ -30,7 +58,7 @@
 .property-fields-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
 .property-fields-head small{display:block;color:var(--val-muted,#5b7a72);font-size:10px;letter-spacing:.12em;font-weight:850}
 .property-fields-name{display:grid;gap:3px;margin-top:4px;font-size:11.5px;font-weight:700;color:var(--val-muted,#5b7a72)}
-.property-fields-name input{min-width:240px;min-height:38px;padding:0 10px;border:1px solid var(--val-line,#dce8e4);border-radius:10px;background:#fff;color:var(--val-text,#0e2622);font:inherit;font-size:15px;font-weight:750}
+.property-fields-name input,.property-fields-name select{min-width:240px;min-height:38px;padding:0 10px;border:1px solid var(--val-line,#dce8e4);border-radius:10px;background:#fff;color:var(--val-text,#0e2622);font:inherit;font-size:15px;font-weight:750}
 .property-fields-head p{display:flex;align-items:center;gap:6px;margin:6px 0 0;color:var(--val-muted,#5b7a72);font-size:12.5px}
 .property-fields-tools{display:flex;gap:8px;flex-wrap:wrap}
 .property-fields-tools button,.property-fields-draw button,.property-fields-list-head button,.property-fields-foot button{
@@ -86,7 +114,10 @@
 
 @media(max-width:760px){
  .val-map-canvas{height:min(var(--val-map-height,280px),58vh)}
- .property-fields-name input{min-width:0;width:100%}
+ .val-map-controls{gap:5px;top:8px;right:8px}
+ .val-map-controls button{min-height:40px;padding:0 9px;font-size:10.5px}
+ .val-map-error{bottom:32px}
+ .property-fields-name input,.property-fields-name select{min-width:0;width:100%}
  .property-fields-tools{width:100%}
  .property-fields-tools button{flex:1 1 auto;justify-content:center;min-height:46px}
  .property-fields-draw button{flex:1 1 auto;justify-content:center;min-height:46px}
