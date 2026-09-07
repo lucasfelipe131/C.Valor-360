@@ -132,6 +132,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
   {mode==='draw'&&<p className="property-fields-hint" role="status">Toque nos cantos do talhão, um a um. {draft.length} ponto{draft.length===1?'':'s'} marcado{draft.length===1?'':'s'}{draftArea?` • ${draftArea}`:''}</p>}
 
   <SatelliteMap
+   key={`${client?.id}:${form.propertyId||'loading'}`}
    center={form.location}
    pins={form.location?[{...form.location,label:'',title:'Sede'}]:[]}
    polygons={mapped.map(field=>({points:field.points,label:field.name}))}
