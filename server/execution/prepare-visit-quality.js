@@ -1,6 +1,7 @@
 import {compactKnowledgeRefs,knowledgeQualityState,normalizeKnowledgeRetrieval} from '../commercial/knowledge-support.js'
 
 export const prepareVisitQualityVersion='val.prepare_visit.quality.v1'
+export const decisionParticipantValidationQuestion='Quem além de você participa desta decisão e o que essa pessoa precisa validar?'
 
 const list=value=>Array.isArray(value)?value:[]
 const text=(value,max=1200)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,max)
@@ -95,8 +96,10 @@ function questionSet({crop,solution,hasTiming,hasPrice,participantKnown,insuffic
  if(hasTiming&&crop&&solution)questions.push(`Na primeira aplicação do ${crop}, o que mais pesa na escolha do ${solution}: segurança de controle, resultado que já conhece ou investimento por hectare?`)
  else if(solution||crop)questions.push(`Qual problema ou risco${culture} precisa estar resolvido para a escolha do ${target} fazer sentido?`)
  if(hasPrice)questions.push('Quando você compara nossa proposta com a alternativa que está avaliando, onde percebe hoje a principal diferença de valor?')
+ // Knowing that another person participates does not establish their criteria.
+ // Reserve a question before the generic proof prompt and the three-item cap.
+ questions.push(participantKnown?decisionParticipantValidationQuestion:'Quem participa desta decisão e quais critérios essa pessoa precisa validar?')
  if(solution)questions.push(`Para avançar na decisão sobre ${solution} agora, o que precisa ficar mais claro ou comprovado?`)
- if(!participantKnown&&questions.length<3)questions.push('Quem participa desta decisão e quais critérios essa pessoa precisa validar?')
  if(questions.length<2)questions.push('Qual resultado concreto definiria um avanço útil nesta visita?')
  return unique(questions).slice(0,3)
 }
@@ -114,7 +117,7 @@ export function buildPrepareVisitDecisionModel({contextSnapshot={},visitObjectiv
  const priceItems=knowledge.filter(item=>priceSignal(itemStatement(item)))
  const confirmedPrice=priceItems.some(item=>['FACT','VALIDATED_KNOWLEDGE'].includes(item.epistemic_state)&&explicitPriceObjection(itemStatement(item)))
  const hasPrice=priceItems.length>0||priceSignal(visitObjective)
- const participantKnown=statements.some(decisionParticipant)
+ const participantKnown=knowledge.some(item=>['FACT','VALIDATED_KNOWLEDGE'].includes(item.epistemic_state)&&(item?.value?.signal_code==='MULTI_DECISION_PARTICIPANT'||decisionParticipant(itemStatement(item))))
  const proofs=historyProofs(contextSnapshot,{crop,solution})
  const hasHistory=list(contextSnapshot?.commercial_context?.business_history).length>0||list(contextSnapshot?.commercial_context?.opportunities).length>0
  const materialAgronomic=Boolean(crop&&(hasPlanted||hasEmerged||hasApplicationNear))
