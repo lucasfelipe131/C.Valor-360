@@ -140,6 +140,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  const [density,setDensity]=useState(()=>readConsultantExperiencePreference(storageScope).toLowerCase())
  const [outputMode,setOutputMode]=useState(()=>readValOutputMode(storageScope))
  const [mode,setMode]=useState('ASK')
+ const [voiceStageActive,setVoiceStageActive]=useState(false)
  const [registrationDraft,setRegistrationDraft]=useState(null)
  const [registrationAutoOpenKey,setRegistrationAutoOpenKey]=useState('')
  const [replyingTo,setReplyingTo]=useState(null)
@@ -170,6 +171,9 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
  const [historyQuery,setHistoryQuery]=useState('')
  const [threadOverride,setThreadOverride]=useState('')
  const [clarification,setClarification]=useState(null)
+ const voiceNeedsReview=Boolean(clarification?.options?.length||replyingTo||sessionReplyOffer||pendingFiles.length||attachments.length)
+ const voiceStageFocused=mode==='ASK'&&voiceStageActive&&!voiceNeedsReview
+ useEffect(()=>{if(!open||mode!=='ASK')setVoiceStageActive(false)},[open,mode])
  const fileInput=useRef(null)
  const photoInput=useRef(null)
  const messageInput=useRef(null)
@@ -632,7 +636,7 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
    <div className="val-fs-header-actions"><button type="button" aria-label="Abrir histórico de conversas" onClick={()=>setHistoryOpen(true)} disabled={uploading}><History aria-hidden="true"/><span>Histórico</span></button><button type="button" aria-label="Iniciar nova conversa" onClick={()=>newConversation()} disabled={uploading}><Plus aria-hidden="true"/><span>Nova conversa</span></button><button type="button" className={contextPanelOpen?'active':''} aria-label={contextPanelOpen?'Fechar contexto':'Abrir contexto'} aria-pressed={contextPanelOpen} onClick={()=>setContextPanelOpen(value=>!value)}><PanelRightOpen aria-hidden="true"/><span>Contexto</span></button></div>
   </header>
   <div className="val-fs-workspace">
-   <section className="val-fs-conversation" aria-label="Conversa com a VAL">
+   <section className={`val-fs-conversation${voiceStageFocused?' has-active-voice':''}`} aria-label="Conversa com a VAL">
     <div className="val-fs-toolbar">
      <label className="val-fs-client"><UserRound/><span>Produtor atual</span><select ref={clientSelectRef} value={selectedId} onChange={event=>chooseClient(event.target.value)} disabled={uploading}><option value="">Sem produtor • pergunta geral</option>{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
      {activeContext&&<div className="val-fs-active-context"><span><b>{activeContext.type?.replaceAll('_',' ')||'contexto'}</b>{activeContext.label}</span><button type="button" aria-label="Remover objeto ativo" onClick={()=>{cancelChatRun();cancelRealtimeClarification();setActiveContext(null)}}><X/></button></div>}
@@ -643,11 +647,13 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
     {mode==='ASK'&&<ValRealtimeConversation
      disabled={busy||uploading}
      autoStartKey={conversationAutoStartKey}
+     className={voiceNeedsReview?'has-review-actions':''}
      processing={busy}
      responseText={realtimeResponseText}
      responseKey={realtimeResponseKey}
      realtimeContext={{clientId:client?.id||'',conversationId:realtimeConversationId,contextEpoch:realtimeContextEpoch,activeContext}}
-     onStart={()=>{if(!hasValOutputModePreference(storageScope))setOutputMode(writeValOutputMode(storageScope,'audio'))}}
+     onStart={()=>{setError('');if(!hasValOutputModePreference(storageScope))setOutputMode(writeValOutputMode(storageScope,'audio'))}}
+     onStateChange={state=>setVoiceStageActive(state.status!=='IDLE')}
      onTranscript={transcript=>ask(transcript,undefined,{inputModality:'voice',responseMode:outputMode,conversationMode:true})}
      onRealtimeUserTranscript={(transcript,callbackScope)=>{if(!realtimeTurnMatchesScope(callbackScope,realtimeScope))return;append({role:'user',text:transcript,intent:'REALTIME_CONVERSATION',conversationId:realtimeConversationId,producerId:client?.id||null,contextEpoch:realtimeContextEpoch,realtimeSessionId:callbackScope.sessionId||null,persistence:'NONE'},threadKey)}}
      onRealtimeAssistantTranscript={(transcript,callbackScope)=>{if(!realtimeTurnMatchesScope(callbackScope,realtimeScope))return;append({role:'assistant_text',status:'incomplete',serverGrounded:false,grounding:'UNVERIFIED_BROWSER_TRANSCRIPT',followUpEligible:false,text:transcript,intent:'REALTIME_CONVERSATION',conversationId:realtimeConversationId,producerId:client?.id||null,contextEpoch:realtimeContextEpoch,realtimeSessionId:callbackScope.sessionId||null,persistence:'NONE'},threadKey)}}
@@ -655,17 +661,17 @@ export default function GlobalValCopilot({open,onClose,clients=[],contextClient=
      onRealtimeMemoryReview={({candidate})=>{if(!client)return {status:'CLIENT_REQUIRED',message:'Escolha o produtor antes de revisar uma informação.'};append({role:'assistant_text',status:'incomplete',serverGrounded:false,grounding:'UNVERIFIED_BROWSER_TRANSCRIPT',followUpEligible:false,text:'Encontrei algo que parece valer a pena registrar. Abri a revisão abaixo — confirme ou descarte para voltar à conversa por voz.',intent:'REALTIME_CONVERSATION',conversationId:realtimeConversationId,producerId:client?.id||null,contextEpoch:realtimeContextEpoch,persistence:'NONE'},threadKey);setRegistrationDraft(createScopedRegistrationDraft({text:candidate,clientId:client.id,threadKey}));setRegistrationAutoOpenKey(`realtime-register-${Date.now()}-${threadKey}`);setMode('REGISTER');return {status:'REVIEW_REQUIRED',message:'A revisão humana foi aberta. Nada foi registrado ainda.'}}}
      onError={message=>setError(typeof message==='string'?message:message?.message||'')}
      onMetrics={recordConversationMetrics}
-     onExit={cancelRealtimeClarification}
-     onFallbackPushToTalk={requestPushToTalk}
-     onFallbackText={()=>messageInput.current?.focus()}
+     onExit={()=>{setVoiceStageActive(false);setError('');cancelRealtimeClarification()}}
+     onFallbackPushToTalk={()=>{setError('');requestPushToTalk()}}
+     onFallbackText={()=>{setError('');requestAnimationFrame(()=>messageInput.current?.focus())}}
     />}
-    <div className="global-val-thread" aria-live="polite">
+    {!voiceStageFocused&&<div className="global-val-thread" aria-live="polite">
      {!visibleThread.length&&mode==='ASK'&&<section className="global-val-empty"><span><BrainCircuit/></span><small>VAL • AMBIENTE DE TRABALHO</small><h2>{client?`Estou com ${firstName(client.name)} aberto.`:'Pode falar comigo.'}</h2><p>{client?'Quer preparar uma conversa, revisar o que ficou pendente ou ver o que merece atenção agora?':'Se for sobre um produtor específico, eu localizo o contexto para você.'}</p><div>{(client?clientQuickPrompts:globalQuickPrompts).map(([intent,label,prompt])=><button type="button" key={`${intent}-${label}`} disabled={busy} onClick={()=>runQuickAction(intent,prompt)}><b>{label}</b>{!client&&prompt&&<small>{prompt}</small>}</button>)}</div></section>}
      {visibleThread.map((item,index)=>item.role==='assistant'&&item.payload?<ReasoningResponse key={`${item.at||index}-${index}`} payload={item.payload} sourceAttachments={item.sourceAttachments} density={density} outputMode={outputMode} onReply={(question,responseScope)=>{if(!responseCardActionAllowed(responseScope))return;setReplyingTo(question);setMessage('');setMode('ASK');requestAnimationFrame(()=>messageInput.current?.focus())}} onRegister={responseScope=>{if(responseCardActionAllowed(responseScope))setMode('REGISTER')}} onOpenModule={openModule} onOpenEvidence={openEvidence}/>:item.role==='assistant_text'&&item.command==='OUTPUT_AUDIO'?<article key={`${item.at||index}-${index}`} className="global-val-local-audio"><p className="global-val-message is-assistant">{item.text}</p><ValAudioResponse text={item.text} autoPlay={item.playAudio===true}/></article>:<p key={`${item.at||index}-${index}`} className={`global-val-message is-${item.role==='assistant_text'?'assistant':item.role}`}>{item.text}</p>)}
      {mode==='REGISTER'&&<section className="global-val-register"><ShieldCheck/><h3>Atualize as premissas com confirmação.</h3><p>{client?'Fale ou digite o que mudou. A VAL separa fatos, hipóteses e compromissos para você revisar antes de incorporar à memória.':'Escolha um produtor acima. Uma informação só pode entrar na memória quando sabemos a qual conta ela pertence.'}</p><VoiceCapture key={`register:${client?.id||'none'}:${threadKey}`} clientId={client?.id||''} interactionType="CLIENT_NOTE" label="Falar ou digitar" description="Revisar antes de salvar" initialText={registerInitialText} autoOpenKey={registrationAutoOpenKey} onOpenChange={isOpen=>{if(isOpen)setRegistrationAutoOpenKey('')}} sourceContext={{page:'GLOBAL_VAL_COPILOT',persistence_mode:'CONFIRM_REQUIRED',conversation_thread:threadKey}} onConfirmed={payload=>registered(payload,{clientId:client?.id||'',threadKey})}/></section>}
      {busy&&<div className="global-val-thinking" role="status"><LoaderCircle/><span><b>{progress?.label||'Analisando a solicitação…'}</b><small>{client?'Etapa real do processamento. Se faltar algo material, a VAL perguntará.':'A VAL não usa memória antiga como dado atual.'}</small></span></div>}
-    </div>
-    {mode==='ASK'&&<div className="global-val-composer-wrap">
+    </div>}
+    {mode==='ASK'&&!voiceStageFocused&&<div className="global-val-composer-wrap">
      {sessionReplyOffer&&<div className="global-val-session-offer"><ShieldCheck/><span><b>Usada somente nesta conversa</b><small>Essa resposta já recalculou a leitura, mas ainda não alterou a memória confirmada.</small></span><button type="button" onClick={()=>setMode('REGISTER')}>Revisar e registrar</button><button type="button" className="is-dismiss" aria-label="Manter apenas nesta conversa" onClick={()=>setSessionReplyOffer(null)}><X/></button></div>}
     {replyingTo&&<div className="global-val-replying"><MessageSquareText/><span><b>Respondendo à pergunta material</b><small>{replyingTo.question}</small></span><button type="button" aria-label="Cancelar resposta" onClick={()=>setReplyingTo(null)}><X/></button></div>}
      {clarification?.options?.length>0&&<div className="global-val-clarification" role="group" aria-label="Desambiguar produtor"><UserRound/><span><b>{clarification.question||'Qual produtor você quer usar?'}</b><small>A VAL só mostra opções da sua carteira autorizada.</small></span><div>{clarification.options.map(option=><button type="button" key={option.id} disabled={busy} onClick={()=>selectClarification(option)}><b>{option.name}</b>{option.municipality&&<small>{option.municipality}</small>}</button>)}</div></div>}
