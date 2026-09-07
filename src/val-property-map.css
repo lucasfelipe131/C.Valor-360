@@ -145,3 +145,43 @@
 @media(max-width:600px){.val-map-placebar{gap:8px;padding:9px}.val-map-placebar>label,.val-map-place-search{min-width:140px}.val-map-placebar button{min-height:44px}.val-map-placebar input,.val-map-placebar select{min-height:44px}.val-map-placebar>button{width:100%}}
 /* Tools belong to the map stage so editing remains available in fullscreen. */
 .val-map-worktools{position:absolute;left:12px;top:55px;z-index:700;display:flex;flex-direction:column;align-items:flex-start;gap:8px;max-width:min(360px,calc(100% - 24px));max-height:calc(100% - 70px);overflow:auto;pointer-events:none}.val-map-worktools>*{pointer-events:auto}.productive-map-tools,.val-cadastral-panel{background:rgba(255,255,255,.97);border:1px solid #ccded5;border-radius:10px;padding:10px;color:#173c30;box-shadow:0 3px 18px #00291b24;max-width:100%;box-sizing:border-box}.val-map-worktools button{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:38px;border:1px solid #c9ddd2;border-radius:7px;background:#fff;color:#075d43;padding:7px 9px;font-size:11px;cursor:pointer}.val-map-worktools button:disabled{opacity:.5;cursor:default}.productive-map-tools .property-fields-tools{gap:5px;justify-content:flex-start}.productive-map-tools{width:320px}.productive-map-tools p,.val-cadastral-panel p{font-size:11px;line-height:1.5;margin:8px 0}.productive-map-tools label,.val-cadastral-panel label{display:flex;flex-direction:column;font-size:11px;gap:4px;min-width:0}.productive-map-tools input,.productive-map-tools select,.val-cadastral-panel input:not([type=checkbox]),.val-cadastral-panel select{box-sizing:border-box;width:100%;min-height:36px;border:1px solid #cbded3;border-radius:6px;background:#fff;color:#173c30;font-size:12px;padding:6px}.productive-map-filters,.productive-drawing{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin:8px 0}.productive-drawing label:nth-child(3),.productive-drawing p,.productive-drawing .property-fields-draw{grid-column:1/-1}.val-cadastral-panel{width:320px;margin-top:6px}.val-cadastral-upload{display:flex;align-items:end;gap:8px;margin:8px 0}.val-cadastral-item{display:flex;align-items:center;gap:6px;margin:8px 0}.val-cadastral-item label{display:flex;flex-direction:row;align-items:center;flex:1;overflow-wrap:anywhere}.val-cadastral-panel nav{display:flex;gap:12px;font-size:11px}.val-cadastral-panel [role=alert],.productive-map-tools [role=alert]{color:#a02d19}.property-field-row{grid-template-columns:repeat(3,minmax(0,1fr))}.property-field-row select{min-height:38px;border:1px solid #dce8e4;border-radius:9px;background:#fff;color:#0e2622;font:inherit;min-width:0}.property-field-potential{font-size:12px;align-self:center}.property-field-remove{justify-self:end}.val-map-shell:has(.productive-map-tools) .val-map-stage{min-height:440px}.val-map-worktools :focus-visible{outline:3px solid #18a987;outline-offset:2px}@media(max-width:600px){.val-map-worktools{left:8px;max-width:calc(100% - 16px)}.productive-map-tools,.val-cadastral-panel{width:275px}.property-field-row{grid-template-columns:1fr 1fr}.val-map-worktools button{min-height:44px}.val-map-shell.is-expanded:has(.productive-map-tools) .val-map-stage{min-height:0}}
+
+/* Map workspace fits the viewport; panels use the same icon rail in normal/fullscreen modes. */
+body.val-map-expanded .main{isolation:auto}
+body.val-map-expanded{overscroll-behavior:none}
+.val-map-shell.is-adaptive{display:flex;flex-direction:column;height:clamp(360px,calc(100dvh - 210px),840px);min-width:0}
+.val-map-shell.is-adaptive .val-map-stage{min-height:0}
+.val-map-shell.is-adaptive .val-map-canvas{height:100%;min-height:0;position:absolute;inset:0}
+.val-map-shell.is-expanded,.val-map-shell.is-expanded.is-adaptive{height:100dvh;width:100%;min-height:0;max-height:100dvh;display:flex;flex-direction:column}
+.val-map-shell.is-expanded .val-map-stage{min-height:0!important;flex:1}
+.val-map-shell.is-expanded .val-map-canvas{height:100%;min-height:0}
+.val-map-placebar{gap:8px;padding:9px 12px;flex:none;box-sizing:border-box;border-bottom:1px solid #d9e5de}
+.val-map-placebar>label{flex:0 1 220px;min-width:120px}
+.val-map-place-search{min-width:150px;flex:1}
+.val-map-place-notice{font-size:10px}
+.val-municipal-status{display:inline;color:#155e75!important}
+.val-map-toolrail{position:absolute;top:12px;left:12px;bottom:auto;max-height:calc(100% - 82px);overflow-y:auto;overflow-x:hidden;z-index:650;width:66px;display:flex;flex-direction:column;gap:3px;padding:5px;border:1px solid #d2e4dc;border-radius:11px;background:#fffffff5;box-shadow:0 5px 20px #002b2d30;scrollbar-width:thin}
+.val-map-toolrail button{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;flex:none;min-height:49px;width:54px;padding:6px 3px;border:0;border-radius:7px;background:transparent;color:#416658;font:inherit;font-size:9px;line-height:1.2;cursor:pointer;text-align:center}
+.val-map-toolrail button svg{flex:none}
+.val-map-toolrail button:hover,.val-map-toolrail button[aria-pressed=true],.val-map-toolrail button[aria-expanded=true]{background:#e1f5ed;color:#007c59}
+.val-map-toolrail button:disabled{opacity:.45;cursor:default}
+.val-map-toolrail button:focus-visible{outline:3px solid #10b98b;outline-offset:-3px}
+.val-map-worktools{left:88px;top:12px;max-width:calc(100% - 100px);max-height:calc(100% - 82px);overflow-y:auto;overflow-x:hidden}
+.val-map-worktools:empty{display:none}
+.val-map-controls{right:54px;top:12px;max-width:calc(100% - 145px)}
+.val-map-shell.is-expanded .val-map-controls{right:max(54px,env(safe-area-inset-right));top:12px}
+.val-map-controls button{gap:5px}
+.val-map-filter-panel{width:300px;max-width:100%;background:#fffffff7;border:1px solid #cbded5;border-radius:10px;padding:14px;color:#194d3d;box-shadow:0 3px 18px #00291b24;font-size:12px}
+.val-map-filter-panel header{display:flex;gap:10px;align-items:center;justify-content:space-between;margin-bottom:12px}
+.val-map-filter-panel label{display:flex;gap:8px;align-items:center;min-height:38px}
+.val-map-filter-panel input{width:16px;height:16px;accent-color:#00805f}
+.val-map-filter-panel p{font-size:11px;line-height:1.6}
+.val-map-footer{position:absolute;z-index:700;bottom:23px;left:12px;right:12px;background:#fffffff5;border:1px solid #ccddd4;border-radius:9px;padding:8px 10px;color:#46685b;font-size:11px;box-shadow:0 3px 14px #00291b20}
+.val-map-footer>div{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.val-map-footer button{display:inline-flex;align-items:center;gap:7px;min-height:38px;border-radius:7px;border:1px solid #007a57;background:#008560;color:#fff;padding:8px 12px;font-size:11px;cursor:pointer}
+.val-map-footer button:disabled{opacity:.45;cursor:default}
+.val-map-footer small{flex-basis:100%}.val-map-footer [role=alert]{color:#9a351f}
+.val-map-shell:has(.val-map-footer) .val-map-loading,.val-map-shell:has(.val-map-footer) .val-map-error{bottom:84px}
+.productive-map-tools{width:310px}.val-cadastral-panel{margin:0}
+@media(max-width:760px){.val-map-shell.is-adaptive{height:clamp(370px,calc(100dvh - 180px),720px)}.val-map-placebar{padding:7px;gap:5px}.val-map-placebar>label{flex:0 1 100px;min-width:90px}.val-map-place-search{min-width:130px}.val-map-placebar label{font-size:10px}.val-map-placebar input,.val-map-placebar select{font-size:13px}.val-map-toolrail{top:8px;left:8px;width:56px;padding:3px}.val-map-toolrail button{width:48px;min-height:48px;font-size:8px}.val-map-worktools{left:70px;top:56px;max-height:calc(100% - 138px);max-width:calc(100% - 78px)}.productive-map-tools,.val-cadastral-panel,.val-map-filter-panel{width:300px;max-width:100%;padding:9px}.val-map-controls{right:50px;top:8px;max-width:calc(100% - 120px)}.val-map-shell.is-expanded .val-map-controls{right:50px;top:8px}.val-map-controls button{font-size:10px;min-height:38px;padding:0 7px}.val-map-footer{left:8px;right:8px;padding:6px;bottom:25px;font-size:10px}.val-map-footer button{min-height:40px;padding:6px}.val-map-footer>div{gap:4px}.val-map-place-notice{max-height:42px;overflow:auto}.productive-map-filters,.productive-drawing{grid-template-columns:1fr}.productive-drawing>*{grid-column:1!important}}
+@media(max-height:500px){.val-map-shell.is-expanded .val-map-place-notice{display:none}.val-map-shell.is-expanded .val-map-placebar{padding:4px 8px}.val-map-shell.is-expanded .val-map-placebar input,.val-map-shell.is-expanded .val-map-placebar select{min-height:34px}.val-map-shell.is-expanded .val-map-toolrail{max-height:calc(100% - 80px)}}

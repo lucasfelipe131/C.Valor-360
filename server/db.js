@@ -17,6 +17,11 @@ export function createDatabase(runtimeConfig,{PoolClass=Pool}={}){
     ssl:runtimeConfig.databaseSsl?{rejectUnauthorized:false}:undefined
   }):null
 
+  // Sem ouvinte, um erro de conexao ociosa (reinicio/failover do Postgres) e emitido como
+  // 'error' sem tratamento e derruba o processo inteiro: VAL, Cliente 360, /tecnico e login caem
+  // juntos. O proprio pool descarta a conexao quebrada; basta nao deixar o evento orfao.
+  pool?.on?.('error',error=>observe('db.pool_error',{errorCode:String(error?.code||'pool_error'),outcome:'error'}))
+
   const queryTimeout=options=>{
     const value=Number(options?.timeoutMs??options?.queryTimeoutMs)
     return Number.isFinite(value)&&value>0?Math.round(value):null

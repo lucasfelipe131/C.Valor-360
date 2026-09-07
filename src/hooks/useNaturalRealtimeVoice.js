@@ -37,6 +37,7 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
  const lifecycle=useRef(0)
  const userPaused=useRef(false)
  const pendingToolResponse=useRef(null)
+ const toolInFlight=useRef(0)
  const resources=useRef(emptyResources())
  const currentEpoch=requiredEpoch(contextEpoch)
  const scopeKey=realtimeVoiceScopeKey({clientId,conversationId,contextEpoch:currentEpoch,activeContext})
@@ -133,16 +134,21 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   if(!eventIsCurrent(eventScope))return
   let args={};try{args=JSON.parse(event.arguments||'{}')}catch{}
   let result
+  // A ferramenta governada leva segundos (round trip ao /api/val/chat). Enquanto ela roda, o palco
+  // nao pode convidar o consultor a falar: a fala nova abriria uma segunda resposta e derrubaria a sessao.
+  toolInFlight.current+=1
+  if(!userPaused.current)update({status:STATES.THINKING,microphoneActive:true})
   try{
    if(event.name==='val_request_memory_review')result=await callbacks.current.onMemoryReview?.({candidate:safeText(args.candidate,1200)})||{status:'REVIEW_REQUIRED',message:'A revisão humana é obrigatória.'}
    else if(event.name==='val_governed_tool')result=await callbacks.current.onToolCall?.({request:safeText(args.request,1200),reason:safeText(args.reason,80)})||{status:'UNAVAILABLE',message:'A ferramenta governada não está conectada.'}
    else result={status:'DENIED',message:'Ferramenta não autorizada.'}
   }catch(error){result={status:'ERROR',message:safeText(error?.message||'A ferramenta falhou.',500)}}
+  toolInFlight.current=Math.max(0,toolInFlight.current-1)
   if(!eventIsCurrent(eventScope))return
   send(toolOutputEvent(event.call_id,result),eventScope)
   if(userPaused.current)pendingToolResponse.current=eventScope
   else send({type:'response.create'},eventScope)
- },[eventIsCurrent,send])
+ },[eventIsCurrent,send,update])
  const handleEvent=useCallback(async(raw,eventScope)=>{
   if(!eventIsCurrent(eventScope))return
   const event=parseRealtimeEvent(raw);if(!event)return
@@ -186,7 +192,7 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
     update({status:STATES.LISTENING,microphoneActive:true,error:message})
     callbacks.current.onError?.(message,{code:`realtime_response_${responseStatus}`})
    }
-   if(!audioStarted&&eventIsCurrent(eventScope)&&!userPaused.current&&responseStatus==='completed')update({status:STATES.LISTENING,microphoneActive:true})
+   if(!audioStarted&&eventIsCurrent(eventScope)&&!userPaused.current&&responseStatus==='completed'&&toolInFlight.current===0)update({status:STATES.LISTENING,microphoneActive:true})
    if(pendingReconnect.current&&!audioStarted&&!userPaused.current){const scopeKeyToReconnect=pendingReconnect.current;pendingReconnect.current=null;await requestReconnect(scopeKeyToReconnect)}
    return
   }

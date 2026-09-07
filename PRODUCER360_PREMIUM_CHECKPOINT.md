@@ -104,3 +104,27 @@ demonstrative records are not published to VAL intelligence events.
 The staging source was concurrently moved to claude/continuacao-correcao-val-wiogh7.
 Its separate corrections are retained in the combined release; no force updates,
 main, production or PR95 changes are part of this task.
+
+### Responsive mapping and freely named seasons (2026-09-07 follow-up)
+
+Producer navigation can collapse to icons using the existing navigation preference.
+The mapping canvas fills available viewport height; fullscreen lifts the main
+stacking context so the sidebar cannot cover it. A vertical icon toolbar exposes
+navigation, headquarters, productive fields, crop/season filters, GPS, cadastral
+layers, administrative borders, fit and help; saving remains within the map.
+
+Selecting a municipality loads that municipality's actual simplified IBGE mesh
+through a bounded, cached same-origin adapter. Municipal/state boundaries can be
+shown separately. Missing provider results never turn into a rectangular boundary
+or producer location. The endpoint only accepts an IBGE code and returns reference
+geometry; no producer data is transmitted to IBGE or persisted by this lookup.
+
+Migration 010 expands season identifiers from the former fixed five-character
+codes to manually entered labels (2–30 characters). Existing codes and histories
+are unchanged. User-defined periods are not inferred for historical averages.
+The map, consolidated crop budget and technical report accept the same labels.
+
+Validation includes scoped HTTP persistence across restart, free-name form entry,
+municipality ID matching, provider failures, bounded responses, border toggles,
+existing map interactions and production builds. Browser preview on the local
+port was unavailable; no claim of visual or authenticated staging UAT is made.

@@ -11,7 +11,7 @@ test('season budgets preserve missing inputs and do not manufacture available gr
  assert.deepEqual(cropPotential(row),{productionSc:6000,actualProductionSc:null,availableSc:5000,targetSc:2000,remainingSc:1500,achievementPct:25,conflict:false})
  assert.equal(cropPotential({...row,otherBuyersSc:7000}).availableSc,null)
  assert.equal(cropPotential({...row,areaHa:0,retainedSc:0,otherBuyersSc:0}).availableSc,0)
- assert.equal(validSeasonCode('2727I'),true);assert.equal(validSeasonCode('2627V'),true);assert.equal(validSeasonCode('2726V'),false)
+ assert.equal(validSeasonCode('2727I'),true);assert.equal(validSeasonCode('2627V'),true);assert.equal(validSeasonCode('Inverno 2029'),true);assert.equal(validSeasonCode(' '),false)
 })
 test('prior yield is area weighted, prior seasons only, matching season type and crop',()=>{
  const seasons=[{season:'2425V',crops:[{crop:'Soja',areaHa:10,actualYield:40}]},{season:'2526V',crops:[{crop:'Soja',areaHa:30,actualYield:60}]},{season:'2727I',crops:[{crop:'Soja',areaHa:100,actualYield:100}]}]
@@ -19,7 +19,7 @@ test('prior yield is area weighted, prior seasons only, matching season type and
  assert.equal(previousYield(seasons,'2627V','Milho'),null)
 })
 test('validation rejects invalid inputs, duplicate crops, bad date and negative quantities',()=>{
- for(const patch of [{season:'bad'},{revision:-1},{sourceNote:''},{observedOn:'2026-02-30'},{crops:Array(4).fill({crop:'Soja'})}])assert.throws(()=>normalizeSeasonInput({...input(),...patch}))
+ for(const patch of [{season:'<script>'},{revision:-1},{sourceNote:''},{observedOn:'2026-02-30'},{crops:Array(4).fill({crop:'Soja'})}])assert.throws(()=>normalizeSeasonInput({...input(),...patch}))
  for(const value of ['abc',Infinity,-1,true,[],{}]){const row=input();row.crops[0].areaHa=value;assert.throws(()=>normalizeSeasonInput(row))}
  const row=input();row.crops[0].targetSharePct=101;assert.throws(()=>normalizeSeasonInput(row))
  assert.equal(normalizeSeasonInput(input()).crops[0].areaHa,null)
@@ -47,4 +47,27 @@ test('SQL write checks ownership and revision inside a locked transaction',async
 test('report escapes producer input and labels projections without creating a cross-crop total',()=>{
  const report=seasonReportHtml({name:'<script>alert(1)</script>'},{...input(),isDemo:true})
  assert.ok(!report.includes('<script>'));assert.ok(report.includes('&lt;script&gt;'));assert.ok(report.includes('DEMONSTRATIVO'));assert.ok(report.includes('não são somadas'))
+})
+
+test('manual season names persist as labels without inventing a season period for historical averaging',()=>{
+ const row=normalizeSeasonInput({...input(),season:'  Inverno 2029  '});assert.equal(row.season,'INVERNO 2029')
+ assert.equal(previousYield([{season:'2526V',crops:[{crop:'Soja',areaHa:100,actualYield:80}]}],row.season,'Soja'),null)
+ assert.equal(validSeasonCode('A'.repeat(31)),false)
+})
+
+test('manual names can be typed with spaces in the season form and create an independent blank plan',async()=>{
+ const React=await import('react'),{default:TestRenderer,act}=await import('react-test-renderer'),{createServer}=await import('vite')
+ const vite=await createServer({logLevel:'silent',server:{middlewareMode:true},appType:'custom'})
+ let view
+ try{
+  const {default:ProducerSeasons}=await vite.ssrLoadModule('/src/components/ProducerSeasons.jsx')
+  await act(async()=>{view=TestRenderer.create(React.createElement(ProducerSeasons,{client:{id:'fixture'},resource:{status:'ready',seasons:[],isDemo:true,retry(){},saved(){}}}))})
+  const input=view.root.findByProps({placeholder:'Ex.: Verão 2028/29'})
+  await act(async()=>input.props.onChange({target:{value:'Inverno '}}));assert.equal(input.props.value,'INVERNO ')
+  await act(async()=>input.props.onChange({target:{value:'Inverno 2029'}}))
+  const button=view.root.findAllByType('button').find(node=>node.children.includes('Criar / abrir safra'));assert.equal(button.props.disabled,false)
+  await act(async()=>button.props.onClick())
+  assert.equal(view.root.findByType('select').props.value,'INVERNO 2029')
+  for(const field of view.root.findAllByProps({type:'number'}))assert.equal(field.props.value,'')
+ }finally{if(view)await act(async()=>view.unmount());await vite.close()}
 })

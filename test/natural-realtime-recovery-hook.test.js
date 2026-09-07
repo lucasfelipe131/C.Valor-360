@@ -163,3 +163,24 @@ test('real voice hook translates a native missing-device DOMException before fal
   assert.equal(app.sessionCount,0)
  }finally{await app.dispose()}
 })
+
+// O palco derivava LISTENING de response.done sem audio mesmo com a ferramenta governada ainda em
+// voo: o consultor era convidado a falar durante o processamento e a fala nova derrubava a sessao.
+test('real voice hook keeps working state while a governed tool is still running',async()=>{
+ const tool=deferred(),requested=deferred()
+ const app=await mountVoice({onToolCall:()=>{requested.resolve();return tool.promise}})
+ try{
+  await app.start()
+  const channel=app.peers[0].dc
+  let eventWork
+  await act(async()=>{channel.emit({type:'response.created'})})
+  assert.equal(app.voice.state.status,'THINKING')
+  await act(async()=>{eventWork=channel.emit({type:'response.function_call_arguments.done',name:'val_governed_tool',call_id:'tool-1',arguments:JSON.stringify({request:'Consultar soja'})});await requested.promise})
+  await act(async()=>{channel.emit({type:'response.done',response:{id:'r1',status:'completed',usage:{}}})})
+  assert.equal(app.voice.state.status,'THINKING','com a ferramenta em voo o palco nao pode dizer que esta ouvindo')
+  await act(async()=>{tool.resolve({status:'OK',message:'Resultado governado'});await eventWork})
+  assert.equal(channel.sent.filter(event=>event.type==='response.create').length,1)
+  await act(async()=>{channel.emit({type:'response.done',response:{id:'r2',status:'completed',usage:{}}})})
+  assert.equal(app.voice.state.status,'LISTENING','terminada a ferramenta, a VAL volta a ouvir')
+ }finally{await app.dispose()}
+})

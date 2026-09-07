@@ -57,5 +57,15 @@ test('voice stage — estados, controles e falha preservam uma saída utilizáve
    assert.match(markup,/&lt;script&gt;/)
    assert.doesNotMatch(markup,/<script>/)
   })
+  // Enquanto uma capacidade governada roda (round trip de segundos), o palco nao pode convidar o
+  // consultor a falar: a fala nova abriria uma segunda resposta e derrubaria a sessao.
+  await t.test('ferramenta governada em voo mostra trabalho em vez de convidar a falar',()=>{
+   const markup=stage({status:'LISTENING',microphoneActive:true},{processing:true})
+   assert.match(markup,/Pensando na sua pergunta/)
+   assert.doesNotMatch(markup,/Estou ouvindo/)
+   assert.doesNotMatch(markup,/Fale naturalmente/)
+   const idle=stage({status:'LISTENING',microphoneActive:true})
+   assert.match(idle,/Estou ouvindo/)
+  })
  }finally{await vite.close()}
 })

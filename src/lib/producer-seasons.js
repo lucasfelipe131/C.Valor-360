@@ -1,7 +1,14 @@
 export const SEASON_CROPS=['Milho','Soja','Trigo','Canola']
 export const seasonCode=value=>String(value||'').trim().toUpperCase()
-export function validSeasonCode(value){const code=seasonCode(value);if(!/^\d{4}[IV]$/.test(code))return false;const start=Number(code.slice(0,2)),end=Number(code.slice(2,4));return end===start||end===start+1}
-export const seasonOrder=code=>Number(String(code).slice(2,4))*10+(String(code).endsWith('I')?2:1)
+// Labels are user-defined. Only recognised codes participate in automatic historical averages.
+export function validSeasonCode(value){const label=seasonCode(value);return label.length>=2&&label.length<=30&&/^[\p{L}\p{N}][\p{L}\p{N} /_.()-]*$/u.test(label)}
+export function seasonPeriod(value){
+ const code=seasonCode(value);if(!/^\d{4}[IV]$/.test(code))return null
+ const start=Number(code.slice(0,2)),end=Number(code.slice(2,4));if(end!==start&&end!==start+1)return null
+ return {order:(2000+end)*10+(code.endsWith('I')?2:1),type:code.slice(-1)}
+}
+export const seasonOrder=code=>seasonPeriod(code)?.order??0
+export const compareSeasons=(a,b)=>seasonOrder(b)-seasonOrder(a)||a.localeCompare(b,'pt-BR',{numeric:true})
 export const numeric=value=>value===null||value===undefined||String(value).trim()===''?null:Number(String(value).replace(',','.'))
 export const emptySeasonCrops=()=>SEASON_CROPS.map(crop=>({crop,areaHa:null,expectedYield:null,actualYield:null,retainedSc:null,otherBuyersSc:null,targetSharePct:null,deliveredSc:null}))
 const known=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0
@@ -15,7 +22,8 @@ export function cropPotential(row){
  return {productionSc,actualProductionSc,availableSc,targetSc,remainingSc:targetSc!==null&&known(row.deliveredSc)?Math.max(0,targetSc-row.deliveredSc):null,achievementPct:targetSc>0&&known(row.deliveredSc)?row.deliveredSc/targetSc*100:null,conflict}
 }
 export function previousYield(seasons,code,crop){
- const rows=seasons.filter(s=>s.season!==code&&seasonOrder(s.season)<seasonOrder(code)&&s.season.endsWith(code.slice(-1))).flatMap(s=>(s.crops||[]).filter(r=>r.crop===crop&&known(r.actualYield)&&known(r.areaHa)&&r.areaHa>0))
+ const target=seasonPeriod(code);if(!target)return null
+ const rows=seasons.filter(s=>{const prior=seasonPeriod(s.season);return prior&&prior.order<target.order&&prior.type===target.type}).flatMap(s=>(s.crops||[]).filter(r=>r.crop===crop&&known(r.actualYield)&&known(r.areaHa)&&r.areaHa>0))
  const area=rows.reduce((sum,r)=>sum+r.areaHa,0)
  return area?{yield:rows.reduce((sum,r)=>sum+r.areaHa*r.actualYield,0)/area,count:rows.length}:null
 }
