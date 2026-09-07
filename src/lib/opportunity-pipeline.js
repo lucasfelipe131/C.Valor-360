@@ -35,11 +35,20 @@ const cleanEvidence=(value,key,stage)=>{
 // que o servidor gravou. Antes era descartada e as telas de Oportunidades e Cliente 360 divergiam.
 // Oportunidade derivada de relato de visita ou de captura de voz é registro canônico do servidor.
 const visitReportItem=item=>/^(?:visit-report|voice):/.test(String(item?.candidateKey||''))
+const demoKey='val-demo-rafael-missoes-v1'
+const demoOpportunityItem=(item,client)=>client?.commercial?.synthetic===true&&client?.commercial?.demoKey===demoKey&&String(item?.candidateKey||'').startsWith(`${demoKey}:opportunity-`)
 export function reconcilePipeline(clients=[],cachedItems=[]){
  const persisted=(Array.isArray(cachedItems)?cachedItems:[]).filter(item=>item&&item.clientId)
  const cacheByClient=new Map(persisted.filter(item=>!visitReportItem(item)).map(item=>[String(item.clientId),item]))
  const reported=new Map();for(const item of persisted.filter(visitReportItem)){const list=reported.get(String(item.clientId))||[];list.push(item);reported.set(String(item.clientId),list)}
  return (Array.isArray(clients)?clients:[]).flatMap(client=>{
+  // The scoped demonstration has two canonical opportunities; Q27 describes
+  // the same needs and must not add the entire open wallet as a third deal.
+  const demoItems=[...new Map(persisted.filter(item=>String(item.clientId)===String(client.id)&&demoOpportunityItem(item,client)).map(item=>[String(item.candidateKey),item])).values()]
+  if(demoItems.length)return demoItems.map(item=>{
+   const stage=PIPELINE_STAGES.includes(item.stage)?item.stage:'Diagnóstico'
+   return {...item,id:`o-${client.id}:${item.candidateKey}`,clientId:client.id,title:String(item.title||'Oportunidade simulada'),value:Number.isFinite(Number(item.value??item.estimatedValue))?Number(item.value??item.estimatedValue):0,source:'val-demo-synthetic-v1',candidateKey:String(item.candidateKey),stage,stageProgress:stageProgress[stage]}
+  })
   const fromVisits=(reported.get(String(client.id))||[]).map(item=>{
    const stage=PIPELINE_STAGES.includes(item.stage)?item.stage:'Diagnóstico'
    return {id:String(item.id||`o-${client.id}:${item.candidateKey}`),clientId:client.id,title:String(item.title||item.category||'Oportunidade registrada na visita'),value:Number.isFinite(Number(item.value??item.estimatedValue))?Number(item.value??item.estimatedValue):currentValue(client),source:String(item.source||'visit_report'),candidateKey:String(item.candidateKey),stage,stageProgress:stageProgress[stage]}

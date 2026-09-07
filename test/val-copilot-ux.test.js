@@ -12,7 +12,7 @@ import {
 
 const read=path=>readFileSync(new URL(`../${path}`,import.meta.url),'utf8')
 const dashboard=read('src/pages/Dashboard.jsx')
-const client360=read('src/pages/Client360.jsx')
+const client360=read('src/pages/Client360.jsx')+read('src/pages/Client360Details.jsx')
 const visits=read('src/pages/Visits.jsx')
 const sidebar=read('src/components/Sidebar.jsx')
 const mobile=read('src/components/MobileNav.jsx')
@@ -106,7 +106,7 @@ test('Home e Cliente 360 conectam os view models e o refetch protegido',()=>{
 })
 
 test('Cliente 360 mantém dossiê em drill-down sem chamar agendamento de interação',()=>{
- for(const label of ['O QUE MUDOU','PRIORIDADE / OPORTUNIDADE','ÚLTIMA VISITA COMPROVADA','PRÓXIMO COMPROMISSO'])assert.match(client360,new RegExp(label))
+ for(const label of ['O QUE MUDOU','PRIORIDADE / OPORTUNIDADE','ÚLTIMA VISITA REGISTRADA','PRÓXIMO COMPROMISSO'])assert.match(client360,new RegExp(label))
  assert.doesNotMatch(client360,/ÚLTIMA INTERAÇÃO/)
  assert.match(client360,/Somente informações registradas ou confirmadas/)
  assert.match(client360,/const Drilldown=.*<details className="client-drilldown"/)

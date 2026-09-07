@@ -58,7 +58,7 @@ test('batch import has a responsive visual hierarchy and keeps the VAL PWA brand
 
 test('negative optional answers use discovery labels instead of false opportunities',()=>{
  const profile=read('src/lib/profile.js')
- const client360=read('src/pages/Client360.jsx')
+ const client360=read('src/pages/Client360.jsx')+read('src/pages/Client360Details.jsx')
  const dashboard=read('src/pages/Dashboard.jsx')
  const opportunities=read('src/pages/Opportunities.jsx')
  assert.match(profile,/noAdditionalNeedPatterns/)
@@ -71,7 +71,7 @@ test('negative optional answers use discovery labels instead of false opportunit
 })
 
 test('producer dossier, access release and strategic action are exposed in the interface',()=>{
- const client360=read('src/pages/Client360.jsx')
+ const client360=read('src/pages/Client360.jsx')+read('src/pages/Client360Details.jsx')
  const dataHub=read('src/pages/DataHub.jsx')
  const settings=read('src/pages/Settings.jsx')
  const admin=read('src/pages/Admin.jsx')
@@ -120,7 +120,7 @@ test('página da inteligência organiza a leitura em camadas claras e responsiva
 })
 
 test('technical memory confirmation remains textual and cannot render a response object as a toast',()=>{
- const client360=read('src/pages/Client360.jsx')
+ const client360=read('src/pages/Client360.jsx')+read('src/pages/Client360Details.jsx')
  const app=read('src/App.jsx')
  assert.match(client360,/onSaved\?\.\(['"]Complemento técnico salvo na nuvem e incorporado à memória da VAL\./)
  assert.doesNotMatch(client360,/onSaved\?\.\(payload\.context\)/)
@@ -159,7 +159,7 @@ test('global overview, usage metrics and administration stay protected by login 
 test('commercial cache is scoped and technical drafts expire with the browser session',()=>{
  const app=read('src/App.jsx')
  const settings=read('src/pages/Settings.jsx')
- const client360=read('src/pages/Client360.jsx')
+ const client360=read('src/pages/Client360.jsx')+read('src/pages/Client360Details.jsx')
  const server=read('server.js')
  assert.match(app,/opportunityCacheKey\(effectiveScope\)/)
  assert.match(app,/clearSessionPortfolioCache\(currentUser\?\.storageScope\)/)

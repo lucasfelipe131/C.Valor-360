@@ -1,7 +1,7 @@
 import {createHash} from 'node:crypto'
 import {artifactReference,buildActionPlan} from './action-plan.js'
 import {assertExecutionContract,prepareVisitVersion,validatePrepareVisit} from './contracts.js'
-import {buildPrepareVisitDecisionModel,evaluatePrepareVisitQuality,isForbiddenPrepareVisitLanguage} from './prepare-visit-quality.js'
+import {buildPrepareVisitDecisionModel,decisionParticipantValidationQuestion,evaluatePrepareVisitQuality,isForbiddenPrepareVisitLanguage} from './prepare-visit-quality.js'
 import {compactKnowledgeRefs,normalizeKnowledgeRetrieval} from '../commercial/knowledge-support.js'
 
 const list=value=>Array.isArray(value)?value:[]
@@ -39,7 +39,7 @@ function profileApproach(profile){
  }
 }
 
-function goldenQuestions(snapshot,profile,valuePlan,type){
+function goldenQuestions(snapshot,profile,valuePlan,type,decisionModel){
  const questions=[]
  const push=value=>{let question=text(value?.question??value?.description??value,500);if(!question||isForbiddenPrepareVisitLanguage(question))return;if(!question.endsWith('?'))question=`${question.replace(/[.]$/,'')}?`;if(!questions.includes(question))questions.push(question)}
  if(type==='TECHNICAL'){
@@ -47,14 +47,10 @@ function goldenQuestions(snapshot,profile,valuePlan,type){
   const current=soil.some(item=>item?.freshness==='CURRENT')
   if(!current)push('Quando foi feita a última análise de solo válida para esta área e onde está o laudo?')
  }
+ if(decisionModel?.participant_known)push(decisionParticipantValidationQuestion)
  for(const item of list(valuePlan?.decision_questions))push(item)
  for(const item of list(valuePlan?.questions))push(item)
  if(confirmedVisitItems(snapshot,'visit_report.objection').some(item=>/pre[cç]o|investimento|caro/i.test(text(item?.value?.statement))))push('Qual comparação de custo por hectare e retorno tornaria este investimento seguro para avançar?')
- const decisionParticipants=[
-  ...confirmedVisitItems(snapshot,'voice.fact'),
-  ...confirmedVisitItems(snapshot,'visit_report.producer_signal')
- ]
- if(decisionParticipants.some(item=>item?.value?.signal_code==='MULTI_DECISION_PARTICIPANT'||/s[oó]ci[oa]|decisor|participante.*decis/i.test(text(item?.value?.statement))))push('Quem além de você participa desta decisão e o que essa pessoa precisa validar?')
  for(const item of list(snapshot?.missing_information).filter(item=>item?.question))push(item)
  for(const item of list(profile?.missing_information).filter(item=>item?.question&&!/^\d+[.]\s*/.test(text(item.question))))push(item)
  return questions.slice(0,3)
@@ -137,7 +133,7 @@ export function buildPrepareVisit(input={}){
  const actionPlan=input.actionPlan||buildActionPlan({organizationId,subjectId:snapshot.subject?.id,contextSnapshot:snapshot,decisionThesis:thesis,valuePlan,actor:input.actor,defaultDueAt:visit.scheduled_at??visit.scheduledAt,now})
  const opportunity=opportunities(snapshot,valuePlan)
  const decisionModel=buildPrepareVisitDecisionModel({contextSnapshot:snapshot,context:input.context,visitObjective:visit.objective||thesis.objective,behavioralProfile:profile,knowledgeRetrieval})
- const questions=goldenQuestions(snapshot,profile,valuePlan,type)
+ const questions=goldenQuestions(snapshot,profile,valuePlan,type,decisionModel)
  const missing=[...list(snapshot.missing_information).map(item=>text(item?.description||item?.code)),...(type==='TECHNICAL'&&!list(snapshot?.agronomic_context?.soil_analyses).some(item=>item?.freshness==='CURRENT')?['Falta análise de solo atualizada ou confirmação de que ela não é necessária para o objetivo desta visita.']:[])].filter(Boolean)
  const commercialApplicable=type==='COMMERCIAL'
  const commitmentTarget=commercialApplicable?text(valuePlan.commitment_target||decisionModel.commitment_target):type==='TECHNICAL'?text(decisionModel.commitment_target||'Combinar a coleta, validação ou acompanhamento técnico adequado ao objetivo.'):'Combinar um próximo passo de relacionamento ou resolução da pendência.'

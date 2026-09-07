@@ -103,13 +103,13 @@ test('sem PostgreSQL a sede e os talhões vivem no arquivo local, por dono, e a 
 })
 
 test('as telas ligam o mapa onde a decisão acontece, sem pino inventado',()=>{
- const client360=readFileSync('src/pages/Client360.jsx','utf8')
+ const client360=readFileSync('src/pages/Client360.jsx','utf8')+readFileSync('src/pages/Client360Details.jsx','utf8')
  assert.match(client360,/<Drilldown eyebrow="PROPRIEDADE E TALHÕES"/)
  assert.match(client360,/<PropertyFields client=\{client\} onSaved=\{onSaved\} onRefreshPortfolio=\{onRefreshPortfolio\}\/>/)
- assert.match(client360,/client\.location\?'Sede no mapa':'Sem sede no mapa'/)
+ assert.match(client360,/Nenhuma localização cadastrada/)
 
  const visits=readFileSync('src/pages/Visits.jsx','utf8')
- assert.match(visits,/<RouteMap visits=\{upcoming\} clients=\{clients\}\/>/)
+ assert.match(visits,/<RouteMap visits=\{visits\} clients=\{clients\}[^>]*onOpenVisit=\{openVisitDetails\}/)
  assert.ok(!visits.includes('route-visual'),'a ilustração decorativa da rota voltou')
  assert.ok(!visits.includes('começar pelo maior potencial'),'a frase decorativa sobre a rota voltou')
 
@@ -127,7 +127,7 @@ test('as telas ligam o mapa onde a decisão acontece, sem pino inventado',()=>{
 
  const server=readFileSync('server.js','utf8')
  assert.match(server,/\/api\\\/clients\\\/\(\[\^\/\]\+\)\\\/property\$/)
- assert.match(server,/repository\.savePropertyProfile\(clientId,await body\(request\),identity\?\.id\)/)
+ assert.match(server,/repository\.savePropertyProfile\(clientId,await body\(request\),identity\?\.id\|\|identity\?\.email\)/)
  const repository=readFileSync('server/repository.js','utf8')
  assert.match(repository,/'propertyProfiles'\]\)store\.val\[key\]\|\|=\[\]/)
  assert.match(repository,/property\.metadata->'location'/)

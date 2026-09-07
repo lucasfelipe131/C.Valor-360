@@ -6,7 +6,7 @@ const read=path=>readFileSync(new URL(`../${path}`,import.meta.url),'utf8')
 
 test('dossiê do produtor oferece galeria de lavoura com metadados e armazenamento protegido',()=>{
  const gallery=read('src/components/ProducerFieldGallery.jsx')
- const client360=read('src/pages/Client360.jsx')
+ const client360=read('src/pages/Client360.jsx')+read('src/pages/Client360Details.jsx')
  const server=read('server.js')
  const repository=read('server/repository.js')
  assert.match(client360,/ProducerFieldGallery/)
@@ -29,7 +29,7 @@ test('dossiê do produtor oferece galeria de lavoura com metadados e armazenamen
 })
 
 test('linha superior do produtor usa apenas métricas comerciais canônicas',()=>{
- const client360=read('src/pages/Client360.jsx')
+ const client360=read('src/pages/Client360.jsx')+read('src/pages/Client360Details.jsx')
  assert.match(client360,/commercialMetrics\(client\)/)
  assert.match(client360,/IRT \/ NPS/)
  assert.match(client360,/Potencial em aberto/)

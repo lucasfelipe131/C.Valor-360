@@ -76,7 +76,7 @@ test('App possui página própria e atalhos encaminham para o mesmo Full-Screen 
  assert.match(app,/setPage\('copilot'\)/)
  assert.match(app,/page!=='copilot'&&<Topbar/)
  assert.match(app,/content-copilot-fullscreen/)
- assert.match(app,/open=\{page==='copilot'&&copilotOpen\}/)
+ assert.match(app,/open=\{\(page==='copilot'\|\|page==='client360'\)&&copilotOpen\}/)
  assert.match(sidebar,/className=\{`sidebar-copilot\$\{page==='copilot'\?' active':''\}`\}/)
  assert.match(sidebar,/onClick=\{\(\)=>onOpenVal\?\.\(\)\}/)
  assert.match(mobile,/aria-label="Abrir o Copiloto VAL"/)
