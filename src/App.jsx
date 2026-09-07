@@ -1,5 +1,6 @@
 import React,{lazy,Suspense,useCallback,useEffect,useMemo,useState} from 'react'
 import {BrainCircuit} from 'lucide-react'
+import ProducerNavigation from './components/ProducerNavigation'
 import Sidebar from './components/Sidebar'
 import MobileNav from './components/MobileNav'
 import Topbar from './components/Topbar'
@@ -74,6 +75,7 @@ export default function App(){
  const [workspace,setWorkspace]=useState('comercial')
  const [valMode,setValMode]=useState(null)
  const [selected,setSelected]=useState(null)
+ const [producerTab,setProducerTab]=useState('overview')
  const [prepareVisitClientId,setPrepareVisitClientId]=useState('')
  const [clientList,setClientList]=useState([])
  const [visits,setVisits]=useState([])
@@ -86,7 +88,7 @@ export default function App(){
  const [copilotPageContext,setCopilotPageContext]=useState(null)
  const [agroLaunch,setAgroLaunch]=useState(createEmptyAgroLaunch)
  const copilotOwnerScope=currentUser?.storageScope||currentUser?.id||''
- const openClient=c=>{setCopilotSeed({clientId:c.id,nonce:Date.now()});setSelected(c);setCopilotLoaded(true);setCopilotOpen(true);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
+ const openClient=c=>{if(String(c.id)!==String(selected?.id)){setProducerTab('overview');setCopilotSeed({clientId:c.id,nonce:Date.now()});}setSelected(c);setCopilotLoaded(true);setCopilotOpen(window.matchMedia('(min-width:1051px)').matches);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
  const notify=message=>{const text=typeof message==='string'?message:String(message?.message||'Ação concluída.');setToast(text);window.clearTimeout(window.__valorToast);window.__valorToast=window.setTimeout(()=>setToast(''),2800)}
  const prepareClient=c=>{if(!c?.id)return;setSelected(c);setPrepareVisitClientId(c.id);setPage('visits');if(page==='visits')window.requestAnimationFrame(resetPageViewport)}
  const openValClient=c=>{setSelected(c);setValMode('insumos');setPage('val');if(page==='val')window.requestAnimationFrame(resetPageViewport)}
@@ -149,6 +151,7 @@ export default function App(){
   if(action.requiresConfirmation){notify('Revise e confirme a alteração no módulo canônico antes de persistir.');return {status:'CONFIRM_REQUIRED'}}
   const targetClient=action.clientId?clientList.find(item=>String(item.id)===String(action.clientId))||null:null
   if(action.clientId&&!targetClient){notify('O produtor solicitado não está disponível na carteira autorizada desta sessão.');return {status:'CLIENT_SCOPE_DENIED'}}
+  if(page==='client360'&&action.type==='NAVIGATE'&&action.page==='agro'&&['produtores','mapa'].includes(action.tool)&&(!targetClient||String(targetClient.id)===String(selected?.id))){setProducerTab('map');return {status:'COMPLETED'}}
   setCopilotOpen(false)
   if(action.type==='OPEN_CLIENT'){openClient(targetClient);return {status:'COMPLETED'}}
   if(action.type==='PREPARE_VISIT'){prepareClient(targetClient);return {status:'COMPLETED'}}
@@ -234,7 +237,7 @@ export default function App(){
  if(!portfolioReady)return <main className="auth-loading" role="status"><BrainCircuit/><span>Carregando carteira protegida…</span></main>
  return <div className={`app-shell ${page==='client360'?'p360-shell':''}`}>
   <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
-  <Sidebar page={page} tool={activeTool} currentUser={currentUser} workspace={workspace} onWorkspaceChange={changeWorkspace} onSelect={selectNav} onOpenVal={()=>openCopilot()}/>
+  {page==='client360'?<ProducerNavigation tab={producerTab} onTab={setProducerTab} onNavigate={navigate} onAsk={()=>openCopilot({client:selected})} user={currentUser}/>:<Sidebar page={page} tool={activeTool} currentUser={currentUser} workspace={workspace} onWorkspaceChange={changeWorkspace} onSelect={selectNav} onOpenVal={()=>openCopilot()}/>}
   <main className="main" id="main-content" tabIndex="-1">
    {page!=='copilot'&&<Topbar title={title} subtitle={subtitle} onNavigate={navigate} onOpenVal={()=>openCopilot()} workspace={workspace} page={page} client={selected} clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onOpenClient={openClient}/>}
    <div className={`content ${page==='copilot'?'content-copilot-fullscreen':''} ${page==='client360'&&copilotOpen?'p360-with-copilot':''}`}>
@@ -243,7 +246,7 @@ export default function App(){
     {page==='clients'&&<Clients clients={clientList} opportunities={opportunities} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
     {page==='datahub'&&<DataHub clients={clientList} onImport={importClients} onProfileImport={addClients} onUpdate={updateClient} onDelete={deleteClient} onNotify={notify}/>}
     {page==='client360'&&selected&&<Client360
-     key={selected.id} client={selected} visits={visits} opportunities={opportunities}
+     key={selected.id} client={selected} activeTab={producerTab} onTabChange={setProducerTab} visits={visits} opportunities={opportunities}
      currentUser={currentUser} onNewOpportunity={()=>{setSelected(selected);navigate('opportunities')}} storageScope={currentUser?.storageScope} onBack={()=>navigate('clients')}
      onPrepare={()=>prepareClient(selected)} onUpdate={updateClient} onRefreshPortfolio={refreshPortfolio}
      onAsk={input=>openCopilot(input&&typeof input==='object'&&!input.nativeEvent?{...input,client:input.client||selected}:{client:selected})}

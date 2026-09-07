@@ -1,6 +1,9 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import React from 'react'
+import {mkdtemp,rm} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import {renderToStaticMarkup} from 'react-dom/server'
 import {createServer} from 'vite'
 import {displayDatum,isDemoRecord,scopedRecords} from '../src/lib/producer-display.js'
@@ -22,7 +25,8 @@ test('producer display filters foreign producer and synthetic evidence',()=>{
 })
 
 test('empty producer retains layout without reference facts; real fields render unchanged',async()=>{
- const vite=await createServer({logLevel:'silent',server:{middlewareMode:true},appType:'custom'})
+ const cacheDir=await mkdtemp(join(tmpdir(),'val-p360-ssr-'))
+ const vite=await createServer({cacheDir,logLevel:'silent',server:{middlewareMode:true},appType:'custom'})
  try{
   const {default:Client360}=await vite.ssrLoadModule('/src/pages/Client360.jsx')
   const props={client:{id:'empty-a',name:'Produtor sem dados',commercial:{}},visits:[],opportunities:[]}
@@ -34,5 +38,5 @@ test('empty producer retains layout without reference facts; real fields render 
   assert.ok(filled.includes('712 ha'));assert.ok(filled.includes('Canola'))
   const demo=renderToStaticMarkup(React.createElement(Client360,{...props,client:{...props.client,isDemo:true}}))
   assert.ok(demo.includes('Dados demonstrativos'));assert.ok(demo.includes('data-provenance="DEMO"'))
- }finally{await vite.close()}
+ }finally{await vite.close();await rm(cacheDir,{recursive:true,force:true})}
 })
