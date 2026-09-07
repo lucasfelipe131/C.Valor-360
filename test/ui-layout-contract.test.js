@@ -18,12 +18,14 @@ test('brand mark exposes the VAL identity and reuses the real logo on mobile',()
  assert.doesNotMatch(topbar,/topbar-mobile-mark|>C</)
 })
 
-test('pipeline presents discrete stages without a probability-style progress bar',()=>{
+test('approved board presents four discrete stages without duplicated progress or probability bar',()=>{
  const opportunities=read('src/pages/Opportunities.jsx')
- const rendered=opportunities.slice(opportunities.indexOf('return <div className="page-stack pipeline-page"'))
- assert.match(rendered,/pipeline-stage-progress/)
- assert.match(rendered,/Etapa \{index\+1\} de 4/)
- assert.doesNotMatch(rendered,/pipeline-probability|probabilidade/i)
+ const domain=read('src/lib/opportunity-workspace.js')
+ assert.match(domain,/OPPORTUNITY_STAGES=\['Diagnóstico','Proposta','Negociação','Fechado'\]/)
+ assert.match(opportunities,/columns=OPPORTUNITY_STAGES\.map/)
+ assert.match(opportunities,/aria-label="Fluxo de oportunidades"/)
+ assert.match(opportunities,/aria-label=\{column\.stage\}/)
+ assert.doesNotMatch(opportunities,/pipeline-stage-progress|pipeline-probability|probabilidade/i)
 })
 
 test('navigation resets long pages and the responsive shell retains scroll clearance',()=>{
@@ -65,7 +67,8 @@ test('negative optional answers use discovery labels instead of false opportunit
  assert.match(client360,/Nenhuma necessidade adicional declarada/)
  assert.match(client360,/Ainda não identificada/)
  assert.match(dashboard,/reconcilePipeline\(clients,/)
- assert.match(opportunities,/reconcilePipeline\(clients,/)
+ assert.match(opportunities,/buildOpportunityWorkspace\(clients,persistedItems\)/)
+ assert.match(read('src/lib/opportunity-workspace.js'),/reconcilePipeline\(clients,\[\]\)/)
  assert.doesNotMatch(dashboard,/fallbackOpportunities|pipelineStages\[Math\.min\(index,2\)\]/)
  assert.doesNotMatch(opportunities,/clients\.map\(\(client,index\).*stage:/s)
 })

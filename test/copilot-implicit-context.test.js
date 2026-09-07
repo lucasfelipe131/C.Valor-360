@@ -106,7 +106,10 @@ test('superfícies registram o objeto ativo e abrem Perguntar à VAL sem persist
  assert.match(app,/storageScope:copilotOwnerScope/)
  assert.match(app,/GlobalValCopilot key=\{copilotOwnerScope\|\|'session'\}/)
  assert.match(opportunities,/buildOpportunityCopilotContext/)
- assert.match(opportunities,/pipeline-ask-context/)
+ // O fluxo aprovado abre o mesmo Copiloto dentro do painel da oportunidade.
+ assert.match(opportunities,/onClick=\{ask\}>Preparar conversa/)
+ assert.match(opportunities,/<GlobalValCopilot[^>]+open embedded/)
+ assert.match(opportunities,/contextClient=\{selected\.client\} clients=\{\[selected\.client\]\}/)
  assert.match(visits,/buildVisitCopilotContext/)
  assert.match(visits,/onContextChange\?\.\(pageContext\)/)
  assert.match(prepare,/Perguntar à VAL/)

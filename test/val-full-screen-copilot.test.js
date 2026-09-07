@@ -71,10 +71,11 @@ test('matriz obrigatória mantém 30 cenários rastreáveis sem transformar UAT 
  assert.match(read('VAL_FULL_SCREEN_MOBILE_v1.md'),/UAT físico obrigatório/)
 })
 
-test('App possui página própria e atalhos encaminham para o mesmo Full-Screen Copilot',()=>{
+test('App mantém Copiloto global e Oportunidades reutiliza o componente no painel contextual',()=>{
  assert.match(app,/copilot:\['VAL Copilot'/)
  assert.match(app,/setPage\('copilot'\)/)
- assert.match(app,/page!=='copilot'&&<Topbar/)
+ assert.match(app,/page!=='copilot'&&page!=='opportunities'&&<Topbar/)
+ assert.match(app,/page!=='client360'&&page!=='opportunities'\)setPage\('copilot'\)/)
  assert.match(app,/content-copilot-fullscreen/)
  assert.match(app,/open=\{\(page==='copilot'\|\|page==='client360'\)&&copilotOpen\}/)
  assert.match(sidebar,/className=\{`sidebar-copilot\$\{page==='copilot'\?' active':''\}`\}/)
