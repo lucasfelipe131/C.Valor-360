@@ -38,3 +38,21 @@ export function validateValWorkspaceAction(value){
  if(!modules.has(page))return null
  return Object.freeze({type,page,label:clean(value.label),clientId:clean(value.client_id),clientName:clean(value.client_name),tool:clean(value.tool,80),manualPage:clean(value.manual_page,80),diagnosisMode:clean(value.diagnosis_mode,80),requiresConfirmation:value.requires_confirmation===true})
 }
+
+// Navigation is UI context, not permission to replace the conversation's
+// producer. Never attach a different page's property/field to the active chat.
+export function scopeWorkspaceToConversation(workspace,{client=null,conversationId=''}={}){
+ if(!workspace)return null
+ const sameClient=Boolean(client?.id&&String(workspace.current_client?.id||'')===String(client.id))
+ return createValWorkspaceContext({
+  module:workspace.current_module,
+  client,
+  property:sameClient?workspace.current_property:null,
+  field:sameClient?workspace.current_field:null,
+  visit:sameClient?workspace.current_visit:null,
+  opportunity:sameClient?workspace.current_opportunity:null,
+  attachment:sameClient?workspace.current_attachment:null,
+  analysis:sameClient?workspace.current_analysis:null,
+  conversation:conversationId?{id:conversationId,label:'Conversa VAL ativa'}:null
+ })
+}

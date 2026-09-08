@@ -2,6 +2,7 @@ import React,{useEffect,useRef,useState} from 'react'
 import {MousePointer2,Layers,Map as MapIcon,Focus,HelpCircle,X,MapPin,Maximize,Minimize} from 'lucide-react'
 import {searchMunicipalities,localityBounds} from '../../lib/map-localities'
 import CadastralLayers from './CadastralLayers'
+import {stateAtPoint} from '../../lib/cadastral-viewport'
 import 'leaflet/dist/leaflet.css'
 import '../../val-property-map.css'
 import {BRAZIL_VIEW,SATELLITE_TILES,validLocation} from '../../lib/property-map'
@@ -33,6 +34,8 @@ export default function SatelliteMap({
  const selectionRef=useRef(null)
  const draftPointRef=useRef(onDraftPointClick);draftPointRef.current=onDraftPointClick
  const [referenceLayers,setReferenceLayers]=useState([])
+ const [viewport,setViewport]=useState(null)
+ const [cadastralNotice,setCadastralNotice]=useState('Cadastros automáticos: aproxime o mapa.')
  const [railPanel,setRailPanel]=useState(null)
  const [municipality,setMunicipality]=useState(null),[municipalData,setMunicipalData]=useState(null),[municipalStatus,setMunicipalStatus]=useState('idle'),[municipalAttempt,setMunicipalAttempt]=useState(0),[showMunicipality,setShowMunicipality]=useState(true)
  const togglePanel=panel=>{onPanelChange?.();setRailPanel(current=>current===panel?null:panel)}
@@ -66,8 +69,6 @@ export default function SatelliteMap({
   const map=mapRef.current,L=leafletRef.current
   if(mapStatus!=='ready'||!map||!L)return
   const layers=referenceLayers.map(reference=>L.geoJSON(reference.geojson,{interactive:false,style:{color:reference.color,weight:2,fillOpacity:.04,dashArray:'6 3'},onEachFeature:(feature,shape)=>shape.bindTooltip(escapeHtml(`${reference.type} • ${Object.entries(feature.properties).filter(([key])=>key!=='_referenceIndex').slice(0,3).map(([key,value])=>`${key}: ${value}`).join(' • ')}`),{sticky:true})}).addTo(map))
-  const bounds=layers.filter(layer=>layer.getBounds().isValid()).map(layer=>layer.getBounds())
-  if(bounds.length){const combined=bounds[0];bounds.slice(1).forEach(b=>combined.extend(b));map.fitBounds(combined,{padding:[30,30],maxZoom:16})}
   return()=>layers.forEach(layer=>{if(map.hasLayer(layer))map.removeLayer(layer)})
  },[referenceLayers,mapStatus])
  useEffect(()=>{
@@ -84,6 +85,13 @@ export default function SatelliteMap({
   const layer=L.geoJSON(municipalData.geojson,{interactive:false,style:{color:'#67e8f9',weight:3,opacity:1,fillColor:'#67e8f9',fillOpacity:.025},onEachFeature:(_feature,shape)=>shape.bindTooltip(escapeHtml(`${municipality?.[1]} • divisa municipal IBGE`),{sticky:true,className:'val-state-label'})}).addTo(map)
   return()=>{if(map.hasLayer(layer))map.removeLayer(layer)}
  },[mapStatus,municipalData,showMunicipality,municipality])
+ useEffect(()=>{
+  const map=mapRef.current
+  if(mapStatus!=='ready'||!map||!stateGeo)return
+  const update=()=>{const point=map.getCenter(),bounds=map.getBounds();setViewport({lat:point.lat,lng:point.lng,zoom:map.getZoom(),uf:stateAtPoint(point,stateGeo),bbox:[bounds.getWest(),bounds.getSouth(),bounds.getEast(),bounds.getNorth()]})}
+  map.on('moveend zoomend',update);update()
+  return()=>map.off('moveend zoomend',update)
+ },[mapStatus,stateGeo])
  const choosePlace=row=>{
   setMunicipality(row);setShowMunicipality(true)
   const bounds=localityBounds(row)
@@ -266,7 +274,7 @@ export default function SatelliteMap({
     {placeOpen&&placeQuery.trim()&&<div className="val-map-place-results" role="group" aria-label="Municípios encontrados">{matches.map(row=><button type="button" key={row[0]} onClick={()=>choosePlace(row)}>{row[1]} <b>{row[2]}</b></button>)}{!matches.length&&<p>Nenhum município encontrado. Confira o nome ou o estado.</p>}<button type="button" onClick={()=>setPlaceOpen(false)}>Fechar resultados</button></div>}
    </div>
 
-   <div className="val-map-place-notice" role="status">{placeStatus==='loading'?'Carregando municípios e divisas…':placeStatus==='error'?<>Referência indisponível. <button type="button" onClick={()=>setPlaceAttempt(value=>value+1)}>Recarregar municípios</button></>:placeNotice||'Busque um município ou escolha um estado para aproximar.'} <span>Limites de referência • IBGE</span>{municipality&&<span className="val-municipal-status">{municipalStatus==='loading'?'Carregando divisa municipal…':municipalStatus==='ready'?`${municipality[1]}: divisa ${showMunicipality?'visível':'oculta'}`:municipalStatus==='error'?<>Divisa municipal indisponível. <button type="button" onClick={()=>setMunicipalAttempt(value=>value+1)}>Tentar divisa novamente</button></>:''}</span>}</div>
+   <div className="val-map-place-notice" role="status">{placeStatus==='loading'?'Carregando municípios e divisas…':placeStatus==='error'?<>Referência indisponível. <button type="button" onClick={()=>setPlaceAttempt(value=>value+1)}>Recarregar municípios</button></>:placeNotice||'Busque um município ou escolha um estado para aproximar.'} <span>Limites de referência • IBGE</span><button type="button" className="val-map-cadastral-notice" onClick={()=>togglePanel('layers')}>{cadastralNotice}</button>{municipality&&<span className="val-municipal-status">{municipalStatus==='loading'?'Carregando divisa municipal…':municipalStatus==='ready'?`${municipality[1]}: divisa ${showMunicipality?'visível':'oculta'}`:municipalStatus==='error'?<>Divisa municipal indisponível. <button type="button" onClick={()=>setMunicipalAttempt(value=>value+1)}>Tentar divisa novamente</button></>:''}</span>}</div>
   </div>}
   <div className="val-map-stage">
   {controls&&interactive&&<>
@@ -280,7 +288,7 @@ export default function SatelliteMap({
    </div>
    <div className="val-map-worktools">
     {editorTools}
-    <div hidden={railPanel!=='layers'}><CadastralLayers panelOnly onChange={setReferenceLayers} getPoint={()=>{const point=mapRef.current?.getCenter();return point?{lat:point.lat,lng:point.lng,uf:placeUf}:null}}/></div>
+    <div hidden={railPanel!=='layers'}><CadastralLayers panelOnly onChange={setReferenceLayers} viewport={viewport} onStatusChange={setCadastralNotice}/></div>
     {railPanel==='boundaries'&&<section className="val-map-filter-panel"><header><strong>Divisas no mapa</strong><button type="button" aria-label="Fechar filtros de divisas" onClick={()=>setRailPanel(null)}><X size={16}/></button></header><label><input type="checkbox" checked={showStates} onChange={e=>setShowStates(e.target.checked)}/>Divisas estaduais</label><label><input type="checkbox" disabled={!municipality} checked={showMunicipality} onChange={e=>setShowMunicipality(e.target.checked)}/>Divisa do município selecionado</label><p>{municipality?`${municipality[1]} — ${municipality[2]}`:'Selecione um município na busca.'}</p><p>Referência administrativa IBGE; não define limites da propriedade.</p></section>}
     {railPanel==='help'&&<section className="val-map-filter-panel"><header><strong>Como mapear</strong><button type="button" aria-label="Fechar ajuda" onClick={()=>setRailPanel(null)}><X size={16}/></button></header><p>1. Busque o município e escolha a safra.</p><p>2. Use Sede para marcar a localização ou Talhão / cultura para tocar nos cantos da área produtiva.</p><p>3. Toque em um ponto azul para apagá-lo. Conclua a área e salve.</p><p>Safras e culturas filtram o mesmo talhão físico. Camadas exibe CAR, SIGEF e arquivos de matrícula.</p></section>}
    </div>

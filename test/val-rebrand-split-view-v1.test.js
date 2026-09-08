@@ -93,8 +93,8 @@ test('o Produtor 360 entrega o Split View e só o escopo do produtor ativo',()=>
  assert.match(page,/<div className="p360-page">/)
  assert.match(page,/scopedRecords\(opportunities,client\)/)
  const app=readFileSync('src/App.jsx','utf8')
- assert.match(app,/embedded=\{page==='client360'\}/)
- assert.match(app,/contextClient=\{page==='client360'\?selected:null\}/)
+ assert.match(app,/embedded=\{page!=='copilot'\}/)
+ assert.match(app,/contextClient=\{activeCopilotClient\}/)
  assert.match(app,/p360-with-copilot/)
 
 })

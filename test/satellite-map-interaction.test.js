@@ -14,6 +14,7 @@ const source=readFileSync(new URL('../src/components/map/SatelliteMap.jsx',impor
  .replace("from 'react'",`from '${import.meta.resolve('react')}'`)
  .replace("from '../../lib/property-map'",`from '${new URL('../src/lib/property-map.js',import.meta.url).href}'`)
  .replace("from '../../lib/map-localities'",`from '${new URL('../src/lib/map-localities.js',import.meta.url).href}'`)
+ .replace("from '../../lib/cadastral-viewport'",`from '${new URL('../src/lib/cadastral-viewport.js',import.meta.url).href}'`)
  .replace("import('leaflet')",'globalThis.__valSatelliteTestLeaflet()')
 const compiled=await transformWithEsbuild(source,'SatelliteMap.jsx',{loader:'jsx',jsx:'transform'})
 const {default:SatelliteMap}=await import(`data:text/javascript;base64,${Buffer.from(compiled.code).toString('base64')}`)
@@ -24,7 +25,8 @@ function fakeLeaflet(){
  const layer=(kind,points,options={})=>evented({kind,points,options,addTo(target){target.layers.add(this);return this},bindTooltip(){return this}})
  const L={
   map(_node,options){
-   const map=evented({options,layers:new Set(),views:[],fits:[],pans:[],currentZoom:4,
+   const map=evented({options,layers:new Set(),views:[],fits:[],pans:[],currentZoom:4,center:{lat:-28,lng:-54},
+    getCenter(){return this.center},getBounds(){return {getWest:()=>-54.1,getSouth:()=>-28.1,getEast:()=>-53.9,getNorth:()=>-27.9}},
     setView(point,zoom){this.views.push({point,zoom});this.currentZoom=zoom;return this},
     fitBounds(bounds,options){this.fits.push({bounds,options});this.currentZoom=12;return this},
     panTo(point){this.pans.push(point);return this},getZoom(){return this.currentZoom},invalidateSize(){},
