@@ -1,8 +1,8 @@
 import {spawn} from 'node:child_process'
 import {createHash,createHmac} from 'node:crypto'
 import {existsSync} from 'node:fs'
+import {createRequire} from 'node:module'
 import {join} from 'node:path'
-import httpProxy from 'http-proxy'
 import {observe} from './observability.js'
 
 export const TECHNICAL_BASE_PATH='/tecnico'
@@ -52,13 +52,16 @@ export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}
  const enabled=existsSync(manualEntry)
  const internalPort=Number(process.env.MANUAL_INTERNAL_PORT||31_001)
  const embedSecret=runtimeConfig.sessionSecret
- const proxy=httpProxy.createProxyServer({xfwd:true,changeOrigin:false,proxyTimeout:120_000,timeout:120_000})
+ // http-proxy avalia util._extend (DEP0060) ao ser carregado: importado de forma estatica ele
+ // imprime duas linhas de aviso em stderr a cada boot, e o Railway classifica stderr como erro.
+ // Sem o build do nucleo tecnico o proxy nunca e usado, entao so carregamos quando ha o que servir.
+ const proxy=enabled?createRequire(import.meta.url)('http-proxy').createProxyServer({xfwd:true,changeOrigin:false,proxyTimeout:120_000,timeout:120_000}):null
  let child=null,closing=false,restartTimer=null,restartAttempts=0,startedAt=0
 
- proxy.on('proxyRes',upstream=>{
+ proxy?.on('proxyRes',upstream=>{
   delete upstream.headers['x-powered-by']
  })
- proxy.on('error',(error,_request,response)=>{
+ proxy?.on('error',(error,_request,response)=>{
   if(response.headersSent){response.destroy(error);return}
   json(response,503,{error:'O núcleo técnico está reiniciando. Tente novamente em instantes.'})
  })
@@ -113,7 +116,7 @@ export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}
  function close(){
   closing=true
   if(restartTimer){clearTimeout(restartTimer);restartTimer=null}
-  proxy.close()
+  proxy?.close()
   if(child&&!child.killed)child.kill('SIGTERM')
  }
 

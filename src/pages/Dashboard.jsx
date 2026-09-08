@@ -25,7 +25,8 @@ import Disclosure from '../components/Disclosure'
 import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
 import {buildHomeCopilotAnswer,buildLocalHomePriorities,canonicalVoiceChange} from '../lib/copilot-view-model'
 import {buildDayBriefing,buildFocusProducers,buildPendencies,buildTopCultures,visitLifecycle} from '../lib/home-command-center'
-import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline,resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
+import {buildOpportunityWorkspace} from '../lib/opportunity-workspace'
+import {resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
 const greeting=()=>{
  const hour=new Date().getHours()
@@ -70,9 +71,11 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  const portfolioPriorities=portfolioMetrics.map(({client,metrics})=>({client,metrics,candidate:resolveOpportunityCandidate(client)})).filter(item=>item.candidate).sort((a,b)=>b.metrics.openPotential-a.metrics.openPotential).slice(0,3)
  const now=Date.now()
  const upcomingVisits=[...(visits||[])].filter(visit=>{const scheduled=scheduledAtOf(visit);const lifecycle=String(visit.lifecycleStatus||visit.lifecycle_status||'').toUpperCase();const openLifecycle=['IN_PROGRESS','PLANNED','PREPARED'].includes(lifecycle);return (scheduled?.getTime()>=now||openLifecycle)&&!/^(realizada|cancelada)$/i.test(String(visit.status||''))}).sort((a,b)=>{const rank=visit=>String(visit.lifecycleStatus||visit.lifecycle_status||'').toUpperCase()==='IN_PROGRESS'?0:1;return rank(a)-rank(b)||scheduledAtOf(a)-scheduledAtOf(b)})
- const cacheKey=opportunityCacheKey(currentUser?.storageScope)
- const cachedItems=cacheKey?parseOpportunityCache(localStorage.getItem(cacheKey)):[]
- const pipelineItems=reconcilePipeline(clients,[...cachedItems,...opportunities])
+ // A Home lê a MESMA fonte do quadro de Oportunidades. Com reconcilePipeline sobre o cache do
+ // navegador, a oportunidade criada no quadro (candidateKey "manual:") era descartada, a etapa
+ // gravada do candidato Q27 voltava para Diagnóstico e o valor virava o potencial em aberto do
+ // produtor: o consultor salvava no quadro e a Home dizia que não havia nada em aberto.
+ const pipelineItems=useMemo(()=>buildOpportunityWorkspace(clients,opportunities),[clients,opportunities])
  const priorities=useMemo(()=>insights??buildLocalHomePriorities({upcomingVisits,opportunities,clients}),[insights,upcomingVisits,opportunities,clients])
  const selectedVoiceClient=clients.find(client=>client.id===voiceClientId)||null
 

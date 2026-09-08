@@ -3,7 +3,8 @@ import {
  BrainCircuit,CheckCircle2,Database,Download,KeyRound,Layers3,LoaderCircle,
  LogOut,RefreshCw,Server,ShieldCheck,Trash2,UserCog,Zap
 } from 'lucide-react'
-import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline} from '../lib/opportunity-pipeline'
+import {buildOpportunityWorkspace} from '../lib/opportunity-workspace'
+import {opportunityCacheKey} from '../lib/opportunity-pipeline'
 
 function displayValue(value,fallback='Não informado'){
  if(value===null||value===undefined||value==='')return fallback
@@ -62,8 +63,9 @@ export default function Settings({clients,visits,opportunities=[],currentUser,on
  useEffect(()=>{loadValStatus()},[])
 
  const backup=()=>{
-  const cached=scopedOpportunityKey?parseOpportunityCache(localStorage.getItem(scopedOpportunityKey)):[]
-  const payload={version:'0.4.0',exportedAt:new Date().toISOString(),clients,visits,opportunities:reconcilePipeline(clients,[...cached,...opportunities])}
+  // O backup exporta o que o consultor vê no quadro: pelo cache do navegador, as oportunidades
+  // criadas na tela de Oportunidades saíam de fora do arquivo.
+  const payload={version:'0.4.0',exportedAt:new Date().toISOString(),clients,visits,opportunities:buildOpportunityWorkspace(clients,opportunities)}
   const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='valor360-backup.json';a.click();URL.revokeObjectURL(url);onNotify?.('Backup do piloto gerado com sucesso.')
  }
  const clear=()=>{if(window.confirm('Limpar rascunhos e dados locais deste dispositivo? Os registros do PostgreSQL não serão apagados.')){for(const key of ['valor360-clients','valor360-visits','valor360-opportunities',scopedOpportunityKey])if(key)localStorage.removeItem(key);Object.keys(localStorage).filter(key=>key.startsWith('valor360-tech-')||key.startsWith('valor360-client-context:')).forEach(key=>localStorage.removeItem(key));Object.keys(sessionStorage).filter(key=>key.startsWith('valor360-tech-')).forEach(key=>sessionStorage.removeItem(key));window.location.reload()}}

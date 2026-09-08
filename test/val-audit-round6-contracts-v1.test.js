@@ -12,11 +12,14 @@ import {extractNaturalClientReference} from '../server/decision-copilot/producer
 import {selectKnowledge} from '../server/knowledge/selection.js'
 import {evaluateResponseGrounding} from '../server/decision-copilot/response-grounding.js'
 import {routeValIntent} from '../server/ai-reasoning/intent-router.js'
+import {readFileSync} from 'node:fs'
+import {buildOpportunityWorkspace} from '../src/lib/opportunity-workspace.js'
 
 const repositoryRoot=join(dirname(fileURLToPath(import.meta.url)),'..')
 const tenantId='00000000-0000-4000-8000-000000000001'
 const ownerId='demo@valor360.local'
 const scoped=value=>({tenantId,ownerId,...value})
+const emptyStore={surveys:[],imports:[],visits:[],businessEvents:[],opportunities:[],val:{commitments:[],memories:[],visitReports:[]},grains:{profiles:[],intentions:[],marketSnapshots:[]}}
 const now=Date.now()
 const ago=days=>new Date(now-days*86400000).toISOString()
 const ahead=days=>new Date(now+days*86400000).toISOString()
@@ -185,4 +188,98 @@ test('HTTP: compromisso concluído não responde "o que está pendente"',async()
   assert.equal(neutral.status,200,neutral.answer)
   assert.match(neutral.answer,/amostra ao laboratório/)
  })
+})
+
+// Railway classifica tudo que sai em stderr como severity=error. Um aviso de depreciação impresso
+// a cada boot enche o monitoramento de erro falso e esconde a falha de verdade.
+test('o boot do servidor não escreve avisos de depreciação em stderr',async()=>{
+ const dataRoot=await mkdtempAsync(join(tmpdir(),'val-boot-stderr-'))
+ await writeFileAsync(join(dataRoot,'valor360-store.json'),JSON.stringify(emptyStore))
+ const port=await availablePort()
+ const child=spawn(process.execPath,['server/start.js'],{cwd:repositoryRoot,env:{...process.env,PORT:String(port),VAL_DEMO_MODE:'true',VAL_DEFAULT_TENANT_ID:tenantId,AUTO_MIGRATE:'false',DATA_DIR:dataRoot,DATABASE_URL:'',OPENAI_API_KEY:'',VAL_ADMIN_EMAIL:'',VAL_ADMIN_PASSWORD:'',VAL_SESSION_SECRET:''},stdio:['ignore','pipe','pipe']})
+ let out='',err='',settled=false
+ try{
+  await new Promise((resolve,reject)=>{
+   const finish=(fn,value)=>{if(settled)return;settled=true;clearTimeout(timer);fn(value)}
+   const timer=setTimeout(()=>finish(reject,new Error(`timeout ${err}`)),30000)
+   child.stdout.on('data',chunk=>{out+=chunk;if(out.includes('VALOR 360 disponível na porta'))finish(resolve)})
+   child.stderr.on('data',chunk=>{err+=chunk})
+   child.once('exit',code=>finish(reject,new Error(`exit ${code} ${err}`)))
+  })
+  await new Promise(resolve=>setTimeout(resolve,300))
+  assert.equal(/DeprecationWarning|DEP0060|util\._extend/.test(err),false,`stderr do boot: ${err.slice(0,500)}`)
+ }finally{
+  child.kill('SIGTERM')
+  await new Promise(resolve=>{const timer=setTimeout(()=>{child.kill('SIGKILL');resolve()},3000);child.once('exit',()=>{clearTimeout(timer);resolve()})})
+  await rmAsync(dataRoot,{recursive:true,force:true})
+ }
+})
+
+test('http-proxy só é carregado quando existe núcleo técnico para servir',()=>{
+ const source=readFileSync(join(repositoryRoot,'server/technical-workspace.js'),'utf8')
+ assert.equal(/^import .*from 'http-proxy'/m.test(source),false)
+ assert.match(source,/enabled\?createRequire\(import\.meta\.url\)\('http-proxy'\)/)
+})
+
+// O servidor recusa a safra sem origem dos dados (400). Um consultor real levou essa recusa em
+// produção depois de preencher as quatro culturas: a tela precisa barrar antes do round-trip.
+test('a tela de safras exige a origem dos dados antes de enviar ao servidor',()=>{
+ const source=readFileSync(join(repositoryRoot,'src/components/ProducerSeasons.jsx'),'utf8')
+ assert.match(source,/if\(!String\(draft\.sourceNote\|\|''\)\.trim\(\)\)\{setError\('Informe a origem dos dados antes de salvar a safra\.'\);return\}/)
+ assert.match(source,/Origem dos dados \(obrigatório\)/)
+ assert.match(source,/required aria-required="true"/)
+ const save=source.slice(source.indexOf('const save=async()=>{'))
+ assert.ok(save.indexOf('sourceNote')<save.indexOf('fetch('),'a checagem precisa vir antes do fetch')
+})
+
+// A Home lia o pipeline por reconcilePipeline sobre o cache do navegador e o quadro lia os registros
+// canônicos do servidor: o consultor salvava no quadro e a Home dizia que não havia nada em aberto.
+test('a Home conta as oportunidades pela mesma fonte do quadro',()=>{
+ const joao={id:'joao',name:'João Pereira',additionalNeed:'Ampliar armazenagem',additionalNeedStatus:'reported',
+  commercial:{opportunity:'Ampliar armazenagem',opportunityProvenance:{origin:'producer_360',field:'q27',state:'reported'},potential:120000,potentialValidated:true}}
+ const maria={id:'maria',name:'Maria Souza',commercial:{potential:0,potentialValidated:false}}
+ const clients=[joao,maria]
+ const persisted=[
+  {id:'db:1',databaseId:1,clientId:'joao',candidateKey:'producer_360_q27:ampliar armazenagem',title:'Ampliar armazenagem',stage:'Negociação',value:8000,valueKnown:true,evidence:[]},
+  {id:'db:2',databaseId:2,clientId:'joao',candidateKey:'manual:abc',title:'Barter milho 26',stage:'Proposta',value:90000,valueKnown:true,evidence:[]},
+  {id:'db:3',databaseId:3,clientId:'maria',candidateKey:'manual:def',title:'Venda de KCl 25/26',stage:'Negociação',value:50000,valueKnown:true,evidence:[]}
+ ]
+ const board=buildOpportunityWorkspace(clients,persisted)
+ assert.equal(board.length,3)
+ assert.equal(board.reduce((total,item)=>total+Number(item.value||0),0),148000)
+ // A oportunidade criada no quadro não some, e a etapa gravada do candidato Q27 não volta para
+ // Diagnóstico por causa de outra oportunidade do mesmo produtor.
+ assert.equal(board.find(item=>item.title==='Barter milho 26')?.stage,'Proposta')
+ assert.equal(board.find(item=>item.title==='Ampliar armazenagem')?.stage,'Negociação')
+ assert.equal(board.find(item=>item.title==='Ampliar armazenagem')?.value,8000)
+ const dashboard=readFileSync(join(repositoryRoot,'src/pages/Dashboard.jsx'),'utf8')
+ const settings=readFileSync(join(repositoryRoot,'src/pages/Settings.jsx'),'utf8')
+ for(const source of [dashboard,settings]){
+  assert.match(source,/buildOpportunityWorkspace\(clients,opportunities\)/)
+  assert.doesNotMatch(source,/reconcilePipeline\(clients,\[\.\.\./)
+ }
+})
+
+// Valor não informado não é zero: o quadro precisa dizer "a estimar", não "R$ 0".
+test('oportunidade de relato de visita e de voz nasce com valor desconhecido, não com zero',()=>{
+ const source=readFileSync(join(repositoryRoot,'server/repository.js'),'utf8')
+ assert.match(source,/value:item\.estimated_value\?\?null,valueKnown:item\.estimated_value!=null/)
+ assert.match(source,/item\.hypothesis,item\.estimated_value\?\?null,item\.stage\|\|'Diagnóstico'/)
+ assert.doesNotMatch(source,/hypothesis:item\.hypothesis,value:0,/)
+})
+
+// "0% do limite de crédito utilizado" aparecia ao lado do mesmo campo exibido como "—".
+test('sem crédito utilizado a tela não afirma percentual de uso',()=>{
+ const source=readFileSync(join(repositoryRoot,'src/components/ProducerBusinessOverview.jsx'),'utf8')
+ assert.match(source,/!known\(business\.creditUsed\)\?'Crédito utilizado ainda não informado\.'/)
+ assert.doesNotMatch(source,/business\.creditLimit\?`\$\{percent\(business\.creditUsed\/business\.creditLimit/)
+})
+
+// A visita em andamento não está entre as preparáveis: abrir "a próxima do produtor" entregava o
+// roteiro de outro compromisso.
+test('a linha clicada abre a visita pedida, e nunca outra do mesmo produtor',()=>{
+ const source=readFileSync(join(repositoryRoot,'src/pages/Visits.jsx'),'utf8')
+ assert.match(source,/const requestedAnyLifecycle=initialVisitId\?visits\.find\(item=>String\(item\.id\)===String\(initialVisitId\)&&item\.clientId===initialClientId\):null/)
+ assert.match(source,/const visit=requested\|\|\(requestedAnyLifecycle\?null:candidates\.find/)
+ assert.match(source,/Esta visita já foi iniciada/)
 })

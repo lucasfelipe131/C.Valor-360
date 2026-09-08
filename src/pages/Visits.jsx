@@ -75,8 +75,16 @@ export default function Visits({clients,visits,storageScope,initialClientId='',i
   // A visita pedida no gesto vem primeiro: sem ela, duas visitas futuras do mesmo produtor faziam
   // qualquer linha da Home abrir o roteiro da mais proxima.
   const requested=initialVisitId?candidates.find(item=>String(item.id)===String(initialVisitId)):null
-  const visit=requested||candidates.find(item=>visitTime(item)>=Date.now())||candidates[0]
+  // A visita pedida pode estar em andamento, e ai ela nao esta entre as preparaveis. Abrir
+  // "a proxima do produtor" nesse caso entregava ao consultor o roteiro de outro compromisso:
+  // quando a linha clicada existe mas nao se prepara, dizemos isso em vez de trocar de visita.
+  const requestedAnyLifecycle=initialVisitId?visits.find(item=>String(item.id)===String(initialVisitId)&&item.clientId===initialClientId):null
+  const visit=requested||(requestedAnyLifecycle?null:candidates.find(item=>visitTime(item)>=Date.now())||candidates[0])
   if(visit)prepareVisit(visit)
+  else if(requestedAnyLifecycle){
+   setError('Esta visita já foi iniciada. Use o registro por voz do cartão dela; a preparação vale para visitas ainda não iniciadas.')
+   document.getElementById(`visit-card-${requestedAnyLifecycle.id}`)?.scrollIntoView?.({block:'center'})
+  }
   else{
    setForm(current=>({...current,clientId:initialClientId,objective:''}))
    setShowForm(true)
