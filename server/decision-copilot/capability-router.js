@@ -4,8 +4,12 @@ import {legacyVisitLifecycle} from '../visit-loop/lifecycle.js'
 import {evaluateSourceFreshness} from '../memory/freshness-policy.js'
 import {assertResponseGrounding,assertResponseQuestionRelevance,evaluateResponseGrounding} from './response-grounding.js'
 import {assertActiveProducerBoundary,classifyValContextDomain,contextTraceEntry,matchedValContextDomains} from './context-selector.js'
+import {stripMessagePreamble} from '../message-preamble.js'
 
 export const systemCapabilityRouterVersion='val.system_capability_router.v1'
+
+// Espelha a lista do repositório: compromisso nesses status não responde "o que está pendente".
+const CLOSED_COMMITMENT_STATUS=new Set(['COMPLETED','CANCELLED','CANCELED','REJECTED','DONE','CONCLUIDO','CANCELADO'])
 export const reasoningPathVersion='val.fast_deep_reasoning.v1'
 export const reasoningPathsArchitectureVersion='val.reasoning_paths.v2'
 export const reasoningPaths=Object.freeze(['FAST','CONTEXT','DEEP','TOOL','LIVE_DATA'])
@@ -221,7 +225,11 @@ export function assessEngineMateriality(input={}){
 }
 
 export function classifyStructuredClientFact(message=''){
- const source=normalize(message).replace(/[?!.,;:]+$/g,'').trim()
+ // "Val, qual a próxima visita?" é a mesma pergunta que "qual a próxima visita?": todos os
+ // padrões abaixo são ancorados em ^, então o vocativo da voz derrubava a allowlist inteira e a
+ // resposta certa virava "não há evidência". O preâmbulo sai antes, como já sai no seletor de
+ // contexto e no roteador de comandos de sessão.
+ const source=stripMessagePreamble(normalize(message)).replace(/[?!.,;:]+$/g,'').trim()
  if(!source)return null
  // Fact First is a positive allowlist of complete literal questions. A mixed,
  // advisory, aggregate or prospective request must remain contextual/deep even
@@ -1419,7 +1427,7 @@ function fastProfilePresentation(facts={},now=new Date(),scope={}){
  return {dataPath:'BEHAVIORAL_PROFILE',answer,primaryFound:true,sourceRef:primaryEvidenceRef,factsUsed:[...profileFacts,...observationFacts,inferenceFact],action:`Para ${name}, ${profileApproach(primary)}.`,missing:unknown,doNotDo:'Não misturar contrato, crédito, grãos, produtos ou compromissos sem relação explícita com a pergunta de perfil.'}
 }
 
-function fastFactPresentation({facts,route,now,scope={}}){
+function fastFactPresentation({facts,route,now,scope={},message=''}){
  const client=facts.client||{id:'unknown',name:'Produtor'}
  const clientName=clean(client.name,180)||'Produtor'
  const dataPath=route.data_path||'LATEST_VISIT'
@@ -1487,10 +1495,17 @@ function fastFactPresentation({facts,route,now,scope={}}){
   const due=commitment?.due_at||commitment?.dueAt||null
   const status=clean(commitment?.status,80)
   const sourceRef=clean(commitment?.commitment_id||commitment?.id,180)||null
-  const primaryFound=Boolean(description&&sourceRef)
-  const answer=primaryFound?`O último compromisso registrado de ${clientName} é: ${description}${status?` — status ${status}`:''}${due?` — prazo ${fastDate(due)}`:''}.`:'Ainda não há compromisso registrado com referência auditável.'
+  // Quando o consultor pergunta pelo que está PENDENTE, um compromisso concluído não é resposta:
+  // apresentá-lo esconde que não há nada em aberto. A pergunta neutra ("qual foi o último
+  // compromisso?") continua aceitando qualquer status.
+  const asksOpenCommitment=/\b(?:pendente|pendencia|em aberto|aberto|falta fazer|ficou de fazer)\b/.test(stripMessagePreamble(normalize(message)))
+  const closed=CLOSED_COMMITMENT_STATUS.has(String(status||'').trim().toUpperCase())
+  const primaryFound=Boolean(description&&sourceRef&&!(asksOpenCommitment&&closed))
+  const answer=primaryFound?`O ${asksOpenCommitment?'compromisso em aberto':'último compromisso registrado'} de ${clientName} é: ${description}${status?` — status ${status}`:''}${due?` — prazo ${fastDate(due)}`:''}.`
+   :asksOpenCommitment&&closed?'Ainda não há compromisso em aberto registrado com referência auditável.'
+   :'Ainda não há compromisso registrado com referência auditável.'
   const factsUsed=primaryFound?[{id:sourceRef,source_type:'commitment',statement:answer,observed_at:commitment?.updated_at||commitment?.updatedAt||commitment?.created_at||commitment?.createdAt||null,status:status||null,confidence:1}]:[]
-  return {dataPath,answer,primaryFound,capabilityStatus:primaryFound?undefined:'NO_DATA',sourceRef,factsUsed,action:primaryFound?'Valide o status do compromisso antes de criar outro.':'Confirme o compromisso em um registro canônico com identificador auditável.',missing:'Compromisso com referência auditável',doNotDo:'Não confundir compromisso proposto ou texto legado sem identificador com o registro canônico.'}
+  return {dataPath,answer,primaryFound,capabilityStatus:primaryFound?undefined:'NO_DATA',sourceRef:primaryFound?sourceRef:null,factsUsed,action:primaryFound?'Valide o status do compromisso antes de criar outro.':'Confirme o compromisso em um registro canônico com identificador auditável.',missing:'Compromisso com referência auditável',doNotDo:'Não confundir compromisso proposto ou texto legado sem identificador com o registro canônico.'}
  }
  if(dataPath==='LATEST_PURCHASE'){
   const purchase=facts.latestPurchase||null
@@ -1542,7 +1557,7 @@ export function buildFastClientResponse({facts={},message='',organizationId='unk
  const route=routeSystemCapability({message,intentHint:'ASK_CLIENT',hasClient:true})
  const client=facts.client||{id:'unknown',name:'Produtor'}
  const verifiedScope=assertFastFactsBoundary(facts,{tenantId:organizationId,ownerId})
- const presentation=fastFactPresentation({facts,route,now,scope:verifiedScope})
+ const presentation=fastFactPresentation({facts,route,now,scope:verifiedScope,message})
  const capability=route.capabilities[0]||'CLIENT_CONTEXT'
  const auditedSourceRef=clean(presentation.sourceRef,180)||null
  const normalizedEpoch=exactContextEpoch(contextEpoch)
@@ -1563,7 +1578,12 @@ export function buildFastClientResponse({facts={},message='',organizationId='unk
  // pendente?" nao cita "visita" -, nao que a resposta seja de outro dominio. So um conflito entre
  // dois dominios especificos e violacao; antes qualquer frase sem a palavra do dominio virava 400
  // com texto interno na tela do consultor.
+ // MULTI_DOMAIN e o mesmo caso: "qual o estilo de compra dele?" casa PROFILE (estilo de compra)
+ // e COMMERCIAL (compra) ao mesmo tempo, e o classificador devolve MULTI_DOMAIN. Isso nao e
+ // conflito - o dominio do fato esta entre os dominios que a propria frase menciona; tratar
+ // como violacao devolvia 400 com o texto interno da excecao na tela do consultor.
  const domainConflict=responseDomain!==groundingDomain&&responseDomain!=='GENERAL'&&groundingDomain!=='GENERAL'
+  &&!(responseDomain==='MULTI_DOMAIN'&&matchedValContextDomains(message).includes(groundingDomain))
  if(domainConflict)throw Object.assign(new Error('O domínio factual não corresponde ao grounding selecionado.'),{code:'CONTEXT_SCOPE_VIOLATION',reason:'DOMAIN_MISMATCH',expectedDomain:groundingDomain,actualDomain:responseDomain})
  const reasoning={
   contract_version:'val.ai_reasoning_result.v1',reasoning_id:randomUUID(),organization:{id:String(organizationId)},client:{id:String(client.id),name:clean(client.name,180)},context_snapshot:{id:`fast-${contextHash.slice(0,16)}`,version:'val.fast_data_snapshot.v1',confidence:{level:evidenceVerified?'VERIFICADO':'INSUFICIENTE'},hash:contextHash},conversation_id:clean(conversationId,180)||'stateless',intent:route.intent,persistence_mode:'NONE',objective:clean(message,1200),situation_summary:presentation.answer,key_signals:[],facts_used:auditedFactsUsed,hypotheses:[],missing_information:evidenceVerified?[]:[presentation.missing],decision_thesis:{CURRENT_SITUATION:presentation.answer,WHAT_MATTERS:'A resposta usa primeiro o registro estruturado mínimo e autorizado.',KEY_UNCERTAINTY:evidenceVerified?'O registro pode não refletir um fato ainda não salvo.':presentation.missing,THESIS:presentation.answer,WHY:evidenceVerified?'O lookup retornou um fato estruturado no escopo do produtor.':'O lookup não retornou evidência auditável suficiente.',WHAT_TO_VALIDATE:evidenceVerified?'Confirme se houve atualização posterior ainda não registrada.':presentation.missing,WHAT_WOULD_CHANGE_MY_VIEW:'Um registro estruturado mais recente e autorizado.'},golden_questions:[],recommended_strategy:{reading:presentation.answer,action:clean(presentation.action,1200),do_not_do:presentation.doNotDo},evidence_to_use:auditedFactsUsed,agronomic_context:{status:evidenceVerified&&presentation.dataPath==='REGISTERED_CROPS'?'registered_fact':'not_applicable',human_review_required:false,sources:{},safety_note:'Nenhuma prescrição ou recomendação agronômica foi produzida.'},commercial_context:{status:evidenceVerified?'structured_fact_lookup':'no_data',data_path:presentation.dataPath},next_commitment:clean(presentation.action,1200),risks:[],confidence:{level:evidenceVerified?'VERIFICADO':'INSUFICIENTE',score:evidenceVerified?0.98:0.2,rationale:evidenceVerified?'Leitura direta de registro estruturado autorizado com referência auditável.':'Não há registro com referência auditável suficiente para afirmar o fato.'},reasoning_confidence:{version:'val.reasoning_confidence.v1',context:evidenceVerified?0.98:0.2,thesis:evidenceVerified?0.98:0.2,question:.9,agronomy:null,knowledge:1,threshold:{ask_below:.72,answer_at_or_above:.72}},knowledge_refs:[],memory_refs:[],created_at:createdAt,model:'rules-fast-client-v1',prompt_version:'val-decision-copilot-v3',run:{provider:'system-capability-router',model:'rules-fast-client-v1',prompt_version:'val-decision-copilot-v3',context_hash:contextHash,latency_ms:Number(latencyMs)||0,status:'completed',fallback:false,path:'FAST',model_call_count:0,tool_call_count:1,hop_count:hops,estimated_input_tokens:0,estimated_output_tokens:0,estimated_cost_usd:0,capabilities_planned:route.capabilities,capabilities_used:capabilityStatus==='EXECUTED'?[capability]:[],capability_results:[{capability,status:capabilityStatus,source_ref:auditedSourceRef}],latency_breakdown:{AUTH:null,CONTEXT_RETRIEVAL:null,MEMORY:null,DATABASE:null,MCA:null,MIA:null,EXTERNAL_DATA:null,MODEL_INPUT:null,MODEL_INFERENCE:null,VALIDATION:null,RESPONSE:null}},premises:{recomputed_for_request:true,source:'authorized_fast_data',profile_specific:true,conversation_is_not_confirmed_memory:true,data_path:presentation.dataPath,context_scope:{tenant_id:String(organizationId),owner_id:clean(ownerId,180)||null,producer_id:String(client.id),conversation_id:clean(conversationId,180)||'stateless',context_epoch:normalizedEpoch,domain:responseDomain,minimum_sufficient_context:true},session_context:{conversation_id:clean(conversationId,180)||'stateless',context_epoch:normalizedEpoch,current_domain:responseDomain,persistence_mode:'NONE'}},voice_output:{version:'val.voice_output.v1',speakable_text:presentation.answer,persistence:'NONE',automatic_memory_effect:false},decision_interview:{version:'val.decision_interview.v1',status:'NOT_NEEDED',questions:[],material_missing_information:[],non_material_missing_information:[],session_context:{conversation_id:clean(conversationId,180)||'stateless',context_epoch:normalizedEpoch,persistence_mode:'NONE'},explanation:'A pergunta foi respondida diretamente por um lookup factual mínimo; nenhum modelo foi chamado.'},quality:{status:'NOT_EVALUATED',dimensions:{},automatic_tests:{name_swap:{passed:null,evaluated:false,reason:'Não aplicável a uma consulta literal de fato.'},context_removal:{passed:null,evaluated:false,reason:'Não executado no FAST PATH determinístico.'}}}

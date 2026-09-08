@@ -718,7 +718,7 @@ function governedGeneralAnswer(message){
 // produtor/cliente/dado espec\u00edfico \u00e9 tratada como geral. Isso nunca exp\u00f5e dado privado: o
 // caminho geral (generalAnswer/governedGeneralAnswer) nunca consulta base de produtor, e o
 // grounding a jusante continua exigindo evid\u00eancia real para qualquer afirma\u00e7\u00e3o factual.
-function isGeneralConceptRequest(message=''){
+export function isGeneralConceptRequest(message=''){
  const original=String(message).replace(/\s+/g,' ').trim()
  const source=original.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
  const contextual=/\b(?:deste|desse|dessa|desta|daquele|daquela|daquilo|atual|selecionad[oa]|produtor|cliente|conta|oportunidade|visita|talhao|propriedade|laudo|analise|fazenda|dele|dela)\b/.test(source)

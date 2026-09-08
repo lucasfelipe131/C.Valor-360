@@ -20,7 +20,7 @@ const naturalReferencePatterns=Object.freeze([
  // Fatos possessivos precisam ser avaliados antes do comando genérico
  // "mostre/abra"; caso contrário, "Mostre a última visita do Antônio"
  // tenta resolver toda a frase como se fosse o nome do produtor.
- {kind:'FACT_OWNER',pattern:/(?:^|\s)(?:visita|compra|obje[cç][ãa]o|compromisso|culturas?|safra|[áa]rea)\s+(?:do|da)\s+(?:(?:o|a)\s+)?(?<reference>[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,5}?)(?=\s+(?:est(?:[aá]|[aã]o)|t[eê]m|foi|[ée]|registrad\p{L}*|cadastrad\p{L}*|mais\s+recente|no\s+sistema|na\s+carteira|e\s+(?:quanto|qual|quais|como|o\s+que|por\s+que))(?=\s|[,.!?;]|$)|[,.!?;]|$)/iu},
+ {kind:'FACT_OWNER',pattern:/(?:^|\s)(?:visita|compra|obje[cç][ãa]o|compromisso|culturas?|safra|[áa]rea|perfil|oportunidade|potencial|pend[êe]ncia)s?(?:\s+(?:comportamental|pendente|aberta?s?|em\s+aberto|combinad[oa]|conclu[íi]d[oa]|realizada?|agendada?|registrad[oa]|atual|mais\s+recente|[úu]ltim[oa]|pr[óo]xima?))*\s+(?:do|da)\s+(?:(?:o|a)\s+)?(?<reference>[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,5}?)(?=\s+(?:est(?:[aá]|[aã]o)|t[eê]m|foi|[ée]|registrad\p{L}*|cadastrad\p{L}*|mais\s+recente|no\s+sistema|na\s+carteira|e\s+(?:quanto|qual|quais|como|o\s+que|por\s+que))(?=\s|[,.!?;]|$)|[,.!?;]|$)/iu},
  {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/\b(?:abre|abra|abrir|mostra|mostre|mostrar|procura|procure|buscar?)\s+(?:(?:o|a)\s+)?(?:(?:cliente|produtor|produtora|fazenda|propriedade)\s+)?(?<reference>[^,.!?;]+)/iu},
  {kind:'EXPLICIT_NAME',pattern:/\b(?:prepara|prepare|preparar|monta|monte)\s+(?:(?:a|uma)\s+)?(?:visita|conversa)\s+(?:de|do|da|para|pro|pra|com)\s+(?<reference>[^,.!?;]+)/iu},
  {kind:'EXPLICIT_NAME',pattern:/\b(?:vou|vamos|iremos?|pretendo)\s+(?:visitar|ver|encontrar)\s+(?<reference>[^,.!?;]+)/iu},

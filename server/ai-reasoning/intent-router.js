@@ -37,6 +37,11 @@ const definitionalShape=/^(?:(?:val[, ]+)?(?:me\s+)?(?:o que (?:e|sao|significa|
 const contextualReference=/\b(?:deste|desse|dessa|desta|daquele|daquela|daquilo|atual|selecionad[oa]|produtor|cliente|conta|oportunidade|visita|talhao|propriedade|laudo|analise|fazenda|dele|dela)\b/
 const individualReference=/\b(?:ele|ela|dele|dela|deste|desse|desta|dessa|daquele|daquela|meu cliente|minha conta|es[st]e (?:cliente|produtor)|aquele produtor|(?:cliente|produtor) selecionad[oa]|(?:desta|dessa) conversa|do (?:sr|senhor|seu|sra|senhora|dona)\b)\b/
 const greetingOrThanks=/^\s*(?:val[, ]+)?(?:(?:muito\s+)?(?:oi+|ola|opa|e\s*ai|eae|hey|hi|hello|bom\s*dia|boa\s*tarde|boa\s*noite|tudo\s*bem|tudo\s*bom|como\s*vai|como\s*voce\s*esta|beleza|obrigad[oa]s?|valeu|show|perfeito|entendi|certo|ok|okay|blz|ta\s*bom|combinado|legal)[\s!.,?]*){1,3}(?:(?:val|viu|hein|demais|mesmo)[\s!.,?]*)?$/
+// "me fala sobre ferrugem asiatica", "me conta do basis": a mesma pergunta conceitual na forma que
+// o consultor usa falando. Com produtor aberto ela virava ASK_CLIENT e morria em "nao ha
+// evidencia"; sem produtor a Biblioteca respondia. So vale quando o assunto nao e uma pessoa -
+// "me fala sobre ele" continua sendo pergunta do produtor.
+const narrativeShape=/^(?:me\s+)?(?:fala|fale|falar|conta|conte|contar|comenta|comente|comentar|diga|diz|explana)\s+(?:um pouco\s+)?(?:sobre|de|do|da|a respeito de)\s+\S/
 const currentMoment=/\b(?:hoje|amanha|agora|atual(?:mente)?|previsao|proxim[oa]s? (?:dias|semana|horas)|esta semana|nesta semana|fim de semana|ontem|semana que vem|nos proximos)\b/
 
 // Cumprimento colado a pergunta conceitual ("Oi val, o que e WASDE?") nao muda o destino porque ha um
@@ -47,6 +52,7 @@ function semanticGeneralConceptIntent(source=''){
  if(greetingOrThanks.test(folded))return 'ASK_GENERAL'
  const question=folded.replace(greetingPrefix,'')
  if(definitionalShape.test(question)&&!contextualReference.test(question))return 'ASK_GENERAL'
+ if(narrativeShape.test(question)&&!contextualReference.test(question)&&!individualReference.test(question))return 'ASK_GENERAL'
  return ''
 }
 

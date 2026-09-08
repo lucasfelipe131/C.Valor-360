@@ -2,6 +2,7 @@ import {createHash} from 'node:crypto'
 import {knowledgeSelectionVersion,assertKnowledgeContract,validateKnowledgeSelection} from './contracts.js'
 import {loadKnowledgeLibrary} from './library.js'
 import {authorityRank,evaluateGeography,evaluateKnowledgeLifecycle,knowledgePolicyVersion,list,normalizeSearchText,text,uniqueText} from './policy.js'
+import {stripMessagePreamble} from '../message-preamble.js'
 
 const stopWords=new Set([
  'a','ao','aos','as','com','como','da','das','de','do','dos','e','ele','ela','em','entre','essa','esse','esta','este','eu','foi','ha','isso','ja','mais','mas','na','nas','no','nos','o','os','ou','para','pela','pelo','por','que','se','sem','ser','sua','suas','seu','seus','tem','um','uma','voce',
@@ -16,6 +17,7 @@ const stopWords=new Set([
  // tambem nao sao assunto: cada uma contava como termo fora do corpus e derrubava a maioria.
  'bom','boa','dia','tarde','noite','duvida','duvidas','tira','tirar','curiosidade','pergunta','perguntar',
  'ajuda','ajudar','ajude','direitinho','rapida','rapido','explicar','entender','saber','sobre','tenho','fiquei','queria','quero',
+ 'poderia','podia','poderiam','pode','sera','gentileza','licenca','incomodar','atrapalhar','desculpa','desculpe','rapidinho','minutinho','explicame','explique',
  'melhor','melhores','pior','piores','maior','menor','muito','muita','pouco','pouca','todo','toda','todos','todas',
  'ideal','ideais','otimo','otima','bom','boa','certo','certa','correto','correta','adequado','adequada','recomendado','recomendada','possivel','preciso',
  'fazer','faco','faz','ser','sou','estar','esta','ter','tem','pode','posso','deve','devo','vai','vou','quero','queria',
@@ -316,13 +318,18 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
  const cappedLimit=Math.min(3,Math.max(1,Number.isFinite(Number(limit))?Math.trunc(Number(limit)):3))
  const requestedModules=uniqueText(Array.isArray(modules)?modules:[modules]).map(value=>value.toUpperCase()).sort()
  const contextText=flattenContext(contextSnapshot).join(' ')
- const queryTokens=tokens(query)
- const queryBaseTokens=baseTokens(query)
- const normalizedQuery=normalizeSearchText(query)
+ // A cobertura é medida contando quantos termos da pergunta existem no acervo: "desculpa
+ // incomodar" antes da pergunta engorda o denominador e derruba a pergunta legítima abaixo do
+ // piso. Enumerar cada palavra de cortesia em stopWords nunca fecha a lista — o preâmbulo sai
+ // inteiro antes de tokenizar. Se a frase for só cortesia, mede-se a frase original.
+ const question=stripMessagePreamble(normalizeSearchText(query))||query
+ const queryTokens=tokens(question)
+ const queryBaseTokens=baseTokens(question)
+ const normalizedQuery=normalizeSearchText(question)
  const derivedTokens=new Set([...queryTokens].filter(token=>!queryBaseTokens.has(token)))
  const contextTokens=tokens(contextText)
  const searchTokens=new Set([...queryTokens,...contextTokens])
- const objectiveConcepts=exclusiveConcepts(query)
+ const objectiveConcepts=exclusiveConcepts(question)
  const contextConcepts=exclusiveConcepts(contextText)
  const queryConcepts=objectiveConcepts.size?objectiveConcepts:contextConcepts
  const sourceById=new Map(source.sources.map(entry=>[entry.source_id,entry]))

@@ -37,7 +37,7 @@ import {createVoiceCandidateExtractor} from './server/voice-capture/extraction.j
 import {createVoiceCaptureService} from './server/voice-capture/service.js'
 import {normalizeValIntent,routeValIntent} from './server/ai-reasoning/intent-router.js'
 import {buildClientMarketResponse,buildFastClientComparisonResponse,buildFastClientResponse,buildFastMarketResponse,finalizeAttachmentRecommendation,routeSystemCapability} from './server/decision-copilot/capability-router.js'
-import {buildCapabilityExecutionResponse,buildGeneralNoClientResponse,executeCapabilityPlan,validateActiveContext} from './server/decision-copilot/capability-executor.js'
+import {buildCapabilityExecutionResponse,buildGeneralNoClientResponse,executeCapabilityPlan,isGeneralConceptRequest,validateActiveContext} from './server/decision-copilot/capability-executor.js'
 import {attachLatencyPerformance,createLatencyTrace,valLatencyMetrics} from './server/decision-copilot/latency-observability.js'
 import {createSessionContextCache,sessionContextCacheNamespaces} from './server/decision-copilot/session-context-cache.js'
 import {createConversationSessionStore} from './server/decision-copilot/conversation-session-store.js'
@@ -757,7 +757,20 @@ async function handleApi(request,response,url){
   // orcamento), sem ler contexto privado nem acionar a engine, e mantem o produtor ativo na sessao.
   // Antes, "oi" e "O que e WASDE?" com produtor ativo terminavam em "Nao ha evidencia selecionada
   // suficiente".
-  if(routedIntent.intent==='ASK_GENERAL'&&clientCapability.path==='CONTEXT'&&!clientCapability.session_command&&!attachmentIds.length&&clientCapability.capabilities.every(item=>item==='KNOWLEDGE_LIBRARY')){
+  // A condicao original so aceitava ASK_GENERAL com a lista de capabilities exatamente igual a
+  // ['KNOWLEDGE_LIBRARY']. Pergunta agronomica vira ASK_AGRONOMIC e planeja tambem
+  // AGRONOMIC_WORKSPACE e AGRONOMIST_MANUAL, entao "lixiviacao de potassio" com produtor aberto
+  // caia no caminho de escopo privado - onde nao ha evidencia nenhuma sobre o assunto - e o
+  // consultor lia "nao ha evidencia" para uma pergunta que a Biblioteca responde. Basta a
+  // pergunta nao referenciar produtor, cliente ou dado especifico (isGeneralConceptRequest, o
+  // mesmo criterio que ja libera o executor) e a Biblioteca estar entre as capabilities.
+  // A frase nao pode nomear ou apontar um produtor: "Mostre a principal objecao do Antonio" nao
+  // cita produtor/cliente/dele, mas nomeia o dono do fato, e responder isso pelo caminho geral
+  // tiraria a pergunta do escopo do produtor. Candidato de nome ainda nao resolvido continua
+  // passando: e o que sobra de "fala sobre ferrugem asiatica".
+  const namesProducer=['FACT_OWNER','EXPLICIT_NAME','CURRENT_CLIENT'].includes(naturalClientReference.kind)
+  const generalConceptWithProducer=!namesProducer&&isGeneralConceptRequest(message)&&clientCapability.capabilities.includes('KNOWLEDGE_LIBRARY')
+  if((routedIntent.intent==='ASK_GENERAL'&&clientCapability.capabilities.every(item=>item==='KNOWLEDGE_LIBRARY')||generalConceptWithProducer)&&clientCapability.path==='CONTEXT'&&!clientCapability.session_command&&!attachmentIds.length){
    // O raciocinio desta resposta nao le contexto privado (fontes em escopo GENERAL_KNOWLEDGE, client
    // 'portfolio'), mas a resposta pertence a conversa do produtor ativo: o browser e o contrato de
    // escopo (createValResponseScope) exigem que context_scope.producer_id, session_context e
