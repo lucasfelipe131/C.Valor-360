@@ -94,6 +94,17 @@ test('an unknown general question uses AI once and the database survives restart
  assert.doesNotMatch(JSON.stringify(database.writes),/tenant-a|owner-a|thread-a|fotossíntese\?/)
 })
 
+test('general knowledge outside agronomy reaches the model without requiring a producer',async()=>{
+ const message='Por que o céu é azul?'
+ const text='O céu é azul porque as moléculas do ar espalham a luz azul do Sol mais intensamente do que a luz vermelha. Esse fenômeno é chamado espalhamento de Rayleigh.'
+ const ai=model(text)
+ const result=await general({message,aiClient:ai.client,aiModel:'test-model'})
+ assert.equal(ai.calls.length,1)
+ assert.equal(result.advice.answer,text)
+ assert.equal(result.advice.ai_reasoning.evidence_status,'UNVERIFIED_MODEL_KNOWLEDGE')
+ assert.equal(result.advice.ai_reasoning.run.tool_result.context.private_memory_used,false)
+})
+
 test('cache invalidates expired, corrupted, relabeled and changed-policy answers',async()=>{
  for(const mutation of ['expired','corrupted','relabeled','policy','model']){
   const database=databaseFixture(),ai=model()

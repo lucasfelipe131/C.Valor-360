@@ -12,6 +12,7 @@ import {resolveCopilotLaunch} from './lib/copilot-context'
 import {clearCopilotSessionStorage} from './lib/copilot-session-storage'
 import {createValWorkspaceContext,validateValWorkspaceAction} from './lib/val-workspace-context'
 import {resolveActiveWorkspace,workspaceEntryPoint,workspaceHoldsPage} from './lib/val-workspaces'
+import {installMobileViewport,resetMobilePageScroll} from './lib/mobile-viewport'
 
 const GlobalValCopilot=lazy(()=>import('./components/GlobalValCopilot'))
 const Dashboard=lazy(()=>import('./pages/Dashboard'))
@@ -44,7 +45,8 @@ const clearSessionPortfolioCache=storageScope=>{
 }
 const rememberStorageScope=user=>{if(user?.storageScope)sessionStorage.setItem(activeStorageScopeKey,user.storageScope)}
 
-const resetPageViewport=()=>{
+ const resetPageViewport=()=>{
+  resetMobilePageScroll()
  window.scrollTo({top:0,left:0,behavior:'auto'})
  document.querySelector('.topbar h1')?.focus({preventScroll:true})
 }
@@ -66,6 +68,7 @@ const meta={
  copilot:['VAL Copilot','Centro de conversa, decisão e orquestração do ecossistema']
 }
 export default function App(){
+ useEffect(()=>installMobileViewport(),[])
  const publicSurveyToken=new URLSearchParams(window.location.search).get('responder')
  const [authenticated,setAuthenticated]=useState(null)
  const [currentUser,setCurrentUser]=useState(null)
@@ -84,6 +87,7 @@ export default function App(){
  const [opportunities,setOpportunities]=useState([])
  const [toast,setToast]=useState('')
  const [copilotOpen,setCopilotOpen]=useState(false)
+ const [copilotPresented,setCopilotPresented]=useState(false)
  const [copilotLoaded,setCopilotLoaded]=useState(false)
  const [copilotRevealKey,setCopilotRevealKey]=useState(0)
  const [copilotNavigationSequence,setCopilotNavigationSequence]=useState(0)
@@ -291,7 +295,7 @@ export default function App(){
     </Suspense>
     <Suspense fallback={null}>
 	    {copilotLoaded&&<GlobalValCopilot key={copilotOwnerScope||'session'}
-	     open={copilotOpen} onClose={closeCopilot} embedded={page!=='copilot'} contextClient={activeCopilotClient} navigationKey={page} revealKey={copilotRevealKey} collapseKey={copilotNavigationSequence}
+	     open={copilotOpen} onClose={closeCopilot} onPresentationChange={setCopilotPresented} embedded={page!=='copilot'} contextClient={activeCopilotClient} navigationKey={page} revealKey={copilotRevealKey} collapseKey={copilotNavigationSequence}
 	     clients={clientList} onConversationClientChange={updateConversationClient} seed={copilotSeed} workspaceContext={workspaceContext} storageScope={currentUser?.storageScope} identityScope={{tenantId:currentUser?.tenantId||'',ownerId:currentUser?.ownerId||''}}
      visits={visits} opportunities={opportunities} onRefreshPortfolio={refreshPortfolio}
      onOpenClient={openClient} onPrepareVisit={prepareClient} onNavigate={navigate} onWorkspaceAction={executeValWorkspaceAction}
@@ -299,7 +303,7 @@ export default function App(){
     </Suspense>
    </div>
   </main>
-  {page!=='copilot'&&<MobileNav page={page} tool={activeTool} currentUser={currentUser} workspace={workspace} onWorkspaceChange={changeWorkspace} onSelect={selectNav} onOpenVal={()=>openCopilot()}/>}
+  {page!=='copilot'&&<MobileNav page={page} tool={activeTool} currentUser={currentUser} workspace={workspace} onWorkspaceChange={changeWorkspace} onSelect={selectNav} copilotActive={copilotOpen&&copilotPresented} onOpenVal={()=>openCopilot()}/>}
   {toast&&<div className="toast" role="status">{toast}</div>}
  </div>
 }

@@ -20,9 +20,11 @@ import {createValProgressRequestId,initialValProgress,startValProgressPolling} f
 import {hasValOutputModePreference,localNaturalCommandTurn,naturalCommandMatchesClient,naturalCommandNeedsSettledResponse,naturalCommandRequest,readValOutputMode,resolveValNaturalCommand,writeValOutputMode} from '../lib/val-natural-commands'
 import {cancelVoiceInteraction,createVoiceInteraction,processVoiceInteraction,uploadVoiceAudio} from '../lib/voice-interactions-client'
 import {attachmentContentUrl,attachmentMatchesBrowserScope} from '../lib/attachment-browser-scope'
+import {lockMobilePage} from '../lib/mobile-viewport'
 import '../global-val-copilot.css'
 import '../val-full-screen-copilot.css'
 import '../val-producer360-premium.css'
+import '../val-mobile-navigation.css'
 
 const ATTACHMENT_TYPES=new Set(['image/jpeg','image/png','image/webp','image/gif','application/pdf','application/msword','application/vnd.openxmlformats-officedocument.wordprocessingml.document','application/vnd.ms-excel','application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','text/csv','text/plain'])
 const MAX_ATTACHMENT_BYTES=6_000_000
@@ -138,10 +140,12 @@ function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onRe
  </article>
 }
 
-export default function GlobalValCopilot({open,onClose,embedded=false,navigationKey='',revealKey=0,collapseKey=navigationKey,clients=[],onConversationClientChange,contextClient=null,seed,workspaceContext=null,onRefreshPortfolio,onOpenClient,onPrepareVisit,onNavigate,onWorkspaceAction,visits=[],opportunities=[],storageScope='session',identityScope=null}){
+export default function GlobalValCopilot({open,onClose,onPresentationChange,embedded=false,navigationKey='',revealKey=0,collapseKey=navigationKey,clients=[],onConversationClientChange,contextClient=null,seed,workspaceContext=null,onRefreshPortfolio,onOpenClient,onPrepareVisit,onNavigate,onWorkspaceAction,visits=[],opportunities=[],storageScope='session',identityScope=null}){
  const [panelExpanded,setPanelExpanded]=useState(false)
  const [panelCompact,setPanelCompact]=useState(false)
  const compactToggleRef=useRef(null)
+ useEffect(()=>{onPresentationChange?.(open&&!panelCompact)},[open,panelCompact,onPresentationChange])
+ useEffect(()=>{if(open&&!panelCompact)return lockMobilePage()},[open,panelCompact])
  useEffect(()=>{if(open)setPanelCompact(false)},[open,seed?.nonce,revealKey])
  const previousNavigation=useRef(collapseKey)
  useEffect(()=>{
@@ -199,6 +203,8 @@ export default function GlobalValCopilot({open,onClose,embedded=false,navigation
  const messageInput=useRef(null)
  const clientSelectRef=useRef(null)
  const pageRef=useRef(null)
+ const threadRef=useRef(null)
+ const followThreadBottom=useRef(true)
  const uploadRunRef=useRef({generation:0,controller:null,targetClientId:''})
  const chatRunRef=useRef({generation:0,controller:null,threadKey:''})
  const voiceActivationSequence=useRef(0)
@@ -216,6 +222,21 @@ export default function GlobalValCopilot({open,onClose,embedded=false,navigation
  const activeDomain=String(threadMetadata[threadKey]?.domain||'').trim().toUpperCase()
  const metadataContextEpoch=Number.isSafeInteger(threadMetadata[threadKey]?.contextEpoch)&&threadMetadata[threadKey].contextEpoch>=0?threadMetadata[threadKey].contextEpoch:0
  const visibleThread=useMemo(()=>thread.filter(turn=>conversationTurnVisibleInScope(turn,{tenantId:identityTenantId,ownerId:identityOwnerId,conversationId:realtimeConversationId,producerId:client?.id||'',contextEpoch:metadataContextEpoch,domain:activeDomain})),[thread,identityTenantId,identityOwnerId,realtimeConversationId,client?.id,metadataContextEpoch,activeDomain])
+ useEffect(()=>{followThreadBottom.current=true},[threadKey])
+ useEffect(()=>{
+  const target=threadRef.current
+  if(!open||panelCompact||!target)return
+  if(followThreadBottom.current||visibleThread.at(-1)?.role==='user'){
+   target.scrollTop=target.scrollHeight;followThreadBottom.current=true
+  }
+ },[open,panelCompact,visibleThread])
+ useEffect(()=>{
+  const target=threadRef.current
+  if(!open||!target||typeof ResizeObserver==='undefined')return
+  const observer=new ResizeObserver(()=>{if(followThreadBottom.current)target.scrollTop=target.scrollHeight})
+  observer.observe(target)
+  return ()=>observer.disconnect()
+ },[open,mode,voiceStageFocused])
  const realtimeContextEpoch=conversationContextEpoch(visibleThread,{conversationId:realtimeConversationId,producerId:client?.id||'',fallbackContextEpoch:metadataContextEpoch})
  const conversationWorkspace=useMemo(()=>scopeWorkspaceToConversation(workspaceContext,{client,conversationId:realtimeConversationId}),[workspaceContext,client,realtimeConversationId])
  const realtimeScope={conversationId:realtimeConversationId,clientId:client?.id||'',contextEpoch:realtimeContextEpoch}
@@ -667,7 +688,7 @@ export default function GlobalValCopilot({open,onClose,embedded=false,navigation
    <span className="p360-copilot-rail-client" title={client?.name||'Conversa geral'}>{client?.name?.trim()?.[0]||'V'}</span>
   </div>}
   {historyOpen&&<><button type="button" className="val-history-backdrop" aria-label="Fechar histórico" onClick={()=>setHistoryOpen(false)}/><aside className="val-history-drawer" aria-label="Histórico de conversas"><header><div><small>VAL</small><h2>Conversas</h2></div><button type="button" aria-label="Fechar histórico" onClick={()=>setHistoryOpen(false)}><X/></button></header><button type="button" className="val-new-thread" onClick={()=>newConversation({general:true})}><Plus/>Nova conversa geral</button><label className="val-history-search"><Search/><input value={historyQuery} onChange={event=>setHistoryQuery(event.target.value)} placeholder="Buscar produtor ou conversa"/></label>{[...historyGroups].map(([group,items])=><section key={group}><h3>{group}</h3>{items.map(item=><button type="button" key={item.key} onClick={()=>selectHistory(item)}><Clock3/><span><b>{item.label}</b><small>{item.preview}</small></span></button>)}</section>)}{visibleClients.length>0&&<section><h3>Produtores</h3>{visibleClients.map(item=><button type="button" key={item.id} onClick={()=>chooseClient(item.id)}><UserRound/><span><b>{item.name}</b><small>Abrir conversa por produtor</small></span></button>)}</section>}</aside></>}
-  {embedded&&<header className="p360-copilot-header"><Logo variant="icon-only" decorative/><div><b>VAL Copiloto</b><small title={client?.name||'Conversa geral'}>{client?.name||'Conversa geral'}{navigationKey&&' · acompanha sua navegação'}</small></div><button type="button" title="Reduzir VAL para ícones" aria-label="Reduzir VAL para ícones" aria-expanded={!panelCompact} onClick={()=>{setPanelExpanded(false);setPanelCompact(true);setHistoryOpen(false)}}><ChevronsRight size={17}/></button><button aria-label="Fixar Copiloto" aria-pressed={panelPinned} onClick={()=>setPanelPinned(value=>!value)}><Pin size={15}/></button><button aria-label={panelExpanded?'Recolher tela cheia':'Expandir Copiloto'} onClick={()=>setPanelExpanded(value=>!value)}>{panelExpanded?<Minimize2 size={15}/>:<Maximize2 size={15}/>}</button><button aria-label="Fechar Copiloto" onClick={()=>{setPanelExpanded(false);onClose?.()}}><X size={16}/></button></header>}
+  {embedded&&<header className="p360-copilot-header"><Logo variant="icon-only" decorative/><div><b>VAL Copiloto</b><small title={client?.name||'Conversa geral'}>{client?.name||'Conversa geral'}{navigationKey&&' · acompanha sua navegação'}</small></div><button type="button" className="p360-mobile-history" aria-label="Abrir histórico de conversas" onClick={()=>setHistoryOpen(true)}><History size={19}/></button><button type="button" title="Reduzir VAL para ícones" aria-label="Reduzir VAL para ícones" aria-expanded={!panelCompact} onClick={()=>{messageInput.current?.blur();setPanelExpanded(false);setPanelCompact(true);setHistoryOpen(false)}}><ChevronsRight size={17}/></button><button className="p360-desktop-control" aria-label="Fixar Copiloto" aria-pressed={panelPinned} onClick={()=>setPanelPinned(value=>!value)}><Pin size={15}/></button><button className="p360-desktop-control" aria-label={panelExpanded?'Recolher tela cheia':'Expandir Copiloto'} onClick={()=>setPanelExpanded(value=>!value)}>{panelExpanded?<Minimize2 size={15}/>:<Maximize2 size={15}/>}</button><button aria-label="Fechar Copiloto" onClick={()=>{messageInput.current?.blur();setPanelExpanded(false);onClose?.()}}><X size={16}/></button></header>}
   {embedded&&isDemoRecord(client)&&<p className="p360-copilot-demo" data-provenance="DEMO">DEMO • Contexto demonstrativo, sem validade para produtores reais.</p>}
   <header className="val-fs-header">
    <button type="button" className="val-fs-back" aria-label="Voltar" onClick={onClose} disabled={uploading}><ArrowLeft/></button>
@@ -706,8 +727,8 @@ export default function GlobalValCopilot({open,onClose,embedded=false,navigation
      onFallbackPushToTalk={()=>{setError('');requestPushToTalk()}}
      onFallbackText={()=>{setError('');requestAnimationFrame(()=>messageInput.current?.focus())}}
     />}
-    {!voiceStageFocused&&<div className="global-val-thread" aria-live="polite">
-     {!visibleThread.length&&mode==='ASK'&&<section className="global-val-empty"><span><BrainCircuit/></span><small>VAL • AMBIENTE DE TRABALHO</small><h2>{client?`Estou com ${firstName(client.name)} aberto.`:'Pode falar comigo.'}</h2><p>{client?'Quer preparar uma conversa, revisar o que ficou pendente ou ver o que merece atenção agora?':'Se for sobre um produtor específico, eu localizo o contexto para você.'}</p><div>{(client?clientQuickPrompts:globalQuickPrompts).map(([intent,label,prompt])=><button type="button" key={`${intent}-${label}`} disabled={busy} onClick={()=>runQuickAction(intent,prompt)}><b>{label}</b>{!client&&prompt&&<small>{prompt}</small>}</button>)}</div></section>}
+    {!voiceStageFocused&&<div ref={threadRef} className="global-val-thread" aria-live="polite" onScroll={event=>{const target=event.currentTarget;followThreadBottom.current=target.scrollHeight-target.scrollTop-target.clientHeight<80}}>
+     {!visibleThread.length&&mode==='ASK'&&<section className="global-val-empty"><span><BrainCircuit/></span><small>VAL • AMBIENTE DE TRABALHO</small><h2>{client?`Estou com ${firstName(client.name)} aberto.`:'Pode falar comigo.'}</h2><p>{client?'Quer preparar uma conversa, revisar o que ficou pendente ou tirar uma dúvida geral?':'Pergunte sobre agronomia ou outros assuntos. Para consultar dados da carteira, escolha o produtor acima.'}</p><div>{(client?clientQuickPrompts:globalQuickPrompts).map(([intent,label,prompt])=><button type="button" key={`${intent}-${label}`} disabled={busy} onClick={()=>runQuickAction(intent,prompt)}><b>{label}</b>{!client&&prompt&&<small>{prompt}</small>}</button>)}</div></section>}
      {visibleThread.map((item,index)=>item.role==='assistant'&&item.payload?<ReasoningResponse key={`${item.at||index}-${index}`} payload={item.payload} sourceAttachments={item.sourceAttachments} density={density} outputMode={outputMode} onReply={(question,responseScope)=>{if(!responseCardActionAllowed(responseScope))return;setReplyingTo(question);setMessage('');setMode('ASK');requestAnimationFrame(()=>messageInput.current?.focus())}} onRegister={responseScope=>{if(responseCardActionAllowed(responseScope))setMode('REGISTER')}} onOpenModule={openModule} onOpenEvidence={openEvidence}/>:item.role==='assistant_text'&&item.command==='OUTPUT_AUDIO'?<article key={`${item.at||index}-${index}`} className="global-val-local-audio"><p className="global-val-message is-assistant">{item.text}</p><ValAudioResponse text={item.text} autoPlay={item.playAudio===true}/></article>:<p key={`${item.at||index}-${index}`} className={`global-val-message is-${item.role==='assistant_text'?'assistant':item.role}`}>{item.text}</p>)}
      {mode==='REGISTER'&&<section className="global-val-register"><ShieldCheck/><h3>Atualize as premissas com confirmação.</h3><p>{client?'Fale ou digite o que mudou. A VAL separa fatos, hipóteses e compromissos para você revisar antes de incorporar à memória.':'Escolha um produtor acima. Uma informação só pode entrar na memória quando sabemos a qual conta ela pertence.'}</p><VoiceCapture key={`register:${client?.id||'none'}:${threadKey}`} clientId={client?.id||''} interactionType="CLIENT_NOTE" label="Falar ou digitar" description="Revisar antes de salvar" initialText={registerInitialText} autoOpenKey={registrationAutoOpenKey} onOpenChange={isOpen=>{if(isOpen)setRegistrationAutoOpenKey('')}} sourceContext={{page:'GLOBAL_VAL_COPILOT',persistence_mode:'CONFIRM_REQUIRED',conversation_thread:threadKey}} onConfirmed={payload=>registered(payload,{clientId:client?.id||'',threadKey})}/></section>}
      {busy&&<div className="global-val-thinking" role="status"><LoaderCircle/><span><b>{progress?.label||'Analisando a solicitação…'}</b><small>{client?'Etapa real do processamento. Se faltar algo material, a VAL perguntará.':'A VAL não usa memória antiga como dado atual.'}</small></span></div>}

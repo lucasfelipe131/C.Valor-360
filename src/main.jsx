@@ -13,6 +13,7 @@ import './presentation.css'
 import './copilot-ux.css'
 import './val-ui-simple-modern.css'
 import './val-workspace-shell.css'
+import './val-mobile-navigation.css'
 
 createRoot(document.getElementById('root')).render(<React.StrictMode><App/></React.StrictMode>)
 if('serviceWorker' in navigator&&import.meta.env.PROD)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js'))

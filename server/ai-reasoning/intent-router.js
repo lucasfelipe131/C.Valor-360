@@ -44,11 +44,16 @@ const greetingOrThanks=/^\s*(?:val[, ]+)?(?:(?:muito\s+)?(?:oi+|ola|opa|e\s*ai|e
 // "me fala sobre ele" continua sendo pergunta do produtor.
 const narrativeShape=/^(?:me\s+)?(?:fala|fale|falar|conta|conte|contar|comenta|comente|comentar|diga|diz|explana)\s+(?:um pouco\s+)?(?:sobre|de|do|da|a respeito de)\s+\S/
 const currentMoment=/\b(?:hoje|amanha|agora|atual(?:mente)?|previsao|proxim[oa]s? (?:dias|semana|horas)|esta semana|nesta semana|fim de semana|ontem|semana que vem|nos proximos)\b/
+// Open questions outside agronomy must not become producer-fact queries just
+// because the side panel has a producer selected. Ambiguous account fields and
+// pronouns still stay on the scoped path; live data/tools take precedence below.
+const openGeneralQuestion=/^(?:(?:val[, ]+)?(?:me\s+)?(?:por que|porque|como|quando|onde|quem|qual|quais|ajude a|ajuda a|escreva|escreve|crie|cria|traduza|traduz))\b/
+const accountFieldReference=/\b(?:perfil|comportament\w*|area|hectares?|ha|produtividade|culturas?|saldo|estoque|compromiss\w*|historico|pendenc\w*|decisor|decide|compr\w*|objec\w*|plantad\w*|plantou|comercializ\w*|vendeu|entreg\w*|precis\w*|necessidad\w*|renda|fatur\w*|divida|credito|mercado|commodity|commodities)\b/
 
 // Cumprimento colado a pergunta conceitual ("Oi val, o que e WASDE?") nao muda o destino porque ha um
 // produtor selecionado: o prefixo de saudacao/vocativo sai antes do teste de forma definicional.
 const greetingPrefix=/^\s*(?:(?:oi+|ola|opa|e\s*ai|eae|hey|hi|hello|bom\s*dia|boa\s*tarde|boa\s*noite|tudo\s*bem|tudo\s*bom)[\s!.,]*)+(?:val[\s!.,]*)?/i
-function semanticGeneralConceptIntent(source=''){
+function semanticGeneralConceptIntent(source='',allowOpenQuestion=true){
  const folded=fold(source)
  if(greetingOrThanks.test(folded))return 'ASK_GENERAL'
  const question=folded.replace(greetingPrefix,'')
@@ -56,6 +61,7 @@ function semanticGeneralConceptIntent(source=''){
  if(/\b(?:ureia|nitrogenio|cigarrinha|lagarta|inseticida|herbicida|fungicida)\b/.test(question)&&!contextualReference.test(question)&&!individualReference.test(question))return 'ASK_GENERAL'
  if(definitionalShape.test(question)&&!contextualReference.test(question))return 'ASK_GENERAL'
  if(narrativeShape.test(question)&&!contextualReference.test(question)&&!individualReference.test(question))return 'ASK_GENERAL'
+ if(allowOpenQuestion&&openGeneralQuestion.test(question)&&!contextualReference.test(question)&&!individualReference.test(question)&&!accountFieldReference.test(question))return 'ASK_GENERAL'
  return ''
 }
 
@@ -123,7 +129,7 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
  const semanticCurrent=semanticCurrentDataIntent(source)
  const semanticCommand=semanticCommandIntent(source,hasClient)
  const semanticClientIdentity=isCurrentClientIdentityRequest(source)?'ASK_CLIENT':''
- const semanticGeneral=generalTopicClarification(source)&&currentDataIntents.has(hinted)?'':semanticGeneralConceptIntent(source)
+ const semanticGeneral=generalTopicClarification(source)&&currentDataIntents.has(hinted)?'':semanticGeneralConceptIntent(source,!toolHint&&!currentDataIntents.has(hinted))
  const folded=fold(source)
  const individual=hasClient||individualReference.test(folded)
  // Hints may come from an older client. They cannot downgrade an explicit
