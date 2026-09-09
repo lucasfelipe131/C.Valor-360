@@ -1,6 +1,7 @@
 import React,{useEffect,useRef,useState} from 'react'
 import {MousePointer2,Layers,Map as MapIcon,Focus,HelpCircle,X,MapPin,Maximize,Minimize} from 'lucide-react'
-import {searchMunicipalities,localityBounds} from '../../lib/map-localities'
+import {searchMunicipalities,localityBounds,loadAdministrativeReferences} from '../../lib/map-localities'
+import {cadastralDetails} from '../../lib/cadastral-map'
 import CadastralLayers from './CadastralLayers'
 import {stateAtPoint} from '../../lib/cadastral-viewport'
 import 'leaflet/dist/leaflet.css'
@@ -18,13 +19,16 @@ const routePoint=value=>validLocation(Array.isArray(value)?{lat:value[0],lng:val
 
 export default function SatelliteMap({
  center=null,zoom=15,pins=[],polygons=[],route=[],routes=[],draft=[],fit=true,onClick,onPinClick,selectedId=null,
- height=280,className='',label='Mapa de satélite',interactive=true,controls=true,editorTools=null,editorActions=[],footerTools=null,adaptive=false,onNavigateMap,onPanelChange,onDraftPointClick=null
+ height=280,className='',label='Mapa de satélite',interactive=true,controls=true,editorTools=null,editorActions=[],footerTools=null,adaptive=false,onNavigateMap,onPanelChange,onDraftPointClick=null,clientId=null,onUseReference=null,adoptionDisabled=false
 }){
  const shell=useRef(null)
  const container=useRef(null)
  const mapRef=useRef(null)
  const leafletRef=useRef(null)
  const layersRef=useRef(null)
+ const baseRenderRef=useRef(null)
+ const draftRenderRef=useRef({vertices:[],line:null,area:null})
+ const referenceRenderRef=useRef(new Map())
  const clickRef=useRef(onClick)
  const pinClickRef=useRef(onPinClick)
  const renderRef=useRef(()=>{})
@@ -51,14 +55,15 @@ export default function SatelliteMap({
  const [showStates,setShowStates]=useState(true),[placeNotice,setPlaceNotice]=useState('')
  const matches=searchMunicipalities(places,placeQuery,placeUf)
  useEffect(()=>{
-  const controller=new AbortController();const timer=setTimeout(()=>controller.abort(),15000)
+  let active=true
   setPlaceStatus('loading')
-  Promise.all(['/geo/municipalities.json','/geo/states.geojson'].map(url=>fetch(url,{signal:controller.signal}).then(response=>{if(!response.ok)throw new Error('reference unavailable');return response.json()}))).then(([rows,geo])=>{
-   if(!Array.isArray(rows)||geo?.features?.length!==27)throw new Error('invalid reference')
-   setPlaces(rows);setStateGeo(geo);setPlaceStatus('ready')
-  }).catch(()=>{if(!controller.signal.aborted)setPlaceStatus('error');else if(controller.signal.reason?.name==='AbortError')setPlaceStatus('error')}).finally(()=>clearTimeout(timer))
-  return()=>{clearTimeout(timer);controller.abort('unmount')}
+  loadAdministrativeReferences().then(({rows,geo})=>{
+   if(active){setPlaces(rows);setStateGeo(geo);setPlaceStatus('ready')}
+  }).catch(()=>{if(active)setPlaceStatus('error')})
+  return()=>{active=false}
  },[placeAttempt])
+ const editing=className.includes('is-editing')
+ const showHolderLabels=(viewport?.zoom||0)>=13
  useEffect(()=>{
   const map=mapRef.current,L=leafletRef.current
   if(mapStatus!=='ready'||!map||!L||!stateGeo||!showStates)return
@@ -68,9 +73,19 @@ export default function SatelliteMap({
  useEffect(()=>{
   const map=mapRef.current,L=leafletRef.current
   if(mapStatus!=='ready'||!map||!L)return
-  const layers=referenceLayers.map(reference=>L.geoJSON(reference.geojson,{interactive:false,style:{color:reference.color,weight:2,fillOpacity:.04,dashArray:'6 3'},onEachFeature:(feature,shape)=>shape.bindTooltip(escapeHtml(`${reference.type} • ${Object.entries(feature.properties).filter(([key])=>key!=='_referenceIndex').slice(0,3).map(([key,value])=>`${key}: ${value}`).join(' • ')}`),{sticky:true})}).addTo(map))
-  return()=>layers.forEach(layer=>{if(map.hasLayer(layer))map.removeLayer(layer)})
- },[referenceLayers,mapStatus])
+  const rendered=referenceRenderRef.current
+  for(const [id,entry] of rendered){if(!referenceLayers.some(reference=>reference.id===id&&reference.geojson===entry.geojson&&entry.editing===editing&&entry.labels===showHolderLabels)){map.removeLayer(entry.layer);rendered.delete(id)}}
+  for(const reference of referenceLayers){
+   if(rendered.has(reference.id))continue
+   const layer=L.geoJSON(reference.geojson,{interactive:!editing,bubblingMouseEvents:false,smoothFactor:1,style:{color:reference.color,weight:2,fillOpacity:.04,dashArray:'6 3'},onEachFeature:(feature,shape)=>{
+    const details=cadastralDetails(feature),holder=details.holder||'Titular não informado na fonte'
+    const title=`${reference.type} · ${details.registry||details.code||details.name||'Limite de referência'}`
+    shape.bindTooltip(`${escapeHtml(title)}<br>${escapeHtml(holder)}`,{permanent:reference.type==='Matrícula'&&Boolean(details.holder)&&showHolderLabels,direction:'center',className:'val-registry-label'})
+    if(!editing)shape.bindPopup?.(`<strong>${escapeHtml(title)}</strong><br>${escapeHtml(holder)}<br>${escapeHtml(reference.name)}${reference.official?'':reference.registered?' · cadastro do usuário':' · declarado no arquivo'}`)
+   }}).addTo(map)
+   rendered.set(reference.id,{layer,geojson:reference.geojson,editing,labels:showHolderLabels})
+  }
+ },[referenceLayers,mapStatus,editing,showHolderLabels])
  useEffect(()=>{
   setMunicipalData(null)
   if(!municipality){setMunicipalStatus('idle');return}
@@ -108,13 +123,16 @@ export default function SatelliteMap({
 
  clickRef.current=onClick
  pinClickRef.current=onPinClick
+ const baseSignature=JSON.stringify({pins,polygons,route,routes,selectedId,interactive,clickable:Boolean(onPinClick)})
 
  renderRef.current=()=>{
   const L=leafletRef.current;const map=mapRef.current;const group=layersRef.current
   if(!L||!map||!group)return
-  group.clearLayers()
-  const everything=[]
-  let selectedPin=null
+  let everything=baseRenderRef.current?.everything||[]
+  let selectedPin=baseRenderRef.current?.selectedPin||null
+  if(baseRenderRef.current?.signature!==baseSignature){
+  group.clearLayers();draftRenderRef.current={vertices:[],line:null,area:null}
+  everything=[];selectedPin=null
   for(const pin of pins){
    const point=validLocation(pin);if(!point)continue
    everything.push([point.lat,point.lng])
@@ -145,7 +163,7 @@ export default function SatelliteMap({
    if(ring.length<3)continue
    const coordinates=ring.map(point=>[point.lat,point.lng])
    everything.push(...coordinates)
-   const shape=L.polygon(coordinates,{color:polygon.color||'#c8f25e',weight:2,fillColor:polygon.color||'#c8f25e',fillOpacity:.18}).addTo(group)
+   const shape=L.polygon(coordinates,{color:polygon.color||'#c8f25e',weight:2,fillColor:polygon.color||'#c8f25e',fillOpacity:.18,interactive:false}).addTo(group)
    if(polygon.label)shape.bindTooltip(escapeHtml(polygon.label),{permanent:true,direction:'center',className:'val-map-label'})
   }
   const routeLayers=[...(route.length?[{points:route,kind:'planned',color:'#00c896'}]:[]),...routes]
@@ -164,13 +182,22 @@ export default function SatelliteMap({
    for(const value of line.points||[]){const point=routePoint(value);if(point)segment.push([point.lat,point.lng]);else drawSegment()}
    drawSegment()
   }
-  if(draft.length){
-   const coordinates=draft.map(validLocation).filter(Boolean).map(point=>[point.lat,point.lng])
-   everything.push(...coordinates)
-   coordinates.forEach((coordinate,index)=>{const vertex=L.circleMarker(coordinate,{radius:10,color:'#fff',weight:2,fillColor:'#2d8cff',fillOpacity:1,bubblingMouseEvents:false}).addTo(group);vertex.bindTooltip(`Ponto ${index+1}${onDraftPointClick?' • toque para apagar':''}`);if(onDraftPointClick)vertex.on('click',()=>draftPointRef.current?.(index))})
-   if(coordinates.length>1)L.polyline(coordinates,{color:'#2d8cff',weight:2}).addTo(group)
-   if(coordinates.length>2)L.polygon(coordinates,{color:'#2d8cff',weight:1,fillColor:'#2d8cff',fillOpacity:.12,dashArray:'4 4'}).addTo(group)
+  baseRenderRef.current={signature:baseSignature,everything,selectedPin}
   }
+  const drawing=draftRenderRef.current,coordinates=draft.map(validLocation).filter(Boolean).map(point=>[point.lat,point.lng])
+  while(drawing.vertices.length>coordinates.length)group.removeLayer(drawing.vertices.pop())
+  coordinates.forEach((coordinate,index)=>{
+   let vertex=drawing.vertices[index]
+   if(!vertex){vertex=L.circleMarker(coordinate,{radius:10,color:'#fff',weight:2,fillColor:'#2d8cff',fillOpacity:1,bubblingMouseEvents:false}).addTo(group);vertex.on('click',()=>draftPointRef.current?.(index));drawing.vertices.push(vertex)}
+   else if(vertex._valCoordinate!==coordinate.join(','))vertex.setLatLng(coordinate)
+   vertex._valCoordinate=coordinate.join(',');vertex.bindTooltip(`Ponto ${index+1}${onDraftPointClick?' • toque para apagar':''}`)
+  })
+  for(const [key,min,make,options] of [['line',2,'polyline',{color:'#2d8cff',weight:2}],['area',3,'polygon',{color:'#2d8cff',weight:1,fillColor:'#2d8cff',fillOpacity:.12,dashArray:'4 4'}]]){
+   if(coordinates.length<min){if(drawing[key])group.removeLayer(drawing[key]);drawing[key]=null}
+   else if(drawing[key])drawing[key].setLatLngs(coordinates)
+   else drawing[key]=L[make](coordinates,{...options,interactive:false}).addTo(group)
+  }
+  everything=[...everything,...coordinates]
   const start=validLocation(center)
   fitRef.current=()=>{
    if(everything.length>1)map.fitBounds(L.latLngBounds(everything),{padding:[44,44],maxZoom:17})
@@ -196,6 +223,7 @@ export default function SatelliteMap({
   let map=null
   setMapStatus('loading')
   initialFitRef.current=false
+  baseRenderRef.current=null;referenceRenderRef.current=new Map()
   selectionRef.current=null
   import('leaflet').then(module=>{
    if(disposed||!container.current)return
@@ -204,7 +232,7 @@ export default function SatelliteMap({
    const start=validLocation(center)
    map=L.map(container.current,{
     attributionControl:true,zoomControl:interactive,dragging:interactive,scrollWheelZoom:interactive,
-    doubleClickZoom:false,touchZoom:interactive,boxZoom:false,keyboard:interactive
+    doubleClickZoom:false,touchZoom:interactive,boxZoom:false,keyboard:interactive,preferCanvas:true
    })
    map.setView(start?[start.lat,start.lng]:BRAZIL_VIEW.center,start?zoom:BRAZIL_VIEW.zoom)
    layersRef.current=L.layerGroup().addTo(map)
@@ -230,7 +258,7 @@ export default function SatelliteMap({
   if(mapStatus!=='ready'||!map||!L)return
   let disposed=false;let errors=0;let timer=null
   const tiles=basemap==='satellite'?SATELLITE_TILES:STREET_TILES
-  const layer=L.tileLayer(tiles.url,{maxZoom:tiles.maxZoom,attribution:tiles.attribution})
+  const layer=L.tileLayer(tiles.url,{maxZoom:tiles.maxZoom,attribution:tiles.attribution,updateWhenIdle:true,keepBuffer:3})
   const loading=()=>{
    errors=0;clearTimeout(timer);setTileStatus('loading')
    timer=setTimeout(()=>{if(!disposed)setTileStatus('error')},20000)
@@ -242,7 +270,7 @@ export default function SatelliteMap({
   return()=>{disposed=true;clearTimeout(timer);layer.off();if(map.hasLayer(layer))map.removeLayer(layer)}
  },[basemap,tileAttempt,mapStatus])
 
- const signature=JSON.stringify({pins,polygons,route,routes,draft,center,fit,zoom,selectedId})
+ const signature=JSON.stringify({baseSignature,draft,center,fit,zoom})
  useEffect(()=>{renderRef.current()},[signature,Boolean(onPinClick),Boolean(onDraftPointClick)])
 
  useEffect(()=>{
@@ -288,7 +316,7 @@ export default function SatelliteMap({
    </div>
    <div className="val-map-worktools">
     {editorTools}
-    <div hidden={railPanel!=='layers'}><CadastralLayers panelOnly onChange={setReferenceLayers} viewport={viewport} onStatusChange={setCadastralNotice}/></div>
+    <div hidden={railPanel!=='layers'}><CadastralLayers panelOnly onChange={setReferenceLayers} viewport={viewport} onStatusChange={setCadastralNotice} clientId={clientId} adoptionDisabled={adoptionDisabled} onFocusReference={geojson=>{const L=leafletRef.current;if(L&&mapRef.current)mapRef.current.fitBounds(L.geoJSON(geojson).getBounds(),{padding:[44,44],maxZoom:17})}} onUseReference={onUseReference?(...args)=>{if(onUseReference(...args)!==false)setRailPanel(null)}:null}/></div>
     {railPanel==='boundaries'&&<section className="val-map-filter-panel"><header><strong>Divisas no mapa</strong><button type="button" aria-label="Fechar filtros de divisas" onClick={()=>setRailPanel(null)}><X size={16}/></button></header><label><input type="checkbox" checked={showStates} onChange={e=>setShowStates(e.target.checked)}/>Divisas estaduais</label><label><input type="checkbox" disabled={!municipality} checked={showMunicipality} onChange={e=>setShowMunicipality(e.target.checked)}/>Divisa do município selecionado</label><p>{municipality?`${municipality[1]} — ${municipality[2]}`:'Selecione um município na busca.'}</p><p>Referência administrativa IBGE; não define limites da propriedade.</p></section>}
     {railPanel==='help'&&<section className="val-map-filter-panel"><header><strong>Como mapear</strong><button type="button" aria-label="Fechar ajuda" onClick={()=>setRailPanel(null)}><X size={16}/></button></header><p>1. Busque o município e escolha a safra.</p><p>2. Use Sede para marcar a localização ou Talhão / cultura para tocar nos cantos da área produtiva.</p><p>3. Toque em um ponto azul para apagá-lo. Conclua a área e salve.</p><p>Safras e culturas filtram o mesmo talhão físico. Camadas exibe CAR, SIGEF e arquivos de matrícula.</p></section>}
    </div>

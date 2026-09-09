@@ -1,4 +1,4 @@
-import React,{useEffect,useRef,useState} from 'react'
+import React,{useEffect,useMemo,useRef,useState} from 'react'
 import {SlidersHorizontal,Check,Crosshair,LocateFixed,MapPin,PencilRuler,Plus,Save,Trash2,Undo2,X} from 'lucide-react'
 import {cropColor,formatNumber} from '../lib/producer-display'
 import {SEASON_CROPS,seasonCode,validSeasonCode} from '../lib/producer-seasons'
@@ -85,12 +85,16 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
  const onMapClick=point=>{
   if(busy)return
   if(mode==='pin'){update({location:point});setMode('')}
-  else if(mode==='draw')setDraft(current=>[...current,point])
+  else if(mode==='draw'){
+   if(draft.length>=500){setState(current=>({...current,error:'Limite de 500 pontos. Conclua a área ou apague um ponto antes de continuar.'}));return}
+   setDraft(current=>[...current,point])
+  }
  }
+ const draftMetrics=useMemo(()=>({valid:validProductiveRing(draft),area:draft.length>=3?polygonAreaHa(draft):null}),[draft])
  const finishDraft=()=>{
-  if(!validProductiveRing(draft)){setState(current=>({...current,error:'O contorno precisa de pelo menos três cantos distintos e não pode cruzar sobre si mesmo.'}));return}
+  if(!draftMetrics.valid){setState(current=>({...current,error:'O contorno precisa de 3 a 500 cantos distintos e não pode cruzar sobre si mesmo.'}));return}
   if(!drawing.crop||!validSeasonCode(drawing.season)){setState(current=>({...current,error:'Escolha a cultura e informe o nome da safra (2 a 30 caracteres).'}));return}
-  const values={...drawing,season:mapSeason,points:draft,areaHa:polygonAreaHa(draft).toFixed(2)}
+  const values={...drawing,season:mapSeason,points:draft,areaHa:draftMetrics.area.toFixed(2)}
   if(editKey)updateField(editKey,values);else addField(values)
   setEditKey(null)
   setDraft([]);setMode('')
@@ -131,7 +135,14 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
 
  const visible=form.fields.filter(field=>!cropFilter||field.crop===cropFilter)
  const mapped=visible.filter(field=>field.points.length>=3&&field.key!==editKey)
- const draftArea=draft.length>=3?formatHectares(polygonAreaHa(draft)):''
+ const draftArea=draftMetrics.area!==null?formatHectares(draftMetrics.area):''
+ const useReference=(reference,kind)=>{
+  if(busy)return false
+  if(draft.length&&!window.confirm('Descartar os pontos ainda não concluídos e usar o limite selecionado?'))return false
+  setEditKey(null);setDraft(reference.points);setDrawing({crop:'',season:mapSeason,productivityTarget:''});setMode('draw');setToolsOpen(true)
+  setState(current=>({...current,error:'',notice:`${kind==='guide'?'Desenhe a área produtiva usando o limite como guia':'Contorno carregado para revisão'} · ${reference.source}. Escolha cultura e safra; confira a área produtiva antes de concluir e salvar.`}))
+  return true
+ }
 
  const seasonCodes=[...new Set(['2627V','2727I',mapSeason,...(savedProfile.current?.fields||[]).flatMap(f=>(f.seasons||[]).map(row=>row.season)),...(savedProfile.current?.fields||[]).map(f=>f.season)].filter(Boolean))].sort().reverse()
  const changeMapSeason=code=>{
@@ -158,7 +169,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
     <button type="button" disabled={busy} className={mode==='draw'?'active':''} onClick={()=>{setEditKey(null);setMode(mode==='draw'?'':'draw');setDraft([])}}><PencilRuler size={16}/>{mode==='draw'?'Desenhando…':'Circular área produtiva'}</button>
    </div>
  <div className="productive-map-filters"><label>Cultura no mapa<select value={cropFilter} onChange={e=>setCropFilter(e.target.value)}><option value="">Todas</option>{[...new Set(form.fields.map(f=>f.crop).filter(Boolean))].map(crop=><option key={crop}>{crop}</option>)}</select></label><label>Safra no mapa<select disabled={busy} value={mapSeason} onChange={e=>changeMapSeason(e.target.value)}>{seasonCodes.map(season=><option key={season}>{season}</option>)}</select></label><label>Nova safra<input value={newMapSeason} maxLength={30} placeholder="Ex.: Inverno 2029" onChange={e=>setNewMapSeason(e.target.value.toUpperCase())}/></label><button type="button" disabled={busy||!validSeasonCode(newMapSeason)} onClick={()=>{changeMapSeason(seasonCode(newMapSeason));setNewMapSeason('')}}>Criar / abrir safra</button></div>
- {mode==='draw'&&<div className="productive-drawing"><label>Cultura<select disabled={busy} value={drawing.crop} onChange={e=>setDrawing(current=>({...current,crop:e.target.value}))}><option value="">Selecionar</option>{SEASON_CROPS.map(crop=><option key={crop}>{crop}</option>)}</select></label><label>Safra<input readOnly value={mapSeason}/></label><label>Produtividade projetada (sc/ha)<input disabled={busy} type="number" min="0" max="1000" step="any" value={drawing.productivityTarget} placeholder="Não informada" onChange={e=>setDrawing(current=>({...current,productivityTarget:e.target.value}))}/></label><p>{draft.length} pontos · Área aproximada: {draftArea||'—'} · Potencial: {formatNumber(validProductiveRing(draft)?fieldProduction({...drawing,areaHa:polygonAreaHa(draft)}):null)} sc. Toque em um ponto azul para apagá-lo.</p><div className="property-fields-draw"><button type="button" disabled={busy||draft.length<3} onClick={finishDraft}><Check size={16}/>Concluir área</button><button type="button" disabled={busy||!draft.length} onClick={()=>setDraft(current=>current.slice(0,-1))}><Undo2 size={16}/>Desfazer ponto</button><button type="button" disabled={busy} onClick={()=>{setDraft([]);setEditKey(null);setMode('')}}><X size={16}/>Cancelar desenho</button></div></div>}
+ {mode==='draw'&&<div className="productive-drawing"><label>Cultura<select disabled={busy} value={drawing.crop} onChange={e=>setDrawing(current=>({...current,crop:e.target.value}))}><option value="">Selecionar</option>{SEASON_CROPS.map(crop=><option key={crop}>{crop}</option>)}</select></label><label>Safra<input readOnly value={mapSeason}/></label><label>Produtividade projetada (sc/ha)<input disabled={busy} type="number" min="0" max="1000" step="any" value={drawing.productivityTarget} placeholder="Não informada" onChange={e=>setDrawing(current=>({...current,productivityTarget:e.target.value}))}/></label><p>{draft.length} pontos · Área aproximada: {draftArea||'—'} · Potencial: {formatNumber(draftMetrics.valid?fieldProduction({...drawing,areaHa:draftMetrics.area}):null)} sc. Toque em um ponto azul para apagá-lo.</p><div className="property-fields-draw"><button type="button" disabled={busy||!draftMetrics.valid} onClick={finishDraft}><Check size={16}/>Concluir área</button><button type="button" disabled={busy||!draft.length} onClick={()=>setDraft(current=>current.slice(0,-1))}><Undo2 size={16}/>Desfazer ponto</button><button type="button" disabled={busy} onClick={()=>{setDraft([]);setEditKey(null);setMode('')}}><X size={16}/>Cancelar desenho</button></div></div>}
  <button type="button" className="is-primary" disabled={busy||!dirty||mode==='draw'} onClick={save}><Save size={16}/>Salvar propriedade</button>
  </>}
  {state.error&&<p role="alert">{state.error}</p>}{state.notice&&<p role="status">{state.notice}</p>}
@@ -179,6 +190,10 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
   {mode==='draw'&&<p className="property-fields-hint" role="status">Toque nos cantos do talhão, um a um. {draft.length} ponto{draft.length===1?'':'s'} marcado{draft.length===1?'':'s'}{draftArea?` • ${draftArea}`:''}</p>}
 
   <SatelliteMap
+   key={`${client?.id||'none'}:${selectedPropertyId||'default'}`}
+   clientId={client?.id}
+   onUseReference={useReference}
+   adoptionDisabled={busy}
    center={form.location}
    pins={form.location?[{...form.location,label:'',title:'Sede'}]:[]}
    polygons={mapped.map(field=>({points:field.points,color:cropColor(field.crop),label:`${field.name} • ${field.crop||'Cultura não informada'} • ${field.season||'Safra não informada'}`}))}

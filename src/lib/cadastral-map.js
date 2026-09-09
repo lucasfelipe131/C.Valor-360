@@ -18,12 +18,32 @@ export function normalizeCadastralGeoJSON(input){
     return points
    })
   }
+  if(geometry.type==='MultiPolygon'&&(!Array.isArray(geometry.coordinates)||!geometry.coordinates.length))throw new Error('Polígono vazio.')
   const coordinates=geometry.type==='Polygon'?polygon(geometry.coordinates):geometry.coordinates.map(polygon)
   const properties={}
-  for(const [key,value] of Object.entries(feature.properties||{}).slice(0,40))if(['string','number','boolean'].includes(typeof value))properties[key.slice(0,80)]=String(value).slice(0,300)
+  for(const [key,value] of Object.entries(feature.properties||{}).slice(0,40))if(!['__proto__','prototype','constructor'].includes(key)&&['string','number','boolean'].includes(typeof value))properties[key.slice(0,80)]=String(value).slice(0,300)
   return {type:'Feature',geometry:{type:geometry.type,coordinates},properties:{...properties,_referenceIndex:index+1}}
  })
  return {type:'FeatureCollection',features:normalized}
+}
+const folded=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]/g,'')
+export function cadastralDetails(feature){
+ const entries=Object.entries(feature.properties||{})
+ const pick=keys=>String(entries.find(([key,value])=>keys.includes(folded(key))&&String(value).trim())?.[1]||'').trim()
+ return {
+  registry:pick(['matricula','registromatricula','numeromatricula','nummatricula','registry','number']),
+  holder:pick(['titular','nometitular','proprietario','nomeproprietario','nomeproprietarios','ownername','owner','proprietarionome']),
+  name:pick(['nome','name','label','propertyname','nomeimovel','nomearea']),
+  code:pick(['codigo','codimovel','propertycode','parcelcode']),
+ }
+}
+export function referenceParts(layer){
+ return layer.geojson.features.flatMap(feature=>(feature.geometry.type==='Polygon'?[feature.geometry.coordinates]:feature.geometry.coordinates).map((rings,index,all)=>({
+  id:`${layer.id}:${feature.properties._referenceIndex||layer.geojson.features.indexOf(feature)}:${index}`,
+  layer,feature:{...feature,geometry:{type:'Polygon',coordinates:rings}},
+  label:`${cadastralDetails(feature).name||cadastralDetails(feature).registry||cadastralDetails(feature).code||`Contorno ${feature.properties._referenceIndex||1}`}${all.length>1?` · parte ${index+1}/${all.length}`:''}`,
+  hasHoles:rings.length>1,
+ })))
 }
 export function filterCadastral(layer,query=''){
  const normalize=value=>String(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()

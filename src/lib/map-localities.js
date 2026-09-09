@@ -10,3 +10,15 @@ export function localityBounds(row){
  const b=row?.[3]
  return Array.isArray(b)&&b.length===4&&b.every(Number.isFinite)&&b[0]<b[2]&&b[1]<b[3]?[[b[0],b[1]],[b[2],b[3]]]:null
 }
+// Only public, versioned geographic references are shared across map instances.
+let administrativePromise=null
+export function loadAdministrativeReferences(fetcher=fetch){
+ if(!administrativePromise){
+  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000)
+  administrativePromise=Promise.all(['/geo/municipalities.json','/geo/states.geojson'].map(url=>fetcher(url,{signal:controller.signal}).then(response=>{if(!response.ok)throw new Error('Referência indisponível.');return response.json()}))).then(([rows,geo])=>{
+   if(!Array.isArray(rows)||geo?.features?.length!==27)throw new Error('Referência inválida.')
+   return {rows,geo}
+  }).catch(error=>{administrativePromise=null;throw error}).finally(()=>clearTimeout(timer))
+ }
+ return administrativePromise
+}

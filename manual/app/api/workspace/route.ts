@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { ensureAccessSchema, sessionFromRequest } from "../../lib/access";
 import { publishWorkspaceToValor } from "../../lib/valor360";
 import { authenticatedValor360OwnerForWorkspace } from "../../lib/valor360-workspace-owner";
+import { authorizeProducerReport, ProducerReportAccessError } from "../../lib/producer-report-scope";
+import { producerMapRegistrations } from "../../lib/producer-map-registrations";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -41,6 +43,12 @@ export async function GET(request: NextRequest) {
     const session = await sessionFromRequest(request);
     if (!session) return NextResponse.json({ error: "Sessão expirada." }, { status: 401 });
     const pool = await ensureWorkspaceSchema();
+    if (request.nextUrl.searchParams.get("scope") === "producer-map") {
+      const owner = authenticatedValor360OwnerForWorkspace(session, session.user.id);
+      const producer = await authorizeProducerReport(pool, session.tenantId, owner, request.nextUrl.searchParams.get("clientId"));
+      const mapped = await pool.query("SELECT producers, updated_at FROM app_workspace_data WHERE tenant_id=$1 AND workspace_id=$2 LIMIT 1", [session.tenantId, session.user.id]);
+      return noStore(NextResponse.json({registrations:producerMapRegistrations(mapped.rows[0]?.producers,producer),updatedAt:mapped.rows[0]?.updated_at??null}));
+    }
     const result = await pool.query(
       'SELECT producers, soil_analyses AS "soilAnalyses", professional_profile AS "professionalProfile", updated_at AS "updatedAt" ' +
       "FROM app_workspace_data WHERE tenant_id = $1 AND workspace_id = $2 LIMIT 1",
@@ -56,6 +64,7 @@ export async function GET(request: NextRequest) {
       storage: "postgresql",
     }));
   } catch (error) {
+    if (error instanceof ProducerReportAccessError) return noStore(NextResponse.json({error:error.message},{status:error.status}));
     console.error("workspace:get", error);
     return NextResponse.json({ error: "Não foi possível carregar o backup da conta." }, { status: 500 });
   }

@@ -27,6 +27,29 @@ test('unmount prevents delayed fetches and source failure never becomes a cached
  loader.update(view);loader.cancel();await tick();assert.equal(calls,0)
  loader.update(view);await tick();loader.update(view);await tick();assert.equal(calls,2);loader.cancel()
 })
+test('small pans reuse buffered results; refresh and failed requests keep old geometry visible',async()=>{
+ const requests=[],data=[],statuses=[]
+ const loader=createCadastralLoader({delay:0,onData:d=>data.push(d),onStatus:s=>statuses.push(s),fetcher:(url,options)=>{const d=deferred();requests.push({...d,url,options});return d.promise}})
+ try{
+  loader.update(view);await tick()
+  const bounds=new URL(requests[0].url,'https://val.test').searchParams.get('bbox').split(',').map(Number)
+  assert.ok(bounds[0]<view.bbox[0]&&bounds[2]>view.bbox[2])
+  requests[0].resolve({ok:true,json:async()=>payload('buffered')});await tick()
+  loader.update({...view,lng:-53.99,bbox:[-54.09,-28.1,-53.89,-27.9]});await tick()
+  assert.equal(requests.length,1);assert.equal(data.at(-1).id,'buffered')
+  loader.update(view,{refresh:true});await tick();assert.equal(data.at(-1).id,'buffered')
+  requests[1].resolve({ok:false,json:async()=>({error:'offline'})});await tick()
+  assert.equal(statuses.at(-1),'error');assert.equal(data.at(-1).id,'buffered')
+  loader.update({...view,uf:'SC'});assert.equal(data.at(-1),null)
+ }finally{loader.cancel()}
+})
+test('limited and partly failed responses cannot hide new parcels behind a broad cached extent',async()=>{
+ for(const problem of [{limited:true},{failedSources:1}]){
+  let calls=0
+  const loader=createCadastralLoader({delay:0,onData:()=>{},onStatus:()=>{},fetcher:async()=>({ok:true,json:async()=>{calls++;return {...payload('partial'),sigef:{status:'available',features:[],...problem}}}})})
+  loader.update(view);await tick();loader.update(view);await tick();loader.cancel();assert.equal(calls,2)
+ }
+})
 test('viewport uses actual state geometry and rejects country-wide or malformed queries',()=>{
  const states=JSON.parse(readFileSync('public/geo/states.geojson','utf8'))
  assert.equal(stateAtPoint({lat:-28.4,lng:-54.9},states),'RS')
