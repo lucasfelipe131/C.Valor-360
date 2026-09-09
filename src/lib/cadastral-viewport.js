@@ -27,28 +27,33 @@ export function officialReferenceLayers(payload){
 }
 // A fresh controller invalidates both delayed and in-flight requests, including
 // fetch implementations that complete after abort. Cache stays in this map only.
-export function createCadastralLoader({fetcher=fetch,onData,onStatus,delay=700}){
- let timer,controller,epoch=0
+export function createCadastralLoader({fetcher=fetch,onData,onStatus,delay=250}){
+ let timer,controller,epoch=0,lastUf=''
  const cache=new Map()
  const cancel=()=>{epoch++;clearTimeout(timer);controller?.abort()}
  return {
   cancel,
   update(view,{refresh=false}={}){
    cancel();const key=cadastralViewportKey(view),run=epoch
-   if(!key){onData(null);onStatus('idle');return}
-   const cached=cache.get(key)
-   if(!refresh&&cached&&Date.now()-cached.at<120000){onData(cached.data);onStatus('ready');return}
-   onData(null);onStatus('loading')
+   if(!key){onData(null);onStatus('idle');lastUf='';return}
+   const contains=(outer,inner)=>outer[0]<=inner[0]&&outer[1]<=inner[1]&&outer[2]>=inner[2]&&outer[3]>=inner[3]
+   const cached=[...cache.values()].reverse().find(item=>item.uf===view.uf&&Date.now()-item.at<120000&&contains(item.bounds,view.bbox))
+   if(!refresh&&cached){onData(cached.data);onStatus('ready');lastUf=view.uf;return}
+   // Keep the preceding reference visible during a pan, but never across UFs.
+   if(lastUf!==view.uf)onData(null)
+   lastUf=view.uf;onStatus('loading')
+   const [w,s,e,n]=view.bbox,padX=Math.min((e-w)*.25,(2-e+w)/2),padY=Math.min((n-s)*.25,(2-n+s)/2)
+   const bounds=[Math.max(-180,w-padX),Math.max(-90,s-padY),Math.min(180,e+padX),Math.min(90,n+padY)]
    timer=setTimeout(async()=>{
     controller=new AbortController()
     const timeout=setTimeout(()=>controller.abort(),25000)
     try{
-     const params=new URLSearchParams({lat:String(view.lat),lng:String(view.lng),uf:view.uf,bbox:view.bbox.join(',')})
+     const params=new URLSearchParams({lat:String(view.lat),lng:String(view.lng),uf:view.uf,bbox:bounds.join(',')})
      const response=await fetcher(`/api/geospatial/official-boundaries?${params}`,{signal:controller.signal})
      const data=await response.json()
      if(!response.ok)throw new Error(data.error||'Cadastros indisponíveis.')
      if(epoch!==run)return
-     if(data.car?.status!=='unavailable'&&data.sigef?.status!=='unavailable'){cache.set(key,{at:Date.now(),data});if(cache.size>20)cache.delete(cache.keys().next().value)}
+     if(['available','no_match'].includes(data.car?.status)&&['available','no_match'].includes(data.sigef?.status)&&!data.car?.limited&&!data.sigef?.limited&&!data.sigef?.failedSources){cache.set(key,{at:Date.now(),data,uf:view.uf,bounds});if(cache.size>20)cache.delete(cache.keys().next().value)}
      onData(data);onStatus('ready')
     }catch(error){if(epoch===run)onStatus('error',error.message)}finally{clearTimeout(timeout)}
    },refresh?0:delay)

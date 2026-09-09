@@ -15,6 +15,7 @@ const source=readFileSync(new URL('../src/components/map/SatelliteMap.jsx',impor
  .replace("from '../../lib/property-map'",`from '${new URL('../src/lib/property-map.js',import.meta.url).href}'`)
  .replace("from '../../lib/map-localities'",`from '${new URL('../src/lib/map-localities.js',import.meta.url).href}'`)
  .replace("from '../../lib/cadastral-viewport'",`from '${new URL('../src/lib/cadastral-viewport.js',import.meta.url).href}'`)
+ .replace("from '../../lib/cadastral-map'",`from '${new URL('../src/lib/cadastral-map.js',import.meta.url).href}'`)
  .replace("import('leaflet')",'globalThis.__valSatelliteTestLeaflet()')
 const compiled=await transformWithEsbuild(source,'SatelliteMap.jsx',{loader:'jsx',jsx:'transform'})
 const {default:SatelliteMap}=await import(`data:text/javascript;base64,${Buffer.from(compiled.code).toString('base64')}`)
@@ -22,7 +23,7 @@ const {default:SatelliteMap}=await import(`data:text/javascript;base64,${Buffer.
 function fakeLeaflet(){
  const state={maps:[],tiles:[],group:null}
  const evented=object=>Object.assign(object,{events:{},on(name,handler){this.events[name]=handler;return this},off(){this.events={};return this},emit(name,event){this.events[name]?.(event)}})
- const layer=(kind,points,options={})=>evented({kind,points,options,addTo(target){target.layers.add(this);return this},bindTooltip(){return this}})
+ const layer=(kind,points,options={})=>evented({kind,points,options,addTo(target){target.layers.add(this);return this},bindTooltip(){return this},setLatLng(point){this.points=point;return this},setLatLngs(points){this.points=points;return this}})
  const L={
   map(_node,options){
    const map=evented({options,layers:new Set(),views:[],fits:[],pans:[],currentZoom:4,center:{lat:-28,lng:-54},
@@ -33,7 +34,7 @@ function fakeLeaflet(){
     hasLayer(item){return this.layers.has(item)},removeLayer(item){this.layers.delete(item)},remove(){this.removed=true;this.layers.clear()}
    });state.maps.push(map);return map
   },
-  layerGroup(){const group={layers:new Set(),clearLayers(){this.layers.clear()},addTo(map){map.layers.add(this);return this}};state.group=group;return group},
+  layerGroup(){const group={layers:new Set(),clearLayers(){this.layers.clear()},removeLayer(layer){this.layers.delete(layer)},addTo(map){map.layers.add(this);return this}};state.group=group;return group},
   tileLayer(url,options){const tile=layer('tile',null,options);tile.url=url;state.tiles.push(tile);return tile},
   marker(point,options){
    const marker=layer('marker',point,options)
@@ -201,4 +202,21 @@ test('touching a draft vertex removes that point without adding a new map point'
  const removed=[],added=[]
  const app=await mountMap({draft:[{lat:-12,lng:-55},{lat:-12.01,lng:-55},{lat:-12,lng:-55.01}],onDraftPointClick:index=>removed.push(index),onClick:point=>added.push(point)})
  try{const vertices=app.layers('circle');assert.equal(vertices.length,3);assert.equal(vertices[1].options.bubblingMouseEvents,false);vertices[1].emit('click');assert.deepEqual(removed,[1]);assert.deepEqual(added,[])}finally{await app.dispose()}
+})
+
+test('drawing keeps existing parcels, pins and vertices alive and updates shapes in place',async()=>{
+ const initial=[{lat:-12,lng:-55},{lat:-12.01,lng:-55},{lat:-12.01,lng:-55.01}]
+ const app=await mountMap({pins,draft:initial,polygons:[{points:initial}],fit:false})
+ try{
+  const marker=app.layers('marker')[0],parcel=app.layers('polygon')[0],vertices=app.layers('circle'),line=app.layers('polyline')[0]
+  for(let i=1;i<=20;i++)await app.update({draft:[...initial,...Array.from({length:i},(_,n)=>({lat:-12.005+n*.00001,lng:-55.01}))]})
+  assert.equal(app.layers('marker')[0],marker);assert.equal(app.layers('polygon')[0],parcel)
+  assert.equal(app.layers('circle')[0],vertices[0]);assert.equal(app.layers('circle')[2],vertices[2]);assert.equal(app.layers('polyline')[0],line)
+  assert.equal(app.layers('circle').length,23)
+  await app.update({draft:[initial[0],initial[2]]})
+  assert.equal(app.layers('circle').length,2);assert.deepEqual(app.layers('circle')[1].points,[-12.01,-55.01])
+  assert.equal(app.layers('polygon').length,1);assert.equal(app.layers('polygon')[0],parcel)
+  assert.equal(app.state.maps[0].options.preferCanvas,true)
+  assert.equal(app.state.tiles[0].options.updateWhenIdle,true)
+ }finally{await app.dispose()}
 })
