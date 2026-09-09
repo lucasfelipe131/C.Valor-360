@@ -73,9 +73,9 @@ export function ValRealtimeConversationStage({
 export default function ValRealtimeConversation({
  disabled=false,responseText='',responseKey='',processing=false,onTranscript,onError,onStateChange,onMetrics,onStart,onExit,
  onFallbackPushToTalk,onFallbackText,realtimeContext,onRealtimeUserTranscript,onRealtimeAssistantTranscript,onRealtimeToolCall,
- onRealtimeMemoryReview,retryAfterSeconds=0,errorMessage='',canRetry=true,liveTranscript='',className='',autoStartKey=''
+ onRealtimeMemoryReview,onRealtimeContextSync,retryAfterSeconds=0,errorMessage='',canRetry=true,liveTranscript='',className='',autoStartKey=''
 }){
- const conversation=useNaturalRealtimeVoice({disabled,clientId:realtimeContext?.clientId||'',conversationId:realtimeContext?.conversationId||'',contextEpoch:realtimeContext?.contextEpoch??0,activeContext:realtimeContext?.activeContext||null,onUserTranscript:onRealtimeUserTranscript,onAssistantTranscript:onRealtimeAssistantTranscript,onToolCall:onRealtimeToolCall,onMemoryReview:onRealtimeMemoryReview,onError,onStateChange,onMetrics})
+ const conversation=useNaturalRealtimeVoice({disabled,clientId:realtimeContext?.clientId||'',conversationId:realtimeContext?.conversationId||'',contextEpoch:realtimeContext?.contextEpoch??0,activeContext:realtimeContext?.activeContext||null,onUserTranscript:onRealtimeUserTranscript,onAssistantTranscript:onRealtimeAssistantTranscript,onToolCall:onRealtimeToolCall,onMemoryReview:onRealtimeMemoryReview,onContextSync:onRealtimeContextSync,onError,onStateChange,onMetrics})
  const {state}=conversation
  const start=async()=>{
   onStart?.()

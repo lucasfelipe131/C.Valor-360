@@ -1167,7 +1167,7 @@ createServer((request,response)=>{
   const safeMessage=status<500||exception?.safeToRetry===true||exception?.exposeMessage===true?exception?.message:'Não foi possível processar a solicitação.'
   const retryAfterSeconds=Math.max(0,Math.min(600,Math.ceil(Number(exception?.retryAfterSeconds)||0)))
   if(retryAfterSeconds)response.setHeader('Retry-After',String(retryAfterSeconds))
-  json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception?.code?{code:String(exception.code).slice(0,100)}:{}),...(exception?.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{}),...(retryAfterSeconds?{retryAfterSeconds}:{})})
+  json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception?.code?{code:String(exception.code).slice(0,100)}:{}),...(exception?.code==='realtime_voice_context_epoch_mismatch'&&exception.currentContext?{currentContext:exception.currentContext}:{}),...(exception?.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{}),...(retryAfterSeconds?{retryAfterSeconds}:{})})
  })
 }).listen(port,'0.0.0.0',()=>console.log(`VALOR 360 disponível na porta ${port}`))
 

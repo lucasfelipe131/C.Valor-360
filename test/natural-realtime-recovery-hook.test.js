@@ -7,7 +7,7 @@ import useNaturalRealtimeVoice from '../src/hooks/useNaturalRealtimeVoice.js'
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no});return {promise,resolve,reject}}
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}})
 
-async function mountVoice({permissionQuery=async()=>({state:'granted'}),statusResponse=null,getMedia=null,usageResponse=null,onToolCall=null}={}){
+async function mountVoice({permissionQuery=async()=>({state:'granted'}),statusResponse=null,getMedia=null,usageResponse=null,onToolCall=null,sessionResponse=null}={}){
  const saved=new Map()
  const replace=(key,value)=>{saved.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,writable:true,configurable:true})}
  const requests=[],streams=[],audios=[],peers=[]
@@ -30,7 +30,7 @@ async function mountVoice({permissionQuery=async()=>({state:'granted'}),statusRe
   const payload=options.body&&String(path).startsWith('/api/')?JSON.parse(options.body):null
   requests.push({path:String(path),payload,signal:options.signal})
   if(path==='/api/v1/realtime-voice/status')return statusResponse?statusResponse():json({available:true,canRetry:true})
-  if(path==='/api/v1/realtime-voice/sessions'){sessionCount++;return json({sessionId:`voice-session-${sessionCount}`,clientSecret:'ek_mock',model:'test-model',callUrl:'https://voice.mock/realtime/calls',maxSessionSeconds:600,budget:{remainingUsd:24},context:{clientId:payload.clientId||null,conversationId:payload.conversationId,contextEpoch:payload.contextEpoch}},201)}
+  if(path==='/api/v1/realtime-voice/sessions'){sessionCount++;if(sessionResponse)return sessionResponse(payload);return json({sessionId:`voice-session-${sessionCount}`,clientSecret:'ek_mock',model:'test-model',callUrl:'https://voice.mock/realtime/calls',maxSessionSeconds:600,budget:{remainingUsd:24},context:{clientId:payload.clientId||null,conversationId:payload.conversationId,contextEpoch:payload.contextEpoch}},201)}
   if(path==='https://voice.mock/realtime/calls')return new Response('v=0\n',{status:200})
   if(String(path).endsWith('/usage'))return usageResponse?usageResponse(payload):json({accepted:true,remainingUsd:24,exhausted:false})
   if(String(path).endsWith('/turns'))return json({accepted:true,reconnectRequired:false})
@@ -182,5 +182,27 @@ test('real voice hook keeps working state while a governed tool is still running
   assert.equal(channel.sent.filter(event=>event.type==='response.create').length,1)
   await act(async()=>{channel.emit({type:'response.done',response:{id:'r2',status:'completed',usage:{}}})})
   assert.equal(app.voice.state.status,'LISTENING','terminada a ferramenta, a VAL volta a ouvir')
+ }finally{await app.dispose()}
+})
+
+
+test('voice recovery rejects a different producer, different conversation or malformed authoritative epoch without retrying',async()=>{
+ for(const patch of [{clientId:'another-producer'},{conversationId:'another-thread'},{contextEpoch:1.5}]){
+  const app=await mountVoice({sessionResponse:request=>json({code:'realtime_voice_context_epoch_mismatch',currentContext:{clientId:null,conversationId:request.conversationId,contextEpoch:2,...patch}},409)})
+  try{
+   const result=await app.start()
+   assert.equal(result.ok,false);assert.equal(app.sessionCount,1)
+   assert.equal(app.peers.length,0);assert.equal(app.streams.every(stream=>stream.track.stopped),true)
+   assert.equal(app.voice.state.microphoneActive,false)
+  }finally{await app.dispose()}
+ }
+})
+
+test('voice recovery attempts at most one epoch synchronization and stops if the server changes again',async()=>{
+ const app=await mountVoice({sessionResponse:request=>json({code:'realtime_voice_context_epoch_mismatch',currentContext:{clientId:null,conversationId:request.conversationId,contextEpoch:request.contextEpoch+1}},409)})
+ try{
+  const result=await app.start()
+  assert.equal(result.ok,false);assert.equal(app.sessionCount,2);assert.equal(app.microphoneCalls,1)
+  assert.equal(app.peers.length,0);assert.equal(app.streams.every(stream=>stream.track.stopped),true)
  }finally{await app.dispose()}
 })

@@ -91,7 +91,13 @@ export function createRealtimeVoiceService({runtimeConfig,client,repository,conv
    const conversationState=assertConversationScope(conversationSessions.ensure(baseScope),{tenantId,ownerId,conversationId,clientId})
    if(!clientId&&hasProducerContext(conversationState))throw voiceError('Selecione explicitamente o produtor desta conversa antes de abrir o modo realtime.','realtime_voice_client_selection_required',409)
    const contextEpoch=conversationState.context_epoch
-   if(Object.prototype.hasOwnProperty.call(input,'contextEpoch')&&(!exactEpoch(input.contextEpoch)||input.contextEpoch!==contextEpoch))throw voiceError('O epoch solicitado não pertence à conversa realtime atual.','realtime_voice_context_epoch_mismatch',409)
+   if(Object.prototype.hasOwnProperty.call(input,'contextEpoch')&&(!exactEpoch(input.contextEpoch)||input.contextEpoch!==contextEpoch)){
+    const error=voiceError('A conversa foi atualizada. Sincronize o contexto para retomar a voz.','realtime_voice_context_epoch_mismatch',409)
+    // Only reconcile the epoch after tenant, owner, conversation and producer
+    // were validated above. No retrieval, reservation or provider call occurs.
+    if(exactEpoch(input.contextEpoch))error.currentContext={conversationId,clientId:clientId||null,contextEpoch,contextDomain:domainOf(conversationState.current_domain)}
+    throw error
+   }
    const contextDomain=domainOf(conversationState.current_domain)
    const activeContextCandidate=requestedActiveContext??conversationState.active_object??null
    if(clientId){
