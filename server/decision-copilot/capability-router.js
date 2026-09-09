@@ -1490,19 +1490,18 @@ function fastFactPresentation({facts,route,now,scope={},message=''}){
   return {dataPath,answer,primaryFound,capabilityStatus,sourceRef,factsUsed,action:ambiguous&&hasAuditableEvidence?'Defina qual objeção é principal antes de usá-la como eixo da abordagem.':primaryFound?'Use a objeção confirmada como contexto; valide se ela continua atual antes de decidir.':'Confirme a objeção em um registro canônico com identificador auditável.',missing:ambiguous&&hasAuditableEvidence?'Marcação da objeção principal':'Objeção confirmada com referência auditável',doNotDo:'Não promover relatório pendente, hipótese, texto legado sem identificador ou motivo de perda a objeção confirmada.',latestCompletedVisit}
  }
  if(dataPath==='LATEST_COMMITMENT'){
-  const commitment=facts.latestCommitment||null
+  // A pergunta escolhe o candidato: "o que está pendente" olha o mais recente ENTRE OS ABERTOS,
+  // a pergunta neutra olha o mais recente por data. Um candidato só para as duas fazia a neutra
+  // chamar de "último" um registro antigo, só por estar aberto.
+  const asksOpenCommitment=/\b(?:pendente|pendencia|em aberto|aberto|falta fazer|ficou de fazer)\b/.test(stripMessagePreamble(normalize(message)))
+  const commitment=(asksOpenCommitment?facts.latestOpenCommitment:facts.latestCommitment)||null
   const description=clean(commitment?.description||commitment?.action,700)
   const due=commitment?.due_at||commitment?.dueAt||null
   const status=clean(commitment?.status,80)
   const sourceRef=clean(commitment?.commitment_id||commitment?.id,180)||null
-  // Quando o consultor pergunta pelo que está PENDENTE, um compromisso concluído não é resposta:
-  // apresentá-lo esconde que não há nada em aberto. A pergunta neutra ("qual foi o último
-  // compromisso?") continua aceitando qualquer status.
-  const asksOpenCommitment=/\b(?:pendente|pendencia|em aberto|aberto|falta fazer|ficou de fazer)\b/.test(stripMessagePreamble(normalize(message)))
-  const closed=CLOSED_COMMITMENT_STATUS.has(String(status||'').trim().toUpperCase())
-  const primaryFound=Boolean(description&&sourceRef&&!(asksOpenCommitment&&closed))
+  const primaryFound=Boolean(description&&sourceRef)
   const answer=primaryFound?`O ${asksOpenCommitment?'compromisso em aberto':'último compromisso registrado'} de ${clientName} é: ${description}${status?` — status ${status}`:''}${due?` — prazo ${fastDate(due)}`:''}.`
-   :asksOpenCommitment&&closed?'Ainda não há compromisso em aberto registrado com referência auditável.'
+   :asksOpenCommitment?'Ainda não há compromisso em aberto registrado com referência auditável.'
    :'Ainda não há compromisso registrado com referência auditável.'
   const factsUsed=primaryFound?[{id:sourceRef,source_type:'commitment',statement:answer,observed_at:commitment?.updated_at||commitment?.updatedAt||commitment?.created_at||commitment?.createdAt||null,status:status||null,confidence:1}]:[]
   return {dataPath,answer,primaryFound,capabilityStatus:primaryFound?undefined:'NO_DATA',sourceRef:primaryFound?sourceRef:null,factsUsed,action:primaryFound?'Valide o status do compromisso antes de criar outro.':'Confirme o compromisso em um registro canônico com identificador auditável.',missing:'Compromisso com referência auditável',doNotDo:'Não confundir compromisso proposto ou texto legado sem identificador com o registro canônico.'}

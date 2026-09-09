@@ -511,6 +511,18 @@ ALTER TABLE integration_events ADD COLUMN IF NOT EXISTS owner_user_id UUID REFER
 ALTER TABLE integration_events DROP CONSTRAINT IF EXISTS integration_events_tenant_id_source_external_id_key;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_integration_events_owner_external ON integration_events(tenant_id,owner_user_id,source,external_id);
 
+-- O identificador externo do ERP/app de campo e unico POR DONO, nunca por tenant: sem isto dois
+-- consultores que usam o mesmo numero de pedido ou de laudo se sobrescrevem (migration 011).
+ALTER TABLE business_events ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE field_reports ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE ndvi_observations ADD COLUMN IF NOT EXISTS owner_user_id UUID REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE business_events DROP CONSTRAINT IF EXISTS business_events_tenant_id_source_external_id_key;
+ALTER TABLE field_reports DROP CONSTRAINT IF EXISTS field_reports_tenant_id_source_external_id_key;
+ALTER TABLE ndvi_observations DROP CONSTRAINT IF EXISTS ndvi_observations_tenant_id_source_external_id_key;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_business_events_owner_external ON business_events(tenant_id,owner_user_id,source,external_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_field_reports_owner_external ON field_reports(tenant_id,owner_user_id,source,external_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_ndvi_observations_owner_external ON ndvi_observations(tenant_id,owner_user_id,source,external_id);
+
 DO $$
 BEGIN
   IF NOT EXISTS (

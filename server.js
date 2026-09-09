@@ -210,6 +210,9 @@ const realtimeVoice=createRealtimeVoiceService({runtimeConfig:config,client:voic
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
 function consumeRateLimit(scope,key,limit){const now=Date.now();const bucketKey=`${scope}:${key}`;const current=rateBuckets.get(bucketKey);if(!current||current.resetAt<=now){rateBuckets.set(bucketKey,{count:1,resetAt:now+600_000});return true}if(current.count>=limit)return false;current.count+=1;return true}
+// Lê o balde sem gastar cota: o login precisa checar o freio ANTES de autenticar e só cobrar
+// quando a tentativa falha.
+function rateLimitAllows(scope,key,limit){const now=Date.now();const current=rateBuckets.get(`${scope}:${key}`);return !current||current.resetAt<=now||current.count<limit}
 // Atrás do proxy da Railway todos os usuários compartilham o remoteAddress: com VAL_TRUST_PROXY=true a
 // chave de limite de tentativas passa a ser o último salto de X-Forwarded-For (acrescentado pelo edge).
 const requestIdentity=request=>{
@@ -265,10 +268,16 @@ async function handleApi(request,response,url){
  }
  if(url.pathname==='/api/auth/login'&&request.method==='POST'){
   if(!auth.configured)return config.demoMode?json(response,200,{authenticated:true,required:false,demo:true,user:userPayload(null)}):json(response,503,{error:'Configure o acesso seguro do VALOR 360 antes de entrar.'})
-  if(!consumeRateLimit('login',requestIdentity(request),config.loginAttemptsPerTenMinutes))return json(response,429,{error:'Muitas tentativas de acesso. Aguarde alguns minutos.'})
+  // O balde antigo era por endereço de origem e era consumido TAMBÉM pelo login que dava certo:
+  // atrás do proxy (ou de um NAT de escritório/fazenda) oito entradas bem-sucedidas trancavam a
+  // equipe inteira por dez minutos, e trocar de IP contornava o freio — o inverso do pretendido.
+  // Agora a chave inclui a conta e só a tentativa que FALHA consome cota.
   const payload=await body(request)
+  const loginKey=`${requestIdentity(request)}|${String(payload?.email||'').trim().toLowerCase()}`
+  if(!rateLimitAllows('login',loginKey,config.loginAttemptsPerTenMinutes))return json(response,429,{error:'Muitas tentativas de acesso. Aguarde alguns minutos.'})
   const identity=await accessRepository.authenticate(payload.email,payload.password)
-  if(!identity)return json(response,401,{error:'E-mail ou senha inválidos, acesso bloqueado ou expirado.'})
+  if(!identity){consumeRateLimit('login',loginKey,config.loginAttemptsPerTenMinutes);return json(response,401,{error:'E-mail ou senha inválidos, acesso bloqueado ou expirado.'})}
+  rateBuckets.delete(`login:${loginKey}`)
   const token=auth.issue(identity);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{authenticated:true,required:true,demo:false,user:userPayload(identity)})
  }
  if(url.pathname==='/api/auth/logout'&&request.method==='POST'){
@@ -567,7 +576,13 @@ async function handleApi(request,response,url){
     clarificationSelectionConsumed=true
    }
    if(conversationResolution.status==='AMBIGUOUS')return json(response,409,{error:`Encontrei mais de um produtor para “${conversationResolution.reference}”. Qual deles você quer?`,code:'val_client_reference_ambiguous',conversationId,clarification:{contractVersion:'val.client_clarification.v1',reference:conversationResolution.reference,question:'Qual produtor você quer usar nesta conversa?',options:conversationResolution.options}})
-   if(conversationResolution.status==='NOT_FOUND')return json(response,422,{error:`Não encontrei “${conversationResolution.reference}” na sua carteira autorizada. Confirme o nome do produtor.`,code:'val_client_reference_not_found',conversationId,clarification:{question:'Qual é o nome do produtor na sua carteira?'}})
+   // FACT_OWNER e uma inferencia do texto ("<substantivo> do <alguem>"), nao um nome que o consultor
+   // digitou: "qual o perfil do solo?" e "qual o potencial do mercado de soja?" extraem "solo" e
+   // "mercado de soja". Recusar o turno com 422 nesses casos transforma substantivo comum em
+   // produtor inexistente. Quando a inferencia nao resolve, o turno segue sem referencia de
+   // produtor. O 422 continua valendo onde o consultor de fato nomeou alguem.
+   if(conversationResolution.status==='NOT_FOUND'&&naturalClientReference.kind==='FACT_OWNER')conversationResolution={kind:'NONE',status:'NOT_REFERENCED',reference:null}
+   else if(conversationResolution.status==='NOT_FOUND')return json(response,422,{error:`Não encontrei “${conversationResolution.reference}” na sua carteira autorizada. Confirme o nome do produtor.`,code:'val_client_reference_not_found',conversationId,clarification:{question:'Qual é o nome do produtor na sua carteira?'}})
    if(conversationResolution.status==='RESOLVED'){
     // O produtor de referencia do turno e o da thread ou, numa conversa nova, o que o browser
     // enviou: "Mostre a ultima visita do Matheus" com Bruno aberto e consulta pontual nos dois casos,
@@ -768,8 +783,15 @@ async function handleApi(request,response,url){
   // cita produtor/cliente/dele, mas nomeia o dono do fato, e responder isso pelo caminho geral
   // tiraria a pergunta do escopo do produtor. Candidato de nome ainda nao resolvido continua
   // passando: e o que sobra de "fala sobre ferrugem asiatica".
-  const namesProducer=['FACT_OWNER','EXPLICIT_NAME','CURRENT_CLIENT'].includes(naturalClientReference.kind)
-  const generalConceptWithProducer=!namesProducer&&isGeneralConceptRequest(message)&&clientCapability.capabilities.includes('KNOWLEDGE_LIBRARY')
+  // FACT_OWNER que nao resolveu nao nomeia produtor nenhum ("o perfil do solo"): so fecha a ponte
+  // quando a inferencia apontou mesmo para alguem da carteira.
+  const namesProducer=['EXPLICIT_NAME','CURRENT_CLIENT'].includes(naturalClientReference.kind)
+   ||naturalClientReference.kind==='FACT_OWNER'&&conversationResolution?.status==='RESOLVED'
+  // Continuacao curta de um turno do produtor ("e a objecao?", "e a safra?") pertence a conversa
+  // daquele produtor: sem isto a VAL respondia "nenhum produtor selecionado" com o produtor aberto
+  // na tela, porque a frase nao contem nenhuma palavra da lista contextual.
+  const followUpWithProducer=Boolean(clientId)&&/^\s*(?:e|entao|ok|certo)[,\s]+/i.test(String(message||''))
+  const generalConceptWithProducer=!namesProducer&&!followUpWithProducer&&isGeneralConceptRequest(message)&&clientCapability.capabilities.includes('KNOWLEDGE_LIBRARY')
   if((routedIntent.intent==='ASK_GENERAL'&&clientCapability.capabilities.every(item=>item==='KNOWLEDGE_LIBRARY')||generalConceptWithProducer)&&clientCapability.path==='CONTEXT'&&!clientCapability.session_command&&!attachmentIds.length){
    // O raciocinio desta resposta nao le contexto privado (fontes em escopo GENERAL_KNOWLEDGE, client
    // 'portfolio'), mas a resposta pertence a conversa do produtor ativo: o browser e o contrato de

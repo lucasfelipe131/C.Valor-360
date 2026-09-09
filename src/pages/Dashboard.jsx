@@ -25,7 +25,7 @@ import Disclosure from '../components/Disclosure'
 import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
 import {buildHomeCopilotAnswer,buildLocalHomePriorities,canonicalVoiceChange} from '../lib/copilot-view-model'
 import {buildDayBriefing,buildFocusProducers,buildPendencies,buildTopCultures,visitLifecycle} from '../lib/home-command-center'
-import {buildOpportunityWorkspace} from '../lib/opportunity-workspace'
+import {buildOpportunityWorkspace,filterOpportunities} from '../lib/opportunity-workspace'
 import {resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
 const greeting=()=>{
@@ -75,7 +75,10 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  // navegador, a oportunidade criada no quadro (candidateKey "manual:") era descartada, a etapa
  // gravada do candidato Q27 voltava para Diagnóstico e o valor virava o potencial em aberto do
  // produtor: o consultor salvava no quadro e a Home dizia que não havia nada em aberto.
- const pipelineItems=useMemo(()=>buildOpportunityWorkspace(clients,opportunities),[clients,opportunities])
+ // Mesma fonte E mesmo recorte do quadro: sem filterOpportunities, negocio perdido e arquivado
+ // caiam no degrau "Fechado" do funil da Home (o servidor obriga esses status a ficar la) e a
+ // Home somava dinheiro perdido como negocio concluido enquanto o quadro mostrava a coluna vazia.
+ const pipelineItems=useMemo(()=>filterOpportunities(buildOpportunityWorkspace(clients,opportunities),{archived:false}),[clients,opportunities])
  const priorities=useMemo(()=>insights??buildLocalHomePriorities({upcomingVisits,opportunities,clients}),[insights,upcomingVisits,opportunities,clients])
  const selectedVoiceClient=clients.find(client=>client.id===voiceClientId)||null
 
