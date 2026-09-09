@@ -50,6 +50,11 @@
 .val-map-pin:focus-visible{outline:none}
 .val-map-pin:focus-visible b{outline:3px solid #7ed7ff;outline-offset:4px}
 .val-map-pin[role=button]{cursor:pointer}
+.val-map-vertex,.val-map-midpoint{display:grid;place-items:center;touch-action:none;border:0;background:transparent}
+.val-map-vertex>span{width:16px;height:16px;border:2px solid #fff;background:#2d8cff;border-radius:50%;box-shadow:0 1px 5px #003b5980;cursor:grab}
+.val-map-vertex.leaflet-drag-target>span{cursor:grabbing;box-shadow:0 0 0 5px #ffffff60}
+.val-map-midpoint>span{display:grid;place-items:center;width:21px;height:21px;background:#fff;color:#1268c7;border:2px solid #2d8cff;border-radius:50%;font-size:20px;font-weight:700;line-height:1;cursor:pointer}
+.val-map-vertex:focus-visible,.val-map-midpoint:focus-visible{outline:3px solid #8fdaff;border-radius:50%}
 .val-map-label{background:rgba(7,27,25,.74);color:#fff;border:0;border-radius:8px;padding:2px 8px;font-size:11px;font-weight:700;box-shadow:none;white-space:nowrap}
 .val-map-label::before{display:none}
 

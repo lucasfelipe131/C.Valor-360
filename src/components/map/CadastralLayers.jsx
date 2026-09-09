@@ -12,7 +12,15 @@ export default function CadastralLayers({onChange,viewport,onStatusChange,panelO
  const file=useRef(null),loader=useRef(null),importRun=useRef(0),cancelImport=useRef(null)
  useEffect(()=>{loader.current=createCadastralLoader({onData:setPayload,onStatus:(next,message='')=>{setStatus(next);setError(message)}});return()=>{loader.current?.cancel();importRun.current++;cancelImport.current?.()}},[])
  const viewportKey=cadastralViewportKey(viewport)
- useEffect(()=>{loader.current?.update(viewport);return()=>loader.current?.cancel()},[viewportKey])
+ const enabledSources=[...(visible.CAR?['car']:[]),...(visible.SIGEF||visible['Matrícula']?['sigef-particular','sigef-publico']:[])]
+ const sourceKey=enabledSources.join(',')
+ // update decides whether an in-flight query still covers the new view.
+ useEffect(()=>{loader.current?.update(viewport,{sources:enabledSources})},[viewportKey,sourceKey])
+ const sourceProgress=(()=>{
+  if(!payload?.sourceStates)return ''
+  const car=payload.sourceStates.car,sigef=[payload.sourceStates['sigef-particular'],payload.sourceStates['sigef-publico']]
+  return [car!=='disabled'&&`CAR ${car==='loading'?'carregando':car==='error'?'indisponível':'pronto'}`,sigef.some(state=>state!=='disabled')&&`SIGEF ${sigef.includes('loading')?sigef.includes('ready')?'parcial, carregando restante':'carregando':sigef.every(state=>state==='error')?'indisponível':sigef.includes('error')?'parcial':'pronto'}`].filter(Boolean).join(' · ')
+ })()
  useEffect(()=>{
   setRegistered(null)
   if(!clientId){setRegistryStatus('idle');return}
@@ -70,15 +78,15 @@ export default function CadastralLayers({onChange,viewport,onStatusChange,panelO
  }
  useEffect(()=>{
   const unavailable=['car','sigef'].filter(key=>payload?.[key]?.status==='unavailable')
-  onStatusChange?.(status==='loading'?'Atualizando CAR e SIGEF…':status==='idle'?'Cadastros automáticos: aproxime o mapa.':status==='error'?'Consulta indisponível. Camadas anteriores preservadas.':unavailable.length?`${unavailable.map(key=>key.toUpperCase()).join(' / ')} indisponível. Veja Camadas.`:`Cadastros atualizados · ${viewport?.uf||''}`)
- },[status,payload,viewportKey,onStatusChange])
+  onStatusChange?.(sourceProgress||(status==='loading'?'Atualizando CAR e SIGEF…':status==='idle'?'Cadastros automáticos: aproxime o mapa.':status==='error'?'Consulta indisponível. Camadas anteriores preservadas.':unavailable.length?`${unavailable.map(key=>key.toUpperCase()).join(' / ')} indisponível. Veja Camadas.`:`Cadastros atualizados · ${viewport?.uf||''}`))
+ },[status,payload,viewportKey,onStatusChange,sourceProgress])
  const details=selected?cadastralDetails(selected.feature):null
  return <div className="val-cadastral">
   {!panelOnly&&<button type="button" aria-expanded={open} onClick={()=>setOpen(value=>!value)}><Layers size={16}/>Camadas e cadastros</button>}
   {(panelOnly||open)&&<div className="val-cadastral-panel">
    <strong>CAR • SIGEF • Matrículas</strong>
-   <p className="val-cadastral-auto" role="status">{status==='loading'?'Atualizando referências da área visível…':status==='idle'?'Aproxime o mapa para consultar CAR e SIGEF. Você já pode importar um KML.':status==='error'?'Consulta indisponível. As referências anteriores permanecem visíveis; atualize para conferir.':`Atualização automática · ${viewport?.uf||''}`}</p>
-   <div className="val-cadastral-toggles" role="group" aria-label="Cadastros automáticos">{CADASTRAL_TYPES.map(t=><button type="button" key={t} aria-pressed={visible[t]} onClick={()=>setVisible(value=>({...value,[t]:!value[t]}))}><i style={{background:CADASTRAL_COLORS[t]}}/>{t}<span>{allLayers.filter(l=>l.type===t&&l.visible).reduce((sum,l)=>sum+filterCadastral(l.geojson,query).features.length,0)}</span></button>)}</div>
+   <p className="val-cadastral-auto" role="status">{sourceProgress||(status==='loading'?'Atualizando referências da área visível…':status==='idle'?'Aproxime o mapa para consultar CAR e SIGEF. Você já pode importar um KML.':status==='error'?'Consulta indisponível. As referências anteriores permanecem visíveis; atualize para conferir.':`Atualização automática · ${viewport?.uf||''}`)}</p>
+   <div className="val-cadastral-toggles" role="group" aria-label="Cadastros automáticos">{CADASTRAL_TYPES.map(t=>{const count=allLayers.filter(l=>l.type===t&&l.visible).reduce((sum,l)=>sum+filterCadastral(l.geojson,query).features.length,0);const loading=t==='CAR'?payload?.sourceStates?.car==='loading':payload?.loadingSources?.some(source=>source.startsWith('sigef'));return <button type="button" key={t} aria-pressed={visible[t]} onClick={()=>setVisible(value=>({...value,[t]:!value[t]}))}><i style={{background:CADASTRAL_COLORS[t]}}/>{t}<span>{count||loading?'':0}{count||''}{loading?'…':''}</span></button>})}</div>
    <div className="val-cadastral-upload"><label>Camada do arquivo<select value={type} disabled={uploading} onChange={e=>setType(e.target.value)}>{CADASTRAL_TYPES.map(t=><option key={t}>{t}</option>)}</select></label><input ref={file} type="file" accept=".kml,.geojson,.json,application/vnd.google-earth.kml+xml,application/geo+json" hidden onChange={upload}/><button type="button" disabled={uploading} onClick={()=>file.current?.click()}><Upload size={16}/>{uploading?'Lendo arquivo…':'Importar KML / GeoJSON'}</button></div>
    <p>Importe o KML do CAR para visualizar os limites e usá-los como base do talhão.</p>
    <label><Search size={14}/>Buscar matrícula, titular ou imóvel<input value={query} onChange={e=>{setQuery(e.target.value);setLimit(12)}} placeholder="Nome do titular ou número da matrícula"/></label>
@@ -97,12 +105,12 @@ export default function CadastralLayers({onChange,viewport,onStatusChange,panelO
    </section>}
    <div className="val-reference-results" aria-label="Imóveis e matrículas carregados">
     {parts.slice(0,limit).map(part=>{const d=cadastralDetails(part.feature);return <button type="button" key={part.id} aria-pressed={selectedId===part.id} onClick={()=>select(part)}><Focus size={16}/><span><b>{part.layer.type} · {d.registry||part.label}</b><small>{d.holder?`Titular: ${d.holder}`:'Titular não informado na fonte'}</small><small>{part.layer.name}{part.feature.properties.demonstrativo==='DEMO'?' · DEMONSTRATIVO':''}</small></span></button>})}
-    {!parts.length&&<p>{query?'Nenhum limite corresponde à busca.':'Nenhum limite carregado nesta área.'}</p>}
+    {!parts.length&&<p>{query?'Nenhum limite corresponde à busca.':status==='loading'?'Buscando limites. Cada camada aparece assim que responder.':'Nenhum limite carregado nesta área.'}</p>}
     {parts.length>limit&&<button type="button" onClick={()=>setLimit(value=>value+12)}>Mostrar mais ({parts.length-limit})</button>}
    </div>
    {imports.map(layer=><div className="val-cadastral-item" key={layer.id}><label><input type="checkbox" checked={layer.visible} onChange={()=>setImports(current=>current.map(l=>l.id===layer.id?{...l,visible:!l.visible}:l))}/><span style={{color:layer.color}}>●</span>{layer.type} · {layer.name}</label><button type="button" aria-label={`Remover camada ${layer.name}`} onClick={()=>setImports(current=>current.filter(l=>l.id!==layer.id))}><Trash2 size={14}/></button></div>)}
-   <button type="button" disabled={!viewportKey||status==='loading'} onClick={()=>{loader.current?.update(viewport,{refresh:true});setRegistryAttempt(value=>value+1)}}><RefreshCw size={15}/>Atualizar camadas</button>
-   {payload&&<details className="val-cadastral-sources"><summary>Fontes e atualização</summary>{['car','sigef'].map(key=><p key={key}><b>{key.toUpperCase()}</b> · {payload[key]?.note||'Fonte indisponível.'}</p>)}<p>Consulta: {payload.queriedAt?new Date(payload.queriedAt).toLocaleString('pt-BR'):'Não informada'}</p>{(payload.car?.limited||payload.sigef?.limited)&&<p>A consulta atingiu o limite de resultados. Aproxime o mapa para ver mais detalhes.</p>}</details>}
+   <button type="button" disabled={!viewportKey||status==='loading'} onClick={()=>{loader.current?.update(viewport,{refresh:true,sources:enabledSources});setRegistryAttempt(value=>value+1)}}><RefreshCw size={15}/>Atualizar camadas</button>
+   {payload&&<details className="val-cadastral-sources"><summary>Fontes e atualização</summary>{['car','sigef'].map(key=><p key={key}><b>{key.toUpperCase()}</b> · {payload[key]?.note||(status==='loading'?'Aguardando esta fonte.':'Sem consulta disponível.')}{payload[key]?.queriedAt&&<> · Consulta: {new Date(payload[key].queriedAt).toLocaleString('pt-BR')}</>}</p>)}{(payload.car?.limited||payload.sigef?.limited)&&<p>Consulta parcial. Aguarde as fontes restantes ou aproxime o mapa para ver mais detalhes.</p>}</details>}
    <p>A consulta pública do SIGEF informa números de matrícula, sem titulares. Nomes aparecem somente quando constam no cadastro ou arquivo importado. Referências não vinculam imóveis automaticamente ao produtor.</p>
    {error&&<p role="alert">{error}</p>}
   </div>}

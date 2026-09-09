@@ -23,7 +23,7 @@ const {default:SatelliteMap}=await import(`data:text/javascript;base64,${Buffer.
 function fakeLeaflet(){
  const state={maps:[],tiles:[],group:null}
  const evented=object=>Object.assign(object,{events:{},on(name,handler){this.events[name]=handler;return this},off(){this.events={};return this},emit(name,event){this.events[name]?.(event)}})
- const layer=(kind,points,options={})=>evented({kind,points,options,addTo(target){target.layers.add(this);return this},bindTooltip(){return this},setLatLng(point){this.points=point;return this},setLatLngs(points){this.points=points;return this}})
+ const layer=(kind,points,options={})=>evented({kind,points,options,addTo(target){target.layers.add(this);return this},bindTooltip(){return this},setLatLng(point){this.points=point;return this},getLatLng(){return {lat:this.points[0],lng:this.points[1]}},setLatLngs(points){this.points=points;return this}})
  const L={
   map(_node,options){
    const map=evented({options,layers:new Set(),views:[],fits:[],pans:[],currentZoom:4,center:{lat:-28,lng:-54},
@@ -59,6 +59,8 @@ async function mountMap(initialProps={},loader=null){
  return {
   L,state,renderer,
   layers(kind){return [...(state.group?.layers||[])].filter(layer=>layer.kind===kind)},
+  vertices(){return [...(state.group?.layers||[])].filter(layer=>layer.options.icon?.className==='val-map-vertex')},
+  midpoints(){return [...(state.group?.layers||[])].filter(layer=>layer.options.icon?.className==='val-map-midpoint')},
   button(text){const label=node=>typeof node==='string'?node:(node.children||[]).map(label).join('');return renderer.root.findAllByType('button').find(button=>label(button)===text)},
   async update(changes){props={...props,...changes};await act(async()=>{renderer.update(React.createElement(SatelliteMap,props))})},
   async dispose(){await act(async()=>renderer.unmount());if(saved===undefined)delete globalThis.__valSatelliteTestLeaflet;else globalThis.__valSatelliteTestLeaflet=saved}
@@ -201,22 +203,42 @@ test('municipality navigation loads state boundaries by default and never assign
 test('touching a draft vertex removes that point without adding a new map point',async()=>{
  const removed=[],added=[]
  const app=await mountMap({draft:[{lat:-12,lng:-55},{lat:-12.01,lng:-55},{lat:-12,lng:-55.01}],onDraftPointClick:index=>removed.push(index),onClick:point=>added.push(point)})
- try{const vertices=app.layers('circle');assert.equal(vertices.length,3);assert.equal(vertices[1].options.bubblingMouseEvents,false);vertices[1].emit('click');assert.deepEqual(removed,[1]);assert.deepEqual(added,[])}finally{await app.dispose()}
+ try{const vertices=app.vertices();assert.equal(vertices.length,3);assert.equal(vertices[1].options.bubblingMouseEvents,false);vertices[1].emit('click');assert.deepEqual(removed,[1]);assert.deepEqual(added,[])}finally{await app.dispose()}
 })
 
 test('drawing keeps existing parcels, pins and vertices alive and updates shapes in place',async()=>{
  const initial=[{lat:-12,lng:-55},{lat:-12.01,lng:-55},{lat:-12.01,lng:-55.01}]
  const app=await mountMap({pins,draft:initial,polygons:[{points:initial}],fit:false})
  try{
-  const marker=app.layers('marker')[0],parcel=app.layers('polygon')[0],vertices=app.layers('circle'),line=app.layers('polyline')[0]
+  const marker=app.layers('marker')[0],parcel=app.layers('polygon')[0],vertices=app.vertices(),line=app.layers('polyline')[0]
   for(let i=1;i<=20;i++)await app.update({draft:[...initial,...Array.from({length:i},(_,n)=>({lat:-12.005+n*.00001,lng:-55.01}))]})
   assert.equal(app.layers('marker')[0],marker);assert.equal(app.layers('polygon')[0],parcel)
-  assert.equal(app.layers('circle')[0],vertices[0]);assert.equal(app.layers('circle')[2],vertices[2]);assert.equal(app.layers('polyline')[0],line)
-  assert.equal(app.layers('circle').length,23)
+  assert.equal(app.vertices()[0],vertices[0]);assert.equal(app.vertices()[2],vertices[2]);assert.equal(app.layers('polyline')[0],line)
+  assert.equal(app.vertices().length,23)
   await app.update({draft:[initial[0],initial[2]]})
-  assert.equal(app.layers('circle').length,2);assert.deepEqual(app.layers('circle')[1].points,[-12.01,-55.01])
+  assert.equal(app.vertices().length,2);assert.deepEqual(app.vertices()[1].points,[-12.01,-55.01])
   assert.equal(app.layers('polygon').length,1);assert.equal(app.layers('polygon')[0],parcel)
   assert.equal(app.state.maps[0].options.preferCanvas,true)
   assert.equal(app.state.tiles[0].options.updateWhenIdle,true)
+ }finally{await app.dispose()}
+})
+
+test('drag updates the contour in place, commits once on release, and midpoint inserts on its own edge',async()=>{
+ const initial=[{lat:-12,lng:-55},{lat:-12.01,lng:-55},{lat:-12.01,lng:-55.01}],moves=[],removed=[],inserted=[]
+ const app=await mountMap({draft:initial,onDraftPointMove:(...args)=>moves.push(args),onDraftPointClick:i=>removed.push(i),onDraftPointInsert:(...args)=>inserted.push(args)})
+ try{
+  const vertex=app.vertices()[1],line=app.layers('polyline')[0],area=app.layers('polygon')[0],middle=app.midpoints()[0]
+  assert.equal(vertex.options.draggable,true);assert.equal(app.midpoints().length,3)
+  vertex.emit('dragstart');vertex.setLatLng([-12.0051234,-54.9991234]);vertex.emit('drag')
+  assert.deepEqual(moves,[]);assert.equal(app.layers('polyline')[0],line);assert.equal(app.layers('polygon')[0],area)
+  assert.deepEqual(line.points[1],[-12.0051234,-54.9991234]);assert.deepEqual(area.points[1],line.points[1])
+  assert.deepEqual(middle.points,[(-12-12.0051234)/2,(-55-54.9991234)/2])
+  vertex.emit('dragend');vertex.emit('click');assert.deepEqual(removed,[])
+  assert.deepEqual(moves,[[1,{lat:-12.005123,lng:-54.999123}]])
+  await app.update({draft:initial.map((p,i)=>i===1?moves[0][1]:p)})
+  assert.equal(app.vertices()[1],vertex);assert.equal(app.midpoints()[0],middle)
+  middle.emit('click');assert.deepEqual(inserted,[[0,{lat:middle.points[0],lng:middle.points[1]}]])
+  vertex.element.events.keydown({key:'Delete',preventDefault(){},stopPropagation(){}});assert.deepEqual(removed,[1])
+  assert.deepEqual(initial[1],{lat:-12.01,lng:-55})
  }finally{await app.dispose()}
 })
