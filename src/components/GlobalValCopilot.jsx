@@ -103,7 +103,9 @@ function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onRe
  const degraded=quality.status==='REASONING_DEGRADED'||reasoning.run?.status==='REASONING_DEGRADED'||reasoning.grounding?.passed===false
  // Orientação geral (cumprimento, conceito da Biblioteca) já é a própria leitura: não há
  // ferramenta executada nem ação a abrir, e o card 'FERRAMENTA EXECUTADA' repetia o texto.
- const generalGuidance=toolResult?.tool==='general_guidance'
+ const generalGuidance=['general_guidance','ai_general_knowledge'].includes(toolResult?.tool)
+ const unverifiedGeneral=reasoning.evidence_status==='UNVERIFIED_MODEL_KNOWLEDGE'
+ const reusedKnowledge=['HIT','COALESCED'].includes(payload?.responseMetadata?.sharedKnowledgeCache?.status)
  const answer=strategy.reading||advice.answer||'A orientação chegou sem uma leitura principal.'
  const intent=String(reasoning.intent||'ASK_CLIENT').toUpperCase()
  const isBehavioralProfile=isBehavioralProfileResponse(reasoning)
@@ -117,6 +119,7 @@ function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onRe
  return <article className={`global-val-answer is-${density}`}>
   {isBehavioralProfile?<ProfileResponse reasoning={reasoning} answer={answer} facts={facts} outputMode={outputMode} audioNode={audioNode}/>:<>
   <DecisionCard reasoning={reasoning} answer={answer} action={degraded||generalGuidance?'':strategy.action} audioNode={audioNode}/>
+  {unverifiedGeneral&&<p className="global-val-knowledge-note"><Sparkles aria-hidden="true"/><span>{reusedKnowledge?'Resposta geral reutilizada do banco':'Resposta geral formulada pela IA'} · sem fonte verificada</span></p>}
   {toolResult&&!generalGuidance?<GenericToolCard title={toolResult.title} summary={toolResult.summary} status={toolResult.status} onOpen={toolResult.page==='copilot'?undefined:()=>openWithSources({page:toolResult.page||'agro',tool:toolResult.tool,manualPage:toolResult.manual_page,mode:toolResult.mode,context:toolResult.context})}/>:null}
   {!degraded&&intent==='PREPARE_VISIT'&&toolResult?.status!=='CONTEXT_REQUIRED'&&<PrepareVisitCard reasoning={reasoning} questions={questions} onOpen={openScoped}/>}
   {!degraded&&toolResult?.status!=='CATALOG'&&['ASK_AGRONOMIC','ANALYZE_SOIL'].includes(intent)&&<AgronomicInsightCard reasoning={reasoning} onOpen={openScoped}/>}

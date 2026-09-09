@@ -121,7 +121,8 @@ test('oportunidade derivada de relato/voz no PostgreSQL não colide com a oportu
 test('copiloto: orientação geral sem card de ferramenta, seletor de produtor foca a conversa e política do serviço entra no fio',()=>{
  const copilot=read('src/components/GlobalValCopilot.jsx')
  const cards=read('src/components/copilot/DecisionCards.jsx')
- assert.match(copilot,/const generalGuidance=toolResult\?\.tool==='general_guidance'/)
+ assert.match(copilot,/const generalGuidance=\['general_guidance','ai_general_knowledge'\]\.includes\(toolResult\?\.tool\)/)
+ assert.match(copilot,/unverifiedGeneral&&<p className="global-val-knowledge-note"/)
  assert.match(copilot,/\{toolResult&&!generalGuidance\?<GenericToolCard/)
  assert.match(copilot,/action=\{degraded\|\|generalGuidance\?'':strategy\.action\}/)
  assert.match(copilot,/reasoning\.grounding\?\.passed===false/)

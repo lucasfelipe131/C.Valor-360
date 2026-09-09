@@ -15,7 +15,7 @@ const domainPatterns=Object.freeze({
  GRAINS:/\b(?:graos?|soja|milho|trigo|sorgo|cevada|commodity|commodities|contrato (?:de|dos?) graos?|trava(?:mento|r)?|fixa(?:cao|r)|saca|basis)\b/,
  CREDIT:/\b(?:credito|financeir\w*|cpf|limite|score|inadimpl\w*|financiamento|prazo de pagamento)\b/,
  GEO:/\b(?:geo|mapa|mapeamento|geometria|poligono|coordenad\w*|talhao|area desenhada)\b/,
- AGRONOMY:/\b(?:agronom\w*|manejo|solo|nutri[cç][aã]o\w*|fertiliz\w*|herbic\w*|insetic\w*|fungic\w*|praga\w*|doen[cç]a\w*|diagn[oó]stic\w*|fitoscan|nutriscan|lavoura\w*|safra\w*|cultur\w*|plantio\w*|semente\w*|semeadur\w*|germina[cç][aã]o|emerg[eê]ncia)\b/,
+ AGRONOMY:/\b(?:agronom\w*|manejo|solo|ureia|nitrogenio|fosforo|potassio|cigarrinha\w*|lagarta\w*|adubacao|nutri[cç][aã]o\w*|fertiliz\w*|herbic\w*|insetic\w*|fungic\w*|praga\w*|doen[cç]a\w*|diagn[oó]stic\w*|fitoscan|nutriscan|lavoura\w*|safra\w*|cultur\w*|plantio\w*|semente\w*|semeadur\w*|germina[cç][aã]o|emerg[eê]ncia)\b/,
  VISIT:/\b(?:visita\w*|preparevisit|perguntas? de ouro|p[oó]s[- ]?visita\w*|[uú]ltim[ao] conversa|compromisso\w*)\b/,
  OPPORTUNITY:/\b(?:oportunidade\w*|pipeline|proposta\w*|neg[oó]cio\w*|pr[oó]ximo passo|fechamento\w*)\b/,
  COMMERCIAL:/\b(?:comercial|venda\w*|pre[cç]o\w*|custo\w*|compra\w*|compr(?:ou|ar|aram|ava|avam|e|em|aria)|negocia[cç][aã]o\w*|obje[cç](?:[aã]o|oes|ões)\w*|valor(?:es)?|margem|margens)\b/
@@ -35,6 +35,8 @@ export function classifyValContextDomain(message='',intent=''){
  // estreita: preço, custo, venda ou negociação mantêm MULTI_DOMAIN.
  const technicalSeedMargin=/\bmargem tecnica\b/.test(source)&&/\b(?:semente\w*|semeadur\w*)\b/.test(source)
  const explicitCommercial=/\b(?:comercial|venda\w*|preco\w*|custo\w*|compra\w*|negociacao\w*|objec(?:ao|oes)\w*|valor(?:es)?)\b/.test(source)
+ const explicitGrainBusiness=/\b(?:graos?|commodity|commodities|contrato|trava\w*|fixa\w*|saca\w*|basis|saldo|entrega\w*)\b/.test(source)
+ if(unique.length===2&&unique.includes('AGRONOMY')&&unique.includes('GRAINS')&&!explicitCommercial&&!explicitGrainBusiness)return 'AGRONOMY'
  if(technicalSeedMargin&&!explicitCommercial&&unique.includes('AGRONOMY')&&unique.includes('COMMERCIAL'))return 'AGRONOMY'
  const dominantPairs=Object.freeze({GRAINS:'COMMERCIAL',CREDIT:'COMMERCIAL',GEO:'AGRONOMY',OPPORTUNITY:'COMMERCIAL'})
  for(const [dominant,auxiliary] of Object.entries(dominantPairs))if(unique.length===2&&unique.includes(dominant)&&unique.includes(auxiliary))return dominant

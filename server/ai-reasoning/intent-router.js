@@ -1,4 +1,5 @@
 import {routeSessionCommand} from '../decision-copilot/session-command-router.js'
+import {generalTopicClarification} from '../decision-copilot/general-question-context.js'
 
 export const valIntentRouterVersion='val.intent_router.v3'
 
@@ -51,6 +52,8 @@ function semanticGeneralConceptIntent(source=''){
  const folded=fold(source)
  if(greetingOrThanks.test(folded))return 'ASK_GENERAL'
  const question=folded.replace(greetingPrefix,'')
+ if(generalTopicClarification(question))return 'ASK_GENERAL'
+ if(/\b(?:ureia|nitrogenio|cigarrinha|lagarta|inseticida|herbicida|fungicida)\b/.test(question)&&!contextualReference.test(question)&&!individualReference.test(question))return 'ASK_GENERAL'
  if(definitionalShape.test(question)&&!contextualReference.test(question))return 'ASK_GENERAL'
  if(narrativeShape.test(question)&&!contextualReference.test(question)&&!individualReference.test(question))return 'ASK_GENERAL'
  return ''
@@ -120,7 +123,7 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
  const semanticCurrent=semanticCurrentDataIntent(source)
  const semanticCommand=semanticCommandIntent(source,hasClient)
  const semanticClientIdentity=isCurrentClientIdentityRequest(source)?'ASK_CLIENT':''
- const semanticGeneral=semanticGeneralConceptIntent(source)
+ const semanticGeneral=generalTopicClarification(source)&&currentDataIntents.has(hinted)?'':semanticGeneralConceptIntent(source)
  const folded=fold(source)
  const individual=hasClient||individualReference.test(folded)
  // Hints may come from an older client. They cannot downgrade an explicit
@@ -142,7 +145,7 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
   else if(/\b(?:solo|ph|v%|satura[cç][aã]o|ctc|f[oó]sforo|pot[aá]ssio|calagem|aduba[cç][aã]o|nutri[cç][aã]o)\b/i.test(source))intent='ASK_AGRONOMIC'
   else if(['NUTRISCAN','FITOSCAN','PHOTO_DIAGNOSIS'].includes(toolHint)||hasImage)intent='IMAGE_DIAGNOSIS'
   else if(toolHint==='AREA_MAPPING')intent='ASK_AGRONOMIC'
-  else if(/\b(?:agron[oô]mic|praga|doen[cç]a|daninha|manejo|talh[aã]o|safra|cultiv)/i.test(source))intent='ASK_AGRONOMIC'
+  else if(/\b(?:agron[oô]mic|ureia|nitrog[eê]nio|cigarrinha|lagarta|inseticida|herbicida|fungicida|praga|doen[cç]a|daninha|manejo|talh[aã]o|safra|cultiv)/i.test(source))intent='ASK_AGRONOMIC'
   else if(/\b(?:prepar|roteiro|antes da)\w*\b.*\bvisit\w*\b|\bvisit\w*\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))intent='PREPARE_VISIT'
   else if(/^(?:val[, ]+)?(?:registra|registre|anota|anote)\s+que\b/i.test(source)||/\b(?:registr|salv|grav|anot|memoriz)\w*\b.*\b(?:informa[cç][aã]o|nota|hist[oó]rico|mem[oó]ria|fato)\b/i.test(source))intent='REGISTER_INFORMATION'
   else if(/\b(?:p[oó]s[- ]?visita|depois da visita|resultado da visita)\b/i.test(source))intent='POST_VISIT'

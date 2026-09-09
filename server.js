@@ -8,6 +8,8 @@ import {fileURLToPath} from 'node:url'
 import OpenAI from 'openai'
 import {config,getPublicEngineConfig} from './server/config.js'
 import {createDatabase} from './server/db.js'
+import {createSharedKnowledgeAnswerCache} from './server/knowledge/shared-answer-cache.js'
+import {resolveGeneralConversationQuestion} from './server/decision-copilot/general-question-context.js'
 import {createAuth} from './server/auth.js'
 import {AccessRepository} from './server/access-repository.js'
 import {deriveSignals,normalizeIntegrationEvent,requiresTechnicalSignature,verifyIntegrationToken,verifyWebhookSignature} from './server/ingestion.js'
@@ -168,6 +170,7 @@ const validatedSurveyAnswers=input=>validateSurveyAnswers(input,surveyOptions)
 
 const runtimeComposition=assertValRuntimeComposition()
 const database=createDatabase(config)
+const sharedAnswerCache=createSharedKnowledgeAnswerCache({database})
 const auth=createAuth(config)
 const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,tenantId:session.tenantId||config.defaultTenantId,ownerId:session.id||session.sub||session.email,storageScope:auth.storageScope(session)}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,tenantId:config.defaultTenantId,ownerId:'demo@valor360.local',storageScope:'demo'}
 const repository=new ValRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
@@ -522,6 +525,8 @@ async function handleApi(request,response,url){
   const storedConversation=valConversationSessions.get({tenantId,ownerId:scopedOwnerId,conversationId})
   const storedClientId=clean(storedConversation?.current_client?.id)
   if(!clientId&&storedClientId)clientId=storedClientId
+  const generalQuestion=resolveGeneralConversationQuestion({message,conversationState:storedConversation,tenantId,ownerId:scopedOwnerId,conversationId,clientId})
+  const generalMessage=generalQuestion.message
   let conversationResolution=null
   let comparisonResolution=null
   let turnOnlyClientOverride=false
@@ -604,7 +609,7 @@ async function handleApi(request,response,url){
   if(requestedAttachments.some(item=>!item.dataBase64))return json(response,422,{error:'Um ou mais arquivos persistidos não puderam ser carregados para análise.',code:'val_attachment_content_unavailable'})
   const requestedAttachmentTypes=requestedAttachments.map(item=>String(item.mimeType||'').toLowerCase()).filter(Boolean)
   const intentResolutionStartedAt=performance.now()
-  const routedIntent=routeValIntent({message,intentHint:requestedIntent,sessionCommandHint:requestedSessionCommand,hasClient:Boolean(clientId),attachmentTypes:requestedAttachmentTypes})
+  const routedIntent=routeValIntent({message:generalMessage,intentHint:requestedIntent,sessionCommandHint:requestedSessionCommand,hasClient:Boolean(clientId),attachmentTypes:requestedAttachmentTypes})
   // O produtor armazenado na conversa carrega `label`; o roteador lê `name` para nomear a troca
   // ('Agora falando de Antônio Silva') em vez de 'o produtor'.
   const storedRouteClient=storedConversation?.current_client?.id?{id:storedConversation.current_client.id,name:storedConversation.current_client.name||storedConversation.current_client.label||null}:null
@@ -640,7 +645,7 @@ async function handleApi(request,response,url){
   const sessionScope={tenantId,ownerId:scopedOwnerId,conversationId,clientId:turnOnlyClientOverride?storedClientId||requestedClientId:clientId,client:sessionClient,activeContext:null}
   let sessionState=storedConversation||createConversationState(sessionScope)
   if(!turnOnlyClientOverride&&storedConversation&&conversationResolution?.changed_client&&clientId!==storedClientId)sessionState=switchConversationClient(storedConversation,sessionClient,{tenantId,ownerId:scopedOwnerId,conversationId,clientId,client:sessionClient,activeContext:null})
-  if(!turnOnlyClientOverride)sessionState=prepareConversationTurnState(sessionState,{message,intent:routedIntent.intent,sessionCommand:routedIntent.session_command,scope:sessionScope})
+  if(!turnOnlyClientOverride)sessionState=prepareConversationTurnState(sessionState,{message:generalMessage,intent:routedIntent.intent,sessionCommand:routedIntent.session_command,scope:sessionScope})
   // Um fato pedido explicitamente sobre outro produtor e apenas uma consulta
   // deste turno. Nao deixe modalidade, objetivo, fatos ou turns contaminarem a
   // sessao que continua vinculada ao produtor atual.
@@ -722,7 +727,8 @@ async function handleApi(request,response,url){
     return json(response,200,complete(direct,execution))
    }
    const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
-   const general=await buildGeneralNoClientResponse({message,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast})
+   const general=await buildGeneralNoClientResponse({message:generalMessage,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,sharedAnswerCache})
+   general.responseMetadata.questionContinued=generalQuestion.continued
    const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
    if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})
    return json(response,200,complete(general))
@@ -777,7 +783,8 @@ async function handleApi(request,response,url){
    // responseScope apontem para o mesmo produtor, senao "oi" com produtor aberto e rejeitado na tela.
    const generalDomain=requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent)
    const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
-   const general=await buildGeneralNoClientResponse({message,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:generalDomain,aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast})
+   const general=await buildGeneralNoClientResponse({message:generalMessage,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:generalDomain,aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,sharedAnswerCache})
+   general.responseMetadata.questionContinued=generalQuestion.continued
    const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
    if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})
    latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(general,{latency:values,path:clientCapability.path,intent:routedIntent.intent,toolExecution:null});valLatencyMetrics.record({path:clientCapability.path,intent:routedIntent.intent,latency:enriched?.responseMetadata?.performance?.latency||values})
