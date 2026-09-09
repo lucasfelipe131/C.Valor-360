@@ -11,7 +11,9 @@ test('formulário do produtor explicita reais, percentuais, hectares e dias sem 
  assert.match(editor,/FieldLabel unit="ha">Área cultivada/)
  assert.match(editor,/FieldLabel unit="dias \/ condição">Condição de pagamento preferida/)
  assert.match(editor,/FieldLabel unit="dias \/ período">Janela de decisão \/ compra/)
- assert.match(editor,/commercial:\{\.\.\.form\.commercial,openPotential\}/)
+ // O derivado so vai no payload quando a base e conhecida: sem isso, salvar um produtor sem
+ // potencial informado gravava "Potencial em aberto = R$ 0" e apagava o "A medir".
+ assert.match(editor,/commercial:\{\.\.\.form\.commercial,\.\.\.\(openPotential===null\?\{\}:\{openPotential\}\)\}/)
  for(const key of ['purchaseCurrentSeason','purchasePreviousSeason','potentialTotal','walletShare','targetShare','grossMarginPercent','creditLimit','creditUsed','paymentTerms','decisionWindow'])assert.match(editor,new RegExp(`nested\\('commercial','${key}'`),key)
 })
 

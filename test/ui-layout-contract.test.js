@@ -136,7 +136,7 @@ test('commercial editor uses Brazilian currency and derives the open potential b
  assert.match(currency,/>R\$</)
  assert.match(currency,/replace\(\/\\D\/g,['"]['"]\)/)
  assert.match(editor,/Math\.max\(0,totalPotential-currentPurchases\)/)
- assert.match(editor,/commercial:\{\.\.\.form\.commercial,openPotential\}/)
+ assert.match(editor,/commercial:\{\.\.\.form\.commercial,\.\.\.\(openPotential===null\?\{\}:\{openPotential\}\)\}/)
  assert.match(editor,/Crédito disponível — automático/)
 })
 
@@ -186,7 +186,11 @@ test('production bundle receives the protected portfolio only from the server',(
  assert.match(app,/<Dashboard[^>]+opportunities=\{opportunities\}/)
  assert.match(dashboard,/buildOpportunityWorkspace\(clients,opportunities\)/)
  assert.doesNotMatch(dashboard,/nextVisit\?\.time\|\|['"]14:00/)
- assert.match(dashboard,/const scheduled=scheduledAtOf\(visit\)/)
+ // A agenda da Home deriva a data da propria visita (nunca um horario fixo) e conta pelo mesmo
+ // ciclo de vida do resto da tela: sem isso a visita atrasada e a cancelada entravam em
+ // "Compromissos futuros".
+ assert.match(dashboard,/const moment=visitMoment\(visit\)/)
+ assert.match(dashboard,/\['CANCELLED','COMPLETED','COMPLETED_PENDING_REVIEW'\]\.includes\(lifecycle\)\)return false/)
  // As atividades recentes migraram para a coluna direita do cockpit, mas
  // continuam vindo da carteira carregada do servidor.
  assert.match(dashboard,/const recentVisits=\[\.\.\.\(visits\|\|\[\]\)\]/)

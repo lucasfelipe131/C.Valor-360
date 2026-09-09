@@ -8,6 +8,7 @@ import {tmpdir} from 'node:os'
 import {dirname,join} from 'node:path'
 import {fileURLToPath} from 'node:url'
 import {buildOpportunityWorkspace,filterOpportunities} from '../src/lib/opportunity-workspace.js'
+import {visitLifecycle,visitMoment} from '../src/lib/home-command-center.js'
 
 const repositoryRoot=join(dirname(fileURLToPath(import.meta.url)),'..')
 const tenantId='00000000-0000-4000-8000-000000000001'
@@ -167,4 +168,52 @@ test('a Home usa o mesmo recorte do quadro, e não conta perdido nem arquivado',
  assert.equal(closed.reduce((total,item)=>total+Number(item.value||0),0),50000)
  const dashboard=read('src/pages/Dashboard.jsx')
  assert.match(dashboard,/filterOpportunities\(buildOpportunityWorkspace\(clients,opportunities\),\{archived:false\}\)/)
+})
+
+// O Cliente 360 lia só o array cru e dizia "Nenhuma oportunidade ativa" para o produtor que a Home,
+// a tela de Clientes e o quadro contavam como 1 — a mesma divergência que a rodada 6 corrigiu na Home.
+test('o Cliente 360 conta oportunidade pela mesma fonte da Home',()=>{
+ const joao={id:'joao',name:'João Pereira',additionalNeed:'Ampliar armazenagem',additionalNeedStatus:'reported',
+  commercial:{opportunity:'Ampliar armazenagem',opportunityProvenance:{origin:'producer_360',field:'q27',state:'reported'},potential:120000,potentialValidated:true}}
+ const activeOf=items=>items.filter(item=>!/fechado|ganho|perdido|cancelado|closed|won|lost/i.test(String(item.stage||''))).length
+ // Sem nenhuma oportunidade persistida, a projeção do cadastro é a única — e as duas telas veem 1.
+ assert.equal(activeOf(buildOpportunityWorkspace([joao],[])),1)
+ assert.equal(activeOf([]),0,'o array cru é justamente o que contava zero')
+ const client360=read('src/pages/Client360.jsx')
+ assert.match(client360,/const ownOpportunities=buildOpportunityWorkspace\(\[client\],scopedRecords\(opportunities,client\)\)/)
+ // O tile de crédito não pode negar o dado que a aba Crédito da mesma tela mostra.
+ assert.match(client360,/label="Sinal de crédito" value=\{knownCredit\?/)
+ assert.doesNotMatch(client360,/label="Sinal de crédito" detail="Sem informação de crédito"/)
+})
+
+// finite() transformava campo vazio em 0 e o derivado ia sempre no payload: salvar o cadastro de um
+// produtor sem potencial gravava "Potencial em aberto = R$ 0" e apagava o "A medir".
+test('o cadastro não grava potencial em aberto quando a base é desconhecida',()=>{
+ const editor=read('src/components/ProducerProfileEditor.jsx')
+ assert.match(editor,/const totalPotentialKnown=String\(form\.commercial\.potentialTotal\?\?''\)\.trim\(\)!==''/)
+ assert.match(editor,/const openPotential=totalPotentialKnown\?Math\.max\(0,totalPotential-currentPurchases\):null/)
+ assert.match(editor,/commercial:\{\.\.\.form\.commercial,\.\.\.\(openPotential===null\?\{\}:\{openPotential\}\)\}/)
+})
+
+// O critério da agenda era próprio da Home: aceitava visita PLANNED com data no passado e só filtrava
+// cancelamento por uma regex ancorada em status.
+test('a agenda da Home não conta visita atrasada nem cancelada como compromisso futuro',()=>{
+ const now=Date.now()
+ const visits=[
+  {id:'futura',scheduledAt:ahead(2),lifecycleStatus:'PLANNED',status:'Planejada'},
+  {id:'atrasada',scheduledAt:ago(20),lifecycleStatus:'PLANNED',status:'Planejada'},
+  {id:'cancelada',scheduledAt:ahead(1),lifecycleStatus:'CANCELLED',status:'Cancelada pelo produtor'},
+  {id:'andamento',scheduledAt:ago(1),lifecycleStatus:'IN_PROGRESS',status:'Em andamento'}
+ ]
+ const upcoming=visits.filter(visit=>{
+  const lifecycle=visitLifecycle(visit)
+  if(['CANCELLED','COMPLETED','COMPLETED_PENDING_REVIEW'].includes(lifecycle))return false
+  if(lifecycle==='IN_PROGRESS')return true
+  const moment=visitMoment(visit)
+  return Boolean(moment)&&moment.getTime()>=now
+ })
+ assert.deepEqual(upcoming.map(visit=>visit.id),['futura','andamento'])
+ const dashboard=read('src/pages/Dashboard.jsx')
+ assert.match(dashboard,/const moment=visitMoment\(visit\)/)
+ assert.match(dashboard,/\['CANCELLED','COMPLETED','COMPLETED_PENDING_REVIEW'\]\.includes\(lifecycle\)\)return false/)
 })

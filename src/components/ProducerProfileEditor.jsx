@@ -22,12 +22,16 @@ export default function ProducerProfileEditor({client,onSave,onCancel,compact=fa
  const nested=(group,key,value)=>setForm(current=>({...current,[group]:{...current[group],[key]:value}}))
  const currentPurchases=finite(form.commercial.purchaseCurrentSeason)
  const totalPotential=finite(form.commercial.potentialTotal)
- const openPotential=Math.max(0,totalPotential-currentPurchases)
+ // finite() transforma campo vazio em 0, e o derivado era enviado SEMPRE: salvar o cadastro de um
+ // produtor sem potencial informado gravava "Potencial em aberto = R$ 0" e apagava o "A medir" de
+ // todas as telas. Sem a base conhecida nao ha derivado a afirmar.
+ const totalPotentialKnown=String(form.commercial.potentialTotal??'').trim()!==''&&Number.isFinite(Number(form.commercial.potentialTotal))
+ const openPotential=totalPotentialKnown?Math.max(0,totalPotential-currentPurchases):null
  const calculatedShare=totalPotential>0?Math.min(100,currentPurchases/totalPotential*100):0
  const availableCredit=Math.max(0,finite(form.commercial.creditLimit)-finite(form.commercial.creditUsed))
  const submit=async event=>{
   event.preventDefault();setSaving(true);setError('')
-  try{await onSave?.(client.id,{...form,commercial:{...form.commercial,openPotential}})}catch(exception){setError(exception.message||'Não foi possível salvar o produtor.')}finally{setSaving(false)}
+  try{await onSave?.(client.id,{...form,commercial:{...form.commercial,...(openPotential===null?{}:{openPotential})}})}catch(exception){setError(exception.message||'Não foi possível salvar o produtor.')}finally{setSaving(false)}
  }
  return <form className={`producer-profile-editor ${compact?'is-compact':''}`} onSubmit={submit}>
   <header><span><UserRoundPen/></span><div><b>Cadastro completo do produtor</b><small>Dados pessoais e comerciais ficam disponíveis para a VAL no contexto deste login.</small></div></header>

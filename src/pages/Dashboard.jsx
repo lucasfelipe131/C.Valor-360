@@ -24,7 +24,7 @@ import VoiceCapture from '../components/voice/VoiceCapture'
 import Disclosure from '../components/Disclosure'
 import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
 import {buildHomeCopilotAnswer,buildLocalHomePriorities,canonicalVoiceChange} from '../lib/copilot-view-model'
-import {buildDayBriefing,buildFocusProducers,buildPendencies,buildTopCultures,visitLifecycle} from '../lib/home-command-center'
+import {buildDayBriefing,buildFocusProducers,buildPendencies,buildTopCultures,visitLifecycle,visitMoment} from '../lib/home-command-center'
 import {buildOpportunityWorkspace,filterOpportunities} from '../lib/opportunity-workspace'
 import {resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
@@ -70,7 +70,18 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  const irt=relationships.irtKnown?relationships.irtAverage.toFixed(1):'A medir'
  const portfolioPriorities=portfolioMetrics.map(({client,metrics})=>({client,metrics,candidate:resolveOpportunityCandidate(client)})).filter(item=>item.candidate).sort((a,b)=>b.metrics.openPotential-a.metrics.openPotential).slice(0,3)
  const now=Date.now()
- const upcomingVisits=[...(visits||[])].filter(visit=>{const scheduled=scheduledAtOf(visit);const lifecycle=String(visit.lifecycleStatus||visit.lifecycle_status||'').toUpperCase();const openLifecycle=['IN_PROGRESS','PLANNED','PREPARED'].includes(lifecycle);return (scheduled?.getTime()>=now||openLifecycle)&&!/^(realizada|cancelada)$/i.test(String(visit.status||''))}).sort((a,b)=>{const rank=visit=>String(visit.lifecycleStatus||visit.lifecycle_status||'').toUpperCase()==='IN_PROGRESS'?0:1;return rank(a)-rank(b)||scheduledAtOf(a)-scheduledAtOf(b)})
+ // O criterio antigo era proprio da Home e divergia do resto da tela: o ramo "lifecycle aberto"
+ // aceitava visita PLANNED com data no passado (a atrasada virava "futura") e o unico filtro de
+ // cancelamento era uma regex ancorada em status, que nao ve lifecycleStatus CANCELLED nem
+ // "Cancelada pelo produtor". Agora a Home conta visita por uma fonte so, como ja faz com as
+ // oportunidades. Visita em andamento continua aparecendo: ela e o compromisso de agora.
+ const upcomingVisits=[...(visits||[])].filter(visit=>{
+  const lifecycle=visitLifecycle(visit)
+  if(['CANCELLED','COMPLETED','COMPLETED_PENDING_REVIEW'].includes(lifecycle))return false
+  if(lifecycle==='IN_PROGRESS')return true
+  const moment=visitMoment(visit)
+  return Boolean(moment)&&moment.getTime()>=now
+ }).sort((a,b)=>{const rank=visit=>visitLifecycle(visit)==='IN_PROGRESS'?0:1;return rank(a)-rank(b)||scheduledAtOf(a)-scheduledAtOf(b)})
  // A Home lê a MESMA fonte do quadro de Oportunidades. Com reconcilePipeline sobre o cache do
  // navegador, a oportunidade criada no quadro (candidateKey "manual:") era descartada, a etapa
  // gravada do candidato Q27 voltava para Diagnóstico e o valor virava o potencial em aberto do
