@@ -345,3 +345,51 @@ test('a próxima ação é alcançável sem citar "oportunidade"',async()=>{
  // "próxima visita" não pode ser sequestrada pelo novo gatilho.
  assert.notEqual(routeValIntent({message:'qual a proxima visita?',hasClient:true}).intent,'CHECK_OPPORTUNITY')
 })
+
+// Limpar "Tipo de negócio" era aceito, mas o cartão, o chip de filtro e o CSV continuavam mostrando
+// o tipo antigo, ressuscitado a partir de `category`.
+test('limpar o tipo de negócio limpa de verdade',()=>{
+ const joao={id:'joao',name:'João Pereira',commercial:{}}
+ const cleared=buildOpportunityWorkspace([joao],[{id:'db:1',databaseId:1,clientId:'joao',candidateKey:'manual:a',title:'Barter milho 26',stage:'Proposta',status:'open',value:90000,category:'Barter',
+  evidence:[{type:'opportunity_workspace_v1',businessType:'',status:'open'}]}])
+ assert.equal(cleared.find(item=>item.title==='Barter milho 26')?.businessType,'')
+ // Sem escolha registrada, o category ainda serve de origem.
+ const inherited=buildOpportunityWorkspace([joao],[{id:'db:2',databaseId:2,clientId:'joao',candidateKey:'manual:b',title:'Insumo soja',stage:'Proposta',status:'open',value:1000,category:'Insumos',evidence:[]}])
+ assert.equal(inherited.find(item=>item.title==='Insumo soja')?.businessType,'Insumos')
+ assert.match(read('server/opportunity-workspace.js'),/category:businessType\|\|text\(BUSINESS_TYPES\.includes\(input\.category\?\?current\?\.category\)\?'':/)
+})
+
+// O candidato projetado do cadastro vale a carteira em aberto INTEIRA: somado ao negócio que o
+// consultor registrou, "Valor em aberto" contava o mesmo dinheiro duas vezes.
+test('"Valor em aberto" não conta a carteira do produtor duas vezes',()=>{
+ const joao={id:'joao',name:'João Pereira',additionalNeed:'Ampliar armazenagem',additionalNeedStatus:'reported',
+  commercial:{opportunity:'Ampliar armazenagem',opportunityProvenance:{origin:'producer_360',field:'q27',state:'reported'},potential:120000,potentialValidated:true}}
+ // Sem oportunidade registrada, o candidato do cadastro continua valendo a carteira em aberto.
+ const onlyProjected=buildOpportunityWorkspace([joao],[])
+ assert.equal(onlyProjected.length,1)
+ assert.ok(Number(onlyProjected[0].value)>0)
+ // Com uma oportunidade registrada, o cartão da necessidade permanece, mas sem somar de novo.
+ const withSaved=buildOpportunityWorkspace([joao],[{id:'db:1',databaseId:1,clientId:'joao',candidateKey:'manual:a',title:'Barter milho 26',stage:'Proposta',status:'open',value:90000,evidence:[]}])
+ assert.equal(withSaved.length,2)
+ const projected=withSaved.find(item=>item.title==='Ampliar armazenagem')
+ assert.equal(projected.value,null)
+ assert.equal(projected.valueKnown,false)
+ assert.equal(withSaved.reduce((total,item)=>total+Number(item.value||0),0),90000)
+})
+
+// A coluna não tinha ordem própria: era a ordem de chegada do estado, e o cartão editado subia ao
+// topo ao salvar e descia ao fim no refresh.
+test('as colunas do quadro têm ordem própria, estável entre um refresh e outro',()=>{
+ const source=read('src/pages/Opportunities.jsx')
+ assert.match(source,/const columns=OPPORTUNITY_STAGES\.map\(stage=>\(\{stage,items:filtered\.filter\(x=>x\.stage===stage\)\.slice\(\)\.sort\(/)
+ assert.match(source,/dayKey\(a\.nextActionAt,timeZone\)\|\|'9999-99-99'/)
+})
+
+// O texto de recusa era um por intenção e ignorava o objeto da frase: "fecha a oportunidade" mandava
+// o consultor para o Cliente 360, onde oportunidade não se edita.
+test('a recusa de escrita aponta o módulo onde a alteração é feita',()=>{
+ const server=read('server.js')
+ assert.match(server,/const writeTarget=\/\\b\(\?:oportunidade\|neg\[oó\]cio\|negocia\[c\ç\]\[a\ã\]o\|proposta\|pipeline\)\\b\/i\.test\(message\)\?'Oportunidades'/)
+ assert.match(server,/canonicalModule:writeTarget\|\|null/)
+ assert.doesNotMatch(server,/UPDATE:'A VAL não altera cadastro ou registros por conversa\. Abra o produtor no Cliente 360/)
+})

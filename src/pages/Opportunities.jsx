@@ -43,7 +43,13 @@ export default function Opportunities({clients=[],persistedItems=[],storageScope
  const filtered=useMemo(()=>filterOpportunities(items,filters).filter(x=>!filters.clientId||String(x.clientId)===filters.clientId),[items,filters])
  const selected=filtered.find(x=>x.id===selectedId)||null
  const metrics=opportunityMetrics(filtered,now,timeZone)
- const columns=OPPORTUNITY_STAGES.map(stage=>({stage,items:filtered.filter(x=>x.stage===stage)}))
+ // A coluna nao tinha ordem propria: era a ordem de chegada do estado. O cartao recem-salvo subia
+ // para o topo e descia para o fim ao "Atualizar carteira", conforme a persistencia devolvia.
+ // Ordem estavel e util: prazo mais proximo primeiro, depois produtor, desempate pelo id.
+ const columns=OPPORTUNITY_STAGES.map(stage=>({stage,items:filtered.filter(x=>x.stage===stage).slice().sort((a,b)=>
+  (dayKey(a.nextActionAt,timeZone)||'9999-99-99').localeCompare(dayKey(b.nextActionAt,timeZone)||'9999-99-99')
+  ||String(a.client?.name||'').localeCompare(String(b.client?.name||''),'pt-BR')
+  ||String(a.id||'').localeCompare(String(b.id||'')))}))
  const options=key=>[...new Set(items.map(x=>x[key]).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'))
  const context=useMemo(()=>selected?buildOpportunityCopilotContext({opportunity:{...selected,id:selected.databaseId||selected.candidateKey||selected.id},client:selected.client}):null,[selected])
  useEffect(()=>{onContextChange?.(context);return()=>onContextChange?.(null)},[context,onContextChange])

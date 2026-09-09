@@ -34,7 +34,10 @@ export function buildWorkspaceMutation(current,input,{ownerId,now=new Date().toI
  const volume=numeric(get('volume'),'Volume'),volumeUnit=text(get('volumeUnit'),20)
  if(volume!==null&&!['sc','t','kg','L','un'].includes(volumeUnit))throw fail('Informe uma unidade válida para o volume.')
  const data={title,candidateKey,stage:input.stage,value:numeric(input.value,'Valor'),
-  category:businessType||text(input.category||current?.category,120),
+  // Limpar "Tipo de negocio" gravava businessType='' mas mantinha category com o valor anterior,
+  // e o quadro ressuscitava o tipo antigo a partir dela. Quando o tipo e limpo, o category que era
+  // o proprio tipo tambem sai.
+  category:businessType||text(BUSINESS_TYPES.includes(input.category??current?.category)?'':(input.category??current?.category),120),
   hypothesis:text(input.hypothesis??current?.hypothesis,4000),
   nextAction:text(input.nextAction,2000),nextActionAt:timestamp(input.nextActionAt,'Prazo'),
   crop:text(get('crop'),120),season:text(get('season'),60),businessType,status,lossReason,

@@ -642,12 +642,19 @@ async function handleApi(request,response,url){
    return json(response,409,{error:'Use Registrar informação para revisar e confirmar qualquer atualização de memória.',code:'val_confirmation_required',globalIntent:workspaceRoute})
   }
   if(workspaceRoute.requires_confirmation&&['UPDATE','CREATE','MARK_COMPLETE'].includes(workspaceRoute.intent)){
+   // A recusa precisa apontar o modulo onde a alteracao E FEITA. O texto era um por intencao e
+   // ignorava o objeto da frase, entao "fecha a oportunidade" mandava o consultor para o Cliente
+   // 360, onde oportunidade nao se edita. O objeto ja foi reconhecido pelo roteador.
+   const writeTarget=/\b(?:oportunidade|neg[oó]cio|negocia[cç][aã]o|proposta|pipeline)\b/i.test(message)?'Oportunidades'
+    :/\b(?:visita|compromisso|tarefa|agenda)\b/i.test(message)?'Visitas'
+    :/\b(?:safra|cultura|talh[aã]o|propriedade)\b/i.test(message)?'o Produtor 360'
+    :''
    const guidance={
-    UPDATE:'A VAL não altera cadastro ou registros por conversa. Abra o produtor no Cliente 360 para atualizar e confirmar a mudança.',
-    CREATE:'A VAL não cria visitas, oportunidades ou compromissos por conversa. Abra o módulo correspondente para criar e confirmar o registro.',
-    MARK_COMPLETE:'A conclusão exige confirmação no módulo canônico antes de persistir. Abra Visitas ou Compromissos para concluir o item.'
+    UPDATE:`A VAL não altera cadastro ou registros por conversa. Abra ${writeTarget||'o produtor no Cliente 360'} para atualizar e confirmar a mudança.`,
+    CREATE:`A VAL não cria visitas, oportunidades ou compromissos por conversa. Abra ${writeTarget||'o módulo correspondente'} para criar e confirmar o registro.`,
+    MARK_COMPLETE:`A conclusão exige confirmação no módulo canônico antes de persistir. Abra ${writeTarget||'Visitas ou Compromissos'} para concluir o item.`
    }
-   return json(response,409,{error:guidance[workspaceRoute.intent],code:'val_canonical_module_required',globalIntent:workspaceRoute})
+   return json(response,409,{error:guidance[workspaceRoute.intent],code:'val_canonical_module_required',globalIntent:workspaceRoute,canonicalModule:writeTarget||null})
   }
   const requestId=normalizeValProgressRequestId(payload.requestId)||randomUUID()
   const preferences=conversationPreferences(payload,requestedAttachmentTypes)

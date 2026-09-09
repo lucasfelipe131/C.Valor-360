@@ -28,7 +28,9 @@ export function buildOpportunityWorkspace(clients=[],persisted=[]){
    stage:OPPORTUNITY_STAGES.includes(item.stage)?item.stage:'Diagnóstico',
    value:opportunityValue(item),valueKnown:opportunityValue(item)!==null,
    crop:details.crop||item.crop||'',season:details.season||item.season||'',
-   businessType:details.businessType||item.businessType||(BUSINESS_TYPES.includes(item.category)?item.category:''),
+   // O vazio gravado e uma escolha do consultor, nao ausencia de informacao: cair no fallback de
+   // category fazia o cartao, o chip de filtro e o CSV continuarem mostrando o tipo apagado.
+   businessType:details.businessType??item.businessType??(BUSINESS_TYPES.includes(item.category)?item.category:''),
    nextAction:item.nextAction||'',nextActionAt:item.nextActionAt||null,
    history:historyOf(item),workspaceDetails:details
   })
@@ -40,7 +42,13 @@ export function buildOpportunityWorkspace(clients=[],persisted=[]){
   return !saved.some(x=>String(x.clientId)===String(item.clientId)&&x.candidateKey===item.candidateKey)
  }).map(item=>{
   const client=byClient.get(String(item.clientId));const metrics=commercialMetrics(client)
-  return {...item,client,status:'open',value:metrics.openPotentialKnown?item.value:null,valueKnown:metrics.openPotentialKnown,crop:'',season:'',businessType:'',nextAction:'',nextActionAt:null,history:[],workspaceDetails:{}}
+  // O candidato projetado do cadastro vale a carteira em aberto INTEIRA do produtor. Quando o
+  // consultor ja registrou uma oportunidade para esse produtor, somar os dois conta o mesmo
+  // dinheiro duas vezes em "Valor em aberto". O cartao da necessidade continua na tela; o que
+  // some e a soma duplicada.
+  const alreadyRegistered=saved.some(entry=>String(entry.clientId)===String(item.clientId))
+  const projectedValue=alreadyRegistered||!metrics.openPotentialKnown?null:item.value
+  return {...item,client,status:'open',value:projectedValue,valueKnown:projectedValue!==null,crop:'',season:'',businessType:'',nextAction:'',nextActionAt:null,history:[],workspaceDetails:{}}
  })
  return [...projected,...saved]
 }
