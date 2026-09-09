@@ -73,9 +73,9 @@ test('matriz obrigatória mantém 30 cenários rastreáveis sem transformar UAT 
 
 test('App mantém Copiloto global e Oportunidades reutiliza o componente no painel contextual',()=>{
  assert.match(app,/copilot:\['VAL Copilot'/)
- assert.match(app,/setPage\('copilot'\)/)
+ assert.match(app,/if\(next==='copilot'\)\{setCopilotLoaded\(true\);setCopilotOpen\(true\)/)
  assert.match(app,/page!=='copilot'&&page!=='opportunities'&&<Topbar/)
- assert.match(app,/page!=='client360'&&page!=='opportunities'\)setPage\('copilot'\)/)
+ assert.doesNotMatch(app.slice(app.indexOf('const openCopilot='),app.indexOf('const closeCopilot=')),/setPage\(/)
  assert.match(app,/content-copilot-fullscreen/)
  assert.match(app,/open=\{copilotOpen\}/)
  assert.match(sidebar,/className=\{`sidebar-copilot\$\{page==='copilot'\?' active':''\}`\}/)

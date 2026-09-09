@@ -46,7 +46,7 @@ export default function Visits({clients,visits,storageScope,initialClientId='',i
  const createDemo=async()=>{setDemoBusy(true);setDemoNotice('');try{const response=await fetch('/api/demo/producer',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',signal:AbortSignal.timeout(30000)});const payload=await response.json();if(!response.ok)throw new Error(payload.error||'Não foi possível criar a demonstração.');await onRefreshPortfolio?.();setDemoNotice(payload.created?'Rafael Missões (FICTÍCIO) criado com propriedades, talhões, perfil e histórico. Procure-o em Produtores.':'O produtor fictício já está disponível. Seus testes e edições foram preservados.')}catch(exception){setDemoNotice(exception.message)}finally{setDemoBusy(false)}}
  const openVisitDetails=visit=>{setHistoryOpen(true);setTimeout(()=>document.getElementById(`visit-card-${visit.id}`)?.scrollIntoView({block:'start',behavior:'smooth'}),0)}
  const addRouteClient=(clientId,date,reason)=>{setShowForm(true);setForm({clientId,date,time:'14:00',objective:reason||'Visita de acompanhamento'});setTimeout(()=>{formRef.current?.scrollIntoView({block:'start',behavior:'smooth'});formRef.current?.querySelector('input[type=time]')?.focus()},0)}
- const [form,setForm]=useState({clientId:clients[0]?.id||'',date:today(),time:'14:00',objective:''})
+ const [form,setForm]=useState({clientId:initialClientId||'',date:today(),time:'14:00',objective:''})
  const [saving,setSaving]=useState(false)
  const [error,setError]=useState('')
  const [preparations,setPreparations]=useState({})
@@ -104,15 +104,12 @@ export default function Visits({clients,visits,storageScope,initialClientId='',i
  const activeVisit=visits.find(visit=>visit.id===activePreparationId)
  const activePrepared=activeVisit?preparations[activeVisit.id]:null
  const activeClient=activeVisit?clientOf(activeVisit.clientId):null
- const fallbackVisit=!activeVisit&&!showForm?(upcoming[0]||ordered[0]||null):null
- const fallbackClient=fallbackVisit?clientOf(fallbackVisit.clientId):null
  const formClient=showForm?clientOf(form.clientId):null
  const pageContext=useMemo(()=>{
   if(activeVisit&&activeClient)return buildVisitCopilotContext({visit:activeVisit,client:activeClient,preparing:true})
   if(showForm&&formClient)return buildVisitCopilotContext({visit:{clientId:form.clientId,objective:form.objective,lifecycleStatus:'RASCUNHO'},client:formClient,draft:true})
-  if(fallbackVisit&&fallbackClient)return buildVisitCopilotContext({visit:fallbackVisit,client:fallbackClient})
   return {source:'visits',clientId:'',prompt:'',context:null,persistenceMode:'NONE'}
- },[activeVisit,activeClient,showForm,form.clientId,form.objective,fallbackVisit,fallbackClient])
+ },[activeVisit,activeClient,showForm,form.clientId,form.objective])
  useEffect(()=>{onContextChange?.(pageContext);return()=>onContextChange?.(null)},[pageContext,onContextChange])
  const askVisit=(visit,preparing=false)=>{const client=clientOf(visit?.clientId);if(client)onAsk?.(buildVisitCopilotContext({visit,client,preparing}))}
  if(activeVisit&&activePrepared)return <PrepareVisitSimple

@@ -35,7 +35,10 @@ const stopWords=new Set([
 
 // Plural nao e assunto diferente: "daninhas" deve encontrar "daninha" e "herbicidas" deve
 // encontrar "herbicida". Aplicado igualmente a pergunta e ao corpus.
-const singular=token=>token.length>=5&&token.endsWith('s')&&!token.endsWith('ss')?token.slice(0,-1):token
+const singular=token=>{
+ const word=token.length>=5&&token.endsWith('s')&&!token.endsWith('ss')?token.slice(0,-1):token
+ return ({enterrada:'incorporada',enterrado:'incorporada',incorporado:'incorporada',lanco:'superficial'})[word]||word
+}
 
 const lexicalExpansions=Object.freeze({
  adubacao:['fertilizante','fertilidade'],
@@ -191,8 +194,19 @@ function corpusKnowsQuestion(queryBaseTokens,frequency){
 const discriminatingFrequency=2
 const conceptTerms=new Set(exclusiveConceptGroups.flatMap(([,terms])=>terms))
 const discriminating=(token,frequency)=>!conceptTerms.has(token)&&(frequency?.get(token)??Infinity)<=discriminatingFrequency
+const genericTopicTerms=new Set(['aplicacao','aplicacoes','cultura','cultivo','opcao','opcoes','funcao','papel','efeito','efeitos','vantagem','desvantagem','diferenca','corrigido'])
 
-function scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens=new Set(),normalizedQuery='',corpusFrequency,queryConcepts,requestedModules,requestedGeography,sourceById,now}){
+// Lexical overlap with "milho" or "aplicação" is insufficient if the answer
+// drops the actual pest/concept. This checks relevance, not factual truth.
+export function generalAnswerTopicMatches(question,answer){
+ const frequency=corpusVocabulary(loadKnowledgeLibrary())
+ const requested=baseTokens(stripMessagePreamble(question)||question)
+ const anchors=[...requested].filter(token=>token.length>=5&&!conceptTerms.has(token)&&!genericTopicTerms.has(token)&&(frequency.get(token)||0)<=discriminatingFrequency)
+ const answerWords=[...baseTokens(answer)]
+ return anchors.every(anchor=>answerWords.some(word=>word===anchor||word.length>=5&&word.slice(0,5)===anchor.slice(0,5)))&&!conceptConflict(exclusiveConcepts(question),exclusiveConcepts(answer))
+}
+
+function scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens=new Set(),normalizedQuery='',corpusFrequency,queryConcepts,requestedModules,requestedGeography,sourceById,now,strictSubject=false}){
  const reasonCodes=[]
  if(!item.retrieval_eligible)return {eligible:false,reason:item.prompt_safety==='BLOCKED'?'PROMPT_INJECTION_BLOCKED':'STATUS_NOT_ELIGIBLE'}
  if(item.status!=='APPROVED')return {eligible:false,reason:'STATUS_NOT_APPROVED'}
@@ -223,6 +237,12 @@ function scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens=new Set(),no
  // (caso de consulta de termo unico, como "o que e basis").
  if(queryBaseTokens?.size){
   const itemTokens=new Set(Object.values(fields).flatMap(set=>[...set]))
+  if([...queryBaseTokens].every(token=>conceptTerms.has(token)))return {eligible:false,reason:'TOPIC_REQUIRED'}
+  // A crop/category is not the subject of a specific question. In particular,
+  // "inseticida para cigarrinha no milho" cannot select rotation of canola or a
+  // generic insecticide card while silently dropping the pest the user named.
+  const subjectTerms=[...queryBaseTokens].filter(token=>!conceptTerms.has(token)&&corpusFrequency.has(token)&&discriminating(token,corpusFrequency))
+  if(strictSubject&&subjectTerms.length&&!subjectTerms.some(token=>itemTokens.has(token)))return {eligible:false,reason:'SUBJECT_NOT_COVERED'}
   const covered=[...queryBaseTokens].filter(token=>itemTokens.has(token)).length
   // triggers sao escritos pelo curador para dizer "este item responde sobre X",
   // entao um unico termo que caia neles basta. Titulo so vale para termo
@@ -336,11 +356,12 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
  const excludedReasonCounts={}
  const ranked=[]
  const corpusFrequency=corpusVocabulary(source)
- const offDomainQuestion=!corpusKnowsQuestion(queryBaseTokens,corpusFrequency)
+ const unknownTopic=[...queryBaseTokens].some(token=>token.length>=5&&!corpusFrequency.has(token)&&!genericTopicTerms.has(token))
+ const offDomainQuestion=!corpusKnowsQuestion(queryBaseTokens,corpusFrequency)||cappedLimit===1&&unknownTopic
 
  for(const item of source.items){
   if(offDomainQuestion){excludedReasonCounts.QUESTION_OUTSIDE_CORPUS=(excludedReasonCounts.QUESTION_OUTSIDE_CORPUS||0)+1;continue}
-  const result=scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens,normalizedQuery,corpusFrequency,queryConcepts,requestedModules,requestedGeography:geography,sourceById,now})
+  const result=scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens,normalizedQuery,corpusFrequency,queryConcepts,requestedModules,requestedGeography:geography,sourceById,now,strictSubject:cappedLimit===1})
   if(!result.eligible){
    excludedReasonCounts[result.reason]=(excludedReasonCounts[result.reason]||0)+1
    continue

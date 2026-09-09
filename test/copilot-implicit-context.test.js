@@ -101,7 +101,7 @@ test('superfícies registram o objeto ativo e abrem Perguntar à VAL sem persist
  const copilot=read('src/components/GlobalValCopilot.jsx')
  const helper=read('src/lib/copilot-context.js')
 
- assert.match(app,/resolveCopilotLaunch\(\{input,implicitContext:copilotPageContext/)
+ assert.match(app,/resolveCopilotLaunch\(\{input:request,implicitContext:copilotPageContext/)
  assert.match(app,/copilotOwnerScope=currentUser\?\.storageScope\|\|currentUser\?\.id/)
  assert.match(app,/storageScope:copilotOwnerScope/)
  assert.match(app,/GlobalValCopilot key=\{copilotOwnerScope\|\|'session'\}/)

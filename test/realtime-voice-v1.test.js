@@ -109,8 +109,8 @@ test('contextEpoch informado pelo browser precisa coincidir antes de retrieval, 
   conversationSessions:{ensure:()=>stateFor({contextEpoch:4,domain:'PROFILE'})},
   costStore:{reserve:async()=>{reserved=true;return {reserved:true}},record:async()=>({}),snapshot:async()=>({})}
  })
- await assert.rejects(()=>service.createSession({identity,input:{clientId,conversationId:'thread-a',contextEpoch:3}}),error=>error.code==='realtime_voice_context_epoch_mismatch'&&error.statusCode===409)
- await assert.rejects(()=>service.createSession({identity,input:{clientId,conversationId:'thread-a',contextEpoch:4.5}}),error=>error.code==='realtime_voice_context_epoch_mismatch')
+ await assert.rejects(()=>service.createSession({identity,input:{clientId,conversationId:'thread-a',contextEpoch:3}}),error=>error.code==='realtime_voice_context_epoch_mismatch'&&error.statusCode===409&&error.currentContext.contextEpoch===4&&error.currentContext.clientId===clientId&&error.currentContext.conversationId==='thread-a')
+ await assert.rejects(()=>service.createSession({identity,input:{clientId,conversationId:'thread-a',contextEpoch:4.5}}),error=>error.code==='realtime_voice_context_epoch_mismatch'&&!error.currentContext)
  assert.equal(repositoryCalled,false)
  assert.equal(reserved,false)
  assert.equal(providerCalled,false)
@@ -283,4 +283,15 @@ test('contrato de implantação mantém flag default-off, CSP e fallback',()=>{
  assert.match(hook,/dc\.onmessage=event=>handleEvent\(event\.data,eventScope\)/)
  assert.match(hook,/onAssistantTranscript\?\.\(transcript,eventScope\)/)
  assert.ok(hook.indexOf('navigator.mediaDevices.getUserMedia')<hook.indexOf("fetch('/api/v1/realtime-voice/sessions'"),'microfone deve ser validado antes da reserva/sessão paga')
+})
+
+
+test('voice continuity includes only server-scoped dialogue and excludes foreign, stale, demo-mismatched and browser assistant turns',()=>{
+ const base={role:'user',text:'Podemos continuar a dúvida sobre manejo?',scope_verified:true,tenant_id:tenantId,owner_id:userId,subject_client_id:clientId,conversation_id:'thread-a',context_epoch:2}
+ const poison=[{owner_id:'other-owner'},{tenant_id:'other-tenant'},{subject_client_id:'demo-unrelated'},{subject_client_ids:[clientId,'other-client']},{conversation_id:'other-thread'},{context_epoch:1},{scope_verified:false},{role:'assistant',status:'completed',server_grounded:false}].map(patch=>({...base,...patch,text:'CONTEXT_POISON'}))
+ const context=buildRealtimeValContext({context:contextFor({contextEpoch:2}),conversationState:{...stateFor({contextEpoch:2}),conversation_turns:[base,...poison]}})
+ assert.deepEqual(context.conversation.recent_turns,[{role:'user',text:base.text,source:'USER_SESSION_INPUT',persistence:'NONE'}])
+ assert.doesNotMatch(JSON.stringify(context),/CONTEXT_POISON/)
+ assert.equal(context.evidencePolicy.factsIncluded,false)
+ assert.equal(context.conversation.persistent_memory_unchanged,true)
 })

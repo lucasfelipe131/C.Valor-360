@@ -103,7 +103,9 @@ function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onRe
  const degraded=quality.status==='REASONING_DEGRADED'||reasoning.run?.status==='REASONING_DEGRADED'||reasoning.grounding?.passed===false
  // Orientação geral (cumprimento, conceito da Biblioteca) já é a própria leitura: não há
  // ferramenta executada nem ação a abrir, e o card 'FERRAMENTA EXECUTADA' repetia o texto.
- const generalGuidance=toolResult?.tool==='general_guidance'
+ const generalGuidance=['general_guidance','ai_general_knowledge'].includes(toolResult?.tool)
+ const unverifiedGeneral=reasoning.evidence_status==='UNVERIFIED_MODEL_KNOWLEDGE'
+ const reusedKnowledge=['HIT','COALESCED'].includes(payload?.responseMetadata?.sharedKnowledgeCache?.status)
  const answer=strategy.reading||advice.answer||'A orientação chegou sem uma leitura principal.'
  const intent=String(reasoning.intent||'ASK_CLIENT').toUpperCase()
  const isBehavioralProfile=isBehavioralProfileResponse(reasoning)
@@ -117,6 +119,7 @@ function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onRe
  return <article className={`global-val-answer is-${density}`}>
   {isBehavioralProfile?<ProfileResponse reasoning={reasoning} answer={answer} facts={facts} outputMode={outputMode} audioNode={audioNode}/>:<>
   <DecisionCard reasoning={reasoning} answer={answer} action={degraded||generalGuidance?'':strategy.action} audioNode={audioNode}/>
+  {unverifiedGeneral&&<p className="global-val-knowledge-note"><Sparkles aria-hidden="true"/><span>{reusedKnowledge?'Resposta geral reutilizada do banco':'Resposta geral formulada pela IA'} · sem fonte verificada</span></p>}
   {toolResult&&!generalGuidance?<GenericToolCard title={toolResult.title} summary={toolResult.summary} status={toolResult.status} onOpen={toolResult.page==='copilot'?undefined:()=>openWithSources({page:toolResult.page||'agro',tool:toolResult.tool,manualPage:toolResult.manual_page,mode:toolResult.mode,context:toolResult.context})}/>:null}
   {!degraded&&intent==='PREPARE_VISIT'&&toolResult?.status!=='CONTEXT_REQUIRED'&&<PrepareVisitCard reasoning={reasoning} questions={questions} onOpen={openScoped}/>}
   {!degraded&&toolResult?.status!=='CATALOG'&&['ASK_AGRONOMIC','ANALYZE_SOIL'].includes(intent)&&<AgronomicInsightCard reasoning={reasoning} onOpen={openScoped}/>}
@@ -135,18 +138,18 @@ function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onRe
  </article>
 }
 
-export default function GlobalValCopilot({open,onClose,embedded=false,navigationKey='',revealKey=0,clients=[],contextClient=null,seed,workspaceContext=null,onRefreshPortfolio,onOpenClient,onPrepareVisit,onNavigate,onWorkspaceAction,visits=[],opportunities=[],storageScope='session',identityScope=null}){
+export default function GlobalValCopilot({open,onClose,embedded=false,navigationKey='',revealKey=0,collapseKey=navigationKey,clients=[],onConversationClientChange,contextClient=null,seed,workspaceContext=null,onRefreshPortfolio,onOpenClient,onPrepareVisit,onNavigate,onWorkspaceAction,visits=[],opportunities=[],storageScope='session',identityScope=null}){
  const [panelExpanded,setPanelExpanded]=useState(false)
  const [panelCompact,setPanelCompact]=useState(false)
  const compactToggleRef=useRef(null)
  useEffect(()=>{if(open)setPanelCompact(false)},[open,seed?.nonce,revealKey])
- const previousNavigation=useRef(navigationKey)
+ const previousNavigation=useRef(collapseKey)
  useEffect(()=>{
-  if(previousNavigation.current!==navigationKey){
+  if(previousNavigation.current!==collapseKey){
    if(embedded&&open){setPanelExpanded(false);setPanelCompact(true);setHistoryOpen(false)}
-   previousNavigation.current=navigationKey
+   previousNavigation.current=collapseKey
   }
- },[navigationKey,embedded,open])
+ },[collapseKey,embedded,open])
  useEffect(()=>{if(panelCompact)compactToggleRef.current?.focus()},[panelCompact])
  const [panelPinned,setPanelPinned]=useState(true)
  const storedWorkspace=useMemo(()=>readConversationWorkspace(typeof sessionStorage==='undefined'?null:sessionStorage,storageScope),[storageScope])
@@ -202,6 +205,7 @@ export default function GlobalValCopilot({open,onClose,embedded=false,navigation
  const registrationScopeRef=useRef({clientId:'',threadKey:''})
  const realtimeClarificationRef=useRef(null)
  const client=useMemo(()=>clients.find(item=>String(item.id)===String(selectedId))||null,[clients,selectedId])
+ useEffect(()=>{onConversationClientChange?.(client)},[client?.id,onConversationClientChange])
  const canonicalThreadKey=useMemo(()=>conversationScopeKey({clientId:selectedId,context:activeContext}),[selectedId,activeContext])
  const threadKey=threadOverride||canonicalThreadKey
  registrationScopeRef.current={clientId:String(selectedId||''),threadKey}
@@ -215,6 +219,10 @@ export default function GlobalValCopilot({open,onClose,embedded=false,navigation
  const realtimeContextEpoch=conversationContextEpoch(visibleThread,{conversationId:realtimeConversationId,producerId:client?.id||'',fallbackContextEpoch:metadataContextEpoch})
  const conversationWorkspace=useMemo(()=>scopeWorkspaceToConversation(workspaceContext,{client,conversationId:realtimeConversationId}),[workspaceContext,client,realtimeConversationId])
  const realtimeScope={conversationId:realtimeConversationId,clientId:client?.id||'',contextEpoch:realtimeContextEpoch}
+ const syncRealtimeContext=(context,sourceScope)=>{
+  if(!realtimeTurnMatchesScope(sourceScope,realtimeScope)||String(context?.conversationId)!==realtimeConversationId||String(context?.clientId||'')!==String(client?.id||'')||!Number.isSafeInteger(context?.contextEpoch)||context.contextEpoch<0)return
+  setThreadMetadata(current=>({...current,[threadKey]:{...(current[threadKey]||{}),contextEpoch:context.contextEpoch,domain:context.contextDomain||current[threadKey]?.domain||'GENERAL'}}))
+ }
  const registerInitialText=useMemo(()=>registrationDraftTextForScope(registrationDraft,{clientId:selectedId,threadKey})||buildRegisterPrefill(sessionReplies[threadKey]||[]),[registrationDraft,selectedId,sessionReplies,threadKey])
  const latestPayload=useMemo(()=>[...visibleThread].reverse().find(item=>item.role==='assistant')?.payload||null,[visibleThread])
  const latestReasoning=latestPayload?.advice?.ai_reasoning||{}
@@ -233,7 +241,7 @@ export default function GlobalValCopilot({open,onClose,embedded=false,navigation
   chatRunRef.current={generation,controller,threadKey:activeThreadKey}
   return {generation,controller}
  }
- useEffect(()=>{if(contextClient?.id&&String(contextClient.id)!==String(selectedId)){cancelUploadRun();cancelChatRun();cancelRealtimeClarification();setThreadOverride('');setActiveContext(null);setPendingFiles([]);setMessage('');setSelectedId(contextClient.id)}},[contextClient?.id,uploading])
+ useEffect(()=>{if(contextClient?.id&&String(contextClient.id)!==String(selectedId)){cancelUploadRun();cancelChatRun();cancelRealtimeClarification();setThreadOverride('');setActiveContext(null);setPendingFiles([]);setMessage('');setSelectedId(contextClient.id)}},[contextClient?.id])
  useEffect(()=>{
   if(!seed?.nonce)return
   cancelUploadRun();cancelChatRun();cancelRealtimeClarification()
@@ -285,7 +293,12 @@ export default function GlobalValCopilot({open,onClose,embedded=false,navigation
   realtimeClarificationRef.current=null
   pending?.resolve({responseText:'',suppressSpeech:true,cancelled:true})
  }
- const chooseClient=id=>{if(uploading)return;cancelChatRun();cancelRealtimeClarification();if(embedded){const target=clients.find(item=>String(item.id)===String(id));if(!target)return;onOpenClient?.(target);}if(!id){newConversation({general:true});return}setThreadOverride('');setSelectedId(id);setActiveContext(null);setMode('ASK');setRegistrationDraft(null);setRegistrationAutoOpenKey('');setError('');setClarification(null);setHistoryOpen(false)}
+ const chooseClient=id=>{
+  if(uploading)return
+  if(!id){newConversation({general:true});return}
+  if(!clients.some(item=>String(item.id)===String(id)))return
+  cancelChatRun();cancelRealtimeClarification();setThreadOverride('');setSelectedId(id);setActiveContext(null);setMessage('');setPendingFiles([]);setMode('ASK');setRegistrationDraft(null);setRegistrationAutoOpenKey('');setError('');setClarification(null);setHistoryOpen(false)
+ }
  const requestPushToTalk=()=>{
   voiceActivationSequence.current+=1
   setVoiceAutoOpenKey(`push-to-talk-${Date.now()}-${voiceActivationSequence.current}`)
@@ -294,14 +307,13 @@ export default function GlobalValCopilot({open,onClose,embedded=false,navigation
  const newConversation=({general=false}={})=>{
   if(uploading)return
   cancelChatRun();cancelRealtimeClarification()
-  if(embedded)general=false
   const nextClientId=general?'':selectedId
   const nextKey=createConversationThreadKey({clientId:nextClientId})
   setThreadOverride(nextKey);if(general){setSelectedId('');setActiveContext(null)}
   setThreads(current=>({...current,[nextKey]:[]}));setSessionReplies(current=>({...current,[nextKey]:[]}));resetConversationId(nextKey,storageScope);setMessage('');setMode('ASK');setRegistrationDraft(null);setRegistrationAutoOpenKey('');setReplyingTo(null);setSessionReplyOffer(null);setAttachments([]);setPendingFiles([]);setSeedFiles([]);setSeedText(null);setSeedAttachmentIntent('');setPendingCapture('');setVoiceAutoOpenKey('');setError('');setClarification(null);setHistoryOpen(false)
   requestAnimationFrame(()=>messageInput.current?.focus())
  }
- const selectHistory=item=>{if(uploading)return;cancelChatRun();cancelRealtimeClarification();if(embedded&&String(item.clientId)!==String(contextClient?.id)){const target=clients.find(entry=>String(entry.id)===String(item.clientId));if(!target)return;onOpenClient?.(target);}setSelectedId(item.clientId||'');setActiveContext(item.context||null);setThreadOverride(item.key||'');setRegistrationDraft(null);setRegistrationAutoOpenKey('');setHistoryOpen(false);setMode('ASK')}
+ const selectHistory=item=>{if(uploading)return;if(item.clientId&&!clients.some(entry=>String(entry.id)===String(item.clientId)))return;cancelChatRun();cancelRealtimeClarification();setSelectedId(item.clientId||'');setActiveContext(item.context||null);setThreadOverride(item.key||'');setMessage('');setPendingFiles([]);setRegistrationDraft(null);setRegistrationAutoOpenKey('');setHistoryOpen(false);setMode('ASK')}
 
  const uploadFiles=async(files,targetClient)=>{
   const slots=Math.max(0,3-attachments.length);if(!slots){setError('Envie no máximo 3 arquivos por pergunta.');return false}
@@ -396,7 +408,7 @@ export default function GlobalValCopilot({open,onClose,embedded=false,navigation
    setMessage('');setReplyingTo(null);return {responseText:'',suppressSpeech:true}
   }
   const currentConversationId=conversationId(activeThreadKey,storageScope)
-  const currentContextEpoch=conversationContextEpoch(activeThread,{conversationId:currentConversationId,producerId:client?.id||'',fallbackContextEpoch:0})
+  const currentContextEpoch=conversationContextEpoch(activeThread,{conversationId:currentConversationId,producerId:client?.id||'',fallbackContextEpoch:metadataContextEpoch})
   const currentScope={tenantId:identityTenantId,ownerId:identityOwnerId,conversationId:currentConversationId,producerId:client?.id||null,contextEpoch:currentContextEpoch,domain:String(threadMetadata[activeThreadKey]?.domain||'').trim().toUpperCase()}
   let sourceTurn=null
   if(naturalCommandNeedsSettledResponse(naturalCommand)){
@@ -610,7 +622,7 @@ export default function GlobalValCopilot({open,onClose,embedded=false,navigation
  }
  const responseCardActionAllowed=responseScope=>{
   const activeConversationId=conversationId(threadKey,storageScope)
-  const activeScope={tenantId:identityTenantId,ownerId:identityOwnerId,conversationId:activeConversationId,producerId:client?.id||null,contextEpoch:conversationContextEpoch(visibleThread,{conversationId:activeConversationId,producerId:client?.id||'',fallbackContextEpoch:0}),domain:activeDomain}
+  const activeScope={tenantId:identityTenantId,ownerId:identityOwnerId,conversationId:activeConversationId,producerId:client?.id||null,contextEpoch:conversationContextEpoch(visibleThread,{conversationId:activeConversationId,producerId:client?.id||'',fallbackContextEpoch:metadataContextEpoch}),domain:activeDomain}
   if(responseCardActionMatchesScope(responseScope,activeScope))return true
   setError('Este card pertence a outro tenant, usuário, produtor, conversa, epoch ou domínio. Abra a conversa de origem para executar esta ação.')
   return false
@@ -683,6 +695,7 @@ export default function GlobalValCopilot({open,onClose,embedded=false,navigation
      onStart={()=>{setError('');if(!hasValOutputModePreference(storageScope))setOutputMode(writeValOutputMode(storageScope,'audio'))}}
      onStateChange={state=>{setVoiceStageActive(state.status!=='IDLE');setVoiceConnection(state)}}
      onTranscript={transcript=>ask(transcript,undefined,{inputModality:'voice',responseMode:outputMode,conversationMode:true})}
+     onRealtimeContextSync={syncRealtimeContext}
      onRealtimeUserTranscript={(transcript,callbackScope)=>{if(!realtimeTurnMatchesScope(callbackScope,realtimeScope))return;append({role:'user',text:transcript,intent:'REALTIME_CONVERSATION',conversationId:realtimeConversationId,producerId:client?.id||null,contextEpoch:realtimeContextEpoch,realtimeSessionId:callbackScope.sessionId||null,persistence:'NONE'},threadKey)}}
      onRealtimeAssistantTranscript={(transcript,callbackScope)=>{if(!realtimeTurnMatchesScope(callbackScope,realtimeScope))return;append({role:'assistant_text',status:'incomplete',serverGrounded:false,grounding:'UNVERIFIED_BROWSER_TRANSCRIPT',followUpEligible:false,text:transcript,intent:'REALTIME_CONVERSATION',conversationId:realtimeConversationId,producerId:client?.id||null,contextEpoch:realtimeContextEpoch,realtimeSessionId:callbackScope.sessionId||null,persistence:'NONE'},threadKey)}}
      onRealtimeToolCall={async({request,reason})=>{const result=await ask(request,undefined,{inputModality:'voice',responseMode:'text',conversationMode:true,governedTool:true,skipUserAppend:true});return {status:result?.responseText?'COMPLETED':'UNAVAILABLE',reason,result:result?.responseText||'A capacidade governada não devolveu resultado.'}}}

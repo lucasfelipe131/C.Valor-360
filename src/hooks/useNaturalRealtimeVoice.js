@@ -29,7 +29,7 @@ export function realtimeVoiceReconnectReady(requestScope={},activeScope={},resou
  return Boolean(requestedKey&&!String(resourceScope.scopeKey||'')&&requestedKey===String(activeScope.scopeKey||''))
 }
 
-export default function useNaturalRealtimeVoice({clientId='',conversationId='',contextEpoch=0,activeContext=null,disabled=false,onUserTranscript,onAssistantTranscript,onToolCall,onMemoryReview,onMetrics,onError,onStateChange}={}){
+export default function useNaturalRealtimeVoice({clientId='',conversationId='',contextEpoch=0,activeContext=null,disabled=false,onUserTranscript,onAssistantTranscript,onToolCall,onMemoryReview,onMetrics,onError,onStateChange,onContextSync}={}){
  const [machine,setMachine]=useState({status:STATES.IDLE,microphoneActive:false,microphonePermission:'UNKNOWN',error:'',fallbackReason:'',sessionId:'',model:'',budgetRemainingUsd:null,retryAfterSeconds:0,interimTranscript:'',assistantTranscript:''})
  const [reconnectSequence,setReconnectSequence]=useState(0)
  const machineRef=useRef(machine)
@@ -39,14 +39,16 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
  const pendingToolResponse=useRef(null)
  const toolInFlight=useRef(0)
  const resources=useRef(emptyResources())
- const currentEpoch=requiredEpoch(contextEpoch)
+ const [reconciledScope,setReconciledScope]=useState(null)
+ const requestedScopeKey=realtimeVoiceScopeKey({clientId,conversationId,contextEpoch,activeContext})
+ const currentEpoch=reconciledScope?.requestedScopeKey===requestedScopeKey?reconciledScope.contextEpoch:requiredEpoch(contextEpoch)
  const scopeKey=realtimeVoiceScopeKey({clientId,conversationId,contextEpoch:currentEpoch,activeContext})
  const activeScopeRef=useRef(null)
  activeScopeRef.current={scopeKey,clientId:String(clientId),producerId:String(clientId),conversationId:String(conversationId),contextEpoch:currentEpoch}
  const scopeKeyRef=useRef(scopeKey),scopeReconnectPending=useRef(null)
- const callbacks=useRef({onUserTranscript,onAssistantTranscript,onToolCall,onMemoryReview,onMetrics,onError,onStateChange})
+ const callbacks=useRef({onUserTranscript,onAssistantTranscript,onToolCall,onMemoryReview,onMetrics,onError,onStateChange,onContextSync})
  const marks=useRef(null),pendingUser=useRef(''),assistantBuffers=useRef(new Map()),thinkingWatchdog=useRef(null),pendingReconnect=useRef(null)
- callbacks.current={onUserTranscript,onAssistantTranscript,onToolCall,onMemoryReview,onMetrics,onError,onStateChange}
+ callbacks.current={onUserTranscript,onAssistantTranscript,onToolCall,onMemoryReview,onMetrics,onError,onStateChange,onContextSync}
  const capabilities=useMemo(()=>realtimeWebRTCCapabilities(),[])
  const update=useCallback(next=>{const value={...machineRef.current,...(typeof next==='function'?next(machineRef.current):next)};machineRef.current=value;setMachine(value)},[])
  const eventIsCurrent=useCallback(eventScope=>realtimeVoiceEventMatchesScope(eventScope,activeScopeRef.current,resources.current),[])
@@ -240,8 +242,22 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
    // session when the device cannot supply a microphone stream.
    const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true},video:false});attempt.stream=stream;for(const track of stream.getAudioTracks())track.enabled=!userPaused.current;if(!isCurrent())return abandon();update({microphonePermission:'GRANTED'})
    attempt.connectionTimer=globalThis.setTimeout(()=>{if(isCurrent())fail(Object.assign(new Error('A conexão de voz demorou demais. Tente novamente.'),{code:'REALTIME_CONNECT_TIMEOUT',retryAfterSeconds:5}))},20000)
-   const sessionResponse=await fetch('/api/v1/realtime-voice/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:startedScope.clientId,conversationId:startedScope.conversationId,contextEpoch:startedScope.contextEpoch,activeContext}),signal:attempt.controller.signal})
-   const session=await sessionResponse.json().catch(()=>null)
+   let sessionResponse,session
+   for(let syncAttempt=0;syncAttempt<2;syncAttempt++){
+    sessionResponse=await fetch('/api/v1/realtime-voice/sessions',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId:startedScope.clientId,conversationId:startedScope.conversationId,contextEpoch:startedScope.contextEpoch,activeContext}),signal:attempt.controller.signal})
+    session=await sessionResponse.json().catch(()=>null)
+    if(!isCurrent())return abandon(session?.sessionId)
+    const currentContext=session?.currentContext
+    const canSync=syncAttempt===0&&sessionResponse.status===409&&session?.code==='realtime_voice_context_epoch_mismatch'&&currentContext&&String(currentContext.conversationId||'')===startedScope.conversationId&&String(currentContext.clientId||'')===startedScope.clientId&&exactEpoch(currentContext.contextEpoch)!==null&&currentContext.contextEpoch!==startedScope.contextEpoch
+    if(!canSync)break
+    const previousScope={...startedScope}
+    startedScope.contextEpoch=currentContext.contextEpoch
+    startedScope.scopeKey=realtimeVoiceScopeKey({...startedScope,activeContext})
+    attempt.scopeKey=startedScope.scopeKey;attempt.contextEpoch=startedScope.contextEpoch
+    activeScopeRef.current={...startedScope};scopeKeyRef.current=startedScope.scopeKey
+    setReconciledScope({requestedScopeKey,contextEpoch:startedScope.contextEpoch})
+    callbacks.current.onContextSync?.(currentContext,previousScope)
+   }
    if(!isCurrent())return abandon(session?.sessionId)
    if(!sessionResponse.ok)throw Object.assign(new Error(session?.error||'O modo realtime não está disponível neste ambiente.'),{code:session?.code||'realtime_voice_session_unavailable',canRetry:session?.safe_to_retry,retryAfterSeconds:realtimeRetryDelay(session,sessionResponse.headers)})
    attempt.sessionId=String(session?.sessionId||'')
@@ -269,7 +285,7 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
    attempt.timer=globalThis.setTimeout(()=>{if(eventIsCurrent(eventScope))fail(Object.assign(new Error('A sessão atingiu o limite de duração do UAT.'),{code:'REALTIME_SESSION_TIME_LIMIT'}),{eventScope})},Math.max(60,Number(session.maxSessionSeconds)||600)*1000)
    return {ok:true,transport:'WEBRTC',sessionId:attempt.sessionId,scope:eventScope}
   }catch(error){if(!isCurrent())return abandon(attempt.sessionId);if(error?.name==='NotAllowedError')update({microphonePermission:permissionState==='DENIED'?'DENIED':'BLOCKED'});else if(error?.name==='NotFoundError')update({microphonePermission:'UNAVAILABLE'});return fail(error)}
- },[activeContext,capabilities,disabled,eventIsCurrent,fail,handleEvent,postSession,scopeKey,update])
+ },[activeContext,capabilities,disabled,eventIsCurrent,fail,handleEvent,postSession,requestedScopeKey,scopeKey,update])
  useEffect(()=>{
   if(scopeKeyRef.current===scopeKey)return
   scopeKeyRef.current=scopeKey
