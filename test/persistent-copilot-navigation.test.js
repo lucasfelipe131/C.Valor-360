@@ -69,7 +69,7 @@ async function mountApp({mobile=false,apiResponse=null,portfolioVisits=[]}={}){
   throw new Error('Unexpected test request '+path)
  })
  let renderer
- await act(async()=>{renderer=TestRenderer.create(React.createElement(App),{createNodeMock:()=>({focus(){},scrollTop:0,scrollHeight:100})});await flush()})
+ await act(async()=>{renderer=TestRenderer.create(React.createElement(App),{createNodeMock:()=>({focus(){},blur(){},scrollTop:0,scrollHeight:100})});await flush()})
  const stub=name=>renderer.root.findByType('test-'+name)
  const button=label=>renderer.root.findAll(node=>node.type==='button'&&node.props['aria-label']===label)[0]
  const click=async label=>{const node=button(label);assert.ok(node,'button '+label);await act(async()=>{await node.props.onClick();await flush()})}

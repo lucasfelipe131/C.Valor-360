@@ -176,7 +176,7 @@ test('copiloto global mantém contexto por produtor e oferece texto, voz, foto e
  assert.match(app,/ctrlKey\|\|event\.metaKey/)
  assert.match(sidebar,/sidebar-copilot/)   // camada de inteligencia, nao item de menu
  assert.match(mobile,/go\(\{id:'dashboard',page:'dashboard'\}\)/)
- assert.match(mobile,/onClick=\{onOpenVal\}/)
+ assert.match(mobile,/onClick=\{\(\)=>\{close\(\);onOpenVal\?\.\(\)\}\}/)
  assert.match(globalCopilot,/conversationKey=\(threadKey,storageScope\)=>`valor360:val-copilot-thread:v4:/)
  assert.match(globalCopilot,/encodeURIComponent\(String\(storageScope\|\|'session'\)\)/)
  assert.match(globalCopilot,/setAttachments\(\[\]\);setError\(''\)/)

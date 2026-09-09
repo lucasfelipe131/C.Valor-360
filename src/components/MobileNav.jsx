@@ -1,6 +1,7 @@
-import React,{useEffect,useState} from 'react'
+import React,{useEffect,useRef,useState} from 'react'
 import {BrainCircuit,CalendarPlus,ClipboardList,Home,MoreHorizontal,Plus,Target,Users,X} from 'lucide-react'
 import {WORKSPACES,isNavItemActive,settingsModules,workspaceModules} from '../lib/val-workspaces'
+import {lockMobilePage} from '../lib/mobile-viewport'
 
 // Mobile não é desktop encolhido. A barra carrega o que o agrônomo faz em
 // campo — hoje, produtor, registrar, copiloto — e o "Mais" abre o mesmo modelo
@@ -12,9 +13,29 @@ const quickActions=[
  [{id:'opportunities',page:'opportunities'},'Nova oportunidade','Registra a hipótese no funil',Target]
 ]
 
-export default function MobileNav({page,tool,currentUser,workspace,onWorkspaceChange,onSelect,onOpenVal}){
+export default function MobileNav({page,tool,currentUser,workspace,onWorkspaceChange,onSelect,onOpenVal,copilotActive=false}){
  const [sheet,setSheet]=useState('')
+ const sheetRef=useRef(null)
+ const navRef=useRef(null)
  useEffect(()=>setSheet(''),[page])
+ useEffect(()=>{
+  if(!sheet)return
+  const release=lockMobilePage()
+  const previous=document.activeElement
+  sheetRef.current?.querySelector('header button')?.focus({preventScroll:true})
+  const escape=event=>{if(event.key==='Escape')setSheet('')}
+  document.addEventListener('keydown',escape)
+  return ()=>{document.removeEventListener('keydown',escape);release();previous?.focus?.({preventScroll:true})}
+ },[sheet])
+ useEffect(()=>{
+  if(!navRef.current||typeof ResizeObserver==='undefined')return
+  const observer=new ResizeObserver(()=>{
+   const height=navRef.current?.getBoundingClientRect().height
+   if(height>0)document.documentElement.style.setProperty('--val-mobile-nav-height',`${height}px`)
+  })
+  observer.observe(navRef.current)
+  return ()=>{observer.disconnect();document.documentElement.style.removeProperty('--val-mobile-nav-height')}
+ },[])
  const role=currentUser?.role
  const go=entry=>{setSheet('');onSelect?.(entry)}
  const settings=settingsModules(role)
@@ -24,7 +45,7 @@ export default function MobileNav({page,tool,currentUser,workspace,onWorkspaceCh
  return <>
   {sheet&&<>
    <button type="button" className="mobile-more-backdrop" aria-label="Fechar menu" onClick={close}/>
-   <section className={`mobile-more-sheet open${sheet==='create'?' is-create':''}`} aria-label={sheet==='create'?'Ações rápidas':'Workspaces e módulos'}>
+   <section ref={sheetRef} role="dialog" className={`mobile-more-sheet open${sheet==='create'?' is-create':''}`} aria-label={sheet==='create'?'Ações rápidas':'Workspaces e módulos'}>
     <header>
      <div><small>VAL</small><h2>{sheet==='create'?'O que você quer registrar?':'Workspaces'}</h2></div>
      <button type="button" aria-label="Fechar menu" onClick={close}><X/></button>
@@ -59,12 +80,12 @@ export default function MobileNav({page,tool,currentUser,workspace,onWorkspaceCh
    </section>
   </>}
 
-  <nav className="mobile-nav" aria-label="Navegação principal">
-   <button type="button" className={page==='dashboard'?'active':''} aria-current={page==='dashboard'?'page':undefined} onClick={()=>go({id:'dashboard',page:'dashboard'})}><Home/><span>Início</span></button>
-   <button type="button" className={page==='clients'||page==='client360'?'active':''} aria-current={page==='clients'?'page':undefined} onClick={()=>go({id:'producer360',action:'producer',page:'clients'})}><Users/><span>Produtores</span></button>
+  <nav className="mobile-nav" ref={navRef} aria-label="Navegação principal">
+   <button type="button" className={!copilotActive&&page==='dashboard'?'active':''} aria-current={!copilotActive&&page==='dashboard'?'page':undefined} onClick={()=>go({id:'dashboard',page:'dashboard'})}><Home/><span>Início</span></button>
+   <button type="button" className={!copilotActive&&(page==='clients'||page==='client360')?'active':''} aria-current={!copilotActive&&(page==='clients'||page==='client360')?'page':undefined} onClick={()=>go({id:'clients',page:'clients'})}><Users/><span>Produtores</span></button>
    <button type="button" className="mobile-create-button" aria-label="Registrar ou criar" aria-expanded={sheet==='create'} onClick={()=>setSheet(value=>value==='create'?'':'create')}><span><Plus/></span></button>
-   <button type="button" className={page==='copilot'?'active':''} aria-label="Abrir o Copiloto VAL" onClick={onOpenVal}><BrainCircuit/><span>Copiloto</span></button>
-   <button type="button" className={sheet==='more'||(inWorkspaces&&page!=='clients')?'active':''} aria-expanded={sheet==='more'} aria-label="Abrir workspaces e módulos" onClick={()=>setSheet(value=>value==='more'?'':'more')}><MoreHorizontal/><span>Mais</span></button>
+   <button type="button" className={copilotActive||page==='copilot'?'active':''} aria-current={copilotActive||page==='copilot'?'page':undefined} aria-label="Abrir o Copiloto VAL" onClick={()=>{close();onOpenVal?.()}}><BrainCircuit/><span>Copiloto</span></button>
+   <button type="button" className={sheet==='more'||(!copilotActive&&inWorkspaces&&!['clients','client360','dashboard'].includes(page))?'active':''} aria-expanded={sheet==='more'} aria-label="Abrir workspaces e módulos" onClick={()=>setSheet(value=>value==='more'?'':'more')}><MoreHorizontal/><span>Mais</span></button>
   </nav>
  </>
 }
