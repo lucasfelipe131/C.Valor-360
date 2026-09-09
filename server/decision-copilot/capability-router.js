@@ -379,7 +379,11 @@ function freshness(observedAt,now){
  if(deltaMs < -300_000)return {state:'INVALID',hours:null,label:'data futura inválida'}
  const hours=Math.max(0,deltaMs/3_600_000)
  if(hours<=24)return {state:'CURRENT',hours:Number(hours.toFixed(1)),label:'atual nas últimas 24 h'}
- if(hours<=168)return {state:'DATED',hours:Number(hours.toFixed(1)),label:'registrada nesta semana'}
+ // A janela do rotulo nao pode prometer mais do que o contrato de evidencia aceita: o grounding
+ // so admite market_snapshot com ate 72 h (response-grounding.js, maxAgeMs 3*DAY_MS). Entre 72 h e
+ // 168 h a resposta se dizia "registrada nesta semana" e a evidencia era recusada por idade,
+ // derrubando a conversa com 400. As duas janelas passam a ser a mesma.
+ if(hours<=72)return {state:'DATED',hours:Number(hours.toFixed(1)),label:'dos últimos três dias'}
  return {state:'STALE',hours:Number(hours.toFixed(1)),label:'histórica; precisa ser atualizada'}
 }
 
@@ -461,7 +465,10 @@ export function answerCurrentMarket({workspace={},message='',intentHint='',now=n
  const currentPrefix=selected.commodity
   ?selected.freshness.state==='CURRENT'?'A referência mais recente':'A última referência disponível'
   :selected.freshness.state==='CURRENT'?'Entre as referências autorizadas registradas, a mais recente':'Entre as referências autorizadas registradas, a última disponível'
- const warning=selected.freshness.state==='CURRENT'?'':` Ela é ${selected.freshness.label}; confirme uma atualização antes de tratá-la como preço de hoje.`
+ // "Ela é ..." fazia o guardiao de evidencia global ler uma afirmacao sobre um individuo (o texto
+ // desta resposta e tambem o statement da evidencia) e derrubar a conversa com HTTP 400 sempre que
+ // a cotacao passava de 24h. A ressalva continua a mesma para o consultor, sem o pronome solto.
+ const warning=selected.freshness.state==='CURRENT'?'':` Esta referência é ${selected.freshness.label}; confirme uma atualização antes de tratá-la como preço de hoje.`
  return {
   route,
   status:selected.freshness.state,

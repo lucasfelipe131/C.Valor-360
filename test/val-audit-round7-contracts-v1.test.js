@@ -217,3 +217,37 @@ test('a agenda da Home não conta visita atrasada nem cancelada como compromisso
  assert.match(dashboard,/const moment=visitMoment\(visit\)/)
  assert.match(dashboard,/\['CANCELLED','COMPLETED','COMPLETED_PENDING_REVIEW'\]\.includes\(lifecycle\)\)return false/)
 })
+
+// Cotação com mais de 24 h derrubava a conversa com HTTP 400: o texto da resposta é também o
+// statement da evidência, e a ressalva de atualidade começava com o pronome "Ela", que o guardião de
+// evidência global lia como afirmação sobre um indivíduo. Além disso o rótulo prometia "esta semana"
+// (168 h) enquanto o contrato de evidência aceita 72 h — a faixa entre as duas sempre virava 400.
+test('cotação de ontem responde com a ressalva de atualidade, sem quebrar a conversa',async()=>{
+ const {buildFastMarketResponse}=await import('../server/decision-copilot/capability-router.js')
+ const {evaluateResponseGrounding}=await import('../server/decision-copilot/response-grounding.js')
+ const tenant='00000000-0000-4000-8000-000000000001'
+ const owner='demo@valor360.local'
+ const reference=new Date('2026-09-09T12:00:00.000Z')
+ const snapshotAged=hours=>[{id:'ms-1',commodity:'soja',marketKind:'spot',region:'Cascavel/PR',price:128,priceUnit:'BRL/sc',sourceName:'Cepea',sourceType:'public_index',confidence:.9,observedAt:new Date(reference.getTime()-hours*3600000).toISOString(),status:'active',tenantId:tenant,contextOwnerId:owner,scope:'MARKET'}]
+ const answerFor=hours=>buildFastMarketResponse({workspace:{marketSnapshots:snapshotAged(hours)},message:'qual o preço da soja hoje?',organizationId:tenant,ownerId:owner,clientId:'joao',clientName:'João Pereira',conversationId:'c1',contextEpoch:1,now:reference})
+ // Dentro da janela que o contrato de evidência aceita, a conversa não pode quebrar.
+ for(const hours of [1,23,25,48,71]){
+  const result=answerFor(hours)
+  assert.ok(['CURRENT','DATED'].includes(result.responseMetadata?.currentDataStatus),`${hours}h -> ${result.responseMetadata?.currentDataStatus}`)
+  assert.match(result.advice.answer,/R\$\s*128,00/,`${hours}h -> ${result.advice.answer}`)
+ }
+ // A ressalva continua sendo lida pelo consultor, agora sem o pronome solto.
+ const dated=answerFor(25)
+ assert.match(dated.advice.answer,/confirme uma atualização antes de tratá-la como preço de hoje/)
+ assert.doesNotMatch(dated.advice.answer,/\bEla é\b/)
+ // E o guardião de evidência global aceita esse texto como fato de mercado.
+ const grounding=evaluateResponseGrounding({question:'qual o preço da soja hoje?',answer:dated.advice.answer,
+  evidence:[{id:'ms-1',source_type:'market_snapshot',epistemic_type:'FACT',scope:'MARKET',producer_id:null,tenant_id:tenant,context_owner_id:owner,observed_at:new Date(reference.getTime()-25*3600000).toISOString(),confidence:.7,statement:dated.advice.answer}],
+  activeProducerId:'',tenantId:tenant,ownerId:owner,checkQuestionRelevance:false,now:reference})
+ assert.equal(grounding.provenance_violations.length,0,JSON.stringify(grounding.provenance_violations))
+ // A janela do rótulo é a mesma do contrato de evidência: nada promete "esta semana".
+ const router=read('server/decision-copilot/capability-router.js')
+ assert.match(router,/if\(hours<=72\)return \{state:'DATED'/)
+ assert.doesNotMatch(router,/label:'registrada nesta semana'/)
+ assert.match(router,/label:'dos últimos três dias'/)
+})
