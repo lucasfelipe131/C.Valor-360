@@ -251,3 +251,97 @@ test('cotação de ontem responde com a ressalva de atualidade, sem quebrar a co
  assert.doesNotMatch(router,/label:'registrada nesta semana'/)
  assert.match(router,/label:'dos últimos três dias'/)
 })
+
+// A forma mais comum da fala de campo ("o antonio tem ...") não tinha padrão nenhum: a referência
+// saía NONE, o produtor aberto permanecia e a VAL respondia com os dados DELE, sem dizer de quem eram.
+test('pergunta que nomeia outro produtor não é respondida com o produtor aberto',async()=>{
+ const {extractNaturalClientReference}=await import('../server/decision-copilot/producer-entity-resolver.js')
+ for(const question of ['o antonio tem oportunidade aberta?','a maria comprou adubo?','tem oportunidade aberta pro antonio?','manda a proposta pra maria']){
+  const reference=extractNaturalClientReference(question)
+  assert.equal(reference.kind,'AUTHORIZED_NAME_CANDIDATE',question)
+  assert.ok(reference.reference,question)
+ }
+ // O pronome continua sendo o produtor aberto, e a troca explícita continua sendo nome afirmado.
+ for(const question of ['ele tem oportunidade aberta?','E a última visita dele?','Essa cotação da soja muda a negociação com ele?'])
+  assert.equal(extractNaturalClientReference(question).kind,'CURRENT_CLIENT',question)
+ for(const question of ['muda para o João','troca pro Antônio','muda a conta para o João'])
+  assert.equal(extractNaturalClientReference(question).kind,'EXPLICIT_NAME',question)
+ // Interrogativo e substantivo de agenda nunca são nome: viravam a busca por um produtor
+ // inexistente e a conversa travava com 422.
+ for(const question of ['quem eu tenho que visitar hoje?','quero ver a agenda','vou ver a rota de amanha'])
+  assert.equal(extractNaturalClientReference(question).kind,'NONE',question)
+ // O resumo nomeia o produtor: sem isso, nada na tela denunciava uma troca.
+ assert.match(read('server/decision-intelligence.js'),/\$\{opportunityOwner\?` de \$\{opportunityOwner\}`:''\}/)
+})
+
+// Uma letra trocada, um marcador de fala ou uma cortesia tiravam a pergunta da allowlist e a VAL
+// passava a NEGAR ter o dado que ela entrega na redação exata.
+test('erro de digitação e marcador de fala não derrubam o fato estruturado',async()=>{
+ const {classifyStructuredClientFact}=await import('../server/decision-copilot/capability-router.js')
+ const {repairFacetTypos,stripMessagePreamble}=await import('../server/message-preamble.js')
+ for(const [typo,canonical] of [
+  ['qual a proxma visita?','qual a próxima visita?'],
+  ['qual a obejcao dele?','qual a objeção dele?'],
+  ['qual o comprimisso pendente?','qual o compromisso pendente?'],
+  ['qual o pefil dele?','qual o perfil dele?']
+ ]){
+  const expected=classifyStructuredClientFact(canonical)
+  assert.ok(expected,canonical)
+  assert.equal(classifyStructuredClientFact(typo),expected,typo)
+ }
+ for(const [spoken,plain] of [
+  ['entao, qual a ultima compra dele?','qual a ultima compra dele?'],
+  ['e... o que ele comprou?','o que ele comprou?'],
+  ['olha, qual a proxima visita?','qual a proxima visita?']
+ ])assert.equal(classifyStructuredClientFact(spoken),classifyStructuredClientFact(plain),spoken)
+ // Palavra real do domínio não pode ser "corrigida" para uma faceta.
+ for(const kept of ['pagamento a vista','qual o custo por hectare','qual a conta dele','o que ele perdeu'])
+  assert.equal(repairFacetTypos(kept),kept,kept)
+ // "e a objeção?" é continuação do produtor, não marcador de fala: não pode ser removida.
+ assert.equal(stripMessagePreamble('e a objecao?'),'e a objecao?')
+})
+
+// A confirmação e a escolha perguntam o mesmo registro que "qual o perfil dele?" já entrega; fora da
+// allowlist, a VAL negava a evidência comportamental uma frase depois de descrevê-la.
+test('perfil aceita confirmação e escolha, sem virar gaveta para qualquer pergunta',async()=>{
+ const {classifyStructuredClientFact}=await import('../server/decision-copilot/capability-router.js')
+ for(const question of ['ele é analítico?','ela é relacional?','ele é mais analítico ou relacional?','analítico ou relacional?','qual a melhor abordagem para ele?'])
+  assert.equal(classifyStructuredClientFact(question),'BEHAVIORAL_PROFILE',question)
+ for(const question of ['ele é bom pagador?','ele é o dono da fazenda?','ele é grande?'])
+  assert.notEqual(classifyStructuredClientFact(question),'BEHAVIORAL_PROFILE',question)
+})
+
+// A Biblioteca não sabe quantos produtores o consultor tem; quem sabe é a carteira. A pergunta se
+// reduzia a um token e casava com o título de um item qualquer.
+test('pergunta sobre a própria carteira não é respondida pela Biblioteca',async()=>{
+ const {selectKnowledge}=await import('../server/knowledge/selection.js')
+ const count=query=>selectKnowledge({query}).items.length
+ for(const question of ['quantos produtores eu tenho?','quais os produtores da minha carteira','quantas visitas eu fiz','quem sao meus clientes'])
+  assert.equal(count(question),0,question)
+ for(const question of ['o que e basis?','o que e breakeven','lixiviacao de potassio','janela de plantio da soja'])
+  assert.ok(count(question)>0,question)
+})
+
+// "Quem decide?" e "quem decide a compra?" são a mesma pergunta: a palavra "compra" movia o domínio
+// e a faceta, e a VAL bloqueava o decisor que acabara de recuperar.
+test('quem decide é faceta própria, qualquer que seja o domínio da frase',async()=>{
+ const grounding=await import('../server/decision-copilot/response-grounding.js')
+ const source=read('server/decision-copilot/response-grounding.js')
+ assert.match(source,/if\(\/\\b\(\?:decisor\|quem decide\|quem manda\|quem assina\|quem autoriza\|quem toma a decisao\)\\b\/\.test\(source\)\)return 'DECISION_MAKER'/)
+ // A checagem de faceta acontece antes do bloco por domínio.
+ const facetStart=source.indexOf("function contextFacet")
+ const decisionMaker=source.indexOf("return 'DECISION_MAKER'",facetStart)
+ const domainBlock=source.indexOf("if(domain==='GENERAL')",facetStart)
+ assert.ok(decisionMaker<domainBlock,'a faceta do decisor precisa vir antes do bloco por domínio')
+ assert.ok(grounding.evaluateResponseGrounding)
+})
+
+// A próxima ação é campo de primeira classe do quadro, mas só era alcançável se o consultor citasse
+// o nome do módulo.
+test('a próxima ação é alcançável sem citar "oportunidade"',async()=>{
+ const {routeValIntent}=await import('../server/ai-reasoning/intent-router.js')
+ for(const question of ['qual a proxima acao?','qual o proximo passo?','o que eu faco agora?','como eu avanco?'])
+  assert.equal(routeValIntent({message:question,hasClient:true}).intent,'CHECK_OPPORTUNITY',question)
+ // "próxima visita" não pode ser sequestrada pelo novo gatilho.
+ assert.notEqual(routeValIntent({message:'qual a proxima visita?',hasClient:true}).intent,'CHECK_OPPORTUNITY')
+})

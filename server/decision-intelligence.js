@@ -64,7 +64,11 @@ function buildEvidence(context){
     // O enunciado nomeia a entidade perguntada: 'ele tem oportunidade aberta?' precisa encontrar
     // 'oportunidade' (e 'aberta', quando a etapa não é de fechamento) no próprio fato.
     const openStage=!/fechad|perdid|cancelad/i.test(clean(opportunity.stage))
-    const parts=[`Oportunidade${openStage?' aberta':''} “${firstText(opportunity.title,'Oportunidade sem título')}” está em ${firstText(opportunity.stage,'etapa não informada')}`]
+    // O resumo nomeia o produtor, como as respostas FAST ja fazem: sem o nome, uma pergunta sobre
+    // outro produtor respondida com os dados do produtor aberto nao tinha nada na tela que
+    // denunciasse a troca.
+    const opportunityOwner=clean(client.name,120)
+    const parts=[`Oportunidade${openStage?' aberta':''} “${firstText(opportunity.title,'Oportunidade sem título')}”${opportunityOwner?` de ${opportunityOwner}`:''} está em ${firstText(opportunity.stage,'etapa não informada')}`]
     const opportunityValue=field(opportunity,'estimated_value','estimatedValue','value')
     if(number(opportunityValue)!==null&&Number(opportunityValue)>0)parts.push(`valor registrado ${compactBRL(opportunityValue)}`)
     const opportunityNextAction=field(opportunity,'next_action','nextAction'),opportunityNextActionAt=field(opportunity,'next_action_at','nextActionAt')

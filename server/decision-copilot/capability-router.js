@@ -4,7 +4,7 @@ import {legacyVisitLifecycle} from '../visit-loop/lifecycle.js'
 import {evaluateSourceFreshness} from '../memory/freshness-policy.js'
 import {assertResponseGrounding,assertResponseQuestionRelevance,evaluateResponseGrounding} from './response-grounding.js'
 import {assertActiveProducerBoundary,classifyValContextDomain,contextTraceEntry,matchedValContextDomains} from './context-selector.js'
-import {stripMessagePreamble} from '../message-preamble.js'
+import {repairFacetTypos,stripMessagePreamble} from '../message-preamble.js'
 
 export const systemCapabilityRouterVersion='val.system_capability_router.v1'
 
@@ -229,7 +229,9 @@ export function classifyStructuredClientFact(message=''){
  // padrões abaixo são ancorados em ^, então o vocativo da voz derrubava a allowlist inteira e a
  // resposta certa virava "não há evidência". O preâmbulo sai antes, como já sai no seletor de
  // contexto e no roteador de comandos de sessão.
- const source=stripMessagePreamble(normalize(message)).replace(/[?!.,;:]+$/g,'').trim()
+ // Uma letra trocada tirava a pergunta da allowlist e a VAL passava a NEGAR ter o dado que ela
+ // entrega na redacao exata: "qual a proxma visita" respondia com a visita ja realizada.
+ const source=repairFacetTypos(stripMessagePreamble(normalize(message)).replace(/[?!.,;:]+$/g,'').trim())
  if(!source)return null
  // Fact First is a positive allowlist of complete literal questions. A mixed,
  // advisory, aggregate or prospective request must remain contextual/deep even
@@ -249,6 +251,14 @@ export function classifyStructuredClientFact(message=''){
  // evidencia comportamental para um produtor com perfil e evidencia validas.
  if(new RegExp(`^(?:e\\s+)?(?:(?:me\\s+)?(?:fala|fale|conta|conte|diga|diz)\\s+(?:(?:do|da|sobre)\\s+)?)?(?:(?:o|a)\\s+)?perfil(?:\\s+comportamental)?${owner}$`).test(source))return 'BEHAVIORAL_PROFILE'
  if(/^(?:e\s+)?como\s+(?:eu\s+)?devo\s+abordar\s+(?:ele|ela|o\s+produtor|a\s+produtora)$/.test(source))return 'BEHAVIORAL_PROFILE'
+ // Confirmacao ("ele e analitico?") e escolha ("ele e analitico ou relacional?") perguntam o mesmo
+ // registro que "qual o perfil dele?" ja entrega. Fora da allowlist, a rota caia em CONTEXT, cujo
+ // seletor so olha memorias - e a VAL afirmava que nao ha evidencia comportamental do produtor
+ // uma frase depois de descrever o perfil dele.
+ const profileNames='(?:analitic\\w*|relacional|conservador\\w*|inovador\\w*|digital|tecnic\\w*|pragmatic\\w*)'
+ if(new RegExp(`^(?:e\\s+)?(?:ele|ela|o\\s+produtor|a\\s+produtora)\\s+(?:e|eh)\\s+(?:mais\\s+)?${profileNames}(?:\\s+ou\\s+(?:mais\\s+)?${profileNames})?$`).test(source))return 'BEHAVIORAL_PROFILE'
+ if(new RegExp(`^(?:e\\s+)?${profileNames}\\s+ou\\s+${profileNames}${owner}$`).test(source))return 'BEHAVIORAL_PROFILE'
+ if(new RegExp(`^(?:e\\s+)?(?:qual|como)\\s+(?:e\\s+)?(?:a\\s+)?(?:melhor\\s+)?abordagem(?:\\s+(?:para|pra|pro|com)\\s+(?:ele|ela))?${owner}$`).test(source))return 'BEHAVIORAL_PROFILE'
  // 'como abordar ele', 'como lidar com ela na próxima visita', 'como ele decide', 'qual o estilo dele':
  // perguntas de perfil comportamental em linguagem comum recebem a mesma resposta auditável do perfil.
  if(/^(?:e\s+)?como\s+(?:(?:eu\s+)?(?:devo|posso|deveria)\s+)?(?:abordar|lidar\s+com|conversar\s+com|negociar\s+com|falar\s+com)\s+(?:ele|ela|o\s+produtor|a\s+produtora)$/.test(source))return 'BEHAVIORAL_PROFILE'

@@ -43,6 +43,10 @@ const greetingOrThanks=/^\s*(?:val[, ]+)?(?:(?:muito\s+)?(?:oi+|ola|opa|e\s*ai|e
 // evidencia"; sem produtor a Biblioteca respondia. So vale quando o assunto nao e uma pessoa -
 // "me fala sobre ele" continua sendo pergunta do produtor.
 const narrativeShape=/^(?:me\s+)?(?:fala|fale|falar|conta|conte|contar|comenta|comente|comentar|diga|diz|explana)\s+(?:um pouco\s+)?(?:sobre|de|do|da|a respeito de)\s+\S/
+// A proxima acao e campo de primeira classe do quadro de oportunidades, mas so era alcancavel se o
+// consultor citasse o nome do modulo ("oportunidade", "pipeline", "negocio", "proposta"). No campo
+// a pergunta e outra: "qual o proximo passo?", "o que eu faco agora?", "como eu avanco?".
+const nextActionShape=/\b(?:pr[oó]xim[ao]\s+(?:a[cç][aã]o|passo)|pr[oó]ximos?\s+passos?|o que (?:eu )?fa[cç]o agora|o que fazer agora|como (?:eu )?(?:sigo|avan[cç]o|fecho))\b/i
 const currentMoment=/\b(?:hoje|amanha|agora|atual(?:mente)?|previsao|proxim[oa]s? (?:dias|semana|horas)|esta semana|nesta semana|fim de semana|ontem|semana que vem|nos proximos)\b/
 // Open questions outside agronomy must not become producer-fact queries just
 // because the side panel has a producer selected. Ambiguous account fields and
@@ -87,7 +91,7 @@ function semanticCommandIntent(source='',hasClient=false){
  const individual=hasClient||individualReference.test(folded)
  if(/\b(?:prepar|roteiro|antes da)\w*\b.*\b(?:visit\w*|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b|\b(?:visit\w*|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))return 'PREPARE_VISIT'
  if(individual&&/\b(?:obje[cç][aã]o|resist[eê]ncia|discord|recus|n[aã]o quer)\b/i.test(source))return 'OBJECTION_HELP'
- if(individual&&/\b(?:oportunidades?|pipeline|neg[oó]cios?|propostas?)\b/i.test(source))return 'CHECK_OPPORTUNITY'
+ if(individual&&(/\b(?:oportunidades?|pipeline|neg[oó]cios?|propostas?)\b/i.test(source)||nextActionShape.test(source)))return 'CHECK_OPPORTUNITY'
  if(/\b(?:follow.?up|retomar|cobrar retorno|pr[oó]ximo contato)\b/i.test(source))return 'FOLLOW_UP_HELP'
  return ''
 }
@@ -156,7 +160,7 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
   else if(/^(?:val[, ]+)?(?:registra|registre|anota|anote)\s+que\b/i.test(source)||/\b(?:registr|salv|grav|anot|memoriz)\w*\b.*\b(?:informa[cç][aã]o|nota|hist[oó]rico|mem[oó]ria|fato)\b/i.test(source))intent='REGISTER_INFORMATION'
   else if(/\b(?:p[oó]s[- ]?visita|depois da visita|resultado da visita)\b/i.test(source))intent='POST_VISIT'
   else if(individual&&/\b(?:obje[cç][aã]o|resist[eê]ncia|discord|recus|n[aã]o quer)\b/i.test(source))intent='OBJECTION_HELP'
-  else if(individual&&/\b(?:oportunidades?|pipeline|neg[oó]cios?|propostas?)\b/i.test(source))intent='CHECK_OPPORTUNITY'
+  else if(individual&&(/\b(?:oportunidades?|pipeline|neg[oó]cios?|propostas?)\b/i.test(source)||nextActionShape.test(source)))intent='CHECK_OPPORTUNITY'
   else if(/\b(?:follow.?up|retomar|cobrar retorno|pr[oó]ximo contato)\b/i.test(source))intent='FOLLOW_UP_HELP'
   // Pergunta aritmetica de plantabilidade ("300 mil plantas por hectare em 45 cm") ou de custo
   // por hectare com os dois numeros ("gastei 750 mil reais em 300 hectares") e calculo, mesmo sem

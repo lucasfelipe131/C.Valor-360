@@ -346,6 +346,12 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
  const queryTokens=tokens(question)
  const queryBaseTokens=baseTokens(question)
  const normalizedQuery=normalizeSearchText(question)
+ // Pergunta sobre a PROPRIA carteira nao e conhecimento curado: "quantos produtores eu tenho?"
+ // se reduzia a um unico token depois das stopwords e casava com o titulo de um item qualquer
+ // que citasse produtores, devolvendo um trecho aleatorio da Biblioteca como se fosse resposta.
+ // O acervo nao sabe quantos produtores o consultor tem; quem sabe e a carteira.
+ const portfolioQuestion=/\b(?:quant[oa]s|quais|quem)\b[^?]{0,80}\b(?:produtor\w*|client\w*|carteira|visitas?|oportunidades?)\b[^?]{0,40}\b(?:eu|meu|meus|minha|minhas|nossa|nossos)\b/.test(normalizedQuery)
+  ||/\b(?:minha|nossa)\s+carteira\b/.test(normalizedQuery)
  const derivedTokens=new Set([...queryTokens].filter(token=>!queryBaseTokens.has(token)))
  const contextTokens=tokens(contextText)
  const searchTokens=new Set([...queryTokens,...contextTokens])
@@ -371,8 +377,8 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
 
  ranked.sort((left,right)=>right.score-left.score||(authorityRank[left.item.authority]??99)-(authorityRank[right.item.authority]??99)||left.item.knowledge_item_id.localeCompare(right.item.knowledge_item_id))
  const selected=ranked.slice(0,cappedLimit).map(entry=>compactSelection(entry.item,entry))
- const status=selected.length?'SELECTED':'NO_APPLICABLE_KNOWLEDGE'
- const reasonCode=selected.length?'MATCHED_GOVERNED_KNOWLEDGE':'NO_APPLICABLE_GOVERNED_KNOWLEDGE'
+ const status=selected.length&&!portfolioQuestion?'SELECTED':'NO_APPLICABLE_KNOWLEDGE'
+ const reasonCode=portfolioQuestion?'PORTFOLIO_QUESTION_NOT_KNOWLEDGE':selected.length?'MATCHED_GOVERNED_KNOWLEDGE':'NO_APPLICABLE_GOVERNED_KNOWLEDGE'
  const audit={
   library_name:source.library_name,
   library_version:source.library_version,
@@ -395,7 +401,8 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
   corpus_dumped:false,
   evaluated_at:evaluateKnowledgeLifecycle({},now).evaluated_at
  }
- const selection={contract_version:knowledgeSelectionVersion,policy_version:knowledgePolicyVersion,status,items:selected,selected,reason_code:reasonCode,audit}
+ const items=portfolioQuestion?[]:selected
+ const selection={contract_version:knowledgeSelectionVersion,policy_version:knowledgePolicyVersion,status,items,selected:items,reason_code:reasonCode,audit}
  return assertKnowledgeContract(selection,validateKnowledgeSelection,'KnowledgeSelection v1')
 }
 

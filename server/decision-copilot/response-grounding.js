@@ -385,9 +385,13 @@ const evidenceCompatibility=Object.freeze({
 
 function contextFacet(domain,question=''){
  const source=normalize(question)
+ // "Quem decide?" e "quem decide a compra?" sao a mesma pergunta. A palavra "compra" movia o
+ // dominio de GENERAL para COMMERCIAL e a faceta virava "compra", que a memoria do decisor nao
+ // casa: a VAL recuperava o decisor confirmado e bloqueava a propria resposta. Quem decide e uma
+ // faceta propria, qualquer que seja o dominio classificado pela frase.
+ if(/\b(?:decisor|quem decide|quem manda|quem assina|quem autoriza|quem toma a decisao)\b/.test(source))return 'DECISION_MAKER'
  if(domain==='GENERAL'){
   if(/\b(?:produtor|cliente) atual\b|\bquem e (?:o )?(?:produtor|cliente)\b/.test(source))return 'CURRENT_PRODUCER'
-  if(/\b(?:decisor|quem decide|quem toma a decisao)\b/.test(source))return 'DECISION_MAKER'
   if(/\barea\b|\bhectares?\b/.test(source))return 'AREA'
  }
  if(domain==='VISIT'){
@@ -411,7 +415,7 @@ function answerClaimsMatchFacet(facet,answer=''){
   return !isPureInsufficiencyClaim(claim,'','GENERAL')&&!declaredGap.test(source)&&!uncertainty.test(source)&&!strategyInstruction.test(source)
  })
  if(facet==='CURRENT_PRODUCER')return materialClaims.length>0&&materialClaims.every(claim=>/\b(?:produtor|cliente) atual\b/.test(normalize(claim)))
- if(facet==='DECISION_MAKER')return materialClaims.length>0&&materialClaims.every(claim=>/\b(?:decisor|quem decide)\b/.test(normalize(claim)))
+ if(facet==='DECISION_MAKER')return materialClaims.length>0&&materialClaims.every(claim=>/\b(?:decisor|quem decide|decide a compra|decide as compras|assina|autoriza)\b/.test(normalize(claim)))
  if(facet==='AREA')return materialClaims.length>0&&materialClaims.every(claim=>/\barea\b|\bhectares?\b|\bha\b/.test(normalize(claim)))
  return true
 }

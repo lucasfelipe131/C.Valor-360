@@ -43,8 +43,19 @@ const naturalReferencePatterns=Object.freeze([
  // Só o nome: cada palavra começa em maiúscula (voz transcrita e digitação de nome), até quatro
  // palavras, sem saudação/comando capitalizado; 'Isso muda a abordagem?' e 'oi val' não são candidatos.
  {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:new RegExp('^\\s*(?:val[, ]+)?(?!(?:Oi|OI|Ola|OLA|Olá|OLÁ|Opa|OPA|Bom|BOM|Boa|BOA|Obrigado|OBRIGADO|Obrigada|OBRIGADA|Valeu|VALEU|Sim|SIM|Nao|NAO|Não|NÃO|Ok|OK|Certo|CERTO|Perfeito|PERFEITO|Continue|CONTINUE|Continua|CONTINUA|Repete|REPETE|Repita|REPITA|Resume|RESUME|Resuma|RESUMA|Prepare|PREPARE|Prepara|PREPARA|Abra|ABRA|Abre|ABRE|Mostre|MOSTRE|Mostra|MOSTRA|Calcule|CALCULE|Calcula|CALCULA|Registra|REGISTRA|Registre|REGISTRE|Anota|ANOTA|Anote|ANOTE|Isso|ISSO|Essa|ESSA|Esse|ESSE|Qual|QUAL|Quais|QUAIS|Quem|QUEM|Como|COMO|Onde|ONDE|Quando|QUANDO|Quanto|QUANTO)\\b)(?<reference>\\p{Lu}[\\p{L}\'-]*(?:\\s+(?:d[aeo]s?\\s+)?\\p{Lu}[\\p{L}\'-]*){0,3})\\s*[.!?]*$','u')},
+ // Ultimos da lista, de proposito: qualquer padrao existente (inclusive a troca explicita
+ // "muda para o Joao") tem precedencia sobre estes.
+ // nenhum: a referencia saia NONE, o produtor ativo permanecia e a VAL respondia com os dados
+ // DELE, sem dizer de quem eram. Candidato (nao nome afirmado): quando nao resolve na carteira,
+ // o turno segue sem trocar de produtor em vez de recusar.
+ {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/(?:^|\s)(?:o|a)\s+(?<reference>[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,3}?)\s+(?:tem|t[eê]m|ta|est[aá]|estava|ficou|vai|comprou|planta|plantou|quer|pediu|fechou)\b/iu},
+ {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/\b(?:para|pro|pra)\s+(?:(?:o|a)\s+)?(?<reference>[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,3})\s*[?.!]?$/iu}
 ])
 
+// Interrogativo, quantificador, ordinal e substantivo de agenda nunca sao nome de produtor:
+// "quem eu tenho que visitar hoje?" virava a busca por um produtor chamado "quem" e a conversa
+// travava com 422.
+const nonNameReference=/^(?:quem|qual|quais|quantos|quantas|alguem|algu[eé]m|alguns|algumas|todos|todas|ninguem|ningu[eé]m|nada|primeiro|primeira|ultimo|[uú]ltimo|ultima|[uú]ltima|agenda|rota|roteiro|semana|hoje|amanha|amanh[aã]|gente|pessoal|time|equipe)\b/iu
 const stripReference=value=>{
  let reference=clean(value,220).replace(trailingContext,'').trim()
  reference=reference.replace(/^(?:(?:o|a|ao|[àa]|pro|pra|no|na)\s+)?(?:cliente|produtor|produtora|fazenda|propriedade)\s+/iu,'')
@@ -64,6 +75,10 @@ export function extractNaturalClientReference(message){
   if(!reference||temporalOnly.test(reference))return Object.freeze({kind:'NONE',reference:null})
   if(kind==='FACT_OWNER'&&contextualFactOwner.test(reference))return Object.freeze({kind:'NONE',reference:null})
   if(currentClientReference.test(reference))return Object.freeze({kind:'CURRENT_CLIENT',reference})
+  // So depois de descartar a referencia ao produtor atual: interrogativo, quantificador, ordinal e
+  // substantivo comum nunca sao nome de produtor. "quem eu tenho que visitar hoje?" virava a busca
+  // por um produtor chamado "quem" e a conversa travava com 422.
+  if(nonNameReference.test(reference))return Object.freeze({kind:'NONE',reference:null})
   return Object.freeze({kind,reference})
  }
  if(/\b(?:ele|ela|dele|dela|nele|nela|esse cliente|essa cliente|esse produtor|essa produtora)\b/iu.test(source))return Object.freeze({kind:'CURRENT_CLIENT',reference:source.match(/\b(?:ele|ela|dele|dela|nele|nela|esse cliente|essa cliente|esse produtor|essa produtora)\b/iu)?.[0]||null})
