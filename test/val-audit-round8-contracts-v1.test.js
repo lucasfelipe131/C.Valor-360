@@ -126,3 +126,16 @@ test('Voz — relato curto não é marcado como cortado', () => {
  assert.equal(extraction.truncated,false)
  assert.equal(extraction.clauses_skipped,0)
 })
+
+// ANX-01: sem offset, qualquer anexo além do 200º mais recente era inalcançável.
+test('Anexos — a listagem pagina e declara o acervo inteiro', async () => {
+ const {ValRepository}=await import('../server/repository.js')
+ const store={val:{attachments:Array.from({length:205},(_,index)=>({id:`a${index}`,tenantId:'t',tenant_id:'t',ownerId:'o',clientId:'c',mimeType:'image/png',status:'received',original_name:`foto-${index}.png`,created_at:new Date(2026,0,1+index).toISOString()}))}}
+ const repository=new ValRepository({tenantId:'t',db:{configured:false},readStore:()=>structuredClone(store),saveStore:()=>{}})
+ const first=await repository.listAttachments({ownerId:'o',clientId:'c',limit:120,offset:0,mimePrefix:'image/'})
+ assert.equal(first.length,120)
+ assert.equal(first.total,205)
+ const second=await repository.listAttachments({ownerId:'o',clientId:'c',limit:120,offset:120,mimePrefix:'image/'})
+ assert.equal(second.length,85)
+ assert.equal(new Set([...first,...second].map(item=>item.id)).size,205,'nenhum anexo pode ficar inalcançável')
+})

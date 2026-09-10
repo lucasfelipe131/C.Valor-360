@@ -476,17 +476,24 @@ async function handleApi(request,response,url){
   const requestedLimit=Number(url.searchParams.get('limit'))
   const limit=Number.isFinite(requestedLimit)&&requestedLimit>0?Math.min(200,Math.round(requestedLimit)):60
   const mimePrefix=clean(url.searchParams.get('mimePrefix')).slice(0,40)
-  const attachments=await repository.listAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,limit,mimePrefix})
-  // `truncated` deixa a tela distinguir "nada registrado" de "nada nesta pagina".
-  return json(response,200,{attachments,limit,truncated:attachments.length>=limit})
+  const requestedOffset=Number(url.searchParams.get('offset'))
+  const offset=Number.isFinite(requestedOffset)&&requestedOffset>0?Math.round(requestedOffset):0
+  const attachments=await repository.listAttachments({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,limit,offset,mimePrefix})
+  // `truncated` deixa a tela distinguir "nada registrado" de "nada nesta pagina"; total e nextOffset
+  // dao o acervo inteiro, para nenhum arquivo antigo ficar inalcancavel.
+  const total=Number.isFinite(Number(attachments.total))?Number(attachments.total):offset+attachments.length
+  return json(response,200,{attachments:[...attachments],limit,offset,total,truncated:offset+attachments.length<total,nextOffset:offset+attachments.length<total?offset+attachments.length:null})
  }
  if(url.pathname==='/api/val/attachments'&&request.method==='POST'){
   const payload=await body(request);const clientId=clean(payload.clientId);const association=clean(payload.association).toUpperCase()||'LINKED_CLIENT';if(!['LINKED_CLIENT','UNLINKED'].includes(association))return json(response,400,{error:'Associação de arquivo inválida.'});if(association==='LINKED_CLIENT'&&!clientId)return json(response,400,{error:'Selecione um produtor antes de anexar.'});if(association==='UNLINKED'&&clientId)return json(response,400,{error:'Um attachment UNLINKED não pode declarar produtor.'})
   const normalized=normalizedAttachment(payload)
-  const attachment=await repository.createAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:clientId||null,association,...normalized})
+  const created=await repository.createAttachment({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:clientId||null,association,...normalized})
+  const {deduplicated=false,...attachment}=created
   if(clientId)invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId})
-  await accessRepository.recordUsage(identity,{eventType:'val_attachment_uploaded',page:'val',entityType:clientId?'client':'attachment',entityId:clientId||attachment.id,metadata:{attachmentId:attachment.id,association,mimeType:normalized.mimeType,sizeBytes:normalized.sizeBytes}})
-  return json(response,201,{attachment})
+  await accessRepository.recordUsage(identity,{eventType:'val_attachment_uploaded',page:'val',entityType:clientId?'client':'attachment',entityId:clientId||attachment.id,metadata:{attachmentId:attachment.id,association,mimeType:normalized.mimeType,sizeBytes:normalized.sizeBytes,deduplicated}})
+  // 201 so quando algo foi de fato criado. O mesmo arquivo reenviado devolve 200 com deduplicated,
+  // para a tela nao tratar um registro antigo como upload novo.
+  return json(response,deduplicated?200:201,{attachment,...(deduplicated?{deduplicated:true}:{})})
  }
  if(url.pathname==='/api/val/attachments'&&request.method==='PATCH'){
   const scope=browserAttachmentScope(url)
@@ -496,7 +503,11 @@ async function handleApi(request,response,url){
   let analysis
   if(fieldPhoto){
    if(!String(current.mimeType||'').startsWith('image/'))return json(response,422,{error:'Somente imagens podem receber metadados de foto de campo.',code:'attachment_field_photo_image_required'})
-   analysis={...((current.analysis&&typeof current.analysis==='object')?current.analysis:{}),fieldPhoto}
+   const currentAnalysis=(current.analysis&&typeof current.analysis==='object')?current.analysis:{}
+   // Identificacao anterior nao pode sumir: fica no historico, com quando foi substituida.
+   const replaced=currentAnalysis.fieldPhoto&&JSON.stringify(currentAnalysis.fieldPhoto)!==JSON.stringify(fieldPhoto)
+   const history=[...(Array.isArray(currentAnalysis.fieldPhotoHistory)?currentAnalysis.fieldPhotoHistory:[]),...(replaced?[{...currentAnalysis.fieldPhoto,replacedAt:new Date().toISOString()}]:[])].slice(-20)
+   analysis={...currentAnalysis,fieldPhoto,...(history.length?{fieldPhotoHistory:history}:{})}
   }
   const effectiveStatus=status||(current.status==='received'?'stored':current.status)
   const statusTransitioned=Boolean(status)||current.status==='received'

@@ -35,17 +35,37 @@ export default function ProducerFieldGallery({clientId,clientName,onSaved}){
  const [editing,setEditing]=useState('')
  const [editMeta,setEditMeta]=useState(emptyMeta)
  const [state,setState]=useState({loading:true,uploading:false,saving:false,error:''})
+ // total e nextOffset vem da rota: sem eles a galeria mostrava as 120 mais recentes e anunciava "120
+ // fotos" como se fosse o acervo inteiro, e a foto de agosto ficava inalcancavel.
+ const [paging,setPaging]=useState({total:0,nextOffset:null,loadingMore:false})
  const cameraInput=useRef(null)
  const galleryInput=useRef(null)
 
+ const photoPage=(offset,signal)=>fetch(`/api/val/attachments?clientId=${encodeURIComponent(clientId)}&mimePrefix=${encodeURIComponent('image/')}&limit=120&offset=${offset}`,{signal})
+  .then(async response=>{const payload=await response.json().catch(()=>({}));if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error(payload.error||'Não foi possível carregar as fotos.');return payload})
+
  useEffect(()=>{
   const controller=new AbortController();setState(current=>({...current,loading:true,error:''}))
-  fetch(`/api/val/attachments?clientId=${encodeURIComponent(clientId)}&mimePrefix=${encodeURIComponent('image/')}&limit=120`,{signal:controller.signal})
-   .then(async response=>{const payload=await response.json().catch(()=>({}));if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error(payload.error||'Não foi possível carregar as fotos.');return payload})
-   .then(payload=>{setPhotos((payload.attachments||[]).filter(item=>item.mimeType?.startsWith('image/')));setState(current=>({...current,loading:false,error:''}))})
+  photoPage(0,controller.signal)
+   .then(payload=>{
+    setPhotos((payload.attachments||[]).filter(item=>item.mimeType?.startsWith('image/')))
+    setPaging({total:Number(payload.total)||0,nextOffset:payload.nextOffset??null,loadingMore:false})
+    setState(current=>({...current,loading:false,error:''}))
+   })
    .catch(error=>{if(error.name!=='AbortError')setState(current=>({...current,loading:false,error:error.message}))})
   return()=>controller.abort()
  },[clientId])
+
+ const loadMore=async()=>{
+  if(paging.nextOffset===null||paging.loadingMore)return
+  setPaging(current=>({...current,loadingMore:true}));setState(current=>({...current,error:''}))
+  try{
+   const payload=await photoPage(paging.nextOffset)
+   const page=(payload.attachments||[]).filter(item=>item.mimeType?.startsWith('image/'))
+   setPhotos(current=>[...current,...page.filter(item=>!current.some(photo=>photo.id===item.id))])
+   setPaging({total:Number(payload.total)||0,nextOffset:payload.nextOffset??null,loadingMore:false})
+  }catch(error){setPaging(current=>({...current,loadingMore:false}));setState(current=>({...current,error:error.message}))}
+ }
 
  const patchPhoto=async(item,metadata,status=item.status==='received'?'stored':undefined)=>{
   const response=await fetch(`/api/val/attachments?clientId=${encodeURIComponent(clientId)}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({id:item.id,...(status?{status}:{}),fieldPhoto:metadata}),signal:AbortSignal.timeout(15000)})
@@ -57,14 +77,22 @@ export default function ProducerFieldGallery({clientId,clientName,onSaved}){
   setState(current=>({...current,uploading:true,error:''}))
   try{
    let added=0
+   const reused=[]
    for(const [index,original] of files.entries()){
     const file=await preparePhoto(original);const dataUrl=await fileDataUrl(file)
     const response=await fetch('/api/val/attachments',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({clientId,originalName:file.name,mimeType:file.type,sizeBytes:file.size,dataUrl}),signal:AbortSignal.timeout(60000)})
     const payload=await response.json().catch(()=>({}));if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error(payload.error||'Não foi possível enviar esta foto.')
     const label=draft.label.trim()?files.length>1?`${draft.label.trim()} • ${index+1}`:draft.label.trim():fileLabel(file.name)
+    // Arquivo identico ja enviado: o servidor devolve o registro antigo. Reescrever a identificacao de
+    // uma foto ja identificada apagaria a observacao de campo anterior, entao mantemos o que existe e
+    // avisamos o consultor.
+    const alreadyIdentified=Boolean(payload.deduplicated&&payload.attachment?.analysis?.fieldPhoto?.label)
+    if(alreadyIdentified){setPhotos(current=>mergePhoto(current,payload.attachment));reused.push(payload.attachment.originalName||file.name);continue}
     const stored=await patchPhoto(payload.attachment,{...draft,label});setPhotos(current=>mergePhoto(current,stored));added++
    }
-   setDraft(emptyMeta());onSaved?.(`${added} ${added===1?'foto salva':'fotos salvas'} na nuvem e vinculada${added===1?'':'s'} a ${clientName||'este produtor'}.`)
+   setDraft(emptyMeta())
+   if(added)onSaved?.(`${added} ${added===1?'foto salva':'fotos salvas'} na nuvem e vinculada${added===1?'':'s'} a ${clientName||'este produtor'}.`)
+   if(reused.length)setState(current=>({...current,error:`${reused.length===1?'Esta foto já estava registrada e identificada':'Estas fotos já estavam registradas e identificadas'}: ${reused.join(', ')}. A identificação anterior foi mantida — use "Editar dados" para alterá-la.`}))
   }catch(error){setState(current=>({...current,error:error.message}))}finally{setState(current=>({...current,uploading:false}))}
  }
 
@@ -81,7 +109,7 @@ export default function ProducerFieldGallery({clientId,clientName,onSaved}){
  }
 
  return <section className="producer-field-gallery" aria-labelledby="producer-field-gallery-title">
-  <header><div><span className="field-gallery-icon"><Images/></span><div><span className="eyebrow">HISTÓRICO VISUAL DA LAVOURA</span><h3 id="producer-field-gallery-title">Fotos vinculadas ao produtor</h3><p>Registre o que foi observado, onde se encaixa e quando aconteceu. A foto fica disponível no mesmo login e pode compor o contexto da VAL.</p></div></div><span className="field-gallery-count">{photos.length} {photos.length===1?'foto':'fotos'}</span></header>
+  <header><div><span className="field-gallery-icon"><Images/></span><div><span className="eyebrow">HISTÓRICO VISUAL DA LAVOURA</span><h3 id="producer-field-gallery-title">Fotos vinculadas ao produtor</h3><p>Registre o que foi observado, onde se encaixa e quando aconteceu. A foto fica disponível no mesmo login e pode compor o contexto da VAL.</p></div></div><span className="field-gallery-count">{paging.total>photos.length?`${photos.length} de ${paging.total} fotos`:`${photos.length} ${photos.length===1?'foto':'fotos'}`}</span></header>
   <div className="field-photo-composer">
    <div className="field-photo-fields"><label>Rótulo da foto<input value={draft.label} maxLength="120" onChange={event=>setDraft(current=>({...current,label:event.target.value}))} placeholder="Ex.: Soja — Talhão Norte, V4"/></label><label>Categoria<select value={draft.category} onChange={event=>setDraft(current=>({...current,category:event.target.value}))}>{categories.map(category=><option key={category}>{category}</option>)}</select></label><label>Data observada<input type="date" value={draft.observedAt} onChange={event=>setDraft(current=>({...current,observedAt:event.target.value}))}/></label><label className="wide">Notas da observação<textarea rows="2" value={draft.notes} maxLength="1000" onChange={event=>setDraft(current=>({...current,notes:event.target.value}))} placeholder="Ex.: 12 plantas/m, reboleira de 8 × 15 m; conferir após 7 dias."/></label></div>
    <div className="field-photo-actions"><input ref={cameraInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" onChange={upload}/><input ref={galleryInput} className="sr-only" type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={upload}/><button type="button" onClick={()=>cameraInput.current?.click()} disabled={state.uploading}><Camera/>{state.uploading?'Enviando…':'Tirar foto'}</button><button type="button" onClick={()=>galleryInput.current?.click()} disabled={state.uploading}><ImagePlus/>Escolher da galeria</button><small>JPEG, PNG ou WebP • até 6 MB por foto • até 6 por envio</small></div>
@@ -92,6 +120,7 @@ export default function ProducerFieldGallery({clientId,clientName,onSaved}){
    <div className="field-photo-copy"><div className="field-photo-tags"><span><Tag/>{metadata.category}</span><span><CalendarDays/>{formatDate(metadata.observedAt)}</span></div><h4>{metadata.label}</h4><p>{metadata.notes||'Sem observação complementar.'}</p><small>{formatSize(item.sizeBytes)} • {statusLabels[item.status]||item.status}</small></div>
    {editing===item.id?<form className="field-photo-edit" onSubmit={saveEdit}><label>Rótulo<input required value={editMeta.label} maxLength="120" onChange={event=>setEditMeta(current=>({...current,label:event.target.value}))}/></label><label>Categoria<select value={editMeta.category} onChange={event=>setEditMeta(current=>({...current,category:event.target.value}))}>{categories.map(category=><option key={category}>{category}</option>)}</select></label><label>Data<input type="date" value={editMeta.observedAt} onChange={event=>setEditMeta(current=>({...current,observedAt:event.target.value}))}/></label><label className="wide">Notas<textarea rows="3" value={editMeta.notes} maxLength="1000" onChange={event=>setEditMeta(current=>({...current,notes:event.target.value}))}/></label><div><button type="button" onClick={()=>setEditing('')}><X/>Cancelar</button><button className="save" disabled={state.saving}><Save/>{state.saving?'Salvando…':'Salvar'}</button></div></form>:<div className="field-photo-card-actions"><button type="button" onClick={()=>startEdit(item)}><Pencil/>Editar dados</button><button type="button" className="danger" disabled={state.saving} onClick={()=>remove(item)}><Trash2/>Remover</button></div>}
   </article>})}</div>:<div className="field-gallery-empty"><ImagePlus/><div><b>Nenhuma foto registrada</b><span>Use a câmera ou escolha imagens para começar o histórico visual.</span></div></div>}
+  {paging.nextOffset!==null&&<div className="field-gallery-more"><button type="button" onClick={loadMore} disabled={paging.loadingMore}>{paging.loadingMore?'Carregando…':`Ver fotos mais antigas (${Math.max(0,paging.total-photos.length)} restantes)`}</button></div>}
   <footer><Check/><span>As fotos ficam vinculadas ao produtor e isoladas no seu login.</span></footer>
  </section>
 }

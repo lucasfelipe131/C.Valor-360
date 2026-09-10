@@ -48,7 +48,11 @@ test('repositório isola attachment por tenant, consultor e produtor e torna rej
 test('listagens PostgreSQL e fallback omitem binário e o fallback preserva tenant explícito',()=>{
  const repository=read('server/repository.js')
  const diff=read('VAL_AGRONOMIC_CAPABILITY_DIFF.md')
- assert.match(repository,/SELECT a\.\*,NULL::text content_base64,c\.external_key client_external_key FROM val_attachments/)
+ // O que importa é o binário nunca sair na listagem; a projeção pode ganhar colunas (o total do
+ // acervo, para a tela paginar) sem afrouxar essa garantia.
+ assert.match(repository,/SELECT a\.\*,NULL::text content_base64,c\.external_key client_external_key[^"]*FROM val_attachments/)
+ assert.match(repository,/COUNT\(\*\) OVER \(\) total_count/)
+ assert.match(repository,/LIMIT \$4 OFFSET \$6/)
  assert.match(repository,/\.map\(attachmentMetadataRecord\)/)
  assert.match(repository,/attachmentInTenant\(item,tenantId\)/)
  assert.match(diff,/both PostgreSQL and fallback listings omit binary content/i)
