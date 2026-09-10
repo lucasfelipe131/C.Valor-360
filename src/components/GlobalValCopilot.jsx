@@ -21,6 +21,7 @@ import {hasValOutputModePreference,localNaturalCommandTurn,naturalCommandMatches
 import {cancelVoiceInteraction,createVoiceInteraction,processVoiceInteraction,uploadVoiceAudio} from '../lib/voice-interactions-client'
 import {attachmentContentUrl,attachmentMatchesBrowserScope} from '../lib/attachment-browser-scope'
 import {lockMobilePage} from '../lib/mobile-viewport'
+import {realtimeGovernedError,realtimeGovernedResult} from '../lib/realtime-governed-result'
 import '../global-val-copilot.css'
 import '../val-full-screen-copilot.css'
 import '../val-producer360-premium.css'
@@ -517,7 +518,7 @@ export default function GlobalValCopilot({open,onClose,onPresentationChange,embe
    setAttachments([])
    if(activeReply&&!changesConversationScope){setSessionReplies(current=>({...current,[activeThreadKey]:currentSessionReplies.slice(-6)}));setSessionReplyOffer({question:activeReply.question,answer:prompt,intent:activeReply.intent||effectiveIntent||''})}
    const reasoning=payload?.advice?.ai_reasoning||{}
-   return {payload,responseText:reasoning.voice_output?.speakable_text||reasoning.recommended_strategy?.reading||payload?.advice?.answer||'',suppressSpeech:turnOptions.conversationMode===true&&turnOptions.responseMode==='text'}
+   return {payload,verifiedScope:responseScope,responseText:reasoning.voice_output?.speakable_text||reasoning.recommended_strategy?.reading||payload?.advice?.answer||'',suppressSpeech:turnOptions.conversationMode===true&&turnOptions.responseMode==='text'}
  }catch(requestError){
   if(!isCurrent()||(requestError?.name==='AbortError'&&!timedOut))return {responseText:'',suppressSpeech:true,cancelled:true}
   // A pergunta que terminou em erro nao fica "pendente de resposta": sem esta marca, "resume pra mim"
@@ -719,7 +720,7 @@ export default function GlobalValCopilot({open,onClose,onPresentationChange,embe
      onRealtimeContextSync={syncRealtimeContext}
      onRealtimeUserTranscript={(transcript,callbackScope)=>{if(!realtimeTurnMatchesScope(callbackScope,realtimeScope))return;append({role:'user',text:transcript,intent:'REALTIME_CONVERSATION',conversationId:realtimeConversationId,producerId:client?.id||null,contextEpoch:realtimeContextEpoch,realtimeSessionId:callbackScope.sessionId||null,persistence:'NONE'},threadKey)}}
      onRealtimeAssistantTranscript={(transcript,callbackScope)=>{if(!realtimeTurnMatchesScope(callbackScope,realtimeScope))return;append({role:'assistant_text',status:'incomplete',serverGrounded:false,grounding:'UNVERIFIED_BROWSER_TRANSCRIPT',followUpEligible:false,text:transcript,intent:'REALTIME_CONVERSATION',conversationId:realtimeConversationId,producerId:client?.id||null,contextEpoch:realtimeContextEpoch,realtimeSessionId:callbackScope.sessionId||null,persistence:'NONE'},threadKey)}}
-     onRealtimeToolCall={async({request,reason})=>{const result=await ask(request,undefined,{inputModality:'voice',responseMode:'text',conversationMode:true,governedTool:true,skipUserAppend:true});return {status:result?.responseText?'COMPLETED':'UNAVAILABLE',reason,result:result?.responseText||'A capacidade governada não devolveu resultado.'}}}
+     onRealtimeToolCall={async({request,reason})=>{try{const result=await ask(request,undefined,{inputModality:'voice',responseMode:'text',conversationMode:true,governedTool:true,skipUserAppend:true});return realtimeGovernedResult(result,{reason})}catch(error){return realtimeGovernedError(error,{reason})}}}
      onRealtimeMemoryReview={({candidate})=>{if(!client)return {status:'CLIENT_REQUIRED',message:'Escolha o produtor antes de revisar uma informação.'};append({role:'assistant_text',status:'incomplete',serverGrounded:false,grounding:'UNVERIFIED_BROWSER_TRANSCRIPT',followUpEligible:false,text:'Encontrei algo que parece valer a pena registrar. Abri a revisão abaixo — confirme ou descarte para voltar à conversa por voz.',intent:'REALTIME_CONVERSATION',conversationId:realtimeConversationId,producerId:client?.id||null,contextEpoch:realtimeContextEpoch,persistence:'NONE'},threadKey);setRegistrationDraft(createScopedRegistrationDraft({text:candidate,clientId:client.id,threadKey}));setRegistrationAutoOpenKey(`realtime-register-${Date.now()}-${threadKey}`);setMode('REGISTER');return {status:'REVIEW_REQUIRED',message:'A revisão humana foi aberta. Nada foi registrado ainda.'}}}
      onError={message=>setError(typeof message==='string'?message:message?.message||'')}
      onMetrics={recordConversationMetrics}

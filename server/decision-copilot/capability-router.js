@@ -26,7 +26,6 @@ const clean=(value,max=2000)=>String(value??'').replace(/\s+/g,' ').trim().slice
 const normalize=value=>clean(value,4000).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR')
 const commodityLabels={soja:'Soja',milho:'Milho',trigo:'Trigo',sorgo:'Sorgo',feijao:'Feijão',arroz:'Arroz',cevada:'Cevada'}
 const marketKindLabels={spot:'disponível (spot)',forward:'a termo (forward)',futures:'futuro (futures)'}
-const clientIndependent=new Set(['ASK_GENERAL','ASK_MARKET','ASK_COMMODITY','CHECK_MARKET','CHECK_WEATHER','CHECK_LABEL'])
 const responseDomains=new Set(['PROFILE','COMMERCIAL','AGRONOMY','GRAINS','CREDIT','GEO','VISIT','OPPORTUNITY','GENERAL','MULTI_DOMAIN'])
 const producerScopeKeys=Object.freeze(['producer_id','producerId','client_id','clientId','subject_client_id'])
 const tenantScopeKeys=Object.freeze(['tenant_id','tenantId','organization_id','organizationId'])
@@ -224,6 +223,14 @@ export function assessEngineMateriality(input={}){
  return Object.freeze({...materiality,question:'Isso pode mudar materialmente a resposta?'})
 }
 
+/** Uma descrição curta da conta, cuja entidade ainda precisa ser resolvida pelo backend. */
+export function isClientOverviewRequest(message=''){
+ const source=stripMessagePreamble(normalize(message)).replace(/[?!.,;:]+$/g,'').trim()
+ const match=source.match(/^(?:(?:(?:pode|poderia)\s+)?(?:me\s+)?(?:fala|fale|falar|conta|conte|contar)\s+(?:um pouco\s+)?(?:sobre|do|da|de)|o que\s+(?:(?:voce|a val)\s+)?sabe\s+sobre|(?:quero|queria)\s+saber\s+(?:sobre|do|da))\s+(.+)$/)
+ if(!match)return false
+ return /^[a-z][a-z '-]{0,180}$/.test(match[1])&&!/\b(?:como|qual|quais|quanto|quando|onde|porque|por que|manejo|estrategia|recomenda\w*)\b/.test(match[1])
+}
+
 export function classifyStructuredClientFact(message=''){
  // "Val, qual a próxima visita?" é a mesma pergunta que "qual a próxima visita?": todos os
  // padrões abaixo são ancorados em ^, então o vocativo da voz derrubava a allowlist inteira e a
@@ -238,6 +245,7 @@ export function classifyStructuredClientFact(message=''){
  // when it contains one of the same nouns.
  if(/^(?:agora\s+)?(?:compara|compare)\s+(?:os dois|ambos|essas duas contas|esses dois produtores)$/.test(source))return 'CLIENT_COMPARISON'
  const owner='(?:\\s+(?:dele|dela)|\\s+(?:do|da)\\s+[a-z][a-z0-9 \'-]{0,120})?'
+ if(new RegExp(`^(?:e\\s+)?qual\\s+(?:e\\s+)?(?:a\\s+)?area${owner}$`).test(source))return 'REGISTERED_AREA'
  const profileQuestion=new RegExp(`^(?:e\\s+)?(?:(?:qual|como)\\s+(?:e\\s+)?(?:o\\s+)?perfil(?:\\s+comportamental)?${owner}|(?:mostre|mostra|me\\s+mostre)\\s+(?:o\\s+)?perfil(?:\\s+comportamental)?${owner})$`)
  // The profile contract already supplies an evidence-based approach. Accept
  // only these two complete profile clauses; additional domains/actions stay contextual.
@@ -279,8 +287,8 @@ export function classifyStructuredClientFact(message=''){
  return null
 }
 
-export function routeSystemCapability({message='',intentHint='',sessionCommandHint='',hasClient=false,attachmentTypes=[],activeContext=null}={}){
- const intentRoute=routeValIntent({message,intentHint,sessionCommandHint,hasClient,attachmentTypes})
+export function routeSystemCapability({message='',intentHint='',sessionCommandHint='',hasClient=false,resolvedClientReference=false,attachmentTypes=[],activeContext=null}={}){
+ const intentRoute=routeValIntent({message,intentHint,sessionCommandHint,hasClient,resolvedClientReference,attachmentTypes})
  const source=normalize(message)
  const structuredFactCandidate=attachmentTypes.length===0?classifyStructuredClientFact(message):null
  const structuredFactEligible=['ASK_CLIENT','OBJECTION_HELP'].includes(intentRoute.intent)||structuredFactCandidate==='REGISTERED_CROPS'
@@ -309,6 +317,8 @@ export function routeSystemCapability({message='',intentHint='',sessionCommandHi
      :'CLIENT_CONTEXT']
   capabilities.push(...selected);path='FAST';direct=true;dataPath=structuredFact
  }else if(intentRoute.intent==='ASK_CLIENT'&&isCurrentClientIdentityRequest(source)){
+  capabilities.push('CLIENT_CONTEXT');path='FAST';direct=true
+ }else if(intentRoute.intent==='ASK_CLIENT'&&resolvedClientReference&&isClientOverviewRequest(message)){
   capabilities.push('CLIENT_CONTEXT');path='FAST';direct=true
  }else if(intentRoute.intent==='ASK_CLIENT'&&/\b(?:quem decide|decisor|compromisso (?:esta )?aberto|qual compromisso|resume (?:a )?conta)\b/.test(source)){
   capabilities.push('CLIENT_CONTEXT',/compromisso/.test(source)?'COMMERCIAL_HISTORY':'CONFIRMED_MEMORY');path='FAST';direct=true
@@ -370,7 +380,7 @@ export function routeSystemCapability({message='',intentHint='',sessionCommandHi
   direct,
   capabilities:planned,
   current_data_required:intentRoute.requires_current_data,
-  client_context_required:intentRoute.tool_hint!=='AGRONOMIC_TOOL_CATALOG'&&!clientIndependent.has(intentRoute.intent)&&!intentRoute.session_command?.local_only,
+  client_context_required:intentRoute.client_context_required&&!intentRoute.session_command?.local_only,
   persistence_mode:intentRoute.persistence_mode,
   session_command:intentRoute.session_command,
   tool_hint:intentRoute.tool_hint,

@@ -59,6 +59,7 @@ export const config=Object.freeze({
   realtimeVoiceBudgetUsd:boundedNumber(process.env.VAL_REALTIME_VOICE_BUDGET_USD,25,1,25),
   realtimeVoiceReservationUsd:boundedNumber(process.env.VAL_REALTIME_VOICE_RESERVATION_USD,1,.25,2),
   realtimeVoiceMaxSessionSeconds:boundedNumber(process.env.VAL_REALTIME_VOICE_MAX_SESSION_SECONDS,600,60,600),
+  realtimeVoiceMaxOutputTokens:Math.trunc(boundedNumber(process.env.VAL_REALTIME_VOICE_MAX_OUTPUT_TOKENS,4096,1024,4096)),
   realtimeVoiceVadEagerness:choice(process.env.VAL_REALTIME_VOICE_VAD_EAGERNESS,['low','medium','high','auto'],'low'),
   realtimeVoiceRequestsPerTenMinutes:boundedNumber(process.env.VAL_REALTIME_VOICE_REQUESTS_PER_10_MINUTES,6,1,20),
   realtimeVoiceTesters:String(process.env.VAL_REALTIME_VOICE_TESTERS||'').split(',').map(value=>value.trim().toLowerCase()).filter(Boolean).slice(0,50),

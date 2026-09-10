@@ -76,6 +76,10 @@ function semanticCurrentDataIntent(source=''){
  const folded=fold(source)
  const definitional=definitionalShape.test(folded)
  if(/\b(?:bula|registro agrofit|rotulo)\b/.test(folded))return 'CHECK_LABEL'
+ // Dose de defensivo é uma consulta de uso registrado, mesmo sem a palavra “bula”.
+ // Explicações conceituais e cálculos de nutrientes continuam na rota de conhecimento.
+ const suppliedDoseCalculation=/\b(?:calcul\w*|simul\w*)\b/.test(folded)&&/\bdose\s*(?:de\s*)?\d[\d.,]*\s*(?:ml|l|g|kg)\s*\/\s*ha\b/.test(folded)
+ if(!definitional&&!suppliedDoseCalculation&&/\bdose\b/.test(folded)&&/\b(?:de|do|da|aplicar|aplicacao|usar)\b/.test(folded)&&!/\b(?:ureia|calcario|nitrogenio|fosforo|potassio|fertilizante|npk)\b/.test(folded))return 'CHECK_LABEL'
  if(!definitional&&/\b(?:carencia|intervalo de seguranca)\b/.test(folded)&&/\b(?:produto|defensivo|fungicida|herbicida|inseticida|aplic\w*|colh\w*|dose)\b/.test(folded))return 'CHECK_LABEL'
  if(/\b(?:clima|previsao (?:do tempo|meteorologica)|como (?:esta|ta|vai estar) o tempo|vai chover|vai ter (?:chuva|geada|granizo)|esta chovendo|vai fazer (?:frio|calor))\b/.test(folded))return 'CHECK_WEATHER'
  if(!definitional&&/\b(?:tempo|chuva|temperatura|geada|granizo)\b/.test(folded)&&currentMoment.test(folded))return 'CHECK_WEATHER'
@@ -123,8 +127,9 @@ export function normalizeValIntent(value){
  return allowed.has(canonical)?canonical:null
 }
 
-export function routeValIntent({message='',intentHint='',sessionCommandHint='',hasClient=false,attachmentTypes=[]}={}){
- const hinted=normalizeValIntent(intentHint)
+export function routeValIntent({message='',intentHint='',sessionCommandHint='',hasClient=false,resolvedClientReference=false,attachmentTypes=[]}={}){
+ const requestedHint=normalizeValIntent(intentHint)
+ const hinted=resolvedClientReference&&requestedHint==='ASK_GENERAL'?null:requestedHint
  const source=clean(message).toLocaleLowerCase('pt-BR')
  const hasImage=attachmentTypes.some(type=>String(type).startsWith('image/'))
  const sessionCommand=routeSessionCommand(source,sessionCommandHint)
@@ -133,7 +138,10 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
  const semanticCurrent=semanticCurrentDataIntent(source)
  const semanticCommand=semanticCommandIntent(source,hasClient)
  const semanticClientIdentity=isCurrentClientIdentityRequest(source)?'ASK_CLIENT':''
- const semanticGeneral=generalTopicClarification(source)&&currentDataIntents.has(hinted)?'':semanticGeneralConceptIntent(source,!toolHint&&!currentDataIntents.has(hinted))
+ // A resolução do backend é evidência de que “me fala do Antônio” refere-se à carteira.
+ // O nome não precisa constar no vocabulário do roteador, e a simples seleção de um produtor
+ // continua insuficiente para transformar uma pergunta geral em pergunta da conta.
+ const semanticGeneral=resolvedClientReference||generalTopicClarification(source)&&currentDataIntents.has(hinted)?'':semanticGeneralConceptIntent(source,!toolHint&&!currentDataIntents.has(hinted))
  const folded=fold(source)
  const individual=hasClient||individualReference.test(folded)
  // Hints may come from an older client. They cannot downgrade an explicit
@@ -169,7 +177,7 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
   else if(/\d[\d. ]*\s*(?:mil\s+)?(?:plantas|sementes)\s*(?:por|\/)\s*(?:hectare|ha|metro|m)\b/i.test(source))intent='CALCULATE'
   else if(/\d/.test(source)&&/\b(?:custo|custou|gastei|gasto|gastos|investi|investimento|paguei|reais|r\$)\b|r\$/i.test(folded)&&/\b(?:hectares?|ha|por ha|alqueires?|area)\b|\/ha\b/i.test(folded))intent='CALCULATE'
   else if((toolHint==='CALCULATOR'||/\b(?:calcul\w*|simul\w*|retorno|roi|margem|ponto de equil[ií]brio|convers[aã]o de unidade)\b/i.test(source))&&(explicitCalculatorAction||/\d/.test(source)||/\bquanto (?:e|da|fica|custa|rende|vale)\b|\bquant[ao]s\b/.test(folded)))intent='CALCULATE'
-  else intent=hasClient?'ASK_CLIENT':'ASK_GENERAL'
+  else intent=hasClient||resolvedClientReference?'ASK_CLIENT':'ASK_GENERAL'
  }
  const persistenceMode=sessionCommand?.persistence_mode||(['REGISTER_INFORMATION','POST_VISIT'].includes(intent)?'CONFIRM_REQUIRED':'NONE')
  return Object.freeze({

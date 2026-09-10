@@ -1,20 +1,20 @@
 .val-conversation-opt-in{display:flex;align-items:center;gap:12px;min-height:52px;padding:11px 16px;border:1px solid #c7ded6;border-radius:16px;background:#f5fbf8;color:#17684f;font:inherit;text-align:left;cursor:pointer}
 .val-conversation-opt-in:hover:not(:disabled){border-color:#78bba5;background:#edf8f4}
-.val-conversation-opt-in:focus-visible,.val-realtime-conversation button:focus-visible,.val-conversation-transcript:focus-visible{outline:3px solid #16805f;outline-offset:4px}
+.val-conversation-opt-in:focus-visible,.val-realtime-conversation button:focus-visible,.val-conversation-content:focus-visible{outline:3px solid #16805f;outline-offset:2px}
 .val-conversation-opt-in:disabled,.val-realtime-conversation button:disabled{opacity:.5;cursor:not-allowed;box-shadow:none}
 .val-conversation-opt-in>svg{width:21px;height:21px;flex:none}
 .val-conversation-opt-in span{display:grid;gap:3px}
 .val-conversation-opt-in b{font-size:13px;font-weight:750}
 .val-conversation-opt-in small{color:#607970;font-size:11px}
-.val-realtime-conversation{box-sizing:border-box;display:flex;flex-direction:column;align-items:center;gap:22px;position:relative;min-width:0;width:100%;min-height:380px;padding:24px clamp(16px,4vw,48px) 20px;border:1px solid #d8e7df;border-radius:26px;background:radial-gradient(ellipse at 50% 26%,#eaf5ed 0,transparent 56%),#fafcf8;color:#234b3d;box-shadow:0 12px 40px rgba(9,60,50,.035)}
-.val-conversation-topline{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;max-width:800px}
+.val-realtime-conversation{box-sizing:border-box;container-type:inline-size;display:flex;flex-direction:column;align-items:center;gap:16px;position:relative;min-width:0;width:100%;min-height:300px;max-height:min(760px,calc(var(--val-viewport-height,100dvh) - 140px));padding:18px 20px 14px;overflow:hidden;border:1px solid #d8e7df;border-radius:26px;background:radial-gradient(ellipse at 50% 26%,#eaf5ed 0,transparent 56%),#fafcf8;color:#234b3d;box-shadow:0 12px 40px rgba(9,60,50,.035)}
+.val-conversation-topline{display:flex;flex:none;align-items:center;justify-content:space-between;gap:12px;width:100%;max-width:800px}
 .val-conversation-eyebrow{font-size:11px;font-weight:750;letter-spacing:.11em;text-transform:uppercase;color:#60786e}
 .val-conversation-connection{display:flex;align-items:center;gap:7px;color:#62756c;font-size:11px;white-space:nowrap}
 .val-conversation-connection>span{width:6px;height:6px;border-radius:50%;background:#98a9a1;flex:none}
 .val-conversation-connection.is-live{color:#17684f}
 .val-conversation-connection.is-live>span{background:#16805f;box-shadow:0 0 0 4px #16805f12}
-.val-conversation-stage{display:flex;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:30px;width:100%;padding:24px 0 8px}
-.val-conversation-orb{position:relative;isolation:isolate;display:grid;place-items:center;flex:none;width:clamp(128px,14vw,180px);height:clamp(128px,14vw,180px);margin:12px}
+.val-conversation-stage{display:flex;flex:none;flex-direction:column;align-items:center;justify-content:center;gap:16px;width:100%;padding:8px 0}
+.val-conversation-orb{position:relative;isolation:isolate;display:grid;place-items:center;flex:none;width:112px;height:112px;margin:8px}
 .val-orb-core{position:absolute;inset:5%;border-radius:50%;background:radial-gradient(circle at 30% 24%,#effbc4 0,#b7dab2 22%,#68a895 48%,#277660 70%,#154c3e 100%);box-shadow:inset -12px -18px 26px #11382b30,inset 5px 9px 24px #ffffff55,0 18px 35px #164f3d19;transition:filter .3s ease,box-shadow .3s ease}
 .val-orb-shimmer{position:absolute;inset:8%;border-radius:50%;background:radial-gradient(ellipse at 31% 25%,#fff8,transparent 45%);pointer-events:none}
 .val-orb-ring{position:absolute;inset:-3%;border:1px solid #6fa58e24;border-radius:50%;opacity:.75}
@@ -28,8 +28,8 @@
 .val-realtime-conversation.is-speaking .val-orb-ring{animation:val-orb-speak-ring 1.3s ease-in-out infinite;border-color:#70bca347}
 .val-realtime-conversation.is-speaking .val-orb-ring.r2{animation-delay:.15s}
 .val-realtime-conversation.is-speaking .val-orb-ring.r3{animation-delay:.3s}
-.val-realtime-conversation.is-thinking .val-orb-core,.val-realtime-conversation.is-processing .val-orb-core,.val-realtime-conversation.is-connecting .val-orb-core{animation:val-orb-think 1.8s ease-in-out infinite}
-.val-realtime-conversation.is-error .val-orb-core,.val-realtime-conversation.is-fallback .val-orb-core,.val-realtime-conversation.is-paused .val-orb-core{filter:saturate(.3);box-shadow:inset -12px -18px 26px #11382b20,0 12px 30px #164f3d0d}
+.val-realtime-conversation.is-thinking .val-orb-core,.val-realtime-conversation.is-processing .val-orb-core,.val-realtime-conversation.is-connecting .val-orb-core,.val-realtime-conversation.is-recovering .val-orb-core{animation:val-orb-think 1.8s ease-in-out infinite}
+.val-realtime-conversation.is-error .val-orb-core,.val-realtime-conversation.is-fallback .val-orb-core,.val-realtime-conversation.is-paused .val-orb-core,.val-realtime-conversation.is-turn-interrupted .val-orb-core{filter:saturate(.3);box-shadow:inset -12px -18px 26px #11382b20,0 12px 30px #164f3d0d}
 .val-conversation-status{display:grid;gap:9px;width:100%;max-width:600px;text-align:center}
 .val-conversation-status-title{display:flex;align-items:center;justify-content:center;gap:10px}
 .val-conversation-status h2{margin:0;color:#204e3e;font-family:inherit;font-size:clamp(21px,2vw,27px);font-weight:600;letter-spacing:-.045em;line-height:1.22}
@@ -38,13 +38,18 @@
 .val-conversation-mic svg{width:18px;height:18px}
 .val-conversation-spinner{animation:val-conversation-spin 1s linear infinite}
 .val-conversation-speaking,.val-realtime-conversation.is-listening .val-conversation-mic{color:#16805f}
-.val-conversation-transcript{box-sizing:border-box;display:grid;gap:14px;width:100%;max-width:640px;max-height:180px;overflow:auto;overscroll-behavior:contain;scrollbar-width:thin;padding:17px 20px;border:1px solid #dce7df;border-radius:18px;background:#ffffffbd;text-align:left}
+.val-conversation-content{box-sizing:border-box;display:flex;flex:1 1 auto;flex-direction:column;gap:14px;min-height:0;min-width:0;width:100%;max-width:800px;overflow-y:auto;overflow-x:hidden;overscroll-behavior-y:contain;scrollbar-width:thin;scrollbar-gutter:stable;-webkit-overflow-scrolling:touch;touch-action:pan-y;padding:2px}
+.val-conversation-content:empty{flex:1 1 0;padding:0}
+.val-conversation-content>*{flex:none}
+.val-conversation-transcript{box-sizing:border-box;display:grid;gap:16px;width:100%;padding:15px 16px;border:1px solid #dce7df;border-radius:16px;background:#ffffffbd;text-align:left}
 .val-conversation-transcript-turn{display:grid;gap:5px}
 .val-conversation-transcript-turn>span{color:#748378;font-size:10px;font-weight:750;letter-spacing:.075em;text-transform:uppercase}
 .val-conversation-transcript-turn.is-assistant>span{color:#247156}
 .val-conversation-transcript-turn p,.val-conversation-interim{margin:0;white-space:pre-wrap;overflow-wrap:anywhere;color:#365343;font-size:14px;line-height:1.65}
-.val-conversation-controls{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;width:100%;margin-top:auto;padding-top:3px}
-.val-conversation-controls button,.val-conversation-fallback button{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:46px;padding:11px 18px;border:1px solid #d9e4dc;border-radius:999px;background:#fff;color:#2b5d46;font:inherit;font-size:12px;font-weight:600;cursor:pointer;transition:background .16s ease,border-color .16s ease,transform .16s ease}
+.val-conversation-footer{display:grid;flex:none;justify-items:center;gap:8px;width:100%;padding-top:10px;border-top:1px solid #dce7df;background:#fafcf8}
+.val-conversation-controls{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:8px;width:100%}
+.val-conversation-controls button,.val-conversation-fallback button{display:inline-flex;align-items:center;justify-content:center;gap:7px;min-width:44px;min-height:46px;padding:11px 16px;border:1px solid #d9e4dc;border-radius:999px;background:#fff;color:#2b5d46;font:inherit;font-size:12px;font-weight:600;cursor:pointer;touch-action:manipulation;transition:background .16s ease,border-color .16s ease,transform .16s ease}
+.val-conversation-controls .is-turn-retry{flex-basis:100%}
 .val-conversation-controls button:hover:not(:disabled),.val-conversation-fallback button:hover:not(:disabled){border-color:#97b4a3;background:#f1f7f2;transform:translateY(-1px)}
 .val-conversation-controls svg,.val-conversation-fallback svg{width:18px;height:18px;flex:none}
 .val-conversation-controls button.is-primary,.val-conversation-fallback button.is-primary{border-color:#167054;background:#167054;color:#fff;box-shadow:0 6px 16px #16664b15}
@@ -56,21 +61,26 @@
 .val-conversation-fallback>div{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:9px}
 .val-conversation-fallback .val-conversation-retry-note{font-size:11px;color:#886d52}
 .val-conversation-retry-note strong{font-variant-numeric:tabular-nums;color:#785637}
-.val-conversation-notice{margin:0;max-width:610px;padding:12px 16px;border-radius:12px;background:#fff9f0;color:#795e40;font-size:12px;line-height:1.5;text-align:center}
+.val-conversation-notice{box-sizing:border-box;margin:0;width:100%;padding:12px 16px;border-radius:12px;background:#fff9f0;color:#795e40;font-size:12px;line-height:1.5;text-align:center;overflow-wrap:anywhere}
 .val-conversation-privacy{margin:0;max-width:540px;color:#7e8b80;font-size:10px;line-height:1.5;text-align:center}
 .val-fs-conversation>.val-conversation-opt-in{margin:10px 16px 0}
-.val-fs-conversation>.val-realtime-conversation{width:calc(100% - 32px);max-width:960px;flex:1;min-height:0;overflow:auto;margin:16px auto}
+.val-fs-conversation>.val-realtime-conversation{width:calc(100% - 32px);max-width:960px;flex:1;min-height:0;max-height:none;margin:16px auto}
+/* The transcript owns scrolling; transport controls always remain outside it. */
+.val-fullscreen-page .val-fs-conversation.has-active-voice .val-realtime-conversation.has-fixed-controls{overflow:hidden}
 .val-fs-conversation>.val-realtime-conversation.has-review-actions{max-height:320px;flex:0 1 auto}
-.val-realtime-conversation.has-review-actions .val-conversation-stage{flex:0;padding-top:8px;gap:16px}
-.val-realtime-conversation.has-review-actions .val-conversation-orb{width:85px;height:85px}
+.val-realtime-conversation.has-review-actions .val-conversation-stage{flex-direction:row;padding:2px 0;gap:12px}
+.val-realtime-conversation.has-review-actions .val-conversation-orb{width:56px;height:56px}
 @keyframes val-conversation-spin{to{transform:rotate(360deg)}}
 @keyframes val-orb-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.035)}}
 @keyframes val-orb-listen-ring{0%{transform:scale(.96);opacity:.7}100%{transform:scale(1.1);opacity:0}}
 @keyframes val-orb-speak{0%,100%{transform:scale(1)}25%{transform:scale(1.05,.99)}65%{transform:scale(.99,1.035)}}
 @keyframes val-orb-speak-ring{0%,100%{transform:scale(1);opacity:.2}50%{transform:scale(1.055);opacity:.85}}
 @keyframes val-orb-think{0%,100%{opacity:1}50%{opacity:.65}}
-@media(max-width:700px){.val-realtime-conversation{gap:18px;min-height:340px;padding:19px 16px 16px;border-radius:22px}.val-fs-conversation>.val-realtime-conversation{width:calc(100% - 20px);margin:10px auto}.val-conversation-topline{gap:8px}.val-conversation-eyebrow{font-size:9px;letter-spacing:.09em}.val-conversation-connection{font-size:10px}.val-conversation-stage{gap:28px;padding:18px 0 5px}.val-conversation-status p{font-size:12px}.val-conversation-controls{gap:8px}.val-conversation-controls button{min-height:46px;padding:11px 14px;font-size:11px}.val-conversation-transcript{max-height:160px;padding:14px 16px}.val-conversation-transcript-turn p{font-size:13px}.val-conversation-fallback{padding:14px}.val-conversation-fallback p{font-size:12px}.val-conversation-fallback button{font-size:11px;padding:10px 14px}.val-conversation-opt-in{margin-left:10px;margin-right:10px}.val-conversation-privacy{font-size:9px}}
-@media(max-height:650px) and (min-width:701px){.val-realtime-conversation{gap:14px;padding-top:16px}.val-conversation-stage{padding:8px 0;gap:20px}.val-conversation-orb{width:110px;height:110px;margin:8px}.val-conversation-transcript{max-height:100px}.val-conversation-status h2{font-size:21px}}
+@media(max-width:700px){.val-realtime-conversation{gap:12px;min-height:280px;padding:12px 12px calc(10px + env(safe-area-inset-bottom));border-radius:20px}.val-fs-conversation>.val-realtime-conversation{width:calc(100% - 16px);margin:8px auto}.val-conversation-topline{gap:8px}.val-conversation-eyebrow{font-size:10px;letter-spacing:.065em}.val-conversation-connection{font-size:10px}.val-conversation-stage{flex-direction:row;gap:12px;padding:3px 0}.val-conversation-orb{width:64px;height:64px;margin:6px}.val-conversation-status{gap:6px;text-align:left}.val-conversation-status-title{justify-content:flex-start;gap:6px}.val-conversation-status h2{font-size:20px}.val-conversation-status p{font-size:12px;line-height:1.5}.val-conversation-mic svg{width:16px;height:16px}.val-conversation-controls{gap:6px}.val-conversation-controls button{flex:1 1 auto;min-height:46px;padding:10px 9px;font-size:12px}.val-conversation-controls .is-turn-retry{flex-basis:100%}.val-conversation-transcript{padding:13px 14px}.val-conversation-transcript-turn p{font-size:14px;line-height:1.6}.val-conversation-fallback{padding:14px}.val-conversation-fallback p{font-size:12px}.val-conversation-fallback button{font-size:12px;padding:10px 14px}.val-conversation-opt-in{margin-left:10px;margin-right:10px}.val-conversation-privacy{font-size:10px}}
+/* A desktop producer sidebar needs the same compact stage as a phone. */
+@container(max-width:480px){.val-conversation-stage{flex-direction:row;gap:12px;padding:3px 0}.val-conversation-orb{width:64px;height:64px;margin:6px}.val-conversation-status{gap:6px;text-align:left}.val-conversation-status-title{justify-content:flex-start;gap:6px}.val-conversation-status h2{font-size:20px}.val-conversation-status p{font-size:12px;line-height:1.5}.val-conversation-mic svg{width:16px;height:16px}.val-conversation-controls{gap:6px}.val-conversation-controls button{flex:1 1 auto;padding:10px 9px;font-size:12px}.val-conversation-controls .is-turn-retry{flex-basis:100%}.val-conversation-eyebrow{font-size:10px;letter-spacing:.065em}.val-conversation-connection{font-size:10px}}
+@container(max-width:300px){.val-conversation-controls button{flex:1 1 0;flex-direction:column;min-width:0;min-height:52px;gap:3px;padding:7px 4px;font-size:11px}.val-conversation-controls button.is-primary{flex-basis:100%;flex-direction:row;min-height:44px}.val-conversation-orb{width:52px;height:52px}.val-conversation-status h2{font-size:18px}.val-conversation-status p{font-size:11px}.val-conversation-transcript{padding:12px}.val-conversation-topline{gap:6px}.val-conversation-eyebrow{font-size:9px;letter-spacing:.04em}}
+@media(max-height:650px){.val-realtime-conversation{gap:10px;padding-top:10px}.val-conversation-stage{flex-direction:row;padding:2px 0;gap:10px}.val-conversation-orb{width:48px;height:48px;margin:5px}.val-conversation-status{gap:4px;text-align:left}.val-conversation-status-title{justify-content:flex-start}.val-conversation-status h2{font-size:19px}.val-conversation-status p{font-size:11px;line-height:1.4}}
 @media(prefers-reduced-motion:reduce){.val-realtime-conversation *{animation:none!important;transition:none!important}}
 
 /* No celular o modo conversa é a porta de entrada, não uma opção discreta. */

@@ -1,3 +1,5 @@
+import {matchedValContextDomains} from './context-selector.js'
+
 export const producerEntityResolverVersion='val.producer_entity_resolver.v1'
 export const clientReferenceResolutionVersion='val.client_reference_resolution.v1'
 
@@ -40,16 +42,20 @@ const naturalReferencePatterns=Object.freeze([
  // "quero falar sobre calagem" ou "obrigado" não encontram ninguém e seguem como pergunta.
  {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/^\s*(?:val[, ]+)?(?:(?:eu\s+)?(?:quero|queria|preciso|gostaria de)\s+(?:falar|conversar)|vamos\s+(?:falar|conversar)|me\s+fal[ae]|fal[ae]|falar|conversar)\s+(?:sobre|do|da|de|com)\s+(?:(?:o|a)\s+)?(?:(?:cliente|produtor|produtora)\s+)?(?<reference>[^,.!?;]+)/iu},
  {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/^\s*(?:val[, ]+)?sobre\s+(?:(?:o|a)\s+)?(?:(?:cliente|produtor|produtora)\s+)?(?<reference>[^,.!?;]+)/iu},
- // Só o nome: cada palavra começa em maiúscula (voz transcrita e digitação de nome), até quatro
- // palavras, sem saudação/comando capitalizado; 'Isso muda a abordagem?' e 'oi val' não são candidatos.
- {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:new RegExp('^\\s*(?:val[, ]+)?(?!(?:Oi|OI|Ola|OLA|Olá|OLÁ|Opa|OPA|Bom|BOM|Boa|BOA|Obrigado|OBRIGADO|Obrigada|OBRIGADA|Valeu|VALEU|Sim|SIM|Nao|NAO|Não|NÃO|Ok|OK|Certo|CERTO|Perfeito|PERFEITO|Continue|CONTINUE|Continua|CONTINUA|Repete|REPETE|Repita|REPITA|Resume|RESUME|Resuma|RESUMA|Prepare|PREPARE|Prepara|PREPARA|Abra|ABRA|Abre|ABRE|Mostre|MOSTRE|Mostra|MOSTRA|Calcule|CALCULE|Calcula|CALCULA|Registra|REGISTRA|Registre|REGISTRE|Anota|ANOTA|Anote|ANOTE|Isso|ISSO|Essa|ESSA|Esse|ESSE|Qual|QUAL|Quais|QUAIS|Quem|QUEM|Como|COMO|Onde|ONDE|Quando|QUANDO|Quanto|QUANTO)\\b)(?<reference>\\p{Lu}[\\p{L}\'-]*(?:\\s+(?:d[aeo]s?\\s+)?\\p{Lu}[\\p{L}\'-]*){0,3})\\s*[.!?]*$','u')},
  // Ultimos da lista, de proposito: qualquer padrao existente (inclusive a troca explicita
  // "muda para o Joao") tem precedencia sobre estes.
  // nenhum: a referencia saia NONE, o produtor ativo permanecia e a VAL respondia com os dados
  // DELE, sem dizer de quem eram. Candidato (nao nome afirmado): quando nao resolve na carteira,
  // o turno segue sem trocar de produtor em vez de recusar.
- {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/(?:^|\s)(?:o|a)\s+(?<reference>[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,3}?)\s+(?:tem|t[eê]m|ta|est[aá]|estava|ficou|vai|comprou|planta|plantou|quer|pediu|fechou)\b/iu},
- {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/\b(?:para|pro|pra)\s+(?:(?:o|a)\s+)?(?<reference>[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,3})\s*[?.!]?$/iu}
+ {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/(?:^|\s)(?:o|a)\s+(?!(?:que|qual|quais|quanto|como|onde|quando)\b)(?<reference>[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,5}?)\s+(?:tem|t[eê]m|ta|est[aá]|estava|ficou|vai|comprou|planta|plantou|quer|pediu|fechou)\b/iu},
+ {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/\b(?:para|pro|pra)\s+(?:(?:o|a)\s+)?(?<reference>[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,5})\s*[?.!]?$/iu},
+ // Referência estrutural, independente do verbo introdutório: “o que sabe sobre X”,
+ // “pode me falar sobre X”. O assunto só vira produtor se tiver correspondência autorizada.
+ {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/\b(?:sobre|a respeito de)\s+(?:(?:o|a)\s+)?(?:(?:cliente|produtor|produtora)\s+)?(?<reference>[^,.!?;]+)/iu},
+ {kind:'EXPLICIT_NAME',pattern:/\b(?:do|da|com|sobre)\s+(?:(?:o|a)\s+)?(?:cliente|produtor|produtora)\s+(?<reference>[^,.!?;]+)/iu},
+ // Só o nome: a transcrição não garante maiúsculas. É apenas um candidato, e só a carteira
+ // autorizada pode confirmar a entidade; saudações/comandos continuam fora da busca.
+ {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:new RegExp('^\\s*(?:val[, ]+)?(?!(?:O|A|E|Mas|Entao|Então|Voce|Você|Pode|Posso|Vamos|Quero|Preciso|Gostaria|Me|Por|Que|Oi|OI|Ola|OLA|Olá|OLÁ|Opa|OPA|Bom|BOM|Boa|BOA|Obrigado|OBRIGADO|Obrigada|OBRIGADA|Valeu|VALEU|Sim|SIM|Nao|NAO|Não|NÃO|Ok|OK|Certo|CERTO|Perfeito|PERFEITO|Continue|CONTINUE|Continua|CONTINUA|Repete|REPETE|Repita|REPITA|Resume|RESUME|Resuma|RESUMA|Prepare|PREPARE|Prepara|PREPARA|Abra|ABRA|Abre|ABRE|Mostre|MOSTRE|Mostra|MOSTRA|Calcule|CALCULE|Calcula|CALCULA|Registra|REGISTRA|Registre|REGISTRE|Anota|ANOTA|Anote|ANOTE|Isso|ISSO|Essa|ESSA|Esse|ESSE|Qual|QUAL|Quais|QUAIS|Quem|QUEM|Como|COMO|Onde|ONDE|Quando|QUANDO|Quanto|QUANTO)\\b)(?<reference>\\p{L}[\\p{L}\'-]*(?:\\s+(?:d[aeo]s?\\s+)?\\p{L}[\\p{L}\'-]*){0,5})\\s*[.!?]*$','iu')},
 ])
 
 // Interrogativo, quantificador, ordinal e substantivo de agenda nunca sao nome de produtor:
@@ -148,7 +154,14 @@ const similarity=(left,right)=>{
  return longest?1-levenshtein(left,right)/longest:1
 }
 
-const matchAuthorizedClients=(reference,clients)=>{
+const meaningfulNameTokens=value=>normalizeClientReference(value).split(' ').filter(token=>token&&!/^(?:de|da|das|do|dos|e)$/.test(token))
+const containsOrderedTokens=(available,requested)=>{
+ let cursor=0
+ for(const token of requested){cursor=available.indexOf(token,cursor);if(cursor===-1)return false;cursor++}
+ return requested.length>0
+}
+
+const matchAuthorizedClients=(reference,clients,{allowQualifier=true}={})=>{
  const normalized=normalizeClientReference(reference)
  if(!normalized)return {reasonCode:'INVALID_CLIENT_REFERENCE',matches:[],match:null}
  const raw=clean(reference,180)
@@ -165,6 +178,42 @@ const matchAuthorizedClients=(reference,clients)=>{
  if(exactAlias.length)return {reasonCode:'EXACT_ALIAS_MATCH',matches:exactAlias.map(item=>item.safe),match:{kind:'ALIAS',confidence:.98}}
  const exactProperty=rows.filter(item=>item.properties.includes(normalized))
  if(exactProperty.length)return {reasonCode:'EXACT_PROPERTY_MATCH',matches:exactProperty.map(item=>item.safe),match:{kind:'PROPERTY',confidence:.96}}
+ // Um município/propriedade é uma condição sobre a MESMA entidade, nunca uma alternativa ao
+ // nome. “Antônio da Fazenda Boa Vista” desambigua a carteira; nome ou propriedade divergentes
+ // não podem selecionar silenciosamente o proprietário de outra conta.
+ if(allowQualifier){
+  for(const delimiter of normalized.matchAll(/\s+(?:de|do|da|dos|das|em|na|no|nas|nos)\s+/g)){
+   const name=normalized.slice(0,delimiter.index).trim()
+   const qualifier=normalized.slice(delimiter.index+delimiter[0].length).trim()
+   if(!name||!qualifier)continue
+   const typed=qualifier.match(/^(fazenda|propriedade|sitio|chacara|municipio|cidade)\s+(?:(?:de|do|da)\s+)?(.+)$/)
+   const propertyOnly=Boolean(typed&&!['municipio','cidade'].includes(typed[1]))
+   const municipalityOnly=Boolean(typed&&!propertyOnly)
+   const label=typed?.[2]||qualifier
+   const locationMatches=rows.filter(item=>{
+    const municipality=normalizeClientReference(item.safe.municipality)
+    return !municipalityOnly&&(item.properties.includes(qualifier)||item.properties.includes(label))||!propertyOnly&&(municipality===label||municipality.replace(/ [a-z]{2}$/,'')===label)
+   })
+   // Um lugar explicitamente tipado é uma restrição mesmo quando não existe no índice. Um
+   // lugar sem tipo é reconhecido pela carteira; “na soja” permanece complemento de assunto.
+   if(!typed&&!locationMatches.length)continue
+   const named=matchAuthorizedClients(name,clients,{allowQualifier:false})
+   const allowedIds=new Set(named.matches.map(item=>item.id))
+   const qualified=locationMatches.filter(item=>allowedIds.has(item.safe.id))
+   if(qualified.length)return {reasonCode:'NAME_QUALIFIER_MATCH',matches:qualified.map(item=>item.safe),match:{kind:'NAME_AND_LOCATION',confidence:.96}}
+   return {reasonCode:'CLIENT_REFERENCE_QUALIFIER_MISMATCH',matches:[],match:null}
+  }
+ }
+ // Complementos da pergunta não são sobrenome. Mantemos “de/da/do” para que qualificadores
+ // continuem sendo conferidos; a busca nunca usa um pedaço arbitrário do meio da frase.
+ const contextual=normalized.match(/^(.+?)\s+(na|no|nas|nos|em|com|durante|sobre|para)\s+(.+)$/)
+ if(contextual){
+  // Só um assunto reconhecido pode sair do nome. Um sufixo livre pode ser uma localidade
+  // ausente do índice (“João em Porto Alegre”) e nunca autoriza descartar a restrição.
+  const named=matchAuthorizedClients(contextual[1],clients,{allowQualifier:false})
+  if(matchedValContextDomains(contextual[3]).length)return named
+  if(named.matches.length)return {reasonCode:'CLIENT_REFERENCE_QUALIFIER_MISMATCH',matches:[],match:null}
+ }
  const referenceTokens=normalized.split(' ').filter(Boolean)
  const prefix=rows.filter(item=>referenceTokens.length&&referenceTokens.every((token,index)=>item.tokens[index]===token))
  if(prefix.length)return {reasonCode:'NAME_PREFIX_MATCH',matches:prefix.map(item=>item.safe),match:{kind:'PREFIX',confidence:.92}}
@@ -172,9 +221,19 @@ const matchAuthorizedClients=(reference,clients)=>{
   const token=rows.filter(item=>item.tokens.includes(referenceTokens[0]))
   if(token.length)return {reasonCode:'NAME_TOKEN_MATCH',matches:token.map(item=>item.safe),match:{kind:'TOKEN',confidence:.9}}
  }
+ const significant=meaningfulNameTokens(normalized)
+ const ordered=rows.filter(item=>significant.length>=2&&item.names.some(name=>containsOrderedTokens(meaningfulNameTokens(name),significant)))
+ if(ordered.length)return {reasonCode:'NAME_PARTIAL_MATCH',matches:ordered.map(item=>item.safe),match:{kind:'PARTIAL_NAME',confidence:.92}}
  const threshold=normalized.length>=6?.84:.9
  const scored=rows.map(item=>{
-  const candidates=[...item.names.map(name=>({kind:'FUZZY_NAME',value:name})),...item.properties.map(value=>({kind:'FUZZY_PROPERTY',value}))]
+  // A voz costuma fornecer só o primeiro nome ou os dois primeiros. Comparar apenas contra
+  // o nome completo descartava uma letra transcrita errado, mesmo com um candidato inequívoco.
+  // Nomes curtos mantêm o limiar estrito; “Maria” não pode virar “Marina”.
+  const candidates=[...item.names.flatMap(name=>{
+   const prefix=name.split(' ').slice(0,referenceTokens.length).join(' ')
+   const safePartial=referenceTokens.length>=2||prefix.startsWith(normalized)||normalized.startsWith(prefix)
+   return [{kind:'FUZZY_NAME',value:name},...(normalized.length>=6&&safePartial?[{kind:'FUZZY_NAME_PREFIX',value:prefix}]:[])]
+  }),...item.properties.map(value=>({kind:'FUZZY_PROPERTY',value}))]
   const best=candidates.map(candidate=>({...candidate,score:similarity(normalized,candidate.value)})).sort((left,right)=>right.score-left.score)[0]
   return {item,best}
  }).filter(entry=>entry.best?.score>=threshold).sort((left,right)=>right.best.score-left.best.score)
@@ -200,7 +259,8 @@ export function resolveAuthorizedClientReference({message='',reference='',author
   return result({status:'RESOLVED',kind:extracted.kind,reference:extracted.reference,reasonCode:'PREVIOUS_CLIENT_RESOLVED',client:recent[0],current,match:{kind:'RECENT_CONTEXT',confidence:1}})
  }
  const matched=matchAuthorizedClients(extracted.reference,clients)
- if(matched.matches.length===0&&extracted.kind==='AUTHORIZED_NAME_CANDIDATE')return result({status:'NONE',kind:extracted.kind,reference:extracted.reference,reasonCode:'AUTHORIZED_NAME_EVIDENCE_ABSENT',current})
+ const explicitlyNamedProducer=normalizeClientReference(message).includes(`produtor ${normalizeClientReference(extracted.reference)}`)||normalizeClientReference(message).includes(`produtora ${normalizeClientReference(extracted.reference)}`)||normalizeClientReference(message).includes(`cliente ${normalizeClientReference(extracted.reference)}`)
+ if(matched.matches.length===0&&extracted.kind==='AUTHORIZED_NAME_CANDIDATE'&&!explicitlyNamedProducer&&matched.reasonCode!=='CLIENT_REFERENCE_QUALIFIER_MISMATCH')return result({status:'NONE',kind:extracted.kind,reference:extracted.reference,reasonCode:'AUTHORIZED_NAME_EVIDENCE_ABSENT',current})
  if(matched.matches.length===0)return result({status:'NOT_FOUND',kind:extracted.kind,reference:extracted.reference,reasonCode:matched.reasonCode,current})
  if(matched.matches.length>1)return result({status:'AMBIGUOUS',kind:extracted.kind,reference:extracted.reference,reasonCode:'AMBIGUOUS_CLIENT_REFERENCE',options:matched.matches,current,match:matched.match})
  return result({status:'RESOLVED',kind:extracted.kind,reference:extracted.reference,reasonCode:matched.reasonCode,client:matched.matches[0],current,match:matched.match})
