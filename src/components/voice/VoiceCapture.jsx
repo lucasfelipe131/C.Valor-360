@@ -39,7 +39,11 @@ const statusOf=payload=>String(interactionOf(payload).state||interactionOf(paylo
 const rawCandidates=payload=>interactionOf(payload).candidates||interactionOf(payload).extraction?.candidates||payload?.candidates||payload?.structured_candidates||[]
 const randomId=()=>globalThis.crypto?.randomUUID?.()||`voice-${Date.now()}-${Math.random().toString(36).slice(2)}`
 const normalizeCategory=value=>categoryLabels[String(value||'').toUpperCase()]?String(value).toUpperCase():'FACT_CANDIDATE'
-const normalizeCandidate=(item,index)=>({candidate_id:String(item?.candidate_id||item?.item_id||item?.id||`candidate-${index}`),category:normalizeCategory(item?.category||item?.candidate_type||item?.type),statement:String(item?.statement||item?.description||item?.text||'').trim(),epistemic_status:String(item?.epistemic_status||'FACT_CANDIDATE').toUpperCase(),due_at:item?.due_at?String(item.due_at).slice(0,10):'',decision:'CONFIRMED'})
+// O prazo vem do servidor ancorado em 23:59:59.999 de Brasília, que serializa como o DIA SEGUINTE
+// em UTC. Cortar o ISO cru mostrava sexta para quem combinou quinta, e o confirm reenviava essa
+// data: o compromisso era gravado um dia depois do que o consultor combinou com o produtor.
+const localDayValue=value=>{const parsed=new Date(value);return Number.isNaN(parsed.getTime())?String(value).slice(0,10):parsed.toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'})}
+const normalizeCandidate=(item,index)=>({candidate_id:String(item?.candidate_id||item?.item_id||item?.id||`candidate-${index}`),category:normalizeCategory(item?.category||item?.candidate_type||item?.type),statement:String(item?.statement||item?.description||item?.text||'').trim(),epistemic_status:String(item?.epistemic_status||'FACT_CANDIDATE').toUpperCase(),due_at:item?.due_at?localDayValue(item.due_at):'',decision:'CONFIRMED'})
 const formatTime=value=>`${String(Math.floor(Number(value||0)/60)).padStart(2,'0')}:${String(Math.floor(Number(value||0)%60)).padStart(2,'0')}`
 const formatSize=value=>Number(value||0)>=1_000_000?`${(Number(value)/1_000_000).toLocaleString('pt-BR',{maximumFractionDigits:1})} MB`:`${Math.max(1,Math.round(Number(value||0)/1000))} KB`
 const isPostVisit=value=>String(value||'').toUpperCase()==='POST_VISIT'

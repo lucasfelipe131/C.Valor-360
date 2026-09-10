@@ -40,9 +40,17 @@ function parseDate(value){
  if(value instanceof Date)return value
  if(typeof value==='number'&&value>20000)return new Date(Math.round((value-25569)*86400*1000))
  const raw=String(value||'').trim();if(!raw)return null
- const br=raw.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/)
- const date=br?new Date(Date.UTC(Number(br[3].length===2?`20${br[3]}`:br[3]),Number(br[2])-1,Number(br[1]))):new Date(raw)
- return Number.isNaN(date.getTime())?null:date
+ // A regex do formato brasileiro precisa ser ancorada, como ja e no servidor: sem ancora ela casa
+ // no MEIO de uma data ISO ('2026-08-20' -> dia 26, mes 08, ano 2020) e as duas metades da
+ // importacao passam a divergir - o evento comercial fica certo e o perfil do produtor, errado.
+ const br=raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/)
+ const day=br?Number(br[1]):0,month=br?Number(br[2]):0,year=br?Number(br[3].length===2?`20${br[3]}`:br[3]):0
+ const date=br?new Date(Date.UTC(year,month-1,day)):new Date(raw)
+ if(Number.isNaN(date.getTime()))return null
+ // Date.UTC(2026,1,31) rola para 03/03 sem virar NaN: 31/02 era aceita em silencio e virava a
+ // 'ultima compra' do produtor. Data que nao sobrevive ao round-trip nao e data.
+ if(br&&(date.getUTCDate()!==day||date.getUTCMonth()!==month-1||date.getUTCFullYear()!==year))return null
+ return date
 }
 
 function recencyDays(date){return date?Math.max(0,Math.round((Date.now()-date.getTime())/86400000)):null}

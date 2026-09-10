@@ -1143,13 +1143,24 @@ async function handleApi(request,response,url){
  if(overviewMatch&&request.method==='GET')return json(response,200,await repository.getClientOverview(decodeURIComponent(overviewMatch[1]),identity?.id||identity?.email))
  if(url.pathname==='/api/intelligence/imports'&&request.method==='POST'){
   const payload=await body(request);const rows=Array.isArray(payload.rows)?payload.rows.slice(0,5000):[];const mapping=payload.mapping||{};if(!rows.length||!mapping.client||!payload.summary)return json(response,400,{error:'Importação inválida ou sem linhas para validação no servidor.'})
-  const clients=buildCommercialIntelligence(rows,mapping);const learned=summarizeLearning(clients,rows.length,clean(payload.summary.fileName)||'importação comercial');const summary={...learned,id:randomUUID(),rawRowCount:rows.length,rawRowsSent:rows.length,truncated:Boolean(payload.summary.truncated)}
+  const clients=buildCommercialIntelligence(rows,mapping);const learned=summarizeLearning(clients,rows.length,clean(payload.summary.fileName)||'importação comercial')
+  // rawRowCount precisa descrever o ARQUIVO, não o pedaço que chegou: o DataHub já corta em 5.000 e o
+  // servidor corta de novo, então sem o número declarado o consultor lê "5.000 registros" como se
+  // fosse a planilha inteira e nunca fica sabendo das linhas que ficaram de fora.
+  const declaredRowCount=Math.max(Number(payload.summary.rawRowCount)||0,rows.length)
+  const summary={...learned,id:randomUUID(),rawRowCount:declaredRowCount,rawRowsSent:rows.length,truncated:Boolean(payload.summary.truncated)||declaredRowCount>rows.length}
   const persistence=await repository.ingestCommercialImport({tenantId:config.defaultTenantId,ownerId:identity?.id||identity?.email,summary,clients,rows,mapping})
   if(!database.configured){const store=readStore();store.imports.push({...summary,tenantId:config.defaultTenantId,ownerId:identity?.id||identity?.email,clients:clients.slice(0,500)});store.imports=store.imports.slice(-20);saveStore(store)}
   repository.invalidateAuthorizedClientReferences({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email})
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,objections:true})
-  await accessRepository.recordUsage(identity,{eventType:'commercial_import',page:'datahub',metadata:{clientCount:clients.length,rowCount:rows.length}});return json(response,201,{saved:true,clientCount:clients.length,database:persistence.persisted,clients,summary,...(persistence.clientsTruncated?{clientsTruncated:true,persistedClientCount:persistence.persistedClientCount}:{}),...(persistence.archivedSkipped?.length?{archivedSkipped:persistence.archivedSkipped}:{})})
+  // A resposta só pode anunciar o que ficou na base. Devolver a lista inteira fazia o produtor
+  // arquivado reaparecer na carteira da tela e o contador prometer 2.500 produtores quando 2.000
+  // foram gravados.
+  const archivedSkipped=persistence.archivedSkipped||[]
+  const acceptedClients=persistence.persisted?clients.slice(0,persistence.clientLimit||clients.length).filter(item=>!archivedSkipped.includes(String(item.id||'').slice(0,180))):clients
+  const acceptedSummary={...summary,clientCount:acceptedClients.length,rowCount:summary.rowCount,...(acceptedClients.length===clients.length?{}:{declaredClientCount:clients.length})}
+  await accessRepository.recordUsage(identity,{eventType:'commercial_import',page:'datahub',metadata:{clientCount:acceptedClients.length,rowCount:rows.length}});return json(response,201,{saved:true,clientCount:acceptedClients.length,database:persistence.persisted,clients:acceptedClients,summary:acceptedSummary,...(persistence.clientsTruncated?{clientsTruncated:true,persistedClientCount:persistence.persistedClientCount,declaredClientCount:clients.length}:{}),...(archivedSkipped.length?{archivedSkipped}:{}),...(persistence.skippedEventCount?{skippedEventCount:persistence.skippedEventCount}:{})})
  }
  if(url.pathname==='/api/import/google-sheet'&&request.method==='POST'){
   const payload=await body(request);const source=clean(payload.url);const match=source.match(/^https:\/\/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9_-]+)/)

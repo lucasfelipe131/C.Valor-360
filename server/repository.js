@@ -116,7 +116,11 @@ const parsedDate=value=>{
   if(value instanceof Date&&!Number.isNaN(value.getTime()))return value.toISOString()
   if(typeof value==='number'&&value>20_000)return new Date(Math.round((value-25_569)*86_400_000)).toISOString()
   const raw=String(value||'').trim();const br=raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/)
-  const date=br?new Date(Date.UTC(Number(br[3].length===2?`20${br[3]}`:br[3]),Number(br[2])-1,Number(br[1]))):new Date(raw)
+  const day=br?Number(br[1]):0,month=br?Number(br[2]):0,year=br?Number(br[3].length===2?`20${br[3]}`:br[3]):0
+  const date=br?new Date(Date.UTC(year,month-1,day)):new Date(raw)
+  // Date.UTC(2026,1,31) rola para 03/03 sem virar NaN: a data impossivel entrava no banco como
+  // se fosse real e virava a 'ultima compra' do produtor.
+  if(br&&!Number.isNaN(date.getTime())&&(date.getUTCDate()!==day||date.getUTCMonth()!==month-1||date.getUTCFullYear()!==year))return null
   if(!Number.isNaN(date.getTime()))return date.toISOString()
   return null
 }
@@ -2153,6 +2157,7 @@ export class ValRepository{
     tenantId=assertTenantScope(this.tenantId,tenantId)
     if(!this.db.configured)return {persisted:false}
     const archivedSkipped=[]
+    let orphanEvents=0
     try{
       await this.db.transaction(async connection=>{
         await connection.query(`INSERT INTO import_jobs (id,tenant_id,owner_user_id,source_type,file_name,status,row_count,recognized_count,summary,completed_at) VALUES ($1,$2,$3,'commercial_history',$4,'completed',$5,$6,$7,NOW()) ON CONFLICT (id) DO NOTHING`,[summary.id,tenantId,ownerId,summary.fileName,summary.rowCount,clients.length,jsonbParameter(summary)])
@@ -2176,15 +2181,19 @@ export class ValRepository{
           const safeRow={client:name.slice(0,180),value:row[mapping.value]??null,date:row[mapping.date]??null,product:String(row[mapping.product]||'').slice(0,180)||null,status:String(status||'').slice(0,240)||null,municipality:String(row[mapping.municipality]||'').slice(0,140)||null,culture:String(row[mapping.culture]||'').slice(0,160)||null,area:row[mapping.area]??null}
           const externalKey=clientKeys.get(normalize(name))||normalize(name).replace(/\s+/g,'-').slice(0,180)
           if(archivedSkipped.includes(externalKey))continue
+          // Produtor acima do corte de 2.000 nao foi gravado: sem este guarda o evento entrava com
+          // client_id NULL e a compra ficava no livro sem dono, invisivel e irrecuperavel pela tela.
+          const resolvedImportClientId=clientInternalIds.get(externalKey)
+          if(!resolvedImportClientId){orphanEvents++;continue}
           const occurredIso=new Date(occurredAt).toISOString()
           const fingerprint=createHash('sha256').update(JSON.stringify([tenantId,ownerId,externalKey,occurredIso,safeRow.product||'',String(safeRow.value??''),eventOutcome,safeRow.status||''])).digest('hex').slice(0,40)
           const ordinal=(fingerprints.get(fingerprint)||0)+1;fingerprints.set(fingerprint,ordinal)
           const eventExternalId=`commercial_import:${fingerprint}:${ordinal}`
           await connection.query(`INSERT INTO business_events (tenant_id,owner_user_id,client_id,client_external_key,source,external_id,occurred_at,outcome,category,product,value,currency,loss_reason,payload)
-            VALUES ($1,$12,$2,$3,'commercial_import',$4,$5,$6,$7,$8,$9,'BRL',$10,$11) ON CONFLICT (tenant_id,owner_user_id,source,external_id) DO UPDATE SET client_id=EXCLUDED.client_id,client_external_key=EXCLUDED.client_external_key,occurred_at=EXCLUDED.occurred_at,outcome=EXCLUDED.outcome,category=EXCLUDED.category,product=EXCLUDED.product,value=EXCLUDED.value,loss_reason=EXCLUDED.loss_reason,payload=EXCLUDED.payload`,[tenantId,clientInternalIds.get(externalKey)||null,externalKey,eventExternalId,occurredAt,eventOutcome,String(row[mapping.product]||'').trim()||null,String(row[mapping.product]||'').trim()||null,parseMoney(row[mapping.value]),eventOutcome==='lost'?String(status||'').slice(0,240):null,jsonbParameter(safeRow),ownerId])
+            VALUES ($1,$12,$2,$3,'commercial_import',$4,$5,$6,$7,$8,$9,'BRL',$10,$11) ON CONFLICT (tenant_id,owner_user_id,source,external_id) DO UPDATE SET client_id=EXCLUDED.client_id,client_external_key=EXCLUDED.client_external_key,occurred_at=EXCLUDED.occurred_at,outcome=EXCLUDED.outcome,category=EXCLUDED.category,product=EXCLUDED.product,value=EXCLUDED.value,loss_reason=EXCLUDED.loss_reason,payload=EXCLUDED.payload`,[tenantId,resolvedImportClientId,externalKey,eventExternalId,occurredAt,eventOutcome,String(row[mapping.product]||'').trim()||null,String(row[mapping.product]||'').trim()||null,parseMoney(row[mapping.value]),eventOutcome==='lost'?String(status||'').slice(0,240):null,jsonbParameter(safeRow),ownerId])
         }
       })
-      return {persisted:true,rawRows:Math.min(rows.length,5000),truncated:Boolean(summary.truncated),persistedClientCount:Math.min(clients.length,2000)-archivedSkipped.length,clientsTruncated:clients.length>2000,archivedSkipped}
+      return {persisted:true,rawRows:Math.min(rows.length,5000),truncated:Boolean(summary.truncated),persistedClientCount:Math.min(clients.length,2000)-archivedSkipped.length,clientsTruncated:clients.length>2000,archivedSkipped,skippedEventCount:orphanEvents,clientLimit:2000}
     }catch{throw serviceError('A importação não pôde ser persistida no PostgreSQL configurado.')}
   }
 }

@@ -76,11 +76,26 @@ function similarity(a,b){
  return common/Math.max(left.size,right.size,1)
 }
 
+// So aceitamos o alias quando ele nomeia a coluna: no inicio do cabecalho ou apos conectivos
+// neutros ('total de hectares'). Sem isso, 'Ha quanto tempo e cliente' casava com o alias
+// 'cliente' e o valor caia no campo Nome do produtor, deixando o nome real de fora.
+const aliasLead=/^(?:(?:de|do|da|dos|das|o|a|os|as|e|em|no|na|nos|nas|seu|sua|seus|suas|total|qtde|quantidade|numero|tipo)\s*)*$/
+
 function questionFor(label){
  const normalized=normalizeText(label).replace(/^\d+\s*/,'')
  const numeric=Number(String(label).match(/^\s*(\d{1,2})/)?.[1])
  if(numeric>=1&&numeric<=45)return questions.find(question=>question.id===numeric)
- for(const [id,list] of Object.entries(aliases))if(list.some(alias=>normalized===alias||normalized.includes(alias)))return questions.find(question=>question.id===Number(id))
+ // O casamento por substring com alias de 2 letras sequestrava a coluna: 'ha' casava com whatsapp,
+ // chacara e 'trabalha com', e o valor bruto (um telefone) ia para o campo de area - um produtor
+ // de 1.850 ha virava 65 ha. Alias curto so casa a coluna inteira; substring exige 4+ letras e
+ // palavra inteira.
+ const aliasMatches=alias=>{
+  if(normalized===alias)return true
+  if(alias.length<4)return false
+  const match=normalized.match(new RegExp(`(?:^|\\s)${alias.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')}(?:\\s|$)`))
+  return match?aliasLead.test(normalized.slice(0,match.index).trim()):false
+ }
+ for(const [id,list] of Object.entries(aliases))if(list.some(aliasMatches))return questions.find(question=>question.id===Number(id))
  return [...questions].map(question=>({question,score:similarity(normalized,question.text)})).sort((a,b)=>b.score-a.score)[0]?.score>=.36?[...questions].map(question=>({question,score:similarity(normalized,question.text)})).sort((a,b)=>b.score-a.score)[0].question:null
 }
 
