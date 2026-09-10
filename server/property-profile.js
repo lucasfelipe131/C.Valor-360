@@ -7,6 +7,7 @@
 // a resposta diz "sem localização", e a interface mostra isso.
 import {validProductiveRing} from '../src/lib/productive-map.js'
 import {canonicalValToManualGeometry,decodeCanonicalGeometryRef} from '../src/lib/agronomic-geometry-adapter.js'
+import {looksLikeSwappedRing,SWAPPED_COORDINATES_MESSAGE} from '../src/lib/geo-plausibility.js'
 
 const text=(value,max=180)=>String(value??'').trim().slice(0,max)
 const finite=value=>{const parsed=Number(value);return Number.isFinite(parsed)?parsed:null}
@@ -30,6 +31,7 @@ export function normalizeFieldPoints(value,label){
  const points=value.map(point=>normalizeLocation(point)).filter(Boolean)
  if(points.length<3)fail(`O talhão "${label}" precisa de pelo menos três pontos para fechar o contorno.`,'field_points_incomplete')
  if(!validProductiveRing(points))fail(`O contorno do talhão "${label}" tem pontos repetidos, cruzamentos ou área nula.`,'field_points_invalid')
+ if(looksLikeSwappedRing(points.map(point=>[point.lng,point.lat])))fail(`O contorno do talhão "${label}" caiu fora do Brasil. ${SWAPPED_COORDINATES_MESSAGE}`,'field_points_swapped')
  return points
 }
 
@@ -52,7 +54,7 @@ export function normalizePropertyProfileInput(input={}){
    if(productivityTarget!==null&&(!['string','number'].includes(typeof raw)||!Number.isFinite(productivityTarget)||productivityTarget<0||productivityTarget>1000))fail('Produtividade projetada inválida (sc/ha).')
    if(productivityTarget!==null&&(!crop||!season))fail('Informe cultura e safra para a produtividade projetada.')
   }
-  return {productivityTarget,id:text(field.id)||null,name,areaHa:area===null||area<0?null:round(area,4),crop,season,points:normalizeFieldPoints(field.points,name),clearGeometry:field.clearGeometry===true}
+  return {productivityTarget,id:text(field.id)||null,name,areaHa:area===null||area<0?null:round(area,4),crop,season,points:normalizeFieldPoints(field.points,name),clearGeometry:field.clearGeometry===true,replaceMultipartGeometry:field.replaceMultipartGeometry===true}
  })
  const removedFieldIds=[...new Set((Array.isArray(source.removedFieldIds)?source.removedFieldIds:[]).map(id=>text(id)).filter(Boolean))].slice(0,MAX_FIELDS)
  return {propertyId,propertyName,location,fields,removedFieldIds}
@@ -74,11 +76,11 @@ export function locationFromMetadata(metadata){
 
 export function fieldPointsFromGeometryRef(geometryRef,{organizationId}={}){
  const ref=String(geometryRef||'')
- if(!ref)return {points:[],geometryStatus:'NOT_MAPPED',calculatedAreaHa:null}
+ if(!ref)return {points:[],polygons:[],multipart:false,partCount:0,geometryStatus:'NOT_MAPPED',calculatedAreaHa:null}
  try{
   const manual=canonicalValToManualGeometry(decodeCanonicalGeometryRef(ref,{expectedOrganizationId:organizationId}),{expectedOrganizationId:organizationId})
-  return {points:manual.points||[],geometryStatus:'CANONICAL',calculatedAreaHa:manual.calculatedAreaHa??null}
- }catch{return {points:[],geometryStatus:'REJECTED',calculatedAreaHa:null}}
+  return {points:manual.points||[],polygons:manual.polygons||[],multipart:Boolean(manual.multipart),partCount:manual.partCount||(manual.points?.length?1:0),geometryStatus:'CANONICAL',calculatedAreaHa:manual.calculatedAreaHa??null}
+ }catch{return {points:[],polygons:[],multipart:false,partCount:0,geometryStatus:'REJECTED',calculatedAreaHa:null}}
 }
 
 export function emptyPropertyProfile(clientId,source){

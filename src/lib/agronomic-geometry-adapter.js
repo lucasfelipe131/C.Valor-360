@@ -174,9 +174,12 @@ export function rebindCanonicalValGeometry(value,input={}){
 export function canonicalValToManualGeometry(value,options={}){
  const canonical=assertCanonicalValue(value,options)
  const polygons=(canonical.geometry.type==='Polygon'?[canonical.geometry.coordinates]:canonical.geometry.coordinates).map(polygon=>polygon.map(ring=>ring.slice(0,-1).map(([lng,lat])=>({lat,lng}))))
+ // points continua vazio para MultiPolygon de proposito: quem so sabe ler um anel NAO pode receber
+ // meia geometria e grava-la de volta. Quem desenha o mapa le polygons, e multipart/partCount dizem
+ // em voz alta que o talhao tem mais de uma parte.
  return {
   adapterVersion:canonical.adapterVersion,geometryVersion:canonical.geometryVersion,
-  geometry:canonical.geometry,points:canonical.geometry.type==='Polygon'?polygons[0][0]:[],polygons,
+  geometry:canonical.geometry,points:canonical.geometry.type==='Polygon'?polygons[0][0]:[],polygons,multipart:polygons.length>1,partCount:polygons.length,
   area:canonical.measurements.calculatedAreaHa,calculatedAreaHa:canonical.measurements.calculatedAreaHa,
   suppliedAreaHa:canonical.measurements.suppliedAreaHa,unit:'ha',link:canonical.link,provenance:canonical.provenance
  }

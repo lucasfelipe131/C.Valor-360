@@ -30,7 +30,7 @@ export async function readProducerWorkspace(repository,clientId,ownerId){
  ])
  const complete=p.rows.length<=200&&f.rows.length<=2000&&s.rows.length<=5000
  const properties=p.rows.slice(0,200).map(row=>({id:String(row.id),name:row.name,areaHa:number(row.area_ha),location:locationFromMetadata(object(row.metadata)),updatedAt:row.updated_at}))
- const fields=f.rows.slice(0,2000).map(row=>({id:String(row.id),propertyId:String(row.property_id),name:row.name,areaHa:number(row.area_ha),points:fieldPointsFromGeometryRef(row.geometry_ref,{organizationId:tenantId}).points}))
+ const fields=f.rows.slice(0,2000).map(row=>({id:String(row.id),propertyId:String(row.property_id),name:row.name,areaHa:number(row.area_ha),...(({points,polygons,multipart})=>({points,polygons,multipart}))(fieldPointsFromGeometryRef(row.geometry_ref,{organizationId:tenantId}))}))
  const seasons=s.rows.slice(0,5000).map(row=>({id:String(row.id),fieldId:String(row.field_id),season:row.season,crop:row.crop,areaHa:number(row.area_ha),productivityTarget:number(row.productivity_target),productivityActual:number(row.productivity_actual),unit:row.unit,cultivar:row.cultivar,createdAt:row.created_at}))
  return {clientId,properties,property:properties[0]||null,fields,seasons,plan:a.rows[0]||null,complete,source:'postgresql',isDemo:scoped.rows[0].source==='val-demo-synthetic-v1'}
 }

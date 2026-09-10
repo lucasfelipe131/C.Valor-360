@@ -1,4 +1,5 @@
 // User-provided reference layers only: never property ownership evidence.
+import {looksLikeSwappedRing,SWAPPED_COORDINATES_MESSAGE} from './geo-plausibility.js'
 export const CADASTRAL_TYPES=['CAR','SIGEF','Matrícula']
 export const CADASTRAL_COLORS={CAR:'#ffb020',SIGEF:'#c084fc','Matrícula':'#38bdf8'}
 export function normalizeCadastralGeoJSON(input){
@@ -20,6 +21,7 @@ export function normalizeCadastralGeoJSON(input){
   }
   if(geometry.type==='MultiPolygon'&&(!Array.isArray(geometry.coordinates)||!geometry.coordinates.length))throw new Error('Polígono vazio.')
   const coordinates=geometry.type==='Polygon'?polygon(geometry.coordinates):geometry.coordinates.map(polygon)
+  for(const rings of geometry.type==='Polygon'?[coordinates]:coordinates)if(looksLikeSwappedRing(rings[0]))throw new Error(SWAPPED_COORDINATES_MESSAGE)
   const properties={}
   for(const [key,value] of Object.entries(feature.properties||{}).slice(0,40))if(!['__proto__','prototype','constructor'].includes(key)&&['string','number','boolean'].includes(typeof value))properties[key.slice(0,80)]=String(value).slice(0,300)
   return {type:'Feature',geometry:{type:geometry.type,coordinates},properties:{...properties,_referenceIndex:index+1}}
@@ -37,9 +39,23 @@ export function cadastralDetails(feature){
   code:pick(['codigo','codimovel','propertycode','parcelcode']),
  }
 }
+// Identificador do conteudo, nao da posicao na lista. As camadas oficiais sao reconsultadas a cada
+// movimento do mapa e a busca reindexa o array: com id posicional a previa aberta continuava aberta
+// e passava a mostrar o imovel do vizinho, e "Usar contorno no talhao" adotava o limite errado.
+const contentDigest=value=>{
+ let hash=2166136261
+ const source=String(value)
+ for(let index=0;index<source.length;index++){hash^=source.charCodeAt(index);hash=Math.imul(hash,16777619)}
+ return (hash>>>0).toString(36)
+}
+export function referencePartId(layer,feature,rings,index){
+ const details=cadastralDetails(feature)
+ const anchor=rings?.[0]?.[0]||[]
+ return `${layer.id}:${contentDigest([details.registry,details.code,details.name,details.holder,anchor[0],anchor[1],rings?.[0]?.length].join('|'))}:${index}`
+}
 export function referenceParts(layer){
  return layer.geojson.features.flatMap(feature=>(feature.geometry.type==='Polygon'?[feature.geometry.coordinates]:feature.geometry.coordinates).map((rings,index,all)=>({
-  id:`${layer.id}:${feature.properties._referenceIndex||layer.geojson.features.indexOf(feature)}:${index}`,
+  id:referencePartId(layer,feature,rings,index),
   layer,feature:{...feature,geometry:{type:'Polygon',coordinates:rings}},
   label:`${cadastralDetails(feature).name||cadastralDetails(feature).registry||cadastralDetails(feature).code||`Contorno ${feature.properties._referenceIndex||1}`}${all.length>1?` · parte ${index+1}/${all.length}`:''}`,
   hasHoles:rings.length>1,

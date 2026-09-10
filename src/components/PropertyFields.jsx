@@ -21,9 +21,14 @@ export const fromProfile=(profile,selectedSeason='')=>({
   const history=field.seasons?.length?field.seasons:(field.season?[{season:field.season,crop:field.crop,areaHa:field.areaHa,productivityTarget:field.productivityTarget,unit:field.productivityUnit||(field.productivityTarget!=null?'sc/ha':'')}]:[])
   const assignment=selectedSeason?history.find(row=>row.season===selectedSeason):history[0]
   const yieldValue=assignment?.unit==='sc/ha'?assignment.productivityTarget:null
-  return {key:field.id,id:field.id,name:field.name,areaHa:(assignment?.areaHa??field.areaHa)==null?'':String(assignment?.areaHa??field.areaHa),crop:assignment?.crop||'',season:selectedSeason||assignment?.season||'',points:field.points||[],productivityTarget:yieldValue??'',productivityUnit:assignment?.unit||'',productivityTargetTouched:false,clearGeometry:false}
+  return {key:field.id,id:field.id,name:field.name,areaHa:(assignment?.areaHa??field.areaHa)==null?'':String(assignment?.areaHa??field.areaHa),crop:assignment?.crop||'',season:selectedSeason||assignment?.season||'',points:field.points||[],polygons:field.polygons||[],multipart:Boolean(field.multipart),partCount:field.partCount||0,productivityTarget:yieldValue??'',productivityUnit:assignment?.unit||'',productivityTargetTouched:false,clearGeometry:false,replaceMultipartGeometry:false}
  })
 })
+
+// Talhao multiparte tem points vazio de proposito (o envelope canonico nao entrega meia geometria a
+// quem so le um anel). Quem desenha o mapa e quem decide se o talhao esta mapeado le os aneis daqui.
+const fieldRings=field=>(field?.multipart&&field.polygons?.length?field.polygons.map(polygon=>polygon[0]):[field?.points||[]]).filter(ring=>ring?.length>=3)
+const fieldIsMapped=field=>fieldRings(field).length>0
 
 export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
  const [form,setForm]=useState(fromProfile(null))
@@ -76,7 +81,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
  }
  const update=patch=>{if(busy)return;setForm(current=>({...current,...patch}));setDirty(true);setState(current=>({...current,error:'',notice:''}))}
  const updateField=(key,patch)=>update({fields:form.fields.map(field=>field.key===key?{...field,...patch,...(Object.hasOwn(patch,'productivityTarget')?{productivityTargetTouched:true}:{})}:field)})
- const addField=(extra={})=>update({fields:[...form.fields,{key:fieldKey(form.fields.length),id:null,name:`Talhão ${form.fields.length+1}`,areaHa:'',crop:'',season:mapSeason,points:[],productivityTarget:'',clearGeometry:false,...extra}]})
+ const addField=(extra={})=>update({fields:[...form.fields,{key:fieldKey(form.fields.length),id:null,name:`Talhão ${form.fields.length+1}`,areaHa:'',crop:'',season:mapSeason,points:[],polygons:[],multipart:false,partCount:0,productivityTarget:'',clearGeometry:false,replaceMultipartGeometry:false,...extra}]})
  const removeField=field=>{
   if(!window.confirm(`Remover o talhão "${field.name}"? Isso remove a área física de todas as safras; análises ligadas a ela perdem o vínculo.`))return
   if(field.id)setRemoved(current=>[...current,field.id])
@@ -118,7 +123,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
   try{
    const response=await fetch(`/api/clients/${encodeURIComponent(client.id)}/property`,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({
     propertyId:form.propertyId,propertyName:form.propertyName,location:form.location||null,removedFieldIds:removed,
-    fields:form.fields.map(field=>({id:field.id,name:field.name,areaHa:numberOrNull(field.areaHa),crop:field.crop,season:field.season,...((!field.id||field.productivityTargetTouched||field.productivityUnit==='sc/ha')?{productivityTarget:numberOrNull(field.productivityTarget)}:{}),points:field.points,clearGeometry:field.clearGeometry}))
+    fields:form.fields.map(field=>({id:field.id,name:field.name,areaHa:numberOrNull(field.areaHa),crop:field.crop,season:field.season,...((!field.id||field.productivityTargetTouched||field.productivityUnit==='sc/ha')?{productivityTarget:numberOrNull(field.productivityTarget)}:{}),points:field.points,clearGeometry:field.clearGeometry,replaceMultipartGeometry:field.replaceMultipartGeometry===true}))
    }),signal:controller.signal})
    if(controller.signal.aborted||version!==requestVersion.current)return
    if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}
@@ -134,7 +139,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
  }
 
  const visible=form.fields.filter(field=>!cropFilter||field.crop===cropFilter)
- const mapped=visible.filter(field=>field.points.length>=3&&field.key!==editKey)
+ const mapped=visible.filter(field=>fieldIsMapped(field)&&field.key!==editKey)
  const draftArea=draftMetrics.area!==null?formatHectares(draftMetrics.area):''
  const useReference=(reference,kind)=>{
   if(busy)return false
@@ -196,7 +201,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
    adoptionDisabled={busy}
    center={form.location}
    pins={form.location?[{...form.location,label:'',title:'Sede'}]:[]}
-   polygons={mapped.map(field=>({points:field.points,color:cropColor(field.crop),label:`${field.name} • ${field.crop||'Cultura não informada'} • ${field.season||'Safra não informada'}`}))}
+   polygons={mapped.flatMap(field=>fieldRings(field).map((ring,part,all)=>({points:ring,color:cropColor(field.crop),label:`${field.name}${all.length>1?` (parte ${part+1} de ${all.length})`:''} • ${field.crop||'Cultura não informada'} • ${field.season||'Safra não informada'}`})))}
    adaptive
    editorActions={editorActions}
    onNavigateMap={navigateMap}
@@ -223,13 +228,13 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
    {form.fields.length
     ?form.fields.map(field=><div className="property-field-row" key={field.key}>
       <label>Nome<input disabled={busy} value={field.name} onChange={event=>updateField(field.key,{name:event.target.value})}/></label>
-      <label>Área (ha)<input disabled={busy} inputMode="decimal" value={field.areaHa} placeholder={field.points.length>=3?formatHectares(polygonAreaHa(field.points)):'Ex.: 42,5'} onChange={event=>updateField(field.key,{areaHa:event.target.value})}/></label>
+      <label>Área (ha)<input disabled={busy} inputMode="decimal" value={field.areaHa} placeholder={fieldIsMapped(field)?formatHectares(fieldRings(field).reduce((total,ring)=>total+polygonAreaHa(ring),0)):'Ex.: 42,5'} onChange={event=>updateField(field.key,{areaHa:event.target.value})}/></label>
       <label>Cultura<select disabled={busy} value={field.crop} onChange={event=>updateField(field.key,{crop:event.target.value})}><option value="">Não informada</option>{[...new Set([...SEASON_CROPS,field.crop].filter(Boolean))].map(crop=><option key={crop}>{crop}</option>)}</select></label>
       <label>Safra<input readOnly value={mapSeason}/></label>
       <label>Produtividade projetada (sc/ha)<input disabled={busy} type="number" min="0" max="1000" step="any" value={field.productivityTarget} placeholder="Não informada" onChange={event=>updateField(field.key,{productivityTarget:event.target.value})}/></label>
       <span className="property-field-potential">Potencial {field.crop||'da cultura'}: <b>{formatNumber(fieldProduction(field))} sc</b></span>
-      <button type="button" disabled={busy||mode==='draw'} aria-label={`Editar contorno ${field.name}`} onClick={()=>{setEditKey(field.key);setDraft(field.points);setDrawing({crop:field.crop,season:field.season,productivityTarget:field.productivityTarget});setMode('draw');setToolsOpen(true)}}><PencilRuler size={15}/>Editar pontos</button>
-      <span className={`property-field-geo${field.points.length>=3?' is-mapped':''}`}>{field.points.length>=3?'Contorno no mapa':'Sem contorno'}</span>
+      <button type="button" disabled={busy||mode==='draw'} aria-label={`Editar contorno ${field.name}`} onClick={()=>{const rings=fieldRings(field);if(field.multipart&&!window.confirm(`${field.name} está mapeado em ${rings.length} partes separadas. Redesenhar substitui todas por um único contorno e as demais partes serão perdidas. Continuar?`))return;if(field.multipart)updateField(field.key,{replaceMultipartGeometry:true});setEditKey(field.key);setDraft(field.multipart?rings.reduce((biggest,ring)=>polygonAreaHa(ring)>polygonAreaHa(biggest)?ring:biggest,rings[0]||[]):field.points);setDrawing({crop:field.crop,season:field.season,productivityTarget:field.productivityTarget});setMode('draw');setToolsOpen(true)}}><PencilRuler size={15}/>Editar pontos</button>
+      <span className={`property-field-geo${fieldIsMapped(field)?' is-mapped':''}`}>{fieldIsMapped(field)?field.multipart?`Contorno no mapa • ${field.partCount||fieldRings(field).length} partes`:'Contorno no mapa':'Sem contorno'}</span>
       <button type="button" disabled={busy} className="property-field-remove" aria-label={`Remover talhão ${field.name}`} onClick={()=>removeField(field)}><Trash2 size={15}/></button>
      </div>)
     :<p className="property-fields-empty">Nenhum talhão cadastrado. Desenhe no mapa ou adicione pelo nome.</p>}

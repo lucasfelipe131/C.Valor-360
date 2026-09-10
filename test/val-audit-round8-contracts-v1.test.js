@@ -56,3 +56,55 @@ test('Importação — resumo distingue linhas do arquivo das linhas incorporada
  assert.equal(summary.rowCount,rows.length)
  assert.equal(summary.clientCount,clients.length)
 })
+
+import {normalizeCadastralGeoJSON,referenceParts} from '../src/lib/cadastral-map.js'
+import {manualToCanonicalValGeometry,encodeCanonicalGeometryRef} from '../src/lib/agronomic-geometry-adapter.js'
+import {fieldPointsFromGeometryRef,normalizeFieldPoints} from '../server/property-profile.js'
+
+const TENANT='tenant-geo-r8'
+const ring=[{lat:-17.80,lng:-50.92},{lat:-17.80,lng:-50.91},{lat:-17.81,lng:-50.91},{lat:-17.81,lng:-50.92}]
+const secondRing=ring.map(point=>({lat:Number((point.lat-.02).toFixed(7)),lng:Number((point.lng-.02).toFixed(7))}))
+const multipartRef=()=>encodeCanonicalGeometryRef(manualToCanonicalValGeometry({organizationId:TENANT,clientId:'c1',propertyId:'p1',fieldId:'f1',fieldName:'Talhão 1',polygons:[ring,secondRing],provenance:{source:'manual-do-agronomo',method:'import',observedAt:new Date().toISOString(),capturedBy:'ana'}}))
+
+// GEO-01: talhão multiparte aparecia como "Sem contorno" e era destruído no redesenho.
+test('Mapa — talhão MultiPolygon entrega todas as partes a quem desenha', () => {
+ const geometry=fieldPointsFromGeometryRef(multipartRef(),{organizationId:TENANT})
+ assert.equal(geometry.geometryStatus,'CANONICAL')
+ assert.equal(geometry.multipart,true)
+ assert.equal(geometry.partCount,2)
+ assert.equal(geometry.polygons.length,2)
+ assert.deepEqual(geometry.points,[],'points segue vazio: quem só lê um anel não pode receber meia geometria')
+})
+
+test('Mapa — talhão de uma parte só continua entregando points', () => {
+ const single=encodeCanonicalGeometryRef(manualToCanonicalValGeometry({organizationId:TENANT,clientId:'c1',propertyId:'p1',fieldId:'f2',fieldName:'Talhão 2',points:ring,provenance:{source:'valor360',method:'consultant-map-draw',observedAt:new Date().toISOString(),capturedBy:'ana'}}))
+ const geometry=fieldPointsFromGeometryRef(single,{organizationId:TENANT})
+ assert.equal(geometry.multipart,false)
+ assert.equal(geometry.partCount,1)
+ assert.equal(geometry.points.length,ring.length)
+})
+
+// GEO-04: latitude/longitude trocadas passavam pela faixa e iam para o Atlântico.
+test('Mapa — arquivo com latitude e longitude trocadas é recusado', () => {
+ const closed=[[-50.92,-17.80],[-50.91,-17.80],[-50.91,-17.81],[-50.92,-17.81],[-50.92,-17.80]]
+ const feature=coordinates=>({type:'Feature',geometry:{type:'Polygon',coordinates:[coordinates]},properties:{matricula:'12.345'}})
+ assert.ok(normalizeCadastralGeoJSON(feature(closed)),'arquivo correto precisa continuar passando')
+ assert.throws(()=>normalizeCadastralGeoJSON(feature(closed.map(([lng,lat])=>[lat,lng]))),/latitude,longitude/)
+})
+
+test('Talhão — contorno com coordenadas trocadas não é salvo', () => {
+ const open=[[-50.92,-17.80],[-50.91,-17.80],[-50.91,-17.81],[-50.92,-17.81]]
+ assert.equal(normalizeFieldPoints(open.map(([lng,lat])=>({lat,lng})),'Talhão 1').length,4)
+ assert.throws(()=>normalizeFieldPoints(open.map(([lng,lat])=>({lat:lng,lng:lat})),'Talhão 1'),error=>error.code==='field_points_swapped')
+})
+
+// GEO-03: id posicional fazia a prévia trocar de imóvel quando o mapa se movia.
+test('Camadas — identificador da parte cadastral vem do conteúdo, não da posição', () => {
+ const layer=(matricula,nome,base)=>({id:'official-car',geojson:normalizeCadastralGeoJSON({type:'FeatureCollection',features:[{type:'Feature',geometry:{type:'Polygon',coordinates:[base]},properties:{matricula,nome}}]})})
+ const meu=[[-50.92,-17.80],[-50.91,-17.80],[-50.91,-17.81],[-50.92,-17.81],[-50.92,-17.80]]
+ const vizinho=[[-50.80,-17.70],[-50.79,-17.70],[-50.79,-17.71],[-50.80,-17.71],[-50.80,-17.70]]
+ const meuId=referenceParts(layer('12.345','Fazenda São João',meu))[0].id
+ const vizinhoId=referenceParts(layer('99.999','Fazenda do Vizinho',vizinho))[0].id
+ assert.notEqual(meuId,vizinhoId,'imóveis diferentes na mesma posição não podem compartilhar id')
+ assert.equal(referenceParts(layer('12.345','Fazenda São João',meu))[0].id,meuId,'o mesmo imóvel mantém o id entre consultas')
+})

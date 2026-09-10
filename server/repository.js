@@ -1042,7 +1042,7 @@ export class ValRepository{
       properties:properties.rows.map(row=>({id:String(row.id),name:row.name})),
       fields:fields.rows.map(row=>{
         const geometry=fieldPointsFromGeometryRef(row.geometry_ref,{organizationId:this.tenantId});const season=jsonObject(row.latest_season)
-        return {seasons:Array.isArray(row.season_records)?row.season_records:[],id:String(row.id),name:row.name,areaHa:row.area_ha==null?geometry.calculatedAreaHa:Number(row.area_ha),crop:String(season.crop||''),season:String(season.season||''),productivityUnit:String(season.unit||''),productivityTarget:season.unit==='sc/ha'&&season.productivityTarget!=null?Number(season.productivityTarget):null,points:geometry.points,geometryStatus:geometry.geometryStatus,updatedAt:iso(row.updated_at)}
+        return {seasons:Array.isArray(row.season_records)?row.season_records:[],id:String(row.id),name:row.name,areaHa:row.area_ha==null?geometry.calculatedAreaHa:Number(row.area_ha),crop:String(season.crop||''),season:String(season.season||''),productivityUnit:String(season.unit||''),productivityTarget:season.unit==='sc/ha'&&season.productivityTarget!=null?Number(season.productivityTarget):null,points:geometry.points,polygons:geometry.polygons,multipart:geometry.multipart,partCount:geometry.partCount,geometryStatus:geometry.geometryStatus,updatedAt:iso(row.updated_at)}
       }),
       source:'postgresql'
     }
@@ -1104,7 +1104,7 @@ export class ValRepository{
         if(profile.removedFieldIds.length)await connection.query(`DELETE FROM fields WHERE tenant_id=$1 AND property_id=$2 AND id::text=ANY($3::text[])`,[this.tenantId,property.id,profile.removedFieldIds])
         const propertyKey=property.external_key||String(property.id)
         for(const field of profile.fields){
-          const stored=field.id?await connection.query(`SELECT id,external_key FROM fields WHERE tenant_id=$1 AND property_id=$2 AND id::text=$3 LIMIT 1 FOR UPDATE`,[this.tenantId,property.id,field.id]):{rows:[]}
+          const stored=field.id?await connection.query(`SELECT id,external_key,geometry_ref FROM fields WHERE tenant_id=$1 AND property_id=$2 AND id::text=$3 LIMIT 1 FOR UPDATE`,[this.tenantId,property.id,field.id]):{rows:[]}
           let fieldRow=stored.rows[0]||null
           if(fieldRow){
             await connection.query(`UPDATE fields SET name=$4,area_ha=COALESCE($5,area_ha),updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id,field.name,field.areaHa])
@@ -1113,6 +1113,11 @@ export class ValRepository{
             fieldRow=created.rows[0]
           }
           if(field.points.length){
+            // Um talhao multiparte (cortado por estrada, sanga ou reserva) nao pode ser substituido em
+            // silencio por um anel unico: a parte que o consultor nao redesenhou sumiria para sempre.
+            // So sobrescrevemos com o aceite explicito de quem esta desenhando.
+            const previous=fieldPointsFromGeometryRef(fieldRow.geometry_ref,{organizationId:this.tenantId})
+            if(previous.multipart&&!field.replaceMultipartGeometry)throw domainError(`O talhão ${field.name} está mapeado em ${previous.partCount} partes separadas. Salvar um único contorno apagaria as demais; confirme a substituição antes de gravar.`,422,'field_geometry_multipart_replace')
             try{
               const canonical=manualToCanonicalValGeometry({
                 organizationId:this.tenantId,clientId:String(client.id),clientExternalKey:client.external_key,

@@ -39,6 +39,9 @@ export default function CadastralLayers({onChange,viewport,onStatusChange,panelO
  useEffect(()=>{onChange(shownLayers)},[shownLayers,onChange])
  const parts=useMemo(()=>shownLayers.flatMap(referenceParts),[shownLayers])
  const selected=parts.find(part=>part.id===selectedId)
+ // O id agora vem do conteudo: se a consulta trouxe outro imovel, o selecionado simplesmente sai da
+ // lista. Avisamos em vez de deixar a previa aberta apontando para o vizinho.
+ const selectionLost=Boolean(selectedId)&&!selected
  const prepared=useMemo(()=>{
   if(!selected)return null
   try{return prepareReferenceDraft(selected.feature)}catch(e){return {error:e.message}}
@@ -83,6 +86,7 @@ export default function CadastralLayers({onChange,viewport,onStatusChange,panelO
    <p>Importe o KML do CAR para visualizar os limites e usá-los como base do talhão.</p>
    <label><Search size={14}/>Buscar matrícula, titular ou imóvel<input value={query} onChange={e=>{setQuery(e.target.value);setLimit(12)}} placeholder="Nome do titular ou número da matrícula"/></label>
    {clientId&&<p role="status">{registryStatus==='loading'?'Carregando matrículas cadastradas…':registryStatus==='error'?<>Matrículas cadastradas indisponíveis. <button type="button" onClick={()=>setRegistryAttempt(value=>value+1)}>Tentar novamente</button></>:registryStatus==='ready'&&!registered?.geojson.features.length?'Nenhuma matrícula com contorno cadastrada para este produtor.':'Titulares do cadastro do Manual identificados pela fonte.'}</p>}
+   {selectionLost&&<p className="form-error" role="alert">O limite selecionado saiu da consulta atual do mapa. Escolha o imóvel de novo na lista antes de usar o contorno.</p>}
    {selected&&<section className="val-reference-preview" aria-label="Prévia do limite selecionado">
     <strong>{selected.label}</strong>
     <dl><dt>Matrícula</dt><dd>{details.registry||'Não informada'}</dd><dt>Titular</dt><dd>{details.holder||'Não informado na fonte'}</dd><dt>Fonte</dt><dd>{selected.layer.name}{selected.layer.official?' · consulta oficial':selected.layer.registered?' · cadastro do usuário':' · declarado no arquivo'}</dd></dl>
