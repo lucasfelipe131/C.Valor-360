@@ -291,28 +291,36 @@ export async function querySigefAtPoint(
   if (!BRAZIL_UFS.has(uf.toUpperCase())) throw new Error("UF inválida.");
   if (bounds && !validGeoBounds(bounds)) throw new Error("Área de consulta inválida.");
   const tenures = ["particular", "publico"] as const;
-  const settled = await Promise.allSettled(tenures.map(async (tenure) => {
+  const results = await Promise.all(tenures.map(tenure=>querySigefTenureAtPoint(point,uf,tenure,fetcher,bounds)));
+  return mergeSigefSources(results,Boolean(bounds));
+}
+
+export function mergeSigefSources(results: Array<{features:SigefBoundary[];returned?:number;limited?:boolean;failedSources:number}>, viewport:boolean){
+  const features=results.flatMap(result=>result.features),returned=results.reduce((sum,result)=>sum+(result.returned||0),0);
+  const failedSources=results.reduce((sum,result)=>sum+result.failedSources,0);
+  return {features:features.slice(0,viewport?80:12),limited:Boolean(viewport&&(returned>=80||returned>features.length||failedSources>0||results.some(result=>result.limited))),
+    status:features.length?'available':(viewport?failedSources>0||returned>0:failedSources===results.length)?'unavailable':'no_match',failedSources} as const;
+}
+
+export async function querySigefTenureAtPoint(point:GeoPoint,uf:string,tenure:'particular'|'publico',fetcher:typeof fetch=fetch,bounds?:GeoBounds){
+  if(!Number.isFinite(point.lat)||Math.abs(point.lat)>90||!Number.isFinite(point.lng)||Math.abs(point.lng)>180||!BRAZIL_UFS.has(uf.toUpperCase())||!['particular','publico'].includes(tenure))throw new Error('Consulta SIGEF inválida.');
+  if(bounds&&!validGeoBounds(bounds))throw new Error('Área de consulta inválida.');
+  try {
     const response = await fetcher(sigefWfsUrl(uf, tenure, point, bounds), {
       headers: { Accept: "application/gml+xml, application/xml, text/xml" },
       cache: "no-store",
-      signal: AbortSignal.timeout(9_000),
+      signal: AbortSignal.timeout(18_000),
     });
     if (!response.ok) throw new Error(`INCRA respondeu ${response.status}.`);
     const xml = await response.text();
     if (/ServiceException|ExceptionReport/i.test(xml) || !/<(?:wfs:)?FeatureCollection\b/i.test(xml)) {
       throw new Error("O serviço OGC do INCRA retornou uma resposta inválida.");
     }
-    return {features:parseSigefGml(xml, point, tenure, bounds),returned:bounds ? (xml.match(/<gml:featureMember\b/g) ?? []).length : 0};
-  }));
-  const features = settled.flatMap((result) => result.status === "fulfilled" ? result.value.features : []);
-  const returned = settled.reduce((sum, result) => sum + (result.status === "fulfilled" ? result.value.returned : 0), 0);
-  const failedSources = settled.filter((result) => result.status === "rejected").length;
-  return {
-    features: features.slice(0, bounds ? 80 : 12),
-    limited: Boolean(bounds && (returned >= 80 || returned > features.length || failedSources > 0)),
-    status: features.length ? "available" : (bounds ? failedSources > 0 || returned > 0 : failedSources === tenures.length) ? "unavailable" : "no_match",
-    failedSources,
-  } as const;
+    const features=parseSigefGml(xml,point,tenure,bounds),returned=bounds?(xml.match(/<gml:featureMember\b/g)??[]).length:0;
+    return {features,returned,limited:Boolean(bounds&&(returned>=80||returned>features.length)),status:features.length?'available':returned>0?'unavailable':'no_match',failedSources:0} as const;
+  } catch {
+    return {features:[] as SigefBoundary[],returned:0,status:'unavailable',failedSources:1} as const;
+  }
 }
 
 export async function queryCarAtPoint(
@@ -329,7 +337,7 @@ export async function queryCarAtPoint(
     const response = await fetcher(carWfsUrl(uf, point, bounds), {
       headers: { Accept: "application/geo+json, application/json" },
       cache: "no-store",
-      signal: AbortSignal.timeout(9_000),
+      signal: AbortSignal.timeout(18_000),
     });
     if (!response.ok) throw new Error(`SICAR respondeu ${response.status}.`);
     const source = await response.text();

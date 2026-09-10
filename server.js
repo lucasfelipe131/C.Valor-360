@@ -569,7 +569,9 @@ async function handleApi(request,response,url){
    if(sessionCommandClientResolution.status==='AMBIGUOUS')return json(response,409,{error:`Encontrei mais de um produtor para “${sessionCommandClientResolution.reference}”. Use o nome completo.`,code:'val_client_reference_ambiguous',conversationId,clarification:{contractVersion:'val.client_clarification.v1',reference:sessionCommandClientResolution.reference,question:'Qual produtor deve permanecer ativo?',options:sessionCommandClientResolution.options}})
    if(sessionCommandClientResolution.status==='NOT_FOUND')return json(response,422,{error:`Não encontrei “${sessionCommandClientResolution.reference}” na sua carteira autorizada.`,code:'val_client_reference_not_found',conversationId,clarification:{question:'Qual é o nome completo do produtor?'}})
   }
-  const naturalClientReference=sessionCommandPreview?{kind:'NONE',reference:null}:extractNaturalClientReference(message)
+  // A comparação já resolveu e autorizou os dois nomes pela thread; não tratar
+  // o texto "compare os dois" como candidato a um terceiro produtor.
+  const naturalClientReference=sessionCommandPreview||comparisonResolution?{kind:'NONE',reference:null}:extractNaturalClientReference(message)
   if(naturalClientReference.kind==='CURRENT_CLIENT'&&!clientId)return json(response,422,{error:'Ainda não há um produtor ativo nesta conversa. Diga o nome para eu localizar a carteira correta.',code:'val_client_reference_context_required',conversationId,clarification:{question:'De qual produtor você está falando?'}})
   if(['EXPLICIT_NAME','AUTHORIZED_NAME_CANDIDATE','FACT_OWNER','PREVIOUS_CLIENT'].includes(naturalClientReference.kind)){
    entityLookupCount+=1
@@ -586,8 +588,17 @@ async function handleApi(request,response,url){
    // "mercado de soja". Recusar o turno com 422 nesses casos transforma substantivo comum em
    // produtor inexistente. Quando a inferencia nao resolve, o turno segue sem referencia de
    // produtor. O 422 continua valendo onde o consultor de fato nomeou alguem.
-   if(conversationResolution.status==='NOT_FOUND'&&naturalClientReference.kind==='FACT_OWNER')conversationResolution={kind:'NONE',status:'NOT_REFERENCED',reference:null}
-   else if(conversationResolution.status==='NOT_FOUND')return json(response,422,{error:`Não encontrei “${conversationResolution.reference}” na sua carteira autorizada. Confirme o nome do produtor.`,code:'val_client_reference_not_found',conversationId,clarification:{question:'Qual é o nome do produtor na sua carteira?'}})
+   if(conversationResolution.status==='NOT_FOUND'&&naturalClientReference.kind==='FACT_OWNER'&&conversationResolution.reason_code!=='CLIENT_REFERENCE_QUALIFIER_MISMATCH')conversationResolution={kind:'NONE',status:'NOT_REFERENCED',reference:null}
+   else if(conversationResolution.status==='NOT_FOUND'){
+    // Um nome ausente é esclarecimento (422); um ID enviado pelo browser fora
+    // da carteira continua sendo 404, mesmo quando a frase também cita o nome.
+    if(requestedClientId&&requestedClientId!==storedClientId){
+     const authorizedClients=await repository.listAuthorizedClientReferences({tenantId,ownerId:scopedOwnerId,timeoutMs:config.databaseQueryTimeoutMs})
+     throwIfRequestAborted(requestController.signal)
+     if(!authorizedClients.some(item=>String(item?.id||'')===requestedClientId))return json(response,404,{error:'Produtor não encontrado na carteira autorizada.',code:'val_client_not_authorized',conversationId})
+    }
+    return json(response,422,{error:`Não encontrei “${conversationResolution.reference}” na sua carteira autorizada. Confirme o nome do produtor.`,code:'val_client_reference_not_found',conversationId,clarification:{question:'Qual é o nome do produtor na sua carteira?'}})
+   }
    if(conversationResolution.status==='RESOLVED'){
     // O produtor de referencia do turno e o da thread ou, numa conversa nova, o que o browser
     // enviou: "Mostre a ultima visita do Matheus" com Bruno aberto e consulta pontual nos dois casos,
@@ -624,7 +635,8 @@ async function handleApi(request,response,url){
   if(requestedAttachments.some(item=>!item.dataBase64))return json(response,422,{error:'Um ou mais arquivos persistidos não puderam ser carregados para análise.',code:'val_attachment_content_unavailable'})
   const requestedAttachmentTypes=requestedAttachments.map(item=>String(item.mimeType||'').toLowerCase()).filter(Boolean)
   const intentResolutionStartedAt=performance.now()
-  const routedIntent=routeValIntent({message:generalMessage,intentHint:requestedIntent,sessionCommandHint:requestedSessionCommand,hasClient:Boolean(clientId),attachmentTypes:requestedAttachmentTypes})
+  const resolvedClientReference=conversationResolution?.status==='RESOLVED'
+  const routedIntent=routeValIntent({message:generalMessage,intentHint:requestedIntent,sessionCommandHint:requestedSessionCommand,hasClient:Boolean(clientId),resolvedClientReference,attachmentTypes:requestedAttachmentTypes})
   // O produtor armazenado na conversa carrega `label`; o roteador lê `name` para nomear a troca
   // ('Agora falando de Antônio Silva') em vez de 'o produtor'.
   const storedRouteClient=storedConversation?.current_client?.id?{id:storedConversation.current_client.id,name:storedConversation.current_client.name||storedConversation.current_client.label||null}:null
@@ -721,7 +733,7 @@ async function handleApi(request,response,url){
    return json(response,200,completeSession({...direct,workspaceAction:workspaceRoute.workspace_action,globalIntent:workspaceRoute},{client:actionClient,active:null,intent:workspaceRoute.intent}))
   }
   if(!clientId){
-   const capability=routeSystemCapability({message,intentHint:routedIntent.intent,sessionCommandHint:routedIntent.session_command?.command||'',hasClient:false,activeContext})
+   const capability=routeSystemCapability({message,intentHint:routedIntent.intent,sessionCommandHint:routedIntent.session_command?.command||'',hasClient:false,resolvedClientReference,activeContext})
    if(preferences.inputModality!=='voice')valRequestServiceClass=capability.path
    const latency=createLatencyTrace({path:capability.path,intent:routedIntent.intent,startAt:requestStartedAt});latency.set('AUTH',authLatencyMs);latency.set('ENTITY',entityResolutionMs);latency.set('INTENT',intentResolutionMs)
    const complete=(payloadResult,execution=null)=>{latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(payloadResult,{latency:values,path:capability.path,intent:routedIntent.intent,toolExecution:execution});const measuredLatency=enriched?.responseMetadata?.performance?.latency||values;valLatencyMetrics.record({path:capability.path,intent:routedIntent.intent,latency:measuredLatency});observe('val.answer.completed',{mode:'direct',engineMode:'rules',intent:routedIntent.intent,reasoningPath:capability.path,capability:execution?.tool_result?.capability||capability.capabilities[0],capabilityStatus:execution?.tool_result?.status,ttfrMs:measuredLatency.TTFR,outcome:'ok'});return completeSession(enriched)}
@@ -749,13 +761,13 @@ async function handleApi(request,response,url){
     return json(response,200,complete(direct,execution))
    }
    const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
-   const general=await buildGeneralNoClientResponse({message:generalMessage,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,sharedAnswerCache})
+   const general=await buildGeneralNoClientResponse({message:generalMessage,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,sharedAnswerCache,signal:requestController.signal})
    general.responseMetadata.questionContinued=generalQuestion.continued
    const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
    if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})
    return json(response,200,complete(general))
   }
-  const clientCapability=routeSystemCapability({message,intentHint:routedIntent.intent,sessionCommandHint:routedIntent.session_command?.command||'',hasClient:true,attachmentTypes:requestedAttachmentTypes,activeContext})
+  const clientCapability=routeSystemCapability({message,intentHint:routedIntent.intent,sessionCommandHint:routedIntent.session_command?.command||'',hasClient:true,resolvedClientReference,attachmentTypes:requestedAttachmentTypes,activeContext})
   if(preferences.inputModality!=='voice')valRequestServiceClass=clientCapability.path
   const latency=createLatencyTrace({path:clientCapability.path,intent:routedIntent.intent,startAt:requestStartedAt});latency.set('AUTH',authLatencyMs);latency.set('ENTITY',entityResolutionMs);latency.set('INTENT',intentResolutionMs)
   let authorizedContext=null;let activeContextRef=null;let toolExecution=null
@@ -798,21 +810,20 @@ async function handleApi(request,response,url){
   // passando: e o que sobra de "fala sobre ferrugem asiatica".
   // FACT_OWNER que nao resolveu nao nomeia produtor nenhum ("o perfil do solo"): so fecha a ponte
   // quando a inferencia apontou mesmo para alguem da carteira.
-  const namesProducer=['EXPLICIT_NAME','CURRENT_CLIENT'].includes(naturalClientReference.kind)
-   ||naturalClientReference.kind==='FACT_OWNER'&&conversationResolution?.status==='RESOLVED'
+  const namesProducer=['EXPLICIT_NAME','CURRENT_CLIENT'].includes(naturalClientReference.kind)||resolvedClientReference
   // Continuacao curta de um turno do produtor ("e a objecao?", "e a safra?") pertence a conversa
   // daquele produtor: sem isto a VAL respondia "nenhum produtor selecionado" com o produtor aberto
   // na tela, porque a frase nao contem nenhuma palavra da lista contextual.
   const followUpWithProducer=Boolean(clientId)&&/^\s*(?:e|entao|ok|certo)[,\s]+/i.test(String(message||''))
   const generalConceptWithProducer=!namesProducer&&!followUpWithProducer&&isGeneralConceptRequest(message)&&clientCapability.capabilities.includes('KNOWLEDGE_LIBRARY')
-  if((routedIntent.intent==='ASK_GENERAL'&&clientCapability.capabilities.every(item=>item==='KNOWLEDGE_LIBRARY')||generalConceptWithProducer)&&clientCapability.path==='CONTEXT'&&!clientCapability.session_command&&!attachmentIds.length){
+  if(!namesProducer&&(routedIntent.intent==='ASK_GENERAL'&&clientCapability.capabilities.every(item=>item==='KNOWLEDGE_LIBRARY')||generalConceptWithProducer)&&clientCapability.path==='CONTEXT'&&!clientCapability.session_command&&!attachmentIds.length){
    // O raciocinio desta resposta nao le contexto privado (fontes em escopo GENERAL_KNOWLEDGE, client
    // 'portfolio'), mas a resposta pertence a conversa do produtor ativo: o browser e o contrato de
    // escopo (createValResponseScope) exigem que context_scope.producer_id, session_context e
    // responseScope apontem para o mesmo produtor, senao "oi" com produtor aberto e rejeitado na tela.
    const generalDomain=requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent)
    const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
-   const general=await buildGeneralNoClientResponse({message:generalMessage,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:generalDomain,aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,sharedAnswerCache})
+   const general=await buildGeneralNoClientResponse({message:generalMessage,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:generalDomain,aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,sharedAnswerCache,signal:requestController.signal})
    general.responseMetadata.questionContinued=generalQuestion.continued
    const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
    if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})

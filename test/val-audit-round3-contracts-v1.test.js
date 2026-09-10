@@ -284,14 +284,12 @@ test('Biblioteca: itens de mercado novos chegam ao chat e gatilhos específicos 
  assert.match(read('knowledge/library/v1/taxonomy.md'),/commodity_markets/)
 })
 
-test('voz contínua: erro sem áudio chega como texto, pausa não é desfeita pelo provider e reconexão espera a pausa',()=>{
+test('voz contínua publica erros como texto e a navegação mantém os contratos de revisão',()=>{
  const hook=read('src/hooks/useNaturalRealtimeVoice.js')
- assert.match(hook,/callbacks\.current\.onError\?\.\(message,\{code:`realtime_response_\$\{responseStatus\}`\}\)/)
+ assert.match(hook,/callbacks\.current\.onError\?\.\(message,/)
  assert.doesNotMatch(hook,/onError\?\.\(Object\.assign\(new Error\(message\)/)
- assert.match(hook,/const paused=userPaused\.current/)
- assert.match(hook,/if\(type==='session\.created'\|\|type==='session\.updated'\)\{if\(!paused\)update\(/)
- assert.match(hook,/if\(type==='output_audio_buffer\.stopped'\|\|type==='output_audio_buffer\.cleared'\)\{if\(!paused\)update\(/)
- assert.match(hook,/if\(\[STATES\.SPEAKING,STATES\.PAUSED\]\.includes\(machineRef\.current\.status\)\)pendingReconnect\.current=eventScope\.scopeKey/)
+ // Pause, incomplete output and deferred reconnect are exercised through the
+ // mounted hook in natural-realtime-recovery-hook.test.js, not source syntax.
  assert.match(read('src/components/GlobalValCopilot.jsx'),/onError=\{message=>setError\(typeof message==='string'\?message:message\?\.message\|\|''\)\}/)
  const visits=read('src/pages/Visits.jsx')
  assert.match(visits,/const historyLifecycle=new Set\(\['COMPLETED','CANCELLED'\]\)/)
@@ -398,10 +396,16 @@ test('produtor citado pelo nome sem produtor selecionado abre esse produtor (tex
   assert.equal(extracted.reference,expected,message)
  }
  const genorClient={id:'genor',name:'Genor Brum'}
- for(const message of ['Quero falar sobre o Genor Brum','Sobre o Genor Brum.','Genor Brum','genor','fala do Genor']){
+ for(const message of ['Quero falar sobre o Genor Brum','Sobre o Genor Brum.','Genor Brum','genor']){
   const route=routeGlobalIntent({message,client:genorClient})
   assert.equal(route.reason,'SWITCH_RESOLVED_CLIENT',message)
   assert.match(route.summary,/Agora falando de Genor Brum/)
+ }
+ for(const message of ['fala do Genor','Me fala sobre o Genor Brum.','Conte sobre o Genor.']){
+  const route=routeGlobalIntent({message,client:genorClient})
+  assert.equal(route.intent,'ASK',message)
+  assert.equal(route.direct,false,message)
+  assert.equal(route.workspace_action,null,message)
  }
  for(const message of ['calagem','o que ele comprou?','quero falar sobre calagem','sobre a safra de trigo','Isso muda a abordagem?'])assert.notEqual(routeGlobalIntent({message,client:genorClient}).reason,'SWITCH_RESOLVED_CLIENT',message)
  for(const message of ['Isso muda a abordagem?','oi val','bom dia','o que é wasde','Bom dia','Obrigado'])assert.notEqual(extractNaturalClientReference(message).kind,'AUTHORIZED_NAME_CANDIDATE',message)

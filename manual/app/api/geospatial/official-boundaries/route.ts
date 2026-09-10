@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { sessionFromRequest } from "../../../lib/access";
-import { BRAZIL_UFS, queryCarAtPoint, querySigefAtPoint, validGeoBounds } from "../../../lib/official-geodata";
+import { BRAZIL_UFS, queryCarAtPoint, querySigefTenureAtPoint, mergeSigefSources, validGeoBounds } from "../../../lib/official-geodata";
+import { officialBoundaryCache } from "../../../lib/official-boundary-cache";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,11 +28,21 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({error:"Aproxime o mapa para consultar uma área válida."}, {status:400});
     }
     const viewport = bounds && validGeoBounds(bounds) ? bounds : undefined;
+    const source=request.nextUrl.searchParams.get('source');
+    if(source&&!['car','sigef-particular','sigef-publico'].includes(source))return NextResponse.json({error:'Camada inválida.'},{status:400});
+    const refresh=request.nextUrl.searchParams.get('refresh')==='1';
+    const point={lat:latitude,lng:longitude};
+    const extent=viewport?`viewport:${viewport.map(value=>value.toFixed(7)).join(',')}`:`point:${latitude},${longitude}`;
+    const queryCar=()=>officialBoundaryCache.query(`car:${uf}:${extent}`,()=>queryCarAtPoint(point,uf,fetch,viewport),{refresh});
+    const querySigef=(tenure:'particular'|'publico')=>officialBoundaryCache.query(`sigef-${tenure}:${uf}:${extent}`,()=>querySigefTenureAtPoint(point,uf,tenure,fetch,viewport),{refresh});
+    if(source){
+      const item=source==='car'?await queryCar():await querySigef(source==='sigef-particular'?'particular':'publico');
+      const isCar=source==='car';
+      return NextResponse.json({sourceKey:source,point,uf,bounds:viewport,scope:viewport?'viewport_reference':'containing_point',queriedAt:item.queriedAt,cache:item.cache,result:{...item.result,queriedAt:item.queriedAt,source:isCar?'SICAR · Consulta Pública do CAR':'SIGEF/INCRA · Acervo Fundiário',sourceUrl:isCar?'https://consultapublica.car.gov.br/publico/imoveis/index':'https://acervofundiario.incra.gov.br/',note:item.result.status==='unavailable'?'A fonte não respondeu com limites utilizáveis. Tente atualizar.':item.result.status==='no_match'?'Nenhum limite retornado nesta área.':item.result.limited?'Consulta parcial. Aproxime o mapa para ver mais detalhes.':'Limites de referência obtidos na fonte oficial.'}},{headers:{'Cache-Control':'private, no-store, max-age=0'}});
+    }
     const queriedAt = new Date().toISOString();
-    const [sigef, car] = await Promise.all([
-      querySigefAtPoint({ lat: latitude, lng: longitude }, uf, fetch, viewport),
-      queryCarAtPoint({ lat: latitude, lng: longitude }, uf, fetch, viewport),
-    ]);
+    const [sigefPrivate,sigefPublic,carItem]=await Promise.all([querySigef('particular'),querySigef('publico'),queryCar()]);
+    const sigef=mergeSigefSources([sigefPrivate.result,sigefPublic.result],Boolean(viewport)),car=carItem.result;
     return NextResponse.json({
       point: { lat: latitude, lng: longitude },
       queriedAt,
@@ -40,6 +51,7 @@ export async function GET(request: NextRequest) {
       ...(viewport ? {bounds:viewport} : {}),
       sigef: {
         ...sigef,
+        queriedAt:[sigefPrivate.queriedAt,sigefPublic.queriedAt].sort()[0],
         label: "Parcela certificada",
         source: "SIGEF/INCRA · Acervo Fundiário",
         sourceUrl: "https://acervofundiario.incra.gov.br/",
@@ -51,6 +63,7 @@ export async function GET(request: NextRequest) {
       },
       car: {
         ...car,
+        queriedAt:carItem.queriedAt,
         status: car.status,
         label: "Cadastro autodeclarado",
         source: "SICAR · Consulta Pública do CAR",

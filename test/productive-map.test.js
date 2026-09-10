@@ -1,9 +1,18 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {validProductiveRing,fieldProduction} from '../src/lib/productive-map.js'
+import {validProductiveRing,fieldProduction,insertProductivePoint} from '../src/lib/productive-map.js'
 import {normalizeCadastralGeoJSON,filterCadastral} from '../src/lib/cadastral-map.js'
 import {normalizePropertyProfileInput} from '../server/property-profile.js'
 const points=[{lat:-28,lng:-54},{lat:-28,lng:-53.99},{lat:-28.01,lng:-53.99},{lat:-28.01,lng:-54}]
+test('saved field point insertion uses the nearest edge, including the closing edge, without mutating the contour',()=>{
+ const right={lat:-28.005,lng:-53.99},closing={lat:-28.005,lng:-54}
+ const edited=insertProductivePoint(points,right)
+ assert.deepEqual(edited,[points[0],points[1],right,points[2],points[3]]);assert.equal(validProductiveRing(edited),true)
+ assert.deepEqual(insertProductivePoint(points,closing),[...points,closing])
+ assert.deepEqual(insertProductivePoint(points,right,0),[points[0],right,...points.slice(1)])
+ assert.equal(points.length,4);assert.throws(()=>insertProductivePoint(points,{lat:NaN,lng:0}))
+ assert.throws(()=>insertProductivePoint(Array(500).fill(points[0]),right),/500/)
+})
 test('productive rings reject crossed or repeated points and retain a valid ring after point deletion',()=>{
  assert.equal(validProductiveRing(points),true)
  assert.equal(validProductiveRing(points.filter((_,i)=>i!==1)),true)

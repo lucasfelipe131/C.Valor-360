@@ -18,3 +18,19 @@ export function fieldProduction(field){
  const productivity=field.productivityTarget===''||field.productivityTarget==null?null:Number(field.productivityTarget)
  return area!==null&&productivity!==null&&Number.isFinite(area)&&Number.isFinite(productivity)&&area>=0&&productivity>=0?area*productivity:null
 }
+export function insertProductivePoint(points,point,edgeIndex=null){
+ if(points.length>=500)throw new Error('Limite de 500 pontos. Apague um ponto antes de inserir outro.')
+ if(!point||!Number.isFinite(point.lat)||!Number.isFinite(point.lng)||Math.abs(point.lat)>90||Math.abs(point.lng)>180)throw new Error('Ponto inválido.')
+ if(points.length<3)return [...points,point]
+ let edge=edgeIndex
+ if(!Number.isInteger(edge)||edge<0||edge>=points.length){
+  let best=Infinity;const cos=Math.cos(point.lat*Math.PI/180)
+  for(let i=0;i<points.length;i++){
+   const a=points[i],b=points[(i+1)%points.length],dx=(b.lng-a.lng)*cos,dy=b.lat-a.lat
+   const x=(point.lng-a.lng)*cos,y=point.lat-a.lat,t=Math.max(0,Math.min(1,(x*dx+y*dy)/(dx*dx+dy*dy||1)))
+   const distance=(x-t*dx)**2+(y-t*dy)**2
+   if(distance<best){best=distance;edge=i}
+  }
+ }
+ return [...points.slice(0,edge+1),point,...points.slice(edge+1)]
+}

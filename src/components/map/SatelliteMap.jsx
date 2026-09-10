@@ -19,7 +19,7 @@ const routePoint=value=>validLocation(Array.isArray(value)?{lat:value[0],lng:val
 
 export default function SatelliteMap({
  center=null,zoom=15,pins=[],polygons=[],route=[],routes=[],draft=[],fit=true,onClick,onPinClick,selectedId=null,
- height=280,className='',label='Mapa de satélite',interactive=true,controls=true,editorTools=null,editorActions=[],footerTools=null,adaptive=false,onNavigateMap,onPanelChange,onDraftPointClick=null,clientId=null,onUseReference=null,adoptionDisabled=false
+ height=280,className='',label='Mapa de satélite',interactive=true,controls=true,editorTools=null,editorActions=[],footerTools=null,adaptive=false,onNavigateMap,onPanelChange,onDraftPointClick=null,onDraftPointMove=null,onDraftPointInsert=null,clientId=null,onUseReference=null,adoptionDisabled=false
 }){
  const shell=useRef(null)
  const container=useRef(null)
@@ -27,7 +27,7 @@ export default function SatelliteMap({
  const leafletRef=useRef(null)
  const layersRef=useRef(null)
  const baseRenderRef=useRef(null)
- const draftRenderRef=useRef({vertices:[],line:null,area:null})
+ const draftRenderRef=useRef({vertices:[],midpoints:[],line:null,area:null})
  const referenceRenderRef=useRef(new Map())
  const clickRef=useRef(onClick)
  const pinClickRef=useRef(onPinClick)
@@ -37,6 +37,9 @@ export default function SatelliteMap({
  const previousFitRef=useRef(fit)
  const selectionRef=useRef(null)
  const draftPointRef=useRef(onDraftPointClick);draftPointRef.current=onDraftPointClick
+ const draftMoveRef=useRef(onDraftPointMove);draftMoveRef.current=onDraftPointMove
+ const draftInsertRef=useRef(onDraftPointInsert);draftInsertRef.current=onDraftPointInsert
+ const draftCoordinatesRef=useRef([])
  const [referenceLayers,setReferenceLayers]=useState([])
  const [viewport,setViewport]=useState(null)
  const [cadastralNotice,setCadastralNotice]=useState('Cadastros automáticos: aproxime o mapa.')
@@ -131,7 +134,7 @@ export default function SatelliteMap({
   let everything=baseRenderRef.current?.everything||[]
   let selectedPin=baseRenderRef.current?.selectedPin||null
   if(baseRenderRef.current?.signature!==baseSignature){
-  group.clearLayers();draftRenderRef.current={vertices:[],line:null,area:null}
+  group.clearLayers();draftRenderRef.current={vertices:[],midpoints:[],line:null,area:null}
   everything=[];selectedPin=null
   for(const pin of pins){
    const point=validLocation(pin);if(!point)continue
@@ -185,17 +188,51 @@ export default function SatelliteMap({
   baseRenderRef.current={signature:baseSignature,everything,selectedPin}
   }
   const drawing=draftRenderRef.current,coordinates=draft.map(validLocation).filter(Boolean).map(point=>[point.lat,point.lng])
+  draftCoordinatesRef.current=coordinates
   while(drawing.vertices.length>coordinates.length)group.removeLayer(drawing.vertices.pop())
   coordinates.forEach((coordinate,index)=>{
    let vertex=drawing.vertices[index]
-   if(!vertex){vertex=L.circleMarker(coordinate,{radius:10,color:'#fff',weight:2,fillColor:'#2d8cff',fillOpacity:1,bubblingMouseEvents:false}).addTo(group);vertex.on('click',()=>draftPointRef.current?.(index));drawing.vertices.push(vertex)}
+   if(!vertex){
+    vertex=L.marker(coordinate,{icon:L.divIcon({className:'val-map-vertex',html:'<span></span>',iconSize:[28,28],iconAnchor:[14,14]}),draggable:Boolean(onDraftPointMove),keyboard:true,autoPan:true,bubblingMouseEvents:false,zIndexOffset:1600,title:`Ponto ${index+1}: arraste para mover; toque para apagar`}).addTo(group)
+    vertex.on('click',()=>{if(!vertex._valDragging)draftPointRef.current?.(index)})
+    vertex.on('dragstart',()=>{vertex._valDragging=true})
+    vertex.on('drag',()=>{
+     const point=vertex.getLatLng(),live=draftCoordinatesRef.current.map((p,i)=>i===index?[point.lat,point.lng]:p)
+     drawing.line?.setLatLngs(live);drawing.area?.setLatLngs(live)
+     for(const midpoint of drawing.midpoints){const i=midpoint._valEdge,a=live[i],b=live[(i+1)%live.length];if(a&&b)midpoint.setLatLng([(a[0]+b[0])/2,(a[1]+b[1])/2])}
+    })
+    vertex.on('dragend',()=>{
+     const point=vertex.getLatLng();draftMoveRef.current?.(index,{lat:Number(point.lat.toFixed(6)),lng:Number(point.lng.toFixed(6))})
+     // Leaflet normally suppresses click after a drag; also protect touch events.
+     setTimeout(()=>{vertex._valDragging=false},0)
+    })
+    const element=vertex.getElement();element?.setAttribute('role','button');element?.setAttribute('aria-label',`Ponto ${index+1}. Arraste para mover; toque para apagar.`)
+    element?.addEventListener('keydown',event=>{if(event.key==='Delete'||event.key==='Backspace'){event.preventDefault();event.stopPropagation();draftPointRef.current?.(index)}})
+    drawing.vertices.push(vertex)
+   }
    else if(vertex._valCoordinate!==coordinate.join(','))vertex.setLatLng(coordinate)
+   if(onDraftPointMove)vertex.dragging?.enable();else vertex.dragging?.disable()
    vertex._valCoordinate=coordinate.join(',');vertex.bindTooltip(`Ponto ${index+1}${onDraftPointClick?' • toque para apagar':''}`)
   })
   for(const [key,min,make,options] of [['line',2,'polyline',{color:'#2d8cff',weight:2}],['area',3,'polygon',{color:'#2d8cff',weight:1,fillColor:'#2d8cff',fillOpacity:.12,dashArray:'4 4'}]]){
    if(coordinates.length<min){if(drawing[key])group.removeLayer(drawing[key]);drawing[key]=null}
    else if(drawing[key])drawing[key].setLatLngs(coordinates)
    else drawing[key]=L[make](coordinates,{...options,interactive:false}).addTo(group)
+  }
+  // Bounded handles prevent a dense imported boundary from filling the screen
+  // with hundreds of + icons. Saved-field editing also offers nearest-edge taps.
+  const midpointCount=onDraftPointInsert&&coordinates.length>=3&&coordinates.length<80?coordinates.length:0
+  while(drawing.midpoints.length>midpointCount)group.removeLayer(drawing.midpoints.pop())
+  for(let index=0;index<midpointCount;index++){
+   const a=coordinates[index],b=coordinates[(index+1)%coordinates.length],point=[(a[0]+b[0])/2,(a[1]+b[1])/2]
+   let marker=drawing.midpoints[index]
+   if(!marker){
+    marker=L.marker(point,{icon:L.divIcon({className:'val-map-midpoint',html:'<span>+</span>',iconSize:[26,26],iconAnchor:[13,13]}),keyboard:true,bubblingMouseEvents:false,zIndexOffset:1400,title:'Inserir ponto neste lado'}).addTo(group);marker._valEdge=index
+    const insert=()=>{const p=marker.getLatLng();draftInsertRef.current?.(index,{lat:p.lat,lng:p.lng})}
+    marker.on('click',insert);marker.getElement()?.setAttribute('aria-label',`Inserir ponto após o ponto ${index+1}`);marker.getElement()?.setAttribute('role','button')
+    marker.getElement()?.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();event.stopPropagation();insert()}})
+    drawing.midpoints.push(marker)
+   }else marker.setLatLng(point)
   }
   everything=[...everything,...coordinates]
   const start=validLocation(center)
@@ -271,7 +308,7 @@ export default function SatelliteMap({
  },[basemap,tileAttempt,mapStatus])
 
  const signature=JSON.stringify({baseSignature,draft,center,fit,zoom})
- useEffect(()=>{renderRef.current()},[signature,Boolean(onPinClick),Boolean(onDraftPointClick)])
+ useEffect(()=>{renderRef.current()},[signature,Boolean(onPinClick),Boolean(onDraftPointClick),Boolean(onDraftPointMove),Boolean(onDraftPointInsert)])
 
  useEffect(()=>{
   mapRef.current?.invalidateSize({pan:false})

@@ -3,6 +3,7 @@ import {fileURLToPath} from 'node:url'
 import test from 'node:test'
 import React from 'react'
 import {renderToStaticMarkup} from 'react-dom/server'
+import {act,create} from 'react-test-renderer'
 import {createServer} from 'vite'
 
 test('voice stage — estados, controles e falha preservam uma saída utilizável',async t=>{
@@ -66,6 +67,51 @@ test('voice stage — estados, controles e falha preservam uma saída utilizáve
    assert.doesNotMatch(markup,/Fale naturalmente/)
    const idle=stage({status:'LISTENING',microphoneActive:true})
    assert.match(idle,/Estou ouvindo/)
+  })
+  await t.test('recuperação mantém pergunta e identifica a tentativa em andamento',()=>{
+   const markup=stage({status:'THINKING',microphoneActive:true,recoveringTurn:true,interimTranscript:'Como foi a visita ao Antônio?',error:'max_output_tokens'})
+   assert.match(markup,/Recuperando a resposta/)
+   assert.match(markup,/Sua pergunta foi preservada/)
+   assert.match(markup,/Como foi a visita ao Antônio\?/)
+   assert.match(markup,/is-recovering/)
+   assert.doesNotMatch(markup,/Estou ouvindo|max_output_tokens|role="alert"/)
+   assert.match(markup,/Pausar modo conversa/)
+  })
+  await t.test('resposta interrompida oferece recuperação do turno, sem reiniciar a sessão',()=>{
+   let turnRetries=0
+   let reconnects=0
+   let renderer
+   act(()=>{renderer=create(React.createElement(ValRealtimeConversationStage,{state:{status:'LISTENING',microphoneActive:true,canRetryTurn:true,error:'Falha: max_output_tokens'},onRetry:()=>reconnects++,onRetryTurn:()=>turnRetries++}))})
+   const retry=renderer.root.findByProps({'aria-label':'Tentar responder novamente sem repetir a pergunta'})
+   assert.equal(retry.props.disabled,false)
+   act(()=>retry.props.onClick())
+   assert.equal(turnRetries,1)
+   assert.equal(reconnects,0)
+   const markup=stage({status:'LISTENING',microphoneActive:true,canRetryTurn:true,error:'Falha: max_output_tokens',assistantTranscript:'A visita do Antônio...'},{onRetryTurn:()=>{}})
+   assert.match(markup,/Resposta interrompida/)
+   assert.match(markup,/VAL · Resposta incompleta/)
+   assert.match(markup,/A nova tentativa começa a resposta desde o início/)
+   assert.match(markup,/sem repetir/)
+   assert.doesNotMatch(markup,/max_output_tokens|Estou ouvindo/)
+   act(()=>renderer.unmount())
+  })
+  await t.test('pausa prevalece sobre trabalho pendente e impede repetir o turno',()=>{
+   const markup=stage({status:'PAUSED',microphoneActive:false,canRetryTurn:true,recoveringTurn:true},{processing:true,onRetryTurn:()=>{}})
+   assert.match(markup,/Conversa pausada/)
+   assert.doesNotMatch(markup,/Recuperando a resposta|Pensando na sua pergunta|val-conversation-spinner/)
+   assert.match(markup,/<button[^>]*disabled=""[^>]*aria-label="Tentar responder novamente sem repetir a pergunta"/)
+   assert.match(markup,/Retomar modo conversa/)
+  })
+  await t.test('fala em andamento usa indicador de áudio mesmo com ferramenta pendente',()=>{
+   const markup=stage({status:'SPEAKING',microphoneActive:true,canBargeIn:true},{processing:true})
+   assert.match(markup,/VAL está falando/)
+   assert.match(markup,/is-speaking/)
+   assert.doesNotMatch(markup,/val-conversation-spinner/)
+  })
+  await t.test('falha técnica de conexão oferece uma mensagem legível',()=>{
+   const markup=stage({status:'FALLBACK',microphoneActive:false,error:'response.failed: invalid_request_error'})
+   assert.match(markup,/Não foi possível manter a conexão de voz/)
+   assert.doesNotMatch(markup,/response.failed|invalid_request_error/)
   })
  }finally{await vite.close()}
 })

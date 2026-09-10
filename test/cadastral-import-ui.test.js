@@ -82,3 +82,40 @@ test('late registry lookup cannot attach a previous producer holder after switch
   assert.match(JSON.stringify(changes.at(-1)),/Titular B/);assert.doesNotMatch(JSON.stringify(changes.at(-1)),/Titular A/)
  }finally{if(app)await act(async()=>app.unmount());globalThis.fetch=oldFetch}
 })
+
+test('saved field edits move, insert and delete vertices in review; cancel and save preserve its identity and season scope',async()=>{
+ const oldFetch=globalThis.fetch,oldWindow=globalThis.window,writes=[]
+ const original={id:'f1',name:'Talhão existente',areaHa:100,points,seasons:[{season:'2627V',crop:'Soja',areaHa:100,productivityTarget:3600,unit:'kg/ha'},{season:'2727I',crop:'Trigo',areaHa:100,productivityTarget:50,unit:'sc/ha'}]}
+ const profile={property:{id:'p1',name:'Teste'},fields:[original],properties:[]}
+ const snapshot=JSON.stringify(profile)
+ globalThis.window={confirm:()=>true,dispatchEvent:()=>{}}
+ globalThis.fetch=async(url,options={})=>{if(options.method==='PUT')writes.push(JSON.parse(options.body));return {ok:true,json:async()=>profile}}
+ let app
+ try{
+  await act(async()=>{app=TestRenderer.create(React.createElement(PropertyFields,{client:{id:'a'}}))})
+  const map=()=>app.root.findByType('map-test')
+  await act(async()=>map().props.editorActions.find(action=>action.id==='edit').onClick())
+  const select=()=>app.root.findByProps({'aria-label':'Talhão para editar pontos'})
+  await act(async()=>select().props.onChange({target:{value:'f1'}}))
+  assert.deepEqual(map().props.draft,points);assert.notEqual(map().props.draft,points);assert.equal(map().props.polygons.length,0)
+  await act(async()=>map().props.onDraftPointMove(0,{lat:-28.001,lng:-54.001}))
+  await act(async()=>map().props.onDraftPointInsert(0,{lat:-28.0005,lng:-53.995}))
+  assert.equal(map().props.draft.length,5);assert.equal(writes.length,0)
+  await act(async()=>button(app,'Cancelar desenho').props.onClick())
+  assert.equal(map().props.draft.length,0);assert.deepEqual(map().props.polygons[0].points,points)
+  await act(async()=>select().props.onChange({target:{value:'f1'}}))
+  await act(async()=>map().props.onDraftPointMove(0,{lat:-28.001,lng:-54.001}))
+  await act(async()=>map().props.onDraftPointInsert(0,{lat:-28.0005,lng:-53.995}))
+  await act(async()=>map().props.onDraftPointClick(2))
+  const revised=map().props.draft;assert.equal(revised.length,4)
+  await act(async()=>button(app,'Concluir talhão').props.onClick())
+  assert.equal(writes.length,0);assert.equal(map().props.draft.length,0)
+  await act(async()=>button(app,'Salvar mapeamento').props.onClick())
+  assert.equal(writes.length,1);assert.equal(writes[0].fields.length,1)
+  const saved=writes[0].fields[0]
+  assert.equal(saved.id,'f1');assert.equal(saved.season,'2627V');assert.equal(saved.crop,'Soja');assert.deepEqual(saved.points,revised)
+  assert.equal(Object.hasOwn(saved,'productivityTarget'),false,'geometry-only edit must preserve yield in kg/ha')
+  assert.equal(Object.hasOwn(saved,'seasons'),false,'only selected season is updated; history stays server-side')
+  assert.deepEqual(writes[0].removedFieldIds,[]);assert.equal(JSON.stringify(profile),snapshot)
+ }finally{if(app)await act(async()=>app.unmount());globalThis.fetch=oldFetch;globalThis.window=oldWindow}
+})
