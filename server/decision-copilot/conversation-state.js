@@ -37,6 +37,7 @@ const uniqueBy=(items,keyOf,limit)=>{
  return output
 }
 const normalize=value=>clean(value,4000).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR')
+const scopedObjectReference=/\b(?:[dn]?[eE]ss[ae]|[dn]?est[ae]|naquel[ae]|daquel[ae])\s+(?:area|talhao|analise|produto|propriedade|fazenda|visita)\b/gi
 
 const cropLabels=Object.freeze({milho:'Milho',soja:'Soja',trigo:'Trigo',canola:'Canola',sorgo:'Sorgo',arroz:'Arroz',feijao:'Feijão',algodao:'Algodão',pastagem:'Pastagem'})
 
@@ -236,7 +237,7 @@ function turn(value,scope={}){
   uncertainty:clean(value.decision_thesis.uncertainty??value.decision_thesis.KEY_UNCERTAINTY,700)||null,
   next_action:clean(value.decision_thesis.next_action??value.decision_thesis.nextAction,700)||null
  }:null
- return {role,text,status,scope_verified:scopeVerified,server_grounded:serverGrounded,conversation_id:conversationId||null,context_epoch:contextEpoch,modality:['text','voice','photo','file','tool'].includes(String(value.modality))?String(value.modality):'text',intent:clean(value.intent,80)||null,created_at:iso(value.created_at??value.at),...scopedFields(value,scope),...(hasTurnFacts?{facts}:{}),...(hasTurnQuestions?{questions}:{}),...(hasTurnThesis?{decision_thesis:decisionThesis?{...decisionThesis,...scopedFields(value.decision_thesis,scope)}:null}:{})}
+ return {role,text,status,scope_verified:scopeVerified,server_grounded:serverGrounded,...(serverGrounded&&identifier(value.response_id)?{response_id:identifier(value.response_id)}:{}),conversation_id:conversationId||null,context_epoch:contextEpoch,modality:['text','voice','photo','file','tool'].includes(String(value.modality))?String(value.modality):'text',intent:clean(value.intent,80)||null,created_at:iso(value.created_at??value.at),...scopedFields(value,scope),...(hasTurnFacts?{facts}:{}),...(hasTurnQuestions?{questions}:{}),...(hasTurnThesis?{decision_thesis:decisionThesis?{...decisionThesis,...scopedFields(value.decision_thesis,scope)}:null}:{})}
 }
 
 export function normalizeConversationState(value={},scope={}){
@@ -349,6 +350,11 @@ export function switchConversationClient(current={},client,scope={}){
 function shouldPreserveDomain(message,event={},classifiedDomain='GENERAL'){
  const referenceKind=conversationReferenceKind(message)
  if(event.preserveDomain===true||event.sessionCommand)return referenceKind==='TURN_CONTENT'&&classifiedDomain==='GENERAL'
+ // “E nessa área?” aponta para o objeto autorizado da sessão. Retirar apenas o demonstrativo
+ // antes de classificar distingue a continuidade de uma pergunta nova sobre crédito/mercado.
+ const source=normalize(message)
+ const withoutObject=source.replace(scopedObjectReference,'')
+ if(withoutObject!==source&&classifyValContextDomain(withoutObject)==='GENERAL')return true
  return ['TURN_CONTENT','ENTITY_ONLY'].includes(referenceKind)&&classifiedDomain==='GENERAL'
 }
 
@@ -449,7 +455,7 @@ export function advanceConversationState(current={},event={}){
   next_action:clean(reasoning.recommended_strategy?.action??reasoning.next_commitment,700)||null
  }:null
  const reading=clean(reasoning.recommended_strategy?.reading??event.response?.advice?.answer,1200)
- const assistantTurn=reading&&!localPreferenceCommand?turn({role:'assistant',status:'completed',server_grounded:true,text:reading,facts,questions:newQuestions,decision_thesis:turnDecisionThesis,modality:event.responseMode==='audio'?'voice':'text',intent:reasoning.intent??event.intent,created_at:event.now},turnScope):null
+ const assistantTurn=reading&&!localPreferenceCommand?turn({role:'assistant',status:'completed',server_grounded:true,response_id:reasoning.reasoning_id,text:reading,facts,questions:newQuestions,decision_thesis:turnDecisionThesis,modality:event.responseMode==='audio'?'voice':'text',intent:reasoning.intent??event.intent,created_at:event.now},turnScope):null
  const mentionedEntities=[client,active].filter(Boolean)
  const scopedPreviousFacts=comparisonPairChanged?[]:previous.session_facts.filter(item=>itemMatchesAuthorizedSubjects(item,authorizedSubjectIds,scopeBoundary))
  const scopedPreviousHypotheses=comparisonPairChanged?[]:previous.session_hypotheses.filter(item=>itemMatchesAuthorizedSubjects(item,authorizedSubjectIds,scopeBoundary))
@@ -611,5 +617,5 @@ export function conversationStatePromptContext(state={}){
 
 export function messageNeedsSessionReference(message=''){
  const source=normalize(message)
- return /\b(?:ele|ela|dele|dela|essa area|esse talhao|essa analise|esse produto|aquela visita|isso|o filho dele|a primeira aplicacao|volta pro|volte para)\b/.test(source)||clean(message).length<=90&&/^(?:e|agora|mas|entao|por que|porque|aprofunda|resume|repete)\b/.test(source)
+ return source.replace(scopedObjectReference,'')!==source||/\b(?:ele|ela|dele|dela|aquela visita|isso|o filho dele|a primeira aplicacao|volta pro|volte para)\b/.test(source)||clean(message).length<=90&&/^(?:e|agora|mas|entao|por que|porque|aprofunda|resume|repete)\b/.test(source)
 }

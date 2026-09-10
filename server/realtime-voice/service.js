@@ -52,6 +52,10 @@ export function createRealtimeVoiceService({runtimeConfig,client,repository,conv
  const budgetUsd=Math.min(25,Math.max(1,Number(runtimeConfig?.realtimeVoiceBudgetUsd)||25))
  const reservationUsd=Math.min(2,Math.max(.25,Number(runtimeConfig?.realtimeVoiceReservationUsd)||1))
  const maxSessionSeconds=Math.min(600,Math.max(60,Number(runtimeConfig?.realtimeVoiceMaxSessionSeconds)||600))
+ // Realtime counts the tool call and spoken output in its response budget.
+ // Keep short speech in the instructions, without truncating tool arguments.
+ const configuredOutputTokens=Number(runtimeConfig?.realtimeVoiceMaxOutputTokens)
+ const maxOutputTokens=Number.isFinite(configuredOutputTokens)?Math.trunc(Math.min(4096,Math.max(1024,configuredOutputTokens))):4096
  const vadEagerness=['low','medium','high','auto'].includes(String(runtimeConfig?.realtimeVoiceVadEagerness))?String(runtimeConfig.realtimeVoiceVadEagerness):'low'
  const admission=createRealtimeSessionAdmission({limit:Math.max(1,Math.min(20,Number(runtimeConfig?.realtimeVoiceRequestsPerTenMinutes)||6)),now})
  const actorKey=identity=>`${String(identity?.tenantId||'')}:${String(identity?.id||'')}`
@@ -112,7 +116,7 @@ export function createRealtimeVoiceService({runtimeConfig,client,repository,conv
    const safetyIdentifier=createHash('sha256').update(`${tenantId}:${ownerId}`).digest('hex')
    let secret
    try{
-    secret=await client.realtime.clientSecrets.create({expires_after:{anchor:'created_at',seconds:30},session:{type:'realtime',model,output_modalities:['audio'],instructions:buildRealtimeValInstructions({context:realtimeContext,model}),max_output_tokens:512,tool_choice:'auto',tools:realtimeValTools,tracing:null,audio:{input:{noise_reduction:{type:'far_field'},transcription:{model:runtimeConfig.voiceTranscriptionModel||'gpt-transcribe',language:'pt'},turn_detection:{type:'semantic_vad',eagerness:vadEagerness,create_response:true,interrupt_response:true}},output:{voice:'marin',speed:1.05}}}},{headers:{'OpenAI-Safety-Identifier':safetyIdentifier},maxRetries:0,timeout:10_000})
+    secret=await client.realtime.clientSecrets.create({expires_after:{anchor:'created_at',seconds:30},session:{type:'realtime',model,output_modalities:['audio'],instructions:buildRealtimeValInstructions({context:realtimeContext,model}),max_output_tokens:maxOutputTokens,tool_choice:'required',parallel_tool_calls:false,tools:realtimeValTools,tracing:null,audio:{input:{noise_reduction:{type:'far_field'},transcription:{model:runtimeConfig.voiceTranscriptionModel||'gpt-transcribe',language:'pt'},turn_detection:{type:'semantic_vad',eagerness:vadEagerness,create_response:true,interrupt_response:true}},output:{voice:'marin',speed:1.05}}}},{headers:{'OpenAI-Safety-Identifier':safetyIdentifier},maxRetries:0,timeout:10_000})
     if(!secret?.value)throw new Error('invalid_realtime_secret_response')
    }catch(error){
     await costStore.record({sessionId,userId:ownerId,responseId:`failed:${sessionId}`,costUsd:0,final:true,budgetUsd,model,usage:{}}).catch(()=>null)
@@ -125,7 +129,7 @@ export function createRealtimeVoiceService({runtimeConfig,client,repository,conv
    sessions.set(sessionId,{tenantId,ownerId,clientId,conversationId,contextEpoch,contextDomain,client:context.client||null,activeContext,scopeChanged:false,expiresAt:Date.now()+maxSessionSeconds*1000+60_000})
    logger({event:'val.realtime_voice.session_created',sessionId,tenantId,ownerId,model,requestId,clientScoped:Boolean(clientId)})
    admission.complete(attempt,{success:true})
-   return {contractVersion:'val.realtime_voice.session.v1',sessionId,clientSecret:secret.value,expiresAt:secret.expires_at,providerSessionId:secret.session?.id||null,model,transport:'WEBRTC',callUrl:'https://api.openai.com/v1/realtime/calls',maxSessionSeconds,budget:{limitUsd:budgetUsd,remainingUsd:budget.remainingUsd,reservationUsd},context:{conversationId,clientId:clientId||null,contextEpoch,contextDomain,persistenceMode:'NONE'},capabilities:{vad:'SEMANTIC_VAD',vadEagerness,bargeIn:true,streamingAudio:true,tools:'GOVERNED',memory:'CONFIRM_REQUIRED'}}
+   return {contractVersion:'val.realtime_voice.session.v1',sessionId,clientSecret:secret.value,expiresAt:secret.expires_at,providerSessionId:secret.session?.id||null,model,transport:'WEBRTC',callUrl:'https://api.openai.com/v1/realtime/calls',maxSessionSeconds,...(realtimeContext.conversation.resume_response?{resumeResponse:realtimeContext.conversation.resume_response}:{}),budget:{limitUsd:budgetUsd,remainingUsd:budget.remainingUsd,reservationUsd},context:{conversationId,clientId:clientId||null,contextEpoch,contextDomain,persistenceMode:'NONE'},capabilities:{vad:'SEMANTIC_VAD',vadEagerness,bargeIn:true,streamingAudio:true,tools:'GOVERNED',memory:'CONFIRM_REQUIRED'}}
    }catch(error){
     const delay=admission.complete(attempt,{recoveryRequired:error.recoveryRequired===true,retryAfterSeconds:error.retryAfterSeconds,canRetry:error.safeToRetry===true})
     if(delay)error.retryAfterSeconds=delay

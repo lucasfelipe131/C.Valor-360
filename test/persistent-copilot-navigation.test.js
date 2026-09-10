@@ -230,13 +230,13 @@ test('real App + voice hook + service reconnect after a domain epoch change and 
   await app.click('Iniciar modo conversa por voz')
   const first=app.peers[0]
   await act(async()=>{first.dc.emit({type:'conversation.item.input_audio_transcription.completed',item_id:'one',transcript:'Quero entender manejo de plantas daninhas na soja'});await flush()})
-  await act(async()=>{first.dc.emit({type:'response.output_audio_transcript.done',response_id:'one',transcript:'Vamos falar do manejo.'});await flush();await flush()})
+  await act(async()=>{first.dc.emit({type:'response.output_audio_transcript.done',response_id:'one',transcript:'Vamos falar do manejo.'});first.dc.emit({type:'response.done',response:{id:'one',status:'completed'}});await flush();await flush()})
   assert.equal(app.voice().props['data-microphone-active'],'true')
   assert.equal(app.peers.length,2);assert.equal(app.streams.length,2)
   assert.match(providerRequests[1].session.instructions,/Quero entender manejo de plantas daninhas na soja/)
   const second=app.peers[1]
   await act(async()=>{second.dc.emit({type:'conversation.item.input_audio_transcription.completed',item_id:'two',transcript:'E o crédito rural para custeio?'});await flush()})
-  await act(async()=>{second.dc.emit({type:'response.output_audio_transcript.done',response_id:'two',transcript:'Vamos verificar essa dúvida.'});await flush();await flush()})
+  await act(async()=>{second.dc.emit({type:'response.output_audio_transcript.done',response_id:'two',transcript:'Vamos verificar essa dúvida.'});second.dc.emit({type:'response.done',response:{id:'two',status:'completed'}});await flush();await flush()})
   assert.equal(app.voice().props['data-microphone-active'],'true')
   const requests=app.requests.filter(r=>r.path==='/api/v1/realtime-voice/sessions')
   assert.equal(requests.length,4,'one rejected stale epoch is retried once before a paid session')

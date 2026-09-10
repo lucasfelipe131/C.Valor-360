@@ -1,4 +1,5 @@
 import {readFileSync} from 'node:fs'
+import {stripMessagePreamble} from './message-preamble.js'
 
 const agrofitProducts=JSON.parse(readFileSync(new URL('../manual/app/agrofit-products.json',import.meta.url),'utf8'))
 const foliarProducts=JSON.parse(readFileSync(new URL('../manual/app/foliar-products.json',import.meta.url),'utf8'))
@@ -19,6 +20,39 @@ const accountProductText=context=>[
 ].filter(Boolean).join(' ')
 const ingredientSignature=value=>normalize(String(value||'').replace(/\([^)]*(?:g\s*\/\s*[lk]|grama|ml\s*\/\s*l|%)?[^)]*\)/gi,' ')).split(/\s+\+\s+|\s+e\s+/).map(item=>item.trim()).filter(Boolean).sort().join(' + ')
 const exactComposition=value=>normalize(value)
+let descriptiveProductIndex
+function productDescriptionIndex(){
+ if(descriptiveProductIndex)return descriptiveProductIndex
+ const index=new Map()
+ for(const [kind,products] of [['agrofit',agrofitProducts],['foliar',foliarProducts]])for(const product of products){
+  for(const alias of new Set(clean(product.name,500).split(';').map(normalize).filter(Boolean))){
+   const existing=index.get(alias)||[]
+   existing.push({...product,kind})
+   index.set(alias,existing)
+  }
+ }
+ descriptiveProductIndex=index
+ return index
+}
+
+// Public descriptive lookup only. Match complete catalog aliases; a partial
+// brand or an unknown suffix must never select a different formulation.
+export function generalProductCatalogGuidance(message=''){
+ const source=stripMessagePreamble(normalize(message))
+ const request=/^(?:(?:o que e|quem fabrica|qual (?:e )?a (?:composicao|categoria)|qual (?:e )?o (?:principio ativo|ingrediente ativo|fabricante)|quais (?:sao )?os (?:principios ativos|ingredientes ativos)|(?:me )?(?:fale|fala|conte|conta|explique|explica) (?:sobre )?|descreva)\s*(?:(?:o|a|do|da|de)\s+)?(?:produto\s+)?)(.+)$/.exec(source)
+ const sought=(request?.[1]||source).trim()
+ if(!sought||sought.length<3)return null
+ const matches=productDescriptionIndex().get(sought)||[]
+ if(matches.length!==1)return null
+ const product=matches[0]
+ const category=clean(product.type||product.category,120)
+ const composition=clean(product.active||product.composition||product.guarantee,420)
+ const verified=product.kind==='agrofit'||product.verified===true
+ const compositionLabel=product.kind==='agrofit'&&/\bprincipios? ativos?\b/.test(source)?'Princípios ativos cadastrados':product.kind==='agrofit'&&/\bingredientes? ativos?\b/.test(source)?'Ingredientes ativos cadastrados':'Composição cadastrada'
+ const summary=`No catálogo local do Manual do Agrônomo, ${clean(product.name,180)} aparece${category?` como ${category}`:''}${product.maker?`, de ${clean(product.maker,160).replace(/\.+$/,'')}`:''}.${verified&&composition?` ${compositionLabel}: ${composition}.`:' A composição não está confirmada nessa base.'} A atualidade da ficha não foi verificada; indicação, dose e restrições exigem a bula ou ficha técnica vigente.`
+ const reference=Object.freeze({id:product.kind==='agrofit'?`manual:agrofit:${clean(product.registration,80)}`:`manual:foliar:${clean(product.id,100)}`,name:clean(product.name,180),source:product.kind==='agrofit'?AGROFIT_URL:clean(product.source,500)||null,observed_at:null,current_status:'NOT_VERIFIED'})
+ return Object.freeze({summary,reference})
+}
 const cropMatch=(product,cultures)=>array(product.crops).some(crop=>normalize(crop).includes('todas as culturas')||overlap(crop,cultures)>0)
 const evidence=(id,product,claim)=>({id,claim_supported:clean(claim,650),source_type:'official_product_catalog',source_id:product.registration?`mapa:${product.registration}`:product.source||product.id||product.name,observed_at:'unknown',direct_observation:true,quality:'moderate',relevance:'high',uncertainty:'O catálogo é uma base de consulta. Confirme registro, cultura, alvo, modalidade, formulação, restrições e bula ou ficha técnica vigentes antes de comparar ou recomendar.'})
 
