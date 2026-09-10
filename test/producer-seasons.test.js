@@ -15,7 +15,10 @@ test('season budgets preserve missing inputs and do not manufacture available gr
 })
 test('prior yield is area weighted, prior seasons only, matching season type and crop',()=>{
  const seasons=[{season:'2425V',crops:[{crop:'Soja',areaHa:10,actualYield:40}]},{season:'2526V',crops:[{crop:'Soja',areaHa:30,actualYield:60}]},{season:'2727I',crops:[{crop:'Soja',areaHa:100,actualYield:100}]}]
- assert.deepEqual(previousYield(seasons,'2627V','Soja'),{yield:55,count:2})
+ assert.deepEqual(previousYield(seasons,'2627V','Soja'),{yield:55,count:2,seasons:['2425V','2526V']})
+ // O texto de origem gravado no cadastro nomeia exatamente estas safras: a safra de inverno e as
+ // futuras nao entram na media e nao podem aparecer na procedencia.
+ assert.deepEqual(previousYield([...seasons,{season:'2829V',crops:[{crop:'Soja',areaHa:50,actualYield:90}]}],'2627V','Soja').seasons,['2425V','2526V'])
  assert.equal(previousYield(seasons,'2627V','Milho'),null)
 })
 test('validation rejects invalid inputs, duplicate crops, bad date and negative quantities',()=>{

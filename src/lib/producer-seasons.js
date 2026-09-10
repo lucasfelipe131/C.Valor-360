@@ -23,9 +23,13 @@ export function cropPotential(row){
  const targetSc=availableSc!==null&&known(row.targetSharePct)&&row.targetSharePct<=100?availableSc*row.targetSharePct/100:null
  return {productionSc,actualProductionSc,availableSc,targetSc,remainingSc:targetSc!==null&&known(row.deliveredSc)?Math.max(0,targetSc-row.deliveredSc):null,achievementPct:targetSc>0&&known(row.deliveredSc)?row.deliveredSc/targetSc*100:null,conflict}
 }
+// Devolve tambem QUAIS safras entraram na conta: o texto de origem gravado no cadastro (e impresso no
+// relatorio do produtor) precisa nomear exatamente as safras da media, nao uma lista filtrada por
+// outra regra. Antes o botao refazia o filtro pela ultima letra do rotulo e citava safras futuras.
 export function previousYield(seasons,code,crop){
  const target=seasonPeriod(code);if(!target)return null
- const rows=seasons.filter(s=>{const prior=seasonPeriod(s.season);return prior&&prior.order<target.order&&prior.type===target.type}).flatMap(s=>(s.crops||[]).filter(r=>r.crop===crop&&known(r.actualYield)&&known(r.areaHa)&&r.areaHa>0))
+ const eligible=seasons.filter(s=>{const prior=seasonPeriod(s.season);return prior&&prior.order<target.order&&prior.type===target.type})
+ const rows=eligible.flatMap(s=>(s.crops||[]).filter(r=>r.crop===crop&&known(r.actualYield)&&known(r.areaHa)&&r.areaHa>0).map(r=>({...r,season:s.season})))
  const area=rows.reduce((sum,r)=>sum+r.areaHa,0)
- return area?{yield:rows.reduce((sum,r)=>sum+r.areaHa*r.actualYield,0)/area,count:rows.length}:null
+ return area?{yield:rows.reduce((sum,r)=>sum+r.areaHa*r.actualYield,0)/area,count:rows.length,seasons:[...new Set(rows.map(r=>r.season))]}:null
 }

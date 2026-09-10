@@ -37,6 +37,9 @@ const interactionIdOf=payload=>String(interactionOf(payload).voice_interaction_i
 const transcriptOf=payload=>String(interactionOf(payload).transcript?.transcript_text||interactionOf(payload).transcript?.text||interactionOf(payload).transcript_text||payload?.transcript?.transcript_text||payload?.transcript?.text||payload?.transcript_text||'')
 const statusOf=payload=>String(interactionOf(payload).state||interactionOf(payload).status||interactionOf(payload).processing_status||payload?.state||payload?.status||'').toUpperCase()
 const rawCandidates=payload=>interactionOf(payload).candidates||interactionOf(payload).extraction?.candidates||payload?.candidates||payload?.structured_candidates||[]
+// O extrator marca truncated quando o relato longo estoura o teto de candidatos. Sem ler isto, o
+// consultor confirmava metade do relato acreditando ter registrado tudo.
+const extractionOf=payload=>interactionOf(payload).extraction||payload?.extraction||{}
 const randomId=()=>globalThis.crypto?.randomUUID?.()||`voice-${Date.now()}-${Math.random().toString(36).slice(2)}`
 const normalizeCategory=value=>categoryLabels[String(value||'').toUpperCase()]?String(value).toUpperCase():'FACT_CANDIDATE'
 // O prazo vem do servidor ancorado em 23:59:59.999 de Brasília, que serializa como o DIA SEGUINTE
@@ -70,7 +73,7 @@ function VoiceCandidate({candidate,onChange,onRemove,categoryEditable=false,vali
  </article>
 }
 
-function CandidateReview({candidates,setCandidates,transcript,additions,setAdditions,additionDraft,setAdditionDraft,postVisit,outcomeType,setOutcomeType,noAction,setNoAction,onConfirm,busy,error,errorId}){
+function CandidateReview({candidates,setCandidates,transcript,extraction,additions,setAdditions,additionDraft,setAdditionDraft,postVisit,outcomeType,setOutcomeType,noAction,setNoAction,onConfirm,busy,error,errorId}){
  const active=candidates.filter(item=>item.decision!=='REJECTED')
  const removed=candidates.filter(item=>item.decision==='REJECTED')
  const visibleActive=postVisit?active.filter(item=>item.category!=='NEXT_STEP'):active
@@ -89,6 +92,7 @@ function CandidateReview({candidates,setCandidates,transcript,additions,setAddit
  const add=()=>{const statement=additionDraft.statement.trim();if(!statement)return;setAdditions(current=>[...current,{candidate_id:randomId(),category:additionDraft.category,epistemic_status:additionDraft.category==='HYPOTHESIS'?'HYPOTHESIS':'FACT_CANDIDATE',statement,due_at:additionDraft.due_at||''}]);setAdditionDraft({category:'FACT_CANDIDATE',statement:'',due_at:''})}
  return <div className="voice-review">
   <div className="voice-review-intro"><CheckCircle2/><div><small>A VAL ENTENDEU</small><h3>Revise antes de transformar fala em memória.</h3><p>Edite ou remova qualquer item. Nada material é consolidado antes da sua confirmação.</p></div></div>
+  {extraction?.truncated&&<div className="voice-error" role="alert"><AlertTriangle/><span>Este relato é longo demais para uma captura só: a VAL parou de extrair no limite de {extraction.candidate_limit||50} itens e {extraction.clauses_skipped>0?`${extraction.clauses_skipped} ${extraction.clauses_skipped===1?'trecho ficou':'trechos ficaram'} de fora`:'parte do relato ficou de fora'}. Revise a transcrição abaixo e registre o restante em uma nova captura.</span></div>}
   {grouped.length?grouped.map(([category,items])=><section className="voice-candidate-group" key={category}><h4>{categoryLabels[category]||category}</h4>{items.map(candidate=><VoiceCandidate key={candidate.candidate_id} candidate={candidate} validationError={error} errorId={errorId} onChange={update} onRemove={()=>remove(candidate.candidate_id)}/>)}</section>):nextItems.length===0&&<div className="voice-empty-review"><AlertTriangle/><p>Nenhum candidato foi identificado. Adicione abaixo somente o que você deseja confirmar.</p></div>}
   {visibleAdditions.length>0&&<section className="voice-candidate-group"><h4>Informações adicionadas por você</h4>{visibleAdditions.map(item=><VoiceCandidate key={item.candidate_id} categoryEditable candidate={{...item,decision:'CONFIRMED'}} validationError={error} errorId={errorId} onChange={candidate=>setAdditions(current=>current.map(entry=>entry.candidate_id===candidate.candidate_id?candidate:entry))} onRemove={()=>removeAddition(item.candidate_id)}/>)}</section>}
   <section className="voice-addition"><h4><Plus/>Adicionar informação</h4><div><select aria-label="Categoria da nova informação" value={additionDraft.category} onChange={event=>setAdditionDraft(current=>({...current,category:event.target.value}))}>{categories.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select><label className="voice-addition-statement"><span className="voice-sr-only">Texto da nova informação</span><textarea rows="2" maxLength="2000" value={additionDraft.statement} onChange={event=>setAdditionDraft(current=>({...current,statement:event.target.value}))} placeholder="Escreva apenas o que deseja acrescentar…"/></label>{candidateNeedsDate(additionDraft.category)&&<input aria-label="Prazo da nova informação" type="date" value={additionDraft.due_at} onChange={event=>setAdditionDraft(current=>({...current,due_at:event.target.value}))}/>}<button type="button" onClick={add} disabled={!additionDraft.statement.trim()}><Plus/>Adicionar</button></div></section>
@@ -280,7 +284,7 @@ export default function VoiceCapture({clientId,visitId,interactionType='GENERAL_
     </>}
     {['uploading','processing','confirming'].includes(phase)&&<div className="voice-processing" role="status" aria-live="polite"><span><LoaderCircle className="voice-spin"/></span><h3>{phaseCopy[phase]}</h3><p>{phase==='uploading'?'O áudio será persistido antes da transcrição para permitir retry seguro.':phase==='processing'?'A transcrição continua sendo conteúdo não confirmado.':'Memória e execução só serão atualizadas depois desta confirmação.'}</p>{phase!=='confirming'&&<button type="button" onClick={()=>close()}>Cancelar operação</button>}</div>}
     {phase==='review'&&<CandidateReview
-     candidates={candidates} setCandidates={setCandidates} transcript={transcriptOf(payload)}
+     candidates={candidates} setCandidates={setCandidates} transcript={transcriptOf(payload)} extraction={extractionOf(payload)}
      additions={additions} setAdditions={setAdditions} additionDraft={additionDraft} setAdditionDraft={setAdditionDraft}
      postVisit={isPostVisit(interactionType)} outcomeType={outcomeType} setOutcomeType={setOutcomeType}
      noAction={noAction} setNoAction={setNoAction} onConfirm={confirm} busy={busy} error={error} errorId={reviewErrorId}

@@ -183,7 +183,13 @@ export function deterministicVoiceCandidateExtraction({transcript,voiceInteracti
   const candidates=[]
   const seen=new Set()
   const blocked={PROMPT_INJECTION_IGNORED:0,PROTECTED_ATTRIBUTE_IGNORED:0,AGRONOMIC_PRESCRIPTION_IGNORED:0}
-  for(const clause of clauses(transcript)){
+  // O teto de candidatos existe, mas o relato longo parava no meio em silencio: o consultor confirmava
+  // achando que registrara tudo. Contamos as frases que ficaram de fora para a tela poder dizer.
+  const allClauses=clauses(transcript)
+  let clausesRead=0
+  let truncated=false
+  for(const clause of allClauses){
+   clausesRead++
     const reason=voiceCandidateTextSecurityReason(clause)
     if(reason){blocked[reason]++;continue}
     const matches=ambiguousCommercialSignal.test(clause)?[{category:'HYPOTHESIS'}]:deterministicRules.filter(rule=>rule.pattern.test(clause)).slice(0,4)
@@ -205,11 +211,11 @@ export function deterministicVoiceCandidateExtraction({transcript,voiceInteracti
         metadata:{extraction:'deterministic',untrusted_source:true,semantic_type:semanticType},
         now
       }))
-      if(candidates.length>=MAX_CANDIDATES)break
+      if(candidates.length>=MAX_CANDIDATES){truncated=true;break}
     }
-    if(candidates.length>=MAX_CANDIDATES)break
+    if(truncated)break
   }
-  return {candidates,security_flags:securitySummary(blocked)}
+  return {candidates,security_flags:securitySummary(blocked),truncated,clause_count:allClauses.length,clauses_read:truncated?clausesRead:allClauses.length,clauses_skipped:truncated?Math.max(0,allClauses.length-clausesRead):0,candidate_limit:MAX_CANDIDATES}
 }
 
 function safeProviderCode(error){
@@ -286,7 +292,7 @@ export class VoiceCandidateExtractor{
     }
     if(!this.client?.responses?.create){
       const fallback=deterministicVoiceCandidateExtraction({transcript,voiceInteractionId,transcriptRef,interactionType:input.interactionType??input.interaction_type,now:input.now})
-      const metadata={provider:'deterministic',model:'rules-v1',version:this.version,status:'deterministic',security_flags:fallback.security_flags}
+      const metadata={provider:'deterministic',model:'rules-v1',version:this.version,status:'deterministic',security_flags:fallback.security_flags,truncated:Boolean(fallback.truncated),clauses_skipped:fallback.clauses_skipped||0,clause_count:fallback.clause_count||0,candidate_limit:fallback.candidate_limit||MAX_CANDIDATES}
       return {...fallback,metadata,extraction_metadata:metadata}
     }
     const startedAt=Date.now()
@@ -313,7 +319,7 @@ export class VoiceCandidateExtractor{
     }catch(error){
       if(input.signal?.aborted)throw Object.assign(new Error('A extração foi cancelada.'),{code:'extraction_cancelled',statusCode:499})
       const fallback=deterministicVoiceCandidateExtraction({transcript,voiceInteractionId,transcriptRef,interactionType:input.interactionType??input.interaction_type,now:input.now})
-      const metadata={provider:'deterministic',model:'rules-v1',version:this.version,status:'fallback',latency_ms:Date.now()-startedAt,error_code:safeProviderCode(error),security_flags:fallback.security_flags}
+      const metadata={provider:'deterministic',model:'rules-v1',version:this.version,status:'fallback',latency_ms:Date.now()-startedAt,error_code:safeProviderCode(error),security_flags:fallback.security_flags,truncated:Boolean(fallback.truncated),clauses_skipped:fallback.clauses_skipped||0,clause_count:fallback.clause_count||0,candidate_limit:fallback.candidate_limit||MAX_CANDIDATES}
       return {...fallback,metadata,extraction_metadata:metadata}
     }
   }

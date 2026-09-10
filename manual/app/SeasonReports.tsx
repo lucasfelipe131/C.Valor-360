@@ -514,16 +514,34 @@ function inferCategory(value: string): CostCategory {
   return "outros";
 }
 
+// A forma explicita da planilha ("g/ha") e as abreviacoes isoladas ("t", "L", "sc", "un") nao casavam
+// com as regexes antigas e caiam no padrao por categoria: 400 g/ha de fungicida viravam kg/ha e o
+// custo estourava 1000x; 0,4 t/ha de NPK viravam kg/ha e o custo despencava 1000x. A unidade agora e
+// lida como token, com ou sem "/ha", e o mais longo ganha (kg antes de g, ton antes de t).
+const COST_UNIT_TOKENS: Array<[RegExp, CostUnit]> = [
+  [/r\$/, "R$/ha"],
+  [/mililitros?|ml/, "mL/ha"],
+  [/quilogramas?|quilos?|kilos?|kg/, "kg/ha"],
+  [/gramas?|g/, "g/ha"],
+  [/toneladas?|ton|t/, "t/ha"],
+  [/litros?|lt|l/, "L/ha"],
+  [/sacas?|sacos?|saca|saco|sc/, "saco/ha"],
+  [/horas?|hrs?|hr|h/, "h/ha"],
+  [/unidades?|unid|und|un/, "un./ha"],
+];
+
+function unitFromToken(text: string): CostUnit | null {
+  for (const [pattern, unit] of COST_UNIT_TOKENS) {
+    const matcher = new RegExp(`(?:^|[^a-z0-9])(?:${pattern.source})(?:\\s*\\/\\s*ha|\\s+por\\s+ha|(?![a-z0-9]))`);
+    if (matcher.test(text)) return unit;
+  }
+  return null;
+}
+
 function inferUnit(value: string, category: CostCategory): CostUnit {
   const text = normalizeLabel(value);
-  if (/ml/.test(text)) return "mL/ha";
-  if (/(^| )g( |$)/.test(text)) return "g/ha";
-  if (/t( |\/)ha|ton/.test(text)) return "t/ha";
-  if (/l( |\/)ha|litro/.test(text)) return "L/ha";
-  if (/saco|sc( |\/)ha/.test(text)) return "saco/ha";
-  if (/hora|h( |\/)ha/.test(text)) return "h/ha";
-  if (/unidade|un( |\/)ha/.test(text)) return "un./ha";
-  if (/kg/.test(text)) return "kg/ha";
+  const declared = unitFromToken(text);
+  if (declared) return declared;
   if (
     category === "mao-de-obra" ||
     category === "equipamentos"

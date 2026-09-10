@@ -108,3 +108,21 @@ test('Camadas — identificador da parte cadastral vem do conteúdo, não da pos
  assert.notEqual(meuId,vizinhoId,'imóveis diferentes na mesma posição não podem compartilhar id')
  assert.equal(referenceParts(layer('12.345','Fazenda São João',meu))[0].id,meuId,'o mesmo imóvel mantém o id entre consultas')
 })
+
+import {deterministicVoiceCandidateExtraction} from '../server/voice-capture/extraction.js'
+
+// VOZ-2: relato longo parava no meio sem avisar; o consultor confirmava metade acreditando ter tudo.
+test('Voz — relato longo marca o corte em vez de parar em silêncio', () => {
+ const long=Array.from({length:80},(_,index)=>`Combinei de retornar na quinta com o comparativo ${index+1}`).join('. ')+'.'
+ const extraction=deterministicVoiceCandidateExtraction({transcript:long,voiceInteractionId:'vi-1',transcriptRef:'tr-1',interactionType:'FIELD_NOTE',now:new Date('2026-09-10T12:00:00Z')})
+ assert.equal(extraction.truncated,true,'o corte precisa ser declarado')
+ assert.ok(extraction.clauses_skipped>0,'a tela precisa saber quantos trechos ficaram de fora')
+ assert.equal(extraction.candidate_limit,50)
+})
+
+test('Voz — relato curto não é marcado como cortado', () => {
+ const short='O João achou o preço caro. Combinei de retornar na quinta.'
+ const extraction=deterministicVoiceCandidateExtraction({transcript:short,voiceInteractionId:'vi-2',transcriptRef:'tr-2',interactionType:'FIELD_NOTE',now:new Date('2026-09-10T12:00:00Z')})
+ assert.equal(extraction.truncated,false)
+ assert.equal(extraction.clauses_skipped,0)
+})
