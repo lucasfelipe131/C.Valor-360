@@ -52,6 +52,19 @@ const rememberStorageScope=user=>{if(user?.storageScope)sessionStorage.setItem(a
 }
 const RouteFallback=()=> <div className="auth-loading" role="status"><BrainCircuit/><span>Carregando ambiente…</span></div>
 
+// Um deploy renomeia os pedacos carregados sob demanda (Administracao, Oportunidades, Inteligencia
+// Agronomica). Numa aba aberta desde antes do deploy o import() falha e, sem este limite, a falha
+// derrubava a arvore inteira e a area ficava em branco.
+class RouteBoundary extends React.Component{
+ constructor(props){super(props);this.state={failed:false}}
+ static getDerivedStateFromError(){return {failed:true}}
+ componentDidUpdate(previous){if(this.state.failed&&previous.routeKey!==this.props.routeKey)this.setState({failed:false})}
+ render(){
+  if(!this.state.failed)return this.props.children
+  return <div className="auth-loading" role="alert"><BrainCircuit/><div><b>Esta tela não abriu.</b><p>O aplicativo foi atualizado enquanto você estava com ele aberto. Recarregue para buscar a versão nova; nada do seu trabalho foi perdido.</p><button type="button" className="primary-btn" onClick={()=>window.location.reload()}>Recarregar</button></div></div>
+ }
+}
+
 const meta={
  dashboard:['VAL','Seu copiloto comercial e agronômico para o que importa agora'],
  clients:['Clientes','Conheça o produtor antes de oferecer uma solução'],
@@ -240,9 +253,32 @@ export default function App(){
   return navigate(entry.page)
  }
  useEffect(()=>{setCopilotPageContext(null);setCopilotSeed(null);setCopilotOpen(false);setCopilotLoaded(false);setAgroLaunch(createEmptyAgroLaunch())},[copilotOwnerScope])
- useEffect(()=>{fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(session?.authenticated)rememberStorageScope(session.user);else clearSessionPortfolioCache();setCurrentUser(session?.user||null);setPortfolioReady(Boolean(session?.user?.demo));setAuthenticated(Boolean(session?.authenticated));if(!session?.authenticated&&session?.misconfigured)setAuthNotice('O acesso seguro do servidor ainda não foi configurado.')}).catch(()=>{clearSessionPortfolioCache();setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setCurrentUser(null);setAuthNotice('Não foi possível validar o servidor. O acesso permaneceu bloqueado.');setPortfolioReady(false);setAuthenticated(false)})},[])
+ // Sinal ruim na fazenda nao pode valer logout. So limpamos o estado local quando o SERVIDOR disse
+ // que nao ha sessao (401 ou authenticated:false). Falha de rede, timeout ou 5xx bloqueiam o acesso
+ // mas preservam a conversa da VAL e o cache de Oportunidades: o cookie continua valido.
+ useEffect(()=>{fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)})
+  .then(async response=>({sessionDenied:response.status===401,session:response.ok?await response.json().catch(()=>null):null}))
+  .catch(()=>({sessionDenied:false,session:null}))
+  .then(({sessionDenied,session})=>{
+   if(session?.authenticated){rememberStorageScope(session.user);setCurrentUser(session.user);setPortfolioReady(Boolean(session.user?.demo));setAuthenticated(true);return}
+   const serverAnswered=sessionDenied||Boolean(session)
+   if(serverAnswered)clearSessionPortfolioCache()
+   setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setCurrentUser(session?.user||null);setPortfolioReady(Boolean(session?.user?.demo));setAuthenticated(false)
+   if(!serverAnswered)setAuthNotice('Não foi possível validar o servidor. O acesso permaneceu bloqueado; sua conversa e seus dados locais foram preservados.')
+   else if(session?.misconfigured)setAuthNotice('O acesso seguro do servidor ainda não foi configurado.')
+  })},[])
  useEffect(()=>{window.addEventListener('valor360:unauthorized',expireSession);return()=>window.removeEventListener('valor360:unauthorized',expireSession)},[currentUser?.storageScope])
- useEffect(()=>{if(authenticated!==true)return;const revalidate=()=>fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)}).then(response=>response.ok?response.json():Promise.reject()).then(session=>{if(!session?.authenticated){expireSession();return}setCurrentUser(session.user);rememberStorageScope(session.user)}).catch(()=>invalidateSession('Não foi possível revalidar o servidor. Entre novamente para proteger os dados.'));window.addEventListener('focus',revalidate);const timer=window.setInterval(revalidate,300000);return()=>{window.removeEventListener('focus',revalidate);window.clearInterval(timer)}},[authenticated,currentUser?.storageScope])
+ useEffect(()=>{if(authenticated!==true)return;const revalidate=()=>fetch('/api/auth/session',{signal:AbortSignal.timeout(8000)})
+   .then(async response=>({sessionDenied:response.status===401,session:response.ok?await response.json().catch(()=>null):null}))
+   // Rede caiu, timeout ou 5xx: bloqueia o acesso sem apagar nada. So o servidor dizendo que nao ha
+   // sessao (401 ou authenticated:false) limpa a conversa da VAL e o cache de Oportunidades.
+   .catch(()=>({sessionDenied:false,session:null,unreachable:true}))
+   .then(({sessionDenied,session,unreachable})=>{
+    if(session?.authenticated){setCurrentUser(session.user);rememberStorageScope(session.user);return}
+    if(sessionDenied||session){expireSession();return}
+    setAuthNotice(unreachable?'Não foi possível revalidar o servidor. Entre novamente quando o sinal voltar; nada local foi apagado.':'Não foi possível revalidar o servidor. Entre novamente para proteger os dados.')
+    setAuthenticated(false);setPortfolioReady(false)
+   });window.addEventListener('focus',revalidate);const timer=window.setInterval(revalidate,300000);return()=>{window.removeEventListener('focus',revalidate);window.clearInterval(timer)}},[authenticated,currentUser?.storageScope])
  useEffect(()=>{if(authenticated!==true||currentUser?.mustChangePassword)return;clearLegacyPortfolioCache();fetch('/api/intelligence',{signal:AbortSignal.timeout(12000)}).then(async response=>{if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));return null}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'A carteira protegida não pôde ser carregada.');return payload}).then(data=>{if(!data)return;const serverClients=Array.isArray(data.clients)?data.clients:[];setClientList(serverClients);setVisits(Array.isArray(data.visits)?data.visits:[]);setOpportunities(Array.isArray(data.opportunities)?data.opportunities:[]);setSelected(current=>serverClients.find(item=>String(item.id)===String(current?.id))||null);setPortfolioReady(true);setPortfolioError('')}).catch(error=>{setPortfolioError(error.message||'A carteira não pôde ser carregada.');if(currentUser?.demo){setPortfolioReady(true);return}setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setPortfolioReady(true);notify(error.name==='TimeoutError'?'A carteira demorou além do limite e permaneceu bloqueada.':error.message)})},[authenticated,currentUser?.demo,currentUser?.mustChangePassword])
  useEffect(()=>{if(authenticated!==true)return;const frame=window.requestAnimationFrame(resetPageViewport);return()=>window.cancelAnimationFrame(frame)},[page,valMode,authenticated])
  useEffect(()=>{if(authenticated!==true)return;const keydown=event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();openCopilot()}};window.addEventListener('keydown',keydown);return()=>window.removeEventListener('keydown',keydown)},[authenticated,page,selected?.id,clientList,copilotPageContext,copilotOwnerScope])
@@ -272,6 +308,7 @@ export default function App(){
   <main className="main" id="main-content" tabIndex="-1">
    {page!=='copilot'&&page!=='opportunities'&&<Topbar title={title} subtitle={subtitle} onNavigate={navigate} onOpenVal={()=>openCopilot()} workspace={workspace} page={page} client={selected} clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onOpenClient={openClient}/>}
    <div className={`content ${page==='copilot'?'content-copilot-fullscreen':''} ${page==='client360'&&copilotOpen?'p360-with-copilot':''} ${page!=='copilot'&&copilotOpen?'val-with-copilot':''}`}>
+    <RouteBoundary routeKey={page}>
     <Suspense fallback={<RouteFallback/>}>
     {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient} onRefreshPortfolio={refreshPortfolio} onOpenCopilot={openCopilot}/>}
     {page==='clients'&&<Clients clients={clientList} opportunities={opportunities} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
@@ -293,6 +330,7 @@ export default function App(){
     {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
     {page==='admin'&&currentUser?.role==='admin'&&<Admin currentUser={currentUser} onNotify={notify}/>}
     </Suspense>
+    </RouteBoundary>
     <Suspense fallback={null}>
 	    {copilotLoaded&&<GlobalValCopilot key={copilotOwnerScope||'session'}
 	     open={copilotOpen} onClose={closeCopilot} onPresentationChange={setCopilotPresented} embedded={page!=='copilot'} contextClient={activeCopilotClient} navigationKey={page} revealKey={copilotRevealKey} collapseKey={copilotNavigationSequence}

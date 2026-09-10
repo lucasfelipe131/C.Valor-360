@@ -372,8 +372,10 @@ async function handleApi(request,response,url){
    const errorCode=clean(payload.metadata?.errorCode).toLowerCase().replace(/[^a-z0-9_-]/g,'').slice(0,80)||null
    const contextTypes=[...new Set((Array.isArray(payload.metadata?.contextTypes)?payload.metadata.contextTypes:[]).map(value=>clean(value).toLowerCase().replace(/[^a-z0-9_-]/g,'')).filter(Boolean))].slice(0,8)
    const entityType=clean(payload.entityType)==='client'?'client':null;const entityId=entityType?clean(payload.entityId)||null:null
-   await accessRepository.recordUsage(identity,{eventType:'agro_hero_interaction',page:'agro',entityType,entityId,metadata:{action,status,phase,...(errorCode?{errorCode}:{}),contextTypes}})
-   return json(response,202,{accepted:true})
+   // O 202 era montado sem olhar o retorno: o evento nao estava no conjunto aceito, recordUsage saia
+   // antes do INSERT e o painel de Administracao mostrava zero interacoes da Inteligencia Agronomica.
+   const recorded=await accessRepository.recordUsage(identity,{eventType:'agro_hero_interaction',page:'agro',entityType,entityId,metadata:{action,status,phase,...(errorCode?{errorCode}:{}),contextTypes}})
+   return json(response,202,{accepted:true,recorded:Boolean(recorded)})
   }
   await accessRepository.recordUsage(identity,{eventType:'page_view',page:clean(payload.page),entityType:clean(payload.entityType),entityId:clean(payload.entityId)});return json(response,202,{accepted:true})
  }
@@ -1217,7 +1219,17 @@ createServer((request,response)=>{
  }
  const relative=normalize(url.pathname==='/'?'index.html':url.pathname.replace(/^\/+/,''))
  let target=resolve(root,relative)
- if((target!==root&&!target.startsWith(`${root}${sep}`))||!existsSync(target)||statSync(target).isDirectory())target=join(root,'index.html')
+ const missing=(target!==root&&!target.startsWith(`${root}${sep}`))||!existsSync(target)||statSync(target).isDirectory()
+ // Pedido de ARQUIVO que sumiu no deploy (o vite renomeia por hash) precisa ser 404. Caindo no
+ // index.html com HTTP 200, o import() do pedaco recebia HTML, a tela lazy nao abria e o service
+ // worker ainda gravava esse HTML no cache do release com a URL de um modulo .js.
+ const requestedFile=extname(url.pathname)&&extname(url.pathname).toLowerCase()!=='.html'
+ if(missing&&requestedFile){
+  response.writeHead(404,{...securityHeaders,'Content-Type':'text/plain; charset=utf-8','Cache-Control':'no-store'})
+  response.end('Arquivo não encontrado nesta versão. Recarregue o aplicativo para buscar a versão nova.')
+  return
+ }
+ if(missing)target=join(root,'index.html')
  const extension=extname(target).toLowerCase()
  const immutableAsset=/^\/assets\/.+-[a-z0-9_-]{8,}\.[a-z0-9]+$/i.test(url.pathname)
  const cacheControl=url.pathname==='/sw.js'

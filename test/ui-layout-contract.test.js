@@ -167,7 +167,11 @@ test('commercial cache is scoped and technical drafts expire with the browser se
  assert.match(app,/opportunityCacheKey\(effectiveScope\)/)
  assert.match(app,/clearSessionPortfolioCache\(currentUser\?\.storageScope\)/)
  assert.match(app,/invalidateSession=notice=>\{clearSessionPortfolioCache[\s\S]*setClientList\(\[\]\);setVisits\(\[\]\);setOpportunities\(\[\]\);setSelected\(null\)/)
- assert.match(app,/if\(session\?\.authenticated\)rememberStorageScope\(session\.user\);else clearSessionPortfolioCache\(\)/)
+ // Sessão negada pelo servidor limpa o cache local; falha de rede NÃO — o cookie continua válido e a
+ // conversa da VAL do consultor em campo não pode ser apagada por sinal ruim.
+ assert.match(app,/if\(session\?\.authenticated\)\{rememberStorageScope\(session\.user\)/)
+ assert.match(app,/const serverAnswered=sessionDenied\|\|Boolean\(session\)\s*\n?\s*if\(serverAnswered\)clearSessionPortfolioCache\(\)/)
+ assert.match(app,/sessionDenied:response\.status===401/)
  assert.match(settings,/opportunityCacheKey\(currentUser\?\.storageScope\)/)
  assert.match(settings,/buildOpportunityWorkspace\(clients,opportunities\)/)
  assert.match(settings,/Playbook aprovado ativo/)

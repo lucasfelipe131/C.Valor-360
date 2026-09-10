@@ -139,3 +139,40 @@ test('Anexos — a listagem pagina e declara o acervo inteiro', async () => {
  assert.equal(second.length,85)
  assert.equal(new Set([...first,...second].map(item=>item.id)).size,205,'nenhum anexo pode ficar inalcançável')
 })
+
+import {readFileSync} from 'node:fs'
+const source=path=>readFileSync(new URL(`../${path}`,import.meta.url),'utf8')
+
+// VAL-R8-ADM-01: uma falha de rede apagava a conversa da VAL com a sessão ainda válida.
+test('Sessão — só o servidor negando a sessão limpa o estado local', () => {
+ const app=source('src/App.jsx')
+ assert.match(app,/sessionDenied:response\.status===401/)
+ assert.match(app,/const serverAnswered=sessionDenied\|\|Boolean\(session\)\s*\n?\s*if\(serverAnswered\)clearSessionPortfolioCache\(\)/)
+ assert.match(app,/sua conversa e seus dados locais foram preservados/)
+})
+
+// VAL-R8-ADM-03: pedaço ausente após deploy voltava como HTML 200 e envenenava o cache do release.
+test('Estáticos — arquivo ausente é 404, não index.html com 200', () => {
+ const server=source('server.js')
+ assert.match(server,/const requestedFile=extname\(url\.pathname\)&&extname\(url\.pathname\)\.toLowerCase\(\)!=='\.html'/)
+ assert.match(server,/if\(missing&&requestedFile\)\{[\s\S]{0,220}writeHead\(404/)
+})
+
+test('Service worker — não guarda resposta cujo tipo não bate com o pedido', () => {
+ const worker=source('public/sw.js')
+ assert.match(worker,/request\.destination==='script'\|\|request\.destination==='worker'\)return \/javascript\|ecmascript\//)
+ assert.doesNotMatch(worker,/if\(response\.ok\)\{const copy=response\.clone\(\)/)
+})
+
+test('Rotas sob demanda — falha de pedaço não derruba a árvore', () => {
+ const app=source('src/App.jsx')
+ assert.match(app,/class RouteBoundary extends React\.Component/)
+ assert.match(app,/<RouteBoundary routeKey=\{page\}>/)
+})
+
+// VAL-R8-ADM-04: a rota respondia 202 "accepted" e descartava o evento do Hero Agronômico.
+test('Uso — a interação da Inteligência Agronômica é um tipo aceito e a rota diz se gravou', () => {
+ assert.match(source('server/access-repository.js'),/'agro_hero_interaction'\]\)/)
+ assert.match(source('server.js'),/const recorded=await accessRepository\.recordUsage\(identity,\{eventType:'agro_hero_interaction'/)
+ assert.match(source('server.js'),/\{accepted:true,recorded:Boolean\(recorded\)\}/)
+})
