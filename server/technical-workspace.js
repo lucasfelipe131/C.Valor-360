@@ -77,6 +77,7 @@ export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}
  function start(){
   if(!enabled||closing)return false
   startedAt=Date.now()
+  console.info(JSON.stringify({event:'manual.integration.configuration',configured:Boolean(runtimeConfig.manualWebhookSecret)}))
   child=spawn(process.execPath,[manualEntry],{
    cwd:manualRoot,
    env:{
