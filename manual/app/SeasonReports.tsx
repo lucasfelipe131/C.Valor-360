@@ -1,12 +1,13 @@
 "use client";
 
-import { ChangeEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 import { GState, jsPDF } from "jspdf";
 import agrofitProductsData from "./agrofit-products.json";
 import cultivarsData from "./cultivars.json";
 import fertilizerFormulasData from "./fertilizer-formulas.json";
 import foliarProductsData from "./foliar-products.json";
 import { listRecords, saveRecord } from "./records";
+import { recordSaveOutcome } from "./lib/record-save-result";
 
 type ReportField = {
   id: string;
@@ -913,6 +914,9 @@ export default function SeasonReports({
   const [activeCategory, setActiveCategory] =
     useState<CostCategory>("fertilizantes");
   const [message, setMessage] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [pendingSyncId, setPendingSyncId] = useState("");
+  const savingRef = useRef(false);
   const [photoMessage, setPhotoMessage] = useState("");
   const [importItems, setImportItems] = useState<ImportedCostItem[]>([]);
   const [importStatus, setImportStatus] = useState({
@@ -1316,9 +1320,12 @@ export default function SeasonReports({
       ...savedReports.filter((item) => item.id !== saved.id),
     ];
     if (recordsApi) {
+      if (savingRef.current) return;
+      savingRef.current=true;setSaving(true);
       setMessage("Salvando relatório…");
-      try {await recordsApi.save({id:saved.id,type:"season_report",title:`${producer?.name||"Produtor"} · ${saved.crop} · ${saved.season}`,producerName:producer?.name,payload:saved as unknown as Record<string,unknown>});setSavedReports(next);setReport(saved);setMessage("Relatório salvo no histórico do produtor.");}
+      try {const response=await recordsApi.save({id:saved.id,type:"season_report",title:`${producer?.name||"Produtor"} · ${saved.crop} · ${saved.season}`,producerName:producer?.name,payload:saved as unknown as Record<string,unknown>});const outcome=recordSaveOutcome(response);setSavedReports(next);setReport(saved);setPendingSyncId(outcome.pending?saved.id:"");setMessage(outcome.message);}
       catch(error){setMessage(error instanceof Error?error.message:"Não foi possível salvar. Mantenha a tela aberta e tente novamente.");}
+      finally{savingRef.current=false;setSaving(false);}
       return;
     }
     setSavedReports(next);
@@ -1763,6 +1770,7 @@ export default function SeasonReports({
             <button
               className="button secondary"
               onClick={() => void saveReport()}
+              disabled={saving}
             >
               Salvar rascunho
             </button>
@@ -2386,8 +2394,9 @@ export default function SeasonReports({
           <button
             className="button secondary full-button"
             onClick={() => void saveReport()}
+            disabled={saving}
           >
-            Salvar fechamento
+            {saving ? "Salvando…" : pendingSyncId===report.id ? "Salvar e sincronizar" : "Salvar fechamento"}
           </button>
           <button
             className="button primary full-button"
