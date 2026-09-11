@@ -777,6 +777,10 @@ function directlyAnswersQuestion({domain,question,answer,unsupportedClaims}){
  // proveniência já foram validados claim a claim antes deste ponto.
  const calculationTopics=new Set(['semente','sementes','semeadora','semeadura','populacao','colheita','zoneamento','zarc','pulverizacao','fertilizante','nutriente','nutrientes','cotacao','insumo','insumos','plantas','planta','plantabilidade','espacamento','hectare','hectares','custo','custos','area','metro','metros','linear','lineares','saca','sacas','tonelada','toneladas','retorno','investimento','roi','margem'])
  const questionSource=normalize(question)
+ // Preparing a future visit is answered by its grounded history and next action;
+ // it need not repeat the word "próxima" from the request. All claims were checked above.
+ const preparationRequest=/\b(?:prepar\w*|roteiro|organiz\w*)\b.*\bvisita\w*\b|\bvisita\w*\b.*\b(?:prepar\w*|roteiro|organiz\w*)\b/.test(questionSource)
+ if(domain==='VISIT'&&preparationRequest&&/\bvisita\w*\b/.test(source)&&/\b(?:proximo passo|compromisso|objetivo)\b/.test(source))return true
  // "quanto é 300 mil plantas por hectare em 45 cm?" é pedido de cálculo tanto quanto "calcule".
  const calculationRequested=/\bcalcul(?:a|ar|e|o|ou)\b|\bquanto (?:e|da|dao|fica|ficam|sao|seria|seriam|custa|rende|vale)\b|\bquant[ao]s\b/.test(questionSource)
  const calculationReturned=/\bcalculad[oa]s?\b/.test(source)&&numbers(source).length>0

@@ -44,7 +44,7 @@ function activeItems(value=[]){
 function evidenceCorpus(context={},message='',intent=''){
  const common={client:context.client||{},profile:context.profile||{},memories:confirmedMemories(context),conversationState:context.conversationState||null}
  const scoped=intent==='PREPARE_VISIT'
-  ?{opportunities:activeItems(context.opportunities),commitments:activeItems(context.commitments)}
+  ?{opportunities:activeItems(context.opportunities),commitments:activeItems(context.commitments),visits:list(context.visits).slice(0,6),interactions:list(context.interactions).slice(0,6)}
   :intent==='ANALYZE_SOIL'
    ?{properties:list(context.properties).slice(0,8),soilAnalyses:list(context.soilAnalyses).slice(0,3),currentAttachments:list(context.currentAttachments).slice(0,3)}
    :intent==='ASK_AGRONOMIC'

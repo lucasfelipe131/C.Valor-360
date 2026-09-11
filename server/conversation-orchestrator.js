@@ -293,7 +293,10 @@ export function chooseAutomaticRoute(context={},message='',continuity=buildConve
   }else if(intent==='value_sale'&&(continuity.products.length||nuanced)){
     mode='hybrid';useGenerativeAi=true;retrieval=Boolean(continuity.products.length);humanReview=continuity.products.some(item=>item.category?.toLocaleLowerCase('pt-BR').includes('inseticida'))
     reason='A negociação de valor depende de contexto, produto, objeção e linguagem adaptada; o cálculo continua determinístico.'
-  }else if(['account_priority','visit_preparation','commitment'].includes(intent)&&!nuanced){
+  }else if(intent==='visit_preparation'){
+    mode='hybrid';useGenerativeAi=true
+    reason='Preparar visita exige sintetizar relatos recentes, compromissos e mudanças da conta, mesmo quando o pedido é curto.'
+  }else if(['account_priority','commitment'].includes(intent)&&!nuanced){
     mode='deterministic';useGenerativeAi=false
     reason='O botão aciona um fluxo calculado sobre a conta; a resposta não depende de texto generativo.'
   }else if(sourceCount>=4||nuanced||isShortFollowUp(current)){
