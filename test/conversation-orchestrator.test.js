@@ -114,12 +114,12 @@ test('botão de priorização usa regras e não precisa chamar IA',()=>{
   assert.equal(route.useGenerativeAi,false)
 })
 
-test('botão de preparação de visita é determinístico quando o pedido é direto',()=>{
+test('preparação de visita habilita síntese mesmo quando o pedido é direto',()=>{
   const message='Prepare a próxima visita para este produtor. Defina objetivo, oportunidade prioritária, perguntas úteis, critério de avanço e compromisso esperado.'
   const continuity=buildConversationContinuity(baseContext,message)
   const route=chooseAutomaticRoute(baseContext,message,continuity)
   assert.equal(route.intent,'visit_preparation')
-  assert.equal(route.useGenerativeAi,false)
+  assert.equal(route.useGenerativeAi,true)
   const orchestration=buildConversationOrchestration(baseContext,message)
   const advice=enrichAdviceWithOrchestration(genericAdvice(),orchestration,{usedGenerativeAi:false})
   assert.match(advice.answer,/João da Silva/)

@@ -9,7 +9,7 @@ import {
   officialProductKnowledge
 } from './conversation-orchestrator.js'
 
-const QUICK_DETERMINISTIC_INTENTS=new Set(['account_priority','visit_preparation','commitment'])
+const QUICK_DETERMINISTIC_INTENTS=new Set(['account_priority','commitment'])
 const DECISION_DATA_CHECKS=[
   ['Data prevista de semeadura e emergência',/data (?:de )?(?:plantio|semeadura|emerg[eê]ncia)|emerg[eê]ncia (?:ser[aá]|previst[ao]|dia|em)|vai emergir|semeadura em/i],
   ['Presença de milho tiguera e lavouras mais velhas no entorno',/tiguera|milho volunt[aá]rio|milho (?:mais velho|vizinho|pr[oó]ximo)/i],
