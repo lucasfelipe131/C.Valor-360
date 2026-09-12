@@ -258,13 +258,15 @@ test('cotação de ontem responde com a ressalva de atualidade, sem quebrar a co
  assert.equal(stale.status,'STALE')
  assert.match(stale.answer,/histórica/)
  assert.match(stale.action,/Mercado/)
- // DIVERGÊNCIA REGISTRADA (D-MKT-01): VAL_MARKET_COMMODITY_ACCESS_v1 §Atualidade diz que uma
- // referência STALE "pode ser mostrada como histórico, com aviso explícito". O caminho completo
- // ainda recusa: o contrato de evidência corta em 168 h e o turno morre com violação de grounding
- // em vez de entregar o histórico com a ressalva. Fechar isso exige marcar a evidência como
- // histórica declarada — decisão de produto, não ajuste de limiar, por isso está anotada e não
- // silenciosamente afrouxada.
- assert.throws(()=>answerFor(200),error=>error.code==='RESPONSE_GROUNDING_VIOLATION')
+ // VAL_MARKET_COMMODITY_ACCESS_v1 §Atualidade: uma referência STALE "pode ser mostrada como
+ // histórico, com aviso explícito". Antes o turno morria em 400 — o consultor pedia o preço e não
+ // recebia nada. Só a evidência que declara HISTORICAL_REFERENCE atravessa o teto de idade, e o
+ // texto que a acompanha carrega a ressalva e a data de observação.
+ const staleTurn=answerFor(200)
+ assert.equal(staleTurn.responseMetadata?.currentDataStatus,'STALE')
+ assert.match(staleTurn.advice.answer,/histórica e precisa ser atualizada/)
+ assert.match(staleTurn.advice.answer,/R\$\s*128,00/)
+ assert.match(read('server/decision-copilot/response-grounding.js'),/declaredHistorical=sourceType==='market_snapshot'/)
 })
 
 // A forma mais comum da fala de campo ("o antonio tem ...") não tinha padrão nenhum: a referência
