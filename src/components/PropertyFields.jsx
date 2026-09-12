@@ -1,3 +1,4 @@
+import {useNavigationGuard} from '../lib/use-navigation-guard'
 import React,{useEffect,useMemo,useRef,useState} from 'react'
 import {SlidersHorizontal,Check,Crosshair,LocateFixed,MapPin,PencilRuler,Plus,Save,Trash2,Undo2,X} from 'lucide-react'
 import {cropColor,formatNumber} from '../lib/producer-display'
@@ -51,6 +52,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio,initia
  const requestVersion=useRef(0)
  const saveRequest=useRef(null)
  const selectedPropertyId=selection.clientId===client?.id?selection.propertyId:undefined
+ useNavigationGuard(dirty||draft.length>0,{busy:state.saving,label:'mapeamento'})
  const busy=state.loading||state.saving||!loaded
 
  useEffect(()=>{

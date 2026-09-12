@@ -121,6 +121,7 @@ export default function App(){
   setPageRaw(target)
  }
  const setProducerTab=next=>{
+  if(next!==producerTab&&!restoringNavigation.current&&!permitNavigation())return false
   if(page==='client360'&&next!==producerTab&&!restoringNavigation.current)navigationHistory.current.push(navigationSnapshot())
   setProducerTabRaw(next)
  }
@@ -145,7 +146,7 @@ export default function App(){
  const opportunityOwnerRef=useRef(copilotOwnerScope);opportunityOwnerRef.current=copilotOwnerScope
  const copilotClientRef=useRef('')
  const updateConversationClient=useCallback(client=>{copilotClientRef.current=String(client?.id||'')},[])
- const openClient=(c,{preserveConversation=false,propertyId=''}={})=>{if(!permitNavigation())return;if(page==='client360'&&(String(selected?.id)!==String(c.id)||producerPropertyId!==propertyId))navigationHistory.current.push(navigationSnapshot());setProducerPropertyId(propertyId);if(propertyId)setProducerTab('map');if(!preserveConversation&&String(c.id)!==copilotClientRef.current){setProducerTab(propertyId?'map':'overview');setCopilotSeed({clientId:c.id,nonce:Date.now()});}setSelected(c);setCopilotRevealKey(value=>value+1);setCopilotLoaded(true);setCopilotOpen(current=>current||window.matchMedia('(min-width:1051px)').matches);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
+ const openClient=(c,{preserveConversation=false,propertyId=''}={})=>{if(!permitNavigation())return;if(page==='client360'&&(String(selected?.id)!==String(c.id)||producerPropertyId!==propertyId))navigationHistory.current.push(navigationSnapshot());setProducerPropertyId(propertyId);if(propertyId)setProducerTabRaw('map');if(!preserveConversation&&String(c.id)!==copilotClientRef.current){setProducerTabRaw(propertyId?'map':'overview');setCopilotSeed({clientId:c.id,nonce:Date.now()});}setSelected(c);setCopilotRevealKey(value=>value+1);setCopilotLoaded(true);setCopilotOpen(current=>current||window.matchMedia('(min-width:1051px)').matches);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
  const notify=message=>{const text=typeof message==='string'?message:String(message?.message||'Ação concluída.');setToast(text);window.clearTimeout(window.__valorToast);window.__valorToast=window.setTimeout(()=>setToast(''),2800)}
  const prepareClient=(c,options={})=>{if(!c?.id)return;setSelected(c);setPrepareVisitClientId(c.id);setPrepareVisitId(String(options?.visitId||''));if(String(c.id)!==copilotClientRef.current)setCopilotSeed({clientId:c.id,nonce:crypto.randomUUID()});setPage('visits');if(page==='visits')window.requestAnimationFrame(resetPageViewport)}
  const openValClient=c=>{if(copilotLoaded&&String(c.id)!==copilotClientRef.current)setCopilotSeed({clientId:c.id,nonce:Date.now()});setSelected(c);setValMode('insumos');setPage('val');if(page==='val')window.requestAnimationFrame(resetPageViewport)}
