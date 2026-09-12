@@ -8,6 +8,7 @@ import {profileApproach,routeSystemCapability} from '../decision-copilot/capabil
 import {evaluateConversationalNaturalness} from './conversational-naturalness.js'
 import {evaluateReasoningGrounding,evaluateResponseGrounding,factMatchesQuestionFacet} from '../decision-copilot/response-grounding.js'
 import {observe} from '../observability.js'
+import {visitPreparationEvidence,visitPreparationMethod,visitPreparationMethodEvidence} from './visit-preparation-context.js'
 
 export {aiReasoningResultVersion,goldenQuestionQualityVersion,valResponseQualityVersion} from './contracts.js'
 export {routeValIntent,valIntents,valIntentRouterVersion} from './intent-router.js'
@@ -68,7 +69,7 @@ function behavioralSignalEvidence(signal={}){
  return {...signal,id:clean(signal?.id,180)||`behavioral:${key||'signal'}:${clean(signal?.source_ref,120)||'unknown'}`,source_type:clean(signal?.source_type,120)||'behavioral_profile',evidence_type:clean(signal?.evidence_type,40)||'INFERENCE',statement}
 }
 
-function factsUsed(advice={},context={}){
+function factsUsed(advice={},context={},message=''){
  const snapshot=context.contextSnapshot||{}
  const producerId=clean(snapshot.context_scope?.producer_id||snapshot.subject?.id||context.client?.id,180)
  const tenantId=clean(snapshot.context_scope?.tenant_id||snapshot.organization_id||context.organizationId,180)
@@ -89,10 +90,11 @@ function factsUsed(advice={},context={}){
   const epistemicType=['interaction','field_report','soil_analysis','ndvi','manual_record','consultant_attachment'].includes(sourceType)?'OBSERVATION':'FACT'
   return [{...item,source_ref:wrapper.evidence_ref?.id,epistemic_type:epistemicType,producer_id:wrapper.producerId,tenant_id:wrapper.tenantId,owner_id:wrapper.ownerId,observed_at:knownDate(item?.observed_at??item?.observedAt)??knownDate(wrapper?.observed_at??wrapper?.observedAt)??null,valid_until:item?.valid_until??item?.validUntil??wrapper?.valid_until??wrapper?.validUntil??null}]
  })
- const authorized=[...snapshotEvidence,...deterministicEvidence].filter(item=>clean(item?.producer_id??item?.producerId,180)===producerId&&clean(item?.tenant_id??item?.tenantId,180)===tenantId&&clean(item?.source_ref??item?.evidence_ref?.id,240)&&clean(item?.evidence_type??item?.epistemic_type??item?.memory_state??item?.epistemic_state,40))
+ const preparationEvidence=routeValIntent({message,hasClient:Boolean(producerId)}).intent==='PREPARE_VISIT'?visitPreparationEvidence(snapshot):[]
+ const authorized=[...preparationEvidence,...snapshotEvidence,...deterministicEvidence].filter(item=>clean(item?.producer_id??item?.producerId,180)===producerId&&clean(item?.tenant_id??item?.tenantId,180)===tenantId&&clean(item?.source_ref??item?.evidence_ref?.id,240)&&clean(item?.evidence_type??item?.epistemic_type??item?.memory_state??item?.epistemic_state,40))
  const authorizedById=new Map(authorized.map(item=>[idOf(item),item]).filter(([id])=>id))
  const requestedIds=list(advice.evidence_used).map(idOf).filter(id=>authorizedById.has(id))
- const ordered=[...requestedIds.map(id=>authorizedById.get(id)),...authorized]
+ const ordered=[...preparationEvidence,...requestedIds.map(id=>authorizedById.get(id)),...authorized]
  if(advice.human_review?.required===true)ordered.unshift({id:'system_safety_policy:human_review',source_type:'system_safety_policy',source_ref:'val.safety.human_review',evidence_type:'FACT',producer_id:producerId,tenant_id:tenantId,owner_id:snapshot.context_scope?.owner_id||null,statement:'A VAL reteve qualquer orientação técnica acionável até revisão do responsável habilitado.'})
  const seen=new Set()
  return ordered.flatMap(item=>{
@@ -206,7 +208,7 @@ function buildResult({advice={},context={},message='',run={},conversationId='',i
  const strategic=advice.strategic_synthesis||{}
  const thesis=advice.decision_thesis||{}
  const client=context.client||{}
- const facts=factsUsed(advice,context)
+ const facts=factsUsed(advice,context,message)
  const intent=routeValIntent({message,intentHint,hasClient:Boolean(client.id),attachmentTypes:list(context.currentAttachments).map(item=>item.mimeType||item.mime_type)})
  const capabilityRoute=routeSystemCapability({message,intentHint:intent.intent,hasClient:Boolean(client.id),attachmentTypes:list(context.currentAttachments).map(item=>item.mimeType||item.mime_type)})
  const missing=unique([...list(thesis.missing_information),...list(advice.executive_brief?.missing_data),...list(advice.confidence?.missing_data),...list(snapshot.missing_information).map(item=>item?.description||item?.code)]).slice(0,12)
@@ -486,6 +488,36 @@ function applyGroundingFallback(result,context,domain,message='',retainedFacts=[
  return result
 }
 
+function recoverVisitPreparation(result,scope){
+ if(result.intent!=='PREPARE_VISIT')return result
+ const available=list(result.facts_used).filter(item=>item.id.startsWith('visit-preparation:'))
+ const facts=[]
+ let chars=0
+ for(const type of ['visit','commitment','interaction'])for(const item of available.filter(fact=>fact.source_type===type).slice(0,2)){
+  if(chars+item.statement.length>2300)continue
+  facts.push(item);chars+=item.statement.length
+ }
+ if(!facts.length)return result
+ const candidate=structuredClone(result)
+ const reading=facts.map(item=>item.statement.replace(/[.!?]+$/,'')+'.').join(' ')
+ const nextStep=facts.flatMap(item=>item.statement.split(/(?<=[.!?])\s+/)).find(statement=>statement.startsWith('Próximo passo registrado na visita:'))||''
+ const action=[nextStep,visitPreparationMethod.action].filter(Boolean).join(' ')
+ candidate.objective=visitPreparationMethod.objective
+ candidate.situation_summary=reading
+ candidate.recommended_strategy={reading,action,do_not_do:visitPreparationMethod.avoid}
+ candidate.decision_thesis={CURRENT_SITUATION:reading,WHAT_MATTERS:action,KEY_UNCERTAINTY:'O que mudou desde o último registro?',THESIS:action,WHY:reading,WHAT_TO_VALIDATE:visitPreparationMethod.validate,WHAT_WOULD_CHANGE_MY_VIEW:visitPreparationMethod.reconsider}
+ candidate.next_commitment=action
+ candidate.missing_information=[]
+ candidate.confidence={level:'MODERADA',score:.65,rationale:facts[0].statement}
+ candidate.voice_output={...candidate.voice_output,speakable_text:reading+' '+action}
+ candidate.decision_interview={...candidate.decision_interview,questions:[],material_missing_information:[],non_material_missing_information:[],explanation:''}
+ candidate.facts_used.push(visitPreparationMethodEvidence(scope))
+ const checked=evaluateReasoningGrounding({...scope,evidence:candidate.facts_used,blocks:reasoningGroundingBlocks(candidate)})
+ if(!checked.passed)return result
+ candidate.run.status='VISIT_PREPARATION_RECOVERED'
+ return candidate
+}
+
 function applySafetyGroundingFallback(result){
  const reading='A VAL reteve qualquer orientação técnica acionável até revisão do responsável habilitado.'
  result.objective='Encaminhe a solicitação ao responsável habilitado para revisão.'
@@ -541,6 +573,7 @@ export function composeAIReasoning({advice={},context={},message='',run={},conve
  const retainedFacts=groundingFallbackApplied&&!safetyPreserved?selfSupportedFacts(result,groundingScope):[]
  if(groundingFallbackApplied)result=safetyPreserved?applySafetyGroundingFallback(result):applyGroundingFallback(result,context,selectedDomain,message,retainedFacts)
  if(groundingFallbackApplied&&!safetyPreserved&&retainedFacts.length)result=applyFactualFallbackReading(result,groundingScope)
+ if(groundingFallbackApplied&&!safetyPreserved)result=recoverVisitPreparation(result,groundingScope)
  result.reasoning_confidence=buildReasoningConfidence({context,result})
  result.decision_interview=buildDecisionInterview({intent:result.intent,message,context,result})
  // As perguntas materiais da entrevista (campos `question`) não afirmam nada e continuam válidas

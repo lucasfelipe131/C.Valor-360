@@ -2,7 +2,7 @@ import {createHmac,randomBytes,scrypt as scryptCallback,timingSafeEqual} from 'n
 import {promisify} from 'node:util'
 
 const scrypt=promisify(scryptCallback)
-const roles=new Set(['admin','manager','consultant','technical_reviewer'])
+const roles=new Set(['admin','manager','consultant','technical_reviewer','bi_viewer'])
 const safeEqual=(left,right)=>{
   const a=Buffer.from(String(left||''));const b=Buffer.from(String(right||''))
   return a.length===b.length&&timingSafeEqual(a,b)

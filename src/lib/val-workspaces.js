@@ -12,7 +12,7 @@
 // Manual do Agrônomo (`tool`), que já são destinos distintos dentro do iframe.
 
 import {
- BookOpen,BrainCircuit,Calculator,Camera,CalendarCheck2,CalendarDays,ClipboardList,CloudSun,
+ BarChart3,BookOpen,BrainCircuit,Calculator,Camera,CalendarCheck2,CalendarDays,ClipboardList,CloudSun,
  DatabaseZap,FileBarChart,FlaskConical,LandPlot,Layers3,Library,LayoutDashboard,Search,
  Settings,ShieldCheck,Sprout,Target,UserRound,Users
 } from 'lucide-react'
@@ -32,6 +32,7 @@ export const MODULES={
  copilot:{label:'Copiloto VAL',icon:BrainCircuit,workspace:null},
  val:{label:'Análise avançada',icon:Search,workspace:'inteligencia'},
  agro:{label:'Inteligência Agronômica',icon:Sprout,workspace:'campo'},
+ management:{label:'Visão gerencial',icon:BarChart3,workspace:'gestao',roles:['admin','manager','bi_viewer']},
  reports:{label:'Indicadores e relatórios',icon:FileBarChart,workspace:'gestao'},
  settings:{label:'Preferências',icon:Settings,workspace:'gestao'},
  admin:{label:'Administração',icon:ShieldCheck,workspace:'gestao',role:'admin'}
@@ -75,6 +76,7 @@ const NAV={
   {id:'clima',label:'Clima e mercado',icon:CloudSun,page:'agro',tool:'clima'}
  ],
  gestao:[
+  {id:'management',label:'Visão gerencial',icon:BarChart3,page:'management',roles:['admin','manager','bi_viewer']},
   {id:'reports',label:'Indicadores e relatórios',icon:FileBarChart,page:'reports'},
   {id:'biblioteca',label:'Documentos',icon:Library,page:'agro',tool:'biblioteca'}
  ]
@@ -86,7 +88,7 @@ export const SETTINGS_NAV=[
  {id:'settings',label:'Preferências',icon:Settings,page:'settings'}
 ]
 
-const allowed=(item,role)=>!item.role||item.role===role
+const allowed=(item,role)=>(!item.role||item.role===role)&&(!item.roles||item.roles.includes(role))
 
 export const workspaceModules=(workspaceId,role)=>(NAV[workspaceId]||[]).filter(item=>allowed(item,role))
 export const settingsModules=role=>SETTINGS_NAV.filter(item=>allowed(item,role))

@@ -307,7 +307,8 @@ function collectionItems(items,type,{domain,dateKeys=['updated_at','updatedAt','
     // Em MULTI_DOMAIN que inclui VISIT ('como abordar ele na próxima visita?') a mesma redução
     // vale: o resumo narrado (adubação, preço) não pode vetar a própria visita por DOMAIN_MISMATCH.
     const visitIdentityOnly=contextDomain==='VISIT'||contextDomain==='MULTI_DOMAIN'&&matchedValContextDomains(query).includes('VISIT')
-    if(type==='visit'&&visitIdentityOnly&&!visitContentRequested){
+    const preparingVisit=/\b(?:prepar\w*|roteiro|abord\w*|organiz\w*)\b/i.test(text(query).normalize('NFD').replace(/[\u0300-\u036f]/g,''))
+    if(type==='visit'&&visitIdentityOnly&&!visitContentRequested&&!preparingVisit){
       // A identidade/data da visita responde "qual foi a ultima visita" sem
       // carregar automaticamente todos os assuntos discutidos nela. O tipo
       // VISIT autoriza selecionar o evento, não transforma CPF, grãos ou
