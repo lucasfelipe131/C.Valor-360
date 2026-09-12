@@ -25,7 +25,7 @@
   .topbar-title>div:last-child{min-width:0;flex:1}
   .topbar h1{margin:0;max-width:100%;color:#fff!important;font-size:clamp(18px,5vw,22px)!important;font-weight:790;line-height:1.08;letter-spacing:-.035em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .topbar p{margin:3px 0 0;max-width:100%;color:rgba(230,247,242,.72)!important;font-size:10.5px!important;line-height:1.25;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .top-actions{display:none!important}
+  .top-actions{display:flex!important;gap:8px;flex-shrink:0}
 
   .content{width:100%;max-width:100%;min-width:0;padding:13px max(12px,env(safe-area-inset-right)) calc(91px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))!important;overflow-x:clip}
   .page-stack{min-width:0;gap:12px!important}
@@ -60,7 +60,6 @@
   .home-quick-actions>div:first-child h3{margin:3px 0 10px!important;font-size:17px!important}
   .home-quick-grid{grid-template-columns:1fr 1fr!important;gap:8px!important}
   .home-quick-grid>button{min-width:0;padding:11px!important;border-radius:13px!important}
-  .home-quick-grid>button:nth-child(n+3){display:none!important}
   .home-quick-grid>button>span{width:34px!important;height:34px!important;min-width:34px!important}
   .home-quick-grid small{display:none!important}
   .home-quick-grid b{font-size:11.5px!important;line-height:1.2}
@@ -76,7 +75,6 @@
   .conversion-radar-head>button svg{width:18px;height:18px}
   .conversion-radar-list{gap:9px!important}
   .conversion-radar-card{grid-template-columns:1fr!important;gap:9px!important;padding:12px!important;border-radius:14px!important}
-  .conversion-radar-card:nth-child(n+4){display:none!important}
   .conversion-radar-rank{display:none!important}
   .conversion-radar-title-row{gap:8px!important}
   .conversion-radar-title-row h4{font-size:17px!important}
@@ -92,7 +90,6 @@
   .producer-portfolio-summary>div>p{display:none!important}
   .producer-portfolio-summary h2{margin:3px 0 0!important;font-size:22px!important}
   .producer-portfolio-summary dl{display:grid!important;grid-template-columns:1fr 1fr!important;gap:7px!important;margin-top:12px!important}
-  .producer-portfolio-summary dl>div:nth-child(n+3){display:none!important}
   .producer-portfolio-summary dl>div{padding:9px!important;border-radius:11px!important}
   .producer-list-controls{padding:0!important;background:transparent!important;border:0!important;box-shadow:none!important}
   .producer-list-controls .search-row{display:grid!important;grid-template-columns:minmax(0,1fr) auto!important;gap:7px!important}
@@ -113,7 +110,6 @@
   .client-identity h3{margin:10px 0 5px!important;font-size:18px!important}
   .client-identity p{margin:3px 0!important;font-size:11px!important}
   .client-stats{grid-template-columns:1fr 1fr!important;margin:10px 0!important;padding:8px 0!important}
-  .client-stats>span:nth-child(n+3){display:none!important}
   .client-stats>span{padding:4px 5px!important}
   .client-stats small{font-size:8.5px!important}
   .client-stats b{font-size:11.5px!important}
