@@ -2,6 +2,7 @@ import {useEffect} from 'react'
 
 export function useNavigationGuard(dirty,{busy=false,label='formulário'}={}){
  useEffect(()=>{
+  if(typeof window==='undefined'||typeof window.addEventListener!=='function')return
   if(!dirty&&!busy)return
   const leave=event=>{
    if(event.defaultPrevented)return
