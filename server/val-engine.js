@@ -1,5 +1,5 @@
 import OpenAI from 'openai'
-import {visitPreparationInstructions} from './ai-reasoning/visit-preparation-context.js'
+import {visitPreparationInstructions,visitPreparationOutputInstructions} from './ai-reasoning/visit-preparation-context.js'
 import {createHash} from 'node:crypto'
 import {applyWorkingStage,buildFallbackAdvice,buildValInstructionBlocks,buildValInstructions,normalizeValMethodStage,rankOpportunityPortfolio,VAL_INSTRUCTIONS_VERSION,VAL_METHOD_SEQUENCE,valStructuredFormat} from './sales-playbook.js'
 import {commercialMetrics} from '../src/lib/commercial-metrics.js'
@@ -782,7 +782,7 @@ export class ValEngine{
     const routeAudit=emitValRouteAudit(this.logger,buildValRouteAudit({message,mode,route,at:this.clock()}))
     const fallbackAdvice=buildFallbackAdvice({...context,message,mode:route.tier,requestedStage:selectedWorkingStage})
     const instructionBlocks=buildValInstructionBlocks(route.tier)
-    const instructions=buildValInstructions(instructionBlocks.tier)+(context.contextSnapshot?.context_scope?.domain==='VISIT'?`\n${visitPreparationInstructions}`:'')
+    const instructions=buildValInstructions(instructionBlocks.tier)+(context.contextSnapshot?.context_scope?.domain==='VISIT'?`\n${visitPreparationInstructions}\n${visitPreparationOutputInstructions}\nData atual: ${new Date().toISOString().slice(0,10)}`:'')
     const promptPrefixHash=createHash('sha256').update(instructionBlocks.fixed).digest('hex')
     let advice,engineMode='demonstration',warning='',responseMetadata={},providerHumanReview=null
     if(!this.client)advice=fallbackAdvice

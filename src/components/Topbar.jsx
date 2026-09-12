@@ -37,7 +37,7 @@ const buildIndex=({clients,visits,opportunities,role})=>{
  return index
 }
 
-export default function Topbar({title,subtitle,onNavigate,onOpenVal,workspace,page,client,clients,visits,opportunities,currentUser,onOpenClient}){
+export default function Topbar({onBack,backLabel,title,subtitle,onNavigate,onOpenVal,workspace,page,client,clients,visits,opportunities,currentUser,onOpenClient}){
  const initials=String(currentUser?.name||currentUser?.email||'VA').replace(/@.*$/,'').split(/[\s._-]+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase()||'VA'
  // O sino conta pendência real de ciclo de vida — não é contador decorativo.
  const alerts=(visits||[]).filter(visit=>{
@@ -78,6 +78,7 @@ export default function Topbar({title,subtitle,onNavigate,onOpenVal,workspace,pa
 
  return <header className="topbar val-global-header">
   <div className="topbar-title">
+   {onBack&&<button type="button" className="soft-btn" onClick={onBack} aria-label={`Voltar para ${backLabel}`}>← Voltar{backLabel?` · ${backLabel}`:''}</button>}
    <div className="topbar-mobile-logo"><Logo compact/></div>
    <div>
     {trail.length>0&&<nav className="context-trail" aria-label="Contexto atual">

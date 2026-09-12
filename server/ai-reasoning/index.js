@@ -8,7 +8,7 @@ import {profileApproach,routeSystemCapability} from '../decision-copilot/capabil
 import {evaluateConversationalNaturalness} from './conversational-naturalness.js'
 import {evaluateReasoningGrounding,evaluateResponseGrounding,factMatchesQuestionFacet} from '../decision-copilot/response-grounding.js'
 import {observe} from '../observability.js'
-import {visitPreparationEvidence,visitPreparationMethod,visitPreparationMethodEvidence} from './visit-preparation-context.js'
+import {visitPreparationEvidence,visitPreparationMethod,visitPreparationMethodEvidence,visitPreparationOutline} from './visit-preparation-context.js'
 
 export {aiReasoningResultVersion,goldenQuestionQualityVersion,valResponseQualityVersion} from './contracts.js'
 export {routeValIntent,valIntents,valIntentRouterVersion} from './intent-router.js'
@@ -69,7 +69,7 @@ function behavioralSignalEvidence(signal={}){
  return {...signal,id:clean(signal?.id,180)||`behavioral:${key||'signal'}:${clean(signal?.source_ref,120)||'unknown'}`,source_type:clean(signal?.source_type,120)||'behavioral_profile',evidence_type:clean(signal?.evidence_type,40)||'INFERENCE',statement}
 }
 
-function factsUsed(advice={},context={},message=''){
+function factsUsed(advice={},context={},message='',intentHint=''){
  const snapshot=context.contextSnapshot||{}
  const producerId=clean(snapshot.context_scope?.producer_id||snapshot.subject?.id||context.client?.id,180)
  const tenantId=clean(snapshot.context_scope?.tenant_id||snapshot.organization_id||context.organizationId,180)
@@ -90,7 +90,15 @@ function factsUsed(advice={},context={},message=''){
   const epistemicType=['interaction','field_report','soil_analysis','ndvi','manual_record','consultant_attachment'].includes(sourceType)?'OBSERVATION':'FACT'
   return [{...item,source_ref:wrapper.evidence_ref?.id,epistemic_type:epistemicType,producer_id:wrapper.producerId,tenant_id:wrapper.tenantId,owner_id:wrapper.ownerId,observed_at:knownDate(item?.observed_at??item?.observedAt)??knownDate(wrapper?.observed_at??wrapper?.observedAt)??null,valid_until:item?.valid_until??item?.validUntil??wrapper?.valid_until??wrapper?.validUntil??null}]
  })
- const preparationEvidence=routeValIntent({message,hasClient:Boolean(producerId)}).intent==='PREPARE_VISIT'?visitPreparationEvidence(snapshot):[]
+ const preparationEvidence=routeValIntent({message,intentHint,hasClient:Boolean(producerId)}).intent==='PREPARE_VISIT'?visitPreparationEvidence(snapshot):[]
+ // A consultant's new account is an attributed, session-only observation,
+ // never a confirmed visit or a fact copied from another producer.
+ if(preparationEvidence.length&&/\b(?:ele|ela|o produtor)\s+(?:disse|respondeu|informou|confirmou|explicou)\b/i.test(message)){
+  const report=clean(message.split(/(?<=[.!])\s+/).filter(part=>!part.includes('?')).join(' '),900)
+  if(report){const sourceRef=`consultant-turn:${createHash('sha256').update(`${snapshot.context_scope?.conversation_id}:${message}`).digest('hex').slice(0,20)}`
+   preparationEvidence.unshift({id:`visit-preparation:${sourceRef}`,source_ref:sourceRef,source_type:'consultant_input',epistemic_type:'OBSERVATION',producer_id:producerId,tenant_id:tenantId,owner_id:snapshot.context_scope?.owner_id,observed_at:new Date().toISOString(),statement:`Relato do consultor neste turno: ${report}`})
+  }
+ }
  const authorized=[...preparationEvidence,...snapshotEvidence,...deterministicEvidence].filter(item=>clean(item?.producer_id??item?.producerId,180)===producerId&&clean(item?.tenant_id??item?.tenantId,180)===tenantId&&clean(item?.source_ref??item?.evidence_ref?.id,240)&&clean(item?.evidence_type??item?.epistemic_type??item?.memory_state??item?.epistemic_state,40))
  const authorizedById=new Map(authorized.map(item=>[idOf(item),item]).filter(([id])=>id))
  const requestedIds=list(advice.evidence_used).map(idOf).filter(id=>authorizedById.has(id))
@@ -208,7 +216,7 @@ function buildResult({advice={},context={},message='',run={},conversationId='',i
  const strategic=advice.strategic_synthesis||{}
  const thesis=advice.decision_thesis||{}
  const client=context.client||{}
- const facts=factsUsed(advice,context,message)
+ const facts=factsUsed(advice,context,message,intentHint)
  const intent=routeValIntent({message,intentHint,hasClient:Boolean(client.id),attachmentTypes:list(context.currentAttachments).map(item=>item.mimeType||item.mime_type)})
  const capabilityRoute=routeSystemCapability({message,intentHint:intent.intent,hasClient:Boolean(client.id),attachmentTypes:list(context.currentAttachments).map(item=>item.mimeType||item.mime_type)})
  const missing=unique([...list(thesis.missing_information),...list(advice.executive_brief?.missing_data),...list(advice.confidence?.missing_data),...list(snapshot.missing_information).map(item=>item?.description||item?.code)]).slice(0,12)
@@ -493,7 +501,7 @@ function recoverVisitPreparation(result,scope){
  const available=list(result.facts_used).filter(item=>item.id.startsWith('visit-preparation:'))
  const facts=[]
  let chars=0
- for(const type of ['visit','commitment','interaction'])for(const item of available.filter(fact=>fact.source_type===type).slice(0,2)){
+ for(const type of ['consultant_input','visit','commitment','interaction'])for(const item of available.filter(fact=>fact.source_type===type).slice(0,2)){
   if(chars+item.statement.length>2300)continue
   facts.push(item);chars+=item.statement.length
  }
@@ -501,11 +509,13 @@ function recoverVisitPreparation(result,scope){
  const candidate=structuredClone(result)
  const reading=facts.map(item=>item.statement.replace(/[.!?]+$/,'')+'.').join(' ')
  const nextStep=facts.flatMap(item=>item.statement.split(/(?<=[.!?])\s+/)).find(statement=>statement.startsWith('Próximo passo registrado na visita:'))||''
- const action=[nextStep,visitPreparationMethod.action].filter(Boolean).join(' ')
- candidate.objective=visitPreparationMethod.objective
+ const outline=visitPreparationOutline(facts)
+ const action=[nextStep,visitPreparationMethod.action,outline?.valueGuidance,'Registre as respostas, objeções, observações de campo, responsáveis e prazos efetivamente combinados.'].filter(Boolean).join(' ')
+ candidate.objective=nextStep?`Retome o próximo passo registrado. ${nextStep}`:visitPreparationMethod.objective
  candidate.situation_summary=reading
  candidate.recommended_strategy={reading,action,do_not_do:visitPreparationMethod.avoid}
  candidate.decision_thesis={CURRENT_SITUATION:reading,WHAT_MATTERS:action,KEY_UNCERTAINTY:'O que mudou desde o último registro?',THESIS:action,WHY:reading,WHAT_TO_VALIDATE:visitPreparationMethod.validate,WHAT_WOULD_CHANGE_MY_VIEW:visitPreparationMethod.reconsider}
+ if(outline)candidate.golden_questions=outline.questions
  candidate.next_commitment=action
  candidate.missing_information=[]
  candidate.confidence={level:'MODERADA',score:.65,rationale:facts[0].statement}
@@ -643,7 +653,7 @@ function groundedPublicAdvice(result={}){
  const humanReviewRequired=result.agronomic_context?.human_review_required===true
  const safetyNote=clean(result.agronomic_context?.safety_note,800)
  return {
-  answer:reading,
+  answer:result.intent==='PREPARE_VISIT'?['Foco sugerido',objective,'Motivo e registros',reading,'Pauta e resultado esperado',action,...questions.map((item,index)=>`${index+1}. ${item.question}`)].filter(Boolean).join('\n\n'):reading,
   objective,
   evidence_used:facts,
   executive_brief:{headline:reading,reason:situation,action,question:clean(primaryQuestion?.question,700),evidence_ids:facts.map(item=>item.id).filter(Boolean),missing_data:missing},

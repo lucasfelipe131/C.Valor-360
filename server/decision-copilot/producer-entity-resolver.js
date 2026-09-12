@@ -17,6 +17,8 @@ const contextualFactOwner=/^(?:(?:[úu]ltim[oa]|mais recente)\s+(?:visita|compra
 const trailingContext=/\s+(?:amanh[ãa]|hoje|depois|mais tarde|de novo|outra vez|novamente|(?:na\s+)?(?:pr[óo]xima\s+)?semana(?:\s+que\s+vem)?|(?:no\s+)?(?:pr[óo]ximo\s+)?m[êe]s(?:\s+que\s+vem)?|esta semana|para (?:uma|a|o)|pra (?:uma|a|o)|porque\b|pois\b|e (?:quero|preciso|vou|vamos|quanto|qual|quais|como|o que|por que)\b).*$/iu
 
 const naturalReferencePatterns=Object.freeze([
+ {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/\bquantos?\s+hectares?\s+(?:(?:o|a)\s+)?(?<reference>[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,5}?)\s+(?:planta|plantou|cultiva|possui|tem)\b/iu},
+ {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/\b(?:hobby|hobbies|passatempo|lazer)\s+(?:de|do|da)\s+(?<reference>[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,5}?)(?=\s+(?:no cadastro|no sistema)|[.!?;]|$)/iu},
  {kind:'EXPLICIT_NAME',pattern:/\bcomo\s+(?:est[aá]|t[aá]|anda)\s+(?:(?:o|a)\s+)?(?:cliente|produtor|produtora)\s+(?<reference>[^,.!?;]+)/iu},
  {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/\bcomo\s+(?:est[aá]|t[aá]|anda)\s+(?<reference>[^,.!?;]+)/iu},
  // Fatos possessivos precisam ser avaliados antes do comando genérico

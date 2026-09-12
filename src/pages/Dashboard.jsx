@@ -22,6 +22,7 @@ import ConversionRadar from '../components/ConversionRadar'
 import ConversionOpportunityStudio from '../components/ConversionOpportunityStudio'
 import VoiceCapture from '../components/voice/VoiceCapture'
 import Disclosure from '../components/Disclosure'
+import DailyVisitRoute from '../components/DailyVisitRoute'
 import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
 import {buildHomeCopilotAnswer,buildLocalHomePriorities,canonicalVoiceChange} from '../lib/copilot-view-model'
 import {buildDayBriefing,buildFocusProducers,buildPendencies,buildTopCultures,visitLifecycle,visitMoment} from '../lib/home-command-center'
@@ -53,7 +54,7 @@ const pipelineStages=[
  {name:'Fechado',detail:'Negócio marcado como concluído'}
 ]
 
-export default function Dashboard({clients,visits,opportunities=[],currentUser,setPage,onClient,onPrepare,onRefreshPortfolio,onOpenCopilot}){
+export default function Dashboard({clients,visits,opportunities=[],currentUser,setPage,onClient,onPrepare,onRefreshPortfolio,onOpenCopilot,onOpenProperty}){
  const firstName=String(currentUser?.name||currentUser?.email?.split('@')[0]||'Equipe').trim().split(/\s+/)[0]
  const [insights,setInsights]=useState(null)
  const [insightsError,setInsightsError]=useState('')
@@ -190,21 +191,11 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
        <h3 id="home-next-visits-title">Próximas visitas</h3>
        <button type="button" onClick={()=>setPage('visits')}>Ver agenda<ChevronRight size={14}/></button>
       </header>
-      {briefing.upcoming.length
-       ?<ul>{briefing.upcoming.map(entry=>
-         <li key={entry.id}>
-          <time dateTime={entry.at.toISOString()}>{entry.at.toDateString()===new Date().toDateString()?entry.at.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):entry.at.toLocaleString('pt-BR',{weekday:'short',day:'2-digit',month:'short',hour:'2-digit',minute:'2-digit'}).replace('.','')}</time>
-          <div>
-           <b>{entry.clientName}</b>
-           <span>{entry.place||'Local não informado'}</span>
-          </div>
-          <button type="button" aria-label={`Preparar visita de ${entry.clientName}`} onClick={()=>openVisit(entry)}>{entry.lifecycle==='PREPARED'?'Abrir':'Preparar'}</button>
-         </li>
-        )}</ul>
-       :<p className="home-panel-empty">Nenhum compromisso futuro na agenda. Agende uma visita para a VAL montar a próxima rota.</p>}
-      {briefing.undatedVisits>0&&<p className="home-panel-note" role="status">{briefing.undatedVisits} visita{briefing.undatedVisits>1?'s':''} sem data registrada ficaram fora desta lista.</p>}
+      <DailyVisitRoute clients={clients} scheduled={briefing.upcoming} storageScope={currentUser?.storageScope} onClient={onClient} onOpenProperty={onOpenProperty} onPrepare={(client,row)=>onOpenCopilot?.({client,prompt:`Me prepare para a próxima visita. Considere o registro: ${row.reason||row.objective||''}`,autoSubmit:true})}/>
+
      </section>
 
+     <Disclosure id="home-priorities" title="Foco e insights" hint="Prioridades da carteira quando precisar">
      <section className="home-panel home-focus" aria-labelledby="home-focus-title">
       <header>
        <h3 id="home-focus-title">Produtores em foco</h3>
@@ -245,6 +236,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
        :<p className="home-panel-empty">Nenhuma prioridade comprovada agora. A VAL não cria urgência sem um sinal registrado.</p>}
       {insightsError&&<p className="home-panel-note" role="status">Prioridades locais exibidas. {insightsError}</p>}
      </section>
+     </Disclosure>
     </div>
 
     <section className="home-copilot-banner" aria-label="Copiloto VAL">
@@ -348,6 +340,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
 
    </div>
 
+   <Disclosure id="home-activity" title="Pendências e atividades" hint="Alertas e últimos registros">
    <aside className="home-rail" aria-label="Pendências e atividades">
     <section className="home-rail-card home-pendencies">
      <h3>Pendências e alertas</h3>
@@ -377,6 +370,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
       :<p className="home-panel-empty">Nenhuma atividade registrada ainda.</p>}
     </section>
    </aside>
+   </Disclosure>
   </div>
  </div>
 }

@@ -106,7 +106,7 @@ test('sem PostgreSQL a sede e os talhões vivem no arquivo local, por dono, e a 
 test('as telas ligam o mapa onde a decisão acontece, sem pino inventado',()=>{
  const client360=readFileSync('src/pages/Client360.jsx','utf8')+readFileSync('src/pages/Client360Details.jsx','utf8')
  assert.match(client360,/<Drilldown eyebrow="PROPRIEDADE E TALHÕES"/)
- assert.match(client360,/<PropertyFields client=\{client\} onSaved=\{onSaved\} onRefreshPortfolio=\{onRefreshPortfolio\}\/>/)
+ assert.match(client360,/<PropertyFields[^>]*initialPropertyId=\{initialPropertyId\}[^>]*client=\{client\}[^>]*onRefreshPortfolio=\{onRefreshPortfolio\}\/>/)
  assert.match(client360,/Nenhuma localização cadastrada/)
 
  const visits=readFileSync('src/pages/Visits.jsx','utf8')

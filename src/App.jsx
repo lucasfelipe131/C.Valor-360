@@ -90,11 +90,12 @@ export default function App(){
  const [portfolioReady,setPortfolioReady]=useState(false)
  const [portfolioError,setPortfolioError]=useState('')
  const [authNotice,setAuthNotice]=useState('')
- const [page,setPage]=useState('dashboard')
+ const [page,setPageRaw]=useState('dashboard')
  const [workspace,setWorkspace]=useState('comercial')
  const [valMode,setValMode]=useState(null)
  const [selected,setSelected]=useState(null)
- const [producerTab,setProducerTab]=useState('overview')
+ const [producerTab,setProducerTabRaw]=useState('overview')
+ const [producerPropertyId,setProducerPropertyId]=useState('')
  const [prepareVisitClientId,setPrepareVisitClientId]=useState('')
  const [prepareVisitId,setPrepareVisitId]=useState('')
  const [clientList,setClientList]=useState([])
@@ -110,13 +111,43 @@ export default function App(){
  const [copilotSeed,setCopilotSeed]=useState(null)
  const [copilotPageContext,setCopilotPageContext]=useState(null)
  const [agroLaunch,setAgroLaunch]=useState(createEmptyAgroLaunch)
+ const navigationHistory=useRef([])
+ const restoringNavigation=useRef(false)
+ const navigationSnapshot=()=>({page,selected,producerTab,producerPropertyId,workspace,agroLaunch,scrollY:window.scrollY})
+ const setPage=next=>{
+  const target=typeof next==='function'?next(page):next
+  if(target!==page&&!restoringNavigation.current)navigationHistory.current.push(navigationSnapshot())
+  navigationHistory.current=navigationHistory.current.slice(-30)
+  setPageRaw(target)
+ }
+ const setProducerTab=next=>{
+  if(page==='client360'&&next!==producerTab&&!restoringNavigation.current)navigationHistory.current.push(navigationSnapshot())
+  setProducerTabRaw(next)
+ }
+ const permitNavigation=()=>window.dispatchEvent(new Event('val:before-navigation',{cancelable:true}))!==false
+ const goBack=()=>{
+  if(!permitNavigation())return
+  const previous=navigationHistory.current.pop()
+  restoringNavigation.current=true
+  if(!previous){navigate(page==='client360'?'clients':'dashboard')}
+  else{
+   navigate(previous.page)
+   setWorkspace(previous.workspace)
+   if(['client360','val','agro'].includes(previous.page)){
+    setSelected(previous.selected);setProducerTabRaw(previous.producerTab);setProducerPropertyId(previous.producerPropertyId);setAgroLaunch(previous.agroLaunch)
+    setCopilotSeed({clientId:previous.selected?.id||previous.agroLaunch?.client?.id||'',nonce:crypto.randomUUID()})
+   }
+   requestAnimationFrame(()=>requestAnimationFrame(()=>window.scrollTo({top:previous.scrollY||0})))
+  }
+  restoringNavigation.current=false
+ }
  const copilotOwnerScope=currentUser?.storageScope||currentUser?.id||''
  const opportunityOwnerRef=useRef(copilotOwnerScope);opportunityOwnerRef.current=copilotOwnerScope
  const copilotClientRef=useRef('')
  const updateConversationClient=useCallback(client=>{copilotClientRef.current=String(client?.id||'')},[])
- const openClient=(c,{preserveConversation=false}={})=>{if(!preserveConversation&&String(c.id)!==copilotClientRef.current){setProducerTab('overview');setCopilotSeed({clientId:c.id,nonce:Date.now()});}setSelected(c);setCopilotRevealKey(value=>value+1);setCopilotLoaded(true);setCopilotOpen(current=>current||window.matchMedia('(min-width:1051px)').matches);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
+ const openClient=(c,{preserveConversation=false,propertyId=''}={})=>{if(!permitNavigation())return;if(page==='client360'&&(String(selected?.id)!==String(c.id)||producerPropertyId!==propertyId))navigationHistory.current.push(navigationSnapshot());setProducerPropertyId(propertyId);if(propertyId)setProducerTab('map');if(!preserveConversation&&String(c.id)!==copilotClientRef.current){setProducerTab(propertyId?'map':'overview');setCopilotSeed({clientId:c.id,nonce:Date.now()});}setSelected(c);setCopilotRevealKey(value=>value+1);setCopilotLoaded(true);setCopilotOpen(current=>current||window.matchMedia('(min-width:1051px)').matches);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
  const notify=message=>{const text=typeof message==='string'?message:String(message?.message||'Ação concluída.');setToast(text);window.clearTimeout(window.__valorToast);window.__valorToast=window.setTimeout(()=>setToast(''),2800)}
- const prepareClient=(c,options={})=>{if(!c?.id)return;setSelected(c);setPrepareVisitClientId(c.id);setPrepareVisitId(String(options?.visitId||''));setPage('visits');if(page==='visits')window.requestAnimationFrame(resetPageViewport)}
+ const prepareClient=(c,options={})=>{if(!c?.id)return;setSelected(c);setPrepareVisitClientId(c.id);setPrepareVisitId(String(options?.visitId||''));if(String(c.id)!==copilotClientRef.current)setCopilotSeed({clientId:c.id,nonce:crypto.randomUUID()});setPage('visits');if(page==='visits')window.requestAnimationFrame(resetPageViewport)}
  const openValClient=c=>{if(copilotLoaded&&String(c.id)!==copilotClientRef.current)setCopilotSeed({clientId:c.id,nonce:Date.now()});setSelected(c);setValMode('insumos');setPage('val');if(page==='val')window.requestAnimationFrame(resetPageViewport)}
  const updateCopilotPageContext=useCallback(input=>setCopilotPageContext(input?{...input,storageScope:copilotOwnerScope}:null),[copilotOwnerScope])
  const consumeAgroInitialFile=useCallback(file=>setAgroLaunch(current=>{let removed=false;const initialFiles=current.initialFiles.filter(item=>{const candidate=item?.file||item;const match=candidate===file||(!removed&&candidate?.name===file?.name&&candidate?.type===file?.type&&Number(candidate?.size||0)===Number(file?.size||0));if(match&&!removed){removed=true;return false}return true});return initialFiles.length===current.initialFiles.length?current:{...current,initialFiles}}),[])
@@ -133,8 +164,9 @@ export default function App(){
   if(page!=='copilot')setCopilotReturnPage(page)
   setCopilotLoaded(true);setCopilotOpen(true)
  }
- const closeCopilot=()=>{setCopilotOpen(false);if(page!=='copilot')return;setPage(copilotReturnPage&&copilotReturnPage!=='copilot'?copilotReturnPage:'dashboard')}
+ const closeCopilot=()=>{setCopilotOpen(false);if(page!=='copilot')return;navigate(copilotReturnPage&&copilotReturnPage!=='copilot'?copilotReturnPage:'dashboard')}
  const navigate=target=>{
+  if(!restoringNavigation.current&&!permitNavigation())return
   const descriptor=target&&typeof target==='object'?target:{page:target}
   const next=String(descriptor.page||'dashboard')
   if(next==='agro'){
@@ -165,11 +197,14 @@ export default function App(){
   }else{
    setAgroLaunch(current=>current.initialFiles.length?{...current,initialFiles:[]}:current)
   }
-  // Workspace Contextual Híbrido: mudar de módulo não descarta o produtor em
-  // foco. Antes, sair de client360 zerava a seleção e o efeito de fallback
-  // reativava o primeiro da carteira — um contexto que o usuário nunca
-  // escolheu. A troca explícita de produtor continua sendo o único caminho
-  // para trocar o contexto, e o logout continua limpando tudo.
+  // Global modules leave the producer context. Keep stored threads available in
+  // history, but detach the previous producer and start a fresh general thread.
+  if(next==='dashboard'||(Boolean(selected?.id||copilotClientRef.current)&&['clients','datahub','visits','opportunities','reports','management','settings','admin','questionnaire'].includes(next))){
+   setSelected(null);setProducerPropertyId('');setCopilotPageContext(null);setPrepareVisitId('')
+   setAgroLaunch(createEmptyAgroLaunch());copilotClientRef.current=''
+   setCopilotOpen(false)
+   setCopilotSeed({clientId:'',context:null,newConversation:true,nonce:crypto.randomUUID()})
+  }
   if(next!=='visits')setPrepareVisitClientId('')
   if(next==='val')setValMode(null)
   // Only passive navigation reduces the panel; opening a producer/chat reveals it.
@@ -178,7 +213,7 @@ export default function App(){
   setPage(next);if(next===page)window.requestAnimationFrame(resetPageViewport)
  }
  const activeCopilotClient=useMemo(()=>{
-  if(page==='client360')return selected
+  if(page==='client360'||page==='val')return selected
   const contextualClient=copilotPageContext?.source===page&&copilotPageContext?.storageScope===copilotOwnerScope?clientList.find(c=>String(c.id)===String(copilotPageContext?.clientId)):null
   if(contextualClient)return contextualClient
   if(page==='agro')return agroLaunch.client
@@ -187,12 +222,12 @@ export default function App(){
  },[page,selected,copilotPageContext,copilotOwnerScope,clientList,agroLaunch.client,prepareVisitClientId])
  const workspaceContext=useMemo(()=>createValWorkspaceContext({
   module:page,
-  client:page==='opportunities'?clientList.find(c=>String(c.id)===String(copilotPageContext?.clientId))||null:selected,
+  client:activeCopilotClient,
   property:page==='agro'?agroLaunch.property:null,
   field:page==='agro'?agroLaunch.field:null,
   analysis:page==='agro'?agroLaunch.analysis:null,
   conversation:copilotSeed?.nonce?{id:String(copilotSeed.nonce),label:'Conversa VAL ativa'}:null
- }),[page,selected?.id,selected?.name,clientList,copilotPageContext?.clientId,agroLaunch.property,agroLaunch.field,agroLaunch.analysis,copilotSeed?.nonce])
+ }),[page,activeCopilotClient,agroLaunch.property,agroLaunch.field,agroLaunch.analysis,copilotSeed?.nonce])
  const executeValWorkspaceAction=value=>{
   const action=validateValWorkspaceAction(value)
   if(!action){notify('A ação solicitada não pertence ao contrato operacional autorizado da VAL.');return {status:'DENIED'}}
@@ -254,7 +289,7 @@ export default function App(){
   if(entry.tool)return navigate({page:'agro',tool:entry.tool,label:entry.label,context:{tool:entry.tool,label:entry.label}})
   return navigate(entry.page)
  }
- useEffect(()=>{setCopilotPageContext(null);setCopilotSeed(null);setCopilotOpen(false);setCopilotLoaded(false);setAgroLaunch(createEmptyAgroLaunch())},[copilotOwnerScope])
+ useEffect(()=>{navigationHistory.current=[];setCopilotPageContext(null);setCopilotSeed(null);setCopilotOpen(false);setCopilotLoaded(false);setAgroLaunch(createEmptyAgroLaunch())},[copilotOwnerScope])
  // Sinal ruim na fazenda nao pode valer logout. So limpamos o estado local quando o SERVIDOR disse
  // que nao ha sessao (401 ou authenticated:false). Falha de rede, timeout ou 5xx bloqueiam o acesso
  // mas preservam a conversa da VAL e o cache de Oportunidades: o cookie continua valido.
@@ -280,7 +315,7 @@ export default function App(){
     if(sessionDenied||session){expireSession();return}
     setAuthNotice(unreachable?'Não foi possível revalidar o servidor. Entre novamente quando o sinal voltar; nada local foi apagado.':'Não foi possível revalidar o servidor. Entre novamente para proteger os dados.')
     setAuthenticated(false);setPortfolioReady(false)
-   });window.addEventListener('focus',revalidate);const timer=window.setInterval(revalidate,300000);return()=>{window.removeEventListener('focus',revalidate);window.clearInterval(timer)}},[authenticated,currentUser?.storageScope])
+   });window.addEventListener('focus',revalidate);window.addEventListener('val:profile-updated',revalidate);const timer=window.setInterval(revalidate,300000);return()=>{window.removeEventListener('focus',revalidate);window.removeEventListener('val:profile-updated',revalidate);window.clearInterval(timer)}},[authenticated,currentUser?.storageScope])
  useEffect(()=>{if(authenticated!==true||currentUser?.mustChangePassword||currentUser?.role==='bi_viewer')return;clearLegacyPortfolioCache();fetch('/api/intelligence',{signal:AbortSignal.timeout(12000)}).then(async response=>{if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));return null}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'A carteira protegida não pôde ser carregada.');return payload}).then(data=>{if(!data)return;const serverClients=Array.isArray(data.clients)?data.clients:[];setClientList(serverClients);setVisits(Array.isArray(data.visits)?data.visits:[]);setOpportunities(Array.isArray(data.opportunities)?data.opportunities:[]);setSelected(current=>serverClients.find(item=>String(item.id)===String(current?.id))||null);setPortfolioReady(true);setPortfolioError('')}).catch(error=>{setPortfolioError(error.message||'A carteira não pôde ser carregada.');if(currentUser?.demo){setPortfolioReady(true);return}setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setPortfolioReady(true);notify(error.name==='TimeoutError'?'A carteira demorou além do limite e permaneceu bloqueada.':error.message)})},[authenticated,currentUser?.demo,currentUser?.mustChangePassword,currentUser?.role])
  useEffect(()=>{if(authenticated!==true)return;const frame=window.requestAnimationFrame(resetPageViewport);return()=>window.cancelAnimationFrame(frame)},[page,valMode,authenticated])
  useEffect(()=>{if(authenticated!==true||currentUser?.role==='bi_viewer')return;const keydown=event=>{if((event.ctrlKey||event.metaKey)&&event.key.toLowerCase()==='k'){event.preventDefault();openCopilot()}};window.addEventListener('keydown',keydown);return()=>window.removeEventListener('keydown',keydown)},[authenticated,page,selected?.id,clientList,copilotPageContext,copilotOwnerScope,currentUser?.role])
@@ -309,16 +344,16 @@ export default function App(){
   <a className="skip-link" href="#main-content">Pular para o conteúdo</a>
   {page==='client360'?<ProducerNavigation tab={producerTab} onTab={setProducerTab} onNavigate={navigate} onAsk={()=>openCopilot({client:selected})} user={currentUser}/>:<Sidebar page={page} tool={activeTool} currentUser={currentUser} workspace={workspace} onWorkspaceChange={changeWorkspace} onSelect={selectNav} onOpenVal={()=>openCopilot()}/>}
   <main className="main" id="main-content" tabIndex="-1">
-   {page!=='copilot'&&page!=='opportunities'&&<Topbar title={title} subtitle={subtitle} onNavigate={navigate} onOpenVal={()=>openCopilot()} workspace={workspace} page={page} client={selected} clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onOpenClient={openClient}/>}
+   {page!=='copilot'&&page!=='opportunities'&&<Topbar onBack={page!=='dashboard'?goBack:null} backLabel={navigationHistory.current.length?(meta[navigationHistory.current.at(-1).page]?.[0]||'página anterior'):page==='client360'?'Clientes':'Início'} title={title} subtitle={subtitle} onNavigate={navigate} onOpenVal={()=>openCopilot()} workspace={workspace} page={page} client={activeCopilotClient} clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onOpenClient={openClient}/>}
    <div className={`content ${page==='copilot'?'content-copilot-fullscreen':''} ${page==='client360'&&copilotOpen?'p360-with-copilot':''} ${page!=='copilot'&&copilotOpen?'val-with-copilot':''}`}>
     <RouteBoundary routeKey={page}>
     <Suspense fallback={<RouteFallback/>}>
-    {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient} onRefreshPortfolio={refreshPortfolio} onOpenCopilot={openCopilot}/>}
-    {page==='clients'&&<Clients clients={clientList} opportunities={opportunities} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
+    {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient} onRefreshPortfolio={refreshPortfolio} onOpenCopilot={openCopilot} onOpenProperty={(client,propertyId)=>openClient(client,{propertyId})}/>}
+    {page==='clients'&&<Clients storageScope={copilotOwnerScope} clients={clientList} opportunities={opportunities} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
     {page==='datahub'&&<DataHub clients={clientList} onImport={importClients} onProfileImport={addClients} onUpdate={updateClient} onDelete={deleteClient} onNotify={notify}/>}
     {page==='client360'&&selected&&<Client360
-     key={selected.id} client={selected} activeTab={producerTab} onTabChange={setProducerTab} visits={visits} opportunities={opportunities}
-     currentUser={currentUser} onNewOpportunity={()=>{setSelected(selected);navigate('opportunities')}} storageScope={currentUser?.storageScope} onBack={()=>navigate('clients')}
+     key={selected.id} client={selected} initialPropertyId={producerPropertyId} activeTab={producerTab} onTabChange={setProducerTab} visits={visits} opportunities={opportunities}
+     currentUser={currentUser} onNewOpportunity={()=>{setSelected(selected);navigate('opportunities')}} storageScope={currentUser?.storageScope} onBack={goBack}
      onPrepare={()=>prepareClient(selected)} onUpdate={updateClient} onRefreshPortfolio={refreshPortfolio}
      onAsk={input=>openCopilot(input&&typeof input==='object'&&!input.nativeEvent?{...input,client:input.client||selected}:{client:selected})}
      onSaved={message=>notify(message||'Complemento técnico salvo na memória da VAL como entrada pendente de verificação.')}

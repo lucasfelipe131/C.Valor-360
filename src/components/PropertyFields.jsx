@@ -30,7 +30,7 @@ export const fromProfile=(profile,selectedSeason='')=>({
 const fieldRings=field=>(field?.multipart&&field.polygons?.length?field.polygons.map(polygon=>polygon[0]):[field?.points||[]]).filter(ring=>ring?.length>=3)
 const fieldIsMapped=field=>fieldRings(field).length>0
 
-export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
+export default function PropertyFields({client,onSaved,onRefreshPortfolio,initialPropertyId}){
  const [form,setForm]=useState(fromProfile(null))
  const savedProfile=useRef(null)
  const [mapSeason,setMapSeason]=useState('2627V')
@@ -46,7 +46,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio}){
  const [dirty,setDirty]=useState(false)
  const [loaded,setLoaded]=useState(false)
  const [properties,setProperties]=useState([])
- const [selection,setSelection]=useState({clientId:null,propertyId:undefined})
+ const [selection,setSelection]=useState({clientId:client?.id,propertyId:initialPropertyId||undefined})
  const [state,setState]=useState({loading:true,saving:false,error:'',notice:''})
  const requestVersion=useRef(0)
  const saveRequest=useRef(null)

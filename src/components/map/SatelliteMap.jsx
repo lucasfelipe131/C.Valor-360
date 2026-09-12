@@ -18,7 +18,7 @@ const PIN_TONES={visited:'Visita realizada',current:'Visita atual',planned:'Visi
 const routePoint=value=>validLocation(Array.isArray(value)?{lat:value[0],lng:value[1]}:value)
 
 export default function SatelliteMap({
- center=null,zoom=15,pins=[],polygons=[],route=[],routes=[],draft=[],fit=true,onClick,onPinClick,selectedId=null,
+ viewKey='',center=null,zoom=15,pins=[],polygons=[],route=[],routes=[],draft=[],fit=true,onClick,onPinClick,selectedId=null,
  height=280,className='',label='Mapa de satélite',interactive=true,controls=true,editorTools=null,editorActions=[],footerTools=null,adaptive=false,onNavigateMap,onPanelChange,onDraftPointClick=null,onDraftPointMove=null,onDraftPointInsert=null,clientId=null,onUseReference=null,adoptionDisabled=false
 }){
  const shell=useRef(null)
@@ -148,7 +148,7 @@ export default function SatelliteMap({
     icon:L.divIcon({className:`val-map-pin${tone?` is-${tone}`:''}${selected?' is-selected':''}`,html:`<b><span>${escapeHtml(pinLabel)}</span></b>`,iconSize:[34,40],iconAnchor:[17,tone==='position'||tone==='suggested'?17:40]}),
     title:accessibleLabel,keyboard:interactive,bubblingMouseEvents:false,riseOnHover:true,zIndexOffset:selected?1000:tone==='position'?800:0
    }).addTo(group)
-   if(pin.caption)marker.bindTooltip(escapeHtml(pin.caption),{permanent:true,direction:'auto',offset:[13,-20],className:'val-property-pin-label'})
+   if(pin.caption||pin.displayName)marker.bindTooltip(escapeHtml(pin.caption||pin.displayName),{permanent:true,direction:'auto',offset:[13,-20],className:'val-property-pin-label'})
    const element=marker.getElement()
    if(element){
     element.setAttribute('aria-label',accessibleLabel)
@@ -280,6 +280,10 @@ export default function SatelliteMap({
    // Dentro de um <details> fechado o mapa nasce com 0px; quando abre, o
    // Leaflet precisa ser avisado para buscar os tiles do tamanho real.
    if(typeof ResizeObserver!=='undefined'){observer=new ResizeObserver(()=>map.invalidateSize());observer.observe(container.current)}
+   if(viewKey){
+    try{const saved=JSON.parse(sessionStorage.getItem(`val:map-view:${viewKey}`)||'null');const point=validLocation(saved);if(point&&Number.isFinite(saved.zoom)){map.setView([point.lat,point.lng],saved.zoom);initialFitRef.current=true}}catch{}
+    map.on('moveend',()=>{try{const point=map.getCenter();sessionStorage.setItem(`val:map-view:${viewKey}`,JSON.stringify({lat:point.lat,lng:point.lng,zoom:map.getZoom()}))}catch{}})
+   }
    renderRef.current()
    setMapStatus('ready')
   }).catch(error=>{

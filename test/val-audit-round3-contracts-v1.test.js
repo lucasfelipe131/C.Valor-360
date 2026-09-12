@@ -466,7 +466,7 @@ test('rodada 4: agenda tolera visita sem data, Home rotula pelo ciclo de vida, p
  assert.match(read('src/styles.css'),/\.visit-actions \.soft-btn\.is-quiet\{/)
  const dashboard=read('src/pages/Dashboard.jsx')
  assert.match(dashboard,/CANCELLED:'Visita cancelada'/)
- assert.match(dashboard,/entry\.at\.toDateString\(\)===new Date\(\)\.toDateString\(\)/)
+ assert.match(dashboard,/<DailyVisitRoute clients=\{clients\} scheduled=\{briefing.upcoming\}/)
  assert.match(read('src/components/GlobalValCopilot.jsx'),/useEffect\(\(\)=>\{if\(conversationAutoStartKey\)setConversationAutoStartKey\(''\)\},\[conversationAutoStartKey\]\)/)
  const items=reconcilePipeline([{id:'joao',name:'João',commercial:{}}],[{id:'o-joao:voice:abc',clientId:'joao',candidateKey:'voice:abc',title:'Inoculante',stage:'Proposta',value:0}])
  assert.ok(items.some(item=>item.id==='o-joao:voice:abc'&&item.stage==='Proposta'),JSON.stringify(items))
