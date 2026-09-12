@@ -35,6 +35,7 @@ export default function SatelliteMap({
  const renderRef=useRef(()=>{})
  const fitRef=useRef(()=>{})
  const initialFitRef=useRef(false)
+ const restoredViewRef=useRef(false)
  const previousFitRef=useRef(fit)
  const selectionRef=useRef(null)
  const pinMarkersRef=useRef([])
@@ -288,14 +289,14 @@ export default function SatelliteMap({
    else map.setView(BRAZIL_VIEW.center,BRAZIL_VIEW.zoom)
   }
   // Live GPS, status updates and pin selection must preserve the user's zoom.
-  if(fit&&(!initialFitRef.current||!previousFitRef.current)&&(everything.length||start)){
+  if(fit&&!restoredViewRef.current&&(!initialFitRef.current||!previousFitRef.current)&&(everything.length||start)){
    fitRef.current();initialFitRef.current=true
   }
   previousFitRef.current=fit
   const selection=selectedPin?.key??null
   if(selection!==selectionRef.current){
-   if(selectedPin)map.panTo([selectedPin.lat,selectedPin.lng],{animate:false})
-   selectionRef.current=selection
+   if(selectedPin){map.panTo([selectedPin.lat,selectedPin.lng],{animate:false});selectionRef.current=selection}
+   else if(selectedId==null||selectedId==='')selectionRef.current=null
   }
   layoutLabelsRef.current()
  }
@@ -306,6 +307,7 @@ export default function SatelliteMap({
   let map=null
   setMapStatus('loading')
   initialFitRef.current=false
+  restoredViewRef.current=false
   baseRenderRef.current=null;referenceRenderRef.current=new Map()
   selectionRef.current=null
   import('leaflet').then(module=>{
@@ -327,7 +329,7 @@ export default function SatelliteMap({
    // Leaflet precisa ser avisado para buscar os tiles do tamanho real.
    if(typeof ResizeObserver!=='undefined'){observer=new ResizeObserver(()=>map.invalidateSize());observer.observe(container.current)}
    if(viewKey){
-    try{const saved=JSON.parse(sessionStorage.getItem(`val:map-view:${viewKey}`)||'null');const point=validLocation(saved);if(point&&Number.isFinite(saved.zoom)){map.setView([point.lat,point.lng],saved.zoom);initialFitRef.current=true;selectionRef.current=selectedId==null?null:String(selectedId)}}catch{}
+    try{const saved=JSON.parse(sessionStorage.getItem(`val:map-view:${viewKey}`)||'null');const point=validLocation(saved);if(point&&Number.isFinite(saved.zoom)){map.setView([point.lat,point.lng],saved.zoom);initialFitRef.current=true;restoredViewRef.current=true;selectionRef.current=selectedId==null?null:String(selectedId)}}catch{}
     map.on('moveend',()=>{try{const point=map.getCenter();sessionStorage.setItem(`val:map-view:${viewKey}`,JSON.stringify({lat:point.lat,lng:point.lng,zoom:map.getZoom()}))}catch{}})
    }
    renderRef.current()

@@ -266,3 +266,17 @@ test('a touch on overlapping property pins asks which property, then opens its e
   assert.equal(app.renderer.root.findAllByProps({'data-property-choice':true}).length,0)
  }finally{await app.dispose()}
 })
+
+test('returning to a saved map keeps zoom and center when property loading finishes later',async()=>{
+ const previous=globalThis.sessionStorage
+ globalThis.sessionStorage={getItem:key=>key==='val:map-view:roadmap:owner'?JSON.stringify({lat:-28.7,lng:-54.6,zoom:11}):null,setItem(){}}
+ const app=await mountMap({viewKey:'roadmap:owner',fit:false,pins:[],selectedId:'property:b'})
+ try{
+  const map=app.state.maps[0]
+  assert.deepEqual(map.views.at(-1),{point:[-28.7,-54.6],zoom:11})
+  await app.update({fit:true,pins:[{id:'property:a',lat:-28,lng:-54},{id:'property:b',lat:-29,lng:-53}]})
+  assert.equal(map.currentZoom,11);assert.equal(map.fits.length,0);assert.equal(map.pans.length,0)
+  await act(async()=>app.button('Enquadrar').props.onClick())
+  assert.equal(map.fits.length,1,'explicit Enquadrar still works')
+ }finally{await app.dispose();if(previous===undefined)delete globalThis.sessionStorage;else globalThis.sessionStorage=previous}
+})
