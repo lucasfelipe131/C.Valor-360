@@ -1,5 +1,7 @@
 import React,{useEffect,useState} from 'react'
 import HomeVisitMap from './map/HomeVisitMap'
+import {summarizeVisitSuggestion} from '../lib/visit-suggestion-summary'
+import '../val-daily-route.css'
 
 export default function DailyVisitRoute({clients,scheduled=[],storageScope,onClient,onOpenProperty,onPrepare}){
  const dayKey=value=>new Date(value).toLocaleDateString('en-CA',{timeZone:'America/Sao_Paulo'})
@@ -19,14 +21,24 @@ export default function DailyVisitRoute({clients,scheduled=[],storageScope,onCli
   <HomeVisitMap entries={rows} clients={clients} storageScope={storageScope} onOpenProperty={onOpenProperty}/>
   <p className="home-panel-note">Ordem sugerida por prioridade e proximidade em linha reta. Confirme disponibilidade e deslocamentos por estrada. Sugestões não são agendamentos.</p>
   {error&&<p role="status">{error}</p>}
-  <ol>{rows.map((row,index)=>{const client=clients.find(c=>String(c.id)===String(row.clientId));return <li key={row.id}>
-   <div><small>{row.label}</small><button className="home-producer-link" onClick={()=>client&&onClient(client)}>{row.clientName}</button><p>{row.reason}</p>
-    {row.confirmed&&row.at&&<time>{new Date(row.at).toLocaleString('pt-BR')}</time>}
-    {!row.confirmed&&row.dueAt&&<small>Prazo registrado: {new Date(row.dueAt).toLocaleDateString('pt-BR')}</small>}
+  <ol className="daily-route-list">{rows.map((row,index)=>{const client=clients.find(c=>String(c.id)===String(row.clientId));const summary=summarizeVisitSuggestion(row);return <li className="daily-route-item" key={row.id}>
+   <div className="daily-route-heading">
+    <button className="home-producer-link daily-route-name" onClick={()=>client&&onClient(client)}>{row.clientName||client?.name}</button>
+    <div className="daily-route-status"><span>{row.label}</span>
+     {row.confirmed&&row.at&&<time>{new Date(row.at).toLocaleString('pt-BR')}</time>}
+     {!row.confirmed&&row.dueAt&&<time>Prazo registrado: {new Date(row.dueAt).toLocaleDateString('pt-BR')}</time>}
+    </div>
    </div>
-   <button onClick={()=>client&&onPrepare(client,row)}>Preparar</button>
-   <button aria-label={`Antecipar ${row.clientName}`} disabled={index===0} onClick={()=>move(index,-1)}>↑</button>
-   <button aria-label={`Mover ${row.clientName} para depois`} disabled={index===rows.length-1} onClick={()=>move(index,1)}>↓</button>
+   <p className="daily-route-reason">{summary.reason}</p>
+   {summary.nextStep&&<p className="daily-route-next"><b>Próximo passo registrado:</b> {summary.nextStep}</p>}
+   <div className="daily-route-actions">
+    <button className="soft-btn" disabled={!client} onClick={()=>client&&onPrepare(client,row)}>Preparar visita</button>
+    <div className="daily-route-order"><button aria-label={`Antecipar ${row.clientName}`} disabled={index===0} onClick={()=>move(index,-1)}>↑</button>
+     <button aria-label={`Mover ${row.clientName} para depois`} disabled={index===rows.length-1} onClick={()=>move(index,1)}>↓</button></div>
+   </div>
+   {(summary.full||summary.nextFull)&&<details className="daily-route-details"><summary>Ver registro completo</summary>
+    <p>{summary.full}</p>{summary.nextFull&&summary.nextFull!==summary.full&&<p><b>Próximo passo registrado:</b> {summary.nextFull}</p>}
+   </details>}
   </li>})}</ol>
   {!rows.length&&<p>Nenhum compromisso disponível para sugerir visitas.</p>}
   <button className="soft-btn" onClick={()=>setRevision(value=>value+1)}>Atualizar roteiro</button>
