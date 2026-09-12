@@ -84,14 +84,14 @@ async function mountApp({mobile=false,apiResponse=null,portfolioVisits=[]}={}){
  }
 }
 
-test('active voice, draft and connection survive navigation across producer, visits, opportunities, reports and tools',async()=>{
+test('active voice, draft and connection survive navigation within the selected producer tools',async()=>{
  const app=await mountApp()
  try{
   await app.open()
   const draft=app.renderer.root.findByType('textarea');await act(async()=>draft.props.onChange({target:{value:'Dúvida ainda não enviada'}}))
   await app.click('Iniciar modo conversa por voz');assert.equal(app.voice().props['data-microphone-active'],'true')
   const peer=app.peers[0],stream=app.streams[0],session=app.requests.find(r=>r.path==='/api/v1/realtime-voice/sessions').payload
-  for(const target of ['visits','opportunities','reports',{page:'agro',clientId:'demo-a',tool:'produtores'},'clients']){
+  for(const target of [{page:'agro',clientId:'demo-a',tool:'produtores'},'val']){
    await app.navigate(target)
    assert.ok(app.panel());assert.match(app.panel().props.className,/is-compact/)
    assert.equal(app.peers.length,1);assert.equal(app.streams.length,1);assert.equal(stream.track.stopped,false)
@@ -115,7 +115,7 @@ test('explicit producer switch reconnects with the correct producer and discards
  try{
   await app.open();await app.click('Iniciar modo conversa por voz')
   const first=app.peers[0]
-  await app.navigate('clients');await app.open(clients[1])
+  await app.open(clients[1])
   const sessions=app.requests.filter(r=>r.path==='/api/v1/realtime-voice/sessions')
   assert.equal(sessions.length,2);assert.equal(sessions[1].payload.clientId,'demo-b')
   assert.notEqual(sessions[0].payload.conversationId,sessions[1].payload.conversationId)
@@ -130,9 +130,9 @@ test('pause survives navigation; explicit close and logout release microphone an
  const app=await mountApp()
  try{
   await app.open();await app.click('Iniciar modo conversa por voz');await app.click('Pausar modo conversa e desligar o microfone')
-  await app.navigate('reports');assert.equal(app.streams[0].track.enabled,false);assert.equal(app.voice().props['data-microphone-active'],'false')
+  await app.navigate({page:'agro',clientId:clients[0].id});assert.equal(app.streams[0].track.enabled,false);assert.equal(app.voice().props['data-microphone-active'],'false')
   await app.click('Restaurar painel da VAL');await app.click('Retomar modo conversa');assert.equal(app.streams[0].track.enabled,true)
-  await app.click('Fechar Copiloto');assert.equal(app.streams[0].track.stopped,true);assert.ok(app.stub('Reports'))
+  await app.click('Fechar Copiloto');assert.equal(app.streams[0].track.stopped,true);assert.ok(app.stub('Agro'))
   await act(async()=>app.stub('Topbar').props.onOpenVal());await app.click('Iniciar modo conversa por voz')
   await app.navigate('settings');await act(async()=>{await app.stub('Settings').props.onLogout();await flush()})
   assert.equal(app.panel(),undefined);assert.equal(app.streams.every(s=>s.track.stopped),true);assert.equal(app.audios.every(a=>a.removed),true)
@@ -156,7 +156,7 @@ test('mobile navigation and returning to the producer keep an explicitly started
  try{
   await act(async()=>{app.stub('Dashboard').props.onOpenCopilot({client:clients[0],conversation:true});await flush()})
   assert.equal(app.voice().props['data-microphone-active'],'true');assert.equal(app.peers.length,1)
-  await app.navigate('clients');assert.match(app.panel().props.className,/is-compact/)
+  await app.navigate({page:'agro',clientId:clients[0].id});assert.match(app.panel().props.className,/is-compact/)
   await app.open(clients[0]);assert.ok(app.panel());assert.equal(app.voice().props['data-microphone-active'],'true')
   assert.equal(app.peers.length,1);assert.equal(app.streams[0].track.stopped,false)
  }finally{await app.dispose()}
@@ -207,7 +207,7 @@ test('a producer resolved by the chat opens its profile without replacing the co
   await app.ask('Repete')
   assert.equal(app.requests.filter(r=>r.path==='/api/val/chat').length,2,'repeat reuses the last completed answer')
   assert.ok(JSON.stringify(app.renderer.toJSON()).includes('A área ainda não foi informada.'))
-  await app.navigate('reports')
+  await app.navigate({page:'agro',clientId:clients[1].id})
   await act(async()=>app.stub('Topbar').props.onOpenVal())
   await app.ask('E o histórico dele?')
   const last=app.requests.filter(r=>r.path==='/api/val/chat').at(-1).payload
@@ -255,17 +255,17 @@ test('real App + voice hook + service reconnect after a domain epoch change and 
 })
 
 
-test('opening the real Visits page and a new visit does not replace the chat with the first scheduled producer',async()=>{
+test('leaving for the real Visits page clears the producer; a new visit never selects the first scheduled producer',async()=>{
  const app=await mountApp({portfolioVisits:[{id:'visit-a',clientId:clients[0].id,status:'Agendada',scheduledAt:new Date(Date.now()+86400000).toISOString()}]})
  try{
-  await app.open(clients[1]);await app.navigate('visits')
+  await app.open(clients[1]);await app.navigate('visits');await act(async()=>{app.stub('Topbar').props.onOpenVal();await flush()})
   const chatSelect=()=>app.renderer.root.findAll(node=>node.type==='select'&&!node.props.required)[0]
-  assert.equal(chatSelect().props.value,clients[1].id)
+  assert.equal(chatSelect().props.value,'')
   const button=app.renderer.root.findAll(node=>node.type==='button'&&node.children.includes('Nova visita'))[0]
   await act(async()=>{button.props.onClick();await flush()})
   assert.equal(app.renderer.root.findAll(node=>node.type==='select'&&node.props.required)[0].props.value,'')
-  assert.equal(chatSelect().props.value,clients[1].id)
-  await app.navigate('val');assert.equal(chatSelect().props.value,clients[1].id)
+  assert.equal(chatSelect().props.value,'')
+  await app.navigate('val');assert.equal(chatSelect().props.value,'')
  }finally{await app.dispose()}
 })
 
@@ -274,5 +274,103 @@ test('explicitly reopening the displayed producer restores its chat after select
  try{
   await app.open();await app.chooseClient('');assert.equal(app.renderer.root.findByType('select').props.value,'')
   await app.open();assert.equal(app.renderer.root.findByType('select').props.value,clients[0].id)
+ }finally{await app.dispose()}
+})
+
+for(const mobile of [false,true])test(`home detaches the producer and request context; saved history resumes only on selection (${mobile?'mobile':'desktop'})`,async()=>{
+ const app=await mountApp({mobile,apiResponse:(path,request)=>path==='/api/val/chat'?json(replyFor(request,{client:clients.find(c=>c.id===request.clientId)||null})):null})
+ try{
+  await act(async()=>{app.stub('Dashboard').props.onOpenCopilot({client:clients[0],prompt:'Prepare a visita de A',autoSubmit:true});await flush()})
+  const previous=app.requests.find(r=>r.path==='/api/val/chat').payload
+  assert.equal(previous.clientId,clients[0].id)
+  await app.navigate('dashboard')
+  assert.equal(app.stub('Topbar').props.client,null)
+  assert.equal(app.panel(),undefined)
+  assert.match(JSON.stringify(sessionStorage),/Prepare a visita de A/)
+  await act(async()=>{app.stub('Topbar').props.onOpenVal();await flush()})
+  assert.equal(app.renderer.root.findByType('select').props.value,'')
+  assert.doesNotMatch(JSON.stringify(app.renderer.toJSON()),/Prepare a visita de A/)
+  await app.ask('Como organizar minha próxima visita?')
+  const general=app.requests.filter(r=>r.path==='/api/val/chat').at(-1).payload
+  assert.equal(general.clientId,'');assert.equal(general.client,undefined)
+  assert.notEqual(general.conversationId,previous.conversationId)
+  assert.equal(general.context,undefined);assert.equal(general.workspaceContext.current_client,null)
+  assert.equal(general.workspaceContext.current_module,'dashboard')
+  assert.doesNotMatch(JSON.stringify(general),/demo-a|Prepare a visita de A/)
+  await app.click('Abrir histórico de conversas')
+  const drawer=app.renderer.root.findByProps({'aria-label':'Histórico de conversas'})
+  const saved=drawer.findAllByType('button').find(node=>node.findAllByType('b').some(item=>item.children.join('').includes(clients[0].name))&&node.findAllByType('small').every(item=>!item.children.join('').includes('Abrir conversa por produtor')))
+  assert.ok(saved,'saved conversation remains available for explicit resumption')
+  await act(async()=>{saved.props.onClick();await flush()})
+  assert.equal(app.renderer.root.findByType('select').props.value,clients[0].id)
+  await app.ask('Qual o próximo passo com ele?')
+  const resumed=app.requests.filter(r=>r.path==='/api/val/chat').at(-1).payload
+  assert.equal(resumed.clientId,clients[0].id);assert.equal(resumed.conversationId,previous.conversationId)
+  assert.equal(app.stub('Topbar').props.client,null,'explicit chat resumption does not change the home breadcrumb')
+ }finally{await app.dispose()}
+})
+
+test('returning home stops the old voice session and discards its late transcripts',async()=>{
+ const app=await mountApp()
+ try{
+  await app.open();await app.click('Iniciar modo conversa por voz')
+  const old=app.peers[0]
+  await app.navigate('dashboard')
+  assert.equal(app.streams[0].track.stopped,true)
+  assert.equal(old.connectionState,'closed')
+  await act(async()=>{old.dc.emit({type:'conversation.item.input_audio_transcription.completed',item_id:'late-home',transcript:'OLD_HOME_PRODUCER_TRANSCRIPT'});await flush()})
+  await act(async()=>{app.stub('Topbar').props.onOpenVal();await flush()})
+  assert.equal(app.renderer.root.findByType('select').props.value,'')
+  assert.doesNotMatch(JSON.stringify(sessionStorage),/OLD_HOME_PRODUCER_TRANSCRIPT/)
+  assert.equal(app.peers.length,1,'home does not start another microphone session automatically')
+ }finally{await app.dispose()}
+})
+
+test('returning home cancels an in-flight producer answer before it can restore the old context',async()=>{
+ let resolveAnswer
+ const app=await mountApp({apiResponse:(path,request)=>path==='/api/val/chat'?new Promise(resolve=>{resolveAnswer=()=>resolve(json(replyFor(request,{client:clients[0],resolve:true})))}):null})
+ try{
+  await app.open();await app.ask('Abra a ficha deste produtor')
+  const oldRequest=app.requests.find(r=>r.path==='/api/val/chat')
+  await app.navigate('dashboard');assert.equal(oldRequest.signal.aborted,true)
+  await act(async()=>{resolveAnswer();await flush()})
+  assert.ok(app.stub('Dashboard'));assert.equal(app.stub('Topbar').props.client,null)
+  await act(async()=>{app.stub('Topbar').props.onOpenVal();await flush()})
+  assert.equal(app.renderer.root.findByType('select').props.value,'')
+  assert.doesNotMatch(JSON.stringify(app.renderer.toJSON()),/Abrindo o produtor escolhido/)
+ }finally{await app.dispose()}
+})
+
+for(const mobile of [false,true])test(`workspace Intelligence opens the actual copilot and producer switches stay scoped (${mobile?'mobile':'desktop'})`,async()=>{
+ const app=await mountApp({mobile})
+ try{
+  await app.open(clients[0]);await app.navigate('val')
+  await act(async()=>{app.stub('Sidebar').props.onWorkspaceChange('inteligencia');await flush()})
+  assert.equal(app.renderer.root.findAllByType('test-Dashboard').length,0)
+  assert.equal(app.renderer.root.findByType('select').props.value,clients[0].id)
+  await app.navigate('clients');await act(async()=>{app.stub('Topbar').props.onOpenVal();await flush()})
+  assert.equal(app.renderer.root.findByType('select').props.value,'')
+  await app.open(clients[1]);await act(async()=>{app.stub('Topbar').props.onOpenVal();await flush()})
+  assert.equal(app.renderer.root.findByType('select').props.value,clients[1].id)
+  await app.ask('Me prepare para a próxima visita')
+  const request=app.requests.filter(r=>r.path==='/api/val/chat').at(-1).payload
+  assert.equal(request.clientId,clients[1].id);assert.doesNotMatch(JSON.stringify(request),/demo-a/)
+ }finally{await app.dispose()}
+})
+
+for(const mobile of [false,true])test(`global management and reports reset context; back restores the appropriate page (${mobile?'mobile':'desktop'})`,async()=>{
+ const app=await mountApp({mobile})
+ try{
+  await app.open(clients[0]);await app.navigate('management')
+  assert.equal(app.stub('Topbar').props.client,null)
+  assert.equal(app.panel(),undefined)
+  await app.navigate('reports');assert.equal(app.stub('Topbar').props.client,null)
+  await act(async()=>{app.stub('Topbar').props.onBack();await flush()})
+  assert.equal(app.stub('Topbar').props.page,'management');assert.equal(app.stub('Topbar').props.client,null)
+  await act(async()=>{app.stub('Topbar').props.onBack();await flush()})
+  assert.equal(app.stub('Topbar').props.page,'client360');assert.equal(app.stub('Topbar').props.client.id,clients[0].id)
+  await app.open(clients[1]);assert.equal(app.stub('Topbar').props.client.id,clients[1].id)
+  await act(async()=>{app.stub('Topbar').props.onBack();await flush()})
+  assert.equal(app.stub('Topbar').props.client.id,clients[0].id)
  }finally{await app.dispose()}
 })

@@ -92,6 +92,10 @@ test('preparação retoma histórico em conversa nova',async()=>{
   })]},
  }
  await writeFile(join(dataRoot,'valor360-store.json'),JSON.stringify(store))
+  store.imports[0].clients.push(scoped({id:'genor',name:'Genor Blum Filho TEST',area:200,cultures:'Milho, Soja'}));
+  store.val.producerSeasons=[scoped({clientId:'genor',season:'2627V',revision:1,updatedAt:new Date().toISOString(),observedOn:new Date().toISOString().slice(0,10),crops:[{crop:'Milho',areaHa:70},{crop:'Soja',areaHa:90}]}),scoped({clientId:'matheus',season:'2627V',revision:1,updatedAt:new Date().toISOString(),observedOn:new Date().toISOString().slice(0,10),crops:[{crop:'Soja',areaHa:150}]})];
+  store.interactions=[scoped({id:'genor-hobby',clientId:'genor',occurredAt:new Date().toISOString(),summary:'Seu hobby é pescar com a família.'})];
+ await writeFile(join(dataRoot,'valor360-store.json'),JSON.stringify(store));
  const child=spawn(process.execPath,['server/start.js'],{
   cwd:repositoryRoot,
   env:{...process.env,PORT:String(port),VAL_DEMO_MODE:'true',VAL_DEFAULT_TENANT_ID:tenantId,VAL_AI_REQUESTS_PER_10_MINUTES:'60',AUTO_MIGRATE:'false',DATA_DIR:dataRoot,DATABASE_URL:'',OPENAI_API_KEY:'',VAL_ADMIN_EMAIL:'',VAL_ADMIN_PASSWORD:'',VAL_SESSION_SECRET:''},
@@ -128,7 +132,21 @@ test('preparação retoma histórico em conversa nova',async()=>{
   assert.doesNotMatch(prepared.payload.advice.answer,/não há evidência|confirme a fonte/i);
   assert.equal(reasoning.grounding.passed,true);
   assert.equal(reasoning.run.status,'VISIT_PREPARATION_RECOVERED');
+  assert.equal(reasoning.golden_questions.length,3);
+  assert.ok(reasoning.golden_questions.every(item=>/comparativo|custo/.test(item.question)));
+  assert.match(reasoning.recommended_strategy.action,/Registre as respostas/);
+  assert.ok(!reasoning.decision_interview.questions.some(item=>/qual decisão precisa ficar fechada/i.test(item.question)));
   assert.equal(prepared.payload.automaticRouting.useGenerativeAi,true);
+  assert.match(prepared.payload.advice.answer,/antes de discutir desconto/);
+  assert.match(prepared.payload.advice.answer,/sem estimar perdas ou ganhos/);
+  const continued=await turn('Ele disse que está caro e ainda não informou o custo da alternativa. Como conduzir essa visita?', 'antonio','new-session');
+  assert.equal(continued.status,200);
+  assert.match(continued.payload.advice.answer,/comparativo de custo/);
+  assert.match(continued.payload.advice.answer,/alternativa|referência/);
+  assert.match(continued.payload.advice.answer,/ainda não informou o custo da alternativa/);
+  assert.doesNotMatch(continued.payload.advice.ai_reasoning.golden_questions[0].question,/o que mudou/);
+  assert.doesNotMatch(continued.payload.advice.answer,/ganho de \d|perda de \d|desconto de \d/);
+
   assert.ok(reasoning.facts_used.some(f=>f.source_ref==='visit:visit-antonio'));
   assert.ok(!reasoning.decision_interview.questions.some(q=>q.field==='timing'));
   const other=await turn('Me prepare para a próxima visita.','carlos','other-session');
@@ -138,6 +156,17 @@ test('preparação retoma histórico em conversa nova',async()=>{
   assert.equal(empty.status,200,JSON.stringify(empty.payload));
   assert.doesNotMatch(empty.payload.advice.answer,/comparativo|Antônio|Enviar proposta/i);
   assert.ok(!empty.payload.advice.ai_reasoning.facts_used.some(f=>f.source_type==='visit'));
+  for(const [question,target,expected,forbidden] of [
+   ['Quantos hectares Genor Blum Filho TEST planta de milho?','antonio',/70 ha/,/428|150 ha/],
+   ['Qual o hobby de Genor Blum Filho TEST?','genor',/pescar/,/Antônio/],
+   ['Quantos hectares Matheus Nascimento Jaeger planta de soja?','genor',/150 ha/,/70 ha|pescar/]
+  ]){
+   const answer=await turn(question,target,'registered-facts',{conversationMode:true,responseMode:'audio'});
+   assert.equal(answer.status,200,question+JSON.stringify(answer.payload));assert.match(answer.payload.advice.answer,expected);assert.doesNotMatch(answer.payload.advice.answer,forbidden);
+   assert.match(answer.payload.advice.ai_reasoning.voice_output.speakable_text,expected);
+   assert.equal(answer.payload.advice.ai_reasoning.decision_interview.questions.length,0);
+   console.log(`FACT_LATENCY ${question}: ${Math.round(answer.wallMs)}ms`);
+  }
   store.visits[0].nextCommitment='Levar o laudo atualizado para avaliação conjunta';
   store.visits[0].summary='Revisamos o combinado anterior. A prioridade agora é avaliar o laudo atualizado.';
   await writeFile(join(dataRoot,'valor360-store.json'),JSON.stringify(store));

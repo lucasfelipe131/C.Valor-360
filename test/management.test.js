@@ -1,3 +1,5 @@
+import {profilePhoto,validateProfilePhoto} from '../server/profile-photo.js'
+import {readDailyVisitSuggestions} from '../server/daily-visit-suggestions.js'
 import assert from 'node:assert/strict'
 import {readFile,readdir} from 'node:fs/promises'
 import test,{before,after} from 'node:test'
@@ -108,4 +110,29 @@ test('management migration remains idempotent without assigning existing users',
  await pg.exec(migration)
  assert.equal((await service.overview(unassigned,period)).configured,false)
  assert.equal((await service.overview(viewer,period)).unit.id,unit.id)
+})
+
+test('profile photos persist separately and reject foreign producer access',async()=>{
+ const actor={id:consultant,tenantId,role:'consultant'}
+ const photo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j4N8AAAAASUVORK5CYII='
+ const own=await profilePhoto({db,tenantId},actor,{write:true,input:{name:'TEST edited consultant',photo}})
+ assert.equal(own.name,'TEST edited consultant');assert.equal(own.photo,photo)
+ assert.equal((await profilePhoto({db,tenantId},actor,{clientId:id(20)})).photo,null)
+ await profilePhoto({db,tenantId},actor,{clientId:id(20),write:true,input:{photo}})
+ assert.equal((await profilePhoto({db,tenantId},actor,{clientId:id(20)})).photo,photo)
+ await profilePhoto({db,tenantId},actor,{write:true,input:{photo:null}})
+ assert.equal((await profilePhoto({db,tenantId},actor)).photo,null)
+ assert.equal((await profilePhoto({db,tenantId},actor,{clientId:id(20)})).photo,photo)
+ for(const clientId of [id(21),id(22)])await assert.rejects(profilePhoto({db,tenantId},actor,{clientId,write:true,input:{photo}}),{statusCode:404})
+ assert.throws(()=>validateProfilePhoto('data:image/svg+xml;base64,PHN2Zz4='),{statusCode:400})
+ assert.throws(()=>validateProfilePhoto('data:image/png;base64,'+Buffer.from('not an image with enough bytes').toString('base64')),{statusCode:400})
+})
+test('daily suggestions read owned historical next steps without scheduled visits',async()=>{
+ await pg.query("INSERT INTO visits(id,tenant_id,client_id,consultant_id,summary,next_commitment,next_action_at,status) VALUES($1,$2,$3,$4,'TEST visit','TEST compare alternatives',$5,'Realizada')",[id(990),tenantId,id(20),consultant,'2026-09-12T15:00:00Z'])
+ const result=await readDailyVisitSuggestions({db,tenantId},consultant,{now:new Date('2026-09-12T14:00:00Z')})
+ const row=result.suggestions.find(item=>item.clientId===id(20))
+ assert.equal(row.reason,'TEST compare alternatives');assert.equal(row.classification,'DUE_TODAY');assert.equal(row.confirmed,false)
+ assert.ok(result.suggestions.every(item=>![id(21),id(22)].includes(item.clientId)))
+ await pg.query("UPDATE visits SET next_action_at='2026-09-15' WHERE id=$1",[id(990)])
+ assert.ok(!(await readDailyVisitSuggestions({db,tenantId},consultant,{now:new Date('2026-09-12T14:00:00Z')})).suggestions.some(item=>item.sourceId==='visit:'+id(990)))
 })

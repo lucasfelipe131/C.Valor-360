@@ -203,3 +203,11 @@ body.val-map-expanded{overscroll-behavior:none}
 .val-cadastral-auto{padding:9px 10px;background:#edf7f1;border-radius:8px;color:#006e50!important}.val-cadastral-toggles{display:flex;flex-wrap:wrap;gap:5px}.val-cadastral-toggles button{display:flex;align-items:center;gap:5px;border:1px solid #dbe8e1;border-radius:8px;padding:8px;background:#fff;color:#65756c;font-size:11px}.val-cadastral-toggles button[aria-pressed=true]{background:#edf7f1;border-color:#8fbda7;color:#005e45}.val-cadastral-toggles i{width:8px;height:8px;border-radius:50%}.val-cadastral-toggles span{font-size:10px;background:#fff;padding:2px 4px;border-radius:4px}.val-cadastral-sources{border-bottom:1px solid #e0e9e3;margin-bottom:10px}.val-cadastral-panel details{border-top:1px solid #e0e9e3;padding-top:12px;margin-top:12px}.val-cadastral-panel summary{cursor:pointer;color:#006e50;font-size:12px;font-weight:600}
 @media(max-width:760px){.val-map-placebar input,.val-map-placebar select,.productive-map-tools input,.productive-map-tools select,.val-cadastral-panel input:not([type=checkbox]),.val-cadastral-panel select{font-size:16px;min-height:44px}.val-reference-results>button{justify-content:flex-start;align-items:flex-start}}
 .val-map-place-notice .val-map-cadastral-notice{border:0;background:none;padding:0;color:#007154;font:inherit;text-decoration:underline;text-underline-offset:2px;cursor:pointer}
+
+.val-property-producer-label{font-size:11px;font-weight:650;padding:3px 6px;max-width:180px;white-space:normal;border-radius:5px;color:#173f32}
+.home-operational{grid-template-columns:minmax(0,1fr)}
+.home-cockpit{grid-template-columns:minmax(0,1fr)}
+.home-visit-map{margin-bottom:16px;overflow:hidden;border-radius:14px}
+.home-producer-link{padding:0!important;background:none!important;border:0!important;color:var(--ink,#204e3d);text-align:left;font-weight:700;cursor:pointer}
+.home-producer-link:hover{text-decoration:underline}
+.home-operational>.val-disclosure{grid-column:1/-1}

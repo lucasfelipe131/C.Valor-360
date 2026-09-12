@@ -195,12 +195,12 @@ export function collectionMatchesContextDomain(item={},sourceType='',domain='GEN
  // A consulta de visita seleciona o evento pela sua entidade/tipo. O assunto
  // relatado dentro da visita (agronomia, grãos, crédito etc.) não transforma
  // o próprio evento em contexto órfão nem autoriza outras coleções.
- if(selected==='VISIT'&&intrinsic.includes('VISIT'))return true
+ if(requested.includes('VISIT')&&intrinsic.includes('VISIT'))return true
  const evidence=Array.isArray(item?.evidence)?item.evidence:[]
  const linkedToConfirmedVisit=Boolean(item?.visit_id??item?.visitId)||evidence.some(ref=>clean(ref?.type??ref?.source_type??ref?.sourceType,100).toLowerCase()==='confirmed_visit_report')
  // Uma oportunidade explicitamente derivada da visita confirmada é contexto
  // legítimo da preparação seguinte, ainda que sua categoria seja agronômica.
- if(selected==='VISIT'&&intrinsic.includes('OPPORTUNITY')&&linkedToConfirmedVisit)return true
+ if(requested.includes('VISIT')&&intrinsic.includes('OPPORTUNITY')&&linkedToConfirmedVisit)return true
  // A pergunta de oportunidade seleciona a oportunidade pela sua entidade/tipo, como a de visita.
  // O dominio intrinseco da oportunidade inclui COMMERCIAL e o titulo pode citar safra ou credito;
  // nada disso pode vetar o proprio registro perguntado ("ele tem oportunidade aberta?" respondia

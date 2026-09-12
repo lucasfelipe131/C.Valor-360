@@ -1,3 +1,6 @@
+import {registeredFactQuery,registeredFactPresentation} from './server/registered-fact-query.js'
+import {readDailyVisitSuggestions} from './server/daily-visit-suggestions.js'
+import {profilePhoto} from './server/profile-photo.js'
 import {readMunicipalityBoundary} from './server/municipality-boundaries.js'
 import {readProducerSeasons,saveProducerSeason} from './server/producer-seasons.js'
 import {createReadStream,existsSync,mkdirSync,readFileSync,renameSync,statSync,writeFileSync} from 'node:fs'
@@ -296,6 +299,14 @@ async function handleApi(request,response,url){
   const identity=await sessionIdentity(request);if(!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
   const payload=await body(request);const updated=await accessRepository.changePassword(identity,payload.currentPassword,payload.newPassword)
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
+ }
+ const photoMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/profile-photo$/)
+ if((url.pathname==='/api/auth/profile'||photoMatch)&&['GET','PUT'].includes(request.method)){
+  const identity=await sessionIdentity(request)
+  if(!identity)return json(response,401,{error:'Sua sessão expirou.'})
+  if(!managementOnlyAllowed(identity,url.pathname,request.method))return json(response,403,{error:'Acesso restrito.'})
+  response.setHeader('Cache-Control','private, no-store')
+  return json(response,200,await profilePhoto(repository,identity,{clientId:photoMatch?decodeURIComponent(photoMatch[1]):null,write:request.method==='PUT',input:request.method==='PUT'?await body(request):{}}))
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
  const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
@@ -886,6 +897,17 @@ async function handleApi(request,response,url){
    const direct=buildCapabilityExecutionResponse({execution:toolExecution,route:clientCapability,message,organizationId:tenantId,ownerId:scopedOwnerId,clientId,clientName:scoped.client?.name||payload.client?.name,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent),executionCounts:{entityResolutions:entityLookupCount,dataLookups:0,toolCalls:1,hops:entityLookupCount+1}})
    return json(response,200,completeClient(direct,toolExecution))
   }
+  const previousFactMessage=[...(requestConversationState.conversation_turns||[])].reverse().find(turn=>turn.role==='user'&&turn.text!==message)?.text||''
+  const detailQuery=registeredFactQuery(message,{previousMessage:previousFactMessage})
+  if(detailQuery&&!attachmentIds.length){
+   const startedAt=Date.now();latency.start('DATABASE')
+   const [context,declared,facts]=await Promise.all([loadAuthorizedContext(),detailQuery.kind==='crop_area'?readProducerSeasons(repository,clientId,scopedOwnerId):Promise.resolve({seasons:[]}),repository.getFastClientFacts({tenantId,ownerId:scopedOwnerId,clientId,dataPath:'REGISTERED_AREA',timeoutMs:config.databaseQueryTimeoutMs})])
+   latency.end('DATABASE');throwIfRequestAborted(requestController.signal)
+   const narratives=[...(context.visits||[]).map(row=>({id:row.id,source_type:'visit',text:row.summary,observedAt:row.updated_at||row.updatedAt||row.occurredAt||row.created_at})),...(context.interactions||[]).map(row=>({id:row.id,source_type:'interaction',text:row.summary,observedAt:row.occurred_at||row.occurredAt})),...(context.memoryHistory||[]).filter(row=>['CONFIRMED','VERIFIED','FACT'].includes(String(row.memory_state||row.status||row.memory_type||'').toUpperCase())).map(row=>({id:row.id,source_type:'memory',text:typeof row.value==='string'?row.value:JSON.stringify(row.value),observedAt:row.observed_at||row.updated_at}))].filter(row=>row.id&&row.text)
+   const presentationOverride=registeredFactPresentation({query:detailQuery,client:{...context.client,...facts.client},declaredSeasons:declared.seasons,properties:context.properties,narratives})
+   const fast=buildFastClientResponse({facts,presentationOverride,message,organizationId:tenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:requestConversationState.current_domain||'GENERAL',latencyMs:Date.now()-startedAt,executionCounts:{entityResolutions:entityLookupCount,dataLookups:detailQuery.kind==='crop_area'?3:2,hops:entityLookupCount+3}})
+   return json(response,200,completeClient(fast,null))
+  }
   let marketAttachmentBase=null
   if(clientCapability.capabilities.includes('MARKET_COMMODITY')){
    const startedAt=Date.now()
@@ -1043,6 +1065,7 @@ async function handleApi(request,response,url){
  if(url.pathname.startsWith('/api/visit-routes/')){
   if(!identity?.id)return json(response,401,{error:'Entre na sua conta para acessar o roteiro.'})
   response.setHeader('Cache-Control','private, no-store')
+  if(url.pathname==='/api/visit-routes/daily-suggestions'&&request.method==='GET')return json(response,200,await readDailyVisitSuggestions(repository,identity.id))
   if(url.pathname==='/api/visit-routes/properties'&&request.method==='GET')return json(response,200,await readRouteProperties(repository,identity.id))
   if(url.pathname==='/api/visit-routes/driving'&&request.method==='POST')return json(response,200,await visitRouteService.driving({ownerId:identity.id,input:await body(request)}))
   const date=url.searchParams.get('date')

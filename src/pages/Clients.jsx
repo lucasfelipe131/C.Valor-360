@@ -11,10 +11,13 @@ const clientSearchText=client=>normalizeText([client.name,client.municipality,cl
 const opportunityFor=(client,items=[])=>items.find(item=>String(item.clientId)===String(client.id)&&String(item.stage||'').toLowerCase()!=='fechado')||null
 const attentionScore=(client,opportunity)=>{const metrics=commercialMetrics(client);const days=lastContact(client);return (opportunity||resolveOpportunityCandidate(client)?50:0)+(opportunity?.nextActionAt&&new Date(opportunity.nextActionAt)<new Date()?35:0)+(metrics.openPotential>0?Math.min(30,Math.log10(metrics.openPotential+1)*5):0)+(days===null?4:Math.min(20,days/4))+(client.commercial?.decisionWindow?12:0)+(client.commercial?.commercialRisk?8:0)}
 
-export default function Clients({clients=[],opportunities=[],onClient,onNew}){
- const [q,setQ]=useState('')
- const [filter,setFilter]=useState('all')
- const [sort,setSort]=useState('attention')
+export default function Clients({storageScope='',clients=[],opportunities=[],onClient,onNew}){
+ const cacheKey=`val:client-list:${storageScope}`
+ const readCache=()=>{try{return JSON.parse(sessionStorage.getItem(cacheKey)||'{}')}catch{return {}}}
+ const [q,setQ]=useState(()=>readCache().q||'')
+ const [filter,setFilter]=useState(()=>readCache().filter||'all')
+ const [sort,setSort]=useState(()=>readCache().sort||'attention')
+ useEffect(()=>{try{sessionStorage.setItem(cacheKey,JSON.stringify({q,filter,sort}))}catch{}},[cacheKey,q,filter,sort])
  const [visibleCount,setVisibleCount]=useState(9)
  const prepared=useMemo(()=>clients.map(client=>({client,metrics:commercialMetrics(client),candidate:resolveOpportunityCandidate(client),opportunity:opportunityFor(client,opportunities)})),[clients,opportunities])
  const list=useMemo(()=>prepared.filter(item=>{

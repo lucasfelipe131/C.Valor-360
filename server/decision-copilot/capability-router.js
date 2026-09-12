@@ -1611,12 +1611,13 @@ function fastFactPresentation({facts,route,now,scope={},message=''}){
  return {dataPath:'REGISTERED_AREA',answer,primaryFound:found,sourceRef,factsUsed,action:'Use o nível de área cadastrado e confirme divergências antes de calcular.',missing:'Área total cadastrada',doNotDo:'Não somar níveis de área potencialmente sobrepostos.'}
 }
 
-export function buildFastClientResponse({facts={},message='',organizationId='unknown',ownerId='',conversationId='',contextEpoch=0,contextDomain='',now=new Date(),latencyMs=0,executionCounts={}}={}){
+export function buildFastClientResponse({facts={},presentationOverride=null,message='',organizationId='unknown',ownerId='',conversationId='',contextEpoch=0,contextDomain='',now=new Date(),latencyMs=0,executionCounts={}}={}){
  now=now instanceof Date&&!Number.isNaN(now.getTime())?now:new Date()
  const route=routeSystemCapability({message,intentHint:'ASK_CLIENT',hasClient:true})
  const client=facts.client||{id:'unknown',name:'Produtor'}
  const verifiedScope=assertFastFactsBoundary(facts,{tenantId:organizationId,ownerId})
- const presentation=fastFactPresentation({facts,route,now,scope:verifiedScope,message})
+ const presentation=presentationOverride||fastFactPresentation({facts,route,now,scope:verifiedScope,message})
+ if(presentationOverride)for(const item of list(presentationOverride.factsUsed))assertRawRecordScope(item,verifiedScope)
  const capability=route.capabilities[0]||'CLIENT_CONTEXT'
  const auditedSourceRef=clean(presentation.sourceRef,180)||null
  const normalizedEpoch=exactContextEpoch(contextEpoch)

@@ -1,3 +1,4 @@
+import {useNavigationGuard} from '../lib/use-navigation-guard'
 import React,{useEffect,useRef,useState} from 'react'
 import {compareSeasons,cropPotential,emptySeasonCrops,numeric,previousYield,seasonCode,seasonOrder,validSeasonCode} from '../lib/producer-seasons'
 import {formatNumber} from '../lib/producer-display'
@@ -19,6 +20,7 @@ const columns=[['areaHa','Área (ha)'],['expectedYield','Produtividade projetada
 export default function ProducerSeasons({client,resource}){
  const [selected,setSelected]=useState('2627V'),[newCode,setNewCode]=useState(''),[draft,setDraft]=useState(blank('2627V'))
  const [dirty,setDirty]=useState(false),[busy,setBusy]=useState(false),[notice,setNotice]=useState(''),[error,setError]=useState('')
+ useNavigationGuard(dirty,{busy,label:'cadastro de safra'})
  const request=useRef(null)
  useEffect(()=>()=>request.current?.abort('unmount'),[])
  useEffect(()=>{if(!dirty)setDraft(resource.seasons.find(s=>s.season===selected)||blank(selected))},[selected,resource.seasons,dirty])

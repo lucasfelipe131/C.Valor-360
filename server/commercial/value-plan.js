@@ -54,13 +54,20 @@ function priceStatus(message,advice,thesis){
  return priceObjection(message,advice)?'HYPOTHESIS':'ABSENT'
 }
 
+export const consultativeValueGuidance=Object.freeze({
+ impact:'Discuta o problema e suas implicações antes de propor uma solução. Apresente o custo de agir e de não agir somente com dados, unidades, período e premissas explícitos. Confirme quais valores faltam levantar, sem estimar perdas ou ganhos.',
+ alternatives:'Apresente alternativas tecnicamente adequadas pelo custo por hectare, resultado esperado e risco quando houver evidência. Confirme o critério de comparação e a prova necessária antes da proposta.',
+ price:'Confirme o que significa caro e a alternativa usada como referência. Revise o problema e o impacto, defenda o valor com evidências antes de discutir desconto e combine um próximo passo proporcional, sem pressão ou promessa de retorno.',
+ continuity:'Use respostas anteriores, atualize apenas as lacunas que mudam a decisão e adapte a forma de conduzir somente ao perfil registrado.'
+})
+
 function objectionGuidance(status,thesis){
  if(status==='ABSENT')return []
  return [{
   objection:'PRICE',
   automatic_discount:false,
   sequence:['VALIDATE_OBJECTION','RETURN_TO_CONFIRMED_PROBLEM','QUANTIFY_IMPACT','COMPARE_ACTION_VS_INACTION','EXPLAIN_RISK_RETURN','DISCUSS_COMMERCIAL_CONDITION_IF_APPROPRIATE'],
-  guidance:text(thesis?.avoid_guidance||'Confirme o significado de “caro”, reconstrua problema e impacto, compare agir versus não agir e só então discuta condição comercial dentro das regras de margem.')
+  guidance:text(thesis?.avoid_guidance||consultativeValueGuidance.price)
  }]
 }
 

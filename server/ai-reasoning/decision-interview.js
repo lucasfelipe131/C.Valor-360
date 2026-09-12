@@ -114,7 +114,9 @@ export function buildReasoningConfidence({context={},result={}}={}){
 export function buildDecisionInterview({intent='ASK_CLIENT',message='',context={},result={}}={}){
  const corpus=evidenceCorpus(context,message,intent)
  const confidence=buildReasoningConfidence({context,result})
- const base=questionLibrary[intent]||[]
+ // Visit preparation already contains questions for the producer. Do not replace
+ // that useful preparation with a generic interview of the consultant.
+ const base=intent==='PREPARE_VISIT'&&list(result.facts_used).some(item=>String(item.id).startsWith('visit-preparation:'))?[]:questionLibrary[intent]||[]
  const candidates=(base.length?base:fallbackCandidates(result)).filter(item=>{
   if(!item.question)return false
   if(item.known?.test(corpus))return false

@@ -27,6 +27,7 @@ export default function Sidebar({page,tool,currentUser,workspace,onWorkspaceChan
   </button>
  }
 
+ if(collapsed)return <button type="button" className="sidebar-reopen" aria-label="Expandir navegação" onClick={()=>setCollapsed(false)}><ChevronsRight size={20}/><span>Menu</span></button>
  return <aside className={`sidebar val-workspace-sidebar${collapsed?' is-collapsed':''}`}>
   <div className="sidebar-brand">
    <Logo variant={collapsed?'icon-only':'full'}/>

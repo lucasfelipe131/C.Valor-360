@@ -269,7 +269,12 @@ export default function GlobalValCopilot({open,onClose,onPresentationChange,embe
   cancelUploadRun();cancelChatRun();cancelRealtimeClarification()
   const autoSubmit=Boolean(seed.autoSubmit&&seed.prompt)
   const incomingFiles=Array.isArray(seed.files)?seed.files.slice(0,3):[]
-  setThreadOverride('');setSelectedId(seed.clientId||'')
+  const nextKey=seed.newConversation?createConversationThreadKey({clientId:seed.clientId||''}):''
+  if(nextKey){
+   resetConversationId(nextKey,storageScope)
+   setClarification(null);setAttachments([]);setPendingFiles([]);setReplyingTo(null);setSessionReplyOffer(null);setHistoryOpen(false)
+  }
+  setThreadOverride(nextKey);setSelectedId(seed.clientId||'')
   setActiveContext(seed.context||null)
   setMessage(seed.prompt||'')
   setMode(seed.mode||'ASK')

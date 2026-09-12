@@ -95,7 +95,7 @@ export const settingsModules=role=>SETTINGS_NAV.filter(item=>allowed(item,role))
 
 export const workspaceOf=page=>MODULES[page]?.workspace||null
 export const resolveActiveWorkspace=(page,previous)=>workspaceOf(page)||previous||null
-export const workspaceEntryPoint=(workspaceId,role)=>workspaceModules(workspaceId,role)[0]?.page||HOME
+export const workspaceEntryPoint=(workspaceId,role)=>workspaceModules(workspaceId,role)[0]?.page||(workspaceModules(workspaceId,role)[0]?.action==='copilot'?COPILOT:HOME)
 export const moduleLabel=page=>MODULES[page]?.label||'VAL'
 
 // Um item da subnavegação está ativo quando a rota bate e, havendo ferramenta,
@@ -120,7 +120,7 @@ export const contextTrail=({page,workspace,client})=>{
  const space=WORKSPACES.find(item=>item.id===workspace)
  if(space)trail.push({id:`workspace:${space.id}`,label:space.label,kind:'workspace'})
  if(MODULES[page]&&page!==HOME)trail.push({id:`module:${page}`,label:moduleLabel(page),kind:'module'})
- if(client?.name)trail.push({id:`client:${client.id}`,label:client.name,kind:'entity'})
+ if(page!==HOME&&client?.name)trail.push({id:`client:${client.id}`,label:client.name,kind:'entity'})
  return trail
 }
 

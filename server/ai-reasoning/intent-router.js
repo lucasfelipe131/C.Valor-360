@@ -97,7 +97,7 @@ function semanticCurrentDataIntent(source=''){
 function semanticCommandIntent(source='',hasClient=false){
  const folded=fold(source)
  const individual=hasClient||individualReference.test(folded)
- if(/\b(?:prepar|roteiro|antes da)\w*\b.*\b(?:visit\w*|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b|\b(?:visit\w*|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))return 'PREPARE_VISIT'
+ if(/\b(?:prepar|roteiro|conduz|antes da)\w*\b.*\b(?:visit\w*|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b|\b(?:visit\w*|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))return 'PREPARE_VISIT'
  if(individual&&/\b(?:obje[cç][aã]o|resist[eê]ncia|discord|recus|n[aã]o quer)\b/i.test(source))return 'OBJECTION_HELP'
  if(individual&&(/\b(?:oportunidades?|pipeline|neg[oó]cios?|propostas?)\b/i.test(source)||nextActionShape.test(source)))return 'CHECK_OPPORTUNITY'
  if(/\b(?:follow.?up|retomar|cobrar retorno|pr[oó]ximo contato)\b/i.test(source))return 'FOLLOW_UP_HELP'
@@ -168,7 +168,7 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
   else if(['NUTRISCAN','FITOSCAN','PHOTO_DIAGNOSIS'].includes(toolHint)||hasImage)intent='IMAGE_DIAGNOSIS'
   else if(toolHint==='AREA_MAPPING')intent='ASK_AGRONOMIC'
   else if(/\b(?:agron[oô]mic|ureia|nitrog[eê]nio|cigarrinha|lagarta|inseticida|herbicida|fungicida|praga|doen[cç]a|daninha|manejo|talh[aã]o|safra|cultiv)/i.test(source))intent='ASK_AGRONOMIC'
-  else if(/\b(?:prepar|roteiro|antes da)\w*\b.*\bvisit\w*\b|\bvisit\w*\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))intent='PREPARE_VISIT'
+  else if(/\b(?:prepar|roteiro|conduz|antes da)\w*\b.*\bvisit\w*\b|\bvisit\w*\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))intent='PREPARE_VISIT'
   else if(/^(?:val[, ]+)?(?:registra|registre|anota|anote)\s+que\b/i.test(source)||/\b(?:registr|salv|grav|anot|memoriz)\w*\b.*\b(?:informa[cç][aã]o|nota|hist[oó]rico|mem[oó]ria|fato)\b/i.test(source))intent='REGISTER_INFORMATION'
   else if(/\b(?:p[oó]s[- ]?visita|depois da visita|resultado da visita)\b/i.test(source))intent='POST_VISIT'
   else if(individual&&/\b(?:obje[cç][aã]o|resist[eê]ncia|discord|recus|n[aã]o quer)\b/i.test(source))intent='OBJECTION_HELP'

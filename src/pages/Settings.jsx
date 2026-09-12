@@ -1,3 +1,4 @@
+import ProfileEditor from '../components/ProfileEditor'
 import React,{useEffect,useState} from 'react'
 import {
  BrainCircuit,CheckCircle2,Database,Download,KeyRound,Layers3,LoaderCircle,
@@ -109,7 +110,7 @@ export default function Settings({clients,visits,opportunities=[],currentUser,on
   </section>
 
   <section className="settings-grid">
-   <article className="panel setting-card"><div className="setting-icon"><UserCog/></div><h3>Acesso atual</h3><div className="user-setting"><div className="user-avatar">{accountInitials}</div><div><b>{accountLabel}</b><span>{currentUser?.demo?'Modo demonstrativo sem credencial configurada':'Acesso protegido do piloto'}</span></div></div><button className="soft-btn danger-text" onClick={onLogout}><LogOut size={16}/>Encerrar sessão</button></article>
+   <article className="panel setting-card"><div className="setting-icon"><UserCog/></div><h3>Meu perfil</h3><ProfileEditor/><div className="user-setting"><div className="user-avatar">{accountInitials}</div><div><b>{accountLabel}</b><span>{currentUser?.demo?'Modo demonstrativo sem credencial configurada':'Acesso protegido do piloto'}</span></div></div><button className="soft-btn danger-text" onClick={onLogout}><LogOut size={16}/>Encerrar sessão</button></article>
    <article className="panel setting-card"><div className="setting-icon green-icon"><Database/></div><h3>Dados da operação</h3><dl className="setting-list"><div><dt>Produtores</dt><dd>{clients.length}</dd></div><div><dt>Visitas</dt><dd>{visits.length}</dd></div><div><dt>Backup local</dt><dd>JSON não criptografado</dd></div></dl><button className="soft-btn" onClick={backup}><Download size={16}/>Baixar backup JSON</button></article>
    <article className="panel setting-card"><div className="setting-icon cyan-icon"><ShieldCheck/></div><h3>Governança da VAL</h3><ul className="guardrail-list"><li><CheckCircle2/>Premissas e confiança visíveis</li><li><CheckCircle2/>Evidências rastreáveis</li><li><CheckCircle2/>Decisão final do consultor</li><li><CheckCircle2/>Sem inventar dado agronômico</li></ul><span className="version-chip">VAL Engine • ambiente controlado</span></article>
   </section>
