@@ -22,7 +22,11 @@ export const legacyIntentAliases=Object.freeze({
 const allowed=new Set(valIntents)
 const clean=value=>String(value??'').replace(/\s+/g,' ').trim().slice(0,3000)
 const currentDataIntents=new Set(['ASK_MARKET','ASK_COMMODITY','CHECK_MARKET','CHECK_WEATHER','CHECK_LABEL'])
-const clientOptionalIntents=new Set(['ASK_GENERAL','ASK_MARKET','ASK_COMMODITY','CHECK_MARKET','CHECK_WEATHER','CHECK_LABEL'])
+// VAL_SYSTEM_CAPABILITY_ROUTER_v1 §90: somente mercado/commodity diretos podem ser consultados sem
+// produtor. Clima e bula seguem o contrato de contexto autorizado - a pergunta so tem resposta com a
+// propriedade e a cultura de alguem; sem produtor a API precisa pedir a selecao, nao escolher uma
+// conta em silencio. ASK_GENERAL fica: conhecimento geral nao pertence a produtor nenhum.
+const clientOptionalIntents=new Set(['ASK_GENERAL','ASK_MARKET','ASK_COMMODITY','CHECK_MARKET'])
 const persistenceIntents=new Set(['REGISTER_INFORMATION','POST_VISIT'])
 
 export function isCurrentClientIdentityRequest(source=''){
