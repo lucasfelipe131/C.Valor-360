@@ -1,5 +1,5 @@
 .daily-route-list{list-style:none;margin:14px 0;padding:0;display:grid;gap:12px}
-.daily-route-item{min-width:0;padding:14px;border:1px solid var(--val-line,#dbe4dd);border-radius:12px;background:var(--surface,#fff)}
+.daily-route-item{display:block;min-width:0;padding:14px;border:1px solid var(--val-line,#dbe4dd);border-radius:12px;background:var(--surface,#fff)}
 .daily-route-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .daily-route-name{display:block;min-width:0;max-width:100%;font-size:14px;line-height:1.4;overflow-wrap:anywhere;flex:1 1 180px}
 .daily-route-status{display:flex;flex-direction:column;gap:3px;font-size:11px;line-height:1.4;color:var(--val-muted,#59665d)}
@@ -8,8 +8,8 @@
 .daily-route-next{color:var(--val-muted,#59665d);font-size:12px}
 .daily-route-actions{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:11px;flex-wrap:wrap}
 .daily-route-order{display:flex;gap:6px}
-.daily-route-order button{min-width:36px;min-height:36px}
+.daily-route-order button{min-width:44px;min-height:44px}
 .daily-route-details{margin-top:10px;font-size:12px;line-height:1.5}
-.daily-route-details summary{cursor:pointer;color:var(--val-muted,#59665d);padding:4px 0}
+.daily-route-details summary{cursor:pointer;color:var(--val-muted,#59665d);padding:12px 0;min-height:44px;box-sizing:border-box;overflow-wrap:anywhere}
 .daily-route-details p{white-space:pre-wrap;overflow-wrap:anywhere;margin:9px 0}
-@media(max-width:480px){.daily-route-heading{flex-direction:column;gap:6px}.daily-route-name{flex:none}.daily-route-status{width:100%}.daily-route-item{padding:12px}}
+@media(max-width:820px){.daily-route-heading{flex-direction:column;gap:6px}.daily-route-name{flex:none;width:100%;white-space:normal;text-align:left;min-height:44px}.daily-route-status{width:100%}.daily-route-item{padding:12px}.daily-route-actions>button{min-height:44px;white-space:normal}}
