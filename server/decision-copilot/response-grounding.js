@@ -30,7 +30,10 @@ const sourceContracts=new Map([
  ['official_product_catalog',sourceContract(['FACT','VALIDATED_KNOWLEDGE'],{staticSource:true})],
  ['general_knowledge',sourceContract(['FACT','VALIDATED_KNOWLEDGE'],{staticSource:true})],
  ['system_safety_policy',sourceContract(['FACT','VALIDATED_KNOWLEDGE'],{staticSource:true})],
- ['market_snapshot',sourceContract(['FACT','OBSERVATION'],{maxAgeMs:3*DAY_MS,validUntilMayExtend:false})],
+ // 7 dias = a janela DATED de VAL_MARKET_COMMODITY_ACCESS_v1 §Atualidade. Com 3 dias, toda cotacao
+ // entre 72 h e 168 h era classificada como utilizavel com ressalva e recusada por idade no mesmo
+ // turno, derrubando a resposta; as duas janelas passam a ser a mesma.
+ ['market_snapshot',sourceContract(['FACT','OBSERVATION'],{maxAgeMs:7*DAY_MS,validUntilMayExtend:false})],
  ['context_snapshot',sourceContract(['FACT'],{maxAgeMs:DAY_MS,validUntilMayExtend:false})],
  ['system_capability',sourceContract(['FACT'],{maxAgeMs:DAY_MS,validUntilMayExtend:false})],
  ['model_general_knowledge',sourceContract(['FACT'],{staticSource:true})],
@@ -576,7 +579,12 @@ function evidenceEntries(evidence=[],scope={}){
   if(validUntil&&validUntil<=scope.now)temporalCompatible=false
   if(observedAt&&observedAt>scope.now&&!scheduledFuture)temporalCompatible=false
   if(scheduled&&observedAt&&observedAt<scope.now&&scheduledFuture)temporalCompatible=false
-  if(maximumAgeMs&&observedAt&&scope.now-observedAt>maximumAgeMs&&!(contract?.validUntilMayExtend!==false&&validUntil&&validUntil>scope.now))temporalCompatible=false
+  // Uma cotacao de mercado apresentada EXPLICITAMENTE como historico escapa do teto de idade: a
+  // especificacao manda mostra-la com a ressalva, e o proprio texto da resposta carrega o aviso e a
+  // data de observacao. Vale so para market_snapshot e so quando a evidencia declara a marca - nada
+  // mais atravessa o corte por idade em silencio.
+  const declaredHistorical=sourceType==='market_snapshot'&&clean(object?.presented_as??object?.presentedAs,60).toUpperCase()==='HISTORICAL_REFERENCE'
+  if(maximumAgeMs&&observedAt&&scope.now-observedAt>maximumAgeMs&&!declaredHistorical&&!(contract?.validUntilMayExtend!==false&&validUntil&&validUntil>scope.now))temporalCompatible=false
   return {...entry,tokenSet:new Set(tokens(entry.text)),domains,domainCompatible,scopeCompatible,provenanceCompatible,provenanceCodes,temporalCompatible,observedAt:observedAt?.toISOString()||null,validUntil:validUntil?.toISOString()||null}
  })
 }

@@ -673,7 +673,12 @@ async function handleApi(request,response,url){
   // O produtor armazenado na conversa carrega `label`; o roteador lê `name` para nomear a troca
   // ('Agora falando de Antônio Silva') em vez de 'o produtor'.
   const storedRouteClient=storedConversation?.current_client?.id?{id:storedConversation.current_client.id,name:storedConversation.current_client.name||storedConversation.current_client.label||null}:null
-  const workspaceRoute=routeGlobalIntent({message,client:conversationResolution?.client||storedRouteClient,workspaceContext:payload.workspaceContext})
+  // O produtor que o browser mandou NESTA requisicao tambem vale. Sem ele, "Abre a preparacao da
+  // visita do Matheus" numa conversa nova - com Matheus ja selecionado na tela - chegava ao roteador
+  // sem produtor autorizado e nao abria tela nenhuma, enquanto a mesma frase numa conversa em
+  // andamento abria. Mesma familia do ajuste feito adiante para o actionClient.
+  const requestRouteClient=clientId?{id:clientId,name:clean(payload.client?.name)||null}:null
+  const workspaceRoute=routeGlobalIntent({message,client:conversationResolution?.client||storedRouteClient||requestRouteClient,workspaceContext:payload.workspaceContext})
   const intentResolutionMs=performance.now()-intentResolutionStartedAt
   if(routedIntent.persistence_mode!=='NONE'){
    if(clientId)invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId})

@@ -176,3 +176,52 @@ test('Uso — a interação da Inteligência Agronômica é um tipo aceito e a r
  assert.match(source('server.js'),/const recorded=await accessRepository\.recordUsage\(identity,\{eventType:'agro_hero_interaction'/)
  assert.match(source('server.js'),/\{accepted:true,recorded:Boolean\(recorded\)\}/)
 })
+
+// MASTER/H15: o produtor selecionado na tela precisa chegar ao roteador de navegação já no primeiro
+// turno. Sem isso "Abre a preparação da visita do X." abria a tela numa conversa em andamento e não
+// abria nada numa conversa nova, com o mesmo produtor selecionado.
+test('Navegação — o produtor enviado na requisição autoriza a ação de workspace', () => {
+ const server=source('server.js')
+ assert.match(server,/const requestRouteClient=clientId\?\{id:clientId,name:clean\(payload\.client\?\.name\)\|\|null\}:null/)
+ assert.match(server,/routeGlobalIntent\(\{message,client:conversationResolution\?\.client\|\|storedRouteClient\|\|requestRouteClient/)
+})
+
+// MASTER/G12: a allowlist de navegação não pode cair no produtor aberto quando o alvo é outro.
+test('Navegação — alvo fora da allowlist não vira abertura do produtor selecionado', async () => {
+ const {routeGlobalIntent}=await import('../server/decision-copilot/global-intent-router.js')
+ const client={id:'antonio',name:'Antônio Silva'}
+ for(const message of ['abre https://evil.example/admin','abre o tenant 2','abre o módulo admin','vai para /api/val/chat'])
+  assert.equal(routeGlobalIntent({message,client}).workspace_action,null,message)
+ assert.equal(routeGlobalIntent({message:'Abra o produtor Antônio.',client}).workspace_action?.type,'OPEN_CLIENT')
+})
+
+// MASTER/G9: o comando de sessão já classificado não pode chegar como follow-up genérico.
+test('Conversa — "Por quê?" chega nomeado como EXPLAIN', async () => {
+ const {routeGlobalIntent}=await import('../server/decision-copilot/global-intent-router.js')
+ assert.equal(routeGlobalIntent({message:'Por quê?',client:{id:'antonio',name:'Antônio Silva'}}).intent,'EXPLAIN')
+})
+
+// MASTER/I6: clima e bula seguem contexto autorizado; só mercado/commodity dispensam produtor.
+test('Capacidades — clima e bula exigem produtor; mercado direto não', async () => {
+ const {routeSystemCapability}=await import('../server/decision-copilot/capability-router.js')
+ for(const intentHint of ['CHECK_WEATHER','CHECK_LABEL'])
+  assert.equal(routeSystemCapability({message:'x',intentHint,hasClient:false}).client_context_required,true,intentHint)
+ for(const intentHint of ['ASK_MARKET','ASK_COMMODITY','CHECK_MARKET'])
+  assert.equal(routeSystemCapability({message:'x',intentHint,hasClient:false}).client_context_required,false,intentHint)
+})
+
+// MASTER/M5-M6: limiares e UNKNOWN de VAL_MARKET_COMMODITY_ACCESS_v1 §Atualidade.
+test('Mercado — limiares 24h/168h e UNKNOWN para data ausente ou ilegível', async () => {
+ const {answerCurrentMarket}=await import('../server/decision-copilot/capability-router.js')
+ const now=new Date('2026-09-03T12:00:00.000Z')
+ const snap=(hoursAgo,extra={})=>({tenantId:'t1',ownerId:'o1',id:'s',commodity:'soja',marketKind:'spot',region:'Cascavel/PR',price:151.5,priceUnit:'BRL/sc_60kg',sourceName:'Fonte',sourceType:'cooperative',observedAt:new Date(now.getTime()-hoursAgo*3_600_000).toISOString(),confidence:95,status:'active',scope:'MARKET',...extra})
+ const run=item=>answerCurrentMarket({workspace:{marketSnapshots:[item]},message:'cotação da soja',now}).status
+ assert.equal(run(snap(23.9)),'CURRENT')
+ assert.equal(run(snap(24.1)),'DATED')
+ assert.equal(run(snap(167.9)),'DATED')
+ assert.equal(run(snap(168.1)),'STALE')
+ assert.equal(run(snap(1,{observedAt:'data-invalida'})),'UNKNOWN')
+ assert.equal(run(snap(1,{observedAt:''})),'UNKNOWN')
+ // Data futura tem data legível: continua UNAVAILABLE, não UNKNOWN.
+ assert.equal(run(snap(-24)),'UNAVAILABLE')
+})

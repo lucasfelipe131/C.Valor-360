@@ -21,13 +21,13 @@ Escopo autorizado: os 12 ajustes do pedido consolidado e o complemento de venda 
 
 ## Coordenação
 
-O trabalho anterior foi preservado no commit f3ebb49. A branch `feature/val-roadmap-management-v1` da tarefa de mapas foi integrada no commit 823df83; base compartilhada 918acbb. A consulta final das branches remotas de mapa e staging ainda apontava para 918acbb. Componentes e algoritmo de rota existentes foram reutilizados; não foi criado outro motor comercial nem outro mapa.
+O trabalho anterior foi preservado no commit f3ebb49. A branch `feature/val-roadmap-management-v1` da tarefa de mapas foi integrada no commit 823df83; base compartilhada 918acbb. Durante a publicação, o staging avançou para 9335181 com correções de navegação e cotações antigas. Essas mudanças foram integradas e novamente verificadas. Componentes e algoritmo de rota existentes foram reutilizados; não foi criado outro motor comercial nem outro mapa.
 
 O recurso `send_message_to_thread` não está exposto nesta sessão. Portanto, não foi possível enviar o relatório à origem 01a09684-f245-7412-b92c-281ee3bca3c4 nem consultar diretamente o estado vivo da tarefa 6a9e0b5c-4794-83e9-8741-074a48cffcd0. A coordenação técnica foi feita pelas branches compartilhadas.
 
 ## Verificação
 
-- Suíte completa: 1.835 testes aprovados, zero falhas (Node 24, cerca de 17 segundos).
+- Suíte antes da integração concorrente: 1.835 testes aprovados. Após integrar 9335181: 1.839 de 1.840 aprovados na primeira rodada; o único erro foi readiness enquanto o build ainda atualizava o carimbo de versão. Com o build terminado, o teste de readiness passou. A CI valida o conjunto novamente de forma sequencial.
 - Build Vite/PWA concluído.
 - Integração de fotos e sugestões: banco PGlite com migrations do projeto, incluindo a nova tabela de fotos.
 - Preparação HTTP: histórico longo, troca de combinado, isolamento de produtores, objeção de preço, falta de custo da alternativa e nova resposta do consultor. Asserções sobre conteúdo e ausência de números inventados, além dos títulos.

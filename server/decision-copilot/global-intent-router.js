@@ -52,8 +52,13 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
  // soja" consulta o mercado. A resposta e do raciocinio ou da fonte, nao de uma troca de tela.
  const dataQuestion=/\?\s*$/.test(source)||/\b(?:perfil|cotacao|preco|clima|chover|geada|granizo|bula|quanto|quantos|quantas|qual|quais|como|quando|onde|por que|porque)\b/.test(source)
  const factualLookup=factualImperative||dataQuestion||/\b(?:ultima|ultimo|mais recente|principal)\b.*\b(?:visita|compra|objecao|compromisso)\b|\b(?:visita|compra|objecao|compromisso)\b(?:\s+confirmad[oa])?\s+(?:ultima|ultimo|mais recente|principal)\b(?:\s+(?:dele|dela))?|\b(?:quanto|qual|quais)\b.*\b(?:comprou|cultura|safra|area)\b/.test(source)
- const followUp=routeSessionCommand(message)||/\b(?:volta no que)\b/.test(source)
- if(followUp)return result({intent:'FOLLOW_UP',reason:'CONVERSATION_FAST_PATH'})
+ // O roteador de sessao ja sabe QUAL comando e ("Por que?" -> EXPLAIN). Colapsar tudo em FOLLOW_UP
+ // jogava fora essa classificacao, e a regra de EXPLAIN mais abaixo nunca era alcancada. O enum do
+ // GLOBAL_INTENT_ROUTER tem EXPLAIN e COMPARE justamente para o pedido chegar nomeado.
+ const sessionCommand=routeSessionCommand(message)
+ const sessionCommandIntent={EXPLAIN:'EXPLAIN',SHOW_NUMBERS:'SHOW',DEEPEN:'EXPLAIN'}
+ const followUp=sessionCommand||/\b(?:volta no que)\b/.test(source)
+ if(followUp)return result({intent:sessionCommandIntent[sessionCommand?.command]||'FOLLOW_UP',reason:'CONVERSATION_FAST_PATH'})
  const prepareVisit=/\b(?:prepara|prepare|preparar|preparacao|monta|monte)\b.*\b(?:visita|conversa)\b|\b(?:visita|conversa)\b.*\b(?:prepara|prepare|preparar|preparacao|roteiro)\b/.test(source)
  // Pedir preparação não é pedir navegação. Só abrir a tela quando o usuário
  // usar um verbo de abrir; caso contrário a preparação pertence ao raciocínio,
@@ -82,17 +87,22 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
  const bareName=namesClient(source.replace(/^\s*(?:val[, ]+)?/,''))
  // "e o Matheus?" resolve o produtor; sem esta troca explícita a frase ia ao raciocínio e voltava
  // como evidência insuficiente, como se a troca tivesse falhado.
+ // A allowlist de navegacao so conhece produtor da carteira e modulo canonico. Quando o pedido nomeia
+ // um alvo fora dela - URL, caminho, host, tenant ou modulo desconhecido - a resposta certa e nao
+ // navegar. Cair no produtor aberto abria uma tela que ninguem pediu e escondia a recusa do alvo.
+ const unsafeNavigationTarget=/https?:\/\/|\bwww\.|(?:^|\s)\/[a-z0-9._~-]|\b[a-z0-9-]{2,}\.(?:com|net|org|io|br|dev|app|local|example)\b|\btenants?\s*\d|\btenants?\b|\bschema\b|\bm[oó]dulo\b|\blocalhost\b|:\d{2,5}\b/i.test(source)
+
  const eName=source.match(/^\s*(?:val[, ]+)?e\s+(?:o|a)\s+(.+?)\s*[?.!]*$/)
  const eNameSwitch=Boolean(eName)&&namesClient(eName[1])
  // "Agora o Antônio Silva": nome composto depois de 'agora' também é troca quando nomeia o produtor.
  const agoraName=source.match(/^\s*(?:val[, ]+)?agora\s+(?:com\s+)?(?:o|a)\s+(.+?)\s*[.!]*$/)
  const agoraSwitch=Boolean(agoraName)&&namesClient(agoraName[1])
  const switchVerb=bareName||topicSwitch||/^\s*(?:val\s+)?(?:(?:volta|volte|voltar|retoma|retome|retomar|troca|troque|trocar|muda|mude|mudar)\s+(?:(?:o|a)\s+(?:cliente|produtor|produtora|conta)\s+)?(?:para|pro|pra|ao|a)\s+\S|(?:volta|volte|voltar|retoma|retome|retomar)\b.*\banterior\b|agora\s+(?:com\s+)?(?:o|a)\s+[^\s?]+\s*[.!]?\s*$)/.test(source)
- if(!prepareVisit&&(eNameSwitch||agoraSwitch||(!factualLookup&&switchVerb))&&authorizedClient&&!modules.some(module=>module.pattern.test(source))){
+ if(!prepareVisit&&!unsafeNavigationTarget&&(eNameSwitch||agoraSwitch||(!factualLookup&&switchVerb))&&authorizedClient&&!modules.some(module=>module.pattern.test(source))){
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'OPEN',reason:'SWITCH_RESOLVED_CLIENT',direct:true,workspaceAction,summary:authorizedClient.name?`Agora falando de ${authorizedClient.name}. Abrindo no Cliente 360.`:'Agora falando do produtor selecionado. Abrindo no Cliente 360.'})
  }
- if(!factualLookup&&openVerb&&authorizedClient&&/\b(?:cliente|produtor|produtora)\b/.test(source)){
+ if(!factualLookup&&!unsafeNavigationTarget&&openVerb&&authorizedClient&&/\b(?:cliente|produtor|produtora)\b/.test(source)){
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'OPEN',reason:'OPEN_AUTHORIZED_CLIENT',direct:true,workspaceAction,summary:`Abrindo ${authorizedClient.name||'o produtor'} no Cliente 360.`})
  }
@@ -103,11 +113,11 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
    return result({intent:'NAVIGATE',reason:'NAVIGATE_CANONICAL_MODULE',direct:true,workspaceAction,summary:`Abrindo ${module.label}.`})
   }
  }
- if(!factualLookup&&openVerb&&authorizedClient&&!modules.some(module=>module.pattern.test(source))&&/^\s*(?:val\s+)?(?:agora\s+)?(?:abre|abra|abrir|mostra|mostre|mostrar)\b/.test(source)){
+ if(!factualLookup&&!unsafeNavigationTarget&&openVerb&&authorizedClient&&!modules.some(module=>module.pattern.test(source))&&/^\s*(?:val\s+)?(?:agora\s+)?(?:abre|abra|abrir|mostra|mostre|mostrar)\b/.test(source)){
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'OPEN',reason:'OPEN_RESOLVED_CLIENT',direct:true,workspaceAction,summary:`Abrindo ${authorizedClient.name||'o produtor'} no Cliente 360.`})
  }
- if(searchVerb&&authorizedClient&&!factualLookup&&!modules.some(module=>module.pattern.test(source))){
+ if(searchVerb&&!unsafeNavigationTarget&&authorizedClient&&!factualLookup&&!modules.some(module=>module.pattern.test(source))){
   const workspaceAction=action({type:'OPEN_CLIENT',page:'client360',label:`Abrir ${authorizedClient.name||'produtor'}`,client:authorizedClient})
   return result({intent:'SEARCH',reason:'SEARCH_RESOLVED_CLIENT',direct:true,workspaceAction,summary:`Localizei ${authorizedClient.name||'o produtor'} na sua carteira autorizada.`})
  }

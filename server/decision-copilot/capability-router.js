@@ -78,7 +78,7 @@ function assertMarketWorkspaceScope(workspace={},scope={}){
  return workspace
 }
 
-function canonicalEvidence({id,sourceType,statement,observedAt=null,validUntil=null,epistemicType='FACT',scope={},global=false,confidence=null,relevanceScore=1,reasonSelected='DIRECTLY_RELEVANT'}={}){
+function canonicalEvidence({id,sourceType,statement,observedAt=null,validUntil=null,epistemicType='FACT',scope={},global=false,confidence=null,relevanceScore=1,reasonSelected='DIRECTLY_RELEVANT',presentedAs=''}={}){
  const sourceId=clean(id,180)
  const producerId=rawScopeValue(scope,producerScopeKeys,'PRODUCER')
  const tenantId=rawScopeValue(scope,tenantScopeKeys,'TENANT')
@@ -95,6 +95,9 @@ function canonicalEvidence({id,sourceType,statement,observedAt=null,validUntil=n
   relevance_score:Number.isFinite(Number(relevanceScore))?Number(relevanceScore):null,reason_selected:clean(reasonSelected,180)
  }
  if(global)result.scope=marketScope
+ // Marca declarada de historico: e o que autoriza a evidencia de mercado fora da janela a chegar ao
+ // consultor com a ressalva, em vez de derrubar o turno por idade.
+ if(clean(presentedAs,60))result.presented_as=clean(presentedAs,60).toUpperCase()
  if(!result.valid_until)delete result.valid_until
  return result
 }
@@ -103,7 +106,8 @@ function scopedMarketEvidence(market={}){
  if(!market.source?.id)return []
  return [canonicalEvidence({
   id:market.source.id,sourceType:'market_snapshot',statement:market.answer,observedAt:market.source.observed_at,epistemicType:'FACT',scope:market.source,global:true,
-  confidence:market.confidence?.score,relevanceScore:1,reasonSelected:'CURRENT_MARKET_REFERENCE'
+  confidence:market.confidence?.score,relevanceScore:1,reasonSelected:'CURRENT_MARKET_REFERENCE',
+  presentedAs:market.status&&market.status!=='CURRENT'?'HISTORICAL_REFERENCE':''
  })]
 }
 
@@ -300,6 +304,11 @@ export function routeSystemCapability({message='',intentHint='',sessionCommandHi
 
  if(intentRoute.session_command){
   capabilities.push('SESSION_COMMAND')
+  // VAL_NATURAL_CONVERSATIONAL_COPILOT_v1 §Comandos (27/08) manda "Explica melhor", "Me mostra os
+  // numeros" e "Por que" para a engine. O commit 5aee2cf (30/08, "recover conversational routing
+  // latency") reverteu isso de proposito, com benchmark proprio: sao follow-ups deterministicos sobre
+  // a leitura que ja esta na sessao, e pagar uma ida a engine por "por que?" custava a conversa. O
+  // documento e que ficou para tras nesse ponto; "Aprofunda" continua indo a engine.
   if(intentRoute.session_command.command==='DEEPEN'){
    capabilities.push('CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY','AGRONOMIC_WORKSPACE','KNOWLEDGE_LIBRARY');path='DEEP';direct=false
   }else if(intentRoute.session_command.deterministic_follow_up){
@@ -353,7 +362,12 @@ export function routeSystemCapability({message='',intentHint='',sessionCommandHi
  }else if(intentRoute.intent==='ASK_CLIENT'){
   capabilities.push('CLIENT_CONTEXT','CONFIRMED_MEMORY','COMMERCIAL_HISTORY')
   const multiDomain=/\b(?:cruz|estrateg)\w*\b/.test(source)&&[/\b(?:agronomia|agronomico|talhao|safra)\b/,/\b(?:historico|perfil|memoria|visita)\b/,/\b(?:preco|mercado|commodity)\b/].filter(pattern=>pattern.test(source)).length>=2
-  path=multiDomain?'DEEP':'CONTEXT';direct=false
+  // VAL_MARKET_COMMODITY_ACCESS_v1 §Cruzamento com produtor: "Isso muda a conversa com João?" exige
+  // DEEP e contexto explícito. É a pergunta de impacto — o "isso" é a cotação do turno anterior — e
+  // sem planejar MARKET_COMMODITY o raciocínio cruzava a conta sem o preço que motivou a pergunta.
+  const marketCross=/\b(?:isso|isto|essa|esse|esta|este|aquilo)\b[\s\S]{0,40}\bmuda\b|\b(?:cotacao|preco|mercado|commodity|noticia|dolar|cambio)\b[\s\S]{0,40}\bmuda\b/.test(source)&&/\b(?:negociacao|negocio|conversa|abordagem|estrategia|decisao|breakeven|margem|proposta)\b/.test(source)
+  if(marketCross)capabilities.push('MARKET_COMMODITY')
+  path=multiDomain||marketCross?'DEEP':'CONTEXT';direct=false
  }else{
   capabilities.push('KNOWLEDGE_LIBRARY');path='CONTEXT';direct=false
  }
@@ -399,12 +413,12 @@ function freshness(observedAt,now){
  if(deltaMs < -300_000)return {state:'INVALID',hours:null,label:'data futura inválida'}
  const hours=Math.max(0,deltaMs/3_600_000)
  if(hours<=24)return {state:'CURRENT',hours:Number(hours.toFixed(1)),label:'atual nas últimas 24 h'}
- // A janela do rotulo nao pode prometer mais do que o contrato de evidencia aceita: o grounding
- // so admite market_snapshot com ate 72 h (response-grounding.js, maxAgeMs 3*DAY_MS). Entre 72 h e
- // 168 h a resposta se dizia "registrada nesta semana" e a evidencia era recusada por idade,
- // derrubando a conversa com 400. As duas janelas passam a ser a mesma.
- if(hours<=72)return {state:'DATED',hours:Number(hours.toFixed(1)),label:'dos últimos três dias'}
- return {state:'STALE',hours:Number(hours.toFixed(1)),label:'histórica; precisa ser atualizada'}
+ // Limiares de VAL_MARKET_COMMODITY_ACCESS_v1 §Atualidade: CURRENT ate 24 h, DATED ate 168 h, STALE
+ // acima disso. A janela do contrato de evidencia (response-grounding.js, market_snapshot) acompanha
+ // estes 168 h: encolher o rotulo para 72 h deixava o codigo coerente consigo mesmo, mas divergente
+ // da especificacao e sem resolver a recusa por idade.
+ if(hours<=168)return {state:'DATED',hours:Number(hours.toFixed(1)),label:'registrada nesta semana'}
+ return {state:'STALE',hours:Number(hours.toFixed(1)),label:'histórica e precisa ser atualizada'}
 }
 
 function money(value){
@@ -425,7 +439,7 @@ function marketSelection(workspace,message,now){
  const requestedRegion=regionFrom(message,workspace?.marketSnapshots)
  const requestedRange=dateRangeFrom(message,requestedSeason)
  const temporalSelectionRequired=Boolean(requestedRange&&(requestedMarketKind==='forward'||requestedMarketKind==='futures'||/\b(?:entrega|janela|vencimento)\b/.test(normalize(message))))
- const snapshots=list(workspace?.marketSnapshots)
+ const candidates=list(workspace?.marketSnapshots)
   .filter(item=>item?.status!=='inactive'&&(!commodity||item?.commodity===commodity))
   .filter(item=>!requestedMarketKind||normalize(item?.marketKind??item?.market_kind)===requestedMarketKind)
   .filter(item=>!requestedPriceUnit||clean(item?.priceUnit??item?.price_unit,40)===requestedPriceUnit)
@@ -437,11 +451,17 @@ function marketSelection(workspace,message,now){
    if(requestedRange?.source!=='season')return overlapsRange(item,requestedRange)
    return requestedSeason?true:overlapsRange(item,requestedRange)
   })
+ // "Sem cotacao nenhuma" e "existe cotacao, mas nao da para saber quando o preco foi apurado" sao
+ // coisas diferentes: VAL_MARKET_COMMODITY_ACCESS_v1 §Atualidade reserva UNKNOWN para data ausente ou
+ // ilegivel. Data futura segue UNAVAILABLE - ali a data existe e e legivel, so nao e crivel. Nos tres
+ // casos o preco fica fora da resposta; muda o que o consultor precisa fazer a respeito.
+ const undatedCandidates=candidates.filter(item=>item?.sourceName&&Number.isFinite(Number(item?.price))&&(!item?.observedAt||Number.isNaN(new Date(item.observedAt).getTime()))).length
+ const snapshots=candidates
   .filter(item=>item?.sourceName&&item?.observedAt&&Number.isFinite(Number(item?.price))&&freshness(item.observedAt,now).state!=='INVALID')
   .sort((left,right)=>new Date(right.observedAt)-new Date(left.observedAt))
  const latest=snapshots[0]||null
  const previous=latest?snapshots.find(item=>item.id!==latest.id&&item.commodity===latest.commodity&&item.priceUnit===latest.priceUnit&&item.region===latest.region&&item.marketKind===latest.marketKind&&dateOnly(item.deliveryStart??item.delivery_start)===dateOnly(latest.deliveryStart??latest.delivery_start)&&dateOnly(item.deliveryEnd??item.delivery_end)===dateOnly(latest.deliveryEnd??latest.delivery_end))||null:null
- return {commodity,requestedMarketKind,requestedSeason,requestedPriceUnit,requestedRegion,requestedRange,latest,previous,freshness:latest?freshness(latest.observedAt,now):null}
+ return {commodity,requestedMarketKind,requestedSeason,requestedPriceUnit,requestedRegion,requestedRange,latest,previous,undatedCandidates,freshness:latest?freshness(latest.observedAt,now):null}
 }
 
 export function answerCurrentMarket({workspace={},message='',intentHint='',now=new Date()}={}){
@@ -450,6 +470,15 @@ export function answerCurrentMarket({workspace={},message='',intentHint='',now=n
  const requestedLabel=commodityLabels[selected.commodity]||'a commodity solicitada'
  if(!selected.latest){
   const requestedDetails=[selected.requestedMarketKind&&`tipo ${marketKindLabels[selected.requestedMarketKind]||selected.requestedMarketKind}`,selected.requestedSeason&&`safra ${selected.requestedSeason}`,selected.requestedRegion&&`praça ${selected.requestedRegion}`,selected.requestedPriceUnit&&`unidade ${selected.requestedPriceUnit}`,selected.requestedRange&&selected.requestedRange.source!=='season'&&`entrega entre ${selected.requestedRange.start} e ${selected.requestedRange.end}`].filter(Boolean).join(', ')
+  if(selected.undatedCandidates)return {
+   route,
+   status:'UNKNOWN',
+   answer:`Existe referência registrada para ${requestedLabel}, mas sem data válida de observação. Sem saber quando o preço foi apurado não posso apresentá-lo, nem como cotação atual nem como histórico.`,
+   action:'Abra Mercado e corrija a data de observação desta referência antes de usar o valor em uma decisão.',
+   facts:[],
+   source:null,
+   confidence:{level:'INSUFICIENTE',score:.12,rationale:'A referência encontrada não tem data de observação válida; a atualidade não pode ser classificada.'}
+  }
   return {
    route,
    status:'UNAVAILABLE',
@@ -494,7 +523,11 @@ export function answerCurrentMarket({workspace={},message='',intentHint='',now=n
   status:selected.freshness.state,
   answer:`${currentPrefix} é de ${label}: ${money(quote.price)} ${clean(quote.priceUnit,40)} em ${clean(quote.region,120)}. Tipo de mercado: ${kindLabel}.${deliveryText} Fonte ${clean(quote.sourceName,180)}, observada em ${dateText}.${movement}${warning}`,
   action:selected.freshness.state==='CURRENT'?'Cruze esta referência com praça, frete, janela e preço-alvo do produtor antes de avançar.':'Atualize a cotação na área Mercado antes de orientar uma negociação.',
-  facts:[{id:clean(quote.id,180),source_type:'market_snapshot',scope:quoteScope.scope,producer_id:null,tenant_id:quoteScope.tenantId,context_owner_id:quoteScope.ownerId,statement:`${label}: ${money(quote.price)} ${clean(quote.priceUnit,40)} em ${clean(quote.region,120)}; tipo ${kindLabel}${deliveryStart||deliveryEnd?`; entrega ${deliveryStart||deliveryEnd}${deliveryEnd&&deliveryEnd!==deliveryStart?` a ${deliveryEnd}`:''}`:''}; fonte ${clean(quote.sourceName,180)}, observada em ${dateText}.`,observed_at:quote.observedAt,confidence:calibratedScore}],
+  // Cotacao fora da janela DATED so pode chegar ao consultor como historico declarado. Sem esta marca
+  // o contrato de evidencia recusava por idade e o turno morria em 400 - o consultor pedia o preco e
+  // nao recebia nada, em vez de receber a referencia antiga com a ressalva, como manda
+  // VAL_MARKET_COMMODITY_ACCESS_v1 §Atualidade.
+  facts:[{id:clean(quote.id,180),source_type:'market_snapshot',scope:quoteScope.scope,producer_id:null,tenant_id:quoteScope.tenantId,context_owner_id:quoteScope.ownerId,...(selected.freshness.state==='CURRENT'?{}:{presented_as:'HISTORICAL_REFERENCE'}),statement:`${label}: ${money(quote.price)} ${clean(quote.priceUnit,40)} em ${clean(quote.region,120)}; tipo ${kindLabel}${deliveryStart||deliveryEnd?`; entrega ${deliveryStart||deliveryEnd}${deliveryEnd&&deliveryEnd!==deliveryStart?` a ${deliveryEnd}`:''}`:''}; fonte ${clean(quote.sourceName,180)}, observada em ${dateText}.`,observed_at:quote.observedAt,confidence:calibratedScore}],
   source:{id:clean(quote.id,180),name:clean(quote.sourceName,180),url:clean(quote.sourceUrl,1000)||null,observed_at:quote.observedAt,commodity:clean(quote.commodity,80),price_unit:clean(quote.priceUnit,40),market_kind:kind,market_kind_label:kindLabel,region:clean(quote.region,120),delivery_start:deliveryStart||null,delivery_end:deliveryEnd||null,requested_season:selected.requestedSeason||null,requested_region:selected.requestedRegion||null,requested_price_unit:selected.requestedPriceUnit||null,freshness:selected.freshness,scope:quoteScope.scope,producer_id:null,tenant_id:quoteScope.tenantId,context_owner_id:quoteScope.ownerId},
   confidence:{level:confidenceLevel,score:calibratedScore,rationale:`Confiança calibrada pela declaração da fonte, proveniência disponível e atualidade classificada como ${selected.freshness.label}; recência isolada não equivale a verificação.`}
  }
