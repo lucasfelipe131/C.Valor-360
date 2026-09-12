@@ -301,7 +301,7 @@ test('voz contínua publica erros como texto e a navegação mantém os contrato
  assert.match(technical,/const resolvedSession=session\|\|\(demoAllowed\?\{email:'demo@valor360\.local'/)
  assert.match(technical,/json\(response,503,\{error:'O núcleo técnico exige VAL_SESSION_SECRET com 32 ou mais caracteres\.'\}\)/)
  assert.match(technical,/function scheduleRestart\(\)/)
- assert.match(read('server.js'),/technicalWorkspace\.handle\(request,response,url,await sessionIdentity\(request\),\{demoAllowed:!auth\.configured&&config\.demoMode\}\)/)
+ assert.match(read('server.js'),/technicalWorkspace\.handle\(request,response,url,technicalIdentity,\{demoAllowed:!auth\.configured&&config\.demoMode\}\)/)
  assert.match(read('server.js'),/if\(config\.trustProxy\)\{const forwarded=String\(request\.headers\['x-forwarded-for'\]/)
 })
 

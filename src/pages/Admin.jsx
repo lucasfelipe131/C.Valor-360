@@ -4,6 +4,7 @@ import {
  RefreshCw,ShieldCheck,Users,UsersRound
 } from 'lucide-react'
 import AccessManagement from '../components/AccessManagement'
+import ManagementUnits from '../components/ManagementUnits'
 
 const pageLabels={dashboard:'Hoje',clients:'Clientes',client360:'Cliente 360',datahub:'Base Inteligente',visits:'Visitas',opportunities:'Oportunidades',val:'VAL',agro:'Inteligência Agronômica',questionnaire:'Produtor 360',reports:'Relatórios',settings:'Configurações',admin:'Administração'}
 const date=value=>{if(!value)return 'Nunca';const parsed=new Date(value);return Number.isNaN(parsed.getTime())?'Nunca':parsed.toLocaleString('pt-BR')}
@@ -45,5 +46,6 @@ export default function Admin({currentUser,onNotify}){
    <article className="admin-user-metrics"><header><div><small>USO POR LOGIN</small><h4>Carteira e atividade individual</h4></div><span>Dados isolados; apenas totais administrativos</span></header><div className="admin-user-table" role="table" aria-label="Métricas por usuário"><div role="row" className="admin-user-table-head"><span>Usuário</span><span>Produtores</span><span>Acessos</span><span>Páginas</span><span>VAL</span><span>Interações</span><span>Última atividade</span></div>{(state.data?.users||[]).map(user=><div role="row" key={user.id}><span><b>{user.name}</b><small>{user.email} • {user.role}</small></span><span>{user.producerCount}</span><span>{user.accesses}</span><span>{user.pageViews}</span><span>{user.valAnalyses}</span><span>{Number(user.directInteractions||0)}</span><span>{date(user.lastActivityAt||user.lastLoginAt)}</span></div>)}</div></article>
   </section>
   <AccessManagement currentUser={currentUser} onNotify={onNotify}/>
+  <ManagementUnits currentUser={currentUser}/>
  </div>
 }

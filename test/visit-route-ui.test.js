@@ -53,6 +53,7 @@ async function withRoute(props,run,{fetchRequest}={}){
   state.requests.push(request)
   const custom=fetchRequest?.(request,state)
   if(custom!==undefined)return await custom
+  if(request.url.endsWith('/properties'))return response({properties:[]})
   if(request.url.includes('/day?'))return response({orderedVisitIds:request.body?.orderedVisitIds||[],trace:[]})
   if(request.url.endsWith('/driving'))return response(road)
   throw new Error(`Unexpected HTTP action: ${request.url}`)
@@ -67,6 +68,42 @@ async function withRoute(props,run,{fetchRequest}={}){
   for(const [key,descriptor] of globals){if(descriptor)Object.defineProperty(globalThis,key,descriptor);else delete globalThis[key]}
  }
 }
+
+test('properties remain on an empty-day roadmap, with one pin per property and real producer names',async()=>{
+ const producer=client('owner')
+ const properties=[{id:'one',clientId:'owner',producerName:'Produtor teste',name:'Propriedade A',location:{lat:-28,lng:-54}},{id:'two',clientId:'owner',producerName:'Produtor teste',name:'Propriedade B',location:{lat:-28.1,lng:-54.1}},{id:'missing',clientId:'owner',producerName:'Produtor teste',name:'Sem sede',location:null}]
+ const opened=[]
+ await withRoute({clients:[producer],visits:[],onOpenClient:value=>opened.push(value.id)},async ui=>{
+  assert.deepEqual(ui.map().props.pins.map(pin=>pin.id),['property:one','property:two'])
+  assert.equal(ui.map().props.pins[1].caption,'Produtor teste · Propriedade B')
+  await act(async()=>ui.map().props.onPinClick(ui.map().props.pins[1]))
+  await act(async()=>ui.button('Ver produtor').props.onClick())
+  assert.deepEqual(opened,['owner'])
+  assert.match(textOf(ui.renderer.toJSON()),/Sem localização/)
+  await act(async()=>ui.button('Nomes nos pins').props.onClick())
+  assert.ok(ui.map().props.pins.every(pin=>!pin.caption))
+  const query=ui.root().findByProps({'aria-label':'Buscar produtor no roteiro'})
+  await act(async()=>query.props.onChange({target:{value:'Propriedade B'}}))
+  assert.deepEqual(ui.map().props.pins.map(pin=>pin.id),['property:two'])
+  await act(async()=>ui.date().props.onChange({target:{value:day(1)}}))
+  assert.equal(ui.state.requests.filter(item=>item.url.endsWith('/properties')).length,1)
+  assert.equal(ui.map().props.pins[0].id,'property:two')
+ },{fetchRequest:request=>request.url.endsWith('/properties')?response({properties}):undefined})
+})
+
+test('changing portfolio aborts the property query and discards a late response',async()=>{
+ const first=deferred(),second=deferred();let count=0
+ const RouteMap=await loadRouteMap()
+ await withRoute({storageScope:'first'},async ui=>{
+  const oldRequest=ui.state.requests.find(item=>item.url.endsWith('/properties'))
+  await act(async()=>ui.renderer.update(React.createElement(RouteMap,{storageScope:'second'})))
+  assert.equal(oldRequest.options.signal.aborted,true)
+  await act(async()=>first.resolve(response({properties:[{id:'foreign',name:'Foreign',producerName:'Foreign',location:{lat:1,lng:1}}]})))
+  assert.equal(ui.map().props.pins.length,0)
+  await act(async()=>second.resolve(response({properties:[{id:'own',name:'Own',producerName:'Own',location:{lat:2,lng:2}}]})))
+  assert.deepEqual(ui.map().props.pins.map(pin=>pin.id),['property:own'])
+ },{fetchRequest:request=>request.url.endsWith('/properties')?(++count===1?first.promise:second.promise):undefined})
+})
 
 test('day list and numbered pins preserve history/current visits and missing coordinates; pin selection opens the exact visit',async()=>{
  const clients=[client('done'),client('active',0,0.01),client('missing',0,0,{location:null}),client('later',0,0.03),client('near',0,0.04)]
@@ -151,7 +188,7 @@ test('nearby suggestions pass client, selected date and recorded reason only aft
   assert.deepEqual(added,[['candidate',day(0),reason],['candidate',day(0),reason]])
   assert.equal(ui.state.starts,0)
   assert.equal(ui.state.locations,0)
-  assert.ok(ui.state.requests.every(item=>item.options.method==='GET'&&item.url.includes('/api/visit-routes/day?')))
+  assert.ok(ui.state.requests.every(item=>item.options.method==='GET'&&(item.url.includes('/api/visit-routes/day?')||item.url.endsWith('/properties'))))
  })
 })
 

@@ -23,7 +23,7 @@ const {default:SatelliteMap}=await import(`data:text/javascript;base64,${Buffer.
 function fakeLeaflet(){
  const state={maps:[],tiles:[],group:null}
  const evented=object=>Object.assign(object,{events:{},on(name,handler){this.events[name]=handler;return this},off(){this.events={};return this},emit(name,event){this.events[name]?.(event)}})
- const layer=(kind,points,options={})=>evented({kind,points,options,addTo(target){target.layers.add(this);return this},bindTooltip(){return this},setLatLng(point){this.points=point;return this},getLatLng(){return {lat:this.points[0],lng:this.points[1]}},setLatLngs(points){this.points=points;return this}})
+ const layer=(kind,points,options={})=>evented({kind,points,options,addTo(target){target.layers.add(this);return this},bindTooltip(content,options){this.tooltip={content,options};return this},setLatLng(point){this.points=point;return this},getLatLng(){return {lat:this.points[0],lng:this.points[1]}},setLatLngs(points){this.points=points;return this}})
  const L={
   map(_node,options){
    const map=evented({options,layers:new Set(),views:[],fits:[],pans:[],currentZoom:4,center:{lat:-28,lng:-54},
@@ -68,6 +68,15 @@ async function mountMap(initialProps={},loader=null){
 }
 
 const pins=[{id:'a',lat:-12.5,lng:-55.7,label:'1',title:'Primeiro produtor',tone:'visited'},{id:'b',lat:-12.6,lng:-55.8,label:'2',tone:'current'}]
+
+test('permanent property captions escape producer and property names',async()=>{
+ const app=await mountMap({pins:[{id:'property:a',lat:-28,lng:-54,caption:'Produtor <img src=x> · Sede & Fazenda'}]})
+ try{
+  const marker=app.layers('marker')[0]
+  assert.equal(marker.tooltip.options.permanent,true)
+  assert.equal(marker.tooltip.content,'Produtor &lt;img src=x&gt; · Sede &amp; Fazenda')
+ }finally{await app.dispose()}
+})
 
 test('map pins escape HTML and activate with click, Enter and Space',async()=>{
  const selected=[]

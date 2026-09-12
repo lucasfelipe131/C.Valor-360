@@ -18,6 +18,9 @@ import {GrainRepository} from './server/grain-repository.js'
 import {readProducerWorkspace} from './server/producer-workspace.js'
 import {ValRepository} from './server/repository.js'
 import {createVisitRouteService} from './server/visit-route-service.js'
+import {readRouteProperties} from './server/route-properties.js'
+import {createManagementService} from './server/management-service.js'
+import {managementOnlyAllowed} from './server/management-access.js'
 import {seedDemoProducer,DEMO_PRODUCER_KEY} from './server/demo-producer.js'
 import {currentRequestContext,observe,requestIdFrom,runWithRequestContext,updateRequestContext} from './server/observability.js'
 import {publicStorageScope} from './server/storage-policy.js'
@@ -175,6 +178,7 @@ const auth=createAuth(config)
 const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,tenantId:session.tenantId||config.defaultTenantId,ownerId:session.id||session.sub||session.email,storageScope:auth.storageScope(session)}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,tenantId:config.defaultTenantId,ownerId:'demo@valor360.local',storageScope:'demo'}
 const repository=new ValRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const visitRouteService=createVisitRouteService({repository})
+const managementService=createManagementService({db:database,tenantId:config.defaultTenantId})
 const demoProducerEnvironment=String(process.env.VAL_DEMO_ENVIRONMENT||'').toLowerCase()
 const demoProducerEnabled=['staging','test'].includes(demoProducerEnvironment)
 const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
@@ -295,7 +299,7 @@ async function handleApi(request,response,url){
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
  const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
- const protectedPath=url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview|property|workspace|season-plans))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview|property|workspace|season-plans))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const requestStartedAt=performance.now()
  let valRequestController=null
@@ -326,6 +330,7 @@ async function handleApi(request,response,url){
  const identity=protectedPath?await sessionIdentity(request):null
  const authLatencyMs=performance.now()-authStartedAt
  if(protectedPath&&auth.configured&&!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
+ if(identity&&!managementOnlyAllowed(identity,url.pathname,request.method))return json(response,403,{error:'Este acesso permite somente consulta gerencial.'})
  if(protectedPath&&identity?.mustChangePassword)return json(response,403,{error:'Troque a senha temporária antes de acessar a carteira.'})
  if(protectedPath&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para operar dados fora do modo demonstrativo.'})}
  if(storageScope==='public-survey'&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para acessar questionários fora do modo demonstrativo.'})}
@@ -333,6 +338,10 @@ async function handleApi(request,response,url){
  if(valRecommendationPath&&config.openaiApiKey&&!database.configured)return json(response,503,{error:'Configure DATABASE_URL antes de ativar a IA com dados reais.'})
  const municipalityMatch=url.pathname.match(/^\/api\/geo\/municipalities\/(\d{7})\/boundary$/)
  if(municipalityMatch&&request.method==='GET')return json(response,200,await readMunicipalityBoundary(municipalityMatch[1]))
+ if(url.pathname==='/api/management/overview'&&request.method==='GET')return json(response,200,await managementService.overview(identity,Object.fromEntries(url.searchParams)))
+ if(url.pathname==='/api/admin/management-units'&&request.method==='GET')return json(response,200,await managementService.units(identity))
+ if(url.pathname==='/api/admin/management-units'&&request.method==='POST')return json(response,201,await managementService.createUnit(identity,await body(request)))
+ if(url.pathname==='/api/admin/management-units'&&request.method==='PUT')return json(response,200,await managementService.assignUnit(identity,await body(request)))
  if(url.pathname==='/api/admin/metrics'&&request.method==='GET')return json(response,200,await accessRepository.getAdminMetrics(identity,Number(url.searchParams.get('days')||30)))
  if(url.pathname==='/api/val/latency-metrics'&&request.method==='GET')return json(response,200,{...valLatencyMetrics.snapshot(),conversation:valConversationLatency.snapshot(),cache:valSessionContextCache.stats(),sessions:valConversationSessions.stats()})
  if(url.pathname==='/api/val/latency-metrics'&&request.method==='POST'){
@@ -1029,6 +1038,7 @@ async function handleApi(request,response,url){
  if(url.pathname.startsWith('/api/visit-routes/')){
   if(!identity?.id)return json(response,401,{error:'Entre na sua conta para acessar o roteiro.'})
   response.setHeader('Cache-Control','private, no-store')
+  if(url.pathname==='/api/visit-routes/properties'&&request.method==='GET')return json(response,200,await readRouteProperties(repository,identity.id))
   if(url.pathname==='/api/visit-routes/driving'&&request.method==='POST')return json(response,200,await visitRouteService.driving({ownerId:identity.id,input:await body(request)}))
   const date=url.searchParams.get('date')
   if(url.pathname==='/api/visit-routes/day'&&request.method==='GET')return json(response,200,await visitRouteService.getDay({ownerId:identity.id,date,timeZone:url.searchParams.get('timeZone')||undefined}))
@@ -1211,7 +1221,7 @@ createServer((request,response)=>{
  response.once('finish',()=>observe('api.completed',{status:response.statusCode,durationMs:Date.now()-started,outcome:response.statusCode>=500?'error':'ok'}))
  if(!url)return json(response,400,{error:'URL inválida.'})
  if(isTechnicalWorkspaceRequest(url.pathname)){
-  try{if(technicalWorkspace.handle(request,response,url,await sessionIdentity(request),{demoAllowed:!auth.configured&&config.demoMode}))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
+  try{const technicalIdentity=await sessionIdentity(request);if(!managementOnlyAllowed(technicalIdentity,url.pathname,request.method))return json(response,403,{error:'Este acesso permite somente consulta gerencial.'});if(technicalWorkspace.handle(request,response,url,technicalIdentity,{demoAllowed:!auth.configured&&config.demoMode}))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
  }
  if(url.pathname==='/live'||url.pathname==='/ready'||url.pathname==='/health'||url.pathname.startsWith('/api/')){
   try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){const programmingError=exception instanceof TypeError||exception instanceof RangeError||exception instanceof ReferenceError||exception instanceof SyntaxError;const status=Number(exception.statusCode)||(programmingError?500:400);const safeMessage=status<500||exception.safeToRetry===true||exception.exposeMessage===true?exception.message:'Não foi possível processar a solicitação.';const retryAfterSeconds=Math.max(0,Math.min(600,Math.ceil(Number(exception.retryAfterSeconds)||0)));if(retryAfterSeconds)response.setHeader('Retry-After',String(retryAfterSeconds));return json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception.code?{code:String(exception.code).slice(0,100)}:{}),...(exception.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{}),...(retryAfterSeconds?{retryAfterSeconds}:{})})}

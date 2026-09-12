@@ -148,6 +148,7 @@ export default function SatelliteMap({
     icon:L.divIcon({className:`val-map-pin${tone?` is-${tone}`:''}${selected?' is-selected':''}`,html:`<b><span>${escapeHtml(pinLabel)}</span></b>`,iconSize:[34,40],iconAnchor:[17,tone==='position'||tone==='suggested'?17:40]}),
     title:accessibleLabel,keyboard:interactive,bubblingMouseEvents:false,riseOnHover:true,zIndexOffset:selected?1000:tone==='position'?800:0
    }).addTo(group)
+   if(pin.caption)marker.bindTooltip(escapeHtml(pin.caption),{permanent:true,direction:'auto',offset:[13,-20],className:'val-property-pin-label'})
    const element=marker.getElement()
    if(element){
     element.setAttribute('aria-label',accessibleLabel)

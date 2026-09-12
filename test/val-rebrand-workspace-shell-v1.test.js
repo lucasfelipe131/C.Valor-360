@@ -23,7 +23,10 @@ const FERRAMENTAS_ANTES=[
 
 test('nenhum módulo do inventário desapareceu na navegação por workspaces',()=>{
  for(const id of MODULOS_ANTES)assert.ok(MODULES[id],`módulo "${id}" sumiu do registro`)
- assert.equal(Object.keys(MODULES).length,MODULOS_ANTES.length,'o registro ganhou ou perdeu módulos')
+ assert.deepEqual(Object.keys(MODULES).filter(id=>!MODULOS_ANTES.includes(id)),['management'],'somente o módulo gerencial foi acrescentado')
+ assert.ok(workspaceModules('gestao','admin').some(item=>item.id==='management'))
+ assert.ok(workspaceModules('gestao','manager').some(item=>item.id==='management'))
+ assert.ok(!workspaceModules('gestao','consultant').some(item=>item.id==='management'))
 
  const alcancaveis=new Set(assertModuleCoverage('admin'))
  for(const id of MODULOS_ANTES){
