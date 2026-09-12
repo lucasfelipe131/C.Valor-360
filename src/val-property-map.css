@@ -221,3 +221,6 @@ body.val-map-expanded{overscroll-behavior:none}
 .val-map-pin.photo-ready img{opacity:1}
 .val-map-pin.photo-ready span{visibility:hidden}
 @media(max-width:600px){.val-property-pin-label.leaflet-tooltip{font-size:9px;max-width:88px}}
+.val-map-pin-choices{position:absolute;z-index:1400;left:12px;right:12px;bottom:52px;margin:0 auto;max-width:340px;padding:10px;background:#fff;border:1px solid #b6d2c7;border-radius:12px;box-shadow:0 8px 24px #062b3233;color:#163c31}
+.val-map-pin-choices header{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:13px}.val-map-pin-choices header button{min-width:40px;min-height:40px;border:0;background:transparent;color:inherit}
+.val-map-pin-choices>div{display:grid;gap:5px;max-height:180px;overflow:auto;overscroll-behavior:contain}.val-map-pin-choices>div>button{display:flex;align-items:center;gap:8px;width:100%;min-height:48px;padding:9px;text-align:left;background:#f1f8f5;border:1px solid #dcebe5;border-radius:7px;color:inherit;font-size:12px;line-height:1.4}.val-map-pin-choices svg{flex-shrink:0}.val-map-pin-choices span{overflow-wrap:anywhere}

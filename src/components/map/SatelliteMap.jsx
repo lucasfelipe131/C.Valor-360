@@ -3,7 +3,7 @@ import {MousePointer2,Layers,Map as MapIcon,Focus,HelpCircle,X,MapPin,Maximize,M
 import {searchMunicipalities,localityBounds,loadAdministrativeReferences} from '../../lib/map-localities'
 import {cadastralDetails} from '../../lib/cadastral-map'
 import CadastralLayers from './CadastralLayers'
-import {pinPhotoUrls,visiblePinLabels} from '../../lib/map-pin-presentation'
+import {pinPhotoUrls,visiblePinLabels,nearbyPropertyPins} from '../../lib/map-pin-presentation'
 import {stateAtPoint} from '../../lib/cadastral-viewport'
 import 'leaflet/dist/leaflet.css'
 import '../../val-property-map.css'
@@ -39,6 +39,12 @@ export default function SatelliteMap({
  const selectionRef=useRef(null)
  const pinMarkersRef=useRef([])
  const layoutLabelsRef=useRef(()=>{})
+ const [pinChoices,setPinChoices]=useState([])
+ const choicePanel=useRef(null)
+ const choiceTrigger=useRef(null)
+ useEffect(()=>{if(pinChoices.length)choicePanel.current?.querySelector?.('button[data-property-choice]')?.focus?.()},[pinChoices])
+ useEffect(()=>setPinChoices(current=>current.length?[]:current),[pins,viewKey])
+ const closePinChoices=()=>{setPinChoices([]);choiceTrigger.current?.focus?.()}
  const draftPointRef=useRef(onDraftPointClick);draftPointRef.current=onDraftPointClick
  const draftMoveRef=useRef(onDraftPointMove);draftMoveRef.current=onDraftPointMove
  const draftInsertRef=useRef(onDraftPointInsert);draftInsertRef.current=onDraftPointInsert
@@ -168,6 +174,11 @@ export default function SatelliteMap({
    const item={id:String(pin.id??pinMarkersRef.current.length),marker,selected,active:false}
    pinMarkersRef.current.push(item)
    const element=marker.getElement()
+   const activatePin=()=>{
+    const choices=nearbyPropertyPins(pin,pins,map.latLngToContainerPoint?item=>{const point=validLocation(item);return point?map.latLngToContainerPoint([point.lat,point.lng]):null}:null)
+    if(choices.length>1){choiceTrigger.current=element;setPinChoices(choices)}
+    else pinClickRef.current?.(pin)
+   }
    if(element){
     const image=element.querySelector?.('img')
     if(image){
@@ -190,10 +201,10 @@ export default function SatelliteMap({
     if(onPinClick&&interactive)element.setAttribute('aria-pressed',String(selected))
     // divIcon is not a native button: provide both standard activation keys.
     if(interactive)element.addEventListener('keydown',event=>{
-     if((event.key===' '||event.key==='Enter')&&pinClickRef.current){event.preventDefault();event.stopPropagation();pinClickRef.current(pin)}
+     if((event.key===' '||event.key==='Enter')&&pinClickRef.current){event.preventDefault();event.stopPropagation();activatePin()}
     })
    }
-   if(interactive)marker.on('click',()=>pinClickRef.current?.(pin))
+   if(interactive&&onPinClick)marker.on('click',activatePin)
   }
   for(const polygon of polygons){
    const ring=(polygon.points||[]).map(validLocation).filter(Boolean)
@@ -399,6 +410,10 @@ export default function SatelliteMap({
    </div>
   </>}
   <div ref={container} className="val-map-canvas" role={interactive?'region':'img'} aria-label={label} aria-busy={loading}/>
+  {pinChoices.length>1&&<section ref={choicePanel} className="val-map-pin-choices" aria-label="Propriedades próximas neste ponto" onKeyDown={event=>{if(event.key==='Escape'){event.preventDefault();event.stopPropagation();closePinChoices()}}}>
+   <header><strong>Qual propriedade deseja abrir?</strong><button type="button" aria-label="Fechar escolha de propriedade" onClick={closePinChoices}><X size={16}/></button></header>
+   <div>{pinChoices.map(pin=><button type="button" data-property-choice key={pin.id} onClick={()=>{setPinChoices([]);pinClickRef.current?.(pin)}}><MapPin size={18}/><span>{pin.title||pin.displayName||pin.caption||'Propriedade'}</span></button>)}</div>
+  </section>}
   {controls&&interactive&&<div className="val-map-controls" role="group" aria-label="Controles do mapa">
    <div className="val-map-basemaps" role="group" aria-label="Imagem de fundo">
     <button type="button" aria-pressed={basemap==='satellite'} onClick={()=>setBasemap('satellite')}>Satélite</button>

@@ -28,7 +28,7 @@ function fakeLeaflet(){
  const L={
   map(_node,options){
    const map=evented({options,layers:new Set(),views:[],fits:[],pans:[],currentZoom:4,center:{lat:-28,lng:-54},
-    getCenter(){return this.center},getBounds(){return {getWest:()=>-54.1,getSouth:()=>-28.1,getEast:()=>-53.9,getNorth:()=>-27.9}},
+    latLngToContainerPoint(point){return {x:point[1]*100,y:point[0]*100}},getCenter(){return this.center},getBounds(){return {getWest:()=>-54.1,getSouth:()=>-28.1,getEast:()=>-53.9,getNorth:()=>-27.9}},
     setView(point,zoom){this.views.push({point,zoom});this.currentZoom=zoom;return this},
     fitBounds(bounds,options){this.fits.push({bounds,options});this.currentZoom=12;return this},
     panTo(point){this.pans.push(point);return this},getZoom(){return this.currentZoom},invalidateSize(){},
@@ -250,5 +250,19 @@ test('drag updates the contour in place, commits once on release, and midpoint i
   middle.emit('click');assert.deepEqual(inserted,[[0,{lat:middle.points[0],lng:middle.points[1]}]])
   vertex.element.events.keydown({key:'Delete',preventDefault(){},stopPropagation(){}});assert.deepEqual(removed,[1])
   assert.deepEqual(initial[1],{lat:-12.01,lng:-55})
+ }finally{await app.dispose()}
+})
+
+
+test('a touch on overlapping property pins asks which property, then opens its exact ID',async()=>{
+ const opened=[],points=[{id:'property:a',lat:-28,lng:-54,title:'Produtor A · Sede A'},{id:'property:b',lat:-28.01,lng:-54.01,title:'Produtor B · Sede B'}]
+ const app=await mountMap({pins:points,onPinClick:pin=>opened.push(pin.id)})
+ try{
+  await act(async()=>app.layers('marker')[0].emit('click'))
+  assert.deepEqual(opened,[])
+  assert.equal(app.renderer.root.findAllByProps({'data-property-choice':true}).length,2)
+  await act(async()=>app.button('Produtor B · Sede B').props.onClick())
+  assert.deepEqual(opened,['property:b'])
+  assert.equal(app.renderer.root.findAllByProps({'data-property-choice':true}).length,0)
  }finally{await app.dispose()}
 })

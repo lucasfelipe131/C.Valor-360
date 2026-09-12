@@ -3,6 +3,17 @@ export function pinPhotoUrls(pin){
  return [...new Set([pin.propertyPhotoUrl,pin.producerPhotoUrl].filter(value=>typeof value==='string'&&/^\/api\/clients\/[^/?#]+(?:\/properties\/[^/?#]+)?\/profile-photo\?content=1(?:&[^#]*)?$/.test(value)))]
 }
 
+export function nearbyPropertyPins(pin,pins,project){
+ const isProperty=item=>Boolean(item.propertyId)||String(item.id||'').startsWith('property:')
+ if(!isProperty(pin)||!project)return [pin]
+ const center=project(pin)
+ return pins.filter(item=>{
+  if(!isProperty(item))return false
+  const point=project(item)
+  return point&&center&&Math.hypot(point.x-center.x,point.y-center.y)<=40
+ })
+}
+
 const intersects=(a,b)=>a.left<b.right&&a.right>b.left&&a.top<b.bottom&&a.bottom>b.top
 // Pixel grid keeps label decluttering bounded even for large portfolios.
 export function visiblePinLabels(entries,markers,bounds){

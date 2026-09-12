@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {pinPhotoUrls,visiblePinLabels} from '../src/lib/map-pin-presentation.js'
+import {pinPhotoUrls,visiblePinLabels,nearbyPropertyPins} from '../src/lib/map-pin-presentation.js'
 
 test('map photos prefer the specific property, then the producer, excluding external and executable URLs',()=>{
  const propertyPhotoUrl='/api/clients/owner/properties/farm/profile-photo?content=1&v=1'
@@ -20,4 +20,13 @@ test('nearby labels never overlap, selected label wins and more labels return af
  assert.equal(visiblePinLabels([entries[0],{...entries[1],rect:rect(140,50)}, {...entries[2],rect:rect(250,50)}],[],bounds).size,3)
  assert.equal(visiblePinLabels([{id:'offscreen',rect:rect(380,50)}],[],bounds).size,0)
  assert.equal(visiblePinLabels(entries,[{id:'other-pin',rect:rect(90,45,34,40)}],bounds).has('b'),false)
+})
+
+test('overlapping property markers offer exact identities without moving their coordinates',()=>{
+ const pins=[{id:'property:a',lat:0,lng:0},{id:'property:b',lat:0,lng:0},{id:'property:c',lat:0,lng:50},{id:'visit-a',lat:0,lng:0}]
+ const project=pin=>({x:pin.lng,y:pin.lat})
+ assert.deepEqual(nearbyPropertyPins(pins[0],pins,project).map(pin=>pin.id),['property:a','property:b'])
+ assert.deepEqual(nearbyPropertyPins(pins[2],pins,project).map(pin=>pin.id),['property:c'])
+ assert.equal(pins[0].lng,0)
+ assert.deepEqual(nearbyPropertyPins(pins[3],pins,project),[pins[3]])
 })
