@@ -31,7 +31,7 @@ const PROFILE_GUIDANCE={
 }
 const terminalOpportunity=stage=>/fechado|ganho|perdido|cancelado|closed|won|lost/i.test(String(stage||''))
 
-export default function Client360Details({section,initialPropertyId,client,visits=[],opportunities=[],storageScope,onBack,onPrepare,onUpdate,onSaved,onRefreshPortfolio,onAsk}){
+export default function Client360Details({section,initialPropertyId,onPropertyChange,client,visits=[],opportunities=[],storageScope,onBack,onPrepare,onUpdate,onSaved,onRefreshPortfolio,onAsk}){
  const metrics=commercialMetrics(client)
  const storageKey=`valor360-tech-${storageScope||'session'}-${localId(client.id)}`
  const [tech,setTech]=useState(()=>{
@@ -94,7 +94,7 @@ export default function Client360Details({section,initialPropertyId,client,visit
   </section></div>
 
   {section==='map'&&<Drilldown eyebrow="PROPRIEDADE E TALHÕES" title="Ver mapa, sede e talhões">
-   <PropertyFields key={`${client.id}:${initialPropertyId||"default"}`} initialPropertyId={initialPropertyId} client={client} onSaved={onSaved} onRefreshPortfolio={onRefreshPortfolio}/>
+   <PropertyFields key={`${client.id}:${initialPropertyId||"default"}`} initialPropertyId={initialPropertyId} onPropertyChange={onPropertyChange} client={client} onSaved={onSaved} onRefreshPortfolio={onRefreshPortfolio}/>
   </Drilldown>}
 
   {section==='commercial'&&<Drilldown eyebrow="NEGÓCIO" title="Ver negócio, oportunidades e indicadores">

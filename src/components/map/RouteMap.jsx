@@ -12,12 +12,12 @@ const km=value=>Number(value).toLocaleString('pt-BR',{maximumFractionDigits:1})
 const labels={COMPLETED:'Visitada',COMPLETED_PENDING_REVIEW:'Aguardando relato',IN_PROGRESS:'Em andamento',PREPARED:'Preparada',PLANNED:'Programada'}
 const pathDistance=points=>points.slice(1).reduce((sum,point,index)=>{const a=points[index];const radians=Math.PI/180;const dlat=(point.lat-a.lat)*radians;const dlng=(point.lng-a.lng)*radians;const value=Math.sin(dlat/2)**2+Math.cos(a.lat*radians)*Math.cos(point.lat*radians)*Math.sin(dlng/2)**2;return sum+6371*2*Math.atan2(Math.sqrt(value),Math.sqrt(1-value))},0)
 
-export default function RouteMap({visits=[],clients=[],storageScope='',onAddClient,onPrepareVisit,onOpenVisit,onOpenClient}){
- const [date,setDate]=useState(today)
- const [view,setView]=useState('map')
- const [search,setSearch]=useState('')
+export default function RouteMap({visits=[],clients=[],storageScope='',initialState={},onStateChange,onAddClient,onPrepareVisit,onOpenVisit,onOpenClient}){
+ const [date,setDate]=useState(()=>initialState.date||today())
+ const [view,setView]=useState(initialState.view||'map')
+ const [search,setSearch]=useState(initialState.search||'')
  const [propertyState,setPropertyState]=useState({scope:null,items:[],loading:true,error:''})
- const [showNames,setShowNames]=useState(true)
+ const [showNames,setShowNames]=useState(initialState.showNames??true)
  const [propertyLimit,setPropertyLimit]=useState(30)
  const [propertyRetry,setPropertyRetry]=useState(0)
  const propertyRevision=JSON.stringify(clients.map(client=>[client.id,client.updatedAt,client.location]))
@@ -28,7 +28,7 @@ export default function RouteMap({visits=[],clients=[],storageScope='',onAddClie
  const [orderedIds,setOrderedIds]=useState([])
  const [trace,setTrace]=useState([])
  const [position,setPosition]=useState(null)
- const [selectedId,setSelectedId]=useState('')
+ const [selectedId,setSelectedId]=useState(initialState.selectedId||'')
  const [road,setRoad]=useState(null)
  const [roadBusy,setRoadBusy]=useState(false)
  const [notice,setNotice]=useState('')
@@ -37,7 +37,9 @@ export default function RouteMap({visits=[],clients=[],storageScope='',onAddClie
  const [proposal,setProposal]=useState(null)
  const [detours,setDetours]=useState({})
  const [detourBusy,setDetourBusy]=useState('')
- const [maxKm,setMaxKm]=useState(20)
+ const [maxKm,setMaxKm]=useState(initialState.maxKm||20)
+ useEffect(()=>{onStateChange?.({date,view,search,selectedId,showNames,maxKm})},[date,view,search,selectedId,showNames,maxKm,onStateChange])
+ useEffect(()=>{if(typeof window==='undefined')return;const refresh=()=>setPropertyRetry(value=>value+1);window.addEventListener('val:profile-updated',refresh);return()=>window.removeEventListener('val:profile-updated',refresh)},[])
  const loadedDay=useRef('')
  const selectedKey=useRef('')
  const generation=useRef(0)
@@ -56,7 +58,7 @@ export default function RouteMap({visits=[],clients=[],storageScope='',onAddClie
  const drivingInput={clientIds:drivingIds,...(drivingOrigin?{origin:{lat:drivingOrigin.lat,lng:drivingOrigin.lng}}:{})}
  const drivingSignature=JSON.stringify(drivingInput)
  const pins=useMemo(()=>[
-  ...visibleProperties.filter(item=>item.location).map(item=>({id:`property:${item.id}`,...item.location,label:'',title:`${item.producerName} · ${item.name}`,caption:showNames?`${item.producerName} · ${item.name}${item.isDemo?' · DEMO':''}`:null})),
+  ...visibleProperties.filter(item=>item.location).map(item=>({id:`property:${item.id}`,...item.location,propertyPhotoUrl:item.propertyPhotoUrl,producerPhotoUrl:item.producerPhotoUrl,label:'',title:`${item.producerName} · ${item.name}`,caption:showNames?`${item.producerName}${item.isDemo?' · DEMO':''}`:null})),
   ...stops.filter(stop=>stop.location).map(stop=>({id:String(stop.visitId),...stop.location,label:String(stop.order),title:stop.name,tone:stop.tone,caption:showNames&&!visibleProperties.some(item=>String(item.clientId)===String(stop.clientId)&&item.location?.lat===stop.location.lat&&item.location?.lng===stop.location.lng)?`${stop.order}. ${stop.name}`:null})),
   ...suggestions.map(item=>({id:`suggestion:${item.clientId}`,...item.location,label:'+',title:`${item.name} · Sugestão`,tone:'suggested'})),
   ...(position&&date===today()?[{id:'my-position',...position,label:'',title:'Minha posição',tone:'position'}]:[])
@@ -75,7 +77,7 @@ export default function RouteMap({visits=[],clients=[],storageScope='',onAddClie
   const controller=new AbortController();let active=true
   generation.current+=1
   setSaving(false);setDetourBusy('');setPosition(null)
-  loadedDay.current='';setOrderedIds([]);setTrace([]);setProposal(null);setNotice('');setError('');setSelectedId('');setDetours({})
+  loadedDay.current='';setOrderedIds([]);setTrace([]);setProposal(null);setNotice('');setError('');setDetours({})
   routeRequest(routeDayPath(date),{signal:controller.signal}).then(payload=>{if(active){loadedDay.current=date;setOrderedIds(payload.orderedVisitIds||[]);setTrace(payload.trace||[])}}).catch(exception=>{if(active&&exception.name!=='AbortError')setError(exception.message)})
   return()=>{active=false;generation.current+=1;controller.abort()}
  },[date,storageScope])
@@ -145,7 +147,7 @@ export default function RouteMap({visits=[],clients=[],storageScope='',onAddClie
  }
  return <section className="visit-roadmap" aria-label="Mapa e roteiro de visitas">
   <div className="vr-toolbar">
-   <label className="vr-date"><CalendarDays size={18}/><span className="sr-only">Data do roteiro</span><input aria-label="Data do roteiro" type="date" value={date} disabled={tracking.tracking||tracking.busy||saving} onChange={event=>{if(event.target.value)setDate(event.target.value)}}/></label>
+   <label className="vr-date"><CalendarDays size={18}/><span className="sr-only">Data do roteiro</span><input aria-label="Data do roteiro" type="date" value={date} disabled={tracking.tracking||tracking.busy||saving} onChange={event=>{if(event.target.value){setDate(event.target.value);setSelectedId('')}}}/></label>
    <button className="soft-btn" onClick={()=>setDate(today())} disabled={tracking.tracking||tracking.busy||saving}>Hoje</button>
    <label className="vr-search"><Search size={17}/><input aria-label="Buscar produtor no roteiro" placeholder="Produtor, propriedade ou município…" value={search} onChange={event=>{setSearch(event.target.value);setPropertyLimit(30)}}/></label>
    <button className="soft-btn" aria-pressed={showNames} onClick={()=>setShowNames(value=>!value)}><MapPin size={16}/>Nomes nos pins</button>
@@ -174,8 +176,8 @@ export default function RouteMap({visits=[],clients=[],storageScope='',onAddClie
     </section>
    </aside>
    {view==='map'&&<div className="vr-map-panel">
-    <SatelliteMap key={storageScope} pins={pins} routes={routes} height={610} fit={!propertiesLoading} controls selectedId={selectedId} onPinClick={pin=>setSelectedId(String(pin.id))} label="Mapa de satélite com propriedades, produtores e visitas"/>
-    {selectedProperty&&<div className="vr-map-card"><button className="vr-close" aria-label="Fechar propriedade selecionada" onClick={()=>setSelectedId('')}>×</button><span className="vr-status">{selectedProperty.isDemo?'DADOS DEMONSTRATIVOS':'Propriedade cadastrada'}</span><h4>{selectedProperty.producerName}</h4><p>{selectedProperty.name} · {selectedProperty.municipality||'Município não informado'}</p>{!selectedProperty.location&&<p>Sem localização cadastrada. Marque a sede no perfil do produtor para exibir o pin.</p>}<button className="primary-btn" onClick={()=>onOpenClient?.(clients.find(client=>String(client.id)===String(selectedProperty.clientId))||{id:selectedProperty.clientId,name:selectedProperty.producerName})}>Ver produtor</button></div>}
+    <SatelliteMap key={storageScope} viewKey={`roadmap:${storageScope}`} pins={pins} routes={routes} height={610} fit={!propertiesLoading} controls selectedId={selectedId} onPinClick={pin=>setSelectedId(String(pin.id))} label="Mapa de satélite com propriedades, produtores e visitas"/>
+    {selectedProperty&&<div className="vr-map-card"><button className="vr-close" aria-label="Fechar propriedade selecionada" onClick={()=>setSelectedId('')}>×</button><span className="vr-status">{selectedProperty.isDemo?'DADOS DEMONSTRATIVOS':'Propriedade cadastrada'}</span><h4>{selectedProperty.producerName}</h4><p>{selectedProperty.name} · {selectedProperty.municipality||'Município não informado'}</p>{!selectedProperty.location&&<p>Sem localização cadastrada. Marque a sede no perfil do produtor para exibir o pin.</p>}<button className="primary-btn" onClick={()=>onOpenClient?.(clients.find(client=>String(client.id)===String(selectedProperty.clientId))||{id:selectedProperty.clientId,name:selectedProperty.producerName},{propertyId:String(selectedProperty.id),tab:'overview'})}>Ver produtor</button></div>}
     {(selected||selectedSuggestion)&&<div className="vr-map-card"><button className="vr-close" aria-label="Fechar propriedade selecionada" onClick={()=>setSelectedId('')}>×</button><span className={`vr-status is-${selected?.tone||'suggested'}`}>{selected?labels[selected.lifecycle]:'Sugestão próxima'}</span><h4>{selected?.name||selectedSuggestion?.name}</h4><p>{selected?.visit?.objective||selectedSuggestion?.reason}</p>{!selected?.location&&selected&&<p>Marque a sede no cadastro para mostrar o pin.</p>}<div>{selected?<button className="primary-btn" onClick={()=>onOpenVisit?.(selected.visit)}>Ver visita</button>:<button className="primary-btn" onClick={()=>onAddClient?.(selectedSuggestion.clientId,date,selectedSuggestion.reason)}>Adicionar ao roteiro</button>}<button className="soft-btn" onClick={()=>onOpenClient?.(selected?.client||selectedSuggestion?.client)}>Ver produtor</button></div></div>}
     <div className="vr-map-legend"><span><MapPin size={13}/>Propriedade</span><span><i className="vr-dot is-visited"/>Visitada</span><span><i className="vr-dot is-current"/>Em andamento</span><span><i className="vr-dot is-planned"/>Programada</span><span><Plus size={13}/>Sugestão</span><span><b className="vr-line"/>Percurso GPS</span><span><b className="vr-line is-planned"/>Rota planejada</span></div>
    </div>}

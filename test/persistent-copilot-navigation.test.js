@@ -374,3 +374,27 @@ for(const mobile of [false,true])test(`global management and reports reset conte
   assert.equal(app.stub('Topbar').props.client.id,clients[0].id)
  }finally{await app.dispose()}
 })
+
+for(const mobile of [false,true])test(`map opens exact producer and property, integrated commercial and cadastro return to roadmap (${mobile?'mobile':'desktop'})`,async()=>{
+ const app=await mountApp({mobile})
+ const visitsView=()=>app.renderer.root.find(node=>typeof node.type==='function'&&Object.hasOwn(node.props,'routeMapState'))
+ try{
+  await app.navigate('visits')
+  const state={date:'2026-09-15',search:'Farm B',selectedId:'property:farm-b',view:'map'}
+  await act(async()=>visitsView().props.onRouteMapStateChange(state))
+  await act(async()=>{visitsView().props.onOpenClient(clients[1],{propertyId:'farm-b',tab:'overview'});await flush()})
+  assert.equal(app.stub('Client360').props.client.id,clients[1].id)
+  assert.equal(app.stub('Client360').props.initialPropertyId,'farm-b')
+  assert.equal(app.stub('Client360').props.activeTab,'overview')
+  await act(async()=>app.stub('Client360').props.onTabChange('commercial'))
+  assert.equal(app.stub('Client360').props.activeTab,'commercial')
+  await act(async()=>app.stub('Client360').props.onTabChange('profile'))
+  assert.equal(app.stub('Client360').props.activeTab,'profile')
+  for(let i=0;i<3;i++)await act(async()=>{app.stub('Topbar').props.onBack();await flush()})
+  assert.deepEqual(visitsView().props.routeMapState,state)
+  await act(async()=>{visitsView().props.onPrepare(clients[0]);await flush()})
+  assert.equal(app.stub('Client360').props.client.id,clients[0].id)
+  assert.equal(app.stub('Client360').props.activeTab,'commercial')
+  assert.equal(app.renderer.root.findAllByType('test-ValWorkspace').length,0)
+ }finally{await app.dispose()}
+})

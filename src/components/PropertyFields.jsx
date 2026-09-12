@@ -1,3 +1,4 @@
+import ProfileEditor from './ProfileEditor'
 import {useNavigationGuard} from '../lib/use-navigation-guard'
 import React,{useEffect,useMemo,useRef,useState} from 'react'
 import {SlidersHorizontal,Check,Crosshair,LocateFixed,MapPin,PencilRuler,Plus,Save,Trash2,Undo2,X} from 'lucide-react'
@@ -31,7 +32,7 @@ export const fromProfile=(profile,selectedSeason='')=>({
 const fieldRings=field=>(field?.multipart&&field.polygons?.length?field.polygons.map(polygon=>polygon[0]):[field?.points||[]]).filter(ring=>ring?.length>=3)
 const fieldIsMapped=field=>fieldRings(field).length>0
 
-export default function PropertyFields({client,onSaved,onRefreshPortfolio,initialPropertyId}){
+export default function PropertyFields({client,onSaved,onRefreshPortfolio,initialPropertyId,onPropertyChange}){
  const [form,setForm]=useState(fromProfile(null))
  const savedProfile=useRef(null)
  const [mapSeason,setMapSeason]=useState('2627V')
@@ -78,8 +79,8 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio,initia
 
  const selectProperty=propertyId=>{
   if(state.loading||state.saving||propertyId===form.propertyId)return
-  if((dirty||draft.length)&&!window.confirm('Você tem alterações não salvas. Descartar as alterações e trocar de propriedade?'))return
-  setSelection({clientId:client.id,propertyId})
+  if(typeof window!=='undefined'&&window.dispatchEvent(new Event('val:before-navigation',{cancelable:true}))===false)return
+  setSelection({clientId:client.id,propertyId});onPropertyChange?.(propertyId)
  }
  const update=patch=>{if(busy)return;setForm(current=>({...current,...patch}));setDirty(true);setState(current=>({...current,error:'',notice:''}))}
  const updateField=(key,patch)=>update({fields:form.fields.map(field=>field.key===key?{...field,...patch,...(Object.hasOwn(patch,'productivityTarget')?{productivityTargetTouched:true}:{})}:field)})
@@ -216,6 +217,7 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio,initia
     <p>{form.location?<><MapPin size={14}/>Sede em {formatCoordinates(form.location)}</>:'Sede ainda sem localização no mapa.'}</p>
    </div>
 
+   {loaded&&form.propertyId&&<ProfileEditor key={form.propertyId} clientId={client.id} propertyId={form.propertyId}/>}
   </header>
 
   {mode==='pin'&&<p className="property-fields-hint" role="status">Toque no ponto da sede da propriedade. Use o zoom até enxergar a casa ou o barracão.</p>}

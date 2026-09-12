@@ -7,6 +7,7 @@ import {transformWithEsbuild} from 'vite'
 
 async function component(path,{mapStub=false}={}){
  let source=readFileSync(new URL(path,import.meta.url),'utf8')
+ source=source.replace("import ProfileEditor from './ProfileEditor'",'const ProfileEditor=()=>null')
  if(mapStub)source=source.replace("import SatelliteMap from './map/SatelliteMap'","const SatelliteMap=props=>React.createElement('map-test',props,props.editorTools,props.footerTools)")
  source=source.replace(/from '([^']+)'/g,(_match,specifier)=>`from '${specifier.startsWith('.')?new URL(specifier+'.js',new URL(path,import.meta.url)).href:import.meta.resolve(specifier)}'`)
  source=source.replace("import('../../lib/cadastral-import')",`import('${new URL('../src/lib/cadastral-import.js',import.meta.url).href}')`)

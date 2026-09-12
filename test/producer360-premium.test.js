@@ -33,7 +33,7 @@ test('empty producer retains layout without reference facts; real fields render 
   const empty=renderToStaticMarkup(React.createElement(Client360,props))
   for(const title of ['Saldo estimado de grãos','Ainda não calculado','Sem informação de crédito','Perfil comportamental','Não informado','Propriedades e talhões','Indicadores da safra','Carregando dado'])assert.ok(empty.includes(title),title)
   for(const fabricated of ['5.067','2.480','1.950','284.000','13.000','Analítico','R$ 1,2','25 dias','Antonio Carlos'])assert.equal(empty.includes(fabricated),false,fabricated)
-  assert.equal((empty.match(/role="tab"/g)||[]).length,10)
+  assert.equal((empty.match(/role="tab"/g)||[]).length,11)
   const filled=renderToStaticMarkup(React.createElement(Client360,{...props,client:{...props.client,area:'712 ha',cultures:'Canola'}}))
   assert.ok(filled.includes('712 ha'));assert.ok(filled.includes('Canola'))
   const demo=renderToStaticMarkup(React.createElement(Client360,{...props,client:{...props.client,isDemo:true}}))

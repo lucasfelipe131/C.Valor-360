@@ -3,6 +3,7 @@ import {MousePointer2,Layers,Map as MapIcon,Focus,HelpCircle,X,MapPin,Maximize,M
 import {searchMunicipalities,localityBounds,loadAdministrativeReferences} from '../../lib/map-localities'
 import {cadastralDetails} from '../../lib/cadastral-map'
 import CadastralLayers from './CadastralLayers'
+import {pinPhotoUrls,visiblePinLabels} from '../../lib/map-pin-presentation'
 import {stateAtPoint} from '../../lib/cadastral-viewport'
 import 'leaflet/dist/leaflet.css'
 import '../../val-property-map.css'
@@ -36,6 +37,8 @@ export default function SatelliteMap({
  const initialFitRef=useRef(false)
  const previousFitRef=useRef(fit)
  const selectionRef=useRef(null)
+ const pinMarkersRef=useRef([])
+ const layoutLabelsRef=useRef(()=>{})
  const draftPointRef=useRef(onDraftPointClick);draftPointRef.current=onDraftPointClick
  const draftMoveRef=useRef(onDraftPointMove);draftMoveRef.current=onDraftPointMove
  const draftInsertRef=useRef(onDraftPointInsert);draftInsertRef.current=onDraftPointInsert
@@ -124,6 +127,18 @@ export default function SatelliteMap({
   else if(!uf){mapRef.current?.setView(BRAZIL_VIEW.center,BRAZIL_VIEW.zoom);setPlaceNotice('Visão inicial do Brasil.')}
  }
 
+ layoutLabelsRef.current=()=>{
+  const bounds=container.current?.getBoundingClientRect?.();if(!bounds)return
+  const entries=[],markers=[]
+  for(const item of pinMarkersRef.current){
+   const rect=item.marker.getElement()?.getBoundingClientRect?.()
+   if(rect)markers.push({id:item.id,rect})
+   const element=item.marker.getTooltip?.()?.getElement?.()
+   if(element)entries.push({...item,element,rect:element.getBoundingClientRect()})
+  }
+  const visible=visiblePinLabels(entries,markers,bounds)
+  for(const item of entries)item.element.style.visibility=visible.has(item.id)?'visible':'hidden'
+ }
  clickRef.current=onClick
  pinClickRef.current=onPinClick
  const baseSignature=JSON.stringify({pins,polygons,route,routes,selectedId,interactive,clickable:Boolean(onPinClick)})
@@ -135,7 +150,7 @@ export default function SatelliteMap({
   let selectedPin=baseRenderRef.current?.selectedPin||null
   if(baseRenderRef.current?.signature!==baseSignature){
   group.clearLayers();draftRenderRef.current={vertices:[],midpoints:[],line:null,area:null}
-  everything=[];selectedPin=null
+  everything=[];selectedPin=null;pinMarkersRef.current=[]
   for(const pin of pins){
    const point=validLocation(pin);if(!point)continue
    everything.push([point.lat,point.lng])
@@ -144,13 +159,31 @@ export default function SatelliteMap({
    if(selected&&!selectedPin)selectedPin={...point,key:pin.id!=null?String(pin.id):`${point.lat},${point.lng}`}
    const pinLabel=pin.label??(tone==='suggested'?'+':'')
    const accessibleLabel=[pin.title||pinLabel||'Localização',PIN_TONES[tone]].filter(Boolean).join(' · ')
+   const photoUrls=pinPhotoUrls(pin)
    const marker=L.marker([point.lat,point.lng],{
-    icon:L.divIcon({className:`val-map-pin${tone?` is-${tone}`:''}${selected?' is-selected':''}`,html:`<b><span>${escapeHtml(pinLabel)}</span></b>`,iconSize:[34,40],iconAnchor:[17,tone==='position'||tone==='suggested'?17:40]}),
+    icon:L.divIcon({className:`val-map-pin${tone?` is-${tone}`:''}${selected?' is-selected':''}${photoUrls.length?' has-photo':''}`,html:`<b><span>${escapeHtml(pinLabel)}</span>${photoUrls.length?`<img src="${escapeHtml(photoUrls[0])}" alt="" loading="lazy" decoding="async"/>`:''}</b>`,iconSize:[34,40],iconAnchor:[17,tone==='position'||tone==='suggested'?17:40]}),
     title:accessibleLabel,keyboard:interactive,bubblingMouseEvents:false,riseOnHover:true,zIndexOffset:selected?1000:tone==='position'?800:0
    }).addTo(group)
-   if(pin.caption||pin.displayName)marker.bindTooltip(escapeHtml(pin.caption||pin.displayName),{permanent:true,direction:'auto',offset:[13,-20],className:'val-property-pin-label'})
+   if(pin.caption||pin.displayName)marker.bindTooltip(escapeHtml(pin.caption||pin.displayName),{permanent:true,direction:'right',offset:[9,-23],className:'val-property-pin-label'})
+   const item={id:String(pin.id??pinMarkersRef.current.length),marker,selected,active:false}
+   pinMarkersRef.current.push(item)
    const element=marker.getElement()
    if(element){
+    const image=element.querySelector?.('img')
+    if(image){
+     let index=0
+     const loaded=()=>element.classList.add('photo-ready')
+     image.addEventListener('load',loaded)
+     image.addEventListener('error',()=>{
+      element.classList.remove('photo-ready')
+      if(++index<photoUrls.length)image.src=photoUrls[index]
+      else{image.remove();element.classList.remove('has-photo')}
+     })
+     if(image.complete&&image.naturalWidth)loaded()
+    }
+    const highlight=active=>{item.active=active;layoutLabelsRef.current()}
+    element.addEventListener('focus',()=>highlight(true));element.addEventListener('blur',()=>highlight(false))
+    marker.on('mouseover',()=>highlight(true));marker.on('mouseout',()=>highlight(false))
     element.setAttribute('aria-label',accessibleLabel)
     element.setAttribute('role',onPinClick&&interactive?'button':'img')
     if(tone==='current')element.setAttribute('aria-current','step')
@@ -253,6 +286,7 @@ export default function SatelliteMap({
    if(selectedPin)map.panTo([selectedPin.lat,selectedPin.lng],{animate:false})
    selectionRef.current=selection
   }
+  layoutLabelsRef.current()
  }
 
  useEffect(()=>{
@@ -276,12 +310,13 @@ export default function SatelliteMap({
    layersRef.current=L.layerGroup().addTo(map)
    map.on('click',event=>clickRef.current?.({lat:Number(event.latlng.lat.toFixed(6)),lng:Number(event.latlng.lng.toFixed(6))}))
    mapRef.current=map
+   map.on('moveend zoomend resize',()=>layoutLabelsRef.current())
    map.zoomControl?.setPosition('topright')
    // Dentro de um <details> fechado o mapa nasce com 0px; quando abre, o
    // Leaflet precisa ser avisado para buscar os tiles do tamanho real.
    if(typeof ResizeObserver!=='undefined'){observer=new ResizeObserver(()=>map.invalidateSize());observer.observe(container.current)}
    if(viewKey){
-    try{const saved=JSON.parse(sessionStorage.getItem(`val:map-view:${viewKey}`)||'null');const point=validLocation(saved);if(point&&Number.isFinite(saved.zoom)){map.setView([point.lat,point.lng],saved.zoom);initialFitRef.current=true}}catch{}
+    try{const saved=JSON.parse(sessionStorage.getItem(`val:map-view:${viewKey}`)||'null');const point=validLocation(saved);if(point&&Number.isFinite(saved.zoom)){map.setView([point.lat,point.lng],saved.zoom);initialFitRef.current=true;selectionRef.current=selectedId==null?null:String(selectedId)}}catch{}
     map.on('moveend',()=>{try{const point=map.getCenter();sessionStorage.setItem(`val:map-view:${viewKey}`,JSON.stringify({lat:point.lat,lng:point.lng,zoom:map.getZoom()}))}catch{}})
    }
    renderRef.current()

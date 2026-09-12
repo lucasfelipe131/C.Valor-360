@@ -20,7 +20,7 @@ export default function HomeVisitMap({entries=[],clients=[],storageScope='',onOp
    if(!active)return
    const pins=(data.properties||[]).filter(property=>ids.includes(String(property.clientId))).flatMap(property=>{
     const location=validLocation(property.location)
-    return location&&property.id?[{...location,id:`${property.clientId}:${property.id}`,clientId:String(property.clientId),propertyId:String(property.id),propertyName:property.name}]:[]
+    return location&&property.id?[{...location,id:`${property.clientId}:${property.id}`,clientId:String(property.clientId),propertyId:String(property.id),propertyName:property.name,propertyPhotoUrl:property.propertyPhotoUrl,producerPhotoUrl:property.producerPhotoUrl}]:[]
    })
    setState({pins,loading:false,error:ids.some(id=>!pins.some(pin=>pin.clientId===id))?'Há produtores do roteiro sem propriedade localizada. Abra o cadastro para conferir.':''})
   }).catch(error=>{if(active&&!controller.signal.aborted)setState({pins:[],loading:false,error:error.message})})

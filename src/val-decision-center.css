@@ -327,3 +327,11 @@
  .vdc-expert-panel>.val-workspace{padding:8px}
 }
 @media (prefers-reduced-motion:reduce){.vdc-quick-actions button,.vdc-expert-access>button svg{transition:none}.is-spinning{animation:none}}
+
+/* The producer header and tabs own identity/navigation in the integrated view. */
+.vdc-integrated-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:8px 0}
+.vdc-integrated-header h3{margin:0 0 6px;font-size:20px}.vdc-integrated-header p{margin:0;color:#5b756b;font-size:13px;line-height:1.5}
+.val-decision-workspace.is-embedded{min-width:0}.is-embedded .vdc-command-row{grid-template-columns:minmax(0,1fr) auto}
+.p360-commercial-accounts>div{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:12px}
+.p360-commercial-accounts button{display:flex;gap:12px;text-align:left;min-height:68px}.p360-commercial-accounts button span{display:grid;gap:4px;flex:1}.p360-commercial-accounts small{font-weight:400}
+@media(max-width:600px){.vdc-integrated-header{align-items:flex-start;flex-direction:column}.is-embedded .vdc-command-row{grid-template-columns:minmax(0,1fr)}}

@@ -96,6 +96,7 @@ export default function App(){
  const [selected,setSelected]=useState(null)
  const [producerTab,setProducerTabRaw]=useState('overview')
  const [producerPropertyId,setProducerPropertyId]=useState('')
+ const [routeMapState,setRouteMapState]=useState({scope:'',value:{}})
  const [prepareVisitClientId,setPrepareVisitClientId]=useState('')
  const [prepareVisitId,setPrepareVisitId]=useState('')
  const [clientList,setClientList]=useState([])
@@ -143,13 +144,23 @@ export default function App(){
   restoringNavigation.current=false
  }
  const copilotOwnerScope=currentUser?.storageScope||currentUser?.id||''
+ const saveRouteMapState=useCallback(value=>setRouteMapState({scope:copilotOwnerScope,value}),[copilotOwnerScope])
  const opportunityOwnerRef=useRef(copilotOwnerScope);opportunityOwnerRef.current=copilotOwnerScope
  const copilotClientRef=useRef('')
  const updateConversationClient=useCallback(client=>{copilotClientRef.current=String(client?.id||'')},[])
- const openClient=(c,{preserveConversation=false,propertyId=''}={})=>{if(!permitNavigation())return;if(page==='client360'&&(String(selected?.id)!==String(c.id)||producerPropertyId!==propertyId))navigationHistory.current.push(navigationSnapshot());setProducerPropertyId(propertyId);if(propertyId)setProducerTabRaw('map');if(!preserveConversation&&String(c.id)!==copilotClientRef.current){setProducerTabRaw(propertyId?'map':'overview');setCopilotSeed({clientId:c.id,nonce:Date.now()});}setSelected(c);setCopilotRevealKey(value=>value+1);setCopilotLoaded(true);setCopilotOpen(current=>current||window.matchMedia('(min-width:1051px)').matches);setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)}
+ const openClient=(c,{preserveConversation=false,propertyId='',tab}={})=>{
+  if(!c?.id||!permitNavigation())return
+  const nextTab=tab||(propertyId?'map':'overview')
+  if(page==='client360'&&(String(selected?.id)!==String(c.id)||producerPropertyId!==propertyId||producerTab!==nextTab))navigationHistory.current.push(navigationSnapshot())
+  setProducerPropertyId(propertyId);setProducerTabRaw(nextTab)
+  if(!preserveConversation&&String(c.id)!==copilotClientRef.current)setCopilotSeed({clientId:c.id,nonce:Date.now()})
+  setSelected(c);setCopilotRevealKey(value=>value+1);setCopilotLoaded(true)
+  setCopilotOpen(current=>current||window.matchMedia('(min-width:1051px)').matches)
+  setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)
+ }
  const notify=message=>{const text=typeof message==='string'?message:String(message?.message||'Ação concluída.');setToast(text);window.clearTimeout(window.__valorToast);window.__valorToast=window.setTimeout(()=>setToast(''),2800)}
  const prepareClient=(c,options={})=>{if(!c?.id)return;setSelected(c);setPrepareVisitClientId(c.id);setPrepareVisitId(String(options?.visitId||''));if(String(c.id)!==copilotClientRef.current)setCopilotSeed({clientId:c.id,nonce:crypto.randomUUID()});setPage('visits');if(page==='visits')window.requestAnimationFrame(resetPageViewport)}
- const openValClient=c=>{if(copilotLoaded&&String(c.id)!==copilotClientRef.current)setCopilotSeed({clientId:c.id,nonce:Date.now()});setSelected(c);setValMode('insumos');setPage('val');if(page==='val')window.requestAnimationFrame(resetPageViewport)}
+ const openValClient=c=>openClient(c,{tab:'commercial'})
  const updateCopilotPageContext=useCallback(input=>setCopilotPageContext(input?{...input,storageScope:copilotOwnerScope}:null),[copilotOwnerScope])
  const consumeAgroInitialFile=useCallback(file=>setAgroLaunch(current=>{let removed=false;const initialFiles=current.initialFiles.filter(item=>{const candidate=item?.file||item;const match=candidate===file||(!removed&&candidate?.name===file?.name&&candidate?.type===file?.type&&Number(candidate?.size||0)===Number(file?.size||0));if(match&&!removed){removed=true;return false}return true});return initialFiles.length===current.initialFiles.length?current:{...current,initialFiles}}),[])
  const openCopilot=(input={})=>{
@@ -353,7 +364,7 @@ export default function App(){
     {page==='clients'&&<Clients storageScope={copilotOwnerScope} clients={clientList} opportunities={opportunities} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
     {page==='datahub'&&<DataHub clients={clientList} onImport={importClients} onProfileImport={addClients} onUpdate={updateClient} onDelete={deleteClient} onNotify={notify}/>}
     {page==='client360'&&selected&&<Client360
-     key={selected.id} client={selected} initialPropertyId={producerPropertyId} activeTab={producerTab} onTabChange={setProducerTab} visits={visits} opportunities={opportunities}
+     key={selected.id} client={selected} initialPropertyId={producerPropertyId} onPropertyChange={setProducerPropertyId} activeTab={producerTab} onTabChange={setProducerTab} visits={visits} opportunities={opportunities}
      currentUser={currentUser} onNewOpportunity={()=>{setSelected(selected);navigate('opportunities')}} storageScope={currentUser?.storageScope} onBack={goBack}
      onPrepare={()=>prepareClient(selected)} onUpdate={updateClient} onRefreshPortfolio={refreshPortfolio}
      onAsk={input=>openCopilot(input&&typeof input==='object'&&!input.nativeEvent?{...input,client:input.client||selected}:{client:selected})}
@@ -363,7 +374,7 @@ export default function App(){
     {page==='val'&&<ValWorkspace mode={valMode} onModeChange={setValMode} clients={clientList} selectedClient={selected} onSelect={openClient} onPrepareVisit={prepareClient}/>}
     {page==='agro'&&<Agro key={agroLaunch.nonce||'agro'} onAsk={openCopilot} onCapture={openCopilot} onTelemetry={recordAgroHeroTelemetry} onContextChange={updateCopilotPageContext} onInitialFileConsumed={consumeAgroInitialFile} client={agroLaunch.client} property={agroLaunch.property} field={agroLaunch.field} analysis={agroLaunch.analysis} context={agroLaunch.context} initialTool={agroLaunch.initialTool} initialFiles={agroLaunch.initialFiles}/>}
     {page==='questionnaire'&&<Questionnaire onCreate={addClient} onCreateMany={addClients} onOpen={openClient} onNotify={notify}/>}
-    {page==='visits'&&<Visits clients={clientList} visits={visits} storageScope={currentUser?.storageScope} initialClientId={prepareVisitClientId} initialVisitId={prepareVisitId} onInitialHandled={()=>{setPrepareVisitClientId('');setPrepareVisitId('')}} onSave={saveVisit} onPrepare={openValClient} onAsk={openCopilot} onContextChange={updateCopilotPageContext} onStarted={startVisitResult} onCancelled={cancelVisitResult} onRegistered={registerVisitResult} onRefreshPortfolio={refreshPortfolio}/>}
+    {page==='visits'&&<Visits key={copilotOwnerScope} routeMapState={routeMapState.scope===copilotOwnerScope?routeMapState.value:{}} onRouteMapStateChange={saveRouteMapState} onOpenClient={openClient} clients={clientList} visits={visits} storageScope={currentUser?.storageScope} initialClientId={prepareVisitClientId} initialVisitId={prepareVisitId} onInitialHandled={()=>{setPrepareVisitClientId('');setPrepareVisitId('')}} onSave={saveVisit} onPrepare={openValClient} onAsk={openCopilot} onContextChange={updateCopilotPageContext} onStarted={startVisitResult} onCancelled={cancelVisitResult} onRegistered={registerVisitResult} onRefreshPortfolio={refreshPortfolio}/>}
     {page==='opportunities'&&<Opportunities key={copilotOwnerScope} currentUser={currentUser} visits={visits} workspaceContext={workspaceContext} onNavigate={navigate} onPrepare={prepareClient} externalCopilotSeed={copilotSeed} onRefreshPortfolio={refreshPortfolio} loadError={portfolioError} clients={clientList} storageScope={currentUser?.storageScope} persistedItems={opportunities} onPersist={saveOpportunity} onClient={openClient} onAsk={openCopilot} onContextChange={updateCopilotPageContext} onSaved={notify}/>}
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
     {page==='management'&&<Management currentUser={currentUser} onConfigure={()=>navigate('admin')}/>}

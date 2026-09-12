@@ -300,13 +300,20 @@ async function handleApi(request,response,url){
   const payload=await body(request);const updated=await accessRepository.changePassword(identity,payload.currentPassword,payload.newPassword)
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
  }
- const photoMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/profile-photo$/)
+ const photoMatch=url.pathname.match(/^\/api\/clients\/([^/]+)(?:\/properties\/([^/]+))?\/profile-photo$/)
  if((url.pathname==='/api/auth/profile'||photoMatch)&&['GET','PUT'].includes(request.method)){
   const identity=await sessionIdentity(request)
   if(!identity)return json(response,401,{error:'Sua sessão expirou.'})
   if(!managementOnlyAllowed(identity,url.pathname,request.method))return json(response,403,{error:'Acesso restrito.'})
   response.setHeader('Cache-Control','private, no-store')
-  return json(response,200,await profilePhoto(repository,identity,{clientId:photoMatch?decodeURIComponent(photoMatch[1]):null,write:request.method==='PUT',input:request.method==='PUT'?await body(request):{}}))
+  const profile=await profilePhoto(repository,identity,{clientId:photoMatch?decodeURIComponent(photoMatch[1]):null,propertyId:photoMatch?.[2]?decodeURIComponent(photoMatch[2]):null,write:request.method==='PUT',input:request.method==='PUT'?await body(request):{}})
+  if(photoMatch&&request.method==='GET'&&url.searchParams.get('content')==='1'){
+   if(!profile.photo)return json(response,404,{error:'Foto não cadastrada.'})
+   const match=profile.photo.match(/^data:(image\/(?:jpeg|png));base64,(.+)$/)
+   if(!match)return json(response,404,{error:'Foto indisponível.'})
+   response.writeHead(200,{'Content-Type':match[1]});return response.end(Buffer.from(match[2],'base64'))
+  }
+  return json(response,200,profile)
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
  const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'

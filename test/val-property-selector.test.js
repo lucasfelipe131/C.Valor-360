@@ -106,7 +106,7 @@ function loadPropertyFields(){
   const require=createRequire(import.meta.url)
   const bundle=await build({entryPoints:['src/components/PropertyFields.jsx'],bundle:true,write:false,format:'esm',platform:'node',plugins:[{
    name:'test-map-and-shared-react',setup(builder){
-    builder.onResolve({filter:/\/map\/SatelliteMap$/},()=>({path:'map',namespace:'test-map'}))
+    builder.onResolve({filter:/\/(?:map\/SatelliteMap|ProfileEditor)$/},()=>({path:'map',namespace:'test-map'}))
     builder.onLoad({filter:/.*/,namespace:'test-map'},()=>({contents:'export default function SatelliteMap(){return null}',loader:'js'}))
     builder.onResolve({filter:/^(react|lucide-react)$/},args=>({path:pathToFileURL(require.resolve(args.path)).href,external:true}))
    }
@@ -122,7 +122,7 @@ test('the selector confirms dirty edits, sends the selected ID when saving and i
  const requests=[],profiles={p1:{property:{id:'p1',name:'Norte'},fields:[]},p2:{property:{id:'p2',name:'Sul'},fields:[]}}
  const payload=id=>({...profiles[id],properties:[{id:'p1',name:'Norte'},{id:'p2',name:'Sul'}]})
  let confirmResult=false,confirmCalls=0,renderer,lateResolve
- globalThis.window={confirm:()=>{confirmCalls++;return confirmResult},dispatchEvent(){}}
+ globalThis.window=Object.assign(new EventTarget(),{confirm:()=>{confirmCalls++;return confirmResult}})
  globalThis.fetch=async(url,options={})=>{
   requests.push({url,options})
   if(String(url).includes('/c2/'))return new Response(JSON.stringify({property:{id:'other',name:'Outro produtor'},properties:[{id:'other',name:'Outro produtor'}],fields:[]}))

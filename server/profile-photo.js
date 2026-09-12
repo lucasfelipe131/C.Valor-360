@@ -10,12 +10,15 @@ export function validateProfilePhoto(value){
  if(!valid)fail('O arquivo não corresponde ao formato da imagem.')
  return value
 }
-export async function profilePhoto(repository,identity,{clientId=null,write=false,input={}}={}){
+export async function profilePhoto(repository,identity,{clientId=null,propertyId=null,write=false,input={}}={}){
  if(!identity?.id||identity.mustChangePassword)fail('Entre novamente e conclua a configuração da conta.',401)
  if(!repository.db.configured)fail('O armazenamento de perfis está indisponível.',503)
- const tenant=identity.tenantId,owner=identity.id,kind=clientId?'producer':'consultant'
+ if(propertyId&&!clientId)fail('Informe o produtor da propriedade.')
+ const tenant=identity.tenantId,owner=identity.id,kind=propertyId?'property':clientId?'producer':'consultant'
  return repository.db.transaction(async db=>{
-  const result=clientId
+  const result=propertyId
+   ?await db.query("SELECT p.id,p.name FROM properties p JOIN clients c ON c.tenant_id=p.tenant_id AND c.id=p.client_id WHERE p.tenant_id=$1 AND c.consultant_id=$2 AND (c.id::text=$3 OR c.external_key=$3) AND p.id::text=$4 AND c.status='active' FOR UPDATE OF p",[tenant,owner,String(clientId),String(propertyId)])
+   :clientId
    ?await db.query("SELECT id,name FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND (id::text=$3 OR external_key=$3) AND status='active' FOR UPDATE",[tenant,owner,String(clientId)])
    :await db.query('SELECT u.id,u.name FROM users u JOIN memberships m ON m.user_id=u.id WHERE m.tenant_id=$1 AND u.id=$2 FOR UPDATE OF u',[tenant,owner])
   const entity=result.rows[0];if(!entity)fail('Cadastro não encontrado para este acesso.',404)

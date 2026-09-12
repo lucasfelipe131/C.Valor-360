@@ -7,8 +7,9 @@ const center=readFileSync(new URL('../src/components/ValDecisionWorkspace.jsx',i
 const styles=readFileSync(new URL('../src/val-decision-center.css',import.meta.url),'utf8')
 
 test('VAL Insumos abre o novo centro de decisão e preserva o laboratório antigo',()=>{
- assert.match(workspace,/import ValDecisionWorkspace from '\.\/ValDecisionWorkspace'/)
- assert.match(workspace,/<ValDecisionWorkspace clients=\{clients\}/)
+ const profile=readFileSync(new URL('../src/pages/Client360.jsx',import.meta.url),'utf8')
+ assert.match(workspace,/onSelect\?\.\(client,\{tab:'commercial'\}\)/)
+ assert.match(profile,/<DecisionWorkspace embedded clients=\{\[client\]\}/)
  assert.match(center,/import ValPanel from '\.\/ValPanel'/)
  assert.match(center,/MODO ESPECIALISTA PRESERVADO/)
  assert.match(center,/<ValPanel clients=\{clients\}/)

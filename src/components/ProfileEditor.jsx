@@ -12,8 +12,9 @@ async function preparePhoto(file){
   return photo
  }finally{bitmap.close()}
 }
-export default function ProfileEditor({clientId=null,onSaved}){
- const endpoint=clientId?`/api/clients/${encodeURIComponent(clientId)}/profile-photo`:'/api/auth/profile'
+export default function ProfileEditor({clientId=null,propertyId=null,onSaved}){
+ const endpoint=clientId?`/api/clients/${encodeURIComponent(clientId)}${propertyId?`/properties/${encodeURIComponent(propertyId)}`:''}/profile-photo`:'/api/auth/profile'
+ const photoLabel=propertyId?'Foto da propriedade':clientId?'Foto do produtor':'Meu perfil'
  const [profile,setProfile]=useState(null),[editing,setEditing]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('')
  useEffect(()=>{const controller=new AbortController();setProfile(null);setEditing(false);setError('');fetch(endpoint,{signal:controller.signal}).then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error||'Não foi possível carregar o perfil.');return data}).then(setProfile).catch(e=>{if(!controller.signal.aborted)setError(e.message)});return()=>controller.abort()},[endpoint])
  useEffect(()=>{
@@ -24,9 +25,9 @@ export default function ProfileEditor({clientId=null,onSaved}){
   return()=>{window.removeEventListener('val:before-navigation',leave);window.removeEventListener('beforeunload',unload)}
  },[editing,busy])
  const save=async event=>{event.preventDefault();setBusy(true);setError('');try{const response=await fetch(endpoint,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({photo:profile.photo,...(!clientId?{name:profile.name}:{})})});const data=await response.json();if(!response.ok)throw new Error(data.error||'Não foi possível salvar.');setProfile(data);setEditing(false);onSaved?.(data);window.dispatchEvent(new Event('val:profile-updated'))}catch(e){setError(e.message)}finally{setBusy(false)}}
- return <section className="profile-editor" aria-label={clientId?'Foto do produtor':'Meu perfil'}>
-  {profile?.photo&&<img src={profile.photo} alt={clientId?'Foto de identificação do produtor':'Foto do consultor'} width="64" height="64" style={{objectFit:'cover',borderRadius:16}}/>}
-  {!editing&&profile&&<button type="button" className="soft-btn" onClick={()=>setEditing(true)}>{clientId?'Editar foto':'Editar meu perfil'}</button>}
+ return <section className="profile-editor" aria-label={photoLabel}>
+  {profile?.photo&&<img src={profile.photo} alt={photoLabel} width="64" height="64" style={{objectFit:'cover',borderRadius:16}}/>}
+  {!editing&&profile&&<button type="button" className="soft-btn" onClick={()=>setEditing(true)}>{propertyId?'Editar foto da propriedade':clientId?'Editar foto':'Editar meu perfil'}</button>}
   {editing&&<form onSubmit={save}>
    {!clientId&&<label>Nome<input required maxLength={120} value={profile.name} onChange={e=>setProfile({...profile,name:e.target.value})}/></label>}
    <label>Foto<input type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={async e=>{const file=e.target.files?.[0];if(!file)return;setBusy(true);setError('');try{const photo=await preparePhoto(file);setProfile(p=>({...p,photo}))}catch(error){setError(error.message)}finally{setBusy(false)}}}/></label>

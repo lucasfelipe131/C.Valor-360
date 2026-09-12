@@ -16,6 +16,7 @@ const source=readFileSync(new URL('../src/components/map/SatelliteMap.jsx',impor
  .replace("from '../../lib/map-localities'",`from '${new URL('../src/lib/map-localities.js',import.meta.url).href}'`)
  .replace("from '../../lib/cadastral-viewport'",`from '${new URL('../src/lib/cadastral-viewport.js',import.meta.url).href}'`)
  .replace("from '../../lib/cadastral-map'",`from '${new URL('../src/lib/cadastral-map.js',import.meta.url).href}'`)
+ .replace("from '../../lib/map-pin-presentation'",`from '${new URL('../src/lib/map-pin-presentation.js',import.meta.url).href}'`)
  .replace("import('leaflet')",'globalThis.__valSatelliteTestLeaflet()')
 const compiled=await transformWithEsbuild(source,'SatelliteMap.jsx',{loader:'jsx',jsx:'transform'})
 const {default:SatelliteMap}=await import(`data:text/javascript;base64,${Buffer.from(compiled.code).toString('base64')}`)

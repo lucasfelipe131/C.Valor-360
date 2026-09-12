@@ -89,7 +89,7 @@ function EmptyDecision({client,onAsk,loading}){
  </section>
 }
 
-export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect,onPrepareVisit}){
+export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect,onPrepareVisit,embedded=false}){
  const [selected,setSelected]=useState(selectedClient?.id||clients[0]?.id||'')
  const [mode,setMode]=useState('daily')
  const [requestedStage,setRequestedStage]=useState(null)
@@ -113,7 +113,7 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
 
  useEffect(()=>{
   requestRef.current?.abort()
-  setResponse(null);setError('');setMessage('');setRequestedStage(null);setProgress(initialValProgress());setFeedback({sending:false,sent:false,error:''})
+  setLoading(false);setResponse(null);setError('');setMessage('');setRequestedStage(null);setProgress(initialValProgress());setFeedback({sending:false,sent:false,error:''})
  },[selected])
 
  const client=useMemo(()=>clients.find(item=>item.id===selected)||clients[0]||null,[clients,selected])
@@ -170,6 +170,7 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
    const payload=await result.json().catch(()=>({}))
    if(result.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}
    if(!result.ok)throw new Error(payload.error||'Não foi possível analisar esta conta.')
+   if(controller.signal.aborted||requestRef.current!==controller)return
    setResponse(payload);setMessage('');setProgress({stage:'complete',label:'Recomendação pronta',order:5,total:5,done:true,failed:false})
   }catch(requestError){if(requestError.name!=='AbortError'){setProgress({stage:'failed',label:'Não foi possível concluir',order:6,total:5,done:true,failed:true});setError(requestError.name==='TimeoutError'?'A análise ultrapassou o limite. Tente novamente.':requestError.message)}}finally{stopProgress();if(requestRef.current===controller){requestRef.current=null;setLoading(false)}}
  }
@@ -188,8 +189,8 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
 
  if(!client)return <section className="val-decision-workspace vdc-no-client"><BrainCircuit/><h2>A VAL precisa de um produtor</h2><p>Cadastre ou importe uma conta para iniciar o centro de decisão.</p></section>
 
- return <section className="val-decision-workspace" aria-labelledby="vdc-title">
-  <header className="vdc-hero">
+ return <section className={`val-decision-workspace${embedded?' is-embedded':''}`} aria-labelledby="vdc-title">
+  {embedded?<header className="vdc-integrated-header"><div><h3 id="vdc-title">Decisões comerciais</h3><p>Analise oportunidades, prepare a negociação e acompanhe o próximo compromisso de {client.name}.</p></div><button type="button" className="soft-btn" onClick={()=>onSelect?.(client)}>Ver cadastro<ChevronRight/></button></header>:<header className="vdc-hero">
    <div className="vdc-hero-copy">
     <span className="vdc-kicker"><Sparkles/>VAL CONVERSION CORE</span>
     <h2 id="vdc-title">Centro de Decisão Comercial</h2>
@@ -209,11 +210,11 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
     </dl>
     <button type="button" onClick={()=>onSelect?.(client)}><UserRoundSearch/>Abrir Cliente 360<ChevronRight/></button>
    </aside>
-  </header>
+  </header>}
 
   <section className="vdc-command-center" aria-label="Comandos da VAL">
    <div className="vdc-command-row">
-    <label><span>Produtor</span><select value={selected} onChange={event=>setSelected(event.target.value)} disabled={loading}>{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+    {!embedded&&<label><span>Produtor</span><select value={selected} onChange={event=>setSelected(event.target.value)} disabled={loading}>{clients.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
     <div className="vdc-mode-control"><span>Profundidade</span><button type="button" className={mode==='daily'?'is-active':''} onClick={()=>setMode('daily')} disabled={loading}><Zap/>Direta</button><button type="button" className={mode==='strategic'?'is-active':''} onClick={()=>setMode('strategic')} disabled={loading}><BrainCircuit/>Estratégica</button></div>
     <button className="vdc-refresh" type="button" onClick={()=>ask(response?text(response?.advice?.objective,'Recalcule a próxima melhor ação desta conta com os dados mais recentes.'):quickActions[0].prompt)} disabled={loading}><RefreshCw className={loading?'is-spinning':''}/>Atualizar decisão</button>
    </div>

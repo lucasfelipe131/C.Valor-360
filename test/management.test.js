@@ -136,3 +136,24 @@ test('daily suggestions read owned historical next steps without scheduled visit
  await pg.query("UPDATE visits SET next_action_at='2026-09-15' WHERE id=$1",[id(990)])
  assert.ok(!(await readDailyVisitSuggestions({db,tenantId},consultant,{now:new Date('2026-09-12T14:00:00Z')})).suggestions.some(item=>item.sourceId==='visit:'+id(990)))
 })
+
+test('property photos reuse the profile store without leaking between properties, owners or tenants',async()=>{
+ const actor={id:consultant,tenantId,role:'consultant'},repository={db,tenantId}
+ const photo='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j4N8AAAAASUVORK5CYII='
+ await profilePhoto(repository,actor,{clientId:id(20),propertyId:id(35),write:true,input:{photo}})
+ assert.equal((await profilePhoto(repository,actor,{clientId:id(20),propertyId:id(35)})).photo,photo)
+ assert.equal((await profilePhoto(repository,actor,{clientId:id(20),propertyId:id(30)})).photo,null)
+ for(const [clientId,propertyId] of [[id(20),id(31)],[id(21),id(31)],[id(22),id(32)],[id(23),id(35)]]){
+  await assert.rejects(profilePhoto(repository,actor,{clientId,propertyId}),{statusCode:404})
+  await assert.rejects(profilePhoto(repository,actor,{clientId,propertyId,write:true,input:{photo}}),{statusCode:404})
+ }
+ const rows=(await readRouteProperties(repository,consultant)).properties
+ const specific=rows.find(item=>item.id===id(35)),other=rows.find(item=>item.id===id(30))
+ assert.match(specific.propertyPhotoUrl,new RegExp(`/clients/${id(20)}/properties/${id(35)}/profile-photo`))
+ assert.ok(specific.producerPhotoUrl);assert.equal(other.propertyPhotoUrl,null)
+ assert.equal(specific.producerPhotoUrl,other.producerPhotoUrl)
+ assert.ok(!JSON.stringify(rows).includes('base64'))
+ await profilePhoto(repository,actor,{clientId:id(20),propertyId:id(35),write:true,input:{photo:null}})
+ assert.equal((await readRouteProperties(repository,consultant)).properties.find(item=>item.id===id(35)).propertyPhotoUrl,null)
+ assert.equal((await profilePhoto(repository,actor,{clientId:id(20)})).photo,photo)
+})

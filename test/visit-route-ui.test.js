@@ -73,12 +73,13 @@ test('properties remain on an empty-day roadmap, with one pin per property and r
  const producer=client('owner')
  const properties=[{id:'one',clientId:'owner',producerName:'Produtor teste',name:'Propriedade A',location:{lat:-28,lng:-54}},{id:'two',clientId:'owner',producerName:'Produtor teste',name:'Propriedade B',location:{lat:-28.1,lng:-54.1}},{id:'missing',clientId:'owner',producerName:'Produtor teste',name:'Sem sede',location:null}]
  const opened=[]
- await withRoute({clients:[producer],visits:[],onOpenClient:value=>opened.push(value.id)},async ui=>{
+ await withRoute({clients:[producer],visits:[],onOpenClient:(value,context)=>opened.push({id:value.id,...context})},async ui=>{
   assert.deepEqual(ui.map().props.pins.map(pin=>pin.id),['property:one','property:two'])
-  assert.equal(ui.map().props.pins[1].caption,'Produtor teste · Propriedade B')
+  assert.equal(ui.map().props.pins[1].caption,'Produtor teste')
+  assert.equal(ui.map().props.pins[1].title,'Produtor teste · Propriedade B')
   await act(async()=>ui.map().props.onPinClick(ui.map().props.pins[1]))
   await act(async()=>ui.button('Ver produtor').props.onClick())
-  assert.deepEqual(opened,['owner'])
+  assert.deepEqual(opened,[{id:'owner',propertyId:'two',tab:'overview'}])
   assert.match(textOf(ui.renderer.toJSON()),/Sem localização/)
   await act(async()=>ui.button('Nomes nos pins').props.onClick())
   assert.ok(ui.map().props.pins.every(pin=>!pin.caption))
@@ -219,4 +220,16 @@ test('a late aborted driving response cannot replace the route for the newly sel
   await act(async()=>late.resolve(response(road)))
   assert.deepEqual(ui.map().props.routes.find(route=>route.kind==='planned').points,newRoad.geometry)
  },{fetchRequest:request=>request.url.endsWith('/driving')?(request.body.clientIds[0]==='a'?late.promise:response(newRoad)):undefined})
+})
+
+test('roadmap restores day, filter and selected property without restarting GPS, and passes canonical photos',async()=>{
+ const property={id:'second',clientId:'owner',producerName:'TEST owner',name:'Farm B',location:{lat:-28,lng:-54},propertyPhotoUrl:'/api/clients/owner/properties/second/profile-photo?content=1',producerPhotoUrl:'/api/clients/owner/profile-photo?content=1'}
+ const initialState={date:day(2),search:'Farm B',view:'map',selectedId:'property:second',showNames:true,maxKm:10},changes=[]
+ await withRoute({storageScope:'owner-scope',clients:[client('owner')],initialState,onStateChange:value=>changes.push(value)},async ui=>{
+  assert.equal(ui.date().props.value,day(2));assert.equal(ui.map().props.selectedId,'property:second')
+  assert.equal(ui.map().props.viewKey,'roadmap:owner-scope')
+  assert.equal(ui.map().props.pins[0].propertyPhotoUrl,property.propertyPhotoUrl)
+  assert.equal(ui.map().props.pins[0].producerPhotoUrl,property.producerPhotoUrl)
+  assert.equal(ui.state.starts,0);assert.deepEqual(changes.at(-1),initialState)
+ },{fetchRequest:request=>request.url.endsWith('/properties')?response({properties:[property]}):undefined})
 })

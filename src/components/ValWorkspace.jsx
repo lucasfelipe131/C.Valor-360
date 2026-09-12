@@ -9,8 +9,8 @@ import {
  ShieldCheck,
  Sprout,
 } from 'lucide-react'
-import ValDecisionWorkspace from './ValDecisionWorkspace'
 import SogWorkspace from './SogWorkspace'
+import '../val-decision-center.css'
 
 const environments=[
  {
@@ -73,7 +73,7 @@ function ValEnvironmentSelector({onModeChange}){
 }
 
 export default function ValWorkspace({mode,onModeChange,clients,selectedClient,onSelect,onPrepareVisit}){
- if(mode==='insumos')return <div className="val-environment-active is-insumos"><EnvironmentSwitcher mode="insumos" onModeChange={onModeChange}/><ValDecisionWorkspace clients={clients} selectedClient={selectedClient} onSelect={onSelect} onPrepareVisit={onPrepareVisit}/></div>
+ if(mode==='insumos')return <div className="val-environment-active is-insumos"><EnvironmentSwitcher mode="insumos" onModeChange={onModeChange}/><section className="p360-commercial-accounts"><h2>Comercial por produtor</h2><p>Abra o produtor para trabalhar cadastro, oportunidades e decisões no mesmo perfil.</p><div>{clients.map(client=><button type="button" className="soft-btn" key={client.id} onClick={()=>onSelect?.(client,{tab:'commercial'})}><Sprout/><span><b>{client.name}</b><small>{client.municipality||'Município não informado'}</small></span><ArrowRight/></button>)}</div>{!clients.length&&<p>Nenhum produtor cadastrado.</p>}</section></div>
  if(mode==='graos')return <div className="val-environment-active is-graos"><EnvironmentSwitcher mode="graos" onModeChange={onModeChange}/><SogWorkspace clients={clients} onSelect={onSelect}/></div>
  return <ValEnvironmentSelector onModeChange={onModeChange}/>
 }
