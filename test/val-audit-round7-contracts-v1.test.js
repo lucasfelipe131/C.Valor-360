@@ -221,7 +221,9 @@ test('a agenda da Home não conta visita atrasada nem cancelada como compromisso
 // Cotação com mais de 24 h derrubava a conversa com HTTP 400: o texto da resposta é também o
 // statement da evidência, e a ressalva de atualidade começava com o pronome "Ela", que o guardião de
 // evidência global lia como afirmação sobre um indivíduo. Além disso o rótulo prometia "esta semana"
-// (168 h) enquanto o contrato de evidência aceita 72 h — a faixa entre as duas sempre virava 400.
+// (168 h) enquanto o contrato de evidência aceitava 72 h — a faixa entre as duas sempre virava 400.
+// As duas janelas agora são a mesma, e é a da especificação: VAL_MARKET_COMMODITY_ACCESS_v1
+// §Atualidade define DATED até 168 h. O que este teste protege é a igualdade das janelas.
 test('cotação de ontem responde com a ressalva de atualidade, sem quebrar a conversa',async()=>{
  const {buildFastMarketResponse}=await import('../server/decision-copilot/capability-router.js')
  const {evaluateResponseGrounding}=await import('../server/decision-copilot/response-grounding.js')
@@ -231,7 +233,7 @@ test('cotação de ontem responde com a ressalva de atualidade, sem quebrar a co
  const snapshotAged=hours=>[{id:'ms-1',commodity:'soja',marketKind:'spot',region:'Cascavel/PR',price:128,priceUnit:'BRL/sc',sourceName:'Cepea',sourceType:'public_index',confidence:.9,observedAt:new Date(reference.getTime()-hours*3600000).toISOString(),status:'active',tenantId:tenant,contextOwnerId:owner,scope:'MARKET'}]
  const answerFor=hours=>buildFastMarketResponse({workspace:{marketSnapshots:snapshotAged(hours)},message:'qual o preço da soja hoje?',organizationId:tenant,ownerId:owner,clientId:'joao',clientName:'João Pereira',conversationId:'c1',contextEpoch:1,now:reference})
  // Dentro da janela que o contrato de evidência aceita, a conversa não pode quebrar.
- for(const hours of [1,23,25,48,71]){
+ for(const hours of [1,23,25,48,71,100,167]){
   const result=answerFor(hours)
   assert.ok(['CURRENT','DATED'].includes(result.responseMetadata?.currentDataStatus),`${hours}h -> ${result.responseMetadata?.currentDataStatus}`)
   assert.match(result.advice.answer,/R\$\s*128,00/,`${hours}h -> ${result.advice.answer}`)
@@ -245,11 +247,24 @@ test('cotação de ontem responde com a ressalva de atualidade, sem quebrar a co
   evidence:[{id:'ms-1',source_type:'market_snapshot',epistemic_type:'FACT',scope:'MARKET',producer_id:null,tenant_id:tenant,context_owner_id:owner,observed_at:new Date(reference.getTime()-25*3600000).toISOString(),confidence:.7,statement:dated.advice.answer}],
   activeProducerId:'',tenantId:tenant,ownerId:owner,checkQuestionRelevance:false,now:reference})
  assert.equal(grounding.provenance_violations.length,0,JSON.stringify(grounding.provenance_violations))
- // A janela do rótulo é a mesma do contrato de evidência: nada promete "esta semana".
+ // A janela do rótulo e a do contrato de evidência são a mesma, e valem os 168 h da especificação.
  const router=read('server/decision-copilot/capability-router.js')
- assert.match(router,/if\(hours<=72\)return \{state:'DATED'/)
- assert.doesNotMatch(router,/label:'registrada nesta semana'/)
- assert.match(router,/label:'dos últimos três dias'/)
+ const grounder=read('server/decision-copilot/response-grounding.js')
+ assert.match(router,/if\(hours<=168\)return \{state:'DATED'/)
+ assert.match(grounder,/\['market_snapshot',sourceContract\(\['FACT','OBSERVATION'\],\{maxAgeMs:7\*DAY_MS/)
+ // Fora da janela a classificação vira STALE e a resposta manda atualizar.
+ const {answerCurrentMarket}=await import('../server/decision-copilot/capability-router.js')
+ const stale=answerCurrentMarket({workspace:{marketSnapshots:snapshotAged(200)},message:'qual o preço da soja hoje?',now:reference})
+ assert.equal(stale.status,'STALE')
+ assert.match(stale.answer,/histórica/)
+ assert.match(stale.action,/Mercado/)
+ // DIVERGÊNCIA REGISTRADA (D-MKT-01): VAL_MARKET_COMMODITY_ACCESS_v1 §Atualidade diz que uma
+ // referência STALE "pode ser mostrada como histórico, com aviso explícito". O caminho completo
+ // ainda recusa: o contrato de evidência corta em 168 h e o turno morre com violação de grounding
+ // em vez de entregar o histórico com a ressalva. Fechar isso exige marcar a evidência como
+ // histórica declarada — decisão de produto, não ajuste de limiar, por isso está anotada e não
+ // silenciosamente afrouxada.
+ assert.throws(()=>answerFor(200),error=>error.code==='RESPONSE_GROUNDING_VIOLATION')
 })
 
 // A forma mais comum da fala de campo ("o antonio tem ...") não tinha padrão nenhum: a referência

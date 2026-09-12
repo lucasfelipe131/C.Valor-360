@@ -30,7 +30,10 @@ const sourceContracts=new Map([
  ['official_product_catalog',sourceContract(['FACT','VALIDATED_KNOWLEDGE'],{staticSource:true})],
  ['general_knowledge',sourceContract(['FACT','VALIDATED_KNOWLEDGE'],{staticSource:true})],
  ['system_safety_policy',sourceContract(['FACT','VALIDATED_KNOWLEDGE'],{staticSource:true})],
- ['market_snapshot',sourceContract(['FACT','OBSERVATION'],{maxAgeMs:3*DAY_MS,validUntilMayExtend:false})],
+ // 7 dias = a janela DATED de VAL_MARKET_COMMODITY_ACCESS_v1 §Atualidade. Com 3 dias, toda cotacao
+ // entre 72 h e 168 h era classificada como utilizavel com ressalva e recusada por idade no mesmo
+ // turno, derrubando a resposta; as duas janelas passam a ser a mesma.
+ ['market_snapshot',sourceContract(['FACT','OBSERVATION'],{maxAgeMs:7*DAY_MS,validUntilMayExtend:false})],
  ['context_snapshot',sourceContract(['FACT'],{maxAgeMs:DAY_MS,validUntilMayExtend:false})],
  ['system_capability',sourceContract(['FACT'],{maxAgeMs:DAY_MS,validUntilMayExtend:false})],
  ['model_general_knowledge',sourceContract(['FACT'],{staticSource:true})],

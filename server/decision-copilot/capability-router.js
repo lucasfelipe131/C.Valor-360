@@ -399,11 +399,11 @@ function freshness(observedAt,now){
  if(deltaMs < -300_000)return {state:'INVALID',hours:null,label:'data futura inválida'}
  const hours=Math.max(0,deltaMs/3_600_000)
  if(hours<=24)return {state:'CURRENT',hours:Number(hours.toFixed(1)),label:'atual nas últimas 24 h'}
- // A janela do rotulo nao pode prometer mais do que o contrato de evidencia aceita: o grounding
- // so admite market_snapshot com ate 72 h (response-grounding.js, maxAgeMs 3*DAY_MS). Entre 72 h e
- // 168 h a resposta se dizia "registrada nesta semana" e a evidencia era recusada por idade,
- // derrubando a conversa com 400. As duas janelas passam a ser a mesma.
- if(hours<=72)return {state:'DATED',hours:Number(hours.toFixed(1)),label:'dos últimos três dias'}
+ // Limiares de VAL_MARKET_COMMODITY_ACCESS_v1 §Atualidade: CURRENT ate 24 h, DATED ate 168 h, STALE
+ // acima disso. A janela do contrato de evidencia (response-grounding.js, market_snapshot) acompanha
+ // estes 168 h: encolher o rotulo para 72 h deixava o codigo coerente consigo mesmo, mas divergente
+ // da especificacao e sem resolver a recusa por idade.
+ if(hours<=168)return {state:'DATED',hours:Number(hours.toFixed(1)),label:'registrada nesta semana'}
  return {state:'STALE',hours:Number(hours.toFixed(1)),label:'histórica; precisa ser atualizada'}
 }
 
@@ -425,7 +425,7 @@ function marketSelection(workspace,message,now){
  const requestedRegion=regionFrom(message,workspace?.marketSnapshots)
  const requestedRange=dateRangeFrom(message,requestedSeason)
  const temporalSelectionRequired=Boolean(requestedRange&&(requestedMarketKind==='forward'||requestedMarketKind==='futures'||/\b(?:entrega|janela|vencimento)\b/.test(normalize(message))))
- const snapshots=list(workspace?.marketSnapshots)
+ const candidates=list(workspace?.marketSnapshots)
   .filter(item=>item?.status!=='inactive'&&(!commodity||item?.commodity===commodity))
   .filter(item=>!requestedMarketKind||normalize(item?.marketKind??item?.market_kind)===requestedMarketKind)
   .filter(item=>!requestedPriceUnit||clean(item?.priceUnit??item?.price_unit,40)===requestedPriceUnit)
@@ -437,11 +437,17 @@ function marketSelection(workspace,message,now){
    if(requestedRange?.source!=='season')return overlapsRange(item,requestedRange)
    return requestedSeason?true:overlapsRange(item,requestedRange)
   })
+ // "Sem cotacao nenhuma" e "existe cotacao, mas nao da para saber quando o preco foi apurado" sao
+ // coisas diferentes: VAL_MARKET_COMMODITY_ACCESS_v1 §Atualidade reserva UNKNOWN para data ausente ou
+ // ilegivel. Data futura segue UNAVAILABLE - ali a data existe e e legivel, so nao e crivel. Nos tres
+ // casos o preco fica fora da resposta; muda o que o consultor precisa fazer a respeito.
+ const undatedCandidates=candidates.filter(item=>item?.sourceName&&Number.isFinite(Number(item?.price))&&(!item?.observedAt||Number.isNaN(new Date(item.observedAt).getTime()))).length
+ const snapshots=candidates
   .filter(item=>item?.sourceName&&item?.observedAt&&Number.isFinite(Number(item?.price))&&freshness(item.observedAt,now).state!=='INVALID')
   .sort((left,right)=>new Date(right.observedAt)-new Date(left.observedAt))
  const latest=snapshots[0]||null
  const previous=latest?snapshots.find(item=>item.id!==latest.id&&item.commodity===latest.commodity&&item.priceUnit===latest.priceUnit&&item.region===latest.region&&item.marketKind===latest.marketKind&&dateOnly(item.deliveryStart??item.delivery_start)===dateOnly(latest.deliveryStart??latest.delivery_start)&&dateOnly(item.deliveryEnd??item.delivery_end)===dateOnly(latest.deliveryEnd??latest.delivery_end))||null:null
- return {commodity,requestedMarketKind,requestedSeason,requestedPriceUnit,requestedRegion,requestedRange,latest,previous,freshness:latest?freshness(latest.observedAt,now):null}
+ return {commodity,requestedMarketKind,requestedSeason,requestedPriceUnit,requestedRegion,requestedRange,latest,previous,undatedCandidates,freshness:latest?freshness(latest.observedAt,now):null}
 }
 
 export function answerCurrentMarket({workspace={},message='',intentHint='',now=new Date()}={}){
@@ -450,6 +456,15 @@ export function answerCurrentMarket({workspace={},message='',intentHint='',now=n
  const requestedLabel=commodityLabels[selected.commodity]||'a commodity solicitada'
  if(!selected.latest){
   const requestedDetails=[selected.requestedMarketKind&&`tipo ${marketKindLabels[selected.requestedMarketKind]||selected.requestedMarketKind}`,selected.requestedSeason&&`safra ${selected.requestedSeason}`,selected.requestedRegion&&`praça ${selected.requestedRegion}`,selected.requestedPriceUnit&&`unidade ${selected.requestedPriceUnit}`,selected.requestedRange&&selected.requestedRange.source!=='season'&&`entrega entre ${selected.requestedRange.start} e ${selected.requestedRange.end}`].filter(Boolean).join(', ')
+  if(selected.undatedCandidates)return {
+   route,
+   status:'UNKNOWN',
+   answer:`Existe referência registrada para ${requestedLabel}, mas sem data válida de observação. Sem saber quando o preço foi apurado não posso apresentá-lo, nem como cotação atual nem como histórico.`,
+   action:'Abra Mercado e corrija a data de observação desta referência antes de usar o valor em uma decisão.',
+   facts:[],
+   source:null,
+   confidence:{level:'INSUFICIENTE',score:.12,rationale:'A referência encontrada não tem data de observação válida; a atualidade não pode ser classificada.'}
+  }
   return {
    route,
    status:'UNAVAILABLE',
