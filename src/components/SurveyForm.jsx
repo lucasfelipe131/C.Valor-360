@@ -1,8 +1,9 @@
-import React,{useMemo,useState} from 'react'
+import React,{useEffect,useMemo,useState} from 'react'
 import {ArrowLeft,ArrowRight,Check,ChevronRight,ClipboardList,ShieldCheck,Sparkles} from 'lucide-react'
 import questions from '../data/questions.json'
 import matrix from '../data/profile-matrix.json'
 import {calculateProfile} from '../lib/profile'
+import {useNavigationGuard} from '../lib/use-navigation-guard'
 
 const sections=[
  {title:'Sua propriedade',kicker:'CONTEXTO',subtitle:'Vamos começar conhecendo a sua realidade.',from:0,to:6},
@@ -14,11 +15,18 @@ const sections=[
 
 export function buildOptionMap(){return matrix.reduce((map,item)=>{(map[item.Pergunta]??=[]).push(item.Alternativa);return map},{})}
 
-export default function SurveyForm({initialAnswers={},producerName='',onSubmit,embedded=false,submitLabel='Enviar respostas'}){
+export default function SurveyForm({initialAnswers={},producerName='',onSubmit,embedded=false,submitLabel='Enviar respostas',onDirtyChange}){
  const [step,setStep]=useState(0)
  const [answers,setAnswers]=useState(()=>({...initialAnswers,...(producerName&&!initialAnswers[1]?{1:producerName}:{})}))
  const [error,setError]=useState('')
  const [sending,setSending]=useState(false)
+ // 45 perguntas respondidas na frente do produtor moravam so no useState: sair da pagina, ou trocar
+ // de aba dentro do proprio Produtor 360, desmontava o componente e apagava tudo sem uma palavra.
+ const seeded=useMemo(()=>({...initialAnswers,...(producerName&&!initialAnswers[1]?{1:producerName}:{})}),[initialAnswers,producerName])
+ const dirty=useMemo(()=>questions.some(question=>String(answers[question.id]??'')!==String(seeded[question.id]??'')),[answers,seeded])
+ useNavigationGuard(dirty,{busy:sending,label:'questionário',onBlocked:()=>setError('Aguarde o envio das respostas terminar.')})
+ useEffect(()=>{onDirtyChange?.(dirty)},[dirty,onDirtyChange])
+ useEffect(()=>()=>onDirtyChange?.(false),[onDirtyChange])
  const optionMap=useMemo(buildOptionMap,[])
  const current=sections[step]
  const currentQuestions=questions.slice(current.from,current.to)

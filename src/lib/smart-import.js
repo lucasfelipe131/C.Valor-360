@@ -106,8 +106,18 @@ function normalizeAnswer(question,value){
  const options=[...new Set(matrix.filter(item=>item.Pergunta===question.id).map(item=>item.Alternativa))]
  if(!options.length)return raw
  const ranked=options.map(option=>({option,score:similarity(raw,option)+(normalizeText(raw)===normalizeText(option)?1:0)})).sort((a,b)=>b.score-a.score)
- return ranked[0]?.score>=.28?ranked[0].option:''
+ const best=ranked[0]
+ if(!best||best.score<.28)return ''
+ // A similaridade e sobreposicao de PALAVRAS: "Nao gosto de tecnologia" e quase igual a "Gosto de
+ // tecnologia", e a importacao gravava a alternativa OPOSTA como resposta do produtor. Quando uma
+ // das duas frases nega e a outra nao, nao ha correspondencia — a resposta fica em branco e entra
+ // na lista do que o consultor ainda precisa confirmar, em vez de virar um palpite invertido.
+ // Igualdade exata (score>=1) passa direto: ali nao ha o que inverter.
+ if(best.score<1&&negatedAnswer(raw)!==negatedAnswer(best.option))return ''
+ return best.option
 }
+const negationMark=/(?:^|\s)(?:nao|nunca|jamais|nenhum|nenhuma|nem|sem|dispenso|detesto|evito|raramente|prefiro nao|deixo de)(?:\s|$)/
+const negatedAnswer=value=>negationMark.test(normalizeText(value))
 
 export function recognizeQuestionnaire(source){
  const recognizePairs=candidates=>{

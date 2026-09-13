@@ -1,6 +1,13 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
+import {mkdtemp,rm} from 'node:fs/promises'
+import {pathToFileURL} from 'node:url'
+import {build} from 'esbuild'
+import React from 'react'
+import TestRenderer,{act} from 'react-test-renderer'
+import {recognizeQuestionnaire} from '../src/lib/smart-import.js'
+import matrix from '../src/data/profile-matrix.json' with {type:'json'}
 import {buildGrainOpportunities} from '../server/grain-intelligence.js'
 import {dateOnly} from '../server/grain-repository.js'
 
@@ -79,4 +86,70 @@ test('Grãos — o repositório normaliza a data de entrega para o dia civil',()
  assert.equal(dia(''),null)
  assert.equal(dia('amanhã'),null)
  assert.match(fonte,/deliveryStart:dateOnly\(row\.delivery_start\?\?row\.deliveryStart\)/)
+})
+
+// QUEST-01: a similaridade é sobreposição de palavras — "Não busco resultados técnicos" ficava
+// quase igual a "Resultados técnicos, números e retorno financeiro", e a importação gravava a
+// alternativa OPOSTA como resposta do produtor.
+test('Questionário — resposta que nega não vira a alternativa afirmativa',()=>{
+ const reconhece=(id,texto)=>recognizeQuestionnaire({rows:[[String(id),texto,'']],format:'CSV'}).answers
+ for(const texto of ['Não busco resultados técnicos, números e retorno financeiro.','Nunca confio na pessoa que está recomendando.','Sem interesse em potencial de produtividade e inovação.','Jamais priorizo rapidez e facilidade para receber as informações.'])
+  assert.deepEqual(reconhece(7,texto),{},texto)
+})
+
+test('Questionário — resposta afirmativa e paráfrase continuam sendo reconhecidas',()=>{
+ const reconhece=(id,texto)=>recognizeQuestionnaire({rows:[[String(id),texto,'']],format:'CSV'}).answers
+ assert.deepEqual(reconhece(7,'Resultados técnicos, números e retorno financeiro.'),{7:'Resultados técnicos, números e retorno financeiro.'})
+ assert.deepEqual(reconhece(7,'Busco resultados técnicos e retorno financeiro.'),{7:'Resultados técnicos, números e retorno financeiro.'})
+ assert.deepEqual(reconhece(7,'Confiança na pessoa que está recomendando.'),{7:'Confiança na pessoa que está recomendando.'})
+})
+
+test('Questionário — alternativa que já nega casa com resposta que nega',()=>{
+ const negativas=matrix.filter(item=>/(^|\s)(n[ãa]o|nunca|nenhum)(\s|$)/i.test(String(item.Alternativa).normalize('NFD').replace(/\p{Diacritic}/gu,'')))
+ if(!negativas.length)return
+ const alvo=negativas[0]
+ const answers=recognizeQuestionnaire({rows:[[String(alvo.Pergunta),alvo.Alternativa,'']],format:'CSV'}).answers
+ assert.equal(answers[alvo.Pergunta],alvo.Alternativa)
+})
+
+// QUEST-03: 45 perguntas respondidas na frente do produtor moravam só no useState — sair da página
+// ou trocar de aba dentro do próprio Produtor 360 apagava tudo sem uma palavra.
+test('Questionário — respostas digitadas travam a saída e a troca de aba',async()=>{
+ const directory=await mkdtemp(new URL('../.survey-guard-test-',import.meta.url).pathname)
+ const anterior=globalThis.window
+ const eventos=new EventTarget()
+ const perguntas=[];let renderer
+ globalThis.window={addEventListener:eventos.addEventListener.bind(eventos),removeEventListener:eventos.removeEventListener.bind(eventos),
+  confirm:texto=>{perguntas.push(texto);return false},scrollTo:()=>{}}
+ try{
+  await build({entryPoints:['src/components/SurveyForm.jsx'],outfile:directory+'/form.js',bundle:true,platform:'node',format:'esm',packages:'external',loader:{'.css':'empty','.json':'json'},logLevel:'silent'})
+  const SurveyForm=(await import(pathToFileURL(directory+'/form.js'))).default
+  const sujo=[]
+  const sair=()=>eventos.dispatchEvent(new Event('val:before-navigation',{cancelable:true}))
+  await act(async()=>{renderer=TestRenderer.create(React.createElement(SurveyForm,{onSubmit:async()=>{},onDirtyChange:value=>sujo.push(value)}))})
+  // Nada digitado: a saída é livre.
+  assert.equal(sair(),true)
+  assert.equal(perguntas.length,0)
+  assert.equal(sujo.at(-1),false)
+  const primeiro=renderer.root.findAllByType('input')[0]
+  await act(async()=>primeiro.props.onChange({target:{value:'Fazenda Santa Rita - Antônio Nogueira'}}))
+  // Com resposta digitada: a saída pergunta, e recusar cancela a navegação.
+  assert.equal(sujo.at(-1),true)
+  assert.equal(sair(),false)
+  assert.equal(perguntas.length,1)
+  assert.match(perguntas[0],/alterações não salvas no questionário/)
+ }finally{
+  if(renderer)await act(async()=>renderer.unmount())
+  globalThis.window=anterior
+  await rm(directory,{recursive:true,force:true})
+ }
+})
+
+test('Questionário — a troca de aba do Produtor 360 passa pela confirmação',()=>{
+ const fonte=readFileSync(new URL('../src/pages/Questionnaire.jsx',import.meta.url),'utf8')
+ assert.match(fonte,/const leaveAssisted=next=>\{/)
+ assert.match(fonte,/mode==='assistida'&&assistedDirty&&!window\.confirm\('Há respostas do questionário que ainda não foram enviadas\. Sair sem enviar\?'\)/)
+ assert.match(fonte,/onDirtyChange=\{setAssistedDirty\}/)
+ // Nenhuma aba escapa da guarda.
+ assert.doesNotMatch(fonte,/onClick=\{\(\)=>setMode\('(central|importar)'\)\}/)
 })
