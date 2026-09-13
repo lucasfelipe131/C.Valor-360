@@ -157,3 +157,45 @@ test('property photos reuse the profile store without leaking between properties
  assert.equal((await readRouteProperties(repository,consultant)).properties.find(item=>item.id===id(35)).propertyPhotoUrl,null)
  assert.equal((await profilePhoto(repository,actor,{clientId:id(20)})).photo,photo)
 })
+
+// ADM-05: o filtro comparava com `=` e uma diferença de caixa devolvia uma tela inteira de zeros
+// que se lê como medição.
+test('ADM-05 — o filtro de município ignora maiúsculas e explica o zero sem correspondência',async()=>{
+ const igual=await service.overview(viewer,{...period,municipality:'TEST Town'})
+ const caixa=await service.overview(viewer,{...period,municipality:'test town'})
+ assert.equal(igual.producers.length,1)
+ assert.deepEqual(caixa.producers.map(item=>item.id),igual.producers.map(item=>item.id))
+ assert.deepEqual(caixa.visits.map(item=>item.id),igual.visits.map(item=>item.id))
+ const semNada=await service.overview(viewer,{...period,municipality:'TEST Nowhere'})
+ assert.equal(semNada.producers.length,0)
+ assert.match(semNada.notices.join(' '),/Nenhum produtor desta unidade está cadastrado no município “TEST Nowhere”/)
+ assert.match(semNada.notices.join(' '),/não por ausência de atividade/)
+ // Filtro que casa não inventa aviso.
+ assert.equal(caixa.notices.some(notice=>/Nenhum produtor/.test(notice)),false)
+})
+
+// ADM-02: arquivar um produtor apagava do painel visitas já realizadas e relatórios já confirmados
+// de períodos fechados.
+test('ADM-02 — arquivar o produtor não apaga a visita realizada nem o relatório confirmado',async()=>{
+ await pg.query(`UPDATE clients SET status='archived' WHERE id=$1::uuid`,[id(20)])
+ try{
+  const result=await service.overview(viewer,period)
+  assert.deepEqual(result.visits.map(item=>item.id),[id(40),id(45)])
+  assert.equal(result.visits[0].report.summary,'TEST human confirmed report')
+  // O produtor arquivado sai da carteira, mas viaja junto para o gestor saber de quem é a visita.
+  assert.equal(result.producers.length,0)
+  assert.equal(result.summary.producers,0)
+  assert.deepEqual(result.archivedProducers.map(item=>item.id),[id(20)])
+  assert.equal(result.archivedProducers[0].name,'TEST producer 20')
+  assert.equal(result.archivedProducers[0].archived,true)
+  assert.match(result.notices.join(' '),/produtor arquivado tem visita neste período/)
+ }finally{await pg.query(`UPDATE clients SET status='active' WHERE id=$1::uuid`,[id(20)])}
+})
+
+test('ADM-02 — carteira sem produtor arquivado não ganha aviso nem lista extra',async()=>{
+ const result=await service.overview(viewer,period)
+ assert.deepEqual(result.archivedProducers,[])
+ assert.equal(result.notices.some(notice=>/arquivado/.test(notice)),false)
+ assert.equal(result.summary.producers,1)
+ assert.deepEqual(result.truncated,{producers:false})
+})

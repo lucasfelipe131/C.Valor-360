@@ -5,6 +5,7 @@ import {registeredFactPresentation,registeredFactQuery} from '../server/register
 import {evaluateResponseGrounding} from '../server/decision-copilot/response-grounding.js'
 import {validateProfilePhoto} from '../server/profile-photo.js'
 import {readFileSync} from 'node:fs'
+import {importedMunicipality} from '../server/repository.js'
 
 // FATO-01: nome de produtor fora da carteira era descartado em silêncio e a consulta rodava sobre o
 // produtor aberto — a frase de talhão não traz nome, então a troca era invisível para o consultor.
@@ -182,4 +183,39 @@ test('Mapa — quem tem visita no dia mantém o nome; a propriedade no mesmo pon
  assert.match(propriedade,/caption:showNames&&!stops\.some\(/)
  assert.match(parada,/caption:showNames\?`\$\{stop\.order\}\. \$\{stop\.name\}`:null/)
  assert.doesNotMatch(parada,/visibleProperties\.some/)
+})
+
+// ADM-04: a importação comercial gravava o preenchimento automático "A definir" na coluna real
+// clients.municipality, e a visão gerencial devolvia essa linha carimbada como REAL DATA.
+test('Importação — preenchimento automático de município não vira cadastro',()=>{
+ const fonte=readFileSync(new URL('../server/repository.js',import.meta.url),'utf8')
+ const municipio=importedMunicipality
+ for(const preenchimento of ['A definir','a definir','A Classificar','A confirmar','Aguardando cadastro','  A DEFINIR  '])
+  assert.equal(municipio(preenchimento),null,preenchimento)
+ for(const real of ['Palotina','Toledo','São Gabriel do Oeste','Assis Chateaubriand'])
+  assert.equal(municipio(real),real)
+ assert.equal(municipio(''),null)
+ assert.equal(municipio(null),null)
+ assert.equal(municipio(undefined),null)
+ assert.equal(municipio('x'.repeat(200)).length,140)
+ // O UPSERT preserva o município já cadastrado quando a reimportação chega sem ele.
+ assert.match(fonte,/municipality=COALESCE\(EXCLUDED\.municipality,clients\.municipality\)/)
+ assert.match(fonte,/importedMunicipality\(item\.municipality\)/)
+})
+
+// ADM-01: uma unidade com mais de 5.000 produtores nunca abria a tela gerencial, e a mensagem
+// mandava reduzir o período — que nem entra na consulta de produtores.
+test('Gerencial — excesso de produtores corta a lista em vez de derrubar a tela',()=>{
+ const fonte=readFileSync(new URL('../server/management-service.js',import.meta.url),'utf8')
+ // O 422 sobrou só para visitas e deslocamentos, onde o período é de fato a alavanca.
+ assert.match(fonte,/if\(\[visitRows,routeRows\]\.some\(result=>result\.rows\.length>MAX_ROWS\)\)fail\('O período selecionado excede/)
+ assert.doesNotMatch(fonte,/\[producerRows,visitRows,routeRows\]\.some/)
+ assert.match(fonte,/const producersTruncated=producerRows\.rows\.length>MAX_ROWS/)
+ // O total real vem de um COUNT e substitui a contagem da lista cortada.
+ assert.match(fonte,/SELECT count\(\*\)::int AS total FROM clients c/)
+ assert.match(fonte,/summarizeManagement\(\{producers,visits,routes\}\),producers:producerTotal/)
+ // A mensagem cita os filtros que reduzem a carteira, nunca o período.
+ const aviso=fonte.match(/producersTruncated\?`[^`]+`/)[0]
+ assert.match(aviso,/Filtre por município ou por consultor/)
+ assert.doesNotMatch(aviso,/período/)
 })

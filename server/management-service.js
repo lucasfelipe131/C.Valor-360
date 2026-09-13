@@ -101,9 +101,10 @@ export function createManagementService({db,tenantId}){
    const params=[tenantId,owners,filters.start,filters.end,filters.municipality]
    const producerRows=await connection.query(`SELECT c.id,c.name,c.consultant_id,c.municipality,c.total_area_ha,c.cultures,c.updated_at
     FROM clients c WHERE c.tenant_id=$1 AND c.consultant_id=ANY($2::uuid[]) AND c.status='active'
-    AND ($5::text='' OR c.municipality=$5) AND ${realClient}
+    AND ($5::text='' OR lower(c.municipality)=lower($5)) AND ${realClient}
     AND $3::date<=$4::date ORDER BY c.name,c.id LIMIT ${MAX_ROWS+1}`,params)
    const visitRows=await connection.query(`SELECT v.id,v.client_id,v.consultant_id,v.scheduled_at,v.occurred_at,v.completed_at,v.objective,v.status,v.lifecycle_status,
+     c.name AS client_name,c.status AS client_status,
      r.id AS report_id,r.summary AS report_summary,r.consultant_notes AS report_notes,r.confirmed_at AS report_confirmed_at
     FROM visits v JOIN clients c ON c.tenant_id=v.tenant_id AND c.id=v.client_id
     LEFT JOIN LATERAL (SELECT report.id,report.summary,report.consultant_notes,report.confirmed_at
@@ -112,19 +113,43 @@ export function createManagementService({db,tenantId}){
       AND report.confirmation_status='CONFIRMED' AND report.confirmed_at IS NOT NULL
      ORDER BY report.confirmed_at DESC,report.id DESC LIMIT 1) r ON TRUE
     WHERE v.tenant_id=$1 AND v.consultant_id=ANY($2::uuid[]) AND c.consultant_id=ANY($2::uuid[])
-    AND c.status='active' AND ($5::text='' OR c.municipality=$5) AND ${realClient}
+    AND ($5::text='' OR lower(c.municipality)=lower($5)) AND ${realClient}
     AND COALESCE(v.occurred_at,v.completed_at,v.scheduled_at)>=($3::date::timestamp AT TIME ZONE 'America/Sao_Paulo')
     AND COALESCE(v.occurred_at,v.completed_at,v.scheduled_at)<(($4::date+1)::timestamp AT TIME ZONE 'America/Sao_Paulo')
     ORDER BY COALESCE(v.occurred_at,v.completed_at,v.scheduled_at) DESC,v.id LIMIT ${MAX_ROWS+1}`,params)
    const routeRows=await connection.query(`SELECT owner_id,route_date::text AS route_date,trace,time_zone FROM val_visit_routes
     WHERE tenant_id=$1 AND owner_id=ANY($2::uuid[]) AND route_date BETWEEN $3::date AND $4::date
     ORDER BY route_date DESC,owner_id LIMIT ${MAX_ROWS+1}`,params.slice(0,4))
-   if([producerRows,visitRows,routeRows].some(result=>result.rows.length>MAX_ROWS))fail('O resultado excede 5.000 registros. Reduza o período ou selecione um consultor.',422)
+   // O teto de 5.000 linhas e deliberado (docs/management-bi-v1.md). O que nao era deliberado:
+   // uma unidade com mais de 5.000 produtores nunca abria a tela, e a mensagem mandava reduzir o
+   // PERIODO — que nem entra na consulta de produtores. Excesso de produtores agora corta a lista,
+   // diz que cortou e informa o total real; o 422 fica para visitas e deslocamentos, onde o periodo
+   // e de fato a alavanca.
+   if([visitRows,routeRows].some(result=>result.rows.length>MAX_ROWS))fail('O período selecionado excede 5.000 registros de visitas ou deslocamentos. Reduza o período ou selecione um consultor.',422)
+   const producersTruncated=producerRows.rows.length>MAX_ROWS
+   if(producersTruncated)producerRows.rows.length=MAX_ROWS
+   const producerTotal=producersTruncated
+    ?Number((await connection.query(`SELECT count(*)::int AS total FROM clients c
+      WHERE c.tenant_id=$1 AND c.consultant_id=ANY($2::uuid[]) AND c.status='active'
+      AND ($3::text='' OR lower(c.municipality)=lower($3)) AND ${realClient}`,[tenantId,owners,filters.municipality])).rows[0]?.total)||MAX_ROWS
+    :producerRows.rows.length
    const producers=producerRows.rows.map(row=>({id:row.id,name:row.name,consultantId:row.consultant_id,municipality:row.municipality||null,areaHa:number(row.total_area_ha),cultures:row.cultures||null,updatedAt:iso(row.updated_at),dataStatus:'REAL DATA'}))
    const visits=visitRows.rows.map(row=>({id:row.id,clientId:row.client_id,consultantId:row.consultant_id,scheduledAt:iso(row.scheduled_at),occurredAt:iso(row.occurred_at||row.completed_at),objective:row.objective||null,lifecycleStatus:managementVisitStatus(row),dataStatus:'REAL DATA',report:row.report_id?{id:row.report_id,summary:row.report_summary,notes:row.report_notes||null,confirmedAt:iso(row.report_confirmed_at),dataStatus:'REAL DATA'}:null})).filter(visit=>!filters.status||visit.lifecycleStatus===filters.status)
    const routes=routeRows.rows.map(row=>({consultantId:row.owner_id,date:row.route_date,timeZone:row.time_zone,...recordedTravel(row.trace)}))
-   return {configured:true,unit:{id:access.unit_id,name:access.unit_name},filters,team:team.rows,producers,visits,routes,
-    summary:summarizeManagement({producers,visits,routes}),generatedAt:new Date().toISOString(),timeZone:'America/Sao_Paulo',
+   // Arquivar um produtor nao apaga a visita que ja aconteceu nem o relatorio ja confirmado: eles
+   // sao fatos de um periodo fechado. Eles voltam para o painel, e o produtor arquivado viaja junto
+   // — so para o gestor ver de quem e a visita, sem entrar na contagem da carteira.
+   const active=new Set(producerRows.rows.map(row=>String(row.id)))
+   const archivedProducers=[...new Map(visitRows.rows.filter(row=>!active.has(String(row.client_id)))
+    .map(row=>[String(row.client_id),{id:row.client_id,name:row.client_name,consultantId:row.consultant_id,archived:true,status:row.client_status||null,dataStatus:'REAL DATA'}])).values()]
+   const notices=[
+    producersTruncated?`A unidade tem ${producerTotal} produtores no filtro atual e a lista mostra os primeiros ${MAX_ROWS}. Filtre por município ou por consultor para ver o restante; os totais acima consideram a carteira inteira.`:'',
+    filters.municipality&&!producerRows.rows.length?`Nenhum produtor desta unidade está cadastrado no município “${filters.municipality}”. Os números abaixo estão zerados por falta de correspondência no filtro, não por ausência de atividade. A comparação ignora maiúsculas, mas não ignora acentos.`:'',
+    archivedProducers.length?`${archivedProducers.length===1?'Um produtor arquivado tem':`${archivedProducers.length} produtores arquivados têm`} visita neste período; ${archivedProducers.length===1?'ela aparece':'elas aparecem'} na lista e ${archivedProducers.length===1?'não entra':'não entram'} na contagem da carteira.`:''
+   ].filter(Boolean)
+   return {configured:true,unit:{id:access.unit_id,name:access.unit_name},filters,team:team.rows,producers,archivedProducers,visits,routes,notices,
+    truncated:{producers:producersTruncated},
+    summary:{...summarizeManagement({producers,visits,routes}),producers:producerTotal},generatedAt:new Date().toISOString(),timeZone:'America/Sao_Paulo',
     travelScope:'period_and_consultant',portfolioScope:'current_unit',demoExcluded:true}
   })
  }
