@@ -157,20 +157,30 @@ export function buildObjectionLibrary(context={},options={}){
   .filter(item=>isLoss(item)&&timestamp(eventDate(item))!==null&&timestamp(eventDate(item))>=horizonStart&&timestamp(eventDate(item))<=now)
   .map(item=>({item,similarity:similarityToFocus(item,focus)}))
   .filter(entry=>hasFocus?entry.similarity.score>=3:true)
+ // Os motivos de similaridade eram unidos entre registros. Um grupo que junta a perda DESTE produtor
+ // com a perda de OUTRO publicava "mesma conta" — verdade para um registro, falsa para o grupo — e
+ // o consultor lia duas perdas de produtores diferentes como duas ocorrencias da mesma conta.
+ // So sobrevive o motivo que vale para todos os registros do grupo.
+ const sharedReasons=sets=>{
+  if(!sets.length)return []
+  const [primeiro,...resto]=sets.map(item=>new Set(item))
+  return [...primeiro].filter(reason=>resto.every(outro=>outro.has(reason)))
+ }
+ const MAX_OBJECTIONS=8
  const groups=new Map()
  losses.forEach((entry,index)=>{
   const loss=entry.item
   const reason=lossReason(loss)
   const classification=classify(reason)
   const key=classification.id
-  if(!groups.has(key))groups.set(key,{id:`objection:${key}`,label:classification.label,records:[],categories:[],products:[],evidenceIds:[],latestAt:null,highestSimilarity:0,similarityReasons:[]})
+  if(!groups.has(key))groups.set(key,{id:`objection:${key}`,label:classification.label,records:[],categories:[],products:[],evidenceIds:[],latestAt:null,highestSimilarity:0,similarityReasonSets:[]})
   const group=groups.get(key)
   group.records.push(loss)
   group.categories.push(categoryOf(loss))
   group.products.push(productOf(loss))
   group.evidenceIds.push(idOf('business-loss',loss,index))
   group.highestSimilarity=Math.max(group.highestSimilarity,entry.similarity.score)
-  group.similarityReasons.push(...entry.similarity.reasons)
+  group.similarityReasonSets.push(entry.similarity.reasons)
   const at=timestamp(eventDate(loss))
   if(!group.latestAt||at>timestamp(group.latestAt))group.latestAt=eventDate(loss)
  })
@@ -181,16 +191,17 @@ export function buildObjectionLibrary(context={},options={}){
    id:group.id,label:group.label,count:group.records.length,
    categories:unique(group.categories),products:unique(group.products),
    lastSeen:iso(group.latestAt),evidenceIds:unique(group.evidenceIds),
-   highestSimilarity:group.highestSimilarity,similarityReasons:unique(group.similarityReasons),
+   highestSimilarity:group.highestSimilarity,similarityReasons:sharedReasons(group.similarityReasonSets),
    sampleConfidence:group.records.length>=5?'moderate':group.records.length>=2?'low':'insufficient',
    observedMove:move,
    guidance:move?`${move.label}. Use apenas como precedente desta carteira e confirme se o contexto atual é realmente comparável.`:'Ainda não há abordagem associada a avanço real. Descubra a objeção atual em vez de usar um script pronto.',
    guardrail:'O histórico mostra ocorrência e sequência temporal; não prova causalidade nem autoriza pressão, medo, culpa, vergonha ou falsa urgência.'
   }
- }).sort((a,b)=>(b.observedMove?1:0)-(a.observedMove?1:0)||b.highestSimilarity-a.highestSimilarity||b.count-a.count||timestamp(b.lastSeen)-timestamp(a.lastSeen)||a.label.localeCompare(b.label,'pt-BR')).slice(0,8)
+ }).sort((a,b)=>(b.observedMove?1:0)-(a.observedMove?1:0)||b.highestSimilarity-a.highestSimilarity||b.count-a.count||timestamp(b.lastSeen)-timestamp(a.lastSeen)||a.label.localeCompare(b.label,'pt-BR')).slice(0,MAX_OBJECTIONS)
  return {
   version:'val-objection-library-v2',generatedAt:new Date(now).toISOString(),lookbackDays:365,focus,
-  objections,lossEventsConsidered:losses.length,portfolioEventsConsidered:history.length,
+  objections,objectionGroupsTotal:groups.size,objectionsHidden:Math.max(0,groups.size-objections.length),
+  lossEventsConsidered:losses.length,portfolioEventsConsidered:history.length,
   policy:{structuredLossReasonOnly:true,freeNotesExcluded:true,genericScripts:false,causalClaims:false,portfolioScoped:true,personalDataUsed:false},
   emptyReason:objections.length?'':'Nenhuma objeção estruturada de negócio parecido foi registrada nesta carteira nos últimos 12 meses.',
   guardrails:['Sempre cite evidenceIds.','Não trate correlação como causa.','Não transforme histórico em pressão ou urgência artificial.','Confirme se a situação atual é comparável antes de reutilizar qualquer abordagem.']

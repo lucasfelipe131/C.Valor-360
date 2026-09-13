@@ -256,3 +256,42 @@ test('Estúdio de Conversão — a tela busca a rota que realmente monta o dossi
  // E ela é autenticada como todas as outras rotas de produtor.
  assert.match(servidor,/context\|conversion-studio\|overview\|property\|workspace\|season-plans/)
 })
+
+// OBJ-03: os motivos de similaridade eram unidos entre registros. Um grupo que junta a perda deste
+// produtor com a de outro publicava "mesma conta" — verdade para um registro, falsa para o grupo.
+test('Objeções — "mesma conta" só sobrevive quando todo o grupo é da mesma conta',()=>{
+ const fonte=readFileSync(new URL('../server/objection-library.js',import.meta.url),'utf8')
+ const linha=fonte.match(/ const sharedReasons=sets=>\{[\s\S]*?\n \}/)[0]
+ const sharedReasons=new Function('return '+linha.replace(' const sharedReasons=','')+';')()
+ // Dois registros, só um deles da conta atual: "mesma conta" cai.
+ assert.deepEqual(sharedReasons([['mesma categoria','mesma conta'],['mesma categoria']]),['mesma categoria'])
+ // Os dois da mesma conta: o motivo sobrevive.
+ assert.deepEqual(sharedReasons([['mesma categoria','mesma conta'],['mesma categoria','mesma conta']]),['mesma categoria','mesma conta'])
+ assert.deepEqual(sharedReasons([]),[])
+ assert.deepEqual(sharedReasons([['mesma conta']]),['mesma conta'])
+ assert.match(fonte,/similarityReasons:sharedReasons\(group\.similarityReasonSets\)/)
+})
+
+// OBJ-04: o cabeçalho anunciava 11 perdas semelhantes e a lista mostrava 8; as demais sumiam.
+test('Objeções — o corte da lista não é silencioso',()=>{
+ const fonte=readFileSync(new URL('../server/objection-library.js',import.meta.url),'utf8')
+ assert.match(fonte,/objectionGroupsTotal:groups\.size,objectionsHidden:Math\.max\(0,groups\.size-objections\.length\)/)
+ const painel=readFileSync(new URL('../src/components/ObjectionEvidencePanel.jsx',import.meta.url),'utf8')
+ assert.match(painel,/data\.objectionsHidden>0&&/)
+ assert.match(painel,/Mostrando \$\{objections\.length\} de \$\{data\.objectionGroupsTotal\} objeções registradas/)
+})
+
+// CAL-01: Number('') e Number(null) valem 0, então "nada medido" chegava como "0% de avanço" —
+// falta de dado carimbada como nota zero, ao lado de segmentos medidos de verdade.
+test('Calibração — falta de medição não vira 0%, e o 0% medido continua aparecendo',()=>{
+ const fonte=readFileSync(new URL('../src/components/MessageCalibrationPanel.jsx',import.meta.url),'utf8')
+ const linha=fonte.split('\n').find(item=>item.startsWith('const percent='))
+ const percent=new Function('return '+linha.replace('const percent=','')+';')()
+ for(const vazio of [null,undefined,''])assert.equal(percent(vazio),'Em formação',JSON.stringify(vazio))
+ assert.equal(percent('texto'),'Em formação')
+ // 0 medido é informação correta: houve interações observadas e nenhuma avançou de etapa.
+ assert.equal(percent(0),'0%')
+ assert.equal(percent('0'),'0%')
+ assert.equal(percent(0.42),'42%')
+ assert.equal(percent(1),'100%')
+})

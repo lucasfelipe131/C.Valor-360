@@ -13,6 +13,8 @@ export default function ObjectionEvidencePanel({data}){
  const focus=[data?.focus?.title,data?.focus?.category,data?.focus?.product].map(value=>text(value)).filter(Boolean).join(' • ')
  return <section className="objection-panel" aria-labelledby="objection-panel-title">
   <header><div><span><History/>BIBLIOTECA DE OBJEÇÕES REAIS</span><h4 id="objection-panel-title">O que já travou negócios parecidos nesta carteira</h4><p>Somente motivos estruturados de perdas dos últimos 12 meses. Cada precedente traz a evidência usada e nunca vira script automático.</p>{focus&&<em><Target/>Comparando com: {focus}</em>}</div><b>{data.lossEventsConsidered} perdas semelhantes</b></header>
+  {/* O cabeçalho anunciava N perdas e a lista mostrava 8; as demais sumiam sem nada dizer. */}
+  {data.objectionsHidden>0&&<p className="objection-truncated">{`Mostrando ${objections.length} de ${data.objectionGroupsTotal} objeções registradas; as demais têm menos precedente nesta comparação.`}</p>}
   {data?.loadError&&<div className="objection-load-warning">A leitura da carteira completa falhou; esta visão usa apenas o histórico disponível desta conta. {data.loadError}</div>}
   <div className="objection-list">{objections.map(item=>{
    const open=openId===item.id

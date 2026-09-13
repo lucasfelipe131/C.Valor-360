@@ -3,7 +3,12 @@ import {Activity,BarChart3,CheckCircle2,ChevronDown,Database,Edit3,Eye,FlaskConi
 import '../message-calibration.css'
 
 const text=(value,fallback='')=>String(value??fallback).replace(/\s+/g,' ').trim()||fallback
-const percent=value=>Number.isFinite(Number(value))?`${Math.round(Number(value)*100)}%`:'Em formação'
+// Number('') e Number(null) valem 0, entao "nada medido" chegava a tela como "0% de avanco" — falta
+// de dado carimbada como nota zero, ao lado de segmentos que foram medidos de verdade. E a correcao
+// obvia estaria errada: usar falsy apagaria o 0% legitimo, que e a informacao correta quando houve
+// interacoes observadas e nenhuma avancou de etapa. A checagem tem de ser por ausencia, nao por
+// valor.
+const percent=value=>value===null||value===undefined||value===''?'Em formação':Number.isFinite(Number(value))?`${Math.round(Number(value)*100)}%`:'Em formação'
 const stageLabel={preparar:'Preparar',alinhar:'Alinhar',descobrir:'Descobrir',dimensionar:'Dimensionar',construir_valor:'Construir valor',propor:'Propor',comprometer:'Comprometer',unknown:'Etapa não registrada'}
 
 export default function MessageCalibrationPanel({data}){
