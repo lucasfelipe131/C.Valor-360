@@ -225,3 +225,29 @@ test('Mercado — limiares 24h/168h e UNKNOWN para data ausente ou ilegível', a
  // Data futura tem data legível: continua UNAVAILABLE, não UNKNOWN.
  assert.equal(run(snap(-24)),'UNAVAILABLE')
 })
+
+// MASTER/H9: item governado da Biblioteca era entregue ao consultor e o run dizia que a capacidade
+// não tinha contribuído — a auditoria perdia a origem do texto que foi lido.
+test('Biblioteca — item governado entregue consta como capacidade executada', async () => {
+ const {routeSystemCapability}=await import('../server/decision-copilot/capability-router.js')
+ const {buildGeneralNoClientResponse}=await import('../server/decision-copilot/capability-executor.js')
+ for(const question of ['o que é BATNA','o que é WASDE','quanto de calcário aplicar']){
+  const route=routeSystemCapability({message:question,intentHint:'ASK_GENERAL',hasClient:false})
+  const response=await buildGeneralNoClientResponse({message:question,route,organizationId:'tenant-a',ownerId:'owner-a',conversationId:`h9:${question}`})
+  const run=response.advice.ai_reasoning.run
+  const itemId=run.tool_result?.context?.knowledge_item_id
+  assert.ok(itemId,`${question}: o item governado precisa chegar ao consultor`)
+  assert.ok((run.capabilities_used||[]).includes('KNOWLEDGE_LIBRARY'),`${question}: capabilities_used precisa registrar a Biblioteca`)
+  assert.ok((run.capability_results||[]).some(item=>item.capability==='KNOWLEDGE_LIBRARY'&&item.status==='EXECUTED'),`${question}: o resultado da capacidade precisa constar como executado`)
+ }
+})
+
+test('Biblioteca — pergunta sem cobertura não inventa capacidade executada', async () => {
+ const {routeSystemCapability}=await import('../server/decision-copilot/capability-router.js')
+ const {buildGeneralNoClientResponse}=await import('../server/decision-copilot/capability-executor.js')
+ const question='qual o número de telefone do vizinho do meu primo'
+ const route=routeSystemCapability({message:question,intentHint:'ASK_GENERAL',hasClient:false})
+ const run=(await buildGeneralNoClientResponse({message:question,route,organizationId:'tenant-a',ownerId:'owner-a',conversationId:'h9-none'})).advice.ai_reasoning.run
+ assert.equal(run.tool_result?.context?.knowledge_item_id,undefined)
+ assert.deepEqual(run.capabilities_used||[],[])
+})
