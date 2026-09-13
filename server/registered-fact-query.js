@@ -13,7 +13,9 @@ export function registeredFactQuery(message,{previousMessage=''}={}){
 
 // Preserve each declaration and its period/property. Never sum overlapping
 // mapped area with the producer's consolidated declaration.
-export function registeredFactPresentation({query,client,declaredSeasons=[],properties=[],narratives=[]}){
+const thirdPartyArea=/\b(?:vizinh[oa]s?|compadre|comadre|irmaos?|irmas?|prim[oa]s?|sogr[oa]|genro|nora|cunhad[oa]s?|soci[oa]s?|arrendatari[oa]s?|arrendante|parceir[oa]s?|outro produtor|produtor ao lado)\b/
+const STALE_MS=548*24*60*60*1000
+export function registeredFactPresentation({query,client,declaredSeasons=[],properties=[],narratives=[],now=new Date()}){
  const rows=[]
  if(query.kind==='hobby'){
   const hobby=client.hobby||client.hobbies||client.commercial?.hobby||client.commercial?.hobbies
@@ -33,10 +35,16 @@ export function registeredFactPresentation({query,client,declaredSeasons=[],prop
   }
  }
  const pattern=query.kind==='hobby'?/hobb(?:y|ies)|passatempo|lazer/i:new RegExp(`\\b${query.crop}\\b`,'i')
+ let thirdPartyOmitted=0
  for(const record of narratives){
   const sentences=String(record.text||'').split(/(?<=[.!?])\s+/).filter(sentence=>pattern.test(normalized(sentence))&&(query.kind==='hobby'||/\b(?:ha|hectares?)\b/i.test(sentence)))
   for(const sentence of sentences){
    if(query.season&&!normalized(sentence).includes(query.season))continue
+   // Area citada num relato pode ser de OUTRA pessoa. "O vizinho do Joao, o Ademar, planta 1200 ha
+   // de milho na divisa" entrava na resposta de "quantos hectares o Joao planta de milho" com o
+   // mesmo peso do cadastro, e nada na frase dizia que os 1200 ha nao eram do produtor aberto.
+   // Frase que atribui a area a um terceiro fica de fora — e o consultor e avisado de que ficou.
+   if(query.kind!=='hobby'&&thirdPartyArea.test(normalized(sentence))){thirdPartyOmitted++;continue}
    rows.push({id:record.id,source_type:record.source_type,observed_at:record.observedAt,statement:`Relato registrado${record.observedAt?` em ${new Date(record.observedAt).toLocaleDateString('pt-BR',{timeZone:'UTC'})}`:''}: ${sentence}`,narrative:true})
   }
  }
@@ -45,6 +53,22 @@ export function registeredFactPresentation({query,client,declaredSeasons=[],prop
  const label=query.kind==='hobby'?'hobby':'área de '+query.crop
  const answer=found?shown.map(row=>row.statement).join(' '):`Informação ausente: ${label} nos cadastros e relatos consultados.`
  const periods=new Set(unique.map(row=>row.period).filter(Boolean))
- const action=unique.length>8?'Há outros registros; informe a safra ou propriedade para restringir a consulta.':periods.size>1?'Há safras distintas. Qual delas você quer considerar?':unique.length>1?'Os registros foram apresentados separadamente; confirme eventuais divergências antes de usar uma área consolidada.':''
- return {dataPath:'REGISTERED_DETAIL',answer,primaryFound:found,sourceRef:shown[0]?.id||null,factsUsed:shown,action,missing:label,doNotDo:'Não somar áreas de períodos ou níveis diferentes.',capabilityStatus:found?'EXECUTED':'NO_DATA'}
+ // O registro mais novo pode ter varias safras de idade. Perguntada no presente ("quantos hectares
+ // ele planta"), a VAL respondia o numero da safra 2223V em setembro de 2026 sem uma palavra sobre
+ // isso: o texto trazia a safra, mas nada dizia que nao existe declaracao posterior.
+ const observedTimes=unique.map(row=>new Date(row.observed_at||0).getTime()).filter(time=>Number.isFinite(time)&&time>0)
+ const newest=observedTimes.length?Math.max(...observedTimes):null
+ const stale=Boolean(found&&newest&&now.getTime()-newest>STALE_MS)
+ // A frase da lacuna nao pode carregar numero nem ponto-e-virgula: o contrato de grounding parte a
+ // resposta em afirmacoes (inclusive no ';') e so libera uma lacuna declarada quando ela nao afirma
+ // nenhum dado novo. Com a data embutida, a propria correcao derrubava a resposta com HTTP 400.
+ const answerText=stale?`${answer} Informação ausente: registro de ${label} posterior a este.`:answer
+ const notes=[
+  unique.length>8?'Há outros registros; informe a safra ou propriedade para restringir a consulta.':periods.size>1?'Há safras distintas. Qual delas você quer considerar?':unique.length>1?'Os registros foram apresentados separadamente; confirme eventuais divergências antes de usar uma área consolidada.':'',
+  stale?`Confirme com o produtor a ${label} atual antes de usar este número.`:'',
+  thirdPartyOmitted?`${thirdPartyOmitted===1?'Um relato cita':`${thirdPartyOmitted} relatos citam`} área de terceiro (vizinho, sócio, arrendatário) e ${thirdPartyOmitted===1?'ficou':'ficaram'} de fora desta resposta; abra o relato para conferir.`:''
+ ].filter(Boolean)
+ return {dataPath:'REGISTERED_DETAIL',answer:answerText,primaryFound:found,sourceRef:shown[0]?.id||null,factsUsed:shown,action:notes.join(' '),missing:label,doNotDo:'Não somar áreas de períodos ou níveis diferentes.',capabilityStatus:found?'EXECUTED':'NO_DATA',stale,
+  keyUncertainty:stale?`Não há registro de ${label} posterior a este no cadastro.`:'',
+  whatToValidate:stale?`Confirme com o produtor se a ${label} mudou desde o último registro.`:''}
 }

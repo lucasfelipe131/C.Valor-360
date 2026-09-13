@@ -855,13 +855,20 @@ async function handleApi(request,response,url){
   // passando: e o que sobra de "fala sobre ferrugem asiatica".
   // FACT_OWNER que nao resolveu nao nomeia produtor nenhum ("o perfil do solo"): so fecha a ponte
   // quando a inferencia apontou mesmo para alguem da carteira.
+  const previousFactMessage=[...(requestConversationState.conversation_turns||[])].reverse().find(turn=>turn.role==='user'&&turn.text!==message)?.text||''
+  const detailQuery=registeredFactQuery(message,{previousMessage:previousFactMessage})
   const namesProducer=['EXPLICIT_NAME','CURRENT_CLIENT'].includes(naturalClientReference.kind)||resolvedClientReference
   // Continuacao curta de um turno do produtor ("e a objecao?", "e a safra?") pertence a conversa
   // daquele produtor: sem isto a VAL respondia "nenhum produtor selecionado" com o produtor aberto
   // na tela, porque a frase nao contem nenhuma palavra da lista contextual.
   const followUpWithProducer=Boolean(clientId)&&/^\s*(?:e|entao|ok|certo)[,\s]+/i.test(String(message||''))
-  const generalConceptWithProducer=!namesProducer&&!followUpWithProducer&&isGeneralConceptRequest(message)&&clientCapability.capabilities.includes('KNOWLEDGE_LIBRARY')
-  if(!namesProducer&&(routedIntent.intent==='ASK_GENERAL'&&clientCapability.capabilities.every(item=>item==='KNOWLEDGE_LIBRARY')||generalConceptWithProducer)&&clientCapability.path==='CONTEXT'&&!clientCapability.session_command&&!attachmentIds.length){
+  // "Qual a area de milho na safra 2526V?" com o produtor aberto e pergunta pelo CADASTRO dele, nao
+  // conceito de agronomia. A palavra "safra" levava a intencao para ASK_AGRONOMIC, os capabilities
+  // viravam os da Biblioteca, e esta ponte respondia manual tecnico ("Conversa geral") antes da
+  // consulta de fato registrado la embaixo — a area declarada pelo proprio produtor nunca era lida.
+  const registeredFactAboutOpenProducer=Boolean(clientId&&detailQuery)
+  const generalConceptWithProducer=!namesProducer&&!followUpWithProducer&&!registeredFactAboutOpenProducer&&isGeneralConceptRequest(message)&&clientCapability.capabilities.includes('KNOWLEDGE_LIBRARY')
+  if(!namesProducer&&!registeredFactAboutOpenProducer&&(routedIntent.intent==='ASK_GENERAL'&&clientCapability.capabilities.every(item=>item==='KNOWLEDGE_LIBRARY')||generalConceptWithProducer)&&clientCapability.path==='CONTEXT'&&!clientCapability.session_command&&!attachmentIds.length){
    // O raciocinio desta resposta nao le contexto privado (fontes em escopo GENERAL_KNOWLEDGE, client
    // 'portfolio'), mas a resposta pertence a conversa do produtor ativo: o browser e o contrato de
    // escopo (createValResponseScope) exigem que context_scope.producer_id, session_context e
@@ -904,8 +911,6 @@ async function handleApi(request,response,url){
    const direct=buildCapabilityExecutionResponse({execution:toolExecution,route:clientCapability,message,organizationId:tenantId,ownerId:scopedOwnerId,clientId,clientName:scoped.client?.name||payload.client?.name,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent),executionCounts:{entityResolutions:entityLookupCount,dataLookups:0,toolCalls:1,hops:entityLookupCount+1}})
    return json(response,200,completeClient(direct,toolExecution))
   }
-  const previousFactMessage=[...(requestConversationState.conversation_turns||[])].reverse().find(turn=>turn.role==='user'&&turn.text!==message)?.text||''
-  const detailQuery=registeredFactQuery(message,{previousMessage:previousFactMessage})
   // Nome de produtor que nao resolveu na carteira NAO pode virar o produtor aberto. A consulta de
   // fato registrado responde numeros crus ("33 ha de Milho, safra 2223V, talhao ..."), entao a troca
   // era invisivel: a consultora perguntava pelo Sirlei, recebia os hectares do Ivo e nada na frase
