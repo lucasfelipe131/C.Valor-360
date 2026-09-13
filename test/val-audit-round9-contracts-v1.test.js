@@ -158,3 +158,28 @@ test('Foto de perfil — a foto da conta aparece na topbar e na barra lateral',(
  assert.match(hook,/val:profile-updated/)
  assert.match(hook,/startsWith\('data:image\//)
 })
+
+// MAPA-001: o mapa nasce na visão do Brasil enquanto a carteira carrega. Se o consultor navegasse
+// até a região dele nesse intervalo, o enquadramento automático rodava quando os pinos chegavam e
+// jogava fora a navegação dele.
+test('Mapa — gesto do consultor desliga o enquadramento automático',()=>{
+ const mapa=readFileSync(new URL('../src/components/map/SatelliteMap.jsx',import.meta.url),'utf8')
+ assert.match(mapa,/const userMovedRef=useRef\(false\)/)
+ assert.match(mapa,/if\(fit&&!restoredViewRef\.current&&!userMovedRef\.current&&/)
+ assert.match(mapa,/map\.on\('dragstart',markUserMove\)/)
+ assert.match(mapa,/addEventListener\('wheel',markUserMove/)
+ assert.match(mapa,/leaflet-control-zoom/)
+ // Um mapa novo recomeça permitindo o enquadramento.
+ assert.match(mapa,/userMovedRef\.current=false/)
+})
+
+// MAPA-002: parada e propriedade no mesmo ponto — só um nome cabe. O silenciado era o da parada, e
+// como o pino numerado fica por cima, o produtor com visita agendada era o único sem nome no mapa.
+test('Mapa — quem tem visita no dia mantém o nome; a propriedade no mesmo ponto é que cala',()=>{
+ const rota=readFileSync(new URL('../src/components/map/RouteMap.jsx',import.meta.url),'utf8')
+ const propriedade=rota.match(/\.\.\.visibleProperties\.filter\(item=>item\.location\).*$/m)[0]
+ const parada=rota.match(/\.\.\.stops\.filter\(stop=>stop\.location\)\.map\(stop=>\(\{id:String\(stop\.visitId\).*$/m)[0]
+ assert.match(propriedade,/caption:showNames&&!stops\.some\(/)
+ assert.match(parada,/caption:showNames\?`\$\{stop\.order\}\. \$\{stop\.name\}`:null/)
+ assert.doesNotMatch(parada,/visibleProperties\.some/)
+})

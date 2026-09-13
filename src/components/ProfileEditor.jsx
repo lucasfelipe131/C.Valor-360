@@ -26,13 +26,22 @@ export default function ProfileEditor({clientId=null,propertyId=null,onSaved}){
  const photoLabel=propertyId?'Foto da propriedade':clientId?'Foto do produtor':'Meu perfil'
  const [profile,setProfile]=useState(null),[saved,setSaved]=useState(null),[editing,setEditing]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState(''),[attempt,setAttempt]=useState(0)
  useEffect(()=>{const controller=new AbortController();setProfile(null);setSaved(null);setEditing(false);setError('');fetch(endpoint,{signal:controller.signal}).then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error||'Não foi possível carregar o perfil.');return data}).then(data=>{setProfile(data);setSaved(data)}).catch(e=>{if(!controller.signal.aborted)setError(e.message)});return()=>controller.abort()},[endpoint,attempt])
+ // Abrir o editor nao e ter trabalho para perder. Antes, so entrar em modo de edicao ja armava a
+ // confirmacao de saida e o aviso do navegador: quem abriu "Editar foto da propriedade" e nao mudou
+ // nada era barrado do mesmo jeito. A guarda passou a valer pelo que mudou, nao pelo modo aberto.
+ const dirty=Boolean(editing&&saved&&(profile?.photo!==saved.photo||(!clientId&&profile?.name!==saved.name)))
  useEffect(()=>{
-  if(!editing)return
-  const leave=event=>{if(busy){event.preventDefault();setError('Aguarde o salvamento da foto terminar.');return}if(!window.confirm('Há um perfil em edição. Sair sem salvar?'))event.preventDefault()}
+  if(!dirty&&!busy)return
+  const leave=event=>{
+   if(event.defaultPrevented||event.valNavigationConfirmed)return
+   if(busy){event.preventDefault();setError('Aguarde o salvamento da foto terminar.');return}
+   if(window.confirm('Há um perfil em edição. Sair sem salvar?'))event.valNavigationConfirmed=true
+   else event.preventDefault()
+  }
   const unload=event=>{event.preventDefault();event.returnValue=''}
   window.addEventListener('val:before-navigation',leave);window.addEventListener('beforeunload',unload)
   return()=>{window.removeEventListener('val:before-navigation',leave);window.removeEventListener('beforeunload',unload)}
- },[editing,busy])
+ },[dirty,busy])
  // Sem isto o consultor que clicava em "Editar foto" por engano ficava preso: nao havia botao de
  // desistir e qualquer tentativa de sair caia na caixa de confirmacao de edicao pendente.
  const cancel=useCallback(()=>{if(busy)return;setProfile(saved);setEditing(false);setError('')},[busy,saved])

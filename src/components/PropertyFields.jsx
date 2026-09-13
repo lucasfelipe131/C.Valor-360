@@ -79,7 +79,10 @@ export default function PropertyFields({client,onSaved,onRefreshPortfolio,initia
 
  const selectProperty=propertyId=>{
   if(state.loading||state.saving||propertyId===form.propertyId)return
-  if(typeof window!=='undefined'&&window.dispatchEvent(new Event('val:before-navigation',{cancelable:true}))===false)return
+  // Trocar de propriedade descarta o mapeamento em edicao NESTA tela, e so ele. Disparar o evento
+  // global de navegacao punha todos os guardas da pagina para votar: o cadastro de safra do
+  // produtor barrava a troca de propriedade sem ter nada a perder com ela.
+  if((dirty||draft.length>0)&&typeof window!=='undefined'&&!window.confirm('Descartar alterações não salvas do mapeamento e trocar de propriedade?'))return
   setSelection({clientId:client.id,propertyId});onPropertyChange?.(propertyId)
  }
  const update=patch=>{if(busy)return;setForm(current=>({...current,...patch}));setDirty(true);setState(current=>({...current,error:'',notice:''}))}

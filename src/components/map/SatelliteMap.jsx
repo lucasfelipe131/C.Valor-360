@@ -36,6 +36,11 @@ export default function SatelliteMap({
  const fitRef=useRef(()=>{})
  const initialFitRef=useRef(false)
  const restoredViewRef=useRef(false)
+ // O mapa nasce na visao do Brasil enquanto a carteira carrega. Se o consultor navegar ate a regiao
+ // dele nesse intervalo, o enquadramento automatico rodava quando os pinos chegavam e jogava fora a
+ // navegacao dele. Gesto do usuario (arrastar, roda do mouse, pinca, botoes +/-) desliga o
+ // enquadramento automatico; ele so vale enquanto ninguem mexeu no mapa.
+ const userMovedRef=useRef(false)
  const previousFitRef=useRef(fit)
  const selectionRef=useRef(null)
  const pinMarkersRef=useRef([])
@@ -144,7 +149,14 @@ export default function SatelliteMap({
    if(element)entries.push({...item,element,rect:element.getBoundingClientRect()})
   }
   const visible=visiblePinLabels(entries,markers,bounds)
-  for(const item of entries)item.element.style.visibility=visible.has(item.id)?'visible':'hidden'
+  // marginLeft e nao transform: o Leaflet posiciona o tooltip por transform e sobrescrever isso
+  // arrancaria o rotulo do pino.
+  for(const item of entries){
+   const shown=visible.has(item.id)
+   item.element.style.visibility=shown?'visible':'hidden'
+   const shift=shown?visible.offsets?.get(item.id):0
+   item.element.style.marginLeft=shift?`${Math.round(shift)}px`:''
+  }
  }
  clickRef.current=onClick
  pinClickRef.current=onPinClick
@@ -289,7 +301,7 @@ export default function SatelliteMap({
    else map.setView(BRAZIL_VIEW.center,BRAZIL_VIEW.zoom)
   }
   // Live GPS, status updates and pin selection must preserve the user's zoom.
-  if(fit&&!restoredViewRef.current&&(!initialFitRef.current||!previousFitRef.current)&&(everything.length||start)){
+  if(fit&&!restoredViewRef.current&&!userMovedRef.current&&(!initialFitRef.current||!previousFitRef.current)&&(everything.length||start)){
    fitRef.current();initialFitRef.current=true
   }
   previousFitRef.current=fit
@@ -308,6 +320,7 @@ export default function SatelliteMap({
   setMapStatus('loading')
   initialFitRef.current=false
   restoredViewRef.current=false
+  userMovedRef.current=false
   baseRenderRef.current=null;referenceRenderRef.current=new Map()
   selectionRef.current=null
   import('leaflet').then(module=>{
@@ -324,6 +337,12 @@ export default function SatelliteMap({
    map.on('click',event=>clickRef.current?.({lat:Number(event.latlng.lat.toFixed(6)),lng:Number(event.latlng.lng.toFixed(6))}))
    mapRef.current=map
    map.on('moveend zoomend resize',()=>layoutLabelsRef.current())
+   const markUserMove=()=>{userMovedRef.current=true}
+   map.on('dragstart',markUserMove)
+   if(typeof container.current?.addEventListener==='function'){
+    container.current.addEventListener('wheel',markUserMove,{passive:true})
+    container.current.addEventListener('click',event=>{if(event.target?.closest?.('.leaflet-control-zoom'))markUserMove()},true)
+   }
    map.zoomControl?.setPosition('topright')
    // Dentro de um <details> fechado o mapa nasce com 0px; quando abre, o
    // Leaflet precisa ser avisado para buscar os tiles do tamanho real.

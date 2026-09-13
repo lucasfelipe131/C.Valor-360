@@ -4,6 +4,7 @@ import SatelliteMap from './SatelliteMap'
 import useRouteTracking from './useRouteTracking'
 import {buildDayItinerary,getNearbySuggestions,proposeRouteOrder} from '../../lib/visit-route'
 import {routeDayPath,routeRequest,routeTimeZone} from '../../lib/visit-route-api'
+import {useNavigationGuard} from '../../lib/use-navigation-guard'
 import '../../val-visit-routes.css'
 
 const today=()=>{const now=new Date();return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`}
@@ -44,6 +45,9 @@ export default function RouteMap({visits=[],clients=[],storageScope='',initialSt
  const selectedKey=useRef('')
  const generation=useRef(0)
  const tracking=useRouteTracking({date,storageScope,onTrace:setTrace,onPosition:setPosition,onError:setError})
+ // Sair da aba do mapa com o GPS ligado encerrava a gravacao do percurso sem uma palavra: o
+ // consultor tocava em outra aba e o percurso do dia parava ali, em silencio.
+ useNavigationGuard(tracking.tracking,{busy:tracking.busy,question:'A gravação do percurso por GPS está ativa e será encerrada ao sair desta tela. Encerrar a gravação e sair?',onBlocked:()=>setNotice('Aguarde a gravação do percurso responder antes de trocar de tela.')})
  const stops=useMemo(()=>buildDayItinerary({visits,clients,date,orderedIds,allowManualOrder:true}),[visits,clients,date,orderedIds])
  const suggestions=useMemo(()=>getNearbySuggestions({stops,clients,origin:date===today()?position:null,maxKm,limit:4}),[stops,clients,position,maxKm,date])
  const selected=stops.find(stop=>String(stop.visitId)===selectedId)
@@ -58,8 +62,12 @@ export default function RouteMap({visits=[],clients=[],storageScope='',initialSt
  const drivingInput={clientIds:drivingIds,...(drivingOrigin?{origin:{lat:drivingOrigin.lat,lng:drivingOrigin.lng}}:{})}
  const drivingSignature=JSON.stringify(drivingInput)
  const pins=useMemo(()=>[
-  ...visibleProperties.filter(item=>item.location).map(item=>({id:`property:${item.id}`,...item.location,propertyPhotoUrl:item.propertyPhotoUrl,producerPhotoUrl:item.producerPhotoUrl,label:'',title:`${item.producerName} · ${item.name}`,caption:showNames?`${item.producerName}${item.isDemo?' · DEMO':''}`:null})),
-  ...stops.filter(stop=>stop.location).map(stop=>({id:String(stop.visitId),...stop.location,label:String(stop.order),title:stop.name,tone:stop.tone,caption:showNames&&!visibleProperties.some(item=>String(item.clientId)===String(stop.clientId)&&item.location?.lat===stop.location.lat&&item.location?.lng===stop.location.lng)?`${stop.order}. ${stop.name}`:null})),
+  // Quando a parada do dia e a propriedade caem no mesmo ponto, so um nome pode aparecer. Antes o
+  // silenciado era o da PARADA — e como o pino numerado fica por cima do pino da propriedade, o
+  // produtor com visita agendada no dia era justamente o unico que ficava sem nome no mapa.
+  // Agora quem cala e a propriedade: o nome que sobra e o mais informativo ("3. Joao Pereira").
+  ...visibleProperties.filter(item=>item.location).map(item=>({id:`property:${item.id}`,...item.location,propertyPhotoUrl:item.propertyPhotoUrl,producerPhotoUrl:item.producerPhotoUrl,label:'',title:`${item.producerName} · ${item.name}`,caption:showNames&&!stops.some(stop=>stop.location&&String(stop.clientId)===String(item.clientId)&&stop.location.lat===item.location.lat&&stop.location.lng===item.location.lng)?`${item.producerName}${item.isDemo?' · DEMO':''}`:null})),
+  ...stops.filter(stop=>stop.location).map(stop=>({id:String(stop.visitId),...stop.location,label:String(stop.order),title:stop.name,tone:stop.tone,caption:showNames?`${stop.order}. ${stop.name}`:null})),
   ...suggestions.map(item=>({id:`suggestion:${item.clientId}`,...item.location,label:'+',title:`${item.name} · Sugestão`,tone:'suggested'})),
   ...(position&&date===today()?[{id:'my-position',...position,label:'',title:'Minha posição',tone:'position'}]:[])
  ],[stops,suggestions,position,date,properties,search,showNames])

@@ -18,7 +18,18 @@ test('nearby labels never overlap, selected label wins and more labels return af
  assert.deepEqual([...visiblePinLabels(entries,[],bounds)],['b','c'])
  assert.deepEqual([...visiblePinLabels([{...entries[0],active:true},...entries.slice(1)],[],bounds)],['a','c'])
  assert.equal(visiblePinLabels([entries[0],{...entries[1],rect:rect(140,50)}, {...entries[2],rect:rect(250,50)}],[],bounds).size,3)
- assert.equal(visiblePinLabels([{id:'offscreen',rect:rect(380,50)}],[],bounds).size,0)
+ // MAPA-003: o rótulo é centrado no pino; descartar o que passasse da borda deixava o pino mais à
+ // direita sem nome — no telefone, com a tela estreita, isso acontecia sempre. Agora ele desliza
+ // para dentro do mapa e o deslocamento aplicado sai em `offsets`.
+ const borda=visiblePinLabels([{id:'offscreen',rect:rect(380,50)}],[],bounds)
+ assert.equal(borda.size,1)
+ assert.equal(borda.offsets.get('offscreen'),-90)
+ const esquerda=visiblePinLabels([{id:'left',rect:rect(-30,50)}],[],bounds)
+ assert.equal(esquerda.offsets.get('left'),30)
+ // Rótulo mais largo que o mapa não cabe de jeito nenhum: continua escondido.
+ assert.equal(visiblePinLabels([{id:'gigante',rect:rect(10,50,500)}],[],bounds).size,0)
+ // Fora da faixa vertical continua escondido: não há para onde deslizar.
+ assert.equal(visiblePinLabels([{id:'abaixo',rect:rect(30,900)}],[],bounds).size,0)
  assert.equal(visiblePinLabels(entries,[{id:'other-pin',rect:rect(90,45,34,40)}],bounds).has('b'),false)
 })
 
