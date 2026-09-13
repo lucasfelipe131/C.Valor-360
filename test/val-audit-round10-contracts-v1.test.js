@@ -10,6 +10,7 @@ import {recognizeQuestionnaire} from '../src/lib/smart-import.js'
 import matrix from '../src/data/profile-matrix.json' with {type:'json'}
 import {buildGrainOpportunities} from '../server/grain-intelligence.js'
 import {dateOnly} from '../server/grain-repository.js'
+import {buildCommitmentLadders} from '../server/commitment-ladder.js'
 
 const agora=new Date('2026-09-13T12:00:00Z')
 const intencao=extra=>({id:'i1',clientId:'ivo',clientName:'Ivo Dallagnol',commodity:'soja',direction:'sell',season:'2026/27',
@@ -179,4 +180,79 @@ test('Preparação de visita — a preparação devolve os compromissos já assu
  const repo=readFileSync(new URL('../server/repository.js',import.meta.url),'utf8')
  assert.match(repo,/AND commitment\.action_id=\$3 AND commitment\.status<>'CANCELLED'/)
  assert.match(repo,/const already=commitment\.action_id\?store\.val\.commitments\.find\(/)
+})
+
+// ESC-01: o aceite era inferido por regex sobre JSON.stringify do registro inteiro. A nota do
+// consultor "Produtor recusou. Proposta não aceita." casava /proposta.*aceit/ e o degrau "Proposta
+// condicionada aceita" aparecia como Confirmado — em cima de uma recusa.
+test('Escada — recusa escrita pelo consultor não confirma degrau nenhum',()=>{
+ const recusa=buildCommitmentLadders({opportunities:[{id:'o1',title:'Programa de soja',stage:'Proposta',estimated_value:180000,
+  evidence:[{type:'opportunity_workspace_event',note:'Produtor recusou. Proposta não aceita: o custo por hectare está acima do que ele paga hoje.'}]}]})
+ const escada=recusa.ladders[0]
+ assert.equal(escada.steps.every(step=>step.status!=='confirmed'),true,JSON.stringify(escada.steps.map(s=>[s.id,s.status])))
+ assert.equal(escada.currentConfirmedCount,0)
+})
+
+test('Escada — nem a frase afirmativa em texto livre confirma: só o marcador tipado',()=>{
+ const texto=buildCommitmentLadders({opportunities:[{id:'o1',title:'Programa de soja',stage:'Proposta',
+  evidence:[{type:'opportunity_workspace_event',note:'Proposta condicionada aceita pelo produtor.'}]}]})
+ assert.equal(texto.ladders[0].currentConfirmedCount,0)
+ const tipado=buildCommitmentLadders({opportunities:[{id:'o1',title:'Programa de soja',stage:'Proposta',
+  evidence:[{id:'ev-1',type:'conditional_proposal_agreed'}]}]})
+ assert.equal(tipado.ladders[0].steps.find(step=>step.id==='conditional_proposal_agreed').status,'confirmed')
+})
+
+// ESC-02: o quadro grava perda como etapa 'Fechado' + status 'lost'. A escada olhava só o texto da
+// etapa e deixava um negócio perdido de R$ 180.000 como oportunidade viva, com compromisso a cobrar.
+test('Escada — negócio perdido pelo resultado gravado sai da escada',()=>{
+ const perdido={id:'o1',title:'Programa de fertilidade',stage:'Fechado',estimated_value:180000,
+  evidence:[{type:'opportunity_workspace_v1',status:'lost',lossReason:'Produtor fechou com o concorrente por preço.'}]}
+ const viva={id:'o2',title:'Renovação de fungicida',stage:'Proposta',estimated_value:90000,evidence:[]}
+ const result=buildCommitmentLadders({opportunities:[perdido,viva]})
+ assert.deepEqual(result.ladders.map(item=>item.opportunityId),['o2'])
+ assert.equal(result.closedExcludedCount,1)
+ // Ganho continua na escada, com a decisão formalizada.
+ const ganho={id:'o3',title:'Programa ganho',stage:'Fechado',estimated_value:70000,evidence:[{type:'opportunity_workspace_v1',status:'won'}]}
+ const comGanho=buildCommitmentLadders({opportunities:[ganho]})
+ assert.equal(comGanho.ladders[0].steps.find(step=>step.id==='decision_formalized').status,'confirmed')
+ assert.equal(comGanho.ladders[0].audit.lost,false)
+})
+
+// ESC-04: com 8 oportunidades a escada devolvia 6 e sumia com 2 sem avisar.
+test('Escada — o corte em seis escadas não é silencioso',()=>{
+ const muitas=Array.from({length:8},(_,index)=>({id:`o${index}`,title:`Oportunidade ${index}`,stage:'Proposta',estimated_value:1000*(index+1),evidence:[]}))
+ const result=buildCommitmentLadders({opportunities:muitas})
+ assert.equal(result.ladders.length,6)
+ assert.equal(result.totalOpportunities,8)
+ assert.equal(result.shownCount,6)
+ assert.equal(result.hiddenCount,2)
+})
+
+// ESC-05: text(value,max) recebia um texto de reserva no lugar do comprimento — slice(0,NaN)
+// devolvia '' e a frase chegava como 'A etapa "" sugere avanço'.
+test('Escada — a frase de origem do degrau nomeia a etapa',()=>{
+ const result=buildCommitmentLadders({opportunities:[{id:'o1',title:'Sem evidência',stage:'Negociação',evidence:[]}]})
+ const indicado=result.ladders[0].steps.find(step=>step.status==='indicated')
+ assert.match(indicado.stageBasis,/A etapa “Negociação” sugere avanço/)
+ const semEtapa=buildCommitmentLadders({opportunities:[{id:'o2',title:'Sem etapa',stage:'',evidence:[{id:'e',type:'context_confirmed'},{id:'f',type:'proof_agreed'},{id:'g',type:'pilot_or_comparison_agreed'}]}]})
+ const indicadoSemEtapa=semEtapa.ladders[0].steps.find(step=>step.status==='indicated')
+ if(indicadoSemEtapa)assert.match(indicadoSemEtapa.stageBasis,/A etapa “não informada” sugere avanço/)
+})
+
+// CONV-02 / MDM-01 / OBJ-01: o Estúdio de Conversão buscava /api/clients/:id/context, que devolve o
+// complemento técnico e nunca teve conversionInnovations. Os seis painéis recebiam undefined e a
+// tela dizia "Registre uma oportunidade" para um produtor que já tinha oportunidade registrada.
+test('Estúdio de Conversão — a tela busca a rota que realmente monta o dossiê',()=>{
+ const tela=readFileSync(new URL('../src/components/ConversionOpportunityStudio.jsx',import.meta.url),'utf8')
+ assert.equal((tela.match(/\/conversion-studio`/g)||[]).length,2)
+ assert.doesNotMatch(tela,/\$\{encodeURIComponent\(client\.id\)\}\/context`/)
+ const servidor=readFileSync(new URL('../server.js',import.meta.url),'utf8')
+ assert.match(servidor,/const studioMatch=url\.pathname\.match\(\/\^\\\/api\\\/clients\\\/\(\[\^\/\]\+\)\\\/conversion-studio\$\/\)/)
+ // A rota do Estúdio usa getClientContext (o único ponto onde conversionInnovations é montado)...
+ assert.match(servidor,/objective:'conversion_studio'/)
+ assert.match(servidor,/conversionInnovations:context\.conversionInnovations\|\|\{\},opportunities:context\.opportunities\|\|\[\]/)
+ // ...e a rota do Cliente 360 continua barata, com getTechnicalContext.
+ assert.match(servidor,/if\(contextMatch&&request\.method==='GET'\)return json\(response,200,\{context:await repository\.getTechnicalContext/)
+ // E ela é autenticada como todas as outras rotas de produtor.
+ assert.match(servidor,/context\|conversion-studio\|overview\|property\|workspace\|season-plans/)
 })

@@ -18,10 +18,10 @@ export default function ConversionOpportunityStudio({clients=[],onClient,onPrepa
  useEffect(()=>{if(!selectedId&&clients[0]?.id)setSelectedId(clients[0].id)},[clients,selectedId])
  useEffect(()=>{
   if(!client?.id)return
-  run(({signal})=>fetchJsonResource(`/api/clients/${encodeURIComponent(client.id)}/context`,{signal,fallbackMessage:'Não foi possível carregar o dossiê deste produtor.'}),{keepData:false})
+  run(({signal})=>fetchJsonResource(`/api/clients/${encodeURIComponent(client.id)}/conversion-studio`,{signal,fallbackMessage:'Não foi possível carregar o dossiê deste produtor.'}),{keepData:false})
  },[client?.id,run])
 
- const reload=()=>client?.id&&run(({signal})=>fetchJsonResource(`/api/clients/${encodeURIComponent(client.id)}/context`,{signal,fallbackMessage:'Não foi possível atualizar o dossiê deste produtor.'}),{keepData:true})
+ const reload=()=>client?.id&&run(({signal})=>fetchJsonResource(`/api/clients/${encodeURIComponent(client.id)}/conversion-studio`,{signal,fallbackMessage:'Não foi possível atualizar o dossiê deste produtor.'}),{keepData:true})
  const selectClient=event=>{
   const id=event.target.value
   setSelectedId(id)
