@@ -295,3 +295,35 @@ test('Calibração — falta de medição não vira 0%, e o 0% medido continua a
  assert.equal(percent(0.42),'42%')
  assert.equal(percent(1),'100%')
 })
+
+// CONV-01: radarCandidateScore olha oportunidade, visita, potencial e recência — nunca compromisso.
+// Uma conta que só tem compromisso vencido pontuava ~0, caía fora dos 24 contextos carregados, e o
+// cartão ACT_NOW "Compromisso vencido" (prioridade 92, a mais alta do produto) nunca era gerado.
+// Medido: com 24 produtores o cartão aparecia, com 25 sumia.
+test('Radar — conta com compromisso vencido entra na pré-seleção mesmo em carteira grande',()=>{
+ const fonte=readFileSync(new URL('../server/conversion-bootstrap.js',import.meta.url),'utf8')
+ assert.match(fonte,/const overdueIds=list\(intelligence\?\.overdueCommitmentClientIds\)\.slice\(0,MAX_OVERDUE_PRESELECTED\)/)
+ assert.match(fonte,/const selectedIds=new Set\(\[\.\.\.list\(cached\?\.radar\?\.items\|\|preliminary\.items\)\.map\(item=>item\.clientId\),\.\.\.overdueIds,/)
+ // Teto próprio: cada id extra é um contexto completo por requisição.
+ assert.match(fonte,/const MAX_OVERDUE_PRESELECTED=12/)
+ // Ordenado pelo prazo mais estourado primeiro, e falha de leitura não derruba o radar.
+ assert.match(fonte,/\.sort\(\(left,right\)=>new Date\(left\.due_at\|\|left\.dueAt\|\|0\)-new Date\(right\.due_at\|\|right\.dueAt\|\|0\)\)/)
+ assert.match(fonte,/\}catch\{return \[\]\}/)
+ // A consulta fica no caminho do radar, não dentro de getIntelligence.
+ assert.match(fonte,/intelligence\.overdueCommitmentClientIds=await overdueCommitmentClients\(this,ownerId,now\)/)
+ const repo=readFileSync(new URL('../server/repository.js',import.meta.url),'utf8')
+ assert.doesNotMatch(repo,/overdueCommitmentClientIds/)
+})
+
+test('Radar — o cache de 10 minutos enxerga a mudança de compromissos',()=>{
+ const fonte=readFileSync(new URL('../server/conversion-bootstrap.js',import.meta.url),'utf8')
+ // Sem os compromissos no fingerprint, a seleção mudaria sem mudar a chave e o cache serviria o
+ // radar antigo — a correção pareceria intermitente.
+ const impressao=fonte.match(/function radarFingerprint\([\s\S]*?digest\('hex'\)\.slice\(0,20\)/)[0]
+ assert.match(impressao,/commitments:list\(intelligence\?\.overdueCommitmentClientIds\)/)
+})
+
+test('Radar — o que não coube no enriquecimento é contado',()=>{
+ const fonte=readFileSync(new URL('../server/conversion-bootstrap.js',import.meta.url),'utf8')
+ assert.match(fonte,/finalRadar\.contextsSkipped=Math\.max\(0,allClients\.length-contexts\.length\)/)
+})

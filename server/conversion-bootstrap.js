@@ -18,6 +18,7 @@ import {attachExecutionComposition} from './execution/composition.js'
 import {aiReasoningResultVersion,attachAIReasoning,valResponseQualityVersion} from './ai-reasoning/index.js'
 import {observe} from './observability.js'
 import {normalizeConversationState} from './decision-copilot/conversation-state.js'
+import {commitmentIsOverdue} from './execution/commitment.js'
 
 const PATCHED=Symbol.for('valor360.conversion-core.patched')
 export const conversionCompositionVersion='conversion-bootstrap-v1'
@@ -63,6 +64,20 @@ async function raceConversionOperation(signal,operation){
   }
 }
 
+const MAX_OVERDUE_PRESELECTED=12
+// Ordenado pelo prazo mais estourado primeiro: se houver mais contas vencidas do que o teto, as que
+// entram sao as que esperam ha mais tempo. Falha de leitura nunca derruba o radar — no pior caso a
+// selecao volta a ser a de antes.
+async function overdueCommitmentClients(repository,ownerId,now){
+  try{
+    const commitments=await repository.listCommitments({ownerId})
+    return [...new Map(list(commitments)
+      .filter(item=>commitmentIsOverdue(item,now))
+      .sort((left,right)=>new Date(left.due_at||left.dueAt||0)-new Date(right.due_at||right.dueAt||0))
+      .map(item=>[String(item.client_id||item.clientId||''),true]))
+      .keys()].filter(Boolean)
+  }catch{return []}
+}
 function radarPartialContext(client,intelligence){
   const id=String(client?.id||'')
   return {
@@ -92,7 +107,10 @@ function radarFingerprint(intelligence,ownerId,now){
     day:new Date(now).toISOString().slice(0,10),ownerId:String(ownerId||'demo'),
     clients:list(intelligence?.clients).map(item=>[item.id,item.profileUpdatedAt,item.commercial?.openPotential]),
     opportunities:list(intelligence?.opportunities).map(item=>[item.id,radarClientKey(item),item.stage,item.nextActionAt||item.next_action_at,item.updatedAt||item.updated_at]),
-    visits:list(intelligence?.visits).map(item=>[item.id,radarClientKey(item),item.scheduledAt||item.scheduled_at,item.status,item.updatedAt||item.updated_at])
+    visits:list(intelligence?.visits).map(item=>[item.id,radarClientKey(item),item.scheduledAt||item.scheduled_at,item.status,item.updatedAt||item.updated_at]),
+    // Sem os compromissos aqui, a inclusao forcada abaixo mudaria a selecao sem mudar a chave: o
+    // cache de 10 minutos continuaria servindo o radar antigo e a correcao pareceria intermitente.
+    commitments:list(intelligence?.overdueCommitmentClientIds)
   })).digest('hex').slice(0,20)
 }
 
@@ -172,6 +190,10 @@ export function installConversionComposition(){
   ValRepository.prototype.getIntelligence=async function intelligenceWithPortfolioRadar(ownerId,options={}){
     const intelligence=await originalGetIntelligence.call(this,ownerId)
     const now=Date.now()
+    // A consulta de compromissos fica AQUI, no caminho do radar, e nao dentro de getIntelligence:
+    // getIntelligence e chamado por varias rotas que nem usam radar (workspace do produtor, safras,
+    // rota do dia, quadro de oportunidades) e nao devem pagar por isto.
+    intelligence.overdueCommitmentClientIds=await overdueCommitmentClients(this,ownerId,now)
     const fingerprint=radarFingerprint(intelligence,ownerId,now)
     const cacheKey=`${String(this.tenantId||'tenant')}:${String(ownerId||'demo')}:${fingerprint}`
     const cached=radarCache.get(cacheKey)
@@ -180,7 +202,14 @@ export function installConversionComposition(){
     const partialContexts=allClients.map(client=>radarPartialContext(client,intelligence))
     const preliminary=buildPortfolioRadar(partialContexts,{now,maxItems:5})
     const ordered=allClients.map(client=>({client,score:radarCandidateScore(client,intelligence,now)})).sort((a,b)=>b.score-a.score||String(a.client.name||'').localeCompare(String(b.client.name||''),'pt-BR'))
-    const selectedIds=new Set([...list(cached?.radar?.items||preliminary.items).map(item=>item.clientId),...ordered.slice(0,24).map(item=>String(item.client.id))])
+    // radarCandidateScore olha oportunidade, visita, potencial e recencia — nunca compromisso. Uma
+    // conta que so tem compromisso VENCIDO pontua ~0, cai fora dos 24 contextos carregados e o
+    // cartao ACT_NOW "Compromisso vencido" (prioridade 92, a mais alta do produto) nunca chega a
+    // ser gerado. Medido: com 24 produtores o cartao aparece, com 25 some. Estas contas entram por
+    // um caminho proprio, com teto proprio, para nao trocar um defeito de correcao por um de
+    // latencia — cada id extra e um contexto completo carregado por requisicao.
+    const overdueIds=list(intelligence?.overdueCommitmentClientIds).slice(0,MAX_OVERDUE_PRESELECTED)
+    const selectedIds=new Set([...list(cached?.radar?.items||preliminary.items).map(item=>item.clientId),...overdueIds,...ordered.slice(0,24).map(item=>String(item.client.id))])
     const selectedClients=allClients.filter(client=>selectedIds.has(String(client.id)))
     const contexts=await Promise.all(selectedClients.map(async client=>{
       try{return await originalGetClientContext.call(this,{clientId:client.id,client,ownerId,contextRequest:{objective:'portfolio_attention',actorRole:options.role||'consultant',scope:'own_portfolio'}})}
@@ -192,6 +221,7 @@ export function installConversionComposition(){
     finalRadar.considered=allClients.length
     finalRadar.enriched=contexts.length
     finalRadar.policy={...finalRadar.policy,visibility:'consultant_and_manager',portfolioWidePreselection:true}
+    finalRadar.contextsSkipped=Math.max(0,allClients.length-contexts.length)
     for(const [key,value] of radarCache)if(value.expiresAt<=now)radarCache.delete(key)
     radarCache.set(cacheKey,{expiresAt:now+RADAR_CACHE_TTL_MS,radar:finalRadar})
     const insights=buildInsightFeed({organizationId:this.tenantId,actor:{id:ownerId||'demo',role:options.role||'consultant'},contexts,radar:finalRadar,now,maxItems:5})
