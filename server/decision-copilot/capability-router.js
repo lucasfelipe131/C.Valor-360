@@ -1652,7 +1652,13 @@ export function buildFastClientResponse({facts={},presentationOverride=null,mess
  // A pergunta entrou na allowlist de fatos estruturados ("quanto ele comprou?" -> LATEST_PURCHASE) e a
  // resposta e o template daquele fato: a relevancia foi atestada pelo roteador, e o overlap lexical
  // ("comprou" x "compra") nao pode derrubar um fato integro. Toda barreira de evidencia continua.
- const structuredFactAnswer=Boolean(!evaluatedGrounding.passed&&presentation.primaryFound&&evaluatedGrounding.question_relevance==='FAIL'&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
+ // Ausencia DECLARADA e resposta legitima: "Informacao ausente: area de milho nos cadastros e relatos
+ // consultados." nao afirma nada sobre o produtor. O avaliador ja a classifica assim (toda afirmacao
+ // suportada, reason DECLARED_INFORMATION_GAP) e reprova apenas no overlap lexical com a pergunta.
+ // Sem esta excecao, perguntar por uma cultura que o produtor nao tem derrubava a rota com HTTP 400 e
+ // o consultor lia uma mensagem interna em vez de "nao ha registro".
+ const declaredGapAnswer=Boolean(list(evaluatedGrounding.claim_ledger).length&&list(evaluatedGrounding.claim_ledger).every(item=>item?.supported)&&list(evaluatedGrounding.claim_ledger).some(item=>item?.reason_code==='DECLARED_INFORMATION_GAP'))
+ const structuredFactAnswer=Boolean(!evaluatedGrounding.passed&&(presentation.primaryFound||declaredGapAnswer)&&evaluatedGrounding.question_relevance==='FAIL'&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  if(!evaluatedGrounding.passed&&!structuredFactAnswer)throw Object.assign(new Error('A resposta introduziu conteúdo sem suporte no contexto selecionado.'),{code:'RESPONSE_GROUNDING_VIOLATION',grounding:evaluatedGrounding})
  const grounding=structuredFactAnswer?{...evaluatedGrounding,passed:true,question_relevance:'STRUCTURED_FACT'}:evaluatedGrounding
  reasoning.grounding=grounding

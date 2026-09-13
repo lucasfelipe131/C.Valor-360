@@ -906,6 +906,14 @@ async function handleApi(request,response,url){
   }
   const previousFactMessage=[...(requestConversationState.conversation_turns||[])].reverse().find(turn=>turn.role==='user'&&turn.text!==message)?.text||''
   const detailQuery=registeredFactQuery(message,{previousMessage:previousFactMessage})
+  // Nome de produtor que nao resolveu na carteira NAO pode virar o produtor aberto. A consulta de
+  // fato registrado responde numeros crus ("33 ha de Milho, safra 2223V, talhao ..."), entao a troca
+  // era invisivel: a consultora perguntava pelo Sirlei, recebia os hectares do Ivo e nada na frase
+  // dizia de quem era. O resolvedor devolve status NONE (AUTHORIZED_NAME_EVIDENCE_ABSENT) nesse caso,
+  // e nao NOT_FOUND, por isso o 422 mais acima nao alcancava este caminho.
+  if(detailQuery&&['EXPLICIT_NAME','AUTHORIZED_NAME_CANDIDATE'].includes(naturalClientReference.kind)&&conversationResolution?.status!=='RESOLVED'){
+   return json(response,422,{error:`Não encontrei “${clean(naturalClientReference.reference,120)}” na sua carteira autorizada. Confirme o nome do produtor.`,code:'val_client_reference_not_found',conversationId,clarification:{question:'Qual é o nome do produtor na sua carteira?'}})
+  }
   if(detailQuery&&!attachmentIds.length){
    const startedAt=Date.now();latency.start('DATABASE')
    const [context,declared,facts]=await Promise.all([loadAuthorizedContext(),detailQuery.kind==='crop_area'?readProducerSeasons(repository,clientId,scopedOwnerId):Promise.resolve({seasons:[]}),repository.getFastClientFacts({tenantId,ownerId:scopedOwnerId,clientId,dataPath:'REGISTERED_AREA',timeoutMs:config.databaseQueryTimeoutMs})])

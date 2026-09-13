@@ -29,7 +29,7 @@ export function registeredFactPresentation({query,client,declaredSeasons=[],prop
   for(const property of properties)for(const field of list(property.fields))for(const season of list(field.seasons)){
    if(normalized(season.crop)!==query.crop||query.season&&normalized(season.season)!==query.season)continue
    const area=season.areaHa??season.area_ha;if(area===null||area===undefined)continue
-   rows.push({id:`field-season:${field.id}:${season.season}`,source_type:'crop_season',observed_at:season.updated_at||season.created_at,statement:`${area} ha de ${season.crop}, safra ${season.season}, talhão ${field.name||field.id}, propriedade ${property.name||property.id}.`,value:Number(area),period:season.season})
+   rows.push({id:`field-season:${field.id}:${season.season}`,source_type:'crop_season',observed_at:season.updated_at||season.created_at,statement:`${client.name}: ${area} ha de ${season.crop}, safra ${season.season}, talhão ${field.name||field.id}, propriedade ${property.name||property.id}.`,value:Number(area),period:season.season})
   }
  }
  const pattern=query.kind==='hobby'?/hobb(?:y|ies)|passatempo|lazer/i:new RegExp(`\\b${query.crop}\\b`,'i')

@@ -64,6 +64,13 @@ const naturalReferencePatterns=Object.freeze([
 // "quem eu tenho que visitar hoje?" virava a busca por um produtor chamado "quem" e a conversa
 // travava com 422.
 const nonNameReference=/^(?:quem|qual|quais|quantos|quantas|alguem|algu[eé]m|alguns|algumas|todos|todas|ninguem|ningu[eé]m|nada|primeiro|primeira|ultimo|[uú]ltimo|ultima|[uú]ltima|agenda|rota|roteiro|semana|hoje|amanha|amanh[aã]|gente|pessoal|time|equipe)\b/iu
+// Substantivo-entidade SOZINHO ("a fazenda", "o produtor", "essa propriedade") e outra forma de dizer
+// "o produtor aberto", nao o nome de alguem. Precisa casar a referencia INTEIRA: como prefixo isto
+// derrubaria "Fazenda Boa Vista", que e nome de produtor de verdade.
+const bareEntityReference=/^(?:(?:o|a|os|as|esse|essa|este|esta|aquele|aquela|meu|minha|nosso|nossa)\s+)?(?:fazenda|propriedade|produtor|produtora|cliente|conta|lavoura|talh[aã]o|s[ií]tio|granja|ch[aá]cara)$/iu
+// Referencia que TERMINA em pronome e o produtor aberto, nao um nome: o padrao guloso as vezes
+// engole o comeco da frase ("de milho ele" em "quantos hectares de milho ele tem?").
+const pronounTailReference=/(?:^|\s)(?:ele|ela|eles|elas|dele|dela|deles|delas|lhe)$/iu
 const stripReference=value=>{
  let reference=clean(value,220).replace(trailingContext,'').trim()
  reference=reference.replace(/^(?:(?:o|a|ao|[àa]|pro|pra|no|na)\s+)?(?:cliente|produtor|produtora|fazenda|propriedade)\s+/iu,'')
@@ -86,7 +93,7 @@ export function extractNaturalClientReference(message){
   // So depois de descartar a referencia ao produtor atual: interrogativo, quantificador, ordinal e
   // substantivo comum nunca sao nome de produtor. "quem eu tenho que visitar hoje?" virava a busca
   // por um produtor chamado "quem" e a conversa travava com 422.
-  if(nonNameReference.test(reference))return Object.freeze({kind:'NONE',reference:null})
+  if(nonNameReference.test(reference)||bareEntityReference.test(reference)||pronounTailReference.test(reference))return Object.freeze({kind:'NONE',reference:null})
   return Object.freeze({kind,reference})
  }
  if(/\b(?:ele|ela|dele|dela|nele|nela|esse cliente|essa cliente|esse produtor|essa produtora)\b/iu.test(source))return Object.freeze({kind:'CURRENT_CLIENT',reference:source.match(/\b(?:ele|ela|dele|dela|nele|nela|esse cliente|essa cliente|esse produtor|essa produtora)\b/iu)?.[0]||null})
