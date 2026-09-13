@@ -43,5 +43,10 @@ export async function prepareVisitExecution({repository,tenantId,actor,visitId,r
  observe('visit.preparation.completed',{contextSnapshotId:snapshot.context_snapshot_id,behaviorProfileVersion:commercial.behavioral_profile.version,decisionThesisId:preparation.decision_thesis_id,decisionThesisVersion:preparation.decision_thesis_version,valuePlanId:preparation.value_plan_id,valuePlanVersion:preparation.value_plan_version,actionPlanId:actionPlan.action_plan_id,actionPlanVersion:actionPlan.version,modulesCalled:'MCTX,MIC,MDI,MVV,MEX,VIS',durationMs:Math.max(0,Date.now()-started),outcome:'ok'})
  // saveActionPlan transiciona a visita para PREPARED; devolver o objeto lido antes deixava a UI em PLANNED ate um refresh.
  const preparedVisit=await repository.getVisit({tenantId,ownerId,id:visitId}).catch(()=>null)
- return {visit:preparedVisit||visit,context_snapshot_ref:{id:snapshot.context_snapshot_id,version:snapshot.contract_version},behavioral_profile:commercial.behavioral_profile,decision_thesis:commercial.decision_thesis,value_plan:commercial.value_plan,knowledge_retrieval:commercial.knowledge_retrieval,action_plan:stored,preparation}
+ // Reabrir a preparacao devolvia as prioridades sempre como PROPOSED, sem nenhuma referencia ao
+ // compromisso que o consultor ja tinha assumido a partir delas: a tela esquecia, o botao voltava a
+ // "Assumir compromisso" e o segundo clique gravava a mesma pendencia de novo.
+ const existingCommitments=await repository.listCommitments({tenantId,ownerId,clientId:visit.clientId}).catch(()=>[])
+ const planCommitments=existingCommitments.filter(item=>item?.action_id&&String(item.status||'').toUpperCase()!=='CANCELLED'&&(!item.visit_id||String(item.visit_id)===String(visit.id)))
+ return {visit:preparedVisit||visit,commitments:planCommitments,context_snapshot_ref:{id:snapshot.context_snapshot_id,version:snapshot.contract_version},behavioral_profile:commercial.behavioral_profile,decision_thesis:commercial.decision_thesis,value_plan:commercial.value_plan,knowledge_retrieval:commercial.knowledge_retrieval,action_plan:stored,preparation}
 }

@@ -153,3 +153,30 @@ test('Questionário — a troca de aba do Produtor 360 passa pela confirmação'
  // Nenhuma aba escapa da guarda.
  assert.doesNotMatch(fonte,/onClick=\{\(\)=>setMode\('(central|importar)'\)\}/)
 })
+
+// PLAN-01: a bandeira de "compromisso assumido" era uma só para o plano inteiro. Assumir a
+// prioridade 1 rotulava e desabilitava as prioridades 2 e 3, que não tinham compromisso nenhum.
+test('Preparação de visita — o compromisso assumido pertence à ação, não ao plano',()=>{
+ const tela=readFileSync(new URL('../src/components/visit/PrepareVisitSimple.jsx',import.meta.url),'utf8')
+ assert.doesNotMatch(tela,/prepared\.accepted_commitment[^s]/)
+ assert.equal((tela.match(/prepared\.accepted_commitments\?\.\[action\.action_id\]/g)||[]).length,3)
+ const pagina=readFileSync(new URL('../src/pages/Visits.jsx',import.meta.url),'utf8')
+ assert.match(pagina,/accepted_commitments:\{\.\.\.\(current\[visit\.id\]\?\.accepted_commitments\|\|\{\}\),\[action\.action_id\]:payload\.commitment\}/)
+ // Reabrir a preparação reidrata o mapa com o que o servidor já tem gravado.
+ assert.match(pagina,/const withAcceptedCommitments=payload=>/)
+ assert.match(pagina,/\[visit\.id\]:withAcceptedCommitments\(payload\)/)
+})
+
+// PLAN-02: a preparação reaberta não citava o compromisso já assumido, e o segundo clique gravava
+// a mesma pendência de novo na ficha do produtor.
+test('Preparação de visita — a preparação devolve os compromissos já assumidos',()=>{
+ const servico=readFileSync(new URL('../server/execution/service.js',import.meta.url),'utf8')
+ assert.match(servico,/const existingCommitments=await repository\.listCommitments\(\{tenantId,ownerId,clientId:visit\.clientId\}\)/)
+ assert.match(servico,/return \{visit:preparedVisit\|\|visit,commitments:planCommitments,/)
+ // Compromisso cancelado não volta como se estivesse vivo.
+ assert.match(servico,/String\(item\.status\|\|''\)\.toUpperCase\(\)!=='CANCELLED'/)
+ // O mesmo bloqueio existe nos dois caminhos do repositório.
+ const repo=readFileSync(new URL('../server/repository.js',import.meta.url),'utf8')
+ assert.match(repo,/AND commitment\.action_id=\$3 AND commitment\.status<>'CANCELLED'/)
+ assert.match(repo,/const already=commitment\.action_id\?store\.val\.commitments\.find\(/)
+})

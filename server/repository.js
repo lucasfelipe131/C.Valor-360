@@ -1497,6 +1497,10 @@ export class ValRepository{
       if(commitment.visit_id&&!visit)throw domainError('Visita não encontrada na carteira autorizada.',404)
       const plan=commitment.action_plan_id?store.val.actionPlans.find(item=>String(item.action_plan_id)===String(commitment.action_plan_id)&&String(item.tenantId)===String(tenantId)&&String(item.ownerId)===String(ownerId)):null
       if(commitment.action_plan_id&&!plan)throw domainError('ActionPlan não encontrado na carteira autorizada.',404)
+      // Mesma regra do caminho PostgreSQL: uma acao so vira um compromisso vivo. Sem isto, reabrir a
+      // preparacao e clicar de novo duplicava a pendencia na ficha do produtor.
+      const already=commitment.action_id?store.val.commitments.find(item=>String(item.tenantId)===String(tenantId)&&String(item.ownerId)===String(ownerId)&&String(item.client_id)===String(commitment.client_id)&&String(item.action_id||'')===String(commitment.action_id)&&String(item.status||'').toUpperCase()!=='CANCELLED'):null
+      if(already)return already
       const stored={...commitment,tenantId,ownerId,action_plan_id:commitment.action_plan_id||input.action_plan_id||input.actionPlanId||null,updated_at:commitment.created_at};store.val.commitments.push(stored);store.val.commitments=store.val.commitments.slice(-2000);this.saveStore(store);return stored
     }
     try{return await this.db.transaction(async connection=>{
@@ -1505,6 +1509,16 @@ export class ValRepository{
       const actionPlanId=input.action_plan_id??input.actionPlanId??null
       if(actionPlanId){const linked=await connection.query(`SELECT id FROM val_action_plans WHERE tenant_id=$1 AND id=$2 AND client_id=$3 AND owner_user_id=$4 LIMIT 1`,[tenantId,actionPlanId,client.rows[0].id,ownerId]);if(!linked.rowCount)throw domainError('ActionPlan não encontrado na carteira autorizada.',404)}
       if(commitment.opportunity_id){const linked=await connection.query(`SELECT id FROM opportunities WHERE tenant_id=$1 AND id=$2 AND client_id=$3 LIMIT 1`,[tenantId,commitment.opportunity_id,client.rows[0].id]);if(!linked.rowCount)throw domainError('Oportunidade não encontrada para este produtor.',404)}
+      // Reabrir a preparacao gera um plano novo com o MESMO action_id, e o id do compromisso e um
+      // hash que inclui created_at: o segundo clique em "Assumir compromisso" inseria uma linha
+      // nova e a mesma pendencia aparecia duplicada na ficha do produtor, como se fossem dois
+      // acordos com o mesmo produtor. Uma acao so vira um compromisso vivo.
+      if(commitment.action_id){
+        const existing=await connection.query(`SELECT commitment.*,client.external_key client_external_key FROM val_commitments commitment JOIN clients client ON client.tenant_id=commitment.tenant_id AND client.id=commitment.client_id
+          WHERE commitment.tenant_id=$1 AND commitment.client_id=$2 AND commitment.action_id=$3 AND commitment.status<>'CANCELLED'
+          ORDER BY commitment.created_at LIMIT 1`,[tenantId,client.rows[0].id,commitment.action_id])
+        if(existing.rowCount)return commitmentRecord(existing.rows[0])
+      }
       const result=await connection.query(`INSERT INTO val_commitments (id,tenant_id,client_id,visit_id,opportunity_id,action_plan_id,action_id,description,owner_type,owner_id,due_at,status,success_criteria,agreed_with_client,evidence_refs,source_ref,audit,created_at,updated_at,completed_at,cancelled_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$18,$19,$20) RETURNING *`,[commitment.commitment_id,tenantId,client.rows[0].id,commitment.visit_id,commitment.opportunity_id,actionPlanId,commitment.action_id,commitment.description,commitment.owner_type,commitment.owner_id,commitment.due_at,commitment.status,commitment.success_criteria,commitment.agreed_with_client,jsonbParameter(commitment.evidence_refs),commitment.source_ref,jsonbParameter(commitment.audit),commitment.created_at,commitment.completed_at,commitment.cancelled_at])
       return commitmentRecord({...result.rows[0],client_external_key:client.rows[0].external_key})
     })}catch(error){if(error.statusCode)throw error;throw serviceError('O compromisso não pôde ser salvo no PostgreSQL configurado.')}
