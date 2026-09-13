@@ -30,9 +30,15 @@ export function dailyVisitSuggestions({records=[],now=new Date(),timeZone='Ameri
   if(due&&due>today)continue
   // Undated notes remain optional opportunities, never today's obligations.
   const classification=due===today?'DUE_TODAY':due?'OVERDUE':'SUGGESTED'
-  candidates.push({...record,id:`suggestion:${record.sourceId}`,classification,confirmed:false,
-   label:classification==='DUE_TODAY'?'Prazo hoje':classification==='OVERDUE'?'Prazo vencido — confirmar situação':'Sugestão sem data',
-   reason:record.description,focus:classification==='OVERDUE'?`Confirmar se foi resolvido: ${record.description}`:`Retomar: ${record.description}`})
+  // Só compromisso confirmado pelo consultor é pendência registrada. O que veio da leitura do relato
+  // ("Realizar o retorno combinado.") é hipótese do extrator e precisa chegar à tela dizendo isso —
+  // o consultor chegou a relatar que NÃO havia retorno a fazer e mesmo assim via a frase como fato.
+  const attested=record.origin==='COMMITMENT'
+  const label=attested
+   ?classification==='DUE_TODAY'?'Prazo hoje':classification==='OVERDUE'?'Prazo vencido — confirmar situação':'Sugestão sem data'
+   :classification==='DUE_TODAY'?'Prazo hoje — leitura do relato, não confirmada':classification==='OVERDUE'?'Prazo vencido — leitura do relato, não confirmada':'Sugestão do relato — não confirmada'
+  candidates.push({...record,id:`suggestion:${record.sourceId}`,classification,confirmed:false,attested,label,
+   reason:record.description,focus:attested?classification==='OVERDUE'?`Confirmar se foi resolvido: ${record.description}`:`Retomar: ${record.description}`:`Confirmar com o produtor se isto procede: ${record.description}`})
  }
  const rank={DUE_TODAY:0,OVERDUE:1,SUGGESTED:2}
  candidates.sort((a,b)=>rank[a.classification]-rank[b.classification]||text(b.updatedAt).localeCompare(text(a.updatedAt))||text(a.clientName).localeCompare(text(b.clientName)))

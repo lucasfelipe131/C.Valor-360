@@ -37,7 +37,10 @@ test('direct producer preparation opens the focused visit journey while VAL navi
  assert.match(app,/const \[valMode,setValMode\]=useState\(null\)/)
  // A preparacao direta agora carrega a visita escolhida no gesto (options.visitId); sem isso duas
  // visitas futuras do mesmo produtor faziam qualquer linha abrir o roteiro da mais proxima.
- assert.match(app,/const prepareClient=\(c,options=\{\}\)=>\{if\(!c\?\.id\)return;setSelected\(c\);setPrepareVisitClientId\(c\.id\);setPrepareVisitId\(String\(options\?\.visitId\|\|''\)\);[^\n]*setPage\('visits'\)/)
+ // "Registrar visita"/"Preparar visita" saiam do Produtor 360 por setPage cru, sem disparar a guarda:
+ // o formulário de propriedade/safra em edição era descartado sem pergunta. A preparação continua
+ // carregando a visita escolhida no gesto (options.visitId), agora atrás da guarda.
+ assert.match(app,/const prepareClient=\(c,options=\{\}\)=>\{if\(!c\?\.id\)return;if\(!permitNavigation\(\)\)return;setSelected\(c\);setPrepareVisitClientId\(c\.id\);setPrepareVisitId\(String\(options\?\.visitId\|\|''\)\);[^\n]*setPage\('visits'\)/)
  assert.match(app,/if\(next==='val'\)setValMode\(null\)/)
  assert.match(app,/<ValWorkspace mode=\{valMode\} onModeChange=\{setValMode\}[^>]*onPrepareVisit=\{prepareClient\}/)
  assert.match(app,/<Visits[^>]*initialClientId=\{prepareVisitClientId\} initialVisitId=\{prepareVisitId\}/)

@@ -5,17 +5,20 @@ export async function readDailyVisitSuggestions(repository,ownerId,{now=new Date
  if(!ownerId||!repository.db.configured)throw Object.assign(new Error('Não foi possível consultar os compromissos da carteira.'),{statusCode:503})
  const {rows}=await repository.db.query(`
  SELECT c.external_key AS client_key,c.id AS client_id,c.name AS client_name,
-  k.id::text AS source_id,k.description,k.due_at,k.status,k.updated_at
+  k.id::text AS source_id,k.description,k.due_at,k.status,k.updated_at,'COMMITMENT' AS origin
  FROM val_commitments k JOIN clients c ON c.tenant_id=k.tenant_id AND c.id=k.client_id
  WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active'
  UNION ALL
- SELECT c.external_key,c.id,c.name,'visit:'||v.id::text,v.next_commitment,v.next_action_at,'OPEN',v.updated_at
+ -- visits.next_commitment e a leitura do EXTRATOR do relato, gravada mesmo quando o consultor
+ -- confirmou zero compromissos. Continua alimentando a sugestao (requisito 11), mas carimbada como
+ -- leitura nao confirmada: sem isso a paráfrase do extrator chegava a tela como pendencia registrada.
+ SELECT c.external_key,c.id,c.name,'visit:'||v.id::text,v.next_commitment,v.next_action_at,'OPEN',v.updated_at,'VISIT_REPORT'
  FROM visits v JOIN clients c ON c.tenant_id=v.tenant_id AND c.id=v.client_id
  WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' AND NULLIF(trim(v.next_commitment),'') IS NOT NULL
   AND COALESCE(v.status,'') NOT ILIKE '%cancel%'
   AND NOT EXISTS(SELECT 1 FROM val_commitments k WHERE k.tenant_id=v.tenant_id AND k.visit_id=v.id)
  ORDER BY updated_at DESC LIMIT 3000`,[repository.tenantId,ownerId])
- const records=rows.map(row=>({clientId:String(row.client_key||row.client_id),clientName:row.client_name,sourceId:row.source_id,description:row.description,dueAt:row.due_at,status:row.status,updatedAt:row.updated_at}))
+ const records=rows.map(row=>({clientId:String(row.client_key||row.client_id),clientName:row.client_name,sourceId:row.source_id,description:row.description,dueAt:row.due_at,status:row.status,updatedAt:row.updated_at,origin:row.origin}))
  const interactions=await repository.db.query(`SELECT i.id,i.summary,i.commitments,i.occurred_at,c.id client_id,c.external_key client_key,c.name client_name
   FROM interactions i JOIN clients c ON c.tenant_id=i.tenant_id AND c.id=i.client_id
   WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active'
@@ -24,8 +27,8 @@ export async function readDailyVisitSuggestions(repository,ownerId,{now=new Date
  for(const row of interactions.rows){
   const base={clientId:String(row.client_key||row.client_id),clientName:row.client_name,sourceId:`interaction:${row.id}`,updatedAt:row.occurred_at}
   const commitments=Array.isArray(row.commitments)?row.commitments:[]
-  if(commitments.length)records.push(...commitments.map((item,index)=>({...base,sourceId:`${base.sourceId}:${index}`,description:typeof item==='string'?item:item.description||item.text||'',dueAt:item.due_at||item.dueAt||null,status:item.status||'PROPOSED'})))
-  else records.push(...narrativeFollowups({...base,summary:row.summary}))
+  if(commitments.length)records.push(...commitments.map((item,index)=>({...base,sourceId:`${base.sourceId}:${index}`,description:typeof item==='string'?item:item.description||item.text||'',dueAt:item.due_at||item.dueAt||null,status:item.status||'PROPOSED',origin:'INTERACTION'})))
+  else records.push(...narrativeFollowups({...base,summary:row.summary}).map(item=>({...item,origin:'INTERACTION'})))
  }
  const portfolio=await readRouteProperties(repository,ownerId)
  const suggestions=dailyVisitSuggestions({records,now,timeZone}).map(item=>{

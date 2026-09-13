@@ -159,7 +159,7 @@ export default function App(){
   setPage('client360');if(page==='client360')window.requestAnimationFrame(resetPageViewport)
  }
  const notify=message=>{const text=typeof message==='string'?message:String(message?.message||'Ação concluída.');setToast(text);window.clearTimeout(window.__valorToast);window.__valorToast=window.setTimeout(()=>setToast(''),2800)}
- const prepareClient=(c,options={})=>{if(!c?.id)return;setSelected(c);setPrepareVisitClientId(c.id);setPrepareVisitId(String(options?.visitId||''));if(String(c.id)!==copilotClientRef.current)setCopilotSeed({clientId:c.id,nonce:crypto.randomUUID()});setPage('visits');if(page==='visits')window.requestAnimationFrame(resetPageViewport)}
+ const prepareClient=(c,options={})=>{if(!c?.id)return;if(!permitNavigation())return;setSelected(c);setPrepareVisitClientId(c.id);setPrepareVisitId(String(options?.visitId||''));if(String(c.id)!==copilotClientRef.current)setCopilotSeed({clientId:c.id,nonce:crypto.randomUUID()});setPage('visits');if(page==='visits')window.requestAnimationFrame(resetPageViewport)}
  const openValClient=c=>openClient(c,{tab:'commercial'})
  const updateCopilotPageContext=useCallback(input=>setCopilotPageContext(input?{...input,storageScope:copilotOwnerScope}:null),[copilotOwnerScope])
  const consumeAgroInitialFile=useCallback(file=>setAgroLaunch(current=>{let removed=false;const initialFiles=current.initialFiles.filter(item=>{const candidate=item?.file||item;const match=candidate===file||(!removed&&candidate?.name===file?.name&&candidate?.type===file?.type&&Number(candidate?.size||0)===Number(file?.size||0));if(match&&!removed){removed=true;return false}return true});return initialFiles.length===current.initialFiles.length?current:{...current,initialFiles}}),[])
@@ -249,7 +249,7 @@ export default function App(){
   if(page==='client360'&&action.type==='NAVIGATE'&&action.page==='agro'&&['produtores','mapa'].includes(action.tool)&&(!targetClient||String(targetClient.id)===String(selected?.id))){setProducerTab('map');return {status:'COMPLETED'}}
   if(action.type==='OPEN_CLIENT'){openClient(targetClient,{preserveConversation:true});return {status:'COMPLETED'}}
   if(action.type==='PREPARE_VISIT'){prepareClient(targetClient);return {status:'COMPLETED'}}
-  if(action.type==='NAVIGATE'&&action.page==='visits'&&targetClient){setSelected(targetClient);setPrepareVisitClientId(targetClient.id);setPage('visits');return {status:'COMPLETED'}}
+  if(action.type==='NAVIGATE'&&action.page==='visits'&&targetClient){if(!permitNavigation())return {status:'CANCELLED'};setSelected(targetClient);setPrepareVisitClientId(targetClient.id);setPage('visits');return {status:'COMPLETED'}}
   navigate({page:action.page,clientId:targetClient?.id||'',tool:action.tool,manualPage:action.manualPage,diagnosisMode:action.diagnosisMode,label:action.label,context:{clientId:targetClient?.id||'',tool:action.tool,page:action.manualPage,diagnosisMode:action.diagnosisMode,label:action.label}})
   return {status:'COMPLETED'}
  }
