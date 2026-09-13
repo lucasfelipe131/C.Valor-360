@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {extractNaturalClientReference} from '../server/decision-copilot/producer-entity-resolver.js'
 import {registeredFactPresentation,registeredFactQuery} from '../server/registered-fact-query.js'
 import {evaluateResponseGrounding} from '../server/decision-copilot/response-grounding.js'
+import {validateProfilePhoto} from '../server/profile-photo.js'
+import {readFileSync} from 'node:fs'
 
 // FATO-01: nome de produtor fora da carteira era descartado em silêncio e a consulta rodava sobre o
 // produtor aberto — a frase de talhão não traz nome, então a troca era invisível para o consultor.
@@ -109,4 +111,50 @@ test('Fato registrado — pergunta com safra específica continua sendo consulta
   assert.equal(query.kind,'crop_area',message)
   assert.ok(query.season,message)
  }
+})
+
+// VAL-FOTO-04: conferir só a assinatura deixava passar qualquer coisa. Oito bytes de PNG na frente
+// de um shell script eram aceitos, guardados como foto do produtor e devolvidos depois com
+// Content-Type image/png.
+test('Foto de perfil — conteúdo que não é imagem não passa por assinatura',()=>{
+ const fake=(prefix,corpo)=>Buffer.concat([Buffer.from(prefix),Buffer.from(corpo)])
+ const casos=[
+  ['png',fake([137,80,78,71,13,10,26,10],'#!/bin/sh\nrm -rf /\n'.repeat(20))],
+  ['png',fake([137,80,78,71,13,10,26,10],'A'.repeat(400))],
+  ['jpeg',Buffer.concat([Buffer.from([255,216,255]),Buffer.from('conteudo que nao e imagem '.repeat(10)),Buffer.from([255,217])])]
+ ]
+ for(const [tipo,bytes] of casos)
+  assert.throws(()=>validateProfilePhoto(`data:image/${tipo};base64,${bytes.toString('base64')}`),/não corresponde ao formato/,tipo)
+})
+
+test('Foto de perfil — imagem de verdade continua sendo aceita',()=>{
+ const png='iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j4N8AAAAASUVORK5CYII='
+ const jpeg='/9j/4AAQSkZJRgABAQEAYABgAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/2wBDAQkJCQwLDBgNDRgyIRwhMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjL/wAARCAABAAEDASIAAhEBAxEB/8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2JyggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/9oACAEBAAA/AP/Z'
+ assert.equal(validateProfilePhoto('data:image/png;base64,'+png),'data:image/png;base64,'+png)
+ assert.equal(validateProfilePhoto('data:image/jpeg;base64,'+jpeg),'data:image/jpeg;base64,'+jpeg)
+ assert.equal(validateProfilePhoto(null),null)
+})
+
+// VAL-FOTO-02 e VAL-FOTO-03: o editor não tinha saída e o erro do navegador chegava em inglês.
+test('Foto de perfil — o editor tem como desistir e a falha é explicada em português',()=>{
+ const editor=readFileSync(new URL('../src/components/ProfileEditor.jsx',import.meta.url),'utf8')
+ assert.match(editor,/Cancelar edição/)
+ assert.match(editor,/const cancel=useCallback\(\(\)=>\{if\(busy\)return;setProfile\(saved\)/)
+ // createImageBitmap devolve "The source image could not be decoded": nunca vai cru para a tela.
+ assert.match(editor,/catch\{throw new Error\('Não foi possível abrir esta imagem/)
+ // Falha na leitura inicial deixava a tela sem perfil e sem botão nenhum.
+ assert.match(editor,/Tentar de novo/)
+})
+
+// VAL-FOTO-05: a foto de "Meu perfil" era gravada e nunca aparecia em lugar nenhum do produto.
+test('Foto de perfil — a foto da conta aparece na topbar e na barra lateral',()=>{
+ for(const arquivo of ['../src/components/Topbar.jsx','../src/components/Sidebar.jsx']){
+  const fonte=readFileSync(new URL(arquivo,import.meta.url),'utf8')
+  assert.match(fonte,/useAccountPhoto/,arquivo)
+  assert.match(fonte,/accountPhoto\?<img src=\{accountPhoto\}/,arquivo)
+ }
+ const hook=readFileSync(new URL('../src/lib/use-account-photo.js',import.meta.url),'utf8')
+ // Recarrega no mesmo evento que o editor já dispara ao salvar.
+ assert.match(hook,/val:profile-updated/)
+ assert.match(hook,/startsWith\('data:image\//)
 })

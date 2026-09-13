@@ -2,6 +2,7 @@ import React,{useEffect,useState} from 'react'
 import {BrainCircuit,ChevronsLeft,ChevronsRight,LayoutDashboard} from 'lucide-react'
 import Logo from './Logo'
 import {WORKSPACES,isNavItemActive,settingsModules,workspaceModules} from '../lib/val-workspaces'
+import {useAccountPhoto} from '../lib/use-account-photo'
 
 // Sidebar da Mescla 09: marca, workspaces, subnavegação do workspace ativo,
 // configurações sempre à mão e o Copiloto como atalho permanente no rodapé.
@@ -14,6 +15,7 @@ export default function Sidebar({page,tool,currentUser,workspace,onWorkspaceChan
  useEffect(()=>{try{localStorage.setItem(COLLAPSE_KEY,collapsed?'1':'0')}catch{}},[collapsed])
  const role=currentUser?.role
  const account=currentUser?.email||'Ambiente demonstrativo'
+ const accountPhoto=useAccountPhoto(Boolean(currentUser?.id))
  const initials=currentUser?.email?currentUser.email.split('@')[0].split(/[._-]/).slice(0,2).map(part=>part[0]).join('').toUpperCase():'VA'
  const modules=workspace?workspaceModules(workspace,role):[]
  const activeSpace=WORKSPACES.find(item=>item.id===workspace)
@@ -69,7 +71,7 @@ export default function Sidebar({page,tool,currentUser,workspace,onWorkspaceChan
   </>}
 
   <div className="sidebar-foot">
-   <div className="user-card"><div className="user-avatar">{initials}</div><div><strong>{account}</strong><small>{currentUser?.demo?'Modo demonstrativo':'Acesso protegido do piloto'}</small></div></div>
+   <div className="user-card"><div className="user-avatar">{accountPhoto?<img src={accountPhoto} alt="" aria-hidden="true"/>:initials}</div><div><strong>{account}</strong><small>{currentUser?.demo?'Modo demonstrativo':'Acesso protegido do piloto'}</small></div></div>
    <button type="button" className={`sidebar-copilot${page==='copilot'?' active':''}`} title={collapsed?'Acessar Copiloto':undefined} onClick={()=>onOpenVal?.()}>
     <span className="nav-icon"><BrainCircuit size={17}/></span>
     <span><b>Acessar Copiloto</b><small>Atalho rápido</small></span>

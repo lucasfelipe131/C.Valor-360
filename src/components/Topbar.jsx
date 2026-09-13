@@ -3,6 +3,7 @@ import {Bell,ChevronRight,Search,X} from 'lucide-react'
 import Logo from './Logo'
 import {MODULES,contextTrail} from '../lib/val-workspaces'
 import {AGRO_TOOLS} from '../lib/agro-tools'
+import {useAccountPhoto} from '../lib/use-account-photo'
 
 const normalize=value=>String(value??'').toLocaleLowerCase('pt-BR').normalize('NFD').replace(/[̀-ͯ]/g,'')
 
@@ -38,6 +39,7 @@ const buildIndex=({clients,visits,opportunities,role})=>{
 }
 
 export default function Topbar({onBack,backLabel,title,subtitle,onNavigate,onOpenVal,workspace,page,client,clients,visits,opportunities,currentUser,onOpenClient}){
+ const accountPhoto=useAccountPhoto(Boolean(currentUser?.id))
  const initials=String(currentUser?.name||currentUser?.email||'VA').replace(/@.*$/,'').split(/[\s._-]+/).filter(Boolean).slice(0,2).map(part=>part[0]).join('').toUpperCase()||'VA'
  // O sino conta pendência real de ciclo de vida — não é contador decorativo.
  const alerts=(visits||[]).filter(visit=>{
@@ -110,7 +112,7 @@ export default function Topbar({onBack,backLabel,title,subtitle,onNavigate,onOpe
     <Bell size={19}/>
     {alerts>0&&<i className="icon-badge" aria-hidden="true">{alerts>9?'9+':alerts}</i>}
    </button>
-   <button type="button" className="topbar-avatar" aria-label="Abrir preferências da conta" onClick={()=>onNavigate?.('settings')}>{initials}</button>
+   <button type="button" className="topbar-avatar" aria-label="Abrir preferências da conta" onClick={()=>onNavigate?.('settings')}>{accountPhoto?<img src={accountPhoto} alt="" aria-hidden="true"/>:initials}</button>
   </div>
   {open&&<div className="global-search" role="dialog" aria-label="Busca global">
    <div className="global-search-field">

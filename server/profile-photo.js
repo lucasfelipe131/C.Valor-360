@@ -6,9 +6,59 @@ export function validateProfilePhoto(value){
  if(!match)fail('Use uma imagem JPEG ou PNG.')
  const bytes=Buffer.from(match[2],'base64')
  if(bytes.length>250000||bytes.length<20||bytes.toString('base64')!==match[2])fail('Imagem inválida ou muito grande.')
- const valid=match[1]==='png'?bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10])):bytes[0]===255&&bytes[1]===216&&bytes[2]===255&&bytes.at(-2)===255&&bytes.at(-1)===217
+ const valid=match[1]==='png'?validPng(bytes):validJpeg(bytes)
  if(!valid)fail('O arquivo não corresponde ao formato da imagem.')
  return value
+}
+// Conferir so a assinatura deixava passar qualquer coisa: 8 bytes de PNG na frente de um shell
+// script era aceito, guardado como foto do produtor e devolvido depois com Content-Type image/png.
+// Aqui a estrutura inteira e percorrida — se ela nao fecha exatamente no fim do arquivo, nao e
+// imagem. Nenhum decodificador e chamado; e so leitura de cabecalho.
+const PNG_SIGNATURE=Buffer.from([137,80,78,71,13,10,26,10])
+const MAX_DIMENSION=20000
+function validPng(bytes){
+ if(bytes.length<57||!bytes.subarray(0,8).equals(PNG_SIGNATURE))return false
+ let offset=8,first=true,ended=false
+ while(offset+8<=bytes.length){
+  const length=bytes.readUInt32BE(offset)
+  const type=bytes.toString('latin1',offset+4,offset+8)
+  if(!/^[A-Za-z]{4}$/.test(type)||length>bytes.length)return false
+  const next=offset+12+length
+  if(next>bytes.length)return false
+  if(first){
+   if(type!=='IHDR'||length!==13)return false
+   const width=bytes.readUInt32BE(offset+8),height=bytes.readUInt32BE(offset+12)
+   if(!width||!height||width>MAX_DIMENSION||height>MAX_DIMENSION)return false
+   first=false
+  }
+  if(type==='IEND'){ended=length===0&&next===bytes.length;break}
+  offset=next
+ }
+ return ended
+}
+// JPEG: percorre os marcadores ate o inicio do scan. Exige um SOF real (a dimensao esta nele) e o
+// EOI no fim. Os dados comprimidos depois do SOS nao sao validados — nao ha como, sem decodificar.
+function validJpeg(bytes){
+ if(bytes.length<125||bytes[0]!==255||bytes[1]!==216||bytes.at(-2)!==255||bytes.at(-1)!==217)return false
+ let offset=2,sof=false
+ while(offset+4<=bytes.length){
+  if(bytes[offset]!==255)return false
+  let marker=bytes[offset+1]
+  while(marker===255&&offset+2<bytes.length){offset+=1;marker=bytes[offset+1]}
+  if(marker===216||marker===217)return false
+  if(marker===1||marker>=208&&marker<=215){offset+=2;continue}
+  const length=bytes.readUInt16BE(offset+2)
+  if(length<2||offset+2+length>bytes.length)return false
+  if(marker>=192&&marker<=207&&![196,200,204].includes(marker)){
+   if(length<8)return false
+   const height=bytes.readUInt16BE(offset+5),width=bytes.readUInt16BE(offset+7)
+   if(!width||!height||width>MAX_DIMENSION||height>MAX_DIMENSION)return false
+   sof=true
+  }
+  if(marker===218)return sof
+  offset+=2+length
+ }
+ return false
 }
 export async function profilePhoto(repository,identity,{clientId=null,propertyId=null,write=false,input={}}={}){
  if(!identity?.id||identity.mustChangePassword)fail('Entre novamente e conclua a configuração da conta.',401)
