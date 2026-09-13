@@ -26,7 +26,11 @@ const naturalReferencePatterns=Object.freeze([
  // tenta resolver toda a frase como se fosse o nome do produtor.
  {kind:'FACT_OWNER',pattern:/(?:^|\s)(?:visita|compra|obje[cç][ãa]o|compromisso|culturas?|safra|[áa]rea|perfil|oportunidade|potencial|pend[êe]ncia)s?(?:\s+(?:comportamental|pendente|aberta?s?|em\s+aberto|combinad[oa]|conclu[íi]d[oa]|realizada?|agendada?|registrad[oa]|atual|mais\s+recente|[úu]ltim[oa]|pr[óo]xima?))*\s+(?:do|da)\s+(?:(?:o|a)\s+)?(?<reference>[\p{L}][\p{L}'-]*(?:\s+[\p{L}][\p{L}'-]*){0,5}?)(?=\s+(?:est(?:[aá]|[aã]o)|t[eê]m|foi|[ée]|registrad\p{L}*|cadastrad\p{L}*|mais\s+recente|no\s+sistema|na\s+carteira|e\s+(?:quanto|qual|quais|como|o\s+que|por\s+que))(?=\s|[,.!?;]|$)|[,.!?;]|$)/iu},
  {kind:'AUTHORIZED_NAME_CANDIDATE',pattern:/\b(?:abre|abra|abrir|mostra|mostre|mostrar|procura|procure|buscar?)\s+(?:(?:o|a)\s+)?(?:(?:cliente|produtor|produtora|fazenda|propriedade)\s+)?(?<reference>[^,.!?;]+)/iu},
- {kind:'EXPLICIT_NAME',pattern:/\b(?:prepara|prepare|preparar|monta|monte)\s+(?:(?:a|uma)\s+)?(?:visita|conversa)\s+(?:de|do|da|para|pro|pra|com)\s+(?<reference>[^,.!?;]+)/iu},
+ // "prepara a proxima visita ao Sirlei" e "monte a conversa de amanha com a Marta" nao casavam:
+ // faltavam o qualificador entre o substantivo e a preposicao ("proxima", "de amanha") e as
+ // preposicoes "ao/a". Sem casar, a frase perdia o nome, a preparacao rodava sobre o produtor que
+ // ja estava aberto na tela e nada dizia que o produtor pedido nao era aquele.
+ {kind:'EXPLICIT_NAME',pattern:/\b(?:prepara|prepare|preparar|monta|monte)\s+(?:(?:a|uma|minha|a\s+pr[óo]xima)\s+)?(?:visita|conversa)(?:\s+(?:pr[óo]xima|primeira|nova|de\s+amanh[ãa]|de\s+hoje|da\s+semana|de\s+segunda|de\s+ter[çc]a|de\s+quarta|de\s+quinta|de\s+sexta))*\s+(?:de|do|da|para|pro|pra|com|ao|[àa])\s+(?<reference>[^,.!?;]+)/iu},
  {kind:'EXPLICIT_NAME',pattern:/\b(?:vou|vamos|iremos?|pretendo)\s+(?:visitar|ver|encontrar)\s+(?<reference>[^,.!?;]+)/iu},
  {kind:'EXPLICIT_NAME',pattern:/\b(?:vou|vamos|iremos?)\s+(?:no|na|ao|[àa])\s+(?<reference>[^,.!?;]+)/iu},
  {kind:'EXPLICIT_NAME',pattern:/\b(?:visitar|ver|encontrar)\s+(?<reference>[^,.!?;]+)/iu},

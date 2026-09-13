@@ -105,9 +105,17 @@ function factsUsed(advice={},context={},message='',intentHint=''){
  const ordered=[...preparationEvidence,...requestedIds.map(id=>authorizedById.get(id)),...authorized]
  if(advice.human_review?.required===true)ordered.unshift({id:'system_safety_policy:human_review',source_type:'system_safety_policy',source_ref:'val.safety.human_review',evidence_type:'FACT',producer_id:producerId,tenant_id:tenantId,owner_id:snapshot.context_scope?.owner_id||null,statement:'A VAL reteve qualquer orientação técnica acionável até revisão do responsável habilitado.'})
  const seen=new Set()
+ // A mesma fonte entrava por dois caminhos (preparacao + deterministico) com ids diferentes, e o
+ // painel de evidencias mostrava o relato e o compromisso duplicados, com rotulos que se
+ // contradiziam. Como `ordered` comeca pela preparacao (mais completa: prazo, proximo passo e
+ // relato), a duplicata que cai e sempre a mais pobre.
+ const seenRefs=new Set()
  return ordered.flatMap(item=>{
   const id=idOf(item);const statement=statementOf(item)
   if(!id||!statement||seen.has(id))return []
+  const canonicalRef=clean(item.source_ref??item.source_id??item.evidence_ref?.id,240)
+  if(canonicalRef&&seenRefs.has(canonicalRef))return []
+  if(canonicalRef)seenRefs.add(canonicalRef)
   seen.add(id)
   const itemProducer=clean(item.producer_id??item.producerId,180);const itemTenant=clean(item.tenant_id??item.tenantId,180)
   if(itemProducer!==producerId||itemTenant!==tenantId)return []
@@ -501,23 +509,35 @@ function recoverVisitPreparation(result,scope){
  const available=list(result.facts_used).filter(item=>item.id.startsWith('visit-preparation:'))
  const facts=[]
  let chars=0
- for(const type of ['consultant_input','visit','commitment','interaction'])for(const item of available.filter(fact=>fact.source_type===type).slice(0,2)){
-  if(chars+item.statement.length>2300)continue
+ // O corte fixo de 2 por tipo derrubava compromissos pendentes em silencio: com cinco em aberto o
+ // briefing entregava dois e nada dizia dos outros. Compromisso passa a ser limitado so pelo
+ // orcamento de caracteres, e o que ainda ficar de fora e contado na leitura.
+ let omittedCommitments=0
+ for(const type of ['consultant_input','visit','commitment','interaction'])for(const item of available.filter(fact=>fact.source_type===type).slice(0,type==='commitment'?12:2)){
+  if(chars+item.statement.length>2300){if(type==='commitment')omittedCommitments+=1;continue}
   facts.push(item);chars+=item.statement.length
  }
+ omittedCommitments+=Math.max(0,available.filter(fact=>fact.source_type==='commitment').length-12)
  if(!facts.length)return result
  const candidate=structuredClone(result)
  const reading=facts.map(item=>item.statement.replace(/[.!?]+$/,'')+'.').join(' ')
- const nextStep=facts.flatMap(item=>item.statement.split(/(?<=[.!?])\s+/)).find(statement=>statement.startsWith('Próximo passo registrado na visita:'))||''
+ const nextStep=facts.filter(item=>!item.closed).flatMap(item=>item.statement.split(/(?<=[.!?])\s+/)).find(statement=>statement.startsWith('Próximo passo registrado na visita:'))||''
+ // Sem proximo passo em aberto, o objetivo caia no texto generico do metodo. O compromisso que
+ // continua pendente e a resposta melhor — e e exatamente o que a preparacao existe para mostrar.
+ const openCommitment=facts.filter(item=>!item.closed&&item.source_type==='commitment').flatMap(item=>item.statement.split(/(?<=[.!?])\s+/)).find(statement=>/^Compromisso (?:aberto|registrado):/.test(statement))||''
  const outline=visitPreparationOutline(facts)
- const action=[nextStep,visitPreparationMethod.action,outline?.valueGuidance,'Registre as respostas, objeções, observações de campo, responsáveis e prazos efetivamente combinados.'].filter(Boolean).join(' ')
- candidate.objective=nextStep?`Retome o próximo passo registrado. ${nextStep}`:visitPreparationMethod.objective
+ const action=[nextStep||openCommitment,visitPreparationMethod.action,outline?.valueGuidance,'Registre as respostas, objeções, observações de campo, responsáveis e prazos efetivamente combinados.'].filter(Boolean).join(' ')
+ candidate.objective=nextStep?`Retome o próximo passo registrado. ${nextStep}`:openCommitment?`Retome o próximo passo registrado. ${openCommitment}`:visitPreparationMethod.objective
  candidate.situation_summary=reading
  candidate.recommended_strategy={reading,action,do_not_do:visitPreparationMethod.avoid}
  candidate.decision_thesis={CURRENT_SITUATION:reading,WHAT_MATTERS:action,KEY_UNCERTAINTY:'O que mudou desde o último registro?',THESIS:action,WHY:reading,WHAT_TO_VALIDATE:visitPreparationMethod.validate,WHAT_WOULD_CHANGE_MY_VIEW:visitPreparationMethod.reconsider}
  if(outline)candidate.golden_questions=outline.questions
  candidate.next_commitment=action
- candidate.missing_information=[]
+ // O corte precisa ser dito, mas nao pode entrar na leitura: o contrato de grounding parte a
+ // resposta em afirmacoes e uma frase com contagem ("outros 10 compromissos") e um dado novo sem
+ // evidencia — ela derrubava a preparacao inteira, que caia de volta no texto generico. A lacuna
+ // declarada e o lugar certo, e sem numero.
+ candidate.missing_information=omittedCommitments?['Compromissos registrados que não couberam neste resumo; confira a lista completa antes da visita.']:[]
  candidate.confidence={level:'MODERADA',score:.65,rationale:facts[0].statement}
  candidate.voice_output={...candidate.voice_output,speakable_text:reading+' '+action}
  candidate.decision_interview={...candidate.decision_interview,questions:[],material_missing_information:[],non_material_missing_information:[],explanation:''}

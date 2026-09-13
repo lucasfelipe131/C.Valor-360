@@ -6,6 +6,7 @@ import {evaluateResponseGrounding} from '../server/decision-copilot/response-gro
 import {validateProfilePhoto} from '../server/profile-photo.js'
 import {readFileSync} from 'node:fs'
 import {importedMunicipality} from '../server/repository.js'
+import {visitPreparationEvidence,visitPreparationOutline} from '../server/ai-reasoning/visit-preparation-context.js'
 
 // FATO-01: nome de produtor fora da carteira era descartado em silêncio e a consulta rodava sobre o
 // produtor aberto — a frase de talhão não traz nome, então a troca era invisível para o consultor.
@@ -218,4 +219,102 @@ test('Gerencial — excesso de produtores corta a lista em vez de derrubar a tel
  const aviso=fonte.match(/producersTruncated\?`[^`]+`/)[0]
  assert.match(aviso,/Filtre por município ou por consultor/)
  assert.doesNotMatch(aviso,/período/)
+})
+
+const preparacaoSnapshot=(commitments,visits=[])=>({
+ context_scope:{producer_id:'p1',tenant_id:'t1',owner_id:'o1'},
+ relationship_context:{visits,interactions:[],commitments}
+})
+const wrapper=(id,data,observed='2026-09-01T12:00:00Z')=>({producerId:'p1',tenantId:'t1',ownerId:'o1',evidence_ref:{id},data,observed_at:observed})
+
+// PREP-002: compromisso já concluído voltava como "Próximo passo registrado" e virava o foco
+// declarado da próxima visita, com as três perguntas de ouro construídas em cima dele.
+test('Preparação — compromisso concluído não vira o foco da próxima visita',()=>{
+ const facts=visitPreparationEvidence(preparacaoSnapshot(
+  [wrapper('c1',{description:'Enviar a proposta de calcário',status:'DONE',due_at:'2026-08-20T12:00:00Z'}),
+   wrapper('c2',{description:'Levar o comparativo de custo',status:'ACCEPTED',due_at:'2026-08-25T12:00:00Z'})]))
+ const concluido=facts.find(fact=>fact.source_ref==='c1')
+ assert.equal(concluido.closed,true)
+ assert.match(concluido.statement,/Compromisso concluído/)
+ assert.doesNotMatch(concluido.statement,/Próximo passo registrado na visita/)
+ const outline=visitPreparationOutline(facts)
+ assert.doesNotMatch(outline.topic,/proposta de calcário/)
+ assert.match(outline.topic,/comparativo de custo/)
+ assert.equal(outline.focusRef,facts.find(fact=>fact.source_ref==='c2').id)
+})
+
+test('Preparação — o próximo passo da visita não ressuscita um compromisso já encerrado',()=>{
+ const facts=visitPreparationEvidence(preparacaoSnapshot(
+  [wrapper('c1',{description:'Enviar a proposta de calcário',status:'DONE'})],
+  [wrapper('v1',{summary:'Conversamos sobre calcário.',next_commitment:'Enviar a proposta de calcário'})]))
+ const visita=facts.find(fact=>fact.source_ref==='v1')
+ assert.doesNotMatch(visita.statement,/Próximo passo registrado na visita/)
+ assert.match(visita.statement,/já foi encerrado como compromisso/)
+})
+
+test('Preparação — compromisso em aberto continua sendo o próximo passo',()=>{
+ const facts=visitPreparationEvidence(preparacaoSnapshot(
+  [wrapper('c1',{description:'Enviar a proposta',status:'ACCEPTED'})],
+  [wrapper('v1',{summary:'Conversa registrada.',next_commitment:'Levar o laudo de solo'})]))
+ const visita=facts.find(fact=>fact.source_ref==='v1')
+ assert.match(visita.statement,/Próximo passo registrado na visita: Levar o laudo de solo/)
+ assert.equal(facts.every(fact=>fact.closed===false),true)
+})
+
+// PREP-001: o prazo do compromisso era tratado como data de validade da evidência, e o compromisso
+// vencido — o que a preparação mais precisa mostrar — sumia do briefing.
+test('Preparação — prazo de compromisso não é data de validade da evidência',()=>{
+ const fonte=readFileSync(new URL('../server/memory/context-snapshot.js',import.meta.url),'utf8')
+ const linha=fonte.split('\n').find(line=>line.includes("collectionItems(context.commitments,'commitment'"))
+ assert.ok(linha)
+ assert.doesNotMatch(linha,/validUntilKeys/)
+ // Nenhuma outra coleção de relacionamento passou a expirar por acidente.
+ assert.match(fonte.split('\n').find(line=>line.includes("collectionItems(context.interactions,'interaction'")),/dateKeys/)
+})
+
+// PREP-004: o corte fixo de 2 por tipo derrubava compromissos pendentes em silêncio.
+test('Preparação — o briefing não corta compromissos em dois nem em silêncio',()=>{
+ const fonte=readFileSync(new URL('../server/ai-reasoning/index.js',import.meta.url),'utf8')
+ assert.match(fonte,/slice\(0,type==='commitment'\?12:2\)/)
+ assert.match(fonte,/omittedCommitments\+=1/)
+ assert.match(fonte,/candidate\.missing_information=omittedCommitments\?\['Compromissos registrados que não couberam neste resumo/)
+ // A frase da lacuna não pode carregar número: o contrato de grounding derrubaria a preparação.
+ const aviso=fonte.match(/\['Compromissos registrados que não couberam[^']*'\]/)[0]
+ assert.doesNotMatch(aviso,/\d/)
+ // O grupo de compromissos também deixou de ser cortado em 4 na montagem da evidência.
+ assert.match(readFileSync(new URL('../server/ai-reasoning/visit-preparation-context.js',import.meta.url),'utf8'),/slice\(0,type==='commitment'\?12:4\)/)
+})
+
+// PREP-005: a mesma fonte entrava por dois caminhos e o painel de evidências mostrava o relato e o
+// compromisso duplicados, com rótulos que se contradiziam.
+test('Preparação — a mesma fonte não aparece duas vezes no painel de evidências',()=>{
+ const fonte=readFileSync(new URL('../server/ai-reasoning/index.js',import.meta.url),'utf8')
+ assert.match(fonte,/const seenRefs=new Set\(\)/)
+ assert.match(fonte,/const canonicalRef=clean\(item\.source_ref\?\?item\.source_id\?\?item\.evidence_ref\?\.id,240\)/)
+ assert.match(fonte,/if\(canonicalRef&&seenRefs\.has\(canonicalRef\)\)return \[\]/)
+})
+
+// PREP-006: preparação pedida pelo nome de outro produtor rodava sobre o produtor já aberto.
+test('Preparação — o nome pedido é reconhecido em variantes naturais do pedido',()=>{
+ for(const [mensagem,esperado] of [
+  ['Prepara a visita do Sirlei','Sirlei'],
+  ['prepara a proxima visita ao Sirlei','Sirlei'],
+  ['monte a conversa de amanhã com a Marta','Marta'],
+  ['prepara a visita para o Ivo','Ivo'],
+  ['Prepare a próxima visita da Marta','Marta']
+ ]){
+  const referencia=extractNaturalClientReference(mensagem)
+  assert.equal(referencia.kind,'EXPLICIT_NAME',mensagem)
+  assert.equal(referencia.reference,esperado,mensagem)
+ }
+})
+
+// NAV-06: o workspace era trocado ANTES da guarda e nada revertia — o consultor respondia que
+// queria ficar e o menu passava a marcar outro contexto que a tela não tinha.
+test('Navegação — cancelar a saída não troca o workspace',()=>{
+ const app=readFileSync(new URL('../src/App.jsx',import.meta.url),'utf8')
+ assert.match(app,/if\(!restoringNavigation\.current&&!permitNavigation\(\)\)return false/)
+ assert.match(app,/const changeWorkspace=id=>\{if\(navigate\(workspaceEntryPoint\(id,currentUser\?\.role\)\)\)setWorkspace\(id\)\}/)
+ // navigate precisa dizer que a navegação aconteceu.
+ assert.match(app,/setPage\(next\);if\(next===page\)window\.requestAnimationFrame\(resetPageViewport\)\n  return true/)
 })

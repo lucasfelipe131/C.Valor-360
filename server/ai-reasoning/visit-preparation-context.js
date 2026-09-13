@@ -3,6 +3,12 @@ import {consultativeValueGuidance} from '../commercial/value-plan.js'
 const list=value=>Array.isArray(value)?value:[]
 const text=(value,max=2200)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,max)
 const open=value=>/^(?:OPEN|PENDING|IN_PROGRESS|CONFIRMED|ABERTO|PENDENTE)$/i.test(text(value))
+// Havia so o predicado de aberto. Sem o par, o compromisso ja concluido (ou cancelado) voltava
+// como "Proximo passo registrado" e virava o foco declarado da proxima visita — com as tres
+// perguntas de ouro construidas em cima de algo que o consultor ja tinha resolvido.
+const closed=value=>/^(?:DONE|COMPLETED|CANCELLED|CANCELED|CONCLU[IÍ]DO|CONCLUIDA|CANCELADO|CANCELADA|RESOLVIDO)$/i.test(text(value))
+const cancelled=value=>/^(?:CANCELLED|CANCELED|CANCELADO|CANCELADA)$/i.test(text(value))
+const normalizedText=value=>text(value).normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase()
 const date=value=>{const parsed=new Date(value||'');return Number.isNaN(parsed.getTime())?'':parsed.toLocaleDateString('pt-BR',{timeZone:'UTC'})}
 
 export function visitPreparationEvidence(snapshot={}){
@@ -10,13 +16,22 @@ export function visitPreparationEvidence(snapshot={}){
  if(!scope.producer_id||!scope.tenant_id||!scope.owner_id)return []
  const relationship=snapshot.relationship_context||{}
  const groups=[['visit',relationship.visits],['interaction',relationship.interactions],['commitment',relationship.commitments]]
- return groups.flatMap(([type,wrappers])=>list(wrappers).slice(0,4).flatMap(wrapper=>{
+ // O texto do proximo passo continua gravado na visita depois que o consultor encerra o
+ // compromisso correspondente. Sem cruzar os dois, a visita antiga ressuscitava a tarefa.
+ const settled=new Set(list(relationship.commitments)
+  .filter(wrapper=>closed(wrapper?.data?.status))
+  .map(wrapper=>normalizedText(wrapper?.data?.description||wrapper?.data?.summary))
+  .filter(Boolean))
+ return groups.flatMap(([type,wrappers])=>list(wrappers).slice(0,type==='commitment'?12:4).flatMap(wrapper=>{
   if(wrapper.producerId!==scope.producer_id||wrapper.tenantId!==scope.tenant_id||wrapper.ownerId!==scope.owner_id||!wrapper.evidence_ref?.id)return []
   const item=wrapper.data||{}
   const statements=[]
   const observed=wrapper.observed_at
   const when=date(observed)
-  const prefix=type==='visit'?'Relato de visita':type==='interaction'?'Relato de interação':open(item.status)?'Compromisso aberto':'Compromisso registrado'
+  const settledCommitment=type==='commitment'&&closed(item.status)
+  const prefix=type==='visit'?'Relato de visita':type==='interaction'?'Relato de interação'
+   :settledCommitment?(cancelled(item.status)?'Compromisso cancelado':'Compromisso concluído')
+   :open(item.status)?'Compromisso aberto':'Compromisso registrado'
   const rawSummary=text(item.summary||item.description||item.objective,10000)
   const followup=rawSummary.split(/(?<=[.!?])\s+/).filter(sentence=>/combin|compromiss|pr[oó]xim[ao]|retorn|ficou|pendente/i.test(sentence)).slice(-2).join(' ')
   const summary=text(rawSummary,450)
@@ -24,7 +39,9 @@ export function visitPreparationEvidence(snapshot={}){
   if(summary)statements.push(`${prefix}${when&&type!=='commitment'?` em ${when}`:''}: ${summary}`)
   if(type==='commitment'&&when)statements.push(`Data do registro do compromisso: ${when}`)
   const next=text(item.next_commitment??item.nextCommitment,320)
-  if(next)statements.unshift(`Próximo passo registrado na visita: ${next}`)
+  const nextSettled=Boolean(next&&settled.has(normalizedText(next)))
+  if(next&&!settledCommitment&&!nextSettled)statements.unshift(`Próximo passo registrado na visita: ${next}`)
+  else if(next&&nextSettled)statements.push(`Próximo passo desta visita já foi encerrado como compromisso: ${next}`)
   const due=date(item.due_at??item.dueAt??item.next_action_at??item.nextActionAt)
   if(due)statements.unshift(`Prazo registrado: ${due}`)
   if(type==='commitment'&&item.status)statements.push(`Status do compromisso: ${text(item.status,80)}`)
@@ -38,7 +55,7 @@ export function visitPreparationEvidence(snapshot={}){
   }
   return [{id:`visit-preparation:${wrapper.evidence_ref.id}`,source_ref:wrapper.evidence_ref.id,source_type:type,
    epistemic_type:type==='interaction'?'OBSERVATION':'FACT',producer_id:scope.producer_id,tenant_id:scope.tenant_id,owner_id:scope.owner_id,
-   observed_at:observed,valid_until:null,statement:statement.trim(),
+   observed_at:observed,valid_until:null,statement:statement.trim(),closed:settledCommitment,
    // A due date is not an expiry date: overdue commitments remain historical evidence.
   }]
  })).slice(0,12)
@@ -62,9 +79,18 @@ export const visitPreparationMethod=Object.freeze({
 
 export function visitPreparationOutline(facts=[]){
  const sentences=facts.flatMap(fact=>String(fact.statement||'').split(/(?<=[.!?])\s+/).map(statement=>({statement,ref:fact.id})))
- const next=sentences.find(item=>item.statement.startsWith('Próximo passo registrado na visita:'))
+ // O que ja foi encerrado continua como contexto (o consultor precisa saber que aconteceu), mas
+ // nao pode ser escolhido como foco da proxima visita.
+ const openSentences=facts.filter(fact=>!fact.closed).flatMap(fact=>String(fact.statement||'').split(/(?<=[.!?])\s+/).map(statement=>({statement,ref:fact.id})))
+ const next=openSentences.find(item=>item.statement.startsWith('Próximo passo registrado na visita:'))
  const obstacle=sentences.find(item=>/obje[cç][aã]o|caro|custo|receio|d[uú]vida|risco|comparativo|comparar/i.test(item.statement))
- const focus=next||sentences.find(item=>/compromisso aberto|pendente|combin/i.test(item.statement))||sentences[0]
+ // "Prazo registrado: 25/08/2026" e "Status do compromisso: ACCEPTED" sao metadados: viravam o foco
+ // declarado da visita — uma data solta no lugar do que ficou combinado.
+ const metadataOnly=/^(?:Prazo registrado|Data do registro do compromisso|Status do compromisso):/
+ const focus=next
+  ||openSentences.find(item=>/compromisso (?:aberto|registrado)|pendente|combin/i.test(item.statement))
+  ||openSentences.find(item=>!metadataOnly.test(item.statement))
+  ||openSentences[0]
  if(!focus)return null
  const topic=focus.statement.replace(/^Próximo passo registrado na visita:\s*/,'').replace(/[.!?]+$/,'')
  const concern=(obstacle?.statement||topic).replace(/[.!?]+$/,'')

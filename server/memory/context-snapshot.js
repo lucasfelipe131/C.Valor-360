@@ -674,7 +674,12 @@ export function buildContextSnapshot(context={},input={}){
   const completedVisit=item=>/COMPLETED|realizad|conclu/i.test(String(item?.lifecycleStatus??item?.lifecycle_status??item?.status??''))||Boolean(item?.completedAt??item?.completed_at??item?.occurredAt??item?.occurred_at)
   const scopedVisitItems=collectionPolicy.relationship?scopeCollectionToActiveEntity(collectionItems(context.visits,'visit',{...collectionScope,domain:'RELATIONSHIP',dateKeys:['occurred_at','occurredAt','completed_at','completedAt','updated_at','updatedAt','scheduled_at','scheduledAt','created_at','createdAt'],limit:10,now}),'visit',activeEntity,rejectCollection):[]
   const visitItems=latestVisitOnly?(()=>{const completed=scopedVisitItems.filter(item=>completedVisit(item.data));const kept=completed.slice(0,1);for(const item of scopedVisitItems)if(!kept.includes(item))rejectCollection(item,'LOWER_RELEVANCE');return kept})():scopedVisitItems
-  const commitmentItems=collectionPolicy.relationship?scopeCollectionToActiveEntity(collectionItems(context.commitments,'commitment',{...collectionScope,domain:'RELATIONSHIP',dateKeys:['updated_at','updatedAt','created_at','createdAt'],validUntilKeys:['due_at','dueAt'],limit:12,now}),'commitment',activeEntity,rejectCollection):[]
+  // O PRAZO do compromisso era tratado como data de validade da evidencia. Passado o prazo, o
+  // compromisso vencido — justamente o que a preparacao de visita mais precisa mostrar —
+  // desaparecia por completo do briefing, como se nunca tivesse existido. Prazo pede confirmacao
+  // da situacao, nao expira o registro; a deteccao de vencido nao depende disto (o filtro de
+  // overdue_commitments le due_at direto da fonte).
+  const commitmentItems=collectionPolicy.relationship?scopeCollectionToActiveEntity(collectionItems(context.commitments,'commitment',{...collectionScope,domain:'RELATIONSHIP',dateKeys:['updated_at','updatedAt','created_at','createdAt'],limit:12,now}),'commitment',activeEntity,rejectCollection):[]
   const manualRecordItems=collectionPolicy.agronomic?collectionItems(context.manualRecords,'manual_record',{...collectionScope,domain:'AGRONOMIC',dateKeys:['occurred_at','occurredAt','ingested_at','ingestedAt','updated_at','updatedAt','created_at','createdAt'],limit:8,now}):[]
   const attachmentItems=collectionPolicy.agronomic?collectionItems(context.attachments,'attachment',{...collectionScope,domain:'AGRONOMIC',dateKeys:['updated_at','updatedAt','confirmed_at','confirmedAt','created_at','createdAt'],limit:8,now}):[]
   const currentSoil=soilAll.some(item=>item.freshness==='CURRENT')

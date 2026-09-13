@@ -177,8 +177,11 @@ export default function App(){
   setCopilotLoaded(true);setCopilotOpen(true)
  }
  const closeCopilot=()=>{setCopilotOpen(false);if(page!=='copilot')return;navigate(copilotReturnPage&&copilotReturnPage!=='copilot'?copilotReturnPage:'dashboard')}
+ // navigate devolve se a navegacao aconteceu: sem isso quem chama nao tinha como saber que a
+ // guarda barrou, e o seletor de workspace trocava o menu de contexto mesmo com o consultor
+ // respondendo que queria ficar.
  const navigate=target=>{
-  if(!restoringNavigation.current&&!permitNavigation())return
+  if(!restoringNavigation.current&&!permitNavigation())return false
   const descriptor=target&&typeof target==='object'?target:{page:target}
   const next=String(descriptor.page||'dashboard')
   if(next==='agro'){
@@ -223,6 +226,7 @@ export default function App(){
   setCopilotNavigationSequence(value=>value+1)
   if(next==='copilot'){setCopilotLoaded(true);setCopilotOpen(true);setCopilotRevealKey(value=>value+1)}
   setPage(next);if(next===page)window.requestAnimationFrame(resetPageViewport)
+  return true
  }
  const activeCopilotClient=useMemo(()=>{
   if(page==='client360'||page==='val')return selected
@@ -287,7 +291,11 @@ export default function App(){
  // Módulos transversais (Hoje, Copiloto) herdam o workspace ativo em vez de
  // zerá-lo: o usuário abre a VAL e volta para onde estava trabalhando.
  useEffect(()=>{setWorkspace(current=>workspaceHoldsPage(current,page,currentUser?.role)?current:resolveActiveWorkspace(page,current))},[page,currentUser?.role])
- const changeWorkspace=id=>{setWorkspace(id);navigate(workspaceEntryPoint(id,currentUser?.role))}
+ // O workspace so muda quando a navegacao de fato aconteceu. Antes ele era trocado ANTES da
+ // guarda e nada revertia: o consultor respondia "nao, quero ficar", a tela continuava onde
+ // estava e o menu passava a marcar outro workspace — menu de um lugar, conteudo de outro, sem
+ // nenhum item correspondendo a tela aberta, ate a proxima troca de pagina.
+ const changeWorkspace=id=>{if(navigate(workspaceEntryPoint(id,currentUser?.role)))setWorkspace(id)}
  // Ferramenta agronomica ativa: e o que diferencia Manual, Calculadoras e
  // Mapas na subnavegacao, ja que todas moram na mesma rota.
  const activeTool=page==='agro'?String(agroLaunch.initialTool?.tool||agroLaunch.initialTool?.id||''):''
