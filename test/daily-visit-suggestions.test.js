@@ -31,3 +31,33 @@ test('narrative dates are explicit and completed narratives never become a visit
  const undated=narrativeFollowups({...record('b'),summary:'Combinamos retomar o comparativo na próxima semana.'})
  assert.equal(undated[0].dueAt,null)
 })
+
+// SDV-02: o driver do Postgres devolve updated_at como Date; String(Date) começa pelo nome do dia
+// da semana, e o localeCompare ordenava a lista do dia por "Fri, Mon, Sat, Sun, Thu, Tue, Wed".
+test('a lista do dia é ordenada por horário de atualização, não pelo nome do dia da semana',()=>{
+ const dias=['07','08','09','10','11','12']
+ const rows=dailyVisitSuggestions({now,records:dias.map(dia=>record('c'+dia,{updatedAt:new Date(`2026-09-${dia}T10:00:00Z`)}))})
+ assert.deepEqual(rows.map(r=>r.clientId),['c12','c11','c10','c09','c08','c07'])
+})
+
+test('o corte da lista do dia não é silencioso',()=>{
+ const rows=dailyVisitSuggestions({now,records:Array.from({length:11},(_,index)=>record('c'+index,{updatedAt:new Date(2026,8,index+1)}))})
+ assert.equal(rows.length,8)
+ assert.equal(rows.limit,8)
+ assert.equal(rows.total,11)
+ assert.equal(rows.omitted,3)
+})
+
+// SDV-03: "não pretende retomar o plantio" casava com 'retomar' e chegava à tela do dia como
+// pendência a cumprir — a frase que diz que NÃO há o que fazer virava tarefa.
+test('frase de negação não vira compromisso',()=>{
+ for(const frase of ['O produtor não pretende retomar o plantio de milho.','Não combinamos nenhum retorno.','O produtor não vai retomar a conversa por enquanto.','Ficou sem compromisso para a próxima visita.','Nenhum compromisso ficou pendente.'])
+  assert.deepEqual(narrativeFollowups({clientId:'c',sourceId:'i',summary:frase}),[],frase)
+})
+
+test('compromisso afirmativo continua virando sugestão',()=>{
+ const rows=narrativeFollowups({clientId:'c',sourceId:'i',summary:'O produtor não pretende retomar o plantio de milho. Combinamos enviar a proposta até 20/09/2026.'})
+ assert.equal(rows.length,1)
+ assert.match(rows[0].description,/Combinamos enviar a proposta/)
+ assert.equal(rows[0].dueAt,'2026-09-20T12:00:00-03:00')
+})

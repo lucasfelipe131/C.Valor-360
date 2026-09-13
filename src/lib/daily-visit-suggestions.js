@@ -1,11 +1,16 @@
 const text=value=>String(value??'').trim()
 const day=(value,timeZone)=>{const date=new Date(value);return Number.isNaN(date.getTime())?'':new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'}).format(date)}
 const closed=value=>/^(DONE|COMPLETED|CANCELLED|CONCLU[IÍ]DO|CANCELADO|RESOLVIDO)$/i.test(text(value))
+const LIMIT=8
 const normalized=value=>text(value).normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim()
 
+// "O produtor nao pretende retomar o plantio" casava com 'retomar' e virava pendencia PROPOSED:
+// a frase que diz que NAO ha o que fazer chegava a tela do dia como tarefa a cumprir.
+const negatedCommitment=/\bn[aã]o\s+(?:\w+\s+){0,3}?(?:combinamos|pretende[m]?|vai|v[aã]o|quer|querem|deseja[m]?|precisa[m]?|ir[aá]|ir[aã]o|havia|houve|tem|t[eê]m|fic(?:ou|aram))\b|\bsem\s+(?:compromisso|pend[eê]ncia|retorno)\b|\bnada\s+(?:ficou\s+)?pendente\b|\bnenhum\s+compromisso\b/i
 export function narrativeFollowups(record){
  return text(record.summary).split(/(?<=[.!?])\s+/).flatMap((description,index)=>{
   if(!/combinamos|ficou pendente|pr[oó]xima visita|compromisso|retornar|retomar/i.test(description))return []
+  if(negatedCommitment.test(description))return []
   const resolved=/conclu[ií]d|resolvid|cancelad|n[aã]o precisa retornar/i.test(description)
   const literal=description.match(/\b(\d{2})\/(\d{2})\/(\d{4})\b/)
   const iso=description.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0]
@@ -41,7 +46,13 @@ export function dailyVisitSuggestions({records=[],now=new Date(),timeZone='Ameri
    reason:record.description,focus:attested?classification==='OVERDUE'?`Confirmar se foi resolvido: ${record.description}`:`Retomar: ${record.description}`:`Confirmar com o produtor se isto procede: ${record.description}`})
  }
  const rank={DUE_TODAY:0,OVERDUE:1,SUGGESTED:2}
- candidates.sort((a,b)=>rank[a.classification]-rank[b.classification]||text(b.updatedAt).localeCompare(text(a.updatedAt))||text(a.clientName).localeCompare(text(b.clientName)))
+ // O driver do Postgres devolve updated_at como Date. text(Date) vira "Sat Sep 13 2026 ..." e o
+ // localeCompare ordenava a lista do dia pelo NOME DO DIA DA SEMANA em ingles (Fri, Mon, Sat, Sun,
+ // Thu, Tue, Wed) — e o corte em 8 produtores caia em cima dessa ordem sem sentido.
+ const at=value=>{const time=new Date(value??0).getTime();return Number.isFinite(time)?time:0}
+ candidates.sort((a,b)=>rank[a.classification]-rank[b.classification]||at(b.updatedAt)-at(a.updatedAt)||text(a.clientName).localeCompare(text(b.clientName)))
  const seen=new Set()
- return candidates.filter(item=>{if(seen.has(item.clientId))return false;seen.add(item.clientId);return true}).slice(0,8)
+ const eligible=candidates.filter(item=>{if(seen.has(item.clientId))return false;seen.add(item.clientId);return true})
+ // O corte existe (a lista do dia e curta de proposito), mas nao pode ser silencioso.
+ return Object.assign(eligible.slice(0,LIMIT),{total:eligible.length,omitted:Math.max(0,eligible.length-LIMIT),limit:LIMIT})
 }

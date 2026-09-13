@@ -174,11 +174,18 @@ export function proposeRouteOrder(stops,{origin=null}={}){
   let end=start+1
   while(end<result.length&&isFlexible(result[end]))end+=1
   const original=result.slice(start,end)
-  if(original.length<2||original.some(stop=>!routeLocation(stop.location))){start=end;continue}
+  // Um unico ponto sem sede conhecida desligava a proximidade do bloco INTEIRO. Como o produtor com
+  // duas fazendas cadastradas nao tem destino inequivoco (e por isso fica sem localizacao, de
+  // proposito), um produtor assim tirava a ordenacao por proximidade do dia todo. Agora ele so nao
+  // participa da otimizacao: fica na posicao onde estava e os demais continuam sendo ordenados.
+  const fixedSlots=new Map()
+  original.forEach((stop,index)=>{if(!routeLocation(stop.location))fixedSlots.set(index,stop)})
+  const movable=original.filter(stop=>routeLocation(stop.location))
+  if(movable.length<2){start=end;continue}
   const previous=result[start-1]
   const before=previous&&(planned.has(previous.lifecycle)||previous.lifecycle==='IN_PROGRESS')?routeLocation(previous.location):initial
   const after=routeLocation(result[end]?.location)
-  const pool=original.slice();const proposal=[]
+  const pool=movable.slice();const proposal=[]
   let anchor=before
   if(!anchor){const first=pool.shift();proposal.push(first);anchor=routeLocation(first.location)}
   while(pool.length){
@@ -186,7 +193,12 @@ export function proposeRouteOrder(stops,{origin=null}={}){
    for(let index=1;index<pool.length;index+=1)if(approximateDistanceKm(anchor,pool[index].location)<approximateDistanceKm(anchor,pool[nearest].location))nearest=index
    const next=pool.splice(nearest,1)[0];proposal.push(next);anchor=routeLocation(next.location)
   }
-  if(pathLength(proposal,before,after)+0.000001<pathLength(original,before,after))result.splice(start,end-start,...proposal)
+  // Recompoe o bloco: quem tem sede conhecida entra na ordem proposta, quem nao tem volta para o
+  // mesmo indice de antes.
+  const rebuilt=[];const queue=proposal.slice()
+  for(let index=0;index<original.length;index+=1)rebuilt.push(fixedSlots.has(index)?fixedSlots.get(index):queue.shift())
+  const originalMovable=original.filter(stop=>routeLocation(stop.location))
+  if(pathLength(proposal,before,after)+0.000001<pathLength(originalMovable,before,after))result.splice(start,end-start,...rebuilt)
   start=end
  }
  return result.map(stop=>stop.visitId)

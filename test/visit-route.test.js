@@ -99,13 +99,19 @@ test('proposta reduz só o bloco flexível e conserva histórico, atual e compro
  assert.deepEqual(accepted.map(item=>item.order),[1,2,3,4,5,6,7])
 })
 
-test('horários fixos não mudam nem com orderedIds; sem coordenadas a proposta é conservadora',()=>{
+test('horários fixos não mudam nem com orderedIds; parada sem coordenada não desliga a proximidade das outras',()=>{
  const clients=[client('a',0,0.3),client('b',0,0.1),client('c',0,0.2)]
  const visits=[visit('a','a','09:00'),visit('b','b','10:00'),visit('c','c','11:00')]
  const stops=buildDayItinerary({date,visits,clients,orderedIds:['c','b','a']})
  assert.deepEqual(stops.map(item=>item.visitId),['a','b','c'])
  assert.deepEqual(proposeRouteOrder(stops,{origin:{lat:0,lng:0}}),['a','b','c'])
- assert.deepEqual(proposeRouteOrder([stop('a',{lat:0,lng:0.3}),stop('missing',null),stop('b',{lat:0,lng:0.1})],{origin:{lat:0,lng:0}}),['a','missing','b'])
+ // SDV-05: antes, uma unica parada sem sede conhecida deixava o bloco inteiro na ordem original.
+ // O produtor com duas fazendas cadastradas fica sem localizacao de proposito (o destino nao e
+ // inequivoco) e, so por existir na lista, tirava a ordenacao por proximidade do dia todo.
+ // Agora ele fica exatamente no indice onde estava e as paradas com sede conhecida sao ordenadas.
+ assert.deepEqual(proposeRouteOrder([stop('a',{lat:0,lng:0.3}),stop('missing',null),stop('b',{lat:0,lng:0.1})],{origin:{lat:0,lng:0}}),['b','missing','a'])
+ // Com uma unica parada localizada nao ha o que otimizar: nada se move.
+ assert.deepEqual(proposeRouteOrder([stop('a',{lat:0,lng:0.3}),stop('missing',null)],{origin:{lat:0,lng:0}}),['a','missing'])
 })
 
 test('ordem manual explícita move planejadas sem alterar horários nem o prefixo concluído e ativo',()=>{

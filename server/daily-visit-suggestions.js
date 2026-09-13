@@ -31,7 +31,8 @@ export async function readDailyVisitSuggestions(repository,ownerId,{now=new Date
   else records.push(...narrativeFollowups({...base,summary:row.summary}).map(item=>({...item,origin:'INTERACTION'})))
  }
  const portfolio=await readRouteProperties(repository,ownerId)
- const suggestions=dailyVisitSuggestions({records,now,timeZone}).map(item=>{
+ const ranked=dailyVisitSuggestions({records,now,timeZone})
+ const suggestions=ranked.map(item=>{
   const matches=portfolio.properties.filter(property=>String(property.clientId)===String(item.clientId))
   // Several properties require an explicit choice; never guess the destination.
   const property=matches.length===1?matches[0]:null
@@ -42,5 +43,11 @@ export async function readDailyVisitSuggestions(repository,ownerId,{now=new Date
   const ids=proposeRouteOrder(group.map(item=>({...item,visitId:item.id,lifecycle:'PLANNED',timeFlexible:true})))
   return ids.map(id=>group.find(item=>item.id===id))
  })
- return {generatedAt:now.toISOString(),timeZone,suggestions:ordered,limitations:['Ordem por prioridade e proximidade aproximada quando a propriedade é inequívoca; estradas, disponibilidade e tempo de deslocamento não confirmados.'],truncated:rows.length===3000||interactions.rows.length===1500}
+ // O corte da lista do dia deixa de ser silencioso: quem ficou de fora aparece na contagem e numa
+ // limitação explícita, em vez de a tela dar a entender que estes são todos os produtores do dia.
+ const omitted=Number(ranked.omitted)||0
+ return {generatedAt:now.toISOString(),timeZone,suggestions:ordered,eligibleCount:Number(ranked.total)||ordered.length,omittedCount:omitted,
+  limitations:['Ordem por prioridade e proximidade aproximada quando a propriedade é inequívoca; estradas, disponibilidade e tempo de deslocamento não confirmados.',
+   ...(omitted?[`A lista do dia mostra ${ordered.length} produtores; outros ${omitted} com pendência em aberto ficaram de fora deste recorte.`]:[])],
+  truncated:rows.length===3000||interactions.rows.length===1500}
 }
