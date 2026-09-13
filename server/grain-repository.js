@@ -5,6 +5,15 @@ import {buildGrainOpportunities,grainCatalog,summarizeGrainWorkspace} from './gr
 const serviceError=message=>Object.assign(new Error(message),{statusCode:503,exposeMessage:true})
 const domainError=(message,statusCode)=>Object.assign(new Error(message),{statusCode})
 const iso=value=>value instanceof Date?value.toISOString():value||null
+// delivery_start/delivery_end sao DATE no PostgreSQL e o driver devolve um objeto Date. Serializado,
+// virava "2026-02-01T00:00:00.000Z", e a conta de dias montava `${value}T23:59:59` em cima disso —
+// data invalida, NaN, e o card escrevia "Janela de entrega comeca em NaN dias". Dia civil e dia
+// civil: sai como YYYY-MM-DD, sem fuso, dos dois caminhos (PostgreSQL e memoria).
+export const dateOnly=value=>{
+ if(value instanceof Date)return Number.isNaN(value.getTime())?null:`${value.getUTCFullYear()}-${String(value.getUTCMonth()+1).padStart(2,'0')}-${String(value.getUTCDate()).padStart(2,'0')}`
+ const text=String(value??'').trim()
+ return /^\d{4}-\d{2}-\d{2}/.test(text)?text.slice(0,10):null
+}
 const jsonb=value=>JSON.stringify(value??null)
 const numberOrNull=value=>value===null||value===undefined||value===''?null:Number(value)
 const rawValues=(item,keys)=>[...new Set(keys.map(key=>String(item?.[key]??'').trim()).filter(Boolean))]
@@ -33,13 +42,13 @@ const profileRecord=row=>({
 const intentRecord=row=>({
  id:String(row.id),clientId:String(row.client_external_key||row.clientId||row.client_id||''),clientName:row.client_name||row.clientName||'',municipality:row.municipality||'',
  commodity:row.commodity,direction:row.direction,season:row.season||'',volume:Number(row.volume),volumeUnit:row.volume_unit??row.volumeUnit,targetPrice:numberOrNull(row.target_price??row.targetPrice),priceUnit:row.price_unit??row.priceUnit,
- deliveryStart:row.delivery_start??row.deliveryStart??null,deliveryEnd:row.delivery_end??row.deliveryEnd??null,deliveryLocation:row.delivery_location??row.deliveryLocation??'',qualitySpecs:row.quality_specs??row.qualitySpecs??'',
+ deliveryStart:dateOnly(row.delivery_start??row.deliveryStart),deliveryEnd:dateOnly(row.delivery_end??row.deliveryEnd),deliveryLocation:row.delivery_location??row.deliveryLocation??'',qualitySpecs:row.quality_specs??row.qualitySpecs??'',
  status:row.status,confidence:Number(row.confidence||0),source:row.source,sourceDetails:row.source_details??row.sourceDetails??'',notes:row.notes||'',observedAt:iso(row.observed_at??row.observedAt),createdAt:iso(row.created_at??row.createdAt),updatedAt:iso(row.updated_at??row.updatedAt),
  tenantId:String(row.tenant_id??row.tenantId??''),contextOwnerId:String(row.owner_user_id??row.context_owner_id??row.contextOwnerId??row.ownerId??'')
 })
 const marketRecord=row=>({
  id:String(row.id),commodity:row.commodity,marketKind:row.market_kind??row.marketKind,region:row.region,price:Number(row.price),priceUnit:row.price_unit??row.priceUnit,
- deliveryStart:row.delivery_start??row.deliveryStart??null,deliveryEnd:row.delivery_end??row.deliveryEnd??null,sourceName:row.source_name??row.sourceName,sourceType:row.source_type??row.sourceType,
+ deliveryStart:dateOnly(row.delivery_start??row.deliveryStart),deliveryEnd:dateOnly(row.delivery_end??row.deliveryEnd),sourceName:row.source_name??row.sourceName,sourceType:row.source_type??row.sourceType,
  sourceUrl:row.source_url??row.sourceUrl??'',confidence:Number(row.confidence||0),notes:row.notes||'',observedAt:iso(row.observed_at??row.observedAt),status:row.status||'active',createdAt:iso(row.created_at??row.createdAt),updatedAt:iso(row.updated_at??row.updatedAt),
  tenantId:String(row.tenant_id??row.tenantId??''),contextOwnerId:String(row.owner_user_id??row.context_owner_id??row.contextOwnerId??row.ownerId??''),scope:String(row.scope??'')
 })

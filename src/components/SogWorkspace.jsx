@@ -54,7 +54,8 @@ function OpportunityCard({opportunity,onProducer}){
    <div><small>MERCADO</small><b>{market?`${moneyFormat.format(market.price)} / ${priceUnitLabel[market.priceUnit]?.replace('R$/','')||market.priceUnit}`:'Sem referência'}</b></div>
    <div><small>ENTREGA</small><b>{opportunity.deliveryStart?formatDate(opportunity.deliveryStart):opportunity.deliveryEnd?`Até ${formatDate(opportunity.deliveryEnd)}`:'A completar'}</b></div>
   </div>
-  <div className="sog-opportunity-reading"><div><span><Target/></span><p><small>DIRECIONAMENTO SOG</small><b>{opportunity.nextAction}</b></p></div><ul>{opportunity.reasons.slice(0,3).map(reason=><li key={reason}><CheckCircle2/>{reason}</li>)}</ul>{opportunity.warnings?.[0]&&<p className="sog-warning"><AlertCircle/>{opportunity.warnings[0]}</p>}</div>
+  <div className="sog-opportunity-reading"><div><span><Target/></span><p><small>DIRECIONAMENTO SOG</small><b>{opportunity.nextAction}</b></p></div><ul>{opportunity.reasons.slice(0,3).map(reason=><li key={reason}><CheckCircle2/>{reason}</li>)}{opportunity.reasons.length>3&&<li className="sog-more"><CheckCircle2/>{`+${opportunity.reasons.length-3} ${opportunity.reasons.length-3===1?'outro motivo registrado':'outros motivos registrados'}`}</li>}</ul>{/* Todo aviso aparece: antes só o primeiro era renderizado e "cotação vencida" ou "reconfirme com o produtor" sumiam sem nada indicar que existiam. */}
+   {(opportunity.warnings||[]).map(warning=><p key={warning} className="sog-warning"><AlertCircle/>{warning}</p>)}</div>
   <footer><span><ShieldCheck/>Regra {opportunity.reasonsVersion} • sem execução automática</span>{onProducer&&<button type="button" onClick={onProducer}>Abrir Cliente 360<ChevronRight/></button>}</footer>
  </article>
 }

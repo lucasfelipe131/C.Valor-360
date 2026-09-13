@@ -129,12 +129,33 @@ const locationMatch=(intent,quote)=>{
  if(!intentLocation||!quoteLocation)return false
  return intentLocation.includes(quoteLocation)||quoteLocation.includes(intentLocation)
 }
+// A cotacao escolhida so olhava commodity, praca e frescor. Um contrato futuro com entrega em
+// maio/2028 servia de referencia para uma entrega de outubro/2026 sem que nada dissesse isso.
+// A janela entra como criterio de ORDENACAO, nao de filtro: cotacao spot legitima costuma ser
+// gravada sem janela declarada e nao pode sumir da comparacao por causa disso.
+const windowOverlap=(intent,quote)=>{
+ const start=day(quote.deliveryStart),end=day(quote.deliveryEnd)
+ if(!start&&!end)return 0 // sem janela declarada: nem compativel nem incompativel
+ const intentStart=day(intent.deliveryStart),intentEnd=day(intent.deliveryEnd)||intentStart
+ if(!intentStart)return 0
+ const quoteEnd=end||start
+ return start<=(intentEnd||intentStart)&&quoteEnd>=intentStart?1:-1
+}
+const day=value=>{const text=String(value??'').slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(text)?text:''}
 const matchingQuote=(intent,quotes,now)=>{
- const candidates=quotes.filter(quote=>quote.status!=='inactive'&&quote.commodity===intent.commodity).map(quote=>({...quote,_freshness:freshnessFor(quote.observedAt,now),_regional:locationMatch(intent,quote)}))
- candidates.sort((left,right)=>Number(left._freshness.state==='expired')-Number(right._freshness.state==='expired')||Number(right._regional)-Number(left._regional)||new Date(right.observedAt)-new Date(left.observedAt))
+ const candidates=quotes.filter(quote=>quote.status!=='inactive'&&quote.commodity===intent.commodity).map(quote=>({...quote,_freshness:freshnessFor(quote.observedAt,now),_regional:locationMatch(intent,quote),_window:windowOverlap(intent,quote)}))
+ candidates.sort((left,right)=>Number(left._freshness.state==='expired')-Number(right._freshness.state==='expired')||right._window-left._window||Number(right._regional)-Number(left._regional)||new Date(right.observedAt)-new Date(left.observedAt))
  return candidates[0]||null
 }
-const daysUntil=(value,now)=>value?Math.ceil((new Date(`${value}T23:59:59`).getTime()-now.getTime())/86_400_000):null
+// Aceita tanto o dia civil (YYYY-MM-DD) quanto um timestamp ISO completo, e devolve null — nunca
+// NaN — quando a data nao presta: com NaN nenhuma comparacao era verdadeira, o aviso de janela
+// vencida nunca disparava e a tela escrevia "comeca em NaN dias".
+const daysUntil=(value,now)=>{
+ const day=String(value??'').slice(0,10)
+ if(!/^\d{4}-\d{2}-\d{2}$/.test(day))return null
+ const at=new Date(`${day}T23:59:59`)
+ return Number.isNaN(at.getTime())?null:Math.ceil((at.getTime()-now.getTime())/86_400_000)
+}
 const priorityFor=score=>score>=75?{level:'high',label:'Prioridade alta'}:score>=55?{level:'medium',label:'Em validação'}:score>=35?{level:'watch',label:'Monitorar'}:{level:'incomplete',label:'Completar dados'}
 const statusReadiness={draft:4,monitoring:9,confirmed:14,negotiating:16}
 
@@ -161,6 +182,7 @@ export function buildGrainOpportunities({intentions=[],marketSnapshots=[]}={},op
    reasons.push(`Cotação ${quote._freshness.label.toLowerCase()} observada em ${quote.region}`)
    if(!quote._regional&&intent.deliveryLocation)warnings.push('A praça da cotação difere do local de entrega informado; valide frete e base.')
    if(quote._freshness.state==='expired')warnings.push('Cotação vencida para priorização; atualize a referência antes de negociar.')
+   if(quote._window<0)warnings.push(`A cotação usada é de outra janela de entrega${quote.marketKind&&quote.marketKind!=='spot'?` (contrato ${quote.marketKind})`:''}; confira a base antes de comparar com o preço-alvo.`)
   }else{warnings.push('Sem cotação verificável para este grão; não há comparação de preço.')}
   const deliveryDate=intent.deliveryStart||intent.deliveryEnd
   const remaining=daysUntil(deliveryDate,now)
