@@ -45,7 +45,16 @@ export default function Questionnaire({onCreate,onCreateMany,onOpen,onNotify}){
   setAssistedDirty(false);setMode(next)
  }
  const reviewImported=records=>{const list=(Array.isArray(records)?records:[{answers:records}]).filter(item=>item?.answers&&typeof item.answers==='object');if(!list.length){setError('Nenhum perfil válido foi encontrado para revisão.');return}setImportedAnswers(list[0].answers);setImportQueue(list.slice(1));setImportBatchTotal(list.length);setAssistedResult(null);setMode('assistida');window.scrollTo({top:0,behavior:'smooth'})}
- const applyImported=async(records,fileName)=>{const saved=await saveImportedProfiles(records,fileName);onCreateMany?.(saved.clients||[]);onNotify?.(`${saved.clientCount} ${saved.clientCount===1?'perfil atualizado':'perfis atualizados'} no Produtor 360.`);return saved}
+ // Antes so o total de perfis salvos era anunciado: uma resposta descartada por ter o mesmo nome de
+ // outra sumia sem que ninguem soubesse qual. Quem foi descartado agora e nomeado, com o municipio.
+ const applyImported=async(records,fileName)=>{
+  const saved=await saveImportedProfiles(records,fileName)
+  onCreateMany?.(saved.clients||[])
+  const descartados=(saved.collapsedProducers||[]).filter(item=>item?.discarded>0)
+  const aviso=descartados.length?` ${descartados.map(item=>`${item.name}${item.place?` (${item.place})`:''}`).join(', ')}: ficou só a resposta mais recente.`:''
+  onNotify?.(`${saved.clientCount} ${saved.clientCount===1?'perfil atualizado':'perfis atualizados'} no Produtor 360.${aviso}`)
+  return saved
+ }
  return <div className="page-stack producer-lab">
   <section className="producer-hero"><div className="producer-hero-copy"><span className="eyebrow">PRODUTOR 360 • PREFERÊNCIAS DECLARADAS</span><h2>Contexto para adaptar o atendimento — sem rotular a pessoa.</h2><p>Convide, reconheça respostas externas e acompanhe preferências que podem mudar conforme a decisão.</p><div className="producer-hero-actions"><button onClick={()=>leaveAssisted('central')}><Link2/>Criar link inteligente</button><button onClick={()=>leaveAssisted('importar')}><Sparkles/>Importar respostas</button></div></div><div className="dna-visual"><div className="dna-core"><Sparkles/><b>360°</b><span>visão viva</span></div>{['Preferência','IRT','NPS','Valor','Canal'].map((label,index)=><i key={label} style={{'--i':index}}><span>{label}</span></i>)}</div></section>
   <nav className="producer-tabs"><button className={mode==='central'?'active':''} onClick={()=>leaveAssisted('central')}><Inbox/>Central de respostas</button><button className={mode==='importar'?'active':''} onClick={()=>leaveAssisted('importar')}><Sparkles/>Importar arquivo</button><button className={mode==='assistida'?'active':''} onClick={()=>{setImportedAnswers({});setImportQueue([]);setImportBatchTotal(0);setAssistedResult(null);setMode('assistida')}}><ClipboardCheck/>Aplicação assistida</button></nav>

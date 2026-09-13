@@ -11,6 +11,8 @@ import matrix from '../src/data/profile-matrix.json' with {type:'json'}
 import {buildGrainOpportunities} from '../server/grain-intelligence.js'
 import {dateOnly} from '../server/grain-repository.js'
 import {buildCommitmentLadders} from '../server/commitment-ladder.js'
+import {compileSurveyImportBatch} from '../server/survey-import.js'
+import {buildSurveyOptions} from '../server/survey-validation.js'
 
 const agora=new Date('2026-09-13T12:00:00Z')
 const intencao=extra=>({id:'i1',clientId:'ivo',clientName:'Ivo Dallagnol',commodity:'soja',direction:'sell',season:'2026/27',
@@ -326,4 +328,54 @@ test('Radar — o cache de 10 minutos enxerga a mudança de compromissos',()=>{
 test('Radar — o que não coube no enriquecimento é contado',()=>{
  const fonte=readFileSync(new URL('../server/conversion-bootstrap.js',import.meta.url),'utf8')
  assert.match(fonte,/finalRadar\.contextsSkipped=Math\.max\(0,allClients\.length-contexts\.length\)/)
+})
+
+// QUEST-02: a chave do produtor era só o slug do nome. Dois produtores DIFERENTES com o mesmo nome
+// colapsavam num cadastro só — a segunda linha sobrescrevia a primeira e a única pista era um
+// contador de "duplicados". Um produtor de 1.800 ha em Sorriso desaparecia atrás de um xará.
+const respostasValidas=(nome,municipio,area)=>{
+ const alternativa=id=>[...new Set(matrix.filter(item=>item.Pergunta===id).map(item=>item.Alternativa))][0]
+ const answers={1:nome,2:municipio,3:String(area),4:'Soja',5:'Mais de 5 anos',6:'O produtor e a esposa'}
+ for(let id=7;id<=18;id++)answers[id]=alternativa(id)
+ for(let id=19;id<=24;id++)answers[id]=8
+ answers[25]='Atendimento próximo.';answers[26]='Mais visitas técnicas.'
+ return {answers}
+}
+
+test('Importação de questionário — xarás de municípios diferentes não viram um cadastro só',()=>{
+ const lote=compileSurveyImportBatch({records:[
+  respostasValidas('João Batista','Sorriso',1800),
+  respostasValidas('João Batista','Lucas do Rio Verde',120)
+ ]},{profileMatrix:matrix,surveyOptions:buildSurveyOptions(matrix),source:'teste'})
+ assert.equal(lote.receivedCount,2)
+ assert.equal(lote.profiles.length,2,'os dois produtores precisam sobreviver')
+ const areas=lote.profiles.map(item=>item.result.area).sort()
+ assert.deepEqual(areas,['120','1800'])
+ // O primeiro mantém a chave histórica (slug do nome), para o cadastro já gravado continuar casando.
+ assert.equal(lote.profiles[0].result.id,'joao-batista')
+ assert.match(lote.profiles[1].result.id,/^joao-batista-lucas-do-rio-verde$/)
+ assert.equal(lote.duplicateCount,0)
+})
+
+test('Importação de questionário — reenvio do mesmo produtor continua colapsando, e diz que colapsou',()=>{
+ const lote=compileSurveyImportBatch({records:[
+  respostasValidas('Maria Silva','Palotina',400),
+  respostasValidas('Maria Silva','Palotina',450)
+ ]},{profileMatrix:matrix,surveyOptions:buildSurveyOptions(matrix),source:'teste'})
+ assert.equal(lote.profiles.length,1)
+ assert.equal(lote.profiles[0].result.area,'450','a resposta mais recente vence')
+ assert.equal(lote.duplicateCount,1)
+ // Nada some em silêncio: quem foi descartado vai nomeado, com o município.
+ assert.equal(lote.collapsedProducers.length,1)
+ assert.equal(lote.collapsedProducers[0].name,'Maria Silva')
+ assert.equal(lote.collapsedProducers[0].discarded,1)
+ assert.match(lote.collapsedProducers[0].place,/palotina/i)
+})
+
+test('Importação de questionário — a tela nomeia quem foi descartado',()=>{
+ const pagina=readFileSync(new URL('../src/pages/Questionnaire.jsx',import.meta.url),'utf8')
+ assert.match(pagina,/const descartados=\(saved\.collapsedProducers\|\|\[\]\)\.filter\(item=>item\?\.discarded>0\)/)
+ assert.match(pagina,/ficou só a resposta mais recente/)
+ const servidor=readFileSync(new URL('../server.js',import.meta.url),'utf8')
+ assert.match(servidor,/collapsedProducers:batch\.collapsedProducers\|\|\[\]/)
 })
