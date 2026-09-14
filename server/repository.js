@@ -243,7 +243,12 @@ const fallbackSurveyRecord=survey=>({token:survey.token,producerName:survey.prod
 // Power BI carimbado como REAL DATA, e uma reimportacao sem coluna de municipio ainda sobrescrevia
 // um municipio de verdade ja cadastrado. Preenchimento nao e cadastro: entra como NULL.
 const importedPlaceholder=/^a\s+(?:definir|classificar|confirmar)$|^aguardando/i
-export const importedMunicipality=value=>{const text=String(value??'').trim();return text&&!importedPlaceholder.test(text)?text.slice(0,140):null}
+export const importedMunicipality=value=>realCadastralText(value,140)
+// O editor de cadastro pre-preenche os campos com o que a carteira devolve — inclusive o proprio
+// preenchimento automatico. Salvar sem tocar em municipio ou culturas regravava "A definir" na
+// coluna real, desfazendo pelo round-trip a mesma correcao feita na importacao e voltando a
+// carimbar preenchimento como REAL DATA na visao gerencial e no CSV do Power BI.
+export const realCadastralText=(value,max)=>{const text=String(value??'').trim();return text&&!importedPlaceholder.test(text)?text.slice(0,max):null}
 const visitRecord=row=>({id:row.id,clientId:row.client_external_key||row.client_id,scheduledAt:iso(row.scheduled_at),objective:row.objective||'',processAgreement:row.process_agreement||'',summary:row.summary||'',nextCommitment:row.next_commitment||'',nextActionAt:iso(row.next_action_at),status:row.status||'Agendada',lifecycleStatus:row.lifecycle_status||row.lifecycleStatus||null,lifecycleVersion:row.lifecycle_version||row.lifecycleVersion||null,lifecycleRevision:row.lifecycle_revision??row.lifecycleRevision??null,occurredAt:iso(row.occurred_at??row.occurredAt),completedAt:iso(row.completed_at??row.completedAt),cancelledAt:iso(row.cancelled_at??row.cancelledAt),lifecycleUpdatedAt:iso(row.lifecycle_updated_at??row.lifecycleUpdatedAt),lifecycleUpdatedBy:row.lifecycle_updated_by??row.lifecycleUpdatedBy??null,createdAt:iso(row.created_at),updatedAt:iso(row.updated_at)})
 const scopedTenant=value=>value?.tenantId??value?.tenant_id
 const scopedOwner=value=>value?.ownerId??value?.consultantId??value?.consultant_id
@@ -996,7 +1001,7 @@ export class ValRepository{
         const area=parseCultivatedArea(input.area)
         const commercial=derivedCommercial({...jsonObject(selected.rows[0].commercial_profile),...sanitizeCommercial(input.commercial||{})})
         const relationship={...jsonObject(selected.rows[0].relationship_profile),...sanitizeRelationship(input.relationship||{})}
-        await connection.query(`UPDATE clients SET name=$1,municipality=$2,total_area_ha=$3,area_band=$4,cultures=$5,preferred_channel=$6,commercial_profile=$7,relationship_profile=$8,updated_at=NOW() WHERE id=$9 AND tenant_id=$10 AND consultant_id=$11`,[name,limitedText(input.municipality,140)||null,area.totalAreaHa,area.areaBand,limitedText(input.cultures,1000)||null,limitedText(input.servicePreference,60)||null,jsonbParameter(commercial),jsonbParameter(relationship),selected.rows[0].id,this.tenantId,ownerId])
+        await connection.query(`UPDATE clients SET name=$1,municipality=$2,total_area_ha=$3,area_band=$4,cultures=$5,preferred_channel=$6,commercial_profile=$7,relationship_profile=$8,updated_at=NOW() WHERE id=$9 AND tenant_id=$10 AND consultant_id=$11`,[name,importedMunicipality(input.municipality),area.totalAreaHa,area.areaBand,realCadastralText(input.cultures,1000),limitedText(input.servicePreference,60)||null,jsonbParameter(commercial),jsonbParameter(relationship),selected.rows[0].id,this.tenantId,ownerId])
         await connection.query(`INSERT INTO audit_events (tenant_id,actor_id,action,entity_type,entity_id,after_data,created_at) VALUES ($1,$2,'client_updated','client',$3,$4,NOW())`,[this.tenantId,ownerId,selected.rows[0].id,jsonbParameter({name,municipality:input.municipality})])
       })
       const intelligence=await this.getIntelligence(ownerId);return intelligence.clients.find(item=>String(item.id)===String(clientId))||null

@@ -10,8 +10,10 @@ import {recognizeQuestionnaire} from '../src/lib/smart-import.js'
 import matrix from '../src/data/profile-matrix.json' with {type:'json'}
 import {buildGrainOpportunities} from '../server/grain-intelligence.js'
 import {dateOnly} from '../server/grain-repository.js'
+import {importedMunicipality,realCadastralText} from '../server/repository.js'
 import {buildCommitmentLadders} from '../server/commitment-ladder.js'
 import {compileSurveyImportBatch} from '../server/survey-import.js'
+import {buildConversionFoundation} from '../server/conversion-engine.js'
 import {buildSurveyOptions} from '../server/survey-validation.js'
 
 const agora=new Date('2026-09-13T12:00:00Z')
@@ -378,4 +380,35 @@ test('Importação de questionário — a tela nomeia quem foi descartado',()=>{
  assert.match(pagina,/ficou só a resposta mais recente/)
  const servidor=readFileSync(new URL('../server.js',import.meta.url),'utf8')
  assert.match(servidor,/collapsedProducers:batch\.collapsedProducers\|\|\[\]/)
+})
+
+// CONV-04: "A definir" e "A classificar" são o preenchimento que o próprio produto escreve quando a
+// planilha não traz o campo. Eles passavam nos checks de município e cultura como se fossem dado
+// observado do produtor, dobravam a nota de qualidade e a frase "FAZENDA X: A definir, culturas A
+// definir." era publicada como evidência com direct_observation:true.
+test('Radar — preenchimento automático não conta como dado observado do produtor',()=>{
+ const contexto=municipality=>({client:{id:'faz',name:'FAZENDA SÃO JOAQUIM',municipality,cultures:municipality},
+  opportunities:[],visits:[],interactions:[],properties:[],businessHistory:[],signals:[]})
+ const comPlaceholder=buildConversionFoundation(contexto('A definir'))
+ const semNada=buildConversionFoundation(contexto(''))
+ const real=buildConversionFoundation(contexto('Palotina'))
+ const nota=item=>item?.dataQuality?.score??item?.quality?.score
+ // O placeholder passa a valer o mesmo que campo vazio — que é a verdade.
+ assert.equal(nota(comPlaceholder),nota(semNada))
+ // E o dado real continua contando.
+ assert.ok(nota(real)>nota(semNada),`real ${nota(real)} deveria superar vazio ${nota(semNada)}`)
+ // A frase de evidência não anuncia o preenchimento como observação do produtor.
+ assert.doesNotMatch(JSON.stringify(comPlaceholder),/A definir/)
+})
+
+test('Importação e cadastro — o editor não regrava o preenchimento na coluna real',()=>{
+ for(const preenchimento of ['A definir','a classificar','A Confirmar','Aguardando cadastro'])
+  assert.equal(realCadastralText(preenchimento,1000),null,preenchimento)
+ assert.equal(realCadastralText('Soja, Milho',1000),'Soja, Milho')
+ assert.equal(importedMunicipality('Palotina'),'Palotina')
+ assert.equal(realCadastralText('x'.repeat(2000),1000).length,1000)
+ const repo=readFileSync(new URL('../server/repository.js',import.meta.url),'utf8')
+ // updateClient usava limitedText cru: salvar sem tocar nos campos desfazia, pelo round-trip do
+ // editor, a mesma correção feita na importação.
+ assert.match(repo,/\[name,importedMunicipality\(input\.municipality\),area\.totalAreaHa,area\.areaBand,realCadastralText\(input\.cultures,1000\),/)
 })

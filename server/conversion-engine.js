@@ -43,7 +43,7 @@ function metrics(client={}){
 function cultures(client={},ctx={}){
  const raw=[client.cultures,client.crops,client.commercial?.cultures,client.commercial?.cropMix]
  for(const p of A(ctx.properties))for(const f of A(p?.fields))for(const s of A(f?.seasons))raw.push(s?.crop)
- return U(raw.flatMap(v=>Array.isArray(v)?v:String(v||'').split(/[,;|/]+/)).map(v=>T(v,80))).slice(0,12)
+ return U(raw.flatMap(v=>Array.isArray(v)?v:String(v||'').split(/[,;|/]+/)).map(v=>realValue(T(v,80)))).slice(0,12)
 }
 function area(client={},ctx={}){
  for(const v of [client.area,client.totalArea,client.commercial?.area,client.commercial?.totalArea,client.commercial?.plantedArea])if(N(v)>0)return N(v)
@@ -51,7 +51,15 @@ function area(client={},ctx={}){
  for(const p of A(ctx.properties))for(const f of A(p?.fields)){const v=N(f?.area_ha??f?.area);if(v>0){total+=v;known=true}}
  return known?total:null
 }
-const region=c=>T(c.municipality||c.city||c.commercial?.municipality||c.region||c.commercial?.region,140)
+// "A definir" e "A classificar" sao o preenchimento que o PROPRIO produto escreve quando a planilha
+// nao traz o campo. Aqui eles passavam nos checks de municipio e cultura como se fossem dado
+// observado do produtor: a nota de qualidade dobrava (14 -> 29 numa conta vazia, 50 -> 64 depois do
+// round-trip do editor), a frase "FAZENDA X: A definir, culturas A definir." era publicada como
+// evidencia com direct_observation:true, e "A definir" virava no do grafo de culturas.
+// A mesma guarda ja existe duas vezes no produto (server/repository.js e src/lib/home-command-center.js).
+const enginePlaceholder=/^a\s+(?:definir|classificar|confirmar)$|^aguardando/i
+const realValue=value=>{const filled=T(value);return filled&&!enginePlaceholder.test(filled)?filled:''}
+const region=c=>realValue(T(c.municipality||c.city||c.commercial?.municipality||c.region||c.commercial?.region,140))
 function amount(o){for(const v of [o?.estimated_value,o?.estimatedValue,o?.value,o?.amount,o?.potential])if(N(v)!==null&&N(v)>=0)return N(v);return null}
 function probability(o){for(const v of [o?.probability,o?.win_probability,o?.winProbability])if(N(v)!==null)return C(v);return null}
 const updated=o=>o?.updated_at||o?.updatedAt||o?.created_at||o?.createdAt||null
