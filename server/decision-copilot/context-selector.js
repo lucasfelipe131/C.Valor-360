@@ -10,6 +10,21 @@ const clean=(value,max=4000)=>String(value??'').replace(/\s+/g,' ').trim().slice
 const normalize=value=>clean(value).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR')
 const safeJson=value=>{try{return JSON.stringify(value??'')}catch{return String(value??'')}}
 
+// A pergunta do consultor era quebrada so por espaco. Como normalize() nao remove
+// pontuacao, a ULTIMA palavra de uma pergunta chegava aqui grudada no sinal
+// ("irrigacao?") e nunca casava com o texto do registro, que ja e limpo em
+// recordSearchText. Em portugues a palavra que carrega o assunto e quase sempre a
+// ultima, entao a memoria que respondia a pergunta era rejeitada por
+// DOMAIN_MISMATCH exatamente quando era pedida. Todos os outros tokenizadores de
+// pergunta do produto (response-grounding, objection-library, ai-reasoning/quality,
+// product-intelligence) ja quebram por /[^a-z0-9]+/; este era a unica excecao.
+//
+// Numero puro e palavra-funcao ficam de fora: sem isso "Como foi a safra 2026-2027?"
+// passava a casar com qualquer registro que tivesse um "2026" em qualquer campo, e o
+// portao deixava de filtrar.
+const queryStopwords=new Set(['sobre','como','quando','onde','qual','quais','quem','porque','para','pelo','pela','pelos','pelas','esse','essa','esses','essas','este','esta','estes','estas','isso','aquilo','aquele','aquela','dele','dela','deles','delas','seus','suas','minha','meu','muito','muita','mais','menos','ainda','entao','sendo','pode','podem','deve','devem','devo','fazer','tenho','temos','estar','esta','estao','coisa','algo','tudo','nada','agora','hoje','ontem','amanha','favor','poderia','gostaria','preciso','quero','diga','fale','conte','explique','resuma','resumo','disse','falou','sabe','saber','ver','vamos','preciso','alguma','algum','alguns','algumas','outro','outra','outros','outras','mesmo','mesma','entre','depois','antes','durante','tambem','apenas','somente','porem','contudo','produtor','produtora','cliente','fazenda','propriedade'])
+export const contextQueryTokens=(value,minimum=4)=>[...new Set(normalize(value).split(/[^a-z0-9]+/).filter(token=>token.length>=minimum&&!queryStopwords.has(token)&&!/^[0-9]+$/.test(token)))]
+
 const domainPatterns=Object.freeze({
  PROFILE:/\b(?:perfi(?:l|s)|comportament\w*|analitic\w*|relacional|inovador|conservador|digital|como (?:ele|ela|o produtor|a produtora) (?:decide|compra|pensa|escolhe|toma (?:as )?decis(?:ao|oes))|como (?:(?:devo|posso|deveria) )?(?:abordar|lidar com|conversar com|negociar com|falar com) (?:ele|ela|o produtor|a produtora)|(?:estilo|jeito)(?: de (?:decisao|decidir|compra|comprar))? (?:dele|dela))\b/,
  GRAINS:/\b(?:graos?|soja|milho|trigo|sorgo|cevada|commodity|commodities|contrato (?:de|dos?) graos?|trava(?:mento|r)?|fixa(?:cao|r)|saca|basis)\b/,
@@ -132,8 +147,12 @@ export function memoryMatchesContextDomain(record={},domain='GENERAL',query=''){
  }
  if(normalizedDomain==='MULTI_DOMAIN')return recordDomains.some(item=>requested.includes(item))||(memoryDomain==='PRODUCER'&&structuralProducerKey.test(source))
  if(normalizedDomain==='GENERAL'){
-  if(!clean(query))return true
-  const queryTokens=normalize(query).split(/\s+/).filter(token=>token.length>=4)
+  const queryTokens=contextQueryTokens(query)
+  // Sem pergunta o portao ja admitia qualquer memoria de dominio permitido. Uma pergunta
+  // feita so de palavras-funcao ("Como ele esta?") nao tem termo de busca nenhum e caia no
+  // casamento por token contra uma lista vazia, reprovando tudo: perguntar vago era mais
+  // restritivo do que nao perguntar nada. Os dois casos sao o mesmo caso.
+  if(!queryTokens.length)return true
   return memoryDomain==='PRODUCER'&&(structuralProducerKey.test(source)||queryTokens.some(token=>source.includes(token)))
  }
  return false

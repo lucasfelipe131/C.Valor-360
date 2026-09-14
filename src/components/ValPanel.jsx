@@ -343,7 +343,11 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const configured=Boolean(status.data?.configured)
  const engineReady=configured&&!status.error
  const recommendationRegistered=Boolean(response?.recommendationId)
- const contextSources=Object.entries(response?.contextCoverage||{}).filter(([key,value])=>key!=='profile'&&Number(value)>0).map(([key,value])=>({key,label:coverageLabels[key]||key,value}))
+ // "Dossie cruzado pela VAL" anunciava o total de memorias autorizadas do produtor, nao as
+ // que o raciocinio leu: com 86 autorizadas e teto de dominio 6, a tela dizia "86 memorias"
+ // e o consultor concluia que a VAL tinha lido o dossie inteiro. memoriesUsed so vem quando
+ // houve corte, e entao o numero exibido passa a ser o que foi lido, com o total ao lado.
+ const contextSources=Object.entries(response?.contextCoverage||{}).filter(([key,value])=>key!=='profile'&&key!=='memoriesUsed'&&Number(value)>0).map(([key,value])=>({key,label:coverageLabels[key]||key,value,...(key==='memories'&&Number.isFinite(Number(response?.contextCoverage?.memoriesUsed))?{value:response.contextCoverage.memoriesUsed,total:value}:{})}))
  const interpretedAttachments=Array.isArray(response?.attachments)?response.attachments.filter(item=>item.status!=='received'||item.analysis?.summary):[]
  const clientMetrics=useMemo(()=>commercialMetrics(client||{}),[client])
  const primaryQuestionType=questions.find(item=>item.question===brief.question)?.type||textValue(advice?.next_question?.type)||'aberta'
@@ -621,7 +625,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
 
    <details className="val-analysis-details">
     <summary><DatabaseZap/>Ver dossiê e detalhes técnicos</summary>
-    {response&&<div className="val-context-coverage"><div><DatabaseZap/><span><b>Dossiê cruzado pela VAL</b><small>Cadastro canônico{response.contextCoverage?.profile?' + perfil Produtor 360':''}</small></span></div><ul>{contextSources.length?contextSources.map(item=><li key={item.key}><b>{item.value}</b><span>{item.label}</span></li>):<li><b>1</b><span>cadastro do produtor</span></li>}</ul></div>}
+    {response&&<div className="val-context-coverage"><div><DatabaseZap/><span><b>Dossiê cruzado pela VAL</b><small>Cadastro canônico{response.contextCoverage?.profile?' + perfil Produtor 360':''}</small></span></div><ul>{contextSources.length?contextSources.map(item=><li key={item.key}><b>{item.value}</b><span>{item.total?`${item.label} (de ${item.total} autorizadas)`:item.label}</span></li>):<li><b>1</b><span>cadastro do produtor</span></li>}</ul></div>}
 
    <div className="val-insight-grid">
     <article className="val-insight-card val-answer-card">

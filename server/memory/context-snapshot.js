@@ -1,7 +1,7 @@
 import {createHash,randomUUID} from 'node:crypto'
 import {canonicalMemoryRecord,isMemoryAuthorized,memoryContractVersion,memoryValidity} from './contracts.js'
 import {contextFreshnessPolicies,contextFreshnessPolicyVersion,evaluateSourceFreshness} from './freshness-policy.js'
-import {assertActiveProducerBoundary,assertContextScopeAliases,classifyValContextDomain,collectionMatchesContextDomain,contextCollectionPolicy,contextTraceEntry,explicitlyGlobalContext,matchedValContextDomains,memoryMatchesContextDomain,valContextDomains,valContextSelectorVersion} from '../decision-copilot/context-selector.js'
+import {assertActiveProducerBoundary,assertContextScopeAliases,classifyValContextDomain,collectionMatchesContextDomain,contextCollectionPolicy,contextQueryTokens,contextTraceEntry,explicitlyGlobalContext,matchedValContextDomains,memoryMatchesContextDomain,valContextDomains,valContextSelectorVersion} from '../decision-copilot/context-selector.js'
 
 export const contextSnapshotVersion='val.context_snapshot.v1'
 export const contextFreshnessPolicy=Object.freeze({
@@ -77,7 +77,26 @@ function conflictComparable(record){
   return Boolean(key)
 }
 
-function relevance(record,objective,now){
+// O ranking olhava so `memory_type key source_type` contra os baldes fixos de
+// objectiveTokens(), que devolve [] para qualquer objetivo fora de
+// profile/agron/visit/commercial. Em GENERAL isso zerava objectiveScore para TODAS as
+// memorias: a pergunta do consultor nao mudava nada na escolha. Medido, com teto 1:
+// "Fale sobre a irrigacao dele", "Fale sobre a soja dele" e "Fale sobre o municipio
+// dele" selecionavam a MESMA memoria (a mais recente com bonus estrutural). Pior, o
+// portao de dominio admite a memoria JUSTAMENTE pelo conteudo dela, e o ranking em
+// seguida a tratava como se esse conteudo nao existisse - a nota de voz que o proprio
+// consultor gravou perdia a vaga para "area cadastrada da propriedade".
+const memoryQuestionText=record=>`${record.key||''} ${safeJson(record.content??record.value)}`.replace(/[_./:-]+/g,' ').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('pt-BR')
+// Uma unica palavra do assunto perguntado (20) ja supera o bonus estrutural (18), e o
+// teto de 44 impede que uma pergunta longa atropele estado epistemico e autoridade.
+const questionAffinity=(record,query)=>{
+  const tokens=contextQueryTokens(query)
+  if(!tokens.length)return 0
+  const searchable=memoryQuestionText(record)
+  return Math.min(44,tokens.filter(token=>searchable.includes(token)).length*20)
+}
+
+function relevance(record,objective,now,query=''){
   const tokens=objectiveTokens(objective)
   const searchable=`${record.memory_type} ${record.key} ${record.source_type}`.toLowerCase()
   const objectiveScore=tokens.reduce((sum,token)=>sum+(searchable.includes(token)?18:0),0)
@@ -87,13 +106,14 @@ function relevance(record,objective,now){
   const days=ageDays(updated,now)
   const recencyScore=days==null?0:days<=30?18:days<=180?12:days<=365?7:2
   const structuralBonus=record.memory_type==='PRODUCER'&&/(?:area|culture|municip|property|name)/i.test(record.key)?18:0
-  return objectiveScore+stateScore+confidenceScore+sourceAuthority(record)+recencyScore+structuralBonus
+  return objectiveScore+questionAffinity(record,query)+stateScore+confidenceScore+sourceAuthority(record)+recencyScore+structuralBonus
 }
 
-function selectionReasons(record,objective){
+function selectionReasons(record,objective,query=''){
   const searchable=`${record.memory_type} ${record.key} ${record.source_type}`.toLowerCase()
   const reasons=[`epistemic_state:${record.memory_state.toLowerCase()}`]
   if(objectiveTokens(objective).some(token=>searchable.includes(token)))reasons.push('objective_match')
+  if(questionAffinity(record,query))reasons.push('question_match')
   if(sourceAuthority(record)>=25)reasons.push('authoritative_source')
   if(record.confidence!=null)reasons.push('recorded_confidence')
   if(record.memory_type==='PRODUCER'&&/(?:area|culture|municip|property|name)/i.test(record.key))reasons.push('structural_information')
@@ -614,7 +634,15 @@ export function buildContextSnapshot(context={},input={}){
       exclude(record.memory_id,validity)
     }
   }
-  active.sort((left,right)=>relevance(right,`${objective} ${query}`,now)-relevance(left,`${objective} ${query}`,now)||String(right.updated_at||'').localeCompare(String(left.updated_at||'')))
+  // Peso numerico nao resolve isto: medido, a nota de voz que respondia a pergunta
+  // somava 106 e o registro de "area cadastrada" 110, porque bonus estrutural (18) mais
+  // uma faixa de recencia (6) valiam mais do que casar com o assunto perguntado. Em vez
+  // de calibrar constante contra constante, quem fala do assunto perguntado ordena na
+  // frente de quem nao fala, e a nota de relevancia continua decidindo dentro de cada
+  // grupo. Quando a pergunta nao tem termo proprio (contextQueryTokens vazio) ninguem
+  // casa, os dois grupos viram um so e a ordenacao e exatamente a de antes.
+  const affinityRank=record=>questionAffinity(record,query)?0:1
+  active.sort((left,right)=>affinityRank(left)-affinityRank(right)||relevance(right,`${objective} ${query}`,now,query)-relevance(left,`${objective} ${query}`,now,query)||String(right.updated_at||'').localeCompare(String(left.updated_at||'')))
   const domainMemoryLimit={PROFILE:4,VISIT:8,COMMERCIAL:10,AGRONOMY:10,GRAINS:8,CREDIT:8,GEO:8,OPPORTUNITY:8,GENERAL:6,MULTI_DOMAIN:12}[domain]||6
   const selected=active.slice(0,Math.max(1,Math.min(domainMemoryLimit,Number(input.memoryLimit)||domainMemoryLimit)))
   for(const item of active.slice(selected.length))exclude(item.memory_id,'LOWER_RELEVANCE')
@@ -779,7 +807,7 @@ export function buildContextSnapshot(context={},input={}){
   const selectedTrace=[
     ...selected.map(item=>{
       const provenance=memoryScopeById.get(item.memory_id)||{}
-      return contextTraceEntry({sourceType:item.source_type,sourceId:item.source_ref,producerId:provenance.producerId,tenantId:provenance.tenantId,ownerId:provenance.ownerId,timestamp:item.observed_at||item.updated_at,relevanceScore:relevance(item,`${objective} ${query}`,now),reasonSelected:`DOMAIN_${domain}_SEMANTIC_MATCH`})
+      return contextTraceEntry({sourceType:item.source_type,sourceId:item.source_ref,producerId:provenance.producerId,tenantId:provenance.tenantId,ownerId:provenance.ownerId,timestamp:item.observed_at||item.updated_at,relevanceScore:relevance(item,`${objective} ${query}`,now,query),reasonSelected:`DOMAIN_${domain}_SEMANTIC_MATCH`})
     }),
     ...selectedCollections.map(item=>contextTraceEntry({sourceType:item.evidence_ref?.type,sourceId:item.evidence_ref?.id,producerId:item.producerId,tenantId:item.tenantId,ownerId:item.ownerId,timestamp:item.observed_at,relevanceScore:1,reasonSelected:`COLLECTION_${domain}_SEMANTIC_MATCH`})),
     ...behavioralSignals.map(item=>contextTraceEntry({sourceType:'behavioral_profile',sourceId:item.source_ref,producerId:item.producer_id,tenantId:item.tenant_id,ownerId:item.owner_id,timestamp:item.observed_at,relevanceScore:1,reasonSelected:'BEHAVIORAL_EVIDENCE'}))
@@ -788,7 +816,7 @@ export function buildContextSnapshot(context={},input={}){
     ...rejectedScopeTrace,
     ...considered.filter(item=>exclusions.has(item.memory_id)).map(item=>{
       const provenance=memoryScopeById.get(item.memory_id)||{}
-      return contextTraceEntry({sourceType:item.source_type,sourceId:item.source_ref,producerId:provenance.global?'GLOBAL':provenance.producerId,tenantId:provenance.tenantId,ownerId:provenance.ownerId,timestamp:item.observed_at||item.updated_at,relevanceScore:relevance(item,`${objective} ${query}`,now),reasonSelected:[...(exclusions.get(item.memory_id)||[])].join(','),status:'REJECTED'})
+      return contextTraceEntry({sourceType:item.source_type,sourceId:item.source_ref,producerId:provenance.global?'GLOBAL':provenance.producerId,tenantId:provenance.tenantId,ownerId:provenance.ownerId,timestamp:item.observed_at||item.updated_at,relevanceScore:relevance(item,`${objective} ${query}`,now,query),reasonSelected:[...(exclusions.get(item.memory_id)||[])].join(','),status:'REJECTED'})
     }),
     ...collectionRejectedTrace
   ].slice(0,100)
@@ -820,7 +848,7 @@ export function buildContextSnapshot(context={},input={}){
       policy_version:'val.context.selection.v1',
       considered_refs:considered.map(item=>item.memory_id),
       selected_refs:selectedRefs,
-      selection_reason_codes:selected.map(item=>({ref:item.memory_id,reason_codes:selectionReasons(item,`${objective} ${query}`)})),
+      selection_reason_codes:selected.map(item=>({ref:item.memory_id,reason_codes:selectionReasons(item,`${objective} ${query}`,query)})),
       excluded_refs:excludedRefs,
       exclusion_reason_codes:exclusionReasonCodes,
       domain,
@@ -917,11 +945,21 @@ export function validateContextSnapshot(snapshot){
 
   const validationQuery=scope?.query_fingerprint?domainQuery(scope?.requested_domains):''
   if(collectionItemsWithType.some(({sourceType,item})=>!collectionMatchesContextDomain(item?.data||{},sourceType,scope?.domain,validationQuery)))violate('domain_scope')
+  // O validador nao recebe a pergunta original (o snapshot so carrega o fingerprint),
+  // entao reconstroi uma consulta sintetica a partir dos dominios pedidos. Para todo
+  // dominio nomeado essa reconstrucao funciona, porque o rotulo ('perfil', 'comercial')
+  // e ele proprio um marcador de dominio. Para GENERAL ela vira a palavra "geral", que
+  // nao e marcador de nada: cai no casamento por token e passa a exigir que a memoria
+  // contenha literalmente "geral". Toda memoria admitida pelo conteudo reprovava aqui e
+  // derrubava o snapshot inteiro com domain_scope. Em GENERAL o que o validador pode de
+  // fato conferir e o rotulo de dominio permitido; a semantica da pergunta ja foi
+  // conferida na selecao, com a pergunta de verdade.
+  const memoryValidationQuery=text(scope?.domain).toUpperCase()==='GENERAL'?'':validationQuery
   const memoryDomainCompatible=item=>{
     const selectedDomain=text(scope?.domain).toUpperCase()
     if(!text(item.memory_domain))return false
     const record={memory_type:item.memory_domain,key:item.key,source_type:item.source_type,content:item.value}
-    if(memoryMatchesContextDomain(record,selectedDomain,validationQuery))return true
+    if(memoryMatchesContextDomain(record,selectedDomain,memoryValidationQuery))return true
     if(selectedDomain!=='AGRONOMY')return false
     const semantic=matchedValContextDomains(`${item.key||''} ${item.source_type||''} ${safeJson(item.value)}`)
     const structural=/\b(?:area|culture|cultura|property|propriedade|field|talhao)\b/i.test(String(item.key||'').replace(/[_./:-]+/g,' '))

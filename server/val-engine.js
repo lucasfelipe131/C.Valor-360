@@ -526,7 +526,17 @@ export function summarizeContextCoverage(context={}){
     priorRecommendations:count(context.priorRecommendations)
   }
   const saved=count(context.attachments);const current=count(context.currentAttachments)
-  return {...coverage,...(saved?{attachments:saved}:{}),...(current?{currentAttachments:current}:{})}
+  // `memories` conta as memorias AUTORIZADAS do produtor, nao as que o raciocinio leu.
+  // O snapshot corta pelo teto do dominio (6 em GENERAL, 4 em PROFILE), entao um produtor
+  // com historico rico fazia a tela anunciar "86 memorias" sob o titulo "Dossie cruzado
+  // pela VAL" quando a VAL tinha cruzado 6 - o numero exagerava a cobertura exatamente no
+  // caso em que mais material ficou de fora. `memoriesUsed` e o que de fato entrou; a tela
+  // mostra os dois para o consultor saber o tamanho do corte.
+  // Sem snapshot nao ha corte conhecido, e um `memoriesUsed:0` faria a tela dizer
+  // "0 de 86 memorias" - um numero falso e mais alarmante do que o problema original.
+  const selected=context.contextSnapshot?.selection?.selected_refs
+  const used=Array.isArray(selected)?selected.length:null
+  return {...coverage,...(used!==null&&used<coverage.memories?{memoriesUsed:used}:{}),...(saved?{attachments:saved}:{}),...(current?{currentAttachments:current}:{})}
 }
 
 function technicalReviewShell(context,_message,signalRequiresReview){
