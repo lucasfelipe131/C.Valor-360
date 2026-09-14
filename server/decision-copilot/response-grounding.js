@@ -183,6 +183,25 @@ const strategyInstruction=/^(?:nao\s+)?(?:abra|acompanhe|acompanhar|adapte|adapt
 const genericAssertion=/\b(?:ele|ela|produtor\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:e|esta|tem|possui|carrega|mantem|demonstra|desvia|cultiva|quer|pretende|vai|parece|opera)\b/
 const safeNamedObjectFollower=new Set(['antes','como','com','depois','durante','em','na','nas','no','nos','para','por','sobre'])
 const nonNameClauseLeads=new Set(['a','ainda','basis','biblioteca','calagem','chuva','clima','como','confianca','cotacao','ctc','custo','estoque','evite','fitoscan','frete','hedge','informe','inteligencia','manual','margem','mercado','milho','na','nao','nenhum','nenhuma','nutriscan','o','perfil','ph','por','preco','priorize','producao','roi','safra','selecione','soja','sua','temperatura','trigo','use','valide','wasde'])
+// Termos que ESCOLHEM entre registros ja selecionados ("a ultima", "a proxima", "a atual") em vez
+// de predicar atributo novo. Com o registro "Visita concluida em 08/09/2026 na Fazenda Boa Vista",
+// responder "A ultima visita concluida foi em 08/09/2026 na Fazenda Boa Vista." era descartado
+// porque a palavra "ultima" nao esta no texto do registro: o eco literal passava e o portugues
+// natural nao. A lista e fechada de proposito - liberar o vocabulario da pergunta em geral
+// autorizaria "e VIP" ou "tem CPF negativado" a se sustentarem na propria pergunta.
+const questionSelectorTokens=new Set(['ultima','ultimo','ultimas','ultimos','recente','recentes','anterior','anteriores','passada','passado','passadas','passados','proxima','proximo','proximas','proximos','atual','atuais','mesma','mesmo','mesmas','mesmos','citada','citado','citadas','citados'])
+// O nome do produtor ativo e o escopo do turno, nao conteudo a sustentar nem conteudo a endereçar:
+// de quem e a resposta ja foi validado antes daqui pelas fronteiras de tenant/owner/producer.
+//
+// Sai o NOME INTEIRO, nunca os tokens dele. Isentar token a token abre lavagem de verdade, e o
+// nome vem do cadastro, que quem usa o sistema controla: com um produtor gravado como "Joao
+// Pereira Inadimplente", a palavra "inadimplente" viraria salvo-conduto e a resposta "...e ele
+// esta inadimplente" passaria sustentada por uma evidencia que so fala de visita.
+//
+// A fronteira de palavra tambem e obrigatoria: sem ela um produtor chamado "Ana" mutilaria
+// "analise" no meio e o portao passaria a julgar um texto que ninguem escreveu.
+const escapeForRegExp=value=>value.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')
+const withoutScopeName=(text,scopeName)=>scopeName.length>=3?text.replace(new RegExp(`\\b${escapeForRegExp(scopeName)}\\b`,'g'),' '):text
 const inferenceDerivationTokens=new Set(['alta','analitico','analitica','baixa','conservador','conservadora','digital','inovador','inovadora','media','misto','mista','provavel','relacional','secundario','secundaria','verificada','verificado'])
 const safeStrategyToken=/^(?:abra|acompanhar|acompanhe|adaptar|adapte|agir|alternativ\w*|antes|abordagem|aprofundar|apresentar|apresente|atuais?|auditav\w*|autorizad\w*|coletar|colete|comparativ\w*|confirme|confirmar|construa|construir|contexto|continuar|criterio|cruze|cruzar|dados?|data|decisao|defina|definir|desconto|discuta|discutir|encaminhe|encaminhar|entrada\w*|envie|enviar|escopo|evidencia\w*|evite|evitar|fabrique|fabricar|ferramenta|fonte\w*|habilitad\w*|hipotese\w*|inicie|iniciar|inferir|informacao|informe|informar|liberar|mantenha|manter|material|modelo|mostre|mostrar|necessari\w*|objetiv\w*|pergunte|perguntar|preencher|prescrever|priorize|priorizar|processo|produtor|proponha|propor|recomende|recomendar|reduza|reduzir|registre|registrar|responsavel|resposta|resultado|reutilizar|revise|revisar|selecione|selecionar|somente|transformar|unidade\w*|use|usar|valide|validar|verifique|verificar|vinculo|revisao)$/
 const deterministicSafetyPolicy=/^(?:a val reteve qualquer orientacao tecnica acionavel ate revisao do responsavel habilitado|evite liberar orientacao tecnica acionavel antes da revisao habilitada|encaminhe (?:o contexto e as fontes|a solicitacao) ao responsavel habilitado(?: para revisao)?|uma revisao tecnica registrada e vinculada as fontes mudaria este bloqueio|nenhuma orientacao tecnica acionavel foi autorizada automaticamente)\.?$/
@@ -629,7 +648,7 @@ function claimType(value='',field='answer'){
  return 'FACT'
 }
 
-function claimSupport(claim,entries,question='',domain='GENERAL',field='answer',activeProducerId=''){
+function claimSupport(claim,entries,question='',domain='GENERAL',field='answer',activeProducerId='',activeProducerName=''){
  const source=normalize(claim)
  const strategyBody=source.replace(/^(?:como abordar|acao|estrategia):\s*/,'')
  const kind=claimType(claim,field)
@@ -755,7 +774,12 @@ function claimSupport(claim,entries,question='',domain='GENERAL',field='answer',
  const strictGroundingKinds=new Set(['FACT','OBSERVATION','QUOTE','INTENTION','INFERENCE','HYPOTHESIS'])
  if(strictGroundingKinds.has(kind)&&!usable.some(item=>item.exact)){
   const supportedTokens=new Set(usable.flatMap(item=>[...item.entry.tokenSet]))
-  const unsupportedMaterialTokens=claimTokens.filter(token=>!supportedTokens.has(token)&&!(['INFERENCE','HYPOTHESIS'].includes(kind)&&inferenceDerivationTokens.has(token)))
+  // O seletor que a PROPRIA pergunta usou nao e conteudo novo: ele escolhe entre os registros ja
+  // selecionados. A pergunta ja e fonte legitima de contexto compartilhado neste arquivo -
+  // numericMentions(question) e urgency(questionText) fazem exatamente isso.
+  const questionSelectors=new Set(tokens(question).filter(token=>questionSelectorTokens.has(token)))
+  const claimBeyondScope=withoutScopeName(source,normalize(activeProducerName))
+  const unsupportedMaterialTokens=tokens(claimBeyondScope).filter(token=>!supportedTokens.has(token)&&!questionSelectors.has(token)&&!(['INFERENCE','HYPOTHESIS'].includes(kind)&&inferenceDerivationTokens.has(token)))
   if(unsupportedMaterialTokens.length)return {supported:false,evidenceRefs:[],reason:'UNSUPPORTED_SEMANTIC_TAIL'}
  }
  const matches=usable.map(item=>({id:item.entry.id,overlap:item.overlap,exact:item.exact}))
@@ -775,7 +799,7 @@ const cropOnlyGrainsQuestion=question=>{
  return matchedValContextDomains(source).includes('GRAINS')&&!remaining.includes('GRAINS')&&remaining.length>0
 }
 
-function directlyAnswersQuestion({domain,question,answer,unsupportedClaims}){
+function directlyAnswersQuestion({domain,question,answer,unsupportedClaims,activeProducerName=''}){
  const source=normalize(answer)
  if(!source)return false
  if(unsupportedClaims.length)return false
@@ -822,7 +846,14 @@ function directlyAnswersQuestion({domain,question,answer,unsupportedClaims}){
  // Agradecimento e fechamento ("obrigado", "perfeito") não têm conteúdo a endereçar, como o
  // cumprimento: sem isto "Obrigado!" era bloqueado por não ter overlap com "Disponha".
  const relevanceStop=new Set(['qual','quais','como','quando','onde','quem','porque','favor','mostre','mostrar','diga','dizer','devo','esta','estao','foi','foram','mais','recente','atual','aqui','posso','pode','podem','usar','use','resuma','resumir','linha','confirme','confirmar','explique','explicar','quanto','quantos','quantas','aplicar','aplico','vale','pena','preciso','precisa','fazer','faco','seria','sera','entender','saber','significa','conceito','defina','define','definir','funciona','fale','fala','explica','conta','quero','queria','gostaria','sobre','melhor','ideal','obrigado','obrigada','obrigados','obrigadas','valeu','perfeito','entendi','certo','combinado','legal','show','okay','beleza','muito'])
- const questionTokens=tokens(question).filter(token=>!relevanceStop.has(token))
+ // Sem isto, "quando foi a ultima visita?" era respondida e a MESMA pergunta escrita por extenso,
+ // "quando foi a ultima visita concluida do Joao Pereira?", devolvia "Nao ha evidencia selecionada
+ // suficiente" na tela - mesma evidencia, mesma resposta, todas as afirmacoes com suporte.
+ // Quando a pergunta e SO o nome ("Joao Pereira"), tirar o nome deixaria a pergunta sem termo
+ // material e ela cairia na saida de cumprimento, que aceita qualquer resposta. Nesse caso o nome
+ // volta a valer como conteudo.
+ const questionWithoutScope=tokens(withoutScopeName(normalize(question),normalize(activeProducerName))).filter(token=>!relevanceStop.has(token))
+ const questionTokens=questionWithoutScope.length?questionWithoutScope:tokens(question).filter(token=>!relevanceStop.has(token))
  // A pergunta sem nenhum token material (cumprimento como "oi", "bom dia") não tem
  // conteúdo específico para a resposta endereçar ou deixar de endereçar — todo o resto
  // desta função (domínio, faceta, suporte por evidência de cada claim) já rodou antes
@@ -857,13 +888,13 @@ export function factMatchesQuestionFacet({domain='',question='',statement='',sou
  return evidenceMatchesFacet(facet,normalize(statement),clean(sourceType,120))
 }
 
-export function evaluateResponseGrounding({question='',answer='',domain='',evidence=[],activeProducerId='',tenantId='',ownerId='',field='answer',now=new Date(),checkQuestionRelevance=true}={}){
+export function evaluateResponseGrounding({question='',answer='',domain='',evidence=[],activeProducerId='',activeProducerName='',tenantId='',ownerId='',field='answer',now=new Date(),checkQuestionRelevance=true}={}){
  const selectedDomain=domain||classifyValContextDomain(question)
  const evaluatedAt=now instanceof Date&&!Number.isNaN(now.getTime())?now:new Date()
  const entries=evidenceEntries(evidence,{domain:selectedDomain,question,activeProducerId:clean(activeProducerId,180),tenantId:clean(tenantId,180),ownerId:clean(ownerId,180),now:evaluatedAt})
  const claimTexts=splitClaims(answer)
  const claims=claimTexts.map((claim,index)=>{
-  const support=claimSupport(claim,entries,question,selectedDomain,field,activeProducerId)
+  const support=claimSupport(claim,entries,question,selectedDomain,field,activeProducerId,clean(activeProducerName,180))
   return Object.freeze({claim_id:`claim:${hash(`${field}:${index}:${claim}`)}`,field,index,type:claimType(claim,field),supported:support.supported,evidence_refs:support.evidenceRefs,reason_code:support.reason})
  })
  const normalizedAnswer=normalize(answer)
@@ -878,7 +909,7 @@ export function evaluateResponseGrounding({question='',answer='',domain='',evide
  const provenanceViolations=entries.filter(item=>!item.provenanceCompatible).map(item=>Object.freeze({source_ref:item.auditId,reason_codes:item.provenanceCodes}))
  const temporalViolations=entries.filter(item=>!item.temporalCompatible).map(item=>item.auditId)
  const unsupportedClaims=claims.filter(item=>!item.supported)
- const directlyAnswers=!checkQuestionRelevance||directlyAnswersQuestion({domain:selectedDomain,question,answer,unsupportedClaims})
+ const directlyAnswers=!checkQuestionRelevance||directlyAnswersQuestion({domain:selectedDomain,question,answer,unsupportedClaims,activeProducerName:clean(activeProducerName,180)})
  return Object.freeze({
   version:responseGroundingVersion,domain:selectedDomain,
   passed:unsupportedClaims.length===0&&scopeViolations.length===0&&incompatibleEvidence.length===0&&provenanceViolations.length===0&&temporalViolations.length===0&&directlyAnswers,
