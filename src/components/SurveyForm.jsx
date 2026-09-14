@@ -4,6 +4,8 @@ import questions from '../data/questions.json'
 import matrix from '../data/profile-matrix.json'
 import {calculateProfile} from '../lib/profile'
 import {useNavigationGuard} from '../lib/use-navigation-guard'
+import {activeStorageScope} from '../lib/storage-scope.js'
+import {clearSurveyDraft,readSurveyDraft,writeSurveyDraft} from '../lib/survey-draft.js'
 
 const sections=[
  {title:'Sua propriedade',kicker:'CONTEXTO',subtitle:'Vamos começar conhecendo a sua realidade.',from:0,to:6},
@@ -16,8 +18,13 @@ const sections=[
 export function buildOptionMap(){return matrix.reduce((map,item)=>{(map[item.Pergunta]??=[]).push(item.Alternativa);return map},{})}
 
 export default function SurveyForm({initialAnswers={},producerName='',onSubmit,embedded=false,submitLabel='Enviar respostas',onDirtyChange}){
+ const draftScope=activeStorageScope()
+ const restored=useMemo(()=>readSurveyDraft(draftScope),[draftScope])
  const [step,setStep]=useState(0)
- const [answers,setAnswers]=useState(()=>({...initialAnswers,...(producerName&&!initialAnswers[1]?{1:producerName}:{})}))
+ const seedSignature=JSON.stringify({initialAnswers,producerName})
+ // O rascunho só volta para a MESMA abertura do formulário: com outra importação de respostas, o
+ // componente é remontado com outra semente e o rascunho antigo não se aplica.
+ const [answers,setAnswers]=useState(()=>restored&&restored.seed===seedSignature?{...restored.answers}:({...initialAnswers,...(producerName&&!initialAnswers[1]?{1:producerName}:{})}))
  const [error,setError]=useState('')
  const [sending,setSending]=useState(false)
  // 45 perguntas respondidas na frente do produtor moravam so no useState: sair da pagina, ou trocar
@@ -27,6 +34,14 @@ export default function SurveyForm({initialAnswers={},producerName='',onSubmit,e
  useNavigationGuard(dirty,{busy:sending,label:'questionário',onBlocked:()=>setError('Aguarde o envio das respostas terminar.')})
  useEffect(()=>{onDirtyChange?.(dirty)},[dirty,onDirtyChange])
  useEffect(()=>()=>onDirtyChange?.(false),[onDirtyChange])
+ // Gravado a cada tecla, nao na saida: a expiracao de sessao desmonta a arvore inteira sem passar
+ // por guarda de navegacao nenhuma, e o cleanup do proprio componente ja zerou o sinal de sujo.
+ // Sem escopo de usuario nao grava nada - o questionario publico nao tem sessao.
+ useEffect(()=>{
+  if(!draftScope)return
+  if(dirty)writeSurveyDraft(draftScope,{answers,seed:seedSignature})
+  else clearSurveyDraft(draftScope)
+ },[answers,dirty,draftScope,seedSignature])
  const optionMap=useMemo(buildOptionMap,[])
  const current=sections[step]
  const currentQuestions=questions.slice(current.from,current.to)
@@ -43,7 +58,7 @@ export default function SurveyForm({initialAnswers={},producerName='',onSubmit,e
  const finish=async()=>{
   if(!validateStep())return
   setSending(true);setError('')
-  try{await onSubmit?.({answers,result:calculateProfile(answers,matrix,embedded?'Aplicação assistida':'Questionário externo')})}
+  try{await onSubmit?.({answers,result:calculateProfile(answers,matrix,embedded?'Aplicação assistida':'Questionário externo')});clearSurveyDraft(draftScope)}
   catch(exception){setError(exception?.message||'Não foi possível enviar agora. Tente novamente.');setSending(false)}
  }
  const field=question=>{

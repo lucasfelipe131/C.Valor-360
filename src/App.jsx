@@ -7,6 +7,9 @@ import Topbar from './components/Topbar'
 import Login from './pages/Login'
 import PasswordChange from './pages/PasswordChange'
 import {normalizeText,reconcileOpportunityProjection} from './lib/profile'
+
+import {activeStorageScope,activeStorageScopeKey} from './lib/storage-scope.js'
+import {hasSurveyDraft,purgeForeignSurveyDrafts} from './lib/survey-draft.js'
 import {opportunityCacheKey} from './lib/opportunity-pipeline'
 import {resolveCopilotLaunch} from './lib/copilot-context'
 import {clearCopilotSessionStorage} from './lib/copilot-session-storage'
@@ -30,7 +33,7 @@ const DataHub=lazy(()=>import('./pages/DataHub'))
 const Admin=lazy(()=>import('./pages/Admin'))
 const PublicSurvey=lazy(()=>import('./pages/PublicSurvey'))
 
-const activeStorageScopeKey='valor360-active-storage-scope'
+
 const createEmptyAgroLaunch=()=>({nonce:0,client:null,property:null,field:null,analysis:null,context:{},initialTool:null,initialFiles:[]})
 const clearLegacyPortfolioCache=()=>{
  for(const key of ['valor360-clients','valor360-visits','valor360-opportunities'])localStorage.removeItem(key)
@@ -283,11 +286,16 @@ export default function App(){
  const registerVisitResult=visit=>{if(!visit)return;setVisits(current=>[visit,...current.filter(item=>item.id!==visit.id)]);notify('Visita registrada. Sua próxima preparação já foi atualizada.')}
  const saveOpportunity=async input=>{const requestOwner=copilotOwnerScope;const response=await fetch('/api/opportunities',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input),signal:AbortSignal.timeout(10000)});if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível atualizar a oportunidade.');if(opportunityOwnerRef.current!==requestOwner)throw new Error('A conta mudou durante a gravação. Atualize a carteira.');if(!payload.opportunity||String(payload.opportunity.clientId)!==String(input.clientId))throw new Error('O servidor retornou uma oportunidade de contexto diferente.');setOpportunities(current=>[payload.opportunity,...current.filter(item=>!(String(item.clientId)===String(payload.opportunity.clientId)&&item.candidateKey===payload.opportunity.candidateKey))]);return payload.opportunity}
  const refreshPortfolio=async()=>{const response=await fetch('/api/intelligence',{signal:AbortSignal.timeout(12000)});if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'A carteira protegida não pôde ser atualizada.');const serverClients=Array.isArray(payload.clients)?payload.clients:[];setClientList(serverClients);setVisits(Array.isArray(payload.visits)?payload.visits:[]);setOpportunities(Array.isArray(payload.opportunities)?payload.opportunities:[]);setSelected(current=>serverClients.find(item=>String(item.id)===String(current?.id))||null);setPortfolioError('');return payload}
- const login=async credentials=>{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials),signal:AbortSignal.timeout(10000)});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível autenticar.');rememberStorageScope(payload.user);setAuthNotice('');setCurrentUser(payload.user||null);setPortfolioReady(Boolean(payload.user?.demo));setAuthenticated(true);notify('Bem-vindo à VAL.')}
+ const login=async credentials=>{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials),signal:AbortSignal.timeout(10000)});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível autenticar.');rememberStorageScope(payload.user);purgeForeignSurveyDrafts(payload.user?.storageScope);setAuthNotice('');setCurrentUser(payload.user||null);setPortfolioReady(Boolean(payload.user?.demo));setAuthenticated(true);notify('Bem-vindo à VAL.')}
  const changePassword=async input=>{const response=await fetch('/api/auth/password',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(input),signal:AbortSignal.timeout(15000)});const payload=await response.json().catch(()=>({}));if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error(payload.error||'Não foi possível trocar a senha.');rememberStorageScope(payload.user);setCurrentUser(payload.user);setPortfolioReady(false);notify('Senha definida. Sua carteira já está pronta para ser preenchida.')}
  const logout=async()=>{try{const response=await fetch('/api/auth/logout',{method:'POST',signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error();clearSessionPortfolioCache(currentUser?.storageScope);setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setValMode(null);setAgroLaunch(createEmptyAgroLaunch());setAuthNotice('');setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}catch{notify('Não foi possível encerrar a sessão no servidor. Tente novamente.')}}
  const invalidateSession=notice=>{clearSessionPortfolioCache(currentUser?.storageScope);setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setValMode(null);setAgroLaunch(createEmptyAgroLaunch());setAuthNotice(notice);setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}
- const expireSession=()=>invalidateSession('Sua sessão expirou. Entre novamente.')
+ // A tela ja dizia "Sua sessao expirou" - verdadeiro sobre a sessao e silencioso sobre o trabalho.
+ // Com o produtor na frente e 6 de 26 respostas digitadas, a consultora so descobria a perda depois
+ // de entrar de novo e cair no Inicio com o formulario zerado.
+ const expireSession=()=>invalidateSession(hasSurveyDraft(activeStorageScope())
+  ?'Sua sessão expirou. Entre novamente — o questionário que você estava preenchendo ficou guardado nesta aba.'
+  :'Sua sessão expirou. Entre novamente.')
  // Módulos transversais (Hoje, Copiloto) herdam o workspace ativo em vez de
  // zerá-lo: o usuário abre a VAL e volta para onde estava trabalhando.
  useEffect(()=>{setWorkspace(current=>workspaceHoldsPage(current,page,currentUser?.role)?current:resolveActiveWorkspace(page,current))},[page,currentUser?.role])
