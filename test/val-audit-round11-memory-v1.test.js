@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import {contextQueryTokens,memoryMatchesContextDomain} from '../server/decision-copilot/context-selector.js'
 import {buildContextSnapshot,scopeContextSnapshotForModel} from '../server/memory/context-snapshot.js'
+import {deterministicVoiceCandidateExtraction} from '../server/voice-capture/extraction.js'
 import {scopeValContextForModel,summarizeContextCoverage} from '../server/val-engine.js'
 
 const tenant='00000000-0000-4000-8000-000000000001'
@@ -219,4 +220,27 @@ test('memoria encerrada nao ressuscita pela fuga', () => {
  const snapshot=snapshotOf([encerrada],{message:'O que ele pensa sobre irrigação?',requestId:'00000000-0000-4000-8000-000000000998'})
  assert.equal(noModelo(snapshot),0)
  assert.equal(snapshot.selection.selected_refs.length,0)
+})
+
+test('frase que aprova o preco nao vira objecao de preco', () => {
+ // O melhor resultado possível da visita virava uma objeção comercial verificada, e a
+ // preparação seguinte mandava o consultor construir valor contra uma objeção inexistente.
+ const extrair=transcript=>deterministicVoiceCandidateExtraction({
+  transcript,
+  voiceInteractionId:'00000000-0000-4000-8000-000000000001',
+  transcriptRef:'transcript:1',
+  interactionType:'POST_VISIT',
+  now
+ }).candidates.map(item=>item.category)
+ assert.equal(extrair('O produtor disse que o preco de R$ 480 por hectare esta justo e aprovou o programa.').includes('OBJECTION'),false)
+ assert.ok(extrair('O produtor disse que o preco de R$ 480 por hectare esta justo e aprovou o programa.').length,'a oração precisa continuar gerando algum candidato')
+ assert.equal(extrair('Ele concordou com o preco e fechou o programa.').includes('OBJECTION'),false)
+ // Remover o token "preço" da regra seria pior que o defeito: estas são objeções reais que
+ // não usam a palavra "caro".
+ assert.ok(extrair('O preco esta muito alto para ele.').includes('OBJECTION'))
+ assert.ok(extrair('O preco pesou e ele recusou o programa.').includes('OBJECTION'))
+ assert.ok(extrair('Ele achou caro e pediu um comparativo.').includes('OBJECTION'))
+ // Aceitação e resistência na mesma oração continuam sendo objeção: quem aprovou reclamando
+ // do preço ainda deixou uma objeção registrada.
+ assert.ok(extrair('Ele achou caro mas aprovou mesmo assim.').includes('OBJECTION'))
 })

@@ -70,6 +70,22 @@ function clauses(transcript){
   return String(transcript||'').split(/(?:[.!?;]+|\n+)/).map(value=>text(value,1_200)).filter(value=>value.length>=4).slice(0,120)
 }
 
+// A regra OBJECTION casa o token nu "preco", sem polaridade: "o produtor disse que o preco
+// de R$ 480 por hectare esta justo e aprovou o programa" - o melhor resultado possivel da
+// visita - virava uma objecao comercial verificada, e a preparacao da visita seguinte
+// mandava o consultor construir valor antes de discutir condicoes, contra uma objecao que
+// nao existe. A tela de revisao mostra o rotulo "Objecoes", mas todo candidato ja nasce
+// CONFIRMED, o botao e "Confirmar tudo" e a categoria do item extraido nao e editavel.
+//
+// Tirar "preco" da regra seria pior: "O preco esta muito alto" e "O preco pesou e ele
+// recusou o programa" sao objecoes reais que nao usam a palavra "caro". O que entra e uma
+// guarda de polaridade, na mesma forma que server/execution/prepare-visit-quality.js ja usa
+// em explicitPriceObjection: com marcador de aceitacao e nenhum marcador negativo, a oracao
+// nao gera OBJECTION - cai no FACT_CANDIDATE que a propria funcao ja produz por padrao.
+const commercialAcceptance=/\b(?:justo|aprovou|aprovado|aceitou|aceito|concordou|topou|fechou|fecharam|assinou|autorizou|dentro\s+do\s+(?:que\s+)?(?:esperava|or[cç]amento|previsto)|est[aá]\s+(?:bom|boa|ok|tranquilo|de\s+bom\s+tamanho)|vale\s+a\s+pena|compensa)\b/i
+const commercialResistance=/\b(?:car[oa]|alto|elevad[oa]|pesou|pesado|apertad[oa]|salgad[oa]|abusiv[oa]|invi[aá]vel|recusou|rejeitou|negou|travou|desistiu|obje[cç][aã]o|concorrente|n[aã]o\s+(?:quer|vai|pretende)\s+(?:investir|comprar|pagar)|sem\s+(?:dinheiro|caixa|or[cç]amento))\b/i
+const acceptedCommercialTerms=clause=>commercialAcceptance.test(clause)&&!commercialResistance.test(clause)
+
 const deterministicRules=Object.freeze([
   {category:'OBJECTION',pattern:/\b(?:car[oa]|pre[cç]o|investimento\s+alto|n[aã]o\s+quer\s+investir|obje[cç][aã]o|recusou|rejeitou|concorrente)\b/i},
   {category:'COMMITMENT_CANDIDATE',pattern:/\b(?:combinei|combinamos|ficou\s+de|comprometeu|prometeu|vou\s+retornar|retorno\s+(?:na|quinta|sexta|segunda|ter[cç]a|quarta)|retornar\s+(?:na|quinta|sexta|segunda|ter[cç]a|quarta))\b/i},
@@ -192,7 +208,9 @@ export function deterministicVoiceCandidateExtraction({transcript,voiceInteracti
    clausesRead++
     const reason=voiceCandidateTextSecurityReason(clause)
     if(reason){blocked[reason]++;continue}
-    const matches=ambiguousCommercialSignal.test(clause)?[{category:'HYPOTHESIS'}]:deterministicRules.filter(rule=>rule.pattern.test(clause)).slice(0,4)
+    const acceptedTerms=acceptedCommercialTerms(clause)
+    const matched=deterministicRules.filter(rule=>rule.pattern.test(clause)&&!(rule.category==='OBJECTION'&&acceptedTerms))
+    const matches=ambiguousCommercialSignal.test(clause)?[{category:'HYPOTHESIS'}]:matched.slice(0,4)
     const selected=matches.length?matches:[{category:'FACT_CANDIDATE'}]
     for(const {category} of selected){
       const key=`${category}:${normalized(clause)}`
