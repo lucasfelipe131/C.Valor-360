@@ -300,3 +300,60 @@ test('a tela diz quando a VAL descarta a resposta com registro em maos', async (
   await rm(directory,{recursive:true,force:true})
  }
 })
+
+test('salvar depois de uma leitura falha nao apaga o complemento em silencio', async () => {
+ // O PUT do complemento é substituição total. Com o GET falhando, a tela fica em branco, o
+ // botão continuava habilitado e um clique gravava dez campos vazios por cima de daninhas,
+ // doenças, solo, meta e concorrentes — respondendo "salvo com sucesso".
+ const directory=await mkdtemp(new URL('../.client360-render-test-',import.meta.url).pathname)
+ const guardado={}
+ let renderer=null
+ let puts=0
+ try{
+  await build({entryPoints:['src/pages/Client360Details.jsx'],outfile:join(directory,'pagina.js'),bundle:true,platform:'node',format:'esm',external:['react','react-dom','react/jsx-runtime'],loader:{'.css':'empty','.json':'json','.png':'empty','.svg':'empty'},banner:{js:"import{createRequire as __cr} from 'node:module';const require=__cr(import.meta.url);"},logLevel:'silent'})
+  const Pagina=(await import(pathToFileURL(join(directory,'pagina.js')).href)).default
+  let confirmar=false
+  globalThis.window={addEventListener(){},removeEventListener(){},dispatchEvent(){},confirm:()=>confirmar,matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}}),location:{href:''}}
+  globalThis.sessionStorage={getItem:key=>guardado[key]??null,setItem:(key,value)=>{guardado[key]=value},removeItem:key=>{delete guardado[key]}}
+  globalThis.localStorage=globalThis.sessionStorage
+  globalThis.fetch=async(url,options)=>{
+   if(options?.method==='PUT'){puts+=1;return {ok:true,status:200,json:async()=>({context:{}})}}
+   if(String(url).includes('/context'))throw new Error('O complemento salvo não pôde ser carregado.')
+   return {ok:true,status:200,json:async()=>({commitments:[]})}
+  }
+  await act(async()=>{renderer=TestRenderer.create(React.createElement(Pagina,{section:'agronomy',client:{id:'c1',name:'Fazenda X'},visits:[],opportunities:[],storageScope:'t'}))})
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,60))})
+
+  const textos=[],botoes=[]
+  const percorrer=node=>{
+   if(typeof node==='string'){textos.push(node);return}
+   if(!node||typeof node!=='object')return
+   if(node.type==='button')botoes.push(node)
+   ;(node.children||[]).forEach(percorrer)
+  }
+  percorrer(renderer.toJSON())
+  const texto=textos.join(' ')
+  // "não existe memória" e "não consegui ler a memória" eram o mesmo rótulo.
+  assert.match(texto,/não foi possível ler o complemento salvo/i)
+  assert.equal(/ainda não registrada/i.test(texto),false)
+
+  const salvar=botoes.find(item=>JSON.stringify(item.children||'').includes('Salvar na memória'))
+  assert.ok(salvar,'o botão de salvar precisa existir')
+  await act(async()=>{salvar.props.onClick()})
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,20))})
+  assert.equal(puts,0,'recusar a confirmação não pode gravar nada')
+
+  // O botão não pode ficar morto: se a leitura falhar sempre, o consultor ficaria impedido de
+  // registrar qualquer coisa — pior que o defeito. Ele decide, sabendo o que vai acontecer.
+  confirmar=true
+  await act(async()=>{salvar.props.onClick()})
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,40))})
+  assert.equal(puts,1,'confirmar explicitamente precisa gravar')
+ }finally{
+  renderer?.unmount()
+  delete globalThis.window
+  delete globalThis.sessionStorage
+  delete globalThis.localStorage
+  await rm(directory,{recursive:true,force:true})
+ }
+})
