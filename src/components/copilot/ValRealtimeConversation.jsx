@@ -64,6 +64,10 @@ export function ValRealtimeConversationStage({
   {unavailable&&<div className="val-conversation-fallback">
    <p role="alert">{failureText}</p>
    {remaining>0&&<p className="val-conversation-retry-note">Nova tentativa disponível em <strong role="timer" aria-live="off">{countdownLabel(remaining)}</strong>. Não é preciso clicar novamente enquanto aguarda.</p>}
+   {/* Com canRetry false e sem contador, "Tentar novamente" ficava cinza sem nenhuma explicação:
+       o consultor não tinha como saber se esperava um minuto ou se aquilo não voltava mais. Os
+       caminhos que continuam funcionando estão logo abaixo e precisam ser ditos, não deduzidos. */}
+   {remaining===0&&canRetry===false&&<p className="val-conversation-retry-note">Esta tentativa não volta a ficar disponível sozinha. Os caminhos abaixo continuam funcionando.</p>}
    <div>
     <button type="button" className="is-primary" onClick={onRetry} disabled={retryDisabled} aria-label="Tentar modo conversa novamente"><RotateCcw/><span>{remaining>0?`Aguarde ${countdownLabel(remaining)}`:'Tentar novamente'}</span></button>
     {onFallbackPushToTalk&&<button type="button" onClick={onFallbackPushToTalk}><Mic/><span>Apertar para falar</span></button>}

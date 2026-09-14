@@ -68,6 +68,7 @@ export function createRealtimeVoiceService({runtimeConfig,client,repository,conv
   if(!client)throw voiceError('O provider realtime não está configurado.','realtime_voice_provider_unavailable',503)
   if(!costStore)throw voiceError('O controle persistente de custo não está disponível.','realtime_voice_cost_control_unavailable',503)
  }
+ const money=value=>`US$ ${Number(value||0).toFixed(2).replace('.',',')}`
  const status=()=>({enabled:Boolean(runtimeConfig?.realtimeVoiceEnabled&&client&&costStore),model,budgetUsd,maxSessionSeconds,transport:'WEBRTC',fallback:'PUSH_TO_TALK',vad:{type:'SEMANTIC_VAD',eagerness:vadEagerness},testersConfigured:Boolean(runtimeConfig?.realtimeVoiceTesters?.length)})
  return Object.freeze({
   status,
@@ -79,7 +80,17 @@ export function createRealtimeVoiceService({runtimeConfig,client,repository,conv
     if(!ready.allowed)return {...status(),available:false,unavailableCode:ready.code,unavailableMessage:ready.message,canRetry:ready.canRetry!==false,retryAfterSeconds:ready.retryAfterSeconds}
     let budget
     try{budget=await costStore.snapshot({budgetUsd})}catch{throw Object.assign(voiceError('O controle de uso da voz está temporariamente indisponível. Tente novamente em instantes.','realtime_voice_cost_control_unavailable',503),{safeToRetry:true,retryAfterSeconds:5})}
-    if(budget.exhausted||budget.remainingUsd<reservationUsd)return {...status(),available:false,unavailableCode:'realtime_voice_budget_exhausted',unavailableMessage:'O limite de uso da conversa por voz foi atingido.',canRetry:false,retryAfterSeconds:0}
+    // Esta frase e a UNICA coisa que o consultor le neste cenario: a tela faz o gate por
+    // /status antes do POST, entao a mensagem melhor do 402 nunca aparece. Ela dizia so "O
+    // limite de uso da conversa por voz foi atingido", sem contar as tres coisas que mudam o
+    // que ele faz a seguir: o teto e do TENANT inteiro (um consultor que nunca falou perde a
+    // conversa porque um colega gastou), o somatorio nao tem janela de tempo (nao volta
+    // sozinho), e o teto nao sobe nem por variavel de ambiente (nao adianta pedir ao
+    // administrador). Sem numero e sem escopo, ele conclui que foi ele quem gastou e fica
+    // esperando um reset que nao existe.
+    // Nao nomeia quem gastou, de proposito: os eventos de uso sao contentFree e a atividade
+    // de outro consultor nao e assunto deste consultor.
+    if(budget.exhausted||budget.remainingUsd<reservationUsd)return {...status(),available:false,unavailableCode:'realtime_voice_budget_exhausted',unavailableMessage:`O teto de ${money(budget.budgetUsd??budgetUsd)} da conversa por voz e compartilhado por toda a sua equipe e ja foi consumido (${money(budget.totalUsd)} de ${money(budget.budgetUsd??budgetUsd)}). Nao ha retomada automatica.`,budgetScope:'TENANT',budgetTotalUsd:budget.totalUsd,budgetRemainingUsd:budget.remainingUsd,canRetry:false,retryAfterSeconds:0}
     return {...status(),available:true,unavailableCode:null,unavailableMessage:null,canRetry:true,retryAfterSeconds:0}
    }catch(error){return {...status(),available:false,unavailableCode:error.code||'realtime_voice_unavailable',unavailableMessage:error.exposeMessage?error.message:'A conversa por voz está temporariamente indisponível.',canRetry:error.safeToRetry===true,retryAfterSeconds:Number(error.retryAfterSeconds)||0}}
   },
