@@ -8,3 +8,6 @@ dist/
 *.log
 coverage/
 .backups/
+
+# Worktrees transitorios dos agentes de workflow: nao sao conteudo do projeto.
+.claude/worktrees/
