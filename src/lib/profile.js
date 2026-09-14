@@ -106,7 +106,11 @@ export function calculateProfile(answers,matrix,source='Produtor 360'){
   scoresScale:{trust:answers[19],contact:answers[20],value:answers[21],innovation:answers[22],continuity:answers[23],recommendation:answers[24]},
   relationship:{
    preferredName:String(answers[28]||''),birthday:String(answers[31]||''),family:String(answers[32]||''),spouse:'',children:'',favoriteTeam:String(answers[33]||''),
-   ...(fishingAnswer?{likesFishing:!/(?:^|\b)(?:nao|nunca|nenhum)(?:\b|$)/.test(fishingAnswer)&&/(?:sim|gost|ador|pesc)/.test(fishingAnswer)}:{}),fishingStyle:String(answers[35]||''),hobbies:String(answers[36]||''),leisure:String(answers[37]||''),
+   // "Odeio pescar." virava likesFishing:true — bastava a palavra "pesc" e a ausencia de "nao". O
+   // Cliente 360 mostrava "Pescaria: Gosta" para quem escreveu que detesta. Agora so uma afirmacao
+   // explicita vira true, e a frase literal do produtor viaja junto para a tela poder mostrar o que
+   // ele realmente escreveu em vez do palpite.
+   ...(fishingAnswer?{likesFishing:!/(?:^|\b)(?:nao|nunca|nenhum)(?:\b|$)|odei|detest|nem pensar|alergic|menos gost|pouco gost|nada gost/.test(fishingAnswer)&&/(?:sim|gost|ador)/.test(fishingAnswer),fishingAnswer:String(answers[34]||'').trim().slice(0,240)}:{}),fishingStyle:String(answers[35]||''),hobbies:String(answers[36]||''),leisure:String(answers[37]||''),
    favoriteFoods:String(answers[38]||''),favoriteDrinks:String(answers[39]||''),events:String(answers[40]||''),communicationNotes:String(answers[41]||''),
    personalValues:String(answers[42]||''),negotiationPreferences:String(answers[43]||''),importantDates:String(answers[44]||''),personalNotes:String(answers[45]||'')
   },

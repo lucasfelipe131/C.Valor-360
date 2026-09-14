@@ -14,6 +14,8 @@ import {importedMunicipality,realCadastralText} from '../server/repository.js'
 import {buildCommitmentLadders} from '../server/commitment-ladder.js'
 import {compileSurveyImportBatch} from '../server/survey-import.js'
 import {buildConversionFoundation} from '../server/conversion-engine.js'
+import {calculateProfile} from '../src/lib/profile.js'
+import {commercialMetrics} from '../src/lib/commercial-metrics.js'
 import {buildSurveyOptions} from '../server/survey-validation.js'
 
 const agora=new Date('2026-09-13T12:00:00Z')
@@ -470,4 +472,51 @@ test('Estúdio de Conversão — os seis painéis desenham com o payload da rota
   globalThis.window=anterior.window;globalThis.fetch=anterior.fetch
   await rm(directory,{recursive:true,force:true})
  }
+})
+
+// QUEST-04: likesFishing era inferido por regex — bastava a palavra "pesc" e a ausência de "não".
+// O produtor escrevia "Odeio pescar." e o Cliente 360 mostrava "Pescaria: Gosta".
+test('Perfil — negação e frase ambígua sobre pescaria não viram "Gosta"',()=>{
+ const perfil=frase=>calculateProfile({1:'Produtor',2:'Palotina',34:frase},matrix,'teste').relationship
+ for(const frase of ['Odeio pescar.','Detesto pescaria, prefiro futebol.','Pescar é a coisa que eu menos gosto na vida.','Sou alérgico a pescaria.','Pescaria nem pensar.','Não gosto de pescar.'])
+  assert.equal(perfil(frase).likesFishing,false,frase)
+ for(const frase of ['Adoro pescar.','Gosto muito de pescaria.','Sim, todo fim de semana.'])
+  assert.equal(perfil(frase).likesFishing,true,frase)
+})
+
+test('Perfil — a tela mostra a frase do produtor, não o palpite',()=>{
+ const perfil=calculateProfile({1:'Produtor',2:'Palotina',34:'Odeio pescar.'},matrix,'teste').relationship
+ assert.equal(perfil.fishingAnswer,'Odeio pescar.')
+ const tela=readFileSync(new URL('../src/pages/Client360Details.jsx',import.meta.url),'utf8')
+ // A frase literal vence o booleano; o booleano fica só como reserva para cadastro antigo.
+ assert.match(tela,/Pescaria<\/small><b>\{client\.relationship\?\.fishingAnswer\|\|\(client\.relationship\?\.likesFishing\?'Gosta'/)
+})
+
+// QUEST-05: o produto grava validade de 180 dias e a API devolve profileUpdatedAt/profileValidUntil,
+// mas nada em src/ renderizava esses campos — um perfil de 2023 aparecia hoje como "Perfil
+// registrado" carimbado REAL DATA, sem dizer a idade.
+test('Perfil — perfil vencido não é carimbado como dado atual',()=>{
+ const vencido=commercialMetrics({primaryProfile:'Conservador',profileUpdatedAt:'2023-04-10T00:00:00.000Z',profileValidUntil:'2023-10-07T00:00:00.000Z'})
+ const valido=commercialMetrics({primaryProfile:'Conservador',profileUpdatedAt:'2026-08-01T00:00:00.000Z',profileValidUntil:'2099-01-01T00:00:00.000Z'})
+ assert.equal(vencido.profileExpired,true)
+ assert.equal(valido.profileExpired,false)
+ assert.equal(commercialMetrics({}).profileExpired,false)
+ // profileMeasured NÃO muda: ele cascateia em irtKnown, npsKnown e nas médias dos relatórios.
+ assert.equal(vencido.profileMeasured,true)
+ assert.equal(vencido.irtKnown,commercialMetrics({primaryProfile:'Conservador',profileUpdatedAt:'2023-04-10T00:00:00.000Z'}).irtKnown)
+ assert.equal(vencido.profileUpdatedAt,'2023-04-10T00:00:00.000Z')
+ const tela=readFileSync(new URL('../src/pages/Client360.jsx',import.meta.url),'utf8')
+ assert.match(tela,/profileKnown\?metrics\.profileExpired\?'STALE DATA':'REAL DATA':'MISSING'/)
+ assert.match(tela,/respondido em \$\{profileAnsweredOn\}/)
+ assert.match(tela,/A validade registrada já passou/)
+})
+
+// CAL-02: o placar cortava a lista de frases e a de evidências sem dizer que cortou.
+test('Calibração — o corte da lista de frases é declarado',()=>{
+ const fonte=readFileSync(new URL('../server/message-calibration.js',import.meta.url),'utf8')
+ assert.match(fonte,/messages:messages\.slice\(0,16\),messagesTotal:messages\.length,messagesHidden:Math\.max\(0,messages\.length-16\)/)
+ assert.match(fonte,/evidenceIds:unique\(group\.evidenceIds\)\.slice\(0,20\),evidenceTotal:unique\(group\.evidenceIds\)\.length/)
+ const painel=readFileSync(new URL('../src/components/MessageCalibrationPanel.jsx',import.meta.url),'utf8')
+ assert.match(painel,/data\.messagesHidden>0&&/)
+ assert.match(painel,/Mostrando \$\{messages\.length\} de \$\{data\.messagesTotal\} frases avaliadas/)
 })

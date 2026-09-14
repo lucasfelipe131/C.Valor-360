@@ -52,6 +52,7 @@ export default function MessageCalibrationPanel({data}){
     </div>}
    </article>
   })}</div>}
+  {data.messagesHidden>0&&<p className="message-calibration-truncated">{`Mostrando ${messages.length} de ${data.messagesTotal} frases avaliadas.`}</p>}
 
   <footer><ShieldCheck/><div><b>Nenhuma autoalteração</b><p>{text(data.guardrail)}</p><small>{text(data.interpretation)}</small></div><span><Edit3/>Notas livres excluídas • retenção {data.lookbackDays} dias</span></footer>
  </section>

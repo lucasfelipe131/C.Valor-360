@@ -18,7 +18,15 @@ export function commercialMetrics(client={}){
  const realizedShare=hasNumber(commercial,'realizedShare')?number(commercial,'realizedShare'):currentKnown&&potentialKnown&&potentialTotal>0?Math.min(100,currentPurchases/potentialTotal*100):hasNumber(commercial,'walletShare')?number(commercial,'walletShare'):null
  const profileLabel=String(client?.primaryProfile||'')
  const profileMeasured=Boolean(client?.profileUpdatedAt||client?.profileVersion||profileLabel&&!/^a (?:classificar|confirmar)|^aguardando/i.test(profileLabel))
+ // O proprio produto grava validade de 180 dias no perfil (server/repository.js), e /api/intelligence
+ // devolve profileUpdatedAt e profileValidUntil — mas nada em src/ renderizava esses campos: um
+ // perfil respondido em 2023 aparecia hoje como "Perfil registrado" carimbado REAL DATA, sem dizer
+ // a idade. profileMeasured NAO muda: ele cascateia em irtKnown, npsKnown e nas medias dos
+ // relatorios, e transformar perfil vencido em "nao medido" mudaria numero de outras telas.
+ const validUntil=client?.profileValidUntil?new Date(client.profileValidUntil):null
+ const profileExpired=Boolean(profileMeasured&&validUntil&&!Number.isNaN(validUntil.getTime())&&validUntil.getTime()<Date.now())
  return {
+  profileExpired,profileValidUntil:client?.profileValidUntil??null,profileUpdatedAt:client?.profileUpdatedAt??null,
   currentKnown,currentPurchases,potentialKnown,potentialTotal,openPotential,openPotentialKnown:explicitOpenKnown||calculatedOpenKnown||legacyPotentialKnown,
   pipelineKnown,openPipeline,shareKnown:explicitShareKnown||(currentKnown&&potentialKnown&&potentialTotal>0),realizedShare,profileMeasured,
   irtKnown:profileMeasured&&client?.irt!==null&&client?.irt!==undefined&&Number.isFinite(Number(client.irt)),
