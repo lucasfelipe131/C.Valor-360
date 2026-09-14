@@ -1,4 +1,10 @@
 import assert from 'node:assert/strict'
+import {mkdtemp,rm} from 'node:fs/promises'
+import {join} from 'node:path'
+import {pathToFileURL} from 'node:url'
+import {build} from 'esbuild'
+import React from 'react'
+import TestRenderer,{act} from 'react-test-renderer'
 import test from 'node:test'
 import {contextQueryTokens,memoryMatchesContextDomain} from '../server/decision-copilot/context-selector.js'
 import {buildContextSnapshot,scopeContextSnapshotForModel} from '../server/memory/context-snapshot.js'
@@ -243,4 +249,54 @@ test('frase que aprova o preco nao vira objecao de preco', () => {
  // Aceitação e resistência na mesma oração continuam sendo objeção: quem aprovou reclamando
  // do preço ainda deixou uma objeção registrada.
  assert.ok(extrair('Ele achou caro mas aprovou mesmo assim.').includes('OBJECTION'))
+})
+
+test('a tela diz quando a VAL descarta a resposta com registro em maos', async () => {
+ // A VAL escrevia "Não há evidência selecionada suficiente" COM a visita selecionada e em
+ // facts_used, negando a existência do dado que ela mesma carregou. `degraded` só escondia
+ // cards: o descarte não aparecia em densidade nenhuma (em ANALYTICAL saía como
+ // "REASONING_DEGRADED", dentro de dois <details> fechados).
+ const directory=await mkdtemp(new URL('../.copilot-render-test-',import.meta.url).pathname)
+ let renderer=null
+ const raciocinio=facts=>({
+  advice:{
+   val_response_quality:{status:'REASONING_DEGRADED'},
+   ai_reasoning:{
+    intent:'ASK_CLIENT',
+    facts_used:facts,
+    grounding:{passed:false},
+    run:{status:'REASONING_DEGRADED',path:'deep'},
+    recommended_strategy:{reading:'Não há evidência selecionada suficiente para afirmar uma resposta específica com segurança.'}
+   }
+  }
+ })
+ try{
+  await build({entryPoints:['src/components/GlobalValCopilot.jsx'],outfile:join(directory,'copilot.js'),bundle:true,platform:'node',format:'esm',packages:'external',loader:{'.css':'empty','.json':'json'},logLevel:'silent'})
+  const {ReasoningResponse}=await import(pathToFileURL(join(directory,'copilot.js')).href)
+  globalThis.window={addEventListener(){},removeEventListener(){},matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}})}
+  const textoDe=payload=>{
+   const partes=[]
+   const percorrer=node=>{
+    if(typeof node==='string'){partes.push(node);return}
+    if(!node||typeof node!=='object')return
+    ;(node.children||[]).forEach(percorrer)
+   }
+   percorrer(renderer.toJSON())
+   return partes.join(' ')
+  }
+  await act(async()=>{renderer=TestRenderer.create(React.createElement(ReasoningResponse,{payload:raciocinio([{id:'v1',statement:'Visita concluída em 08/09/2026.'}]),density:'simple',outputMode:'text'}))})
+  const comRegistro=textoDe()
+  // O aviso precisa aparecer na densidade padrão, não só na analítica.
+  assert.match(comRegistro,/descartou a propria resposta/i)
+  assert.match(comRegistro,/1 registro selecionado/)
+  assert.match(comRegistro,/Nao e ausencia de registro/i)
+
+  await act(async()=>{renderer.update(React.createElement(ReasoningResponse,{payload:raciocinio([]),density:'simple',outputMode:'text'}))})
+  // Sem registro selecionado a leitura conservadora é verdadeira e o aviso seria ruído.
+  assert.equal(/descartou a propria resposta/i.test(textoDe()),false)
+ }finally{
+  renderer?.unmount()
+  delete globalThis.window
+  await rm(directory,{recursive:true,force:true})
+ }
 })

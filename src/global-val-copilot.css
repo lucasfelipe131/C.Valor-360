@@ -28,3 +28,9 @@
 .global-val-clarification{display:grid;grid-template-columns:auto minmax(0,1fr);gap:8px;margin-bottom:8px;padding:10px;border:1px solid #e4d39f;border-radius:11px;background:#fff9e9;color:#6d5726}.global-val-clarification>svg{width:18px}.global-val-clarification>span b,.global-val-clarification>span small{display:block}.global-val-clarification>span b{font-size:10px}.global-val-clarification>span small{margin-top:2px;font-size:8px}.global-val-clarification>div{grid-column:1/-1;display:grid;grid-template-columns:repeat(auto-fit,minmax(145px,1fr));gap:6px}.global-val-clarification button{min-height:42px;padding:7px 9px;border:1px solid #dec985;border-radius:9px;background:#fff;color:#5f4d23;text-align:left}.global-val-clarification button b,.global-val-clarification button small{display:block}.global-val-clarification button b{font-size:10px}.global-val-clarification button small{margin-top:2px;font-size:8px}
 .global-val-knowledge-note{display:flex;align-items:flex-start;gap:7px;margin:8px 0;color:#64748b;font-size:11px;line-height:1.5}
 .global-val-knowledge-note svg{width:14px;height:14px;flex-shrink:0;margin-top:1px}
+/* Aviso de resposta retida: a VAL tinha registro selecionado e descartou a leitura. Precisa
+   ser legivel em todas as densidades, inclusive SIMPLE, que e a padrao - nao pode ficar
+   com o cinza discreto da nota de conhecimento geral. */
+.global-val-withheld{display:flex;align-items:flex-start;gap:7px;margin:8px 0;padding:9px 11px;border:1px solid #fcd34d;border-radius:10px;background:#fffbeb;color:#78350f;font-size:12px;line-height:1.5}
+.global-val-withheld svg{width:15px;height:15px;flex-shrink:0;margin-top:1px}
+.global-val-withheld .link-btn{color:#78350f;text-decoration:underline;font-size:12px}

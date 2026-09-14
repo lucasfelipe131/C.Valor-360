@@ -316,8 +316,14 @@ function insufficiencyMaterialMatchesQuestionDomain(source='',question='',domain
  })
 }
 
+// "Nao, o produtor nao vai antecipar a compra" e a forma natural de responder uma pergunta
+// de sim/nao em portugues. O "Nao," inicial responde A PERGUNTA; ele nao nega o substantivo
+// que vier logo depois. Como a janela de tres palavras nao enxerga a virgula, o token
+// "produtor" saia NEGADO na resposta e POSITIVO no registro, e a resposta CORRETA era
+// bloqueada por POLARITY_CONTRADICTION - exatamente enquanto a resposta invertida passava.
+const responseParticle=/^\s*(?:n[aã]o|sim)\s*,\s*/i
 function negationState(value,token){
- const words=normalize(value).split(/[^a-z0-9]+/).filter(Boolean)
+ const words=normalize(String(value??'').replace(responseParticle,'')).split(/[^a-z0-9]+/).filter(Boolean)
  const states=[]
  for(let index=0;index<words.length;index+=1){
   if(words[index]!==token)continue
@@ -687,10 +693,28 @@ function claimSupport(claim,entries,question='',domain='GENERAL',field='answer',
  const literalRecordSupport=entry=>['FACT','OBSERVATION','VALIDATED_KNOWLEDGE'].includes(entry.evidenceType)&&source.length>=12&&entry.text.includes(source)
  const typeCompatible=compatible.filter(entry=>(evidenceCompatibility[kind]||evidenceCompatibility.FACT).has(entry.evidenceType)||literalRecordSupport(entry)||literalStrategySupport(entry))
  if(!typeCompatible.length)return {supported:false,evidenceRefs:[],reason:'EPISTEMIC_TYPE_MISMATCH'}
+ // Apagar o "nao" do registro transformava a afirmacao invertida em substring literal dele,
+ // e o atalho `exact` calava a checagem de polaridade: o registro dizia "o produtor NAO vai
+ // antecipar a compra de fertilizante nesta safra" e a VAL afirmava "Vai antecipar a compra
+ // de fertilizante nesta safra." com selo EVIDENCE_TOKEN_MATCH, enquanto a resposta CORRETA
+ // era bloqueada por POLARITY_CONTRADICTION. O termo `scopedEntry` ao lado ja existe para
+ // tapar o mesmo buraco na forma epistemica ("Nao ha confirmacao de que P" contem P
+ // literalmente): a variante com operador escopado foi coberta, o "nao" direto ficou de fora.
+ //
+ // A fronteira de oracao e obrigatoria. Sem cortar em ; : . ! ? a negacao de uma oracao
+ // anterior vaza para a seguinte e derruba resposta legitima - a ficha de produto que diz
+ // "A atualidade da ficha nao foi verificada; indicacao, dose e restricoes exigem a bula"
+ // passaria a contradizer o proprio catalogo.
+ const negationBeforeLiteral=(entryText,index)=>index>0
+  &&!entryText.slice(0,index).split(/[.!?;:—–]/).pop().split(/[^a-z0-9]+/).filter(Boolean).slice(-4).every(word=>!negation.test(word))
+  &&source.split(/[^a-z0-9]+/).filter(Boolean).every(word=>!negation.test(word))
  const candidates=typeCompatible.map(entry=>{
- const exact=source.length>=12&&entry.text.includes(source)||literalStrategySupport(entry)
+  const literalIndex=source.length>=12?entry.text.indexOf(source):-1
+  const exact=literalIndex>=0||literalStrategySupport(entry)
   const scopedEntry=scopedAssertion(entry.text)
-  return {entry,overlap:claimTokens.filter(token=>entry.tokenSet.has(token)),exact,contradiction:(!exact||Boolean(scopedEntry))&&polarityContradiction(source,entry.text)}
+  // A negacao do registro ficou FORA do trecho copiado: o atalho nao pode calar a polaridade.
+  const truncatedNegation=negationBeforeLiteral(entry.text,literalIndex)
+  return {entry,overlap:claimTokens.filter(token=>entry.tokenSet.has(token)),exact,contradiction:(!exact||Boolean(scopedEntry)||truncatedNegation)&&polarityContradiction(source,entry.text)}
  }).filter(item=>item.exact||item.overlap.length)
  const usable=candidates.filter(item=>!item.contradiction)
  if(candidates.length&&!usable.length)return {supported:false,evidenceRefs:[],reason:'POLARITY_CONTRADICTION'}

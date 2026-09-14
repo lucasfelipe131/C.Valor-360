@@ -91,7 +91,7 @@ function SafeContextTrace({trace}){
  return <details className="global-val-layer val-context-trace"><summary aria-label="Abrir Context Trace seguro"><ShieldCheck aria-hidden="true" focusable="false"/><span>Context Trace seguro</span><ChevronDown aria-hidden="true" focusable="false"/></summary><div><p><b>Domínio:</b> <code>{trace.domain}</code></p><div className="val-context-trace-groups"><section aria-label="Contextos selecionados"><h4>Selected ({trace.selected.length})</h4>{trace.selected.length?<ul>{trace.selected.map((item,index)=><li key={`selected-${item.sourceType}-${item.reasonSelected}-${index}`}><code>{item.sourceType}</code><span>{item.reasonSelected}</span></li>)}</ul>:<p>Nenhum item.</p>}</section><section aria-label="Contextos rejeitados"><h4>Rejected ({trace.rejected.length})</h4>{trace.rejected.length?<ul>{trace.rejected.map((item,index)=><li key={`rejected-${item.sourceType}-${item.reasonSelected}-${index}`}><code>{item.sourceType}</code><span>{item.reasonSelected}</span></li>)}</ul>:<p>Nenhum item.</p>}</section></div></div></details>
 }
 
-function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onReply,onRegister,onOpenModule,onOpenEvidence}){
+export function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onReply,onRegister,onOpenModule,onOpenEvidence}){
  const advice=payload?.advice||{}
  const reasoning=advice.ai_reasoning||{}
  const thesis=reasoning.decision_thesis||{}
@@ -122,6 +122,14 @@ function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onRe
  return <article className={`global-val-answer is-${density}`}>
   {isBehavioralProfile?<ProfileResponse reasoning={reasoning} answer={answer} facts={facts} outputMode={outputMode} audioNode={audioNode}/>:<>
   <DecisionCard reasoning={reasoning} answer={answer} action={degraded||generalGuidance?'':strategy.action} audioNode={audioNode}/>
+  {/* A VAL descartava a propria resposta e escrevia "Nao ha evidencia selecionada suficiente"
+      COM o registro em maos e em facts_used - negando a existencia do dado que ela mesma
+      carregou. O consultor conclui que a visita nao foi registrada e refaz o registro. A
+      variavel `degraded` so escondia cards; o descarte nao aparecia em densidade nenhuma
+      (em ANALYTICAL saia como "REASONING_DEGRADED", dentro de dois <details> fechados).
+      Aviso de tela apenas: nao entra no payload de raciocinio, senao viraria claim e
+      derrubaria o proprio grounding. */}
+  {degraded&&facts.length>0&&<p className="global-val-withheld" role="status"><ShieldCheck aria-hidden="true"/><span>A VAL tem {facts.length===1?'1 registro selecionado':`${facts.length} registros selecionados`} para esta pergunta e descartou a propria resposta por nao conseguir sustenta-la neles. Nao e ausencia de registro.{onOpenEvidence?<> <button type="button" className="link-btn" onClick={()=>onOpenEvidence(responseScope)}>Ver o que foi selecionado</button></>:null}</span></p>}
   {unverifiedGeneral&&<p className="global-val-knowledge-note"><Sparkles aria-hidden="true"/><span>{reusedKnowledge?'Resposta geral reutilizada do banco':'Resposta geral formulada pela IA'} · sem fonte verificada</span></p>}
   {toolResult&&!generalGuidance?<GenericToolCard title={toolResult.title} summary={toolResult.summary} status={toolResult.status} onOpen={toolResult.page==='copilot'?undefined:()=>openWithSources({page:toolResult.page||'agro',tool:toolResult.tool,manualPage:toolResult.manual_page,mode:toolResult.mode,context:toolResult.context})}/>:null}
   {!degraded&&intent==='PREPARE_VISIT'&&toolResult?.status!=='CONTEXT_REQUIRED'&&<PrepareVisitCard reasoning={reasoning} questions={questions} onOpen={openScoped}/>}
