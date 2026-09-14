@@ -293,6 +293,11 @@ async function handleApi(request,response,url){
  if(url.pathname==='/api/auth/logout'&&request.method==='POST'){
   const current=await sessionIdentity(request)
   if(current)invalidateValContextScope({tenantId:current.tenantId||config.defaultTenantId,ownerId:current.id||current.email,resetConversation:true})
+  // Sair tem de derrubar a credencial, nao so o cookie deste navegador: e o unico recurso de
+  // quem perdeu o aparelho com a VAL aberta. O modo demo nao tem banco e continua respondendo
+  // 200 - la nao ha credencial persistida para revogar. Falha de revogacao nao pode impedir a
+  // saida: o cookie sai de qualquer jeito e a tela volta para o login.
+  if(current&&database.configured){try{await accessRepository.revokeSessions(current)}catch(error){observe('auth.logout.revoke_failed',{errorCode:String(error?.code||'revoke_failed').slice(0,120),outcome:'degraded'})}}
   response.setHeader('Set-Cookie',auth.clearCookie(request));return json(response,200,{authenticated:false})
  }
  if(url.pathname==='/api/auth/password'&&request.method==='PUT'){

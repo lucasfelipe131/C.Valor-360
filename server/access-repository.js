@@ -202,6 +202,22 @@ export class AccessRepository{
     return {user:accountFromRow({...result.rows[0],role:membership.rows[0]?.role},this.tenantId),temporaryPassword}
   }
 
+  // "Encerrar sessao" limpava so o cookie do navegador. O celular perdido, a outra aba e
+  // qualquer aparelho onde a conta ficou aberta continuavam valendo ate os 12h expirarem, e
+  // reiniciar o servidor tambem nao derrubava - o token e autocontido. A consultora apertava
+  // o botao no desktop, via a volta para o login e concluia que tinha resolvido.
+  //
+  // A maquina de revogacao ja existia e ja e conferida em toda requisicao: resolveSession
+  // compara users.session_version com o sessionVersion do token, e resetPassword e
+  // changePassword ja incrementam esse contador. O logout era o unico caminho que mudava a
+  // sessao sem tocar nele.
+  async revokeSessions(actor){
+    if(!actor?.id)throw domainError('Sessão expirada.',401)
+    if(!/^[0-9a-f-]{36}$/i.test(String(actor.id)))return false
+    const result=await this.db.query(`UPDATE users SET session_version=session_version+1,updated_at=NOW() WHERE id=$1 AND EXISTS (SELECT 1 FROM memberships WHERE tenant_id=$2 AND user_id=users.id)`,[actor.id,this.tenantId])
+    return result.rowCount>0
+  }
+
   async changePassword(actor,currentPassword,newPassword){
     if(!actor?.id)throw domainError('Sessão expirada.',401)
     if(!validPassword(newPassword))throw domainError('A nova senha precisa ter de 8 a 72 caracteres, com maiúscula, minúscula e número.')
