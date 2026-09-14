@@ -412,3 +412,62 @@ test('Importação e cadastro — o editor não regrava o preenchimento na colun
  // editor, a mesma correção feita na importação.
  assert.match(repo,/\[name,importedMunicipality\(input\.municipality\),area\.totalAreaHa,area\.areaBand,realCadastralText\(input\.cultures,1000\),/)
 })
+
+// A rota devolver os seis painéis não prova que a tela os desenha — e era exatamente essa a falha
+// do CONV-02/MDM-01: o payload chegava vazio e os painéis sumiam ou escreviam "ainda não
+// registrado". Este teste renderiza o Estúdio real com o formato que a rota nova devolve.
+test('Estúdio de Conversão — os seis painéis desenham com o payload da rota',async()=>{
+ const directory=await mkdtemp(new URL('../.studio-render-test-',import.meta.url).pathname)
+ const anterior={window:globalThis.window,fetch:globalThis.fetch}
+ let renderer
+ const payload={
+  client:{id:'faz-santa-luzia',name:'FAZENDA SANTA LUZIA'},
+  opportunities:[{id:'o1',title:'Renovação de fungicida 26/27',stage:'Proposta',estimated_value:300000,evidence:[]}],
+  conversionInnovations:{
+   commitmentLadders:buildCommitmentLadders({opportunities:[
+    {id:'o1',title:'Renovação de fungicida 26/27',stage:'Proposta',estimated_value:300000,evidence:[]},
+    {id:'o2',title:'Programa de fertilidade 25/26',stage:'Fechado',estimated_value:180000,evidence:[{type:'opportunity_workspace_v1',status:'lost',lossReason:'Concorrente.'}]}
+   ]}),
+   objectionLibrary:{objections:[],lossEventsConsidered:1,objectionGroupsTotal:0,objectionsHidden:0},
+   valueScenarios:{scenarios:[],generatedAt:'2026-09-14T00:00:00.000Z'},
+   multiDecisionMap:{participants:[],generatedAt:'2026-09-14T00:00:00.000Z'},
+   postConversionExpansion:{candidates:[],generatedAt:'2026-09-14T00:00:00.000Z'},
+   messageCalibration:{messages:[],segments:[],summary:{},generatedAt:'2026-09-14T00:00:00.000Z'}
+  }
+ }
+ try{
+  await build({entryPoints:['src/components/ConversionOpportunityStudio.jsx'],outfile:directory+'/studio.js',bundle:true,platform:'node',format:'esm',packages:'external',loader:{'.css':'empty'},logLevel:'silent'})
+  const Studio=(await import(pathToFileURL(directory+'/studio.js'))).default
+  globalThis.window={addEventListener(){},removeEventListener(){}}
+  globalThis.fetch=async input=>{
+   assert.match(String(input),/\/conversion-studio$/,'o Estúdio precisa buscar a rota que monta o dossiê')
+   return {ok:true,status:200,json:async()=>payload}
+  }
+  await act(async()=>{renderer=TestRenderer.create(React.createElement(Studio,{clients:[{id:'faz-santa-luzia',name:'FAZENDA SANTA LUZIA'}],onClient:()=>{},onPrepare:()=>{}}))})
+  await act(async()=>{await new Promise(resolve=>setTimeout(resolve,20))})
+  const raizes=[]
+  const percorrer=node=>{
+   if(!node||typeof node!=='object')return
+   if(typeof node.props?.className==='string')raizes.push(node.props.className)
+   ;(node.children||[]).forEach(percorrer)
+  }
+  percorrer(renderer.toJSON())
+  // Cada painel desenha, mesmo quando o estado é vazio — o que antes acontecia era não existirem.
+  for(const painel of ['commitment-ladder','post-conversion-panel','decision-map-panel','value-scenario-panel','objection-panel','message-calibration'])
+   assert.ok(raizes.some(classe=>classe===painel||classe.startsWith(`${painel} `)),`o painel ${painel} precisa desenhar (classes: ${raizes.filter(item=>item.includes('-panel')||item.includes('ladder')||item.includes('calibration')).join(', ')})`)
+  // A escada desenha o conteúdo, não o estado vazio.
+  assert.equal(raizes.includes('commitment-ladder-empty'),false)
+  const texto=[]
+  const ler=node=>{if(typeof node==='string')return texto.push(node);if(Array.isArray(node))return node.forEach(ler);if(node&&node.children)node.children.forEach(ler)}
+  ler(renderer.toJSON())
+  const conteudo=texto.join(' ')
+  assert.match(conteudo,/Renovação de fungicida 26\/27/)
+  assert.doesNotMatch(conteudo,/Registre uma oportunidade/)
+  // O negócio perdido não vira escada viva.
+  assert.doesNotMatch(conteudo,/fertilidade/i)
+ }finally{
+  if(renderer)await act(async()=>renderer.unmount())
+  globalThis.window=anterior.window;globalThis.fetch=anterior.fetch
+  await rm(directory,{recursive:true,force:true})
+ }
+})
