@@ -210,7 +210,17 @@ export function deterministicVoiceCandidateExtraction({transcript,voiceInteracti
     if(reason){blocked[reason]++;continue}
     const acceptedTerms=acceptedCommercialTerms(clause)
     const matched=deterministicRules.filter(rule=>rule.pattern.test(clause)&&!(rule.category==='OBJECTION'&&acceptedTerms))
-    const matches=ambiguousCommercialSignal.test(clause)?[{category:'HYPOTHESIS'}]:matched.slice(0,4)
+    // FACT_CANDIDATE e um apanhado generico ("disse", "comentou", "area", "hectares") que casava
+    // JUNTO com a categoria tipada da mesma oracao e gerava uma segunda memoria com o texto
+    // integral da mesma frase. O consultor ditava uma frase e ela aparecia duas ou tres vezes na
+    // memoria do produtor, cada vez com um rotulo diferente. Quando a oracao ja tem categoria
+    // propria, o apanhado generico nao acrescenta nada - so duplica.
+    // A excecao e socio/decisor: producer_signals sai justamente de FACT_CANDIDATE, entao uma
+    // oracao mista ("O socio participa da decisao e ele achou caro") perderia o sinal de decisor.
+    const producerSignal=/\bs[oó]ci[oa]s?\b|\bdecisor\b|participa\w*\s+d\w*\s+decis/i.test(clause)
+    const typed=matched.filter(rule=>rule.category!=='FACT_CANDIDATE')
+    const deduplicated=typed.length&&!producerSignal?typed:matched
+    const matches=ambiguousCommercialSignal.test(clause)?[{category:'HYPOTHESIS'}]:deduplicated.slice(0,4)
     const selected=matches.length?matches:[{category:'FACT_CANDIDATE'}]
     for(const {category} of selected){
       const key=`${category}:${normalized(clause)}`

@@ -60,7 +60,7 @@ const pendingStorageKey=({clientId,visitId,interactionType})=>{
  return `${pendingStoragePrefix}:${storagePart(scope)}:${storagePart(clientId)}:${storagePart(visitId||'client')}:${storagePart(String(interactionType||'GENERAL_CONTEXT').toUpperCase())}`
 }
 
-function VoiceCandidate({candidate,onChange,onRemove,categoryEditable=false,validationError='',errorId}){
+function VoiceCandidate({candidate,onChange,onRemove,categoryEditable=false,validationError='',errorId,alsoIn=[]}){
  const categoryLabel=categoryLabels[candidate.category]||candidate.category||'informação'
  const statementInvalid=Boolean(validationError&&!candidate.statement.trim())
  const dueInvalid=candidate.category==='COMMITMENT_CANDIDATE'&&!candidate.due_at&&validationError.includes('prazo')
@@ -70,6 +70,11 @@ function VoiceCandidate({candidate,onChange,onRemove,categoryEditable=false,vali
   <label><span className="voice-sr-only">Texto de {categoryLabel}</span><textarea rows="2" maxLength="2000" value={candidate.statement} aria-invalid={statementInvalid||undefined} aria-describedby={statementInvalid?errorId:undefined} onChange={event=>onChange({...candidate,statement:event.target.value})}/></label>
   {candidateNeedsDate(candidate.category)&&<label className="voice-due-date"><span>Prazo, se confirmado</span><input type="date" value={candidate.due_at} aria-invalid={dueInvalid||undefined} aria-describedby={dueInvalid?errorId:undefined} onChange={event=>onChange({...candidate,due_at:event.target.value})}/></label>}
   {candidate.category==='AGRONOMIC_OBSERVATION'&&<p className="voice-technical-note"><ShieldCheck/>Observação relatada — não é recomendação técnica.</p>}
+  {/* Uma frase com dois assuntos ("buva no talhão 3 e o programa ficou caro") casa mais de uma
+      regra e o texto integral era copiado para dentro de cada rótulo. Na tela, o consultor via a
+      mesma frase repetida em seções diferentes sem nada dizendo que era a mesma, e confirmava as
+      duas — a observação agronômica entrava também na lista de objeções de preço. */}
+  {alsoIn.length>0&&<p className="voice-duplicate-note"><AlertTriangle/>Mesma frase também em: {alsoIn.join(', ')}. Remova onde não se aplica.</p>}
  </article>
 }
 
@@ -84,6 +89,18 @@ function CandidateReview({candidates,setCandidates,transcript,extraction,additio
   visibleActive.forEach(item=>{const list=map.get(item.category)||[];list.push(item);map.set(item.category,list)})
   return [...map.entries()].sort(([a],[b])=>(categoryOrder.get(a)??99)-(categoryOrder.get(b)??99))
  },[candidates,postVisit])
+ // Onde mais a MESMA frase aparece, por candidato. Sem isto a repetição é invisível: todo
+ // candidato já nasce CONFIRMED e o botão é "Confirmar tudo".
+ const alsoIn=useMemo(()=>{
+  const byStatement=new Map()
+  visibleActive.forEach(item=>{const key=String(item.statement||'').trim().toLocaleLowerCase('pt-BR');if(!key)return;const list=byStatement.get(key)||[];list.push(item);byStatement.set(key,list)})
+  const map=new Map()
+  byStatement.forEach(list=>{
+   if(list.length<2)return
+   list.forEach(item=>map.set(item.candidate_id,[...new Set(list.filter(other=>other.candidate_id!==item.candidate_id).map(other=>categoryLabels[other.category]||other.category))]))
+  })
+  return map
+ },[candidates,postVisit])
  const update=candidate=>setCandidates(current=>current.map(item=>item.candidate_id===candidate.candidate_id?candidate:item))
  const remove=id=>{const target=candidates.find(item=>item.candidate_id===id);setCandidates(current=>current.map(item=>item.candidate_id===id?{...item,decision:'REJECTED'}:item));if(postVisit&&target?.category==='NEXT_STEP'&&!noAction&&!active.some(item=>item.category==='NEXT_STEP'&&item.candidate_id!==id)&&!additions.some(item=>item.category==='NEXT_STEP'))setAdditions(current=>[...current,newNextStepCandidate()])}
  const removeAddition=id=>{const target=additions.find(item=>item.candidate_id===id);setAdditions(current=>{const remaining=current.filter(item=>item.candidate_id!==id);if(postVisit&&target?.category==='NEXT_STEP'&&!noAction&&!active.some(item=>item.category==='NEXT_STEP')&&!remaining.some(item=>item.category==='NEXT_STEP'))return [...remaining,newNextStepCandidate()];return remaining})}
@@ -93,7 +110,7 @@ function CandidateReview({candidates,setCandidates,transcript,extraction,additio
  return <div className="voice-review">
   <div className="voice-review-intro"><CheckCircle2/><div><small>A VAL ENTENDEU</small><h3>Revise antes de transformar fala em memória.</h3><p>Edite ou remova qualquer item. Nada material é consolidado antes da sua confirmação.</p></div></div>
   {extraction?.truncated&&<div className="voice-error" role="alert"><AlertTriangle/><span>Este relato é longo demais para uma captura só: a VAL parou de extrair no limite de {extraction.candidate_limit||50} itens e {extraction.clauses_skipped>0?`${extraction.clauses_skipped} ${extraction.clauses_skipped===1?'trecho ficou':'trechos ficaram'} de fora`:'parte do relato ficou de fora'}. Revise a transcrição abaixo e registre o restante em uma nova captura.</span></div>}
-  {grouped.length?grouped.map(([category,items])=><section className="voice-candidate-group" key={category}><h4>{categoryLabels[category]||category}</h4>{items.map(candidate=><VoiceCandidate key={candidate.candidate_id} candidate={candidate} validationError={error} errorId={errorId} onChange={update} onRemove={()=>remove(candidate.candidate_id)}/>)}</section>):nextItems.length===0&&<div className="voice-empty-review"><AlertTriangle/><p>Nenhum candidato foi identificado. Adicione abaixo somente o que você deseja confirmar.</p></div>}
+  {grouped.length?grouped.map(([category,items])=><section className="voice-candidate-group" key={category}><h4>{categoryLabels[category]||category}</h4>{items.map(candidate=><VoiceCandidate key={candidate.candidate_id} candidate={candidate} alsoIn={alsoIn.get(candidate.candidate_id)||[]} validationError={error} errorId={errorId} onChange={update} onRemove={()=>remove(candidate.candidate_id)}/>)}</section>):nextItems.length===0&&<div className="voice-empty-review"><AlertTriangle/><p>Nenhum candidato foi identificado. Adicione abaixo somente o que você deseja confirmar.</p></div>}
   {visibleAdditions.length>0&&<section className="voice-candidate-group"><h4>Informações adicionadas por você</h4>{visibleAdditions.map(item=><VoiceCandidate key={item.candidate_id} categoryEditable candidate={{...item,decision:'CONFIRMED'}} validationError={error} errorId={errorId} onChange={candidate=>setAdditions(current=>current.map(entry=>entry.candidate_id===candidate.candidate_id?candidate:entry))} onRemove={()=>removeAddition(item.candidate_id)}/>)}</section>}
   <section className="voice-addition"><h4><Plus/>Adicionar informação</h4><div><select aria-label="Categoria da nova informação" value={additionDraft.category} onChange={event=>setAdditionDraft(current=>({...current,category:event.target.value}))}>{categories.map(([value,label])=><option key={value} value={value}>{label}</option>)}</select><label className="voice-addition-statement"><span className="voice-sr-only">Texto da nova informação</span><textarea rows="2" maxLength="2000" value={additionDraft.statement} onChange={event=>setAdditionDraft(current=>({...current,statement:event.target.value}))} placeholder="Escreva apenas o que deseja acrescentar…"/></label>{candidateNeedsDate(additionDraft.category)&&<input aria-label="Prazo da nova informação" type="date" value={additionDraft.due_at} onChange={event=>setAdditionDraft(current=>({...current,due_at:event.target.value}))}/>}<button type="button" onClick={add} disabled={!additionDraft.statement.trim()}><Plus/>Adicionar</button></div></section>
   {removed.length>0&&<details className="voice-removed"><summary>Itens removidos ({removed.length})</summary>{removed.map(item=><button type="button" key={item.candidate_id} onClick={()=>restore(item.candidate_id)}>Restaurar: {item.statement}</button>)}</details>}

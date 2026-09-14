@@ -357,3 +357,24 @@ test('salvar depois de uma leitura falha nao apaga o complemento em silencio', a
   await rm(directory,{recursive:true,force:true})
  }
 })
+
+test('uma frase nao vira tres memorias com rotulos diferentes', () => {
+ // A regra FACT_CANDIDATE é um apanhado genérico ("disse", "comentou", "área", "hectares") que
+ // casava JUNTO com a categoria tipada e gerava uma segunda memória com o texto integral da mesma
+ // frase. O consultor ditava uma frase e ela aparecia duas ou três vezes na memória do produtor.
+ const extrair=transcript=>deterministicVoiceCandidateExtraction({
+  transcript,
+  voiceInteractionId:'00000000-0000-4000-8000-000000000001',
+  transcriptRef:'transcript:1',
+  interactionType:'POST_VISIT',
+  now
+ }).candidates
+ const doAchado=extrair('O produtor relatou buva resistente no talhao 3 e disse que o programa ficou caro, R$ 480 por hectare.')
+ assert.equal(doAchado.some(item=>item.category==='FACT_CANDIDATE'),false,'a cópia genérica não acrescenta nada quando já há categoria própria')
+ assert.ok(doAchado.some(item=>item.category==='AGRONOMIC_OBSERVATION'))
+ assert.ok(doAchado.some(item=>item.category==='OBJECTION'))
+ // Oração sem categoria própria continua virando fato: o apanhado genérico é o fallback.
+ assert.deepEqual(extrair('O produtor disse que a area e de 800 hectares.').map(item=>item.category),['FACT_CANDIDATE'])
+ // producer_signals sai de FACT_CANDIDATE: uma oração mista perderia o sinal de decisor.
+ assert.ok(extrair('O socio participa da decisao e ele achou caro.').some(item=>item.category==='FACT_CANDIDATE'))
+})
