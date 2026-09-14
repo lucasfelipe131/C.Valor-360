@@ -163,6 +163,35 @@ function profileMemoryFreshness(record,evaluation,now){
   return {status,metadata:{...evaluation.metadata,strategy:'PROFILE_BEHAVIORAL_MAX_AGE',observed_at:observedAt,age_days:age,reason_code:status==='CURRENT'?'WITHIN_PROFILE_BEHAVIORAL_WINDOW':'PROFILE_BEHAVIORAL_MAX_AGE_EXCEEDED'}}
 }
 
+// Toda memoria que o produto escreve nasce com valid_until null: voz
+// (server/voice-capture/service.js), relatorio de visita (server/visit-loop/report.js) e
+// complemento tecnico (server/repository.js). Na politica MEMORY, que e
+// EXPLICIT_VALIDITY_WINDOW, ausencia de valid_until vira UNKNOWN/NO_EXPIRY_DECLARED, e o
+// envelope do modelo so aceita CURRENT - a memoria era selecionada, entrava no snapshot e
+// sumia antes de chegar ao raciocinio. Nao era contrato: o mesmo registro, com o mesmo
+// valid_until nulo, ja chegava ao modelo quando era BEHAVIORAL em dominio PROFILE, pela
+// fuga logo acima. E null nesta coluna significa "vigente" em todas as outras leituras -
+// memoryValidity, o SQL de recuperacao e o filtro do fallback. Quem fecha uma versao de
+// memoria e a supersessao, que grava valid_until na hora de encerrar; datar no nascimento
+// inventaria uma expiracao que a origem nunca declarou e faria o fato sumir sozinho.
+//
+// A fuga so vale para o caso "datado e sem expiracao declarada". Registro EXPIRED,
+// SUPERSEDED, REJECTED ou FUTURE ja foi decidido antes por memoryValidity e nao passa por
+// aqui. A data tem de ser de observacao real: source_updated_at ou observed_at, nunca
+// updated_at, senao uma linha legada de 2019 sem observacao seria promovida a vigente pelo
+// carimbo de escrita. E ha teto de idade, como no perfil comportamental, para nota de voz
+// antiga virar STALE em vez de vigente para sempre - a politica MEMORY nao tem max_age_days.
+const OBSERVED_MEMORY_MAX_AGE_DAYS=730
+function observedMemoryFreshness(record,evaluation,now){
+  if(evaluation.status!=='UNKNOWN'||evaluation.metadata?.reason_code!=='NO_EXPIRY_DECLARED')return evaluation
+  const observedAt=iso(record?.observed_at??record?.source_updated_at)
+  if(!observedAt)return evaluation
+  const age=Math.max(0,(now.getTime()-new Date(observedAt).getTime())/86_400_000)
+  if(new Date(observedAt)>now)return {...evaluation,metadata:{...evaluation.metadata,observed_at:observedAt,age_days:age,reason_code:'OBSERVATION_DATE_IN_FUTURE'}}
+  const status=age<=OBSERVED_MEMORY_MAX_AGE_DAYS?'CURRENT':'STALE'
+  return {status,metadata:{...evaluation.metadata,strategy:'OBSERVED_AS_OF',observed_at:observedAt,age_days:age,reason_code:status==='CURRENT'?'OBSERVED_AT_VERIFIED':'OBSERVED_AS_OF_MAX_AGE_EXCEEDED'}}
+}
+
 const producerIdOf=value=>{
   assertContextScopeAliases(value)
   const direct=text(value?.producerId??value?.producer_id??value?.clientId??value?.client_id??value?.subject_client_id)
@@ -608,6 +637,7 @@ export function buildContextSnapshot(context={},input={}){
     if(supersededIds.has(record.memory_id))validity='SUPERSEDED'
     let temporalEvaluation=evaluateSourceFreshness({domain:'MEMORY',sourceType:'val_memory',source:record,observedAt:record.observed_at,validFrom:record.valid_from,validUntil:record.valid_until,now})
     if(domain==='PROFILE'&&record.memory_type==='BEHAVIORAL')temporalEvaluation=profileMemoryFreshness(record,temporalEvaluation,now)
+    else temporalEvaluation=observedMemoryFreshness(record,temporalEvaluation,now)
     evaluatedMemoryFreshness.set(record.memory_id,temporalEvaluation)
     if(validity==='CURRENT'&&domain==='PROFILE'&&temporalEvaluation.status!=='CURRENT'){
       stale.push({...contextItem(record,{freshness:temporalEvaluation.status,freshnessMetadata:temporalEvaluation.metadata,...memoryScopeById.get(record.memory_id)}),reason:String(temporalEvaluation.metadata?.reason_code||temporalEvaluation.status).toLowerCase()})

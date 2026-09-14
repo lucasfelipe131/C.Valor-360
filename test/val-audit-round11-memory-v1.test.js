@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {contextQueryTokens,memoryMatchesContextDomain} from '../server/decision-copilot/context-selector.js'
-import {buildContextSnapshot} from '../server/memory/context-snapshot.js'
-import {summarizeContextCoverage} from '../server/val-engine.js'
+import {buildContextSnapshot,scopeContextSnapshotForModel} from '../server/memory/context-snapshot.js'
+import {scopeValContextForModel,summarizeContextCoverage} from '../server/val-engine.js'
 
 const tenant='00000000-0000-4000-8000-000000000001'
 const owner='00000000-0000-4000-8000-000000000010'
@@ -124,13 +124,99 @@ test('pergunta sem termo proprio nao reordena nada', () => {
  assert.match(String(snapshotOf(memories,{message:'Como ele esta?',memoryLimit:1}).selection.selected_refs[0]||''),/m-recente/)
 })
 
-test('o dossie declara o que foi lido, nao o que existia', () => {
- const memories=Array.from({length:86},(_,index)=>({id:`m${index}`}))
- const coverage=(list,selected)=>summarizeContextCoverage({client:{id:producer},memories:list,...(selected===null?{}:{contextSnapshot:{selection:{selected_refs:list.slice(0,selected).map(item=>item.id)}}})})
- assert.equal(coverage(memories,6).memories,86)
- assert.equal(coverage(memories,6).memoriesUsed,6)
- // Sem corte não há o que declarar, e sem snapshot o número de lidas é desconhecido: um
- // `memoriesUsed:0` faria a tela dizer "0 de 86 memórias", pior que o problema original.
- assert.equal(coverage(memories.slice(0,6),6).memoriesUsed,undefined)
- assert.equal(coverage(memories,null).memoriesUsed,undefined)
+test('o dossie diz de quantas memorias autorizadas saiu o que foi lido', () => {
+ const lidas=Array.from({length:6},(_,index)=>({id:`m${index}`}))
+ const coverage=(authorizedMemories)=>summarizeContextCoverage({client:{id:producer},memories:lidas},authorizedMemories===undefined?undefined:{authorizedMemories})
+ // No pipeline real summarizeContextCoverage roda depois de scopeValContextForModel, então
+ // context.memories já é o que o modelo leu. O total autorizado só existe se for capturado
+ // antes do corte e passado por parâmetro — sem isso numerador e denominador colapsam.
+ assert.equal(coverage(86).memories,6)
+ assert.equal(coverage(86).memoriesAuthorized,86)
+ assert.equal(coverage(6).memoriesAuthorized,undefined,'sem corte não há total a declarar')
+ assert.equal(coverage(undefined).memoriesAuthorized,undefined,'quem não informa o total mantém o comportamento antigo')
+})
+
+test('o total autorizado sobrevive ao corte do envelope do modelo', () => {
+ const memories=Array.from({length:86},(_,index)=>memory(`m${index}`,'producer.area',`Area cadastrada da propriedade ${index}: ${100+index} hectares.`,`2026-08-${String(1+index%28).padStart(2,'0')}T12:00:00.000Z`))
+ const contexto={client:{id:producer,name:'Matheus'},memories,memoryHistory:memories,businessHistory:[],visits:[],interactions:[],commitments:[],opportunities:[],properties:[],fieldReports:[],soilAnalyses:[],ndviObservations:[]}
+ const contextSnapshot=snapshotOf(memories,{message:'Fale da area dele',requestId:'00000000-0000-4000-8000-000000000991'})
+ const autorizadas=memories.length
+ const escopado=scopeValContextForModel({...contexto,contextSnapshot})
+ const coverage=summarizeContextCoverage(escopado,{authorizedMemories:autorizadas})
+ // Sem o parâmetro a tela escreveria "6 memórias" e nada mais: scopeValContextForModel
+ // reconstrói context.memories a partir do snapshot já filtrado.
+ assert.equal(summarizeContextCoverage(escopado).memoriesAuthorized,undefined)
+ assert.ok(coverage.memories<autorizadas)
+ assert.equal(coverage.memoriesAuthorized,autorizadas)
+})
+
+const vozGravada=(observedAt,overrides={})=>({
+ id:'voz-1',
+ tenant_id:tenant,
+ client_id:producer,
+ context_owner_id:owner,
+ subject_type:'client',
+ subject_id:producer,
+ memory_type:'fact',
+ memory_state:'FACT',
+ memory_domain:'PRODUCER',
+ key:'voice.fact',
+ value:{statement:'O produtor esta estudando a compra de irrigacao por pivo.'},
+ content:{statement:'O produtor esta estudando a compra de irrigacao por pivo.'},
+ status:'verified',
+ source:'confirmed_voice_interaction',
+ source_ref:'confirmed_voice_interaction:v1',
+ source_type:'confirmed_voice_interaction',
+ confidence:88,
+ observed_at:observedAt,
+ valid_from:observedAt,
+ created_at:observedAt,
+ // O carimbo de escrita é recente de propósito: ele NÃO pode servir de data de observação.
+ updated_at:'2026-08-29T12:00:00.000Z',
+ valid_until:null,
+ acl:{scope:'own_portfolio'},
+ ...overrides
+})
+
+const noModelo=snapshot=>['facts','inferences','hypotheses','validated_knowledge'].reduce((total,key)=>total+(scopeContextSnapshotForModel(snapshot)[key]||[]).length,0)
+
+test('memoria datada sem expiracao declarada chega ao modelo', () => {
+ // Toda memória que o produto escreve (voz, relatório de visita, complemento técnico) nasce
+ // com valid_until null. A política MEMORY é EXPLICIT_VALIDITY_WINDOW, então isso virava
+ // UNKNOWN e o envelope do modelo, que só aceita CURRENT, apagava a memória depois de ela
+ // já ter sido selecionada e entrado no snapshot.
+ const snapshot=snapshotOf([vozGravada('2026-08-20T12:00:00.000Z')],{message:'O que ele pensa sobre irrigação?',requestId:'00000000-0000-4000-8000-000000000995'})
+ assert.equal(snapshot.selection.selected_refs.length,1)
+ assert.equal(noModelo(snapshot),1)
+ assert.equal(snapshot.facts[0].freshness,'CURRENT')
+ assert.equal(snapshot.facts[0].freshness_metadata.reason_code,'OBSERVED_AT_VERIFIED')
+})
+
+test('a fuga tem teto de idade e nao vale para sempre', () => {
+ // A política MEMORY não tem max_age_days: sem teto, uma nota de voz de sete anos ficaria
+ // vigente indefinidamente. STALE mantém o registro auditável sem entregá-lo ao modelo.
+ const snapshot=snapshotOf([vozGravada('2019-08-20T12:00:00.000Z')],{message:'O que ele pensa sobre irrigação?',requestId:'00000000-0000-4000-8000-000000000996'})
+ assert.equal(snapshot.facts[0]?.freshness,'STALE')
+ assert.equal(snapshot.facts[0]?.freshness_metadata.reason_code,'OBSERVED_AS_OF_MAX_AGE_EXCEEDED')
+ assert.equal(noModelo(snapshot),0)
+})
+
+test('carimbo de escrita nao vira data de observacao', () => {
+ // A política MEMORY lista updated_at entre os date_fields. Se a fuga chaveasse por eles,
+ // uma linha legada sem observação nenhuma seria promovida a vigente pela data em que foi
+ // gravada — que não diz nada sobre quando o fato foi observado.
+ const legada=vozGravada(null,{observed_at:null,valid_from:null,source_updated_at:null,source_type:'legacy_unattributed',updated_at:'2019-03-02T12:00:00.000Z'})
+ const snapshot=snapshotOf([legada],{message:'O que ele pensa sobre irrigação?',requestId:'00000000-0000-4000-8000-000000000997'})
+ assert.equal(snapshot.facts[0]?.freshness,'UNKNOWN')
+ assert.equal(snapshot.facts[0]?.freshness_metadata.reason_code,'NO_EXPIRY_DECLARED')
+ assert.equal(noModelo(snapshot),0)
+})
+
+test('memoria encerrada nao ressuscita pela fuga', () => {
+ // EXPIRED, SUPERSEDED, REJECTED e FUTURE são decididos antes, por memoryValidity. A fuga só
+ // pode tocar o caso "datado e sem expiração declarada".
+ const encerrada=vozGravada('2026-08-20T12:00:00.000Z',{valid_until:'2026-08-25T12:00:00.000Z'})
+ const snapshot=snapshotOf([encerrada],{message:'O que ele pensa sobre irrigação?',requestId:'00000000-0000-4000-8000-000000000998'})
+ assert.equal(noModelo(snapshot),0)
+ assert.equal(snapshot.selection.selected_refs.length,0)
 })

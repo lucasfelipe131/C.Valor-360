@@ -508,7 +508,7 @@ const attachmentReadIntent=/\b(?:leia|ler|transcreva|transcrever|interprete|inte
 const genericAgronomyExplanation=/^\s*(?:o\s+que\s+[ée]|o\s+que\s+significa|como\s+funciona|(?:para|pra)\s+que\s+serve|qual\s+(?:a\s+)?diferen[çc]a\s+entre|quais\s+(?:s[ãa]o\s+)?os\s+tipos\s+de|explique|me\s+explica|resumo\s+sobre|resuma)(?=\s|[?,.:!]|$)/i
 
 const count=value=>Array.isArray(value)?value.length:0
-export function summarizeContextCoverage(context={}){
+export function summarizeContextCoverage(context={},{authorizedMemories=null}={}){
   const coverage={
     profile:Boolean(context.client?.id),
     questionnaire:Object.keys(context.profile?.answers||{}).length,
@@ -526,17 +526,15 @@ export function summarizeContextCoverage(context={}){
     priorRecommendations:count(context.priorRecommendations)
   }
   const saved=count(context.attachments);const current=count(context.currentAttachments)
-  // `memories` conta as memorias AUTORIZADAS do produtor, nao as que o raciocinio leu.
-  // O snapshot corta pelo teto do dominio (6 em GENERAL, 4 em PROFILE), entao um produtor
-  // com historico rico fazia a tela anunciar "86 memorias" sob o titulo "Dossie cruzado
-  // pela VAL" quando a VAL tinha cruzado 6 - o numero exagerava a cobertura exatamente no
-  // caso em que mais material ficou de fora. `memoriesUsed` e o que de fato entrou; a tela
-  // mostra os dois para o consultor saber o tamanho do corte.
-  // Sem snapshot nao ha corte conhecido, e um `memoriesUsed:0` faria a tela dizer
-  // "0 de 86 memorias" - um numero falso e mais alarmante do que o problema original.
-  const selected=context.contextSnapshot?.selection?.selected_refs
-  const used=Array.isArray(selected)?selected.length:null
-  return {...coverage,...(used!==null&&used<coverage.memories?{memoriesUsed:used}:{}),...(saved?{attachments:saved}:{}),...(current?{currentAttachments:current}:{})}
+  // No pipeline real esta funcao roda DEPOIS de scopeValContextForModel, que reconstroi
+  // context.memories a partir do snapshot ja filtrado. Entao `memories` aqui e o que o
+  // raciocinio de fato leu - e numerador e denominador colapsavam no mesmo numero: a tela
+  // escrevia "6 memorias" sob o titulo "Dossie cruzado pela VAL" sem dizer que existiam 86
+  // autorizadas, e o consultor concluia que a VAL tinha lido o dossie inteiro justamente
+  // no caso em que mais material ficou de fora. O total autorizado precisa ser capturado
+  // ANTES do corte e chegar por parametro; quem nao o informa mantem o comportamento antigo.
+  const authorized=Number.isInteger(authorizedMemories)?authorizedMemories:null
+  return {...coverage,...(authorized!==null&&authorized>coverage.memories?{memoriesAuthorized:authorized}:{}),...(saved?{attachments:saved}:{}),...(current?{currentAttachments:current}:{})}
 }
 
 function technicalReviewShell(context,_message,signalRequiresReview){
@@ -771,6 +769,9 @@ export class ValEngine{
     throwIfRequestCancelled(signal)
     context.attachments=savedAttachments.filter(item=>['confirmed','stored'].includes(item.status)).map(compactAttachmentForModel)
     context.currentAttachments=selectedAttachments.map(compactAttachmentForModel)
+    // Capturado antes do corte: depois desta linha context.memories ja e so o que o modelo
+    // vai ler, e o total autorizado do produtor deixa de existir no objeto.
+    const authorizedMemories=count(context.memories)
     context=scopeValContextForModel(context)
     const allowedCurrentAttachmentIds=new Set((context.currentAttachments||[]).map(item=>String(item.id)))
     const modelAttachments=selectedAttachments.filter(item=>allowedCurrentAttachmentIds.has(String(item.id)))
@@ -787,7 +788,7 @@ export class ValEngine{
       knowledgeRetrieval=normalizeKnowledgeRetrieval({status:'NO_APPLICABLE_KNOWLEDGE',reason_codes:['SELECTION_UNAVAILABLE']},{now:knowledgeNow})
     }
     const selectedKnowledge=knowledgeForModel(knowledgeRetrieval)
-    const contextCoverage=summarizeContextCoverage(context)
+    const contextCoverage=summarizeContextCoverage(context,{authorizedMemories})
     const route=selectValModel(message,mode,this.config)
     const routeAudit=emitValRouteAudit(this.logger,buildValRouteAudit({message,mode,route,at:this.clock()}))
     const fallbackAdvice=buildFallbackAdvice({...context,message,mode:route.tier,requestedStage:selectedWorkingStage})

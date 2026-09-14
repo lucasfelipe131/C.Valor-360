@@ -135,9 +135,9 @@ export default function ValDecisionWorkspace({clients=[],selectedClient,onSelect
  const priority=text(core.priority||response?.conversionIntelligence?.priority||brief.priority,'acompanhar')
  const priorityLabel=priorityLabels[priority]||priorityLabels[priority.toLocaleLowerCase('pt-BR')]||'Acompanhar'
  const amountKnown=selectedOpportunity.amount!==null&&selectedOpportunity.amount!==undefined&&Number.isFinite(Number(selectedOpportunity.amount))
- // memoriesUsed e um recorte de `memories`, nao uma fonte a mais: somar os dois contaria as
- // memorias lidas duas vezes no total de fontes cruzadas.
- const sourceCount=Object.entries(response?.contextCoverage||{}).filter(([key])=>key!=='memoriesUsed').reduce((sum,[,value])=>sum+(Number(value)||0),0)
+  // memoriesAuthorized e o total de onde `memories` foi cortado, nao uma fonte a mais:
+ // somar os dois contaria as memorias duas vezes no total de fontes cruzadas.
+ const sourceCount=Object.entries(response?.contextCoverage||{}).filter(([key])=>key!=='memoriesAuthorized').reduce((sum,[,value])=>sum+(Number(value)||0),0)
  const components=Object.entries(selectedOpportunity.components||{}).filter(([,value])=>Number.isFinite(Number(value)))
  const reasons=array(selectedOpportunity.reasons).map(text).filter(Boolean)
  const penalties=array(selectedOpportunity.penalties).map(text).filter(Boolean)

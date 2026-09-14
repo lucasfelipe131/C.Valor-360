@@ -343,11 +343,11 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const configured=Boolean(status.data?.configured)
  const engineReady=configured&&!status.error
  const recommendationRegistered=Boolean(response?.recommendationId)
- // "Dossie cruzado pela VAL" anunciava o total de memorias autorizadas do produtor, nao as
- // que o raciocinio leu: com 86 autorizadas e teto de dominio 6, a tela dizia "86 memorias"
- // e o consultor concluia que a VAL tinha lido o dossie inteiro. memoriesUsed so vem quando
- // houve corte, e entao o numero exibido passa a ser o que foi lido, com o total ao lado.
- const contextSources=Object.entries(response?.contextCoverage||{}).filter(([key,value])=>key!=='profile'&&key!=='memoriesUsed'&&Number(value)>0).map(([key,value])=>({key,label:coverageLabels[key]||key,value,...(key==='memories'&&Number.isFinite(Number(response?.contextCoverage?.memoriesUsed))?{value:response.contextCoverage.memoriesUsed,total:value}:{})}))
+ // "Dossie cruzado pela VAL" mostrava so quantas memorias o raciocinio leu: com 86
+ // autorizadas e teto de dominio 6, a tela dizia "6 memorias" sem dizer de quantas, e o
+ // consultor concluia que a VAL tinha lido o dossie inteiro. memoriesAuthorized so vem
+ // quando houve corte, e entao o total aparece ao lado do que foi lido.
+ const contextSources=Object.entries(response?.contextCoverage||{}).filter(([key,value])=>key!=='profile'&&key!=='memoriesAuthorized'&&Number(value)>0).map(([key,value])=>({key,label:coverageLabels[key]||key,value,...(key==='memories'&&Number.isFinite(Number(response?.contextCoverage?.memoriesAuthorized))?{total:response.contextCoverage.memoriesAuthorized}:{})}))
  const interpretedAttachments=Array.isArray(response?.attachments)?response.attachments.filter(item=>item.status!=='received'||item.analysis?.summary):[]
  const clientMetrics=useMemo(()=>commercialMetrics(client||{}),[client])
  const primaryQuestionType=questions.find(item=>item.question===brief.question)?.type||textValue(advice?.next_question?.type)||'aberta'
