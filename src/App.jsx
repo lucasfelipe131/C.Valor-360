@@ -48,6 +48,20 @@ const clearSessionPortfolioCache=storageScope=>{
  sessionStorage.removeItem(activeStorageScopeKey)
 }
 const rememberStorageScope=user=>{if(user?.storageScope)sessionStorage.setItem(activeStorageScopeKey,user.storageScope)}
+// Sem sinal, "Encerrar sessao" caia no catch e o unico retorno era um toast de 2,8 s: a tela
+// continuava com o menu, a carteira e as Preferencias da consultora. Ela entrega o tablet ao
+// colega ou ao proprio produtor achando que saiu.
+//
+// Limpar so o estado local e mostrar o login seria mentira: o cookie e HttpOnly e continua valido,
+// entao recarregar entra direto na conta, sem senha. O que resolve e uma saida PENDENTE, pegajosa:
+// o aparelho sai agora, o marcador sobrevive a recarga e impede a restauracao da sessao, e o
+// pedido de revogacao e reenviado quando a rede voltar. localStorage de proposito - sessionStorage
+// morreria ao fechar a aba, que e exatamente quando o aparelho troca de mao.
+const pendingLogoutKey='valor360-pending-logout'
+const pendingLogout=()=>{try{return localStorage.getItem(pendingLogoutKey)==='1'}catch{return false}}
+const markPendingLogout=value=>{try{if(value)localStorage.setItem(pendingLogoutKey,'1');else localStorage.removeItem(pendingLogoutKey)}catch{}}
+const pendingLogoutNotice='Sua sessão foi encerrada neste aparelho, mas o servidor ainda não confirmou a revogação. Vamos tentar de novo assim que o sinal voltar; até lá, a credencial pode continuar valendo em outros aparelhos.'
+
 
  const resetPageViewport=()=>{
   resetMobilePageScroll()
@@ -286,9 +300,10 @@ export default function App(){
  const registerVisitResult=visit=>{if(!visit)return;setVisits(current=>[visit,...current.filter(item=>item.id!==visit.id)]);notify('Visita registrada. Sua próxima preparação já foi atualizada.')}
  const saveOpportunity=async input=>{const requestOwner=copilotOwnerScope;const response=await fetch('/api/opportunities',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(input),signal:AbortSignal.timeout(10000)});if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível atualizar a oportunidade.');if(opportunityOwnerRef.current!==requestOwner)throw new Error('A conta mudou durante a gravação. Atualize a carteira.');if(!payload.opportunity||String(payload.opportunity.clientId)!==String(input.clientId))throw new Error('O servidor retornou uma oportunidade de contexto diferente.');setOpportunities(current=>[payload.opportunity,...current.filter(item=>!(String(item.clientId)===String(payload.opportunity.clientId)&&item.candidateKey===payload.opportunity.candidateKey))]);return payload.opportunity}
  const refreshPortfolio=async()=>{const response=await fetch('/api/intelligence',{signal:AbortSignal.timeout(12000)});if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'A carteira protegida não pôde ser atualizada.');const serverClients=Array.isArray(payload.clients)?payload.clients:[];setClientList(serverClients);setVisits(Array.isArray(payload.visits)?payload.visits:[]);setOpportunities(Array.isArray(payload.opportunities)?payload.opportunities:[]);setSelected(current=>serverClients.find(item=>String(item.id)===String(current?.id))||null);setPortfolioError('');return payload}
- const login=async credentials=>{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials),signal:AbortSignal.timeout(10000)});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível autenticar.');rememberStorageScope(payload.user);purgeForeignSurveyDrafts(payload.user?.storageScope);setAuthNotice('');setCurrentUser(payload.user||null);setPortfolioReady(Boolean(payload.user?.demo));setAuthenticated(true);notify('Bem-vindo à VAL.')}
+ const login=async credentials=>{const response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials),signal:AbortSignal.timeout(10000)});const payload=await response.json().catch(()=>({}));if(!response.ok)throw new Error(payload.error||'Não foi possível autenticar.');markPendingLogout(false);rememberStorageScope(payload.user);purgeForeignSurveyDrafts(payload.user?.storageScope);setAuthNotice('');setCurrentUser(payload.user||null);setPortfolioReady(Boolean(payload.user?.demo));setAuthenticated(true);notify('Bem-vindo à VAL.')}
  const changePassword=async input=>{const response=await fetch('/api/auth/password',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(input),signal:AbortSignal.timeout(15000)});const payload=await response.json().catch(()=>({}));if(response.status===401){window.dispatchEvent(new Event('valor360:unauthorized'));throw new Error('Sua sessão expirou.')}if(!response.ok)throw new Error(payload.error||'Não foi possível trocar a senha.');rememberStorageScope(payload.user);setCurrentUser(payload.user);setPortfolioReady(false);notify('Senha definida. Sua carteira já está pronta para ser preenchida.')}
- const logout=async()=>{try{const response=await fetch('/api/auth/logout',{method:'POST',signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error();clearSessionPortfolioCache(currentUser?.storageScope);setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setValMode(null);setAgroLaunch(createEmptyAgroLaunch());setAuthNotice('');setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}catch{notify('Não foi possível encerrar a sessão no servidor. Tente novamente.')}}
+ const leaveDevice=notice=>{clearSessionPortfolioCache(currentUser?.storageScope);setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setValMode(null);setAgroLaunch(createEmptyAgroLaunch());setAuthNotice(notice);setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}
+ const logout=async()=>{try{const response=await fetch('/api/auth/logout',{method:'POST',signal:AbortSignal.timeout(10000)});if(!response.ok)throw new Error();markPendingLogout(false);leaveDevice('')}catch{markPendingLogout(true);leaveDevice(pendingLogoutNotice)}}
  const invalidateSession=notice=>{clearSessionPortfolioCache(currentUser?.storageScope);setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setValMode(null);setAgroLaunch(createEmptyAgroLaunch());setAuthNotice(notice);setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setPage('dashboard')}
  // A tela ja dizia "Sua sessao expirou" - verdadeiro sobre a sessao e silencioso sobre o trabalho.
  // Com o produtor na frente e 6 de 26 respostas digitadas, a consultora so descobria a perda depois
@@ -325,6 +340,16 @@ export default function App(){
   .then(async response=>({sessionDenied:response.status===401,session:response.ok?await response.json().catch(()=>null):null}))
   .catch(()=>({sessionDenied:false,session:null}))
   .then(({sessionDenied,session})=>{
+   // Saida pendente: o consultor ja apertou "Encerrar sessao" neste aparelho. Mesmo que o servidor
+   // diga que a sessao vale, nao restauramos - reenviamos a revogacao e so entao liberamos o login.
+   if(pendingLogout()){
+    fetch('/api/auth/logout',{method:'POST',signal:AbortSignal.timeout(8000)})
+     .then(response=>{if(response.ok){markPendingLogout(false);setAuthNotice('')}else setAuthNotice(pendingLogoutNotice)})
+     .catch(()=>setAuthNotice(pendingLogoutNotice))
+    clearSessionPortfolioCache()
+    setClientList([]);setVisits([]);setOpportunities([]);setSelected(null);setCurrentUser(null);setPortfolioReady(false);setAuthenticated(false);setAuthNotice(pendingLogoutNotice)
+    return
+   }
    if(session?.authenticated){rememberStorageScope(session.user);setCurrentUser(session.user);setPortfolioReady(Boolean(session.user?.demo));setAuthenticated(true);return}
    const serverAnswered=sessionDenied||Boolean(session)
    if(serverAnswered)clearSessionPortfolioCache()

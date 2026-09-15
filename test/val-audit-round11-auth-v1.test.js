@@ -47,3 +47,36 @@ test('o logout so revoga com banco e nunca deixa de deslogar', () => {
  // das duas rotas no arquivo é contrato de outro teste.
  assert.ok(servidor.indexOf("url.pathname==='/api/auth/login'")<servidor.indexOf("url.pathname==='/api/auth/logout'"))
 })
+
+test('sair sem sinal deixa o aparelho de fora e insiste quando a rede volta', () => {
+ // Sem sinal, logout() caía no catch e o único retorno era um toast de 2,8 s: a tela continuava
+ // com o menu, a carteira e as Preferências dela. A consultora entrega o tablet achando que saiu.
+ //
+ // Limpar só o estado local e mostrar o login seria mentira — o cookie é HttpOnly e continua
+ // valendo, então recarregar entra direto na conta, sem senha.
+ const app=readFileSync(new URL('../src/App.jsx',import.meta.url),'utf8').replace(/\s+/g,' ')
+ // A falha sai do aparelho pelo MESMO caminho do sucesso, e marca a pendência.
+ assert.match(app,/catch\{markPendingLogout\(true\);leaveDevice\(pendingLogoutNotice\)\}/)
+ assert.match(app,/if\(response\.ok\)throw new Error\(\)|if\(!response\.ok\)throw new Error\(\)/)
+ // localStorage de propósito: sessionStorage morreria ao fechar a aba, que é exatamente quando o
+ // aparelho troca de mão.
+ assert.match(app,/const pendingLogoutKey='valor360-pending-logout'/)
+ assert.match(app,/localStorage\.setItem\(pendingLogoutKey/)
+ // Com pendência, o bootstrap NÃO restaura a sessão mesmo que o servidor diga que ela vale.
+ assert.match(app,/if\(pendingLogout\(\)\)\{ fetch\('\/api\/auth\/logout',\{method:'POST'/)
+ // O aviso é honesto: não afirma que a credencial já foi revogada.
+ assert.match(app,/o servidor ainda não confirmou a revogação/)
+ // Entrar de novo encerra a pendência.
+ assert.match(app,/markPendingLogout\(false\);rememberStorageScope\(payload\.user\)/)
+})
+
+test('falha de rede sozinha continua sem derrubar sessao', () => {
+ // Contrato da rodada 8 (VAL-R8-ADM-01): sinal ruim na fazenda não pode valer logout. A pendência
+ // só nasce do clique explícito no botão; os efeitos de bootstrap e revalidação seguem intactos.
+ const app=readFileSync(new URL('../src/App.jsx',import.meta.url),'utf8').replace(/\s+/g,' ')
+ assert.match(app,/const serverAnswered=sessionDenied\|\|Boolean\(session\)/)
+ assert.match(app,/if\(serverAnswered\)clearSessionPortfolioCache\(\)/)
+ assert.match(app,/nada local foi apagado/)
+ // markPendingLogout(true) aparece uma única vez: no catch do botão.
+ assert.equal((app.match(/markPendingLogout\(true\)/g)||[]).length,1)
+})
