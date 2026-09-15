@@ -51,7 +51,11 @@ export async function generateGeneralModelAnswer({message='',aiClient=null,model
   response=await aiClient.responses.create({model,instructions,input:[{role:'user',content:clean(message).slice(0,2000)}],max_output_tokens:reformulate?3200:1600,...(/^gpt-5(?:[.-]|$)/i.test(model)?{reasoning:{effort:'low'}}:{}),text:{format:{type:'text'}}},{...(signal?{signal}:{}),timeout:15_000,maxRetries:0})
  }catch(error){
   if(signal?.aborted)throw signal.reason||error
-  return empty({modelCalls:1})
+  // Este catch era o unico lugar onde a causa da falha existia, e ela era jogada fora: provedor
+  // fora do ar (500) e limite do provedor (429) viravam "resposta vazia", indistinguiveis de "a
+  // Biblioteca nao cobre este assunto". O consultor lia um pedido para reformular a pergunta.
+  const retryAfterHeader=Number(error?.headers?.['retry-after']??error?.response?.headers?.get?.('retry-after'))
+  return empty({modelCalls:1,unavailableReason:'PROVIDER_ERROR',providerStatus:Number(error?.status)||null,retryAfterSeconds:Number.isFinite(retryAfterHeader)&&retryAfterHeader>0?Math.min(600,Math.round(retryAfterHeader)):null})
  }
  const costUsd=estimateCost(response?.usage)
  // An incomplete Responses result can contain grammatical but truncated text.
