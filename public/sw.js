@@ -1,5 +1,21 @@
 const CACHE='valor360-v__VAL_RELEASE__'
-self.addEventListener('install',event=>{self.skipWaiting();event.waitUntil(caches.open(CACHE).then(cache=>cache.addAll(['/','/index.html','/manifest.webmanifest','/icon.svg'])))})
+// O pre-cache pedia /icon.svg, que nao existe em lugar nenhum do build nem e servido por rota
+// alguma - o icone real do manifesto e /brand/val-symbol-official.png. E cache.addAll e tudo-ou-
+// nada: um unico item que falha rejeita a promessa inteira, o install nunca conclui e o service
+// worker NUNCA ativa. O consultor instalava a VAL na tela inicial, no escritorio funcionava tudo,
+// e na fazenda sem sinal o icone abria a pagina de erro do navegador.
+//
+// Item a item, de proposito: um arquivo renomeado num deploy futuro passa a custar aquele arquivo,
+// nao o modo offline inteiro. A casca continua sendo requisito - sem ela nao ha o que abrir.
+const PRECACHE_SHELL=['/','/index.html']
+const PRECACHE_EXTRA=['/manifest.webmanifest','/brand/val-symbol-official.png']
+self.addEventListener('install',event=>{
+ self.skipWaiting()
+ event.waitUntil(caches.open(CACHE).then(async cache=>{
+  await cache.addAll(PRECACHE_SHELL)
+  await Promise.allSettled(PRECACHE_EXTRA.map(asset=>cache.add(asset)))
+ }))
+})
 self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())))
 // Um deploy renomeia os pedacos por hash. Se o servidor devolvesse index.html com 200 para um .js que
 // sumiu, guardar essa resposta envenenava o cache do release: a tela lazy nunca mais abriria naquela
