@@ -618,6 +618,12 @@ export async function executeCapabilityPlan(options={}){
 // Texto exposto quando nada na Biblioteca de Conhecimento cobre a pergunta. Extraida como
 // constante para buildGeneralNoClientResponse detectar com seguranca quando deve tentar o
 // fallback de conhecimento geral do modelo, sem duplicar a string em dois lugares.
+// O teto de IA nao verificada desligava o modelo e a tela passava a responder EXATAMENTE como se
+// a pergunta estivesse incompleta: "Informe a cultura, o conceito ou a decisao geral". O consultor
+// reescrevia a pergunta de tres jeitos diferentes achando que o problema era ele. A causa e
+// conhecida no servidor e era jogada fora; agora ela chega ate a frase, no mesmo padrao que o teto
+// da voz ja usa.
+export const aiBudgetExhaustedStub='O limite de uso da IA de conhecimento geral deste acesso foi atingido. Ele é por consultor e por acesso, e um novo login restaura. Perguntas com produtor selecionado, memória e fontes registradas continuam funcionando normalmente.'
 const noKnowledgeCoverageStub='Posso tratar esta dúvida sem selecionar um produtor e sem consultar memória privada. Informe a cultura, o conceito ou a decisão geral que deseja entender; dados atuais e recomendações técnicas continuam exigindo fonte, contexto e revisão.'
 
 // Um cumprimento puro ("oi", "bom dia") não tem nenhuma palavra com 4+ letras para o
@@ -774,7 +780,7 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  const trustedGeneralGuidance=Boolean(!clientId&&sourceRefs.length===1&&sourceRefs[0].id==='system:general-guidance:v1'&&sourceRefs[0].capability==='GENERAL_GUIDANCE'&&tool?.capability==='GENERAL_GUIDANCE'&&evaluatedGrounding.question_relevance==='PASS'&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  // Pedido de esclarecimento por falta de cobertura curada: texto fixo do servidor, sem fonte e
  // sem claim factual; e o que o consultor deve ler quando nao ha item nem modelo disponivel.
- const noCoverageGuidance=Boolean(!sourceRefs.length&&tool?.capability==='GENERAL_GUIDANCE'&&tool?.status==='NO_DATA'&&tool?.mode==='no_coverage'&&[clean(noKnowledgeCoverageStub,1200),generalTopicClarification(message)].includes(summary))
+ const noCoverageGuidance=Boolean(!sourceRefs.length&&tool?.capability==='GENERAL_GUIDANCE'&&tool?.status==='NO_DATA'&&tool?.mode==='no_coverage'&&[clean(noKnowledgeCoverageStub,1200),clean(aiBudgetExhaustedStub,1200),generalTopicClarification(message)].includes(summary))
  // Comando local da sessao ("por escrito", "nao registra"): a resposta e a confirmacao fixa da
  // preferencia, sem afirmacao factual; nao precisa de turno anterior nem de overlap com a frase.
  const localSessionCommand=Boolean(route?.session_command?.local_only&&sourceRefs.length===1&&sourceRefs[0].capability==='SESSION_COMMAND'&&tool?.capability==='SESSION_COMMAND'&&tool?.status==='EXECUTED'&&trustedCapabilityExecutions.has(execution)&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
@@ -847,7 +853,8 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  return {route:route?.path||execution?.path||'TOOL',engineMode:'rules',model:'rules-capability-executor-v1',warning:'',responseMetadata:{toolExecutionVersion:capabilityExecutorVersion,executionBudget},advice:{answer,executive_brief:{headline:blocked?'Resposta bloqueada por grounding':tool?.title||'Capacidade da VAL',reason:answer,action:reasoning.recommended_strategy.action},next_best_action:reasoning.recommended_strategy.action,ai_reasoning:reasoning}}
 }
 
-export async function buildGeneralNoClientResponse({message='',route={},organizationId='unknown',ownerId='',conversationId='',contextEpoch=0,contextDomain='',now=new Date(),aiClient=null,aiModel='',sharedAnswerCache=null,signal}={}){
+export async function buildGeneralNoClientResponse({message='',route={},organizationId='unknown',ownerId='',conversationId='',contextEpoch=0,contextDomain='',now=new Date(),aiClient=null,aiModel='',aiUnavailableReason='',sharedAnswerCache=null,signal}={}){
+ const aiBudgetExhausted=aiUnavailableReason==='BUDGET_EXHAUSTED'&&!aiClient
  throwIfCancelled(signal)
  const catalog=route?.tool_hint==='AGRONOMIC_TOOL_CATALOG'&&list(route.capabilities).includes('AGRONOMIC_WORKSPACE')
  const contextRequired=!catalog&&route?.client_context_required===true&&!isGeneralConceptRequest(message)
@@ -863,7 +870,7 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  // uma resposta factual. Entra como NO_DATA para nao passar por grounding de claims e nunca ser
  // trocado pela mensagem de bloqueio de integridade. Tambem e o que o consultor le quando o item
  // recuperado foi bloqueado a jusante e nao ha modelo disponivel para o fallback.
- const noCoverageExecution=()=>deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'NO_DATA',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:'Orientação geral',summary:topicClarification||noKnowledgeCoverageStub,page:'copilot',manual_page:null,mode:'no_coverage',context:{client_id:null,private_memory_used:false},required_inputs:['topic']},active_context:null})
+ const noCoverageExecution=()=>deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'NO_DATA',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:aiBudgetExhausted?'Limite de IA atingido':'Orientação geral',summary:aiBudgetExhausted?aiBudgetExhaustedStub:(topicClarification||noKnowledgeCoverageStub),page:'copilot',manual_page:null,mode:'no_coverage',context:{client_id:null,private_memory_used:false},required_inputs:aiBudgetExhausted?[]:['topic']},active_context:null})
  const curatedExecution=deepFreeze(catalog
   ?{path:route.path,capabilities_planned:[...list(route.capabilities)],capabilities_used:['AGRONOMIC_WORKSPACE'],capability_results:[catalogExecution],tool_result:catalogExecution.tool_result,active_context:null}
   :contextRequired

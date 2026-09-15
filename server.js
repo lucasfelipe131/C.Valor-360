@@ -811,7 +811,7 @@ async function handleApi(request,response,url){
     return json(response,200,complete(direct,execution))
    }
    const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
-   const general=await buildGeneralNoClientResponse({message:generalMessage,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,sharedAnswerCache,signal:requestController.signal})
+   const general=await buildGeneralNoClientResponse({message:generalMessage,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,aiUnavailableReason:aiGeneralKnowledgeBudget.allowed?'':'BUDGET_EXHAUSTED',sharedAnswerCache,signal:requestController.signal})
    general.responseMetadata.questionContinued=generalQuestion.continued
    const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
    if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})
@@ -880,7 +880,7 @@ async function handleApi(request,response,url){
    // responseScope apontem para o mesmo produtor, senao "oi" com produtor aberto e rejeitado na tela.
    const generalDomain=requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent)
    const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
-   const general=await buildGeneralNoClientResponse({message:generalMessage,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:generalDomain,aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,sharedAnswerCache,signal:requestController.signal})
+   const general=await buildGeneralNoClientResponse({message:generalMessage,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:generalDomain,aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,aiUnavailableReason:aiGeneralKnowledgeBudget.allowed?'':'BUDGET_EXHAUSTED',sharedAnswerCache,signal:requestController.signal})
    general.responseMetadata.questionContinued=generalQuestion.continued
    const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
    if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})
