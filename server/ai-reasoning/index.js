@@ -597,7 +597,7 @@ export function composeAIReasoning({advice={},context={},message='',run={},conve
  }
  if(!quality.passed&&!safetyPreserved)result=insufficientResult(result)
  const selectedDomain=context.contextSnapshot?.context_scope?.domain||''
- const groundingScope={question:message,domain:selectedDomain,evidence:result.facts_used,activeProducerId:result.client?.id,tenantId:result.organization?.id,ownerId:context.contextSnapshot?.context_scope?.owner_id||''}
+ const groundingScope={question:message,domain:selectedDomain,evidence:result.facts_used,activeProducerId:result.client?.id,activeProducerName:context.client?.name||result.client?.name||'',tenantId:result.organization?.id,ownerId:context.contextSnapshot?.context_scope?.owner_id||''}
  const initialGrounding=evaluateReasoningGrounding({...groundingScope,blocks:reasoningGroundingBlocks(result)})
  const groundingFallbackApplied=!initialGrounding.passed
  const retainedFacts=groundingFallbackApplied&&!safetyPreserved?selfSupportedFacts(result,groundingScope):[]

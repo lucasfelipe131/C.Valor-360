@@ -890,11 +890,15 @@ export function factMatchesQuestionFacet({domain='',question='',statement='',sou
 
 export function evaluateResponseGrounding({question='',answer='',domain='',evidence=[],activeProducerId='',activeProducerName='',tenantId='',ownerId='',field='answer',now=new Date(),checkQuestionRelevance=true}={}){
  const selectedDomain=domain||classifyValContextDomain(question)
+ // O nome so e escopo do turno quando ha um produtor selecionado. Sem produtor, o chamador
+ // preenche o campo com um rotulo de tela ("Carteira", em capability-executor.js), e a palavra
+ // viraria contexto compartilhado em toda conversa de carteira.
+ const scopeName=clean(activeProducerId,180)?clean(activeProducerName,180):''
  const evaluatedAt=now instanceof Date&&!Number.isNaN(now.getTime())?now:new Date()
  const entries=evidenceEntries(evidence,{domain:selectedDomain,question,activeProducerId:clean(activeProducerId,180),tenantId:clean(tenantId,180),ownerId:clean(ownerId,180),now:evaluatedAt})
  const claimTexts=splitClaims(answer)
  const claims=claimTexts.map((claim,index)=>{
-  const support=claimSupport(claim,entries,question,selectedDomain,field,activeProducerId,clean(activeProducerName,180))
+  const support=claimSupport(claim,entries,question,selectedDomain,field,activeProducerId,scopeName)
   return Object.freeze({claim_id:`claim:${hash(`${field}:${index}:${claim}`)}`,field,index,type:claimType(claim,field),supported:support.supported,evidence_refs:support.evidenceRefs,reason_code:support.reason})
  })
  const normalizedAnswer=normalize(answer)
@@ -909,7 +913,7 @@ export function evaluateResponseGrounding({question='',answer='',domain='',evide
  const provenanceViolations=entries.filter(item=>!item.provenanceCompatible).map(item=>Object.freeze({source_ref:item.auditId,reason_codes:item.provenanceCodes}))
  const temporalViolations=entries.filter(item=>!item.temporalCompatible).map(item=>item.auditId)
  const unsupportedClaims=claims.filter(item=>!item.supported)
- const directlyAnswers=!checkQuestionRelevance||directlyAnswersQuestion({domain:selectedDomain,question,answer,unsupportedClaims,activeProducerName:clean(activeProducerName,180)})
+ const directlyAnswers=!checkQuestionRelevance||directlyAnswersQuestion({domain:selectedDomain,question,answer,unsupportedClaims,activeProducerName:scopeName})
  return Object.freeze({
   version:responseGroundingVersion,domain:selectedDomain,
   passed:unsupportedClaims.length===0&&scopeViolations.length===0&&incompatibleEvidence.length===0&&provenanceViolations.length===0&&temporalViolations.length===0&&directlyAnswers,
@@ -919,14 +923,18 @@ export function evaluateResponseGrounding({question='',answer='',domain='',evide
  })
 }
 
-export function evaluateReasoningGrounding({question='',domain='',evidence=[],activeProducerId='',tenantId='',ownerId='',blocks={},now=new Date()}={}){
+export function evaluateReasoningGrounding({question='',domain='',evidence=[],activeProducerId='',activeProducerName='',tenantId='',ownerId='',blocks={},now=new Date()}={}){
  const blockEntries=Object.entries(blocks).filter(([,value])=>clean(value))
- const results=blockEntries.map(([field,answer])=>evaluateResponseGrounding({question,answer,domain,evidence,activeProducerId,tenantId,ownerId,field,now,checkQuestionRelevance:false}))
+ const results=blockEntries.map(([field,answer])=>evaluateResponseGrounding({question,answer,domain,evidence,activeProducerId,activeProducerName,tenantId,ownerId,field,now,checkQuestionRelevance:false}))
  const claimLedger=results.flatMap(result=>result.claim_ledger)
  const unsupportedClaims=results.flatMap(result=>result.unsupported_claims)
  const answerFields=/^(?:recommended_strategy\.reading|situation_summary|decision_thesis\.(?:CURRENT_SITUATION|THESIS)|voice_output\.speakable_text|session_turn\.)/i
  const answerEntries=blockEntries.filter(([field])=>answerFields.test(field))
- const relevance=directlyAnswersQuestion({domain:domain||classifyValContextDomain(question),question,answer:answerEntries.map(([,value])=>value).join(' '),unsupportedClaims})
+ // Este e o portao de relevancia do caminho profundo. Sem o nome aqui, a correcao so valia no
+ // caminho rapido: com a visita selecionada e em facts_used, "quando foi a ultima visita
+ // concluida do Joao Pereira?" continuava respondida com "Nao ha evidencia selecionada
+ // suficiente" - a VAL negando o dado que ela mesma carregou.
+ const relevance=directlyAnswersQuestion({domain:domain||classifyValContextDomain(question),question,answer:answerEntries.map(([,value])=>value).join(' '),unsupportedClaims,activeProducerName:clean(activeProducerId,180)?clean(activeProducerName,180):''})
  return Object.freeze({
   version:responseGroundingVersion,domain:domain||classifyValContextDomain(question),
   passed:results.length>0&&results.every(result=>result.passed)&&relevance,
