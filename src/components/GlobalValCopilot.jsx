@@ -558,6 +558,12 @@ export default function GlobalValCopilot({open,onClose,onPresentationChange,embe
   // produtor fora da carteira) entra na conversa como linha do sistema: a faixa de erro sumia na
   // pergunta seguinte e a pergunta ficava no histórico sem nenhuma resposta.
   if(serviceCode&&requestError.payload?.error&&[404,409,422].includes(Number(requestError.status||0)))append({role:'system',command:serviceCode,text:requestError.message,persistence:'NONE',at:new Date().toISOString()},activeThreadKey)
+  // Mesmo raciocinio do ramo acima, para as falhas que ele nao cobre: limite temporario de
+  // analises (429), IA fora do ar (5xx), queda de rede e estouro de tempo. A faixa de erro some
+  // na pergunta seguinte, e o fio ficava com a pergunta do consultor sem resposta e sem nada
+  // dizendo que falhou - ele nao sabe se a VAL nao respondeu ou se ele nunca enviou. A pergunta
+  // continua no fio, verbatim; o que faltava era a marca durar.
+  else append({role:'system',command:'val_request_failed',text:`${requestError.name==='TimeoutError'?'A análise ultrapassou 30 segundos.':requestError.message} A pergunta acima continua registrada nesta conversa; envie de novo quando quiser.`,persistence:'NONE',at:new Date().toISOString()},activeThreadKey)
   setError(requestError.name==='TimeoutError'?'A análise ultrapassou 30 segundos. Tente novamente.':requestError.message)
   if(serviceCode==='val_confirmation_required'&&client&&!turnOptions.conversationMode){setMode('REGISTER');clientSelectRef.current?.focus()}
   if(turnOptions.conversationMode===true)throw requestError
