@@ -288,6 +288,18 @@ export function responseCardActionMatchesScope(responseScope={},activeScope={}){
  }catch{return false}
 }
 
+// Identidade de quem pode VER uma resposta: tenant, dono, produtor e conversa. Epoch e dominio
+// dizem QUANDO dentro da propria conversa a resposta foi produzida - sao proveniencia, nao dono.
+// Exigi-los aqui custava caro e foi medido: mudar de assunto na mesma conversa sobe a epoca
+// (clearedDomainOverlay, no servidor) e as respostas anteriores sumiam da tela E do sessionStorage,
+// enquanto as perguntas - que nao declaram escopo nenhum - ficavam. O consultor terminava com tres
+// perguntas e uma resposta, sem aviso, e a perda era definitiva porque writeConversationWorkspace
+// reaplica este mesmo filtro antes de gravar. Esconder a resposta que ele acabou de ler nao protege
+// ninguem: e o mesmo produtor, na mesma conversa, do mesmo consultor.
+// AGIR a partir de um card continua exigindo o escopo 6D exato, em responseCardActionMatchesScope:
+// ali a epoca importa de verdade, porque uma acao de um epoch antigo aplicaria a decisao no
+// contexto errado. Ver o texto e agir sobre ele sao coisas diferentes.
+const turnOwnershipFields=['tenantId','ownerId','producerId','conversationId']
 /** Não renderiza nem resume turnos que declaram outro produtor/conversa. */
 export function conversationTurnVisibleInScope(turn={},activeScope={}){
  const activeProducer=clean(activeScope.producerId??activeScope.clientId,180)
@@ -295,8 +307,10 @@ export function conversationTurnVisibleInScope(turn={},activeScope={}){
  if(turn?.role==='assistant'&&turn?.payload){
   try{
    const canonical=verifiedResponseScope(turn.payload)
+   // completeActiveScope continua exigindo as seis dimensoes declaradas: escopo ativo incompleto
+   // segue falhando fechado. O que mudou e a COMPARACAO, nao a exigencia de declaracao.
    const active=completeActiveScope(activeScope)
-   return ['tenantId','ownerId','producerId','conversationId','contextEpoch','domain'].every(field=>canonical[field]===active[field])
+   return turnOwnershipFields.every(field=>canonical[field]===active[field])
   }catch{return false}
  }
  const declaredProducer=scopedValue(turn,['producerId','producer_id','clientId','client_id'])

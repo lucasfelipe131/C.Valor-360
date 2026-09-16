@@ -175,7 +175,13 @@ test('ação de card exige tenant, owner, produtor, conversa, contextEpoch e dom
  assert.match(copilot,/if\(\(descriptor\.responseCardAction===true\|\|descriptor\.responseScope\)&&!responseCardActionAllowed\(descriptor\.responseScope\)\)return/)
 })
 
-test('thread e histórico exigem escopo 6D exato e ignoram override de produtor em card do servidor',()=>{
+// CONV-02. Este caso exigia escopo 6D para EXIBIR um turno. Medido: mudar de assunto na mesma
+// conversa sobe a época no servidor, e as respostas anteriores sumiam da tela e do sessionStorage
+// enquanto as perguntas ficavam — o consultor terminava com três perguntas e uma resposta, sem
+// aviso e sem recuperação. Exibir passou a exigir as quatro dimensões de dono (tenant, owner,
+// produtor, conversa); época e domínio continuam obrigatórios como declaração e continuam exatos
+// onde de fato importam: em responseCardActionMatchesScope, que autoriza AGIR a partir do card.
+test('thread e histórico exigem o escopo de dono e ignoram override de produtor em card do servidor',()=>{
  const responseScope={contractVersion:'val.response_scope.v1',tenantId:'tenant-a',ownerId:'owner-a',producerId:'producer-b',conversationId:'conversation-a',contextEpoch:2,domain:'PROFILE'}
  const activeScope={tenantId:'tenant-a',ownerId:'owner-a',producerId:'producer-a',conversationId:'conversation-a',contextEpoch:2,domain:'PROFILE'}
  const scopedPayload=(scope,answer)=>({responseScope:scope,advice:{answer,ai_reasoning:{organization:{id:scope.tenantId},client:{id:scope.producerId},conversation_id:scope.conversationId,premises:{context_scope:{tenant_id:scope.tenantId,owner_id:scope.ownerId,producer_id:scope.producerId,conversation_id:scope.conversationId,context_epoch:scope.contextEpoch,domain:scope.domain,minimum_sufficient_context:true}}}}})
@@ -184,8 +190,14 @@ test('thread e histórico exigem escopo 6D exato e ignoram override de produtor 
  assert.equal(conversationTurnVisibleInScope({...poison,explicitProducerOverride:true},activeScope),false)
  const canonical={...responseScope,producerId:'producer-a'}
  assert.equal(conversationTurnVisibleInScope({...poison,payload:scopedPayload(canonical,'Resposta segura')},activeScope),true)
- for(const [field,value] of [['tenantId','tenant-b'],['ownerId','owner-b'],['conversationId','conversation-b'],['contextEpoch',3],['domain','GRAINS']]){
+ for(const [field,value] of [['tenantId','tenant-b'],['ownerId','owner-b'],['conversationId','conversation-b']]){
   assert.equal(conversationTurnVisibleInScope({...poison,payload:scopedPayload({...canonical,[field]:value},`Poison ${field}`)},activeScope),false,field)
+ }
+ // A resposta do turno anterior da MESMA conversa continua visível depois da troca de assunto.
+ for(const [field,value] of [['contextEpoch',3],['domain','GRAINS']]){
+  assert.equal(conversationTurnVisibleInScope({...poison,payload:scopedPayload({...canonical,[field]:value},`Turno anterior ${field}`)},activeScope),true,field)
+  // Mas agir a partir dela continua barrado: ação de época/domínio antigos aplicaria a decisão no contexto errado.
+  assert.equal(responseCardActionMatchesScope({...canonical,[field]:value},activeScope),false,field)
  }
  for(const missing of ['tenantId','ownerId','producerId','conversationId','contextEpoch','domain']){const incomplete={...activeScope};delete incomplete[missing];assert.equal(conversationTurnVisibleInScope({...poison,payload:scopedPayload(canonical,'Resposta segura')},incomplete),false,missing)}
  const otherConversationScope={...responseScope,producerId:'producer-a',conversationId:'conversation-other'}
@@ -199,6 +211,7 @@ test('thread e histórico exigem escopo 6D exato e ignoram override de produtor 
  assert.doesNotMatch(history[0].preview,/privado de B/i)
  const values=new Map();writeConversationWorkspace({setItem:(key,value)=>values.set(key,value)},'scope-a',{threads,metadata})
  const persisted=readConversationWorkspace({getItem:key=>values.get(key)||null},'scope-a')
+ // O turno de outra conversa continua descartado na persistência; o da mesma conversa sobrevive.
  assert.deepEqual(persisted.threads['client:producer-a'],[safeUser])
  assert.match(copilot,/const visibleThread=useMemo\(\(\)=>thread\.filter\(turn=>conversationTurnVisibleInScope/)
  assert.match(copilot,/tenantId:identityTenantId,ownerId:identityOwnerId,conversationId:realtimeConversationId/)
