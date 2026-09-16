@@ -24,7 +24,9 @@ test('um arquivo faltando nao pode mais derrubar o modo offline inteiro', () => 
  // A casca continua sendo requisito — sem ela não há o que abrir. O resto entra item a item, para
  // que um arquivo renomeado num deploy futuro custe aquele arquivo, não o offline todo.
  assert.match(worker,/await cache\.addAll\(PRECACHE_SHELL\)/)
- assert.match(worker,/await Promise\.allSettled\(PRECACHE_EXTRA\.map\(asset=>cache\.add\(asset\)\)\)/)
+ // OFFLINE-02 somou os arquivos de entrada do build à mesma lista item a item; a propriedade que
+ // este caso protege — um arquivo que falha não derruba o install inteiro — continua valendo.
+ assert.match(worker,/await Promise\.allSettled\(\[\.\.\.PRECACHE_BUILD,\.\.\.PRECACHE_EXTRA\]\.map\(asset=>cache\.add\(asset\)\)\)/)
  assert.equal([...lista('PRECACHE_SHELL'),...lista('PRECACHE_EXTRA')].includes('/icon.svg'),false)
 })
 

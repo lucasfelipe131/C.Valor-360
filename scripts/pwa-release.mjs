@@ -6,6 +6,7 @@ import {fileURLToPath} from 'node:url'
 import {RELEASE_SCHEMA_VERSION,resolveSourceCommit} from '../server/release-metadata.js'
 
 export const PWA_RELEASE_PLACEHOLDER='__VAL_RELEASE__'
+export const PWA_ASSETS_PLACEHOLDER='__VAL_BUILD_ASSETS__'
 export const PWA_CACHE_PREFIX='valor360-v'
 
 const RELEASE_ENV_KEYS=[
@@ -70,6 +71,23 @@ export function resolvePwaReleaseId({root=process.cwd(),env=process.env}={}){
  return `src-${hashReleaseSources(root)}`
 }
 
+// Os arquivos que o index.html do build referencia sao os que o app precisa para ABRIR. Ler do
+// proprio HTML gerado evita uma segunda lista para manter em dia: se o Vite renomear a entrada, o
+// pre-cache acompanha sozinho.
+export function buildEntryAssets({root=process.cwd(),htmlPath='dist/index.html'}={}){
+ const html=resolve(root,htmlPath)
+ if(!existsSync(html))return []
+ const source=readFileSync(html,'utf8')
+ const assets=new Set()
+ for(const match of source.matchAll(/(?:src|href)="(\/assets\/[^"]+)"/g))assets.add(match[1])
+ return [...assets].sort()
+}
+
+function replaceAssets(source,assets){
+ if(!source.includes(PWA_ASSETS_PLACEHOLDER))return source
+ return source.replace(PWA_ASSETS_PLACEHOLDER,JSON.stringify(assets))
+}
+
 function replacePlaceholder(source,releaseId){
  const occurrences=source.split(PWA_RELEASE_PLACEHOLDER).length-1
  if(occurrences!==1)throw new Error(`O service worker precisa conter exatamente um marcador ${PWA_RELEASE_PLACEHOLDER}; encontrei ${occurrences}.`)
@@ -85,7 +103,8 @@ export function stampServiceWorker({
  const normalized=sanitizeReleaseId(releaseId)
  if(!normalized)throw new Error('A versão do PWA ficou vazia.')
  const template=readFileSync(resolve(root,templatePath),'utf8')
- const output=replacePlaceholder(template,normalized)
+ const assets=buildEntryAssets({root})
+ const output=replaceAssets(replacePlaceholder(template,normalized),assets)
  const destination=resolve(root,outputPath)
  mkdirSync(dirname(destination),{recursive:true})
  writeFileSync(destination,output)
@@ -97,7 +116,7 @@ export function stampServiceWorker({
  }
  const manifestPath=resolve(root,'dist/release.json')
  writeFileSync(manifestPath,`${JSON.stringify(manifest,null,2)}\n`)
- return {releaseId:normalized,cacheName:`${PWA_CACHE_PREFIX}${normalized}`,outputPath:destination,manifestPath,sourceCommitSha:source.commitSha}
+ return {releaseId:normalized,cacheName:`${PWA_CACHE_PREFIX}${normalized}`,outputPath:destination,manifestPath,sourceCommitSha:source.commitSha,precachedAssets:assets}
 }
 
 export function verifyServiceWorker({root=process.cwd(),outputPath='dist/sw.js',releaseId}={}){
@@ -105,6 +124,16 @@ export function verifyServiceWorker({root=process.cwd(),outputPath='dist/sw.js',
  if(!existsSync(destination))throw new Error(`Service worker compilado não encontrado em ${outputPath}.`)
  const worker=readFileSync(destination,'utf8')
  if(worker.includes(PWA_RELEASE_PLACEHOLDER))throw new Error('O service worker compilado ainda contém o marcador de release.')
+ if(worker.includes(PWA_ASSETS_PLACEHOLDER))throw new Error('O service worker compilado ainda contém o marcador de assets do build.')
+ // Pre-cache vazio com build presente e o defeito voltando em silencio: o app subiria e so falharia
+ // offline, depois da proxima atualizacao, no campo.
+ const expectedAssets=buildEntryAssets({root})
+ if(expectedAssets.length){
+  const declared=worker.match(/const PRECACHE_BUILD=(\[[^\]]*\])/)
+  const parsed=declared?JSON.parse(declared[1]):[]
+  const faltando=expectedAssets.filter(asset=>!parsed.includes(asset))
+  if(faltando.length)throw new Error(`O service worker compilado não pré-carrega os arquivos de entrada do build: ${faltando.join(', ')}.`)
+ }
  const match=worker.match(/const CACHE='valor360-v([a-z0-9._-]+)'/)
  if(!match)throw new Error('O service worker compilado não possui um CACHE de release válido.')
  const actual=sanitizeReleaseId(match[1])
