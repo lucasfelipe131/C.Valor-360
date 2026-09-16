@@ -9,7 +9,7 @@ import {describeSelectionMatch,generalAnswerTopicMatches} from '../knowledge/sel
 import {generalTopicClarification} from './general-question-context.js'
 import {stripMessagePreamble} from '../message-preamble.js'
 import {generalProductCatalogGuidance} from '../product-intelligence.js'
-import {generateGeneralModelAnswer,isGeneralDoseConcept,safeGeneralModelAnswer} from '../knowledge/general-answer-provider.js'
+import {generateGeneralModelAnswer,isGeneralDoseConcept,regulatedBrandClaim,safeGeneralModelAnswer} from '../knowledge/general-answer-provider.js'
 import {isClientOverviewRequest} from './capability-router.js'
 
 export const capabilityExecutorVersion='val.capability_executor.v1'
@@ -626,6 +626,11 @@ export async function executeCapabilityPlan(options={}){
 // Provedor fora do ar (500) ou no limite dele (429) devolvia EXATAMENTE o mesmo texto de "a
 // Biblioteca nao cobre este assunto", com required_inputs ['topic'] - o campo que afirma que
 // faltou assunto. O consultor reformulava a pergunta contra uma indisponibilidade temporaria.
+// Sem motivo proprio, a resposta recusada por afirmar eficacia de marca cairia no texto de "a
+// Biblioteca nao cobre este assunto" - o consultor reformularia a pergunta contra uma barreira
+// regulatoria. Ele precisa saber que a informacao existe, que ela vem da bula, e o que a VAL ainda
+// pode responder sobre o mesmo alvo.
+export const regulatedClaimStub='Indicação de uso, alvo ou comparação de desempenho de um produto registrado é informação de bula, e a VAL só responde isso com a fonte oficial conectada. Consulte a bula ou a ficha técnica vigente. Posso explicar o conceito, o mecanismo de ação e o manejo integrado do alvo.'
 export const aiProviderUnavailableStub='A IA de conhecimento geral está indisponível neste momento e a VAL não arrisca responder sem ela. Tente novamente em alguns instantes; perguntas com produtor selecionado, memória e fontes registradas continuam funcionando normalmente.'
 export const aiBudgetExhaustedStub='O limite de uso da IA de conhecimento geral deste acesso foi atingido. Ele é por consultor e por acesso, e um novo login restaura. Perguntas com produtor selecionado, memória e fontes registradas continuam funcionando normalmente.'
 const noKnowledgeCoverageStub='Posso tratar esta dúvida sem selecionar um produtor e sem consultar memória privada. Informe a cultura, o conceito ou a decisão geral que deseja entender; dados atuais e recomendações técnicas continuam exigindo fonte, contexto e revisão.'
@@ -784,7 +789,7 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  const trustedGeneralGuidance=Boolean(!clientId&&sourceRefs.length===1&&sourceRefs[0].id==='system:general-guidance:v1'&&sourceRefs[0].capability==='GENERAL_GUIDANCE'&&tool?.capability==='GENERAL_GUIDANCE'&&evaluatedGrounding.question_relevance==='PASS'&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  // Pedido de esclarecimento por falta de cobertura curada: texto fixo do servidor, sem fonte e
  // sem claim factual; e o que o consultor deve ler quando nao ha item nem modelo disponivel.
- const noCoverageGuidance=Boolean(!sourceRefs.length&&tool?.capability==='GENERAL_GUIDANCE'&&tool?.status==='NO_DATA'&&tool?.mode==='no_coverage'&&[clean(noKnowledgeCoverageStub,1200),clean(aiBudgetExhaustedStub,1200),clean(aiProviderUnavailableStub,1200),generalTopicClarification(message)].includes(summary))
+ const noCoverageGuidance=Boolean(!sourceRefs.length&&tool?.capability==='GENERAL_GUIDANCE'&&tool?.status==='NO_DATA'&&tool?.mode==='no_coverage'&&[clean(noKnowledgeCoverageStub,1200),clean(aiBudgetExhaustedStub,1200),clean(aiProviderUnavailableStub,1200),clean(regulatedClaimStub,1200),generalTopicClarification(message)].includes(summary))
  // Comando local da sessao ("por escrito", "nao registra"): a resposta e a confirmacao fixa da
  // preferencia, sem afirmacao factual; nao precisa de turno anterior nem de overlap com a frase.
  const localSessionCommand=Boolean(route?.session_command?.local_only&&sourceRefs.length===1&&sourceRefs[0].capability==='SESSION_COMMAND'&&tool?.capability==='SESSION_COMMAND'&&tool?.status==='EXECUTED'&&trustedCapabilityExecutions.has(execution)&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
@@ -876,10 +881,10 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  // recuperado foi bloqueado a jusante e nao ha modelo disponivel para o fallback.
  // Tres causas diferentes chegavam aqui com o MESMO texto: sem cobertura na Biblioteca, teto de
  // IA estourado e provedor fora do ar. So a primeira e um pedido legitimo de esclarecimento.
- const noCoverageExecution=(providerFailure=false)=>{
-  const unavailable=aiBudgetExhausted||providerFailure
-  const summary=aiBudgetExhausted?aiBudgetExhaustedStub:providerFailure?aiProviderUnavailableStub:(topicClarification||noKnowledgeCoverageStub)
-  const title=aiBudgetExhausted?'Limite de IA atingido':providerFailure?'IA indisponível':'Orientação geral'
+ const noCoverageExecution=(providerFailure=false,regulatedClaim=false)=>{
+  const unavailable=aiBudgetExhausted||providerFailure||regulatedClaim
+  const summary=regulatedClaim?regulatedClaimStub:aiBudgetExhausted?aiBudgetExhaustedStub:providerFailure?aiProviderUnavailableStub:(topicClarification||noKnowledgeCoverageStub)
+  const title=regulatedClaim?'Informação de bula':aiBudgetExhausted?'Limite de IA atingido':providerFailure?'IA indisponível':'Orientação geral'
   return deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'NO_DATA',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title,summary,page:'copilot',manual_page:null,mode:'no_coverage',context:{client_id:null,private_memory_used:false},required_inputs:unavailable?[]:['topic']},active_context:null})
  }
  const curatedExecution=deepFreeze(catalog
@@ -931,12 +936,17 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   // At most two provider calls, whether recovery follows a token limit or an
   // irrelevant answer. Rejected/partial text never enters evidence or the cache.
   const retry=await generateGeneralModelAnswer({message,aiClient,model:aiModel,reformulate:true,signal})
-  return {...retry,text:validAnswer(retry.text)?retry.text:'',costUsd:first.costUsd+retry.costUsd,modelCalls:first.modelCalls+retry.modelCalls}
+  // A recusa por afirmacao regulada precisa sobreviver ao descarte do texto: sem isso o motivo
+  // some junto com a resposta e a tela volta a pedir que o consultor reformule a pergunta.
+  const accepted=validAnswer(retry.text)
+  const rejected=accepted?'':(retry.text||first.text)
+  return {...retry,text:accepted?retry.text:'',regulatedClaim:Boolean(rejected)&&regulatedBrandClaim(rejected),costUsd:first.costUsd+retry.costUsd,modelCalls:first.modelCalls+retry.modelCalls}
  }
  const result=sharedAnswerCache?await sharedAnswerCache.resolve({question:message,model:aiModel,generate,validate:validAnswer}):await generate()
  throwIfCancelled(signal)
  const providerFailure=result?.unavailableReason==='PROVIDER_ERROR'
- const delivered=result.text&&validAnswer(result.text)?buildAiResponse(result.text):finalize(noCoverageExecution(providerFailure))
+ const regulatedClaim=Boolean(result?.regulatedClaim)
+ const delivered=result.text&&validAnswer(result.text)?buildAiResponse(result.text):finalize(noCoverageExecution(providerFailure,regulatedClaim))
  delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:result.costUsd,aiGeneralKnowledgeModelCalls:result.modelCalls,sharedKnowledgeCache:result.cache||null,...(providerFailure?{aiProviderStatus:result.providerStatus??null,aiProviderRetryAfterSeconds:result.retryAfterSeconds??null}:{})}
  delivered.responseMetadata.executionBudget={...delivered.responseMetadata.executionBudget,modelCalls:result.modelCalls,estimatedCostUsd:result.costUsd}
  delivered.advice.ai_reasoning.run={...delivered.advice.ai_reasoning.run,model_call_count:result.modelCalls,estimated_cost_usd:result.costUsd}

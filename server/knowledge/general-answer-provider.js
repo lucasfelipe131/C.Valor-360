@@ -30,7 +30,40 @@ export function requiresVerifiedGeneralSource(message=''){
   ||/\b(?:cotacao|preco atual|clima atual|previsao do tempo|quanto esta|hoje|agora)\b/.test(source)
 }
 
-export const safeGeneralModelAnswer=answer=>!/(?:\b(?:aplique|misture|pulverize|prescrevo|recomendo|garanto)\b|\d[\d.,]*\s*(?:kg|g|ml|l)\s*(?:\/|por)\s*ha\b|(?:segundo|de acordo com)\s+(?:a\s+)?(?:embrapa|fonte|pesquisa))/i.test(answer)
+// Indicacao de uso de marca em cultura ou alvo, desempenho e superioridade sao campos de BULA, e a
+// governanca de fontes atuais coloca bula em bloqueio externo. O portao falhava FECHADO para dose e
+// bula e ABERTO para eficacia: a VAL afirmava "eficaz contra a cigarrinha do milho" e "desempenho
+// superior ao Priori Xtra" sem fonte nenhuma, e o consultor pode repetir isso ao produtor como
+// recomendacao fitossanitaria. A instrucao enviada ao modelo ja proibia exatamente isso - faltava
+// quem conferisse.
+//
+// O portao vive na SAIDA, nao na entrada: nao da para enumerar marca. Medido, o catalogo de
+// produtos nao serve de registro - "Priori Xtra", "Lannate" e "Roundup Transorb" nao estao nele -
+// e o casamento de alias por substring faz "como" casar dentro de "como funciona a fotossintese?".
+// Na resposta o produto aparece escrito, e marca se distingue de conceito pela MAIUSCULA NO MEIO
+// da frase: "A ferrugem asiatica reduz a area foliar" nao tem nenhuma; "O Fox Xpro tem desempenho
+// superior ao Priori Xtra" tem duas.
+const efficacyAssertion=/\b(?:eficaz|efic[áa]cia|controla|controlam|combate|elimina|erradica|protege|indicad[oa]\s+(?:para|contra|no|na)|registrad[oa]\s+para|funciona\s+(?:bem\s+)?(?:contra|em|no|na|para)|atua\s+(?:contra|sobre)|desempenho\s+superior|superior\s+a[os]?|inferior\s+a[os]?|melhor\s+(?:que|do\s+que)|pior\s+(?:que|do\s+que)|mais\s+efica[zs]|mais\s+eficiente|residual\s+mais|maior\s+residual)\b/i
+// Nomes proprios que aparecem no meio da frase e NAO sao marca: instituicoes, siglas tecnicas,
+// paises, meses, culturas e regioes.
+const nonBrandProperNoun=new Set(['embrapa','mapa','agrofit','anvisa','ibama','brasil','brasileiro','brasileira','mip','mid','irac','frac','hrac','ndvi','zarc','val','rr','bt','ipm','eua','estados','unidos','janeiro','fevereiro','marco','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro','soja','milho','trigo','algodao','arroz','feijao','cafe','cana','sorgo','cevada','aveia','canola','girassol','pastagem','cerrado','sul','norte','nordeste','sudeste','centro','oeste'])
+export function namedProductMentions(answer=''){
+ const found=[]
+ for(const sentence of String(answer??'').split(/(?<=[.!?;:])\s+|\n+/)){
+  const words=sentence.trim().split(/\s+/)
+  // A partir da SEGUNDA palavra: inicio de oracao e maiusculo por gramatica, nao por ser marca.
+  for(let index=1;index<words.length;index+=1){
+   const raw=words[index].replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
+   if(!/^[A-ZÀ-Ý][\p{L}\p{N}-]*$/u.test(raw))continue
+   if(nonBrandProperNoun.has(normalize(raw)))continue
+   found.push(raw)
+  }
+ }
+ return found
+}
+export const regulatedBrandClaim=answer=>efficacyAssertion.test(String(answer??''))&&namedProductMentions(answer).length>0
+
+export const safeGeneralModelAnswer=answer=>!regulatedBrandClaim(answer)&&!/(?:\b(?:aplique|misture|pulverize|prescrevo|recomendo|garanto)\b|\d[\d.,]*\s*(?:kg|g|ml|l)\s*(?:\/|por)\s*ha\b|(?:segundo|de acordo com)\s+(?:a\s+)?(?:embrapa|fonte|pesquisa))/i.test(answer)
 
 // Preserve the existing budget estimate for the fast tier. This is not a model
 // price table or a billing claim; metered provider cost must be reconciled apart.
