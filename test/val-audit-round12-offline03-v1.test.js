@@ -1,0 +1,119 @@
+import assert from 'node:assert/strict'
+import {spawn} from 'node:child_process'
+import {mkdtemp,rm,writeFile} from 'node:fs/promises'
+import {createServer} from 'node:net'
+import {tmpdir} from 'node:os'
+import {join,resolve} from 'node:path'
+import test from 'node:test'
+import {fileURLToPath} from 'node:url'
+import {createValChatIdempotencyLedger,valChatTurnFingerprint} from '../server/val-chat-idempotency.js'
+
+// OFFLINE-03. O POST /api/val/chat nao tinha idempotencia. Com a resposta perdida na volta o
+// servidor ja produziu, persistiu e contabilizou a analise; o consultor nao recebe nada, reenvia, e
+// o mesmo turno vira DUAS recomendacoes e DOIS eventos de uso. Medido com proxy TCP que descarta os
+// bytes de resposta: 0 -> 1 -> 2. A chave e o TURNO, nao o requestId: o cliente gera um requestId
+// novo a cada envio, entao dedup por requestId so protegeria um reenvio sintetico.
+const repositoryRoot=resolve(fileURLToPath(new URL('..',import.meta.url)))
+const tenantId='00000000-0000-4000-8000-000000000001'
+const turno=extra=>({tenantId:'t-1',ownerId:'o-1',conversationId:'c-1',clientId:'p-1',mode:'daily',message:'Monte o plano de próxima melhor ação.',...extra})
+
+test('OFFLINE-03 — a impressao do turno ignora o requestId e reage ao que de fato muda',()=>{
+ const base=valChatTurnFingerprint(turno())
+ assert.ok(base)
+ assert.equal(base,valChatTurnFingerprint(turno({attachmentIds:[]})),'a mesma pergunta no mesmo fio é o mesmo turno')
+ assert.equal(base,valChatTurnFingerprint(turno({message:'  Monte o plano de próxima melhor ação.  '})),'espaço em branco não cria um turno novo')
+ for(const [campo,valor] of [['tenantId','t-2'],['ownerId','o-2'],['conversationId','c-2'],['clientId','p-2'],['mode','strategic'],['message','Outra pergunta.']]){
+  assert.notEqual(base,valChatTurnFingerprint(turno({[campo]:valor})),campo)
+ }
+ assert.notEqual(base,valChatTurnFingerprint(turno({attachmentIds:['anexo-1']})))
+ assert.equal(valChatTurnFingerprint(turno({attachmentIds:['a','b']})),valChatTurnFingerprint(turno({attachmentIds:['b','a']})),'a ordem dos anexos não cria um turno novo')
+})
+
+test('OFFLINE-03 — sem conversa, tenant, dono ou pergunta nao ha turno para repetir',()=>{
+ for(const campo of ['tenantId','ownerId','conversationId','message']){
+  assert.equal(valChatTurnFingerprint(turno({[campo]:''})),'',campo)
+ }
+})
+
+test('OFFLINE-03 — o registro devolve o turno concluido dentro da janela e esquece depois',()=>{
+ const ledger=createValChatIdempotencyLedger({ttlMs:1_000,maxEntries:3})
+ const chave=valChatTurnFingerprint(turno())
+ assert.equal(ledger.replay(chave,0),null)
+ ledger.remember(chave,{recommendationId:'rec-1'},0)
+ assert.deepEqual(ledger.replay(chave,999),{recommendationId:'rec-1'})
+ assert.equal(ledger.replay(chave,1_001),null,'passada a janela, um reenvio é uma pergunta nova')
+ // Chave vazia nunca entra: sem ela cada pedido é o seu próprio.
+ assert.equal(ledger.remember('',{recommendationId:'rec-2'},0),false)
+ assert.equal(ledger.replay('',0),null)
+})
+
+test('OFFLINE-03 — o registro nao cresce sem limite',()=>{
+ const ledger=createValChatIdempotencyLedger({ttlMs:60_000,maxEntries:3})
+ for(let indice=0;indice<10;indice+=1)ledger.remember(valChatTurnFingerprint(turno({message:`Pergunta ${indice}`})),{indice},0)
+ assert.equal(ledger.size,3)
+ assert.deepEqual(ledger.replay(valChatTurnFingerprint(turno({message:'Pergunta 9'})),0),{indice:9},'o mais recente sobrevive')
+ assert.equal(ledger.replay(valChatTurnFingerprint(turno({message:'Pergunta 0'})),0),null,'o mais antigo sai')
+})
+
+async function availablePort(){
+ const server=createServer()
+ await new Promise((res,rej)=>{server.once('error',rej);server.listen(0,'127.0.0.1',res)})
+ const port=server.address().port
+ await new Promise(res=>server.close(res))
+ return port
+}
+function waitForStartup(child,timeoutMs=45_000){
+ return new Promise((res,rej)=>{
+  let stderr='';let complete=false
+  const finish=(operation,value)=>{if(complete)return;complete=true;clearTimeout(timer);operation(value)}
+  const timer=setTimeout(()=>finish(rej,new Error(`Timeout ao iniciar servidor local. ${stderr}`)),timeoutMs)
+  child.stdout.on('data',chunk=>{if(String(chunk).includes('VALOR 360 disponível na porta'))finish(res)})
+  child.stderr.on('data',chunk=>{stderr+=chunk})
+  child.once('exit',code=>finish(rej,new Error(`Servidor encerrou antes do teste HTTP (code ${code}). ${stderr}`)))
+ })
+}
+
+test('OFFLINE-03 HTTP — reenviar o mesmo turno devolve a resposta ja produzida, com requestId novo',async()=>{
+ const dataRoot=await mkdtemp(join(tmpdir(),'val-offline03-'))
+ const port=await availablePort()
+ const scoped=value=>({tenantId,ownerId:'demo@valor360.local',...value})
+ const store={surveys:[],imports:[scoped({id:'imp',clients:[scoped({id:'produtor-offline03',name:'Antônio Carlos',area:428.5,cultures:'Soja, Milho'})]})],visits:[],businessEvents:[],opportunities:[],val:{commitments:[],memories:[],visitReports:[]},grains:{profiles:[],intentions:[],marketSnapshots:[]}}
+ await writeFile(join(dataRoot,'valor360-store.json'),JSON.stringify(store))
+ const child=spawn(process.execPath,['server/start.js'],{cwd:repositoryRoot,env:{...process.env,PORT:String(port),VAL_DEMO_MODE:'true',VAL_DEFAULT_TENANT_ID:tenantId,AUTO_MIGRATE:'false',DATA_DIR:dataRoot,DATABASE_URL:'',OPENAI_API_KEY:'',VAL_ADMIN_EMAIL:'',VAL_ADMIN_PASSWORD:'',VAL_SESSION_SECRET:''},stdio:['ignore','pipe','pipe']})
+ const base=`http://127.0.0.1:${port}`
+ const enviar=async(message,conversationId,requestId)=>{
+  const resposta=await fetch(`${base}/api/val/chat`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({message,clientId:'produtor-offline03',client:{id:'produtor-offline03',name:'Antônio Carlos'},conversationId,mode:'daily',requestId})})
+  return {status:resposta.status,payload:await resposta.json()}
+ }
+ try{
+  await waitForStartup(child)
+  // O cliente real gera um requestId NOVO a cada envio; o reenvio tem que ser reconhecido assim mesmo.
+  const primeiro=await enviar('Monte o plano de próxima melhor ação.','fio-offline03','11111111-1111-4111-8111-111111111111')
+  assert.equal(primeiro.status,200,JSON.stringify(primeiro.payload))
+  assert.ok(primeiro.payload.recommendationId)
+  assert.notEqual(primeiro.payload.responseMetadata?.idempotentReplay,true)
+
+  const reenvio=await enviar('Monte o plano de próxima melhor ação.','fio-offline03','22222222-2222-4222-8222-222222222222')
+  assert.equal(reenvio.status,200,JSON.stringify(reenvio.payload))
+  assert.equal(reenvio.payload.recommendationId,primeiro.payload.recommendationId,'o reenvio tem que devolver a análise que o servidor já produziu')
+  assert.equal(reenvio.payload.responseMetadata.idempotentReplay,true,'a repetição precisa ser declarada, não silenciosa')
+  assert.equal(reenvio.payload.requestId,'22222222-2222-4222-8222-222222222222','o requestId devolvido é o do pedido atual')
+
+  // Pergunta diferente no mesmo fio continua sendo um turno novo.
+  const outra=await enviar('E qual o município dele?','fio-offline03','33333333-3333-4333-8333-333333333333')
+  assert.equal(outra.status,200,JSON.stringify(outra.payload))
+  assert.notEqual(outra.payload.responseMetadata?.idempotentReplay,true)
+  assert.notEqual(outra.payload.recommendationId,primeiro.payload.recommendationId)
+
+  // Mesma pergunta em outro fio também é um turno novo.
+  const outroFio=await enviar('Monte o plano de próxima melhor ação.','fio-offline03-b','44444444-4444-4444-8444-444444444444')
+  assert.equal(outroFio.status,200,JSON.stringify(outroFio.payload))
+  assert.notEqual(outroFio.payload.responseMetadata?.idempotentReplay,true)
+ }finally{
+  if(child.exitCode===null){
+   child.kill('SIGTERM')
+   await new Promise(res=>{const timer=setTimeout(()=>{child.kill('SIGKILL');res()},3_000);child.once('exit',()=>{clearTimeout(timer);res()})})
+  }
+  await rm(dataRoot,{recursive:true,force:true})
+ }
+})

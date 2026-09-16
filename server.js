@@ -30,6 +30,7 @@ import {publicStorageScope} from './server/storage-policy.js'
 import {ValEngine} from './server/val-engine.js'
 import {assertValRuntimeComposition} from './server/core/composition.js'
 import {legacyRecommendationResponse,ValCore} from './server/core/val-core.js'
+import {createValChatIdempotencyLedger,valChatTurnFingerprint} from './server/val-chat-idempotency.js'
 import {resolveCoreObjective} from './server/core/router.js'
 import {createValProgressTracker,normalizeValProgressRequestId} from './server/val-progress.js'
 import {createTechnicalWorkspace,isTechnicalWorkspaceRequest} from './server/technical-workspace.js'
@@ -195,6 +196,8 @@ const voiceStorage=createRepositoryAttachmentVoiceStorage({repository,maxAudioBy
 const voiceExtractor=createVoiceCandidateExtractor({client:voiceOpenAI,model:config.voiceExtractionModel,timeoutMs:Math.min(config.openaiTimeoutMs,60_000)})
 const voiceCapture=createVoiceCaptureService({repository,storageProvider:voiceStorage,transcriptionProvider:voiceTranscriptionProvider,extractor:voiceExtractor,visitLoop,prepareVisit:prepareVisitExecution,maxDurationSeconds:config.voiceMaxDurationSeconds})
 const valProgress=createValProgressTracker()
+// OFFLINE-03: verniz de reenvio do turno. Ver server/val-chat-idempotency.js.
+const valChatIdempotency=createValChatIdempotencyLedger()
 const valSessionContextCache=createSessionContextCache()
 const valConversationSessions=createConversationSessionStore()
 const valConversationRequests=createConversationRequestCoordinator()
@@ -719,6 +722,15 @@ async function handleApi(request,response,url){
    return json(response,409,{error:guidance[workspaceRoute.intent],code:'val_canonical_module_required',globalIntent:workspaceRoute,canonicalModule:writeTarget||null})
   }
   const requestId=normalizeValProgressRequestId(payload.requestId)||randomUUID()
+  // Reenvio do MESMO turno depois de a resposta se perder na volta: devolve o que o servidor ja
+  // produziu, em vez de produzir, persistir e cobrar de novo. A chave e o turno, nao o requestId -
+  // o cliente gera um requestId novo a cada envio.
+  const idempotencyKey=valChatTurnFingerprint({tenantId,ownerId:scopedOwnerId,conversationId,clientId,mode:clean(payload.mode)||'daily',message,attachmentIds})
+  const replayedTurn=valChatIdempotency.replay(idempotencyKey)
+  if(replayedTurn){
+   observe('val.chat.idempotent_replay',{conversationId,outcome:'ok'})
+   return json(response,200,{...replayedTurn,requestId,responseMetadata:{...(replayedTurn.responseMetadata||{}),idempotentReplay:true}})
+  }
   const preferences=conversationPreferences(payload,requestedAttachmentTypes)
   if(preferences.inputModality==='voice')valRequestServiceClass='VOICE'
   // Um objeto ativo declarado pelo browser só entra no overlay depois de ser
@@ -1015,7 +1027,9 @@ async function handleApi(request,response,url){
    await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:requestMode,engineMode:result.engineMode,attachments:attachmentIds.length,intent:routedIntent.intent,conversationScoped:Boolean(conversationId)}})
    result=completeClient(result,toolExecution)
    const effectiveCoreResponse={...coreResponse,recommendation:result}
-   return json(response,200,url.pathname==='/api/v1/val/recommendations'?effectiveCoreResponse:legacyRecommendationResponse(effectiveCoreResponse,requestId))
+   const completedPayload=url.pathname==='/api/v1/val/recommendations'?effectiveCoreResponse:legacyRecommendationResponse(effectiveCoreResponse,requestId)
+   valChatIdempotency.remember(idempotencyKey,completedPayload)
+   return json(response,200,completedPayload)
   }catch(error){valProgress.fail({requestId,tenantId,ownerId:ownerKey});throw error}
  }
  if(url.pathname==='/api/val/feedback'&&request.method==='POST'){
