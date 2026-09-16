@@ -136,6 +136,7 @@ export function createManagementService({db,tenantId}){
    const producers=producerRows.rows.map(row=>({id:row.id,name:row.name,consultantId:row.consultant_id,municipality:row.municipality||null,areaHa:number(row.total_area_ha),cultures:row.cultures||null,updatedAt:iso(row.updated_at),dataStatus:'REAL DATA'}))
    const visits=visitRows.rows.map(row=>({id:row.id,clientId:row.client_id,consultantId:row.consultant_id,scheduledAt:iso(row.scheduled_at),occurredAt:iso(row.occurred_at||row.completed_at),objective:row.objective||null,lifecycleStatus:managementVisitStatus(row),dataStatus:'REAL DATA',report:row.report_id?{id:row.report_id,summary:row.report_summary,notes:row.report_notes||null,confirmedAt:iso(row.report_confirmed_at),dataStatus:'REAL DATA'}:null})).filter(visit=>!filters.status||visit.lifecycleStatus===filters.status)
    const routes=routeRows.rows.map(row=>({consultantId:row.owner_id,date:row.route_date,timeZone:row.time_zone,...recordedTravel(row.trace)}))
+   const discardedTravelSegments=routes.reduce((sum,route)=>sum+(Number(route.discardedSegments)||0),0)
    // Arquivar um produtor nao apaga a visita que ja aconteceu nem o relatorio ja confirmado: eles
    // sao fatos de um periodo fechado. Eles voltam para o painel, e o produtor arquivado viaja junto
    // — so para o gestor ver de quem e a visita, sem entrar na contagem da carteira.
@@ -155,7 +156,11 @@ export function createManagementService({db,tenantId}){
     producersTruncated?`A unidade tem ${producerTotal} produtores no filtro atual e a lista mostra os primeiros ${MAX_ROWS}. Filtre por município ou por consultor para ver o restante; os totais acima consideram a carteira inteira.`:'',
     filters.municipality&&!producerRows.rows.length?`Nenhum produtor desta unidade está cadastrado no município “${filters.municipality}”. Os números abaixo estão zerados por falta de correspondência no filtro, não por ausência de atividade. A comparação ignora maiúsculas, mas não ignora acentos.`:'',
     archivedCount?`${archivedCount===1?'Um produtor arquivado tem':`${archivedCount} produtores arquivados têm`} visita neste período; ${archivedCount===1?'ela aparece':'elas aparecem'} na lista e ${archivedCount===1?'não entra':'não entram'} na contagem da carteira.`:'',
-    beyondPageCount?`${beyondPageCount===1?'Um produtor ativo tem':`${beyondPageCount} produtores ativos têm`} visita neste período e ${beyondPageCount===1?'ficou':'ficaram'} fora das primeiras ${MAX_ROWS} linhas da lista; ${beyondPageCount===1?'ele continua contado':'eles continuam contados'} na carteira.`:''
+    beyondPageCount?`${beyondPageCount===1?'Um produtor ativo tem':`${beyondPageCount} produtores ativos têm`} visita neste período e ${beyondPageCount===1?'ficou':'ficaram'} fora das primeiras ${MAX_ROWS} linhas da lista; ${beyondPageCount===1?'ele continua contado':'eles continuam contados'} na carteira.`:'',
+    // Descartar o salto de GPS sem dizer que descartou trocaria um numero errado por outro numero
+    // sem explicacao: o gestor que comparasse com o trajeto bruto veria a diferenca e nao saberia
+    // de onde veio.
+    discardedTravelSegments?`${discardedTravelSegments===1?'Um trecho de GPS foi descartado':`${discardedTravelSegments} trechos de GPS foram descartados`} por registrar velocidade impossível para deslocamento terrestre; a quilometragem acima não ${discardedTravelSegments===1?'o inclui':'os inclui'}.`:''
    ].filter(Boolean)
    return {configured:true,unit:{id:access.unit_id,name:access.unit_name},filters,team:team.rows,producers,archivedProducers,visits,routes,notices,
     truncated:{producers:producersTruncated},

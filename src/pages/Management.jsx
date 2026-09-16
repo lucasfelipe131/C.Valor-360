@@ -1,16 +1,16 @@
 import React,{useEffect,useMemo,useState} from 'react'
 import {BarChart3,CalendarCheck2,Download,FileText,LogOut,MapPin,RefreshCw,Route,ShieldCheck,Users} from 'lucide-react'
 import {fetchJsonResource} from '../hooks/useAsyncResource'
-import {managementCsv,managementStatusLabels} from '../lib/management-data'
+import {csvExportIsPartial,csvExportScope,managementCsv,managementStatusLabels} from '../lib/management-data'
 import '../val-management.css'
 
 const format=value=>value==null?'—':Number(value).toLocaleString('pt-BR',{maximumFractionDigits:1})
 const date=value=>value?new Date(value).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo',dateStyle:'short',timeStyle:'short'}):'Não informado'
 const initialFilters=()=>{const end=new Intl.DateTimeFormat('en-CA',{timeZone:'America/Sao_Paulo'}).format(new Date());const start=new Date(`${end}T12:00:00Z`);start.setUTCDate(start.getUTCDate()-29);return {start:start.toISOString().slice(0,10),end,consultantId:'',municipality:'',status:''}}
 const exports={
- producers:[['unitId','Unidade'],['id','Produtor ID'],['name','Produtor'],['consultantId','Consultor ID'],['consultant','Consultor'],['municipality','Município'],['areaHa','Área (ha)'],['cultures','Culturas'],['updatedAt','Atualizado em'],['dataStatus','Origem']],
- visits:[['unitId','Unidade'],['id','Visita ID'],['clientId','Produtor ID'],['producer','Produtor'],['consultantId','Consultor ID'],['consultant','Consultor'],['scheduledAt','Agendada'],['occurredAt','Realizada'],['lifecycleStatus','Situação'],['objective','Objetivo'],['reportId','Relatório ID'],['reportSummary','Relato confirmado'],['reportNotes','Notas do consultor'],['reportConfirmedAt','Confirmado em'],['dataStatus','Origem']],
- routes:[['unitId','Unidade'],['consultantId','Consultor ID'],['consultant','Consultor'],['date','Data'],['distanceKm','Distância GPS (km)'],['recordedSeconds','Tempo com GPS (s)'],['segments','Trechos GPS'],['timeZone','Fuso'],['dataStatus','Origem']]
+ producers:[['unitId','Unidade'],['id','Produtor ID'],['name','Produtor'],['consultantId','Consultor ID'],['consultant','Consultor'],['municipality','Município'],['areaHa','Área (ha)'],['cultures','Culturas'],['updatedAt','Atualizado em'],['dataStatus','Origem'],['exportScope','Abrangência do arquivo']],
+ visits:[['unitId','Unidade'],['id','Visita ID'],['clientId','Produtor ID'],['producer','Produtor'],['consultantId','Consultor ID'],['consultant','Consultor'],['scheduledAt','Agendada'],['occurredAt','Realizada'],['lifecycleStatus','Situação'],['objective','Objetivo'],['reportId','Relatório ID'],['reportSummary','Relato confirmado'],['reportNotes','Notas do consultor'],['reportConfirmedAt','Confirmado em'],['dataStatus','Origem'],['exportScope','Abrangência do arquivo']],
+ routes:[['unitId','Unidade'],['consultantId','Consultor ID'],['consultant','Consultor'],['date','Data'],['distanceKm','Distância GPS (km)'],['recordedSeconds','Tempo com GPS (s)'],['segments','Trechos GPS'],['discardedSegments','Trechos GPS descartados'],['timeZone','Fuso'],['dataStatus','Origem'],['exportScope','Abrangência do arquivo']]
 }
 
 export default function Management({currentUser,standalone=false,onLogout,onConfigure}){
@@ -41,9 +41,10 @@ export default function Management({currentUser,standalone=false,onLogout,onConf
  const maxCount=Math.max(1,...rankings.map(member=>member.count))
  const download=kind=>{
   const source=kind==='producers'?producers:kind==='routes'?routes:kind==='reports'?visits.filter(visit=>visit.report):visits
-  const rows=source.map(item=>({...item,unitId:data.unit.id,consultant:memberName(item.consultantId),producer:producerById.get(item.clientId)?.name||'',reportId:item.report?.id||null,reportSummary:item.report?.summary||null,reportNotes:item.report?.notes||null,reportConfirmedAt:item.report?.confirmedAt||null}))
+  const exportScope=csvExportScope({truncated:kind==='producers'&&Boolean(data?.truncated?.producers),rows:source.length,total:data?.summary?.producers})
+  const rows=source.map(item=>({...item,unitId:data.unit.id,consultant:memberName(item.consultantId),producer:producerById.get(item.clientId)?.name||'',reportId:item.report?.id||null,reportSummary:item.report?.summary||null,reportNotes:item.report?.notes||null,reportConfirmedAt:item.report?.confirmedAt||null,exportScope}))
   const blob=new Blob([managementCsv(exports[kind==='reports'?'visits':kind].map(([key,label])=>({key,label})),rows)],{type:'text/csv;charset=utf-8'})
-  const url=URL.createObjectURL(blob);const anchor=document.createElement('a');anchor.href=url;anchor.download=`val-${kind}-${filters.start}-${filters.end}.csv`;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
+  const url=URL.createObjectURL(blob);const anchor=document.createElement('a');anchor.href=url;anchor.download=`val-${kind}-${filters.start}-${filters.end}${csvExportIsPartial(exportScope)?'-parcial':''}.csv`;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
  }
  if(!allowed)return <div className="mg-empty"><ShieldCheck/><h2>Acesso gerencial restrito</h2><p>Solicite ao administrador o perfil e o vínculo com sua unidade.</p></div>
  return <div className={`mg-page${standalone?' mg-standalone':''}`}>
