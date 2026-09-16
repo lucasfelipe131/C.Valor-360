@@ -564,7 +564,14 @@ function evidenceEntries(evidence=[],scope={}){
   domainCompatible=governedLibrary||domainCompatible&&intentCompatible
   // Statement curado da Biblioteca usa "do produtor" genericamente ("praça do produtor"); a
   // afirmação individual real continua barrada por genericAssertion/hasNamedIndividualAssertion.
-  const globalProducerSpecific=global&&sourceType!=='general_knowledge'&&/\b(?:ele|ela|este produtor|esse produtor|aquele produtor|o produtor|a produtora|do produtor|da produtora|para o produtor|para a produtora|este cliente|esse cliente|o cliente|do cliente|da cliente)\b/.test(entry.text)
+  // "ele"/"ela" nu NAO nomeia produtor nenhum: em portugues e o pronome anaforico de qualquer
+  // substantivo anterior. Medido: "A fotossintese ... Ela ocorre nos cloroplastos" era barrada, e a
+  // MESMA resposta com "O processo ocorre" passava; das 8 respostas gerais legitimas da bateria, 7
+  // morriam pelo pronome. Pior, o consultor lia o pedido de reformular a pergunta DEPOIS de duas
+  // chamadas pagas ao modelo. Ficam as referencias que de fato apontam um produtor. A afirmacao
+  // individual real com pronome continua barrada por genericAssertion, logo abaixo, que exige
+  // pronome + verbo de estado/posse ("ele tem", "ela esta", "ele e") - medido em 8 de 8.
+  const globalProducerSpecific=global&&sourceType!=='general_knowledge'&&/\b(?:este produtor|esse produtor|aquele produtor|o produtor|a produtora|do produtor|da produtora|para o produtor|para a produtora|este cliente|esse cliente|o cliente|do cliente|da cliente)\b/.test(entry.text)
   if(globalProducerSpecific)aliasConflictCodes.push('GLOBAL_PRODUCER_SPECIFIC_CLAIM')
   if(global&&sourceType!=='general_knowledge'&&(genericAssertion.test(entry.text)||hasNamedIndividualAssertion(rawText)))aliasConflictCodes.push('GLOBAL_INDIVIDUAL_ASSERTION')
   if(global&&!semanticallyGeneralGlobalEvidence(entry))aliasConflictCodes.push('GLOBAL_NOT_SEMANTICALLY_GENERAL')
