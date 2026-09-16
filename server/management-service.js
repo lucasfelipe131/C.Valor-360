@@ -139,13 +139,23 @@ export function createManagementService({db,tenantId}){
    // Arquivar um produtor nao apaga a visita que ja aconteceu nem o relatorio ja confirmado: eles
    // sao fatos de um periodo fechado. Eles voltam para o painel, e o produtor arquivado viaja junto
    // — so para o gestor ver de quem e a visita, sem entrar na contagem da carteira.
+   // Ausencia da pagina nao e arquivamento. Com a lista cortada em MAX_ROWS, todo produtor ATIVO
+   // alem da ultima linha que tivesse visita no periodo saia marcado archived:true, e o gestor lia
+   // que ele "nao entra na contagem da carteira" - entrava, porque o total vem de count(*) sobre
+   // status='active'. Medido com 5001 produtores ativos: o ultimo na ordenacao aparecia arquivado
+   // no painel carregando status 'active' no mesmo objeto. O arquivamento agora vem do status do
+   // cadastro, que a propria consulta de visitas ja traz.
    const active=new Set(producerRows.rows.map(row=>String(row.id)))
-   const archivedProducers=[...new Map(visitRows.rows.filter(row=>!active.has(String(row.client_id)))
-    .map(row=>[String(row.client_id),{id:row.client_id,name:row.client_name,consultantId:row.consultant_id,archived:true,status:row.client_status||null,dataStatus:'REAL DATA'}])).values()]
+   const outOfPageProducers=[...new Map(visitRows.rows.filter(row=>!active.has(String(row.client_id)))
+    .map(row=>[String(row.client_id),{id:row.client_id,name:row.client_name,consultantId:row.consultant_id,archived:String(row.client_status||'').toLowerCase()!=='active',status:row.client_status||null,dataStatus:'REAL DATA'}])).values()]
+   const archivedProducers=outOfPageProducers
+   const archivedCount=outOfPageProducers.filter(item=>item.archived).length
+   const beyondPageCount=outOfPageProducers.length-archivedCount
    const notices=[
     producersTruncated?`A unidade tem ${producerTotal} produtores no filtro atual e a lista mostra os primeiros ${MAX_ROWS}. Filtre por município ou por consultor para ver o restante; os totais acima consideram a carteira inteira.`:'',
     filters.municipality&&!producerRows.rows.length?`Nenhum produtor desta unidade está cadastrado no município “${filters.municipality}”. Os números abaixo estão zerados por falta de correspondência no filtro, não por ausência de atividade. A comparação ignora maiúsculas, mas não ignora acentos.`:'',
-    archivedProducers.length?`${archivedProducers.length===1?'Um produtor arquivado tem':`${archivedProducers.length} produtores arquivados têm`} visita neste período; ${archivedProducers.length===1?'ela aparece':'elas aparecem'} na lista e ${archivedProducers.length===1?'não entra':'não entram'} na contagem da carteira.`:''
+    archivedCount?`${archivedCount===1?'Um produtor arquivado tem':`${archivedCount} produtores arquivados têm`} visita neste período; ${archivedCount===1?'ela aparece':'elas aparecem'} na lista e ${archivedCount===1?'não entra':'não entram'} na contagem da carteira.`:'',
+    beyondPageCount?`${beyondPageCount===1?'Um produtor ativo tem':`${beyondPageCount} produtores ativos têm`} visita neste período e ${beyondPageCount===1?'ficou':'ficaram'} fora das primeiras ${MAX_ROWS} linhas da lista; ${beyondPageCount===1?'ele continua contado':'eles continuam contados'} na carteira.`:''
    ].filter(Boolean)
    return {configured:true,unit:{id:access.unit_id,name:access.unit_name},filters,team:team.rows,producers,archivedProducers,visits,routes,notices,
     truncated:{producers:producersTruncated},
