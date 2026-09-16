@@ -10,7 +10,7 @@ import {describeSelectionMatch,generalAnswerTopicMatches} from '../knowledge/sel
 import {generalTopicClarification} from './general-question-context.js'
 import {stripMessagePreamble} from '../message-preamble.js'
 import {generalProductCatalogGuidance} from '../product-intelligence.js'
-import {generateGeneralModelAnswer,isGeneralDoseConcept,regulatedBrandClaim,safeGeneralModelAnswer} from '../knowledge/general-answer-provider.js'
+import {generateGeneralModelAnswer,isGeneralRegulatedConcept,regulatedBrandClaim,safeGeneralModelAnswer} from '../knowledge/general-answer-provider.js'
 import {isClientOverviewRequest} from './capability-router.js'
 
 export const capabilityExecutorVersion='val.capability_executor.v1'
@@ -691,7 +691,7 @@ function governedGeneralAnswer(message){
  if(!item?.statement)return null
  // A regulatory warning triggered by "dose" is not a definition of dose.
  // Keep that policy for prescriptions; an uncovered generic concept uses AI.
- if(isGeneralDoseConcept(message)&&!/\b(?:dose|dosagem)\b/i.test(item.statement))return null
+ if(isGeneralRegulatedConcept(message)&&!/\b(?:dose|dosagem)\b/i.test(item.statement))return null
  // application_val é nota interna de engenharia (ex.: "MDI usa X para separar Y pago na
  // praça do produtor") e menciona "produtor" genericamente; incluí-la aqui já disparou
  // GLOBAL_PRODUCER_SPECIFIC_CLAIM no grounding por parecer uma afirmação individual.

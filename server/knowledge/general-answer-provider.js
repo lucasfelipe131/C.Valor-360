@@ -5,22 +5,35 @@ const normalize=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036
 const sentinel='PRECISA_FONTE'
 const clean=value=>String(value??'').replace(/\s+/g,' ').trim()
 
-const doseConceptWords=new Set('o a os as um uma de do da dos das em no na e ou entre versus vs que qual quais significa significado conceito diferenca diferencas explique explicar me defina dose doses dosagem dosagens produto produtos comercial comerciais ingrediente ingredientes ativo ativos principio principios herbicida herbicidas fungicida fungicidas inseticida inseticidas defensivo defensivos fitossanitario fitossanitarios'.split(' '))
-export function isGeneralDoseConcept(message=''){
+// A isencao existia so para "dose" e o portao tratava toda a demais terminologia regulada como se
+// fosse pedido operacional. Medido por HTTP real: 7 de 12 perguntas puramente conceituais - "o que e
+// carencia de um defensivo?", "o que e o intervalo de reentrada?", "o que e uma mistura de tanque?" -
+// recebiam o texto de pergunta incompleta, com required_inputs ["topic"], culpando o consultor por
+// uma pergunta que ele ja tinha formulado por completo. Definir um termo nao e prescrever com ele.
+const conceptWords=new Set('o a os as um uma de do da dos das em no na e ou entre versus vs que qual quais significa significado conceito conceitos definicao diferenca diferencas explique explicar me defina dose doses dosagem dosagens produto produtos comercial comerciais ingrediente ingredientes ativo ativos principio principios herbicida herbicidas fungicida fungicidas inseticida inseticidas defensivo defensivos fitossanitario fitossanitarios carencia carencias reentrada reentradas bula bulas registro registros registrado registrada registrados registradas mistura misturas tanque tanques intervalo intervalos periodo periodos seguranca agronomia agronomica agronomico diagnostico diagnosticos deficiencia deficiencias nutricional nutricionais'.split(' '))
+// Os termos que fazem o portao de entrada fechar. A isencao so vale quando a pergunta e sobre UM
+// deles como conceito.
+const regulatedConceptTerm=/\b(?:dose|doses|dosagem|dosagens|carencia|carencias|reentrada|reentradas|bula|bulas|registro|registros|registrado|registrada|registrados|registradas|mistura|misturas|diagnostico|diagnosticos)\b/
+export function isGeneralRegulatedConcept(message=''){
  const question=stripMessagePreamble(normalize(message)).replace(/[.!?]+$/,'').trim()
  // Exempt only a definition/comparison of generic terminology. Unknown brand
- // names, numbers, producer context and application verbs cannot use this path.
+ // names, numbers, producer context and application verbs cannot use this path:
+ // o prefixo de definicao e a lista fechada de palavras garantem as duas coisas.
  return /^(?:o que e|o que significa|qual (?:e )?a diferenca|(?:me )?explique|defina|diferenca entre)\b/.test(question)
-  &&/\b(?:dose|doses|dosagem|dosagens)\b/.test(question)
-  &&question.split(/\s+/).every(word=>doseConceptWords.has(word))
+  &&regulatedConceptTerm.test(question)
+  &&question.split(/\s+/).every(word=>conceptWords.has(word))
 }
 
 export function requiresVerifiedGeneralSource(message=''){
  const source=normalize(message)
  // Product/category explanations are valid general questions. Product choice,
  // application, rates and regulatory claims still require verified evidence.
- return /\b(?:dose|dosagem)\b/.test(source)&&!isGeneralDoseConcept(message)
-  ||/\b(?:mistura|receita agronomica|diagnostico|aplique|misture|prescreva|diagnostique|pulverize)\b/.test(source)
+ if(isGeneralRegulatedConcept(message))return false
+ return /\b(?:dose|dosagem)\b/.test(source)
+  // "mistura" e "misture" estavam na lista e "misturar" nao: "posso misturar X com Y no tanque?"
+  // atravessava o portao. A forma verbal completa fecha a lacuna sem tocar no conceito, que sai
+  // antes por isGeneralRegulatedConcept.
+  ||/\b(?:mistur\w*|receita agronomica|diagnostico|aplique|prescreva|diagnostique|pulverize)\b/.test(source)
   ||/\b(?:qual (?:e )?a composicao|quem fabrica|qual (?:e )?o (?:fabricante|ingrediente ativo|principio ativo)|o que e o produto|sobre (?:o produto|a marca))\b/.test(source)
   ||/\b(?:qual|quais|quanto|indique|recomende|devo|posso)\b.{0,80}\bprodutos?\b.{0,60}\b(?:aplicar|usar|utilizar|controlar|combater|recomenda|indica|melhor)\b/.test(source)
   ||/\b(?:qual|quais)\b.{0,30}\bprodutos?\b\s+(?:para|contra)\b/.test(source)
@@ -72,7 +85,12 @@ const empty=(extra={})=>({text:'',costUsd:0,modelCalls:0,...extra})
 
 export async function generateGeneralModelAnswer({message='',aiClient=null,model='',reformulate=false,signal}={}){
  if(signal?.aborted)throw signal.reason||Object.assign(new Error('Requisição cancelada.'),{name:'AbortError'})
- if(!aiClient||!model||requiresVerifiedGeneralSource(message))return empty()
+ // Recusa regulada de ENTRADA precisa viajar com motivo. Sem isso ela era indistinguivel de "a
+ // Biblioteca nao cobre este assunto" e o consultor lia o pedido de reformular a pergunta, com
+ // required_inputs ["topic"], por uma pergunta que ele ja tinha feito por completo. A frase honesta
+ // ja existia no repositorio (regulatedClaimStub), ligada apenas ao portao de SAIDA.
+ if(requiresVerifiedGeneralSource(message))return empty({regulatedClaim:true})
+ if(!aiClient||!model)return empty()
  const instructions='Responda em português do Brasil com conhecimento geral amplamente estabelecido, com extensão proporcional à pergunta: 2–3 frases para uma dúvida simples; até 250 palavras quando a pessoa pede explicação, comparação ou aprofundamento.\n'+
   'Explique diretamente agronomia, manejo integrado, categorias de produtos, mecanismos de ação e critérios comerciais quando forem conceitos gerais. Preserve a cultura, a praga e o objetivo perguntados. Em explicações aprofundadas, conecte mecanismo, finalidade, condições que alteram o resultado e limitações; explique o porquê, sem alegar superioridade comercial. Não exija produtor para uma dúvida geral.\n'+
   'Pode explicar o significado de dose e a diferença entre quantidade de produto comercial e de ingrediente ativo. Não informe valores de dose, instrução de mistura, indicação de uso de marca em cultura ou alvo, recomendação técnica prescritiva, preço/cotação atual, previsão do tempo ou dados de um produtor. Não invente composição, registro, desempenho ou superioridade de marcas; isso exige catálogo/ficha ou bula consultados.\n'+
