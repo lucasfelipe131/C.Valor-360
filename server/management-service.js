@@ -147,7 +147,13 @@ export function createManagementService({db,tenantId}){
    // no painel carregando status 'active' no mesmo objeto. O arquivamento agora vem do status do
    // cadastro, que a propria consulta de visitas ja traz.
    const active=new Set(producerRows.rows.map(row=>String(row.id)))
-   const outOfPageProducers=[...new Map(visitRows.rows.filter(row=>!active.has(String(row.client_id)))
+   // EXPORT-02: o aviso era contado sobre as visitas CRUAS, antes do filtro de Situação. Com o
+   // filtro ligado a tela dizia "Nenhuma visita neste período e filtro" na tabela e, logo acima,
+   // "um produtor arquivado tem visita neste período; ela aparece na lista" - sobre uma visita que
+   // a lista nao mostra. Os totais ja acompanhavam o filtro; o aviso, nao. Agora os dois leem a
+   // mesma lista: a que o gestor ve.
+   const shownVisitIds=new Set(visits.map(visit=>String(visit.id)))
+   const outOfPageProducers=[...new Map(visitRows.rows.filter(row=>shownVisitIds.has(String(row.id))&&!active.has(String(row.client_id)))
     .map(row=>[String(row.client_id),{id:row.client_id,name:row.client_name,consultantId:row.consultant_id,archived:String(row.client_status||'').toLowerCase()!=='active',status:row.client_status||null,dataStatus:'REAL DATA'}])).values()]
    const archivedProducers=outOfPageProducers
    const archivedCount=outOfPageProducers.filter(item=>item.archived).length
