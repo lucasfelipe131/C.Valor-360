@@ -4,6 +4,7 @@ import {executeCopilotCalculator} from '../agronomic-calculator-adapter.js'
 import {conversationStateContext,lastCompletedAssistantTurn,normalizeConversationState} from './conversation-state.js'
 import {assertActiveProducerBoundary,assertContextScopeAliases,classifyValContextDomain,explicitlyGlobalContext} from './context-selector.js'
 import {evaluateReasoningGrounding} from './response-grounding.js'
+import {compactKnowledgeRefs} from '../commercial/knowledge-support.js'
 import {selectKnowledge} from '../knowledge/library.js'
 import {describeSelectionMatch,generalAnswerTopicMatches} from '../knowledge/selection.js'
 import {generalTopicClarification} from './general-question-context.js'
@@ -671,7 +672,7 @@ function generalGuidance(message=''){
  const explicitProduct=/\b(?:produto|composicao|fabricante|fabrica|categoria)\b/.test(source)
  const product=!governed||explicitProduct||!['TITLE_PHRASE','TRIGGER_PHRASE'].includes(governed.knowledge_match)?generalProductCatalogGuidance(message):null
  if(product)return Object.freeze({summary:product.summary,knowledge_item_id:null,knowledge_match:null,coverage:'PRODUCT_CATALOG',product_catalog_ref:product.reference})
- if(governed)return Object.freeze({summary:governed.text,knowledge_item_id:governed.knowledge_item_id,knowledge_match:governed.knowledge_match,coverage:'LIBRARY'})
+ if(governed)return Object.freeze({summary:governed.text,knowledge_item_id:governed.knowledge_item_id,knowledge_match:governed.knowledge_match,coverage:'LIBRARY',knowledge_ref:governed.knowledge_ref,requires_human_review:governed.requires_human_review})
  return curatedGuidance(noKnowledgeCoverageStub,'NONE')
 }
 function generalAnswer(message=''){return generalGuidance(message).summary}
@@ -700,7 +701,11 @@ function governedGeneralAnswer(message){
  // curador dizendo "este item responde sobre X": relevância atestada pela seleção. Casamento
  // apenas lexical continua sujeito ao overlap do grounding a jusante.
  const match=describeSelectionMatch({query:String(message||''),item}).match
- return {text:`${item.statement}`.replace(/\s+/g,' ').trim()+caveat,knowledge_item_id:clean(item.knowledge_item_id,80)||null,knowledge_match:match}
+ // A proveniencia do item vem junto com o texto. O caminho irmao (prepare-visit) ja publica
+ // exatamente esta forma; aqui ela era descartada e a resposta saia declarando VERIFICADO sem
+ // dizer o que a verificou.
+ const [knowledgeRef=null]=compactKnowledgeRefs(selection)
+ return {text:`${item.statement}`.replace(/\s+/g,' ').trim()+caveat,knowledge_item_id:clean(item.knowledge_item_id,80)||null,knowledge_match:match,knowledge_ref:knowledgeRef,requires_human_review:Boolean(item.requires_human_review)}
 }
 
 // Reconhece perguntas conceituais gen\u00e9ricas (agronomia, comercial, etc.) pelo formato
@@ -906,6 +911,16 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   built.advice.ai_reasoning.client={id:'portfolio',name:'Conversa geral'}
   built.advice.ai_reasoning.premises.profile_specific=false
   built.advice.ai_reasoning.premises.source=contextRequired?'client_context_required':unverified?'ai_general_knowledge_unverified':'general_request_without_private_context'
+  // Item governado entregue ao consultor precisa chegar com a sua propria proveniencia. Sem isto a
+  // resposta declarava VERIFICADO 0.9 com knowledge_refs vazio: nenhuma fonte SRC-, nenhum caveat
+  // de geografia ou de validade, e o painel de evidencias nao tinha o que mostrar. O caminho irmao
+  // (prepare-visit) ja publicava tudo isso do mesmo item. Em item HIGH o texto avisava que exige
+  // responsavel tecnico, mas human_review_required - o campo que a tela e a qualidade leem - vinha
+  // false, entao o aviso nao existia para nada alem do texto.
+  if(guidance?.knowledge_ref&&execution?.tool_result?.context?.knowledge_item_id&&!unverified&&!built.advice.ai_reasoning.grounding?.blocked){
+   built.advice.ai_reasoning.knowledge_refs=[guidance.knowledge_ref]
+   if(guidance.requires_human_review)built.advice.ai_reasoning.agronomic_context={...built.advice.ai_reasoning.agronomic_context,human_review_required:true}
+  }
   if(guidance?.product_catalog_ref&&execution?.tool_result?.context?.product_catalog_ref&&!unverified&&!built.advice.ai_reasoning.grounding?.blocked){
    built.advice.ai_reasoning.evidence_status='LOCAL_CATALOG_REFERENCE'
    built.advice.ai_reasoning.knowledge_refs=[guidance.product_catalog_ref]
