@@ -368,7 +368,11 @@ test('contexto entregue à VAL também neutraliza oportunidade negativa persisti
   assert.deepEqual(contextParams.slice(1),['client-ext',ownerId])
   assert.match(contextSql,/r\.consultant_id=\$3/)
   assert.match(contextSql,/val_recommendation\.consultant_id=\$3/)
-  assert.match(contextSql,/input_context->'contextSnapshot'->'context_scope'->>'context_epoch' context_epoch/)
+  // CONV-03: projeção em jsonb (->), não em texto (->>). O context_epoch é gravado como número e o
+  // filtro de continuidade exige Number.isSafeInteger; com ->> ele chegava como "0" e nenhum turno
+  // anterior atravessava.
+  assert.match(contextSql,/input_context->'contextSnapshot'->'context_scope'->'context_epoch' context_epoch/)
+  assert.doesNotMatch(contextSql,/->>'context_epoch' context_epoch/)
   assert.match(contextSql,/input_context->'contextSnapshot'->'context_scope'->>'domain' domain/)
   assert.match(contextSql,/generated_content->'methodology_state' methodology_state/)
 })

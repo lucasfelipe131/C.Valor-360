@@ -208,7 +208,11 @@ test('conversa curta é escopada por sessão e produtor no backend',()=>{
  assert.match(repository,/val_recommendation\.consultant_id::text owner_id/)
  assert.match(repository,/COALESCE\(val_recommendation\.client_external_key,val_recommendation\.client_id::text\) producer_id/)
  assert.match(repository,/input_context->'contextSnapshot'->'context_scope'->>'conversation_id' conversation_id/)
- assert.match(repository,/input_context->'contextSnapshot'->'context_scope'->>'context_epoch' context_epoch/)
+ // CONV-03: projeção em jsonb (->), não em texto (->>). O context_epoch é gravado como número e o
+ // filtro de continuidade exige Number.isSafeInteger; com ->> ele chegava como "0" e nenhum turno
+ // anterior atravessava.
+ assert.match(repository,/input_context->'contextSnapshot'->'context_scope'->'context_epoch' context_epoch/)
+ assert.doesNotMatch(repository,/->>'context_epoch' context_epoch/)
  assert.match(repository,/input_context->'contextSnapshot'->'context_scope'->>'domain' domain/)
 })
 
