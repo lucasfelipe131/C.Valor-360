@@ -194,6 +194,18 @@ function corpusKnowsQuestion(queryBaseTokens,frequency){
 const discriminatingFrequency=2
 const conceptTerms=new Set(exclusiveConceptGroups.flatMap(([,terms])=>terms))
 const discriminating=(token,frequency)=>!conceptTerms.has(token)&&(frequency?.get(token)??Infinity)<=discriminatingFrequency
+// Um verbo que o acervo nunca escreveu e a FORMA de perguntar, nao o assunto: "como lidar com
+// resistencia de plantas daninhas?" pergunta a mesma coisa que "como tratar...", e so "tratar"
+// estava no vocabulario. O acervo e escrito em prosa expositiva e nao cobre o leque de verbos com
+// que um consultor pergunta, entao qualquer verbo fora dele desligava a Biblioteca inteira. O teste
+// e morfologico, nao uma lista de palavras: lista fechada de verbos nunca fecha, do mesmo jeito que
+// a lista de palavras de cortesia nao fechava. Substantivo desconhecido continua vetando - ele e o
+// assunto, e assunto que o acervo nao conhece nao pode ser respondido por um item qualquer.
+const infinitiveEnding=/(?:ar|er|ir)$/
+// Substantivos e adjetivos comuns terminados em -ar/-er/-ir nao sao infinitivos e nao ganham a
+// isencao; sao poucos e fechados por sufixo, nao por tema.
+const verbLikeNoun=/(?:ular|iliar|olar|inar|elar|ilar|scolar|ilitar|ular|uclear|ineir)$/
+const askingVerb=token=>token.length>=5&&infinitiveEnding.test(token)&&!verbLikeNoun.test(token)
 const genericTopicTerms=new Set(['aplicacao','aplicacoes','cultura','cultivo','opcao','opcoes','funcao','papel','efeito','efeitos','vantagem','desvantagem','diferenca','corrigido'])
 
 // Lexical overlap with "milho" or "aplicação" is insufficient if the answer
@@ -362,7 +374,8 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
  const excludedReasonCounts={}
  const ranked=[]
  const corpusFrequency=corpusVocabulary(source)
- const unknownTopic=[...queryBaseTokens].some(token=>token.length>=5&&!corpusFrequency.has(token)&&!genericTopicTerms.has(token))
+ const unknownTokens=[...queryBaseTokens].filter(token=>token.length>=5&&!corpusFrequency.has(token)&&!genericTopicTerms.has(token)&&!askingVerb(token))
+ const unknownTopic=unknownTokens.length>0
  const offDomainQuestion=!corpusKnowsQuestion(queryBaseTokens,corpusFrequency)||cappedLimit===1&&unknownTopic
 
  for(const item of source.items){
