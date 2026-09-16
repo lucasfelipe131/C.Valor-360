@@ -1,7 +1,7 @@
 import {createHash,randomUUID} from 'node:crypto'
 import {canonicalMemoryRecord,isMemoryAuthorized,memoryContractVersion,memoryValidity} from './contracts.js'
 import {contextFreshnessPolicies,contextFreshnessPolicyVersion,evaluateSourceFreshness} from './freshness-policy.js'
-import {assertActiveProducerBoundary,assertContextScopeAliases,classifyValContextDomain,collectionMatchesContextDomain,contextCollectionPolicy,contextQueryTokens,contextTraceEntry,explicitlyGlobalContext,matchedValContextDomains,memoryMatchesContextDomain,valContextDomains,valContextSelectorVersion} from '../decision-copilot/context-selector.js'
+import {assertActiveProducerBoundary,assertContextScopeAliases,classifyValContextDomain,collectionMatchesContextDomain,contextCollectionPolicy,contextQueryTokens,contextTraceEntry,explicitlyGlobalContext,expandedValContextDomains,matchedValContextDomains,memoryMatchesContextDomain,valContextDomains,valContextSelectorVersion} from '../decision-copilot/context-selector.js'
 
 export const contextSnapshotVersion='val.context_snapshot.v1'
 export const contextFreshnessPolicy=Object.freeze({
@@ -538,7 +538,10 @@ export function buildContextSnapshot(context={},input={}){
   const query=text(input.message??input.query)
   const requestedDomain=text(input.contextDomain??input.context_domain).toUpperCase()
   const domain=valContextDomains.includes(requestedDomain)?requestedDomain:classifyValContextDomain(query||objective,input.intent||objective)
-  const requestedDomains=domain==='MULTI_DOMAIN'?matchedValContextDomains(query):[domain]
+  // expandedValContextDomains garante lista nao vazia mesmo quando o MULTI_DOMAIN herdado do fio
+  // nao casa nada na pergunta atual; sem isso o contrato abaixo recusava o snapshot que esta
+  // propria funcao acabara de montar.
+  const requestedDomains=expandedValContextDomains(domain,query)
   const contextEpoch=contextEpochInput(input)
   const collectionPolicy=contextCollectionPolicy(domain,query)
   const semanticQuery=query||(domain==='GENERAL'?'':objective)

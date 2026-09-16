@@ -65,6 +65,28 @@ export function matchedValContextDomains(value=''){
  return Object.freeze([...new Set(Object.entries(domainPatterns).filter(([,pattern])=>pattern.test(source)).map(([domain])=>domain))])
 }
 
+// MULTI_DOMAIN nunca seleciona sozinho: ele expande na lista concreta de dominios casados na
+// pergunta. O rotulo, porem, e preservado pelo fio (shouldPreserveDomain) enquanto a pergunta
+// seguinte nao muda de assunto, e um acompanhamento como "qual o municipio dele?" nao casa
+// dominio nenhum. A expansao saia vazia e tudo que trabalha sobre ela parava: o contrato do
+// ContextSnapshot exige requested_domains nao vazio, entao o snapshot que o proprio servidor
+// montava era recusado pelo proprio validador e o consultor recebia 503 dizendo que o banco nao
+// podia ser lido - a cada tentativa, ate alguem por acaso escrever uma palavra de dominio. Sem o
+// contrato o estrago seria pior e mudo: contextCollectionPolicy e collectionMatchesContextDomain
+// tambem operam sobre essa lista e nao selecionariam coisa alguma.
+// O piso preserva a largura do fio, que e o que MULTI_DOMAIN afirma: a pergunta nao estreitou o
+// assunto, entao continuam valendo todos os dominios concretos. Reclassificar a pergunta seria a
+// outra saida, mas ela troca o rotulo do fio e um rotulo diferente do anterior e, pelo contrato de
+// sessao, mudanca forte de dominio: subiria a epoca e apagaria turnos, fatos e tese por causa de
+// um "dele".
+const concreteValContextDomains=Object.freeze(['PROFILE','COMMERCIAL','AGRONOMY','GRAINS','CREDIT','GEO','VISIT','OPPORTUNITY'])
+export function expandedValContextDomains(domain='GENERAL',query=''){
+ const selected=valContextDomains.includes(domain)?domain:'GENERAL'
+ if(selected!=='MULTI_DOMAIN')return Object.freeze([selected])
+ const matched=matchedValContextDomains(query)
+ return matched.length?matched:concreteValContextDomains
+}
+
 export function conversationReferenceKind(message=''){
  // O vocativo sai antes das regras, como no roteador de comandos de sessao: sem isto "Val, repete"
  // nao era reconhecido como continuacao, o dominio mudava e a conversa inteira era zerada (turnos,
@@ -145,7 +167,7 @@ export function memoryMatchesContextDomain(record={},domain='GENERAL',query=''){
   if(recordDomains.some(item=>['GRAINS','CREDIT'].includes(item))&&!requested.some(item=>['GRAINS','CREDIT'].includes(item)))return false
   return memoryDomain==='COMMERCIAL'||recordDomains.includes('COMMERCIAL')||recordDomains.includes('OPPORTUNITY')
  }
- if(normalizedDomain==='MULTI_DOMAIN')return recordDomains.some(item=>requested.includes(item))||(memoryDomain==='PRODUCER'&&structuralProducerKey.test(source))
+ if(normalizedDomain==='MULTI_DOMAIN')return recordDomains.some(item=>expandedValContextDomains('MULTI_DOMAIN',query).includes(item))||(memoryDomain==='PRODUCER'&&structuralProducerKey.test(source))
  if(normalizedDomain==='GENERAL'){
   const queryTokens=contextQueryTokens(query)
   // Sem pergunta o portao ja admitia qualquer memoria de dominio permitido. Uma pergunta
@@ -160,7 +182,7 @@ export function memoryMatchesContextDomain(record={},domain='GENERAL',query=''){
 
 export function contextCollectionPolicy(domain='GENERAL',query=''){
  const selected=valContextDomains.includes(domain)?domain:'GENERAL'
- const requested=selected==='MULTI_DOMAIN'?matchedValContextDomains(query):[selected]
+ const requested=expandedValContextDomains(selected,query)
  const legacyBootstrap=selected==='GENERAL'&&!clean(query)
  return Object.freeze({
   // Preparar uma visita precisa da oportunidade vinculada, mas PROFILE nunca
@@ -210,7 +232,7 @@ export function collectionMatchesContextDomain(item={},sourceType='',domain='GEN
  // aceita coleções, portanto o rótulo semântico pode ser retirado aqui.
  const semantic=recordSemanticDomains({key:type,source_type:type,content:item}).filter(itemDomain=>itemDomain!=='PROFILE')
  const itemDomains=[...new Set([...intrinsic,...semantic])]
- const requested=selected==='MULTI_DOMAIN'?matchedValContextDomains(query):[selected]
+ const requested=expandedValContextDomains(selected,query)
  // A consulta de visita seleciona o evento pela sua entidade/tipo. O assunto
  // relatado dentro da visita (agronomia, grãos, crédito etc.) não transforma
  // o próprio evento em contexto órfão nem autoriza outras coleções.
