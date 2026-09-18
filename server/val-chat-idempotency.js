@@ -18,13 +18,22 @@ import {createHash} from 'node:crypto'
 // anterior, em vez de exigir replicacao de estado entre instancias.
 const text=(value,limit=4000)=>String(value??'').replace(/\s+/g,' ').trim().slice(0,limit)
 
-export function valChatTurnFingerprint({tenantId='',ownerId='',conversationId='',clientId='',mode='',message='',attachmentIds=[]}={}){
- const parts=[text(tenantId,180),text(ownerId,180),text(conversationId,180),text(clientId,180),text(mode,40).toLowerCase(),text(message),[...(Array.isArray(attachmentIds)?attachmentIds:[])].map(item=>text(item,80)).sort().join('|')]
+// A epoca da conversa entra na chave. Sem ela, "Novo assunto." - que e um comando explicito de
+// descarte e sobe a epoca - era DESFEITO pelo registro: repetir a pergunta devolvia a analise
+// anterior ao reset e fazia a epoca da thread andar para tras. Medido: epoch 0 -> reset -> 1 ->
+// repeticao volta com a recomendacao de antes e epoch 0.
+export function valChatTurnFingerprint({tenantId='',ownerId='',conversationId='',clientId='',mode='',message='',attachmentIds=[],contextEpoch=0}={}){
+ const parts=[text(tenantId,180),text(ownerId,180),text(conversationId,180),text(clientId,180),text(mode,40).toLowerCase(),text(message),[...(Array.isArray(attachmentIds)?attachmentIds:[])].map(item=>text(item,80)).sort().join('|'),`epoch:${Number.isSafeInteger(contextEpoch)&&contextEpoch>=0?contextEpoch:0}`]
  // Sem tenant, dono, conversa ou pergunta nao ha turno para repetir: cada pedido e o seu proprio.
  if(!parts[0]||!parts[1]||!parts[2]||!parts[5])return ''
  return createHash('sha256').update(parts.join(String.fromCharCode(0))).digest('hex')
 }
 
+// Registrar um fato novo tem que apagar o verniz. Medido: o consultor pergunta, registra a visita e
+// a memoria, pergunta de novo para ver o efeito, e dentro dos 90 s recebe byte a byte a analise de
+// ANTES do registro - com o mesmo recommendationId e o mesmo hash de contexto - enquanto a resposta
+// correta, medida no controle, era outra. Todo endpoint de escrita ja chama invalidateValContextScope;
+// o registro passou a ser invalidado no mesmo lugar.
 export function createValChatIdempotencyLedger({ttlMs=90_000,maxEntries=200}={}){
  const entries=new Map()
  const prune=now=>{
@@ -39,12 +48,23 @@ export function createValChatIdempotencyLedger({ttlMs=90_000,maxEntries=200}={})
    if(!entry||now-entry.at>ttlMs)return null
    return entry.payload
   },
-  remember(key,payload,now=Date.now()){
+  remember(key,payload,now=Date.now(),scope={}){
    if(!key||payload==null)return false
    entries.delete(key)
-   entries.set(key,{payload,at:now})
+   entries.set(key,{payload,at:now,tenantId:text(scope.tenantId,180),ownerId:text(scope.ownerId,180)})
    prune(now)
    return true
+  },
+  invalidate({tenantId='',ownerId=''}={}){
+   const scopedTenant=text(tenantId,180),scopedOwner=text(ownerId,180)
+   if(!scopedOwner)return 0
+   let removed=0
+   for(const [key,entry] of entries){
+    if(entry.ownerId!==scopedOwner)continue
+    if(scopedTenant&&entry.tenantId&&entry.tenantId!==scopedTenant)continue
+    entries.delete(key);removed+=1
+   }
+   return removed
   },
   get size(){return entries.size},
   clear(){entries.clear()}

@@ -206,7 +206,10 @@ function invalidateValContextScope({tenantId=config.defaultTenantId,ownerId,clie
  const scope={tenantId:clean(tenantId)||config.defaultTenantId,ownerId:scopedOwner,...(clean(clientId)?{clientId:clean(clientId)}:{})}
  const cache=valSessionContextCache.invalidate(scope)
  const conversations=resetConversation?valConversationSessions.invalidate(scope):0
- return {cache,conversations}
+ // O verniz de reenvio do chat morre junto: registrar um fato novo e depois repetir a pergunta tem
+ // que recalcular, nao devolver a analise de antes do registro.
+ const replays=valChatIdempotency.invalidate(scope)
+ return {cache,conversations,replays}
 }
 function invalidateDerivedPortfolioCaches({tenantId=config.defaultTenantId,ownerId,grains=false,objections=false}={}){
  const scopedTenant=clean(tenantId)||config.defaultTenantId
@@ -725,11 +728,14 @@ async function handleApi(request,response,url){
   // Reenvio do MESMO turno depois de a resposta se perder na volta: devolve o que o servidor ja
   // produziu, em vez de produzir, persistir e cobrar de novo. A chave e o turno, nao o requestId -
   // o cliente gera um requestId novo a cada envio.
-  const idempotencyKey=valChatTurnFingerprint({tenantId,ownerId:scopedOwnerId,conversationId,clientId,mode:clean(payload.mode)||'daily',message,attachmentIds})
+  const idempotencyKey=valChatTurnFingerprint({tenantId,ownerId:scopedOwnerId,conversationId,clientId,mode:clean(payload.mode)||'daily',message,attachmentIds,contextEpoch:storedConversation?.context_epoch??0})
   const replayedTurn=valChatIdempotency.replay(idempotencyKey)
   if(replayedTurn){
    observe('val.chat.idempotent_replay',{conversationId,outcome:'ok'})
-   return json(response,200,{...replayedTurn,requestId,responseMetadata:{...(replayedTurn.responseMetadata||{}),idempotentReplay:true}})
+   // O payload repetido afirmava premises.recomputed_for_request=true, declarando ter sido recalculado
+   // para ESTE pedido sobre o contexto atual - o que nao aconteceu. A repeticao se declara.
+   const replayedAdvice=replayedTurn.advice?{...replayedTurn.advice,ai_reasoning:{...(replayedTurn.advice.ai_reasoning||{}),premises:{...(replayedTurn.advice.ai_reasoning?.premises||{}),recomputed_for_request:false}}}:replayedTurn.advice
+   return json(response,200,{...replayedTurn,...(replayedAdvice?{advice:replayedAdvice}:{}),requestId,responseMetadata:{...(replayedTurn.responseMetadata||{}),idempotentReplay:true}})
   }
   const preferences=conversationPreferences(payload,requestedAttachmentTypes)
   if(preferences.inputModality==='voice')valRequestServiceClass='VOICE'
@@ -1028,7 +1034,7 @@ async function handleApi(request,response,url){
    result=completeClient(result,toolExecution)
    const effectiveCoreResponse={...coreResponse,recommendation:result}
    const completedPayload=url.pathname==='/api/v1/val/recommendations'?effectiveCoreResponse:legacyRecommendationResponse(effectiveCoreResponse,requestId)
-   valChatIdempotency.remember(idempotencyKey,completedPayload)
+   valChatIdempotency.remember(idempotencyKey,completedPayload,Date.now(),{tenantId,ownerId:scopedOwnerId})
    return json(response,200,completedPayload)
   }catch(error){valProgress.fail({requestId,tenantId,ownerId:ownerKey});throw error}
  }

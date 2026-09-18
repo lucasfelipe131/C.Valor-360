@@ -6,6 +6,7 @@ import {tmpdir} from 'node:os'
 import {join,resolve} from 'node:path'
 import test from 'node:test'
 import {fileURLToPath} from 'node:url'
+import {readFileSync} from 'node:fs'
 import {createValChatIdempotencyLedger,valChatTurnFingerprint} from '../server/val-chat-idempotency.js'
 
 // OFFLINE-03. O POST /api/val/chat nao tinha idempotencia. Com a resposta perdida na volta o
@@ -116,4 +117,37 @@ test('OFFLINE-03 HTTP — reenviar o mesmo turno devolve a resposta ja produzida
   }
   await rm(dataRoot,{recursive:true,force:true})
  }
+})
+
+
+test('OFFLINE-03 — a epoca da conversa entra na chave: reset nao e desfeito pelo registro',()=>{
+ // A rodada 13 mediu: "Novo assunto." é comando explícito de descarte, sobe a época, e repetir a
+ // pergunta devolvia a análise de ANTES do reset — fazendo a época da thread andar para trás.
+ const base=turno()
+ assert.notEqual(valChatTurnFingerprint({...base,contextEpoch:0}),valChatTurnFingerprint({...base,contextEpoch:1}))
+ assert.equal(valChatTurnFingerprint({...base,contextEpoch:0}),valChatTurnFingerprint(base),'época ausente conta como 0')
+})
+
+test('OFFLINE-03 — registrar um fato novo apaga o verniz de reenvio do dono',()=>{
+ // Medido: o consultor pergunta, registra visita e memória, pergunta de novo para ver o efeito, e
+ // recebia byte a byte a análise de antes do registro. Todo endpoint de escrita chama
+ // invalidateValContextScope; o registro morre no mesmo lugar.
+ const ledger=createValChatIdempotencyLedger({ttlMs:60_000})
+ const meu=valChatTurnFingerprint(turno())
+ const deOutroDono=valChatTurnFingerprint(turno({ownerId:'o-2'}))
+ ledger.remember(meu,{recommendationId:'rec-1'},0,{tenantId:'t-1',ownerId:'o-1'})
+ ledger.remember(deOutroDono,{recommendationId:'rec-2'},0,{tenantId:'t-1',ownerId:'o-2'})
+ assert.equal(ledger.invalidate({tenantId:'t-1',ownerId:'o-1'}),1)
+ assert.equal(ledger.replay(meu,0),null,'a repetição do próprio dono tem que recalcular')
+ assert.deepEqual(ledger.replay(deOutroDono,0),{recommendationId:'rec-2'},'o verniz de outro consultor não é afetado')
+ // Sem dono não há escopo para invalidar.
+ assert.equal(ledger.invalidate({tenantId:'t-1'}),0)
+})
+
+test('OFFLINE-03 — o servidor liga a invalidacao do registro ao mesmo lugar das escritas',()=>{
+ const servidor=readFileSync(new URL('../server.js',import.meta.url),'utf8')
+ const bloco=servidor.slice(servidor.indexOf('function invalidateValContextScope('),servidor.indexOf('function invalidateDerivedPortfolioCaches('))
+ assert.match(bloco,/valChatIdempotency\.invalidate\(scope\)/)
+ // E a repetição não pode continuar declarando que foi recalculada para este pedido.
+ assert.match(servidor,/recomputed_for_request:false/)
 })
