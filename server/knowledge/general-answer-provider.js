@@ -1,5 +1,6 @@
 // This path has no producer records or external sources. Its answer is always
 // labelled as model knowledge; it must never supply a prescription or live fact.
+import {loadKnowledgeLibrary} from './library.js'
 import {stripMessagePreamble} from '../message-preamble.js'
 const normalize=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
 const sentinel='PRECISA_FONTE'
@@ -88,10 +89,28 @@ const nonBrandProperNoun=new Set(['embrapa','mapa','agrofit','anvisa','ibama','c
 // "O Lannate controla a lagarta" virava binomio e a marca escapava. As terminacoes abaixo sao de
 // morfologia latina e nenhuma delas e terminacao de verbo conjugado em portugues.
 const speciesEpithet=/^[a-z][a-z-]{3,}(?:us|um|is|ii|i|ae|ana|anum|ense|ensis|icola|oides|formis|ceps|cola|phaga|fera|spora|zae|ium|osa|osum|ida|idae|ella|ellus|inia|iana)$/
+// A marca na PRIMEIRA palavra da oracao era a forma mais comum de alegacao e a unica que escapava
+// inteira: "Lannate controla a lagarta-do-cartucho no milho" passava. Comecar a oracao em maiuscula
+// e gramatica, entao a posicao sozinha nao diz nada - o que diz e a palavra nao existir no
+// vocabulario do acervo curado (medido: nenhuma das 13 marcas do corpus esta la, e 26 de 28 termos
+// comuns da agronomia estao) E o verbo de eficacia vir colado nela, que e a forma "MARCA controla".
+let corpusWords=null
+const corpusVocabulary=()=>{
+ if(corpusWords)return corpusWords
+ corpusWords=new Set()
+ try{
+  for(const item of loadKnowledgeLibrary().items||[])for(const word of normalize(JSON.stringify(item)).split(/[^a-z0-9]+/))if(word.length>=4)corpusWords.add(word)
+ }catch{}
+ return corpusWords
+}
+// A copula pode separar a marca do verbo: "Standak e indicado", "Verdadero e eficaz".
+const leadingBrandClaim=/^\s*(?:[ée]|esta|est[áa]|foi|s[ãa]o|tem)?\s*(?:eficaz|efic[áa]cia|controla|controlam|combate|elimina|erradica|protege|atua|funciona|indicad[oa]|registrad[oa]|desempenho|residual)\b/i
 export function namedProductMentions(answer=''){
  const found=[]
  for(const sentence of String(answer??'').split(/(?<=[.!?;:])\s+|\n+/)){
   const words=sentence.trim().split(/\s+/)
+  const first=(words[0]||'').replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
+  if(/^[A-ZÀ-Ý][\p{L}\p{N}-]*$/u.test(first)&&!nonBrandProperNoun.has(normalize(first))&&first.length>=4&&!corpusVocabulary().has(normalize(first))&&leadingBrandClaim.test(words.slice(1).join(' ')))found.push(first)
   // A partir da SEGUNDA palavra: inicio de oracao e maiusculo por gramatica, nao por ser marca.
   for(let index=1;index<words.length;index+=1){
    const raw=words[index].replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')

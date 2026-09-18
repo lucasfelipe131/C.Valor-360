@@ -144,3 +144,34 @@ test('KNOW-01 — falha do provedor nao e anunciada como bloqueio de bula',async
  assert.doesNotMatch(tool.summary,/informação de bula/i)
  assert.equal(payload.advice.ai_reasoning.run.status,'completed')
 })
+
+
+test('KNOW-01 — marca na primeira palavra da oracao tambem e alegacao de marca',()=>{
+ // A forma mais comum de alegação era a única que escapava inteira: o detector só olhava a partir da
+ // segunda palavra, porque começar a oração em maiúscula é gramática. O que distingue a marca ali é
+ // a palavra não existir no vocabulário do acervo curado e o verbo de eficácia vir colado nela.
+ for(const resposta of [
+  'Lannate controla a lagarta-do-cartucho no milho.',
+  'Roundup elimina as principais daninhas em soja RR.',
+  'Elatus protege a soja contra a ferrugem asiatica.',
+  'Standak e indicado para o tratamento de sementes de soja.',
+  'Aproach combate a mancha alvo no algodao.',
+  'Verdadero e eficaz contra a cigarrinha do milho.'
+ ])assert.equal(regulatedBrandClaim(resposta),true,`deixou passar: ${resposta}`)
+})
+
+test('KNOW-01 — frase que comeca por termo comum da agronomia nao vira marca',()=>{
+ // A regra da primeira palavra não pode custar a resposta legítima que começa por substantivo comum.
+ for(const resposta of [
+  'Chuvas prolongadas favorecem a ferrugem asiatica e antecipam a primeira aplicacao.',
+  'Nematoides de galha reduzem o sistema radicular e comprometem a absorcao de agua.',
+  'Fungicidas multissitio protegem contra a selecao de resistencia quando associados ao sitio especifico.',
+  'Plantas daninhas resistentes exigem rotacao de mecanismos de acao.',
+  'Solos com fertilidade construida mudam a conversa de adubacao.',
+  'Sementes tratadas protegem o estande inicial contra pragas de solo.',
+  'Adubacao de cobertura controla a deficiencia de nitrogenio no milho.',
+  'Manejo integrado combate a resistencia porque alterna mecanismos.',
+  'Temperatura amena e molhamento foliar favorecem o mofo branco.',
+  'Rotacao de culturas elimina hospedeiros do nematoide de cisto.'
+ ])assert.equal(regulatedBrandClaim(resposta),false,`recusou resposta legítima: ${resposta}`)
+})
