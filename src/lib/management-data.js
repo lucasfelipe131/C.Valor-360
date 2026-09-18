@@ -11,7 +11,12 @@ export const managementVisitStatus=visit=>visitLifecycle({status:visit.status,li
 // velocidade implicita era 2.726 km/h. Nenhum deslocamento terrestre chega perto do teto abaixo,
 // entao o trecho e descartado - e contado, porque numero que muda sem dizer que mudou e o mesmo
 // defeito que o corte silencioso.
-const maxGroundSpeedKmh=200
+export const maxGroundSpeedKmh=200
+// A regra vive num lugar so. Ela entrou primeiro no painel do gestor e a tela do consultor ficou com
+// a regra antiga: no mesmo trace do mesmo dia, o consultor lia "81 km registrados por GPS" e o gestor
+// lia 1,2 km. Dois numeros para o mesmo percurso, e o aviso que explica o descarte existia so num
+// dos dois lados.
+export const implausibleGroundStep=(distanceKm,seconds)=>Number.isFinite(distanceKm)&&Number.isFinite(seconds)&&seconds>0&&distanceKm/(seconds/3600)>maxGroundSpeedKmh
 export function recordedTravel(trace){
  let previous=null,segments=0,distanceKm=0,recordedSeconds=0,discardedSegments=0
  for(const value of Array.isArray(trace)?trace:[]){
@@ -21,7 +26,7 @@ export function recordedTravel(trace){
    const seconds=(at-previous.at)/1000
    if(seconds>0&&seconds<=120){
     const stepKm=approximateDistanceKm(previous,point)
-    if(stepKm/(seconds/3600)>maxGroundSpeedKmh)discardedSegments++
+    if(implausibleGroundStep(stepKm,seconds))discardedSegments++
     else{distanceKm+=stepKm;recordedSeconds+=seconds;segments++}
    }
   }

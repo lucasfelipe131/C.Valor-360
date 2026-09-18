@@ -76,7 +76,18 @@ export function requiresVerifiedGeneralSource(message=''){
 const efficacyAssertion=/\b(?:eficaz|efic[áa]cia|controla|controlam|combate|elimina|erradica|protege|indicad[oa]\s+(?:para|contra|no|na)|registrad[oa]\s+para|funciona\s+(?:bem\s+)?(?:contra|em|no|na|para)|atua\s+(?:contra|sobre)|desempenho\s+superior|superior\s+a[os]?|inferior\s+a[os]?|melhor\s+(?:que|do\s+que)|pior\s+(?:que|do\s+que)|mais\s+efica[zs]|mais\s+eficiente|residual\s+mais|maior\s+residual)\b/i
 // Nomes proprios que aparecem no meio da frase e NAO sao marca: instituicoes, siglas tecnicas,
 // paises, meses, culturas e regioes.
-const nonBrandProperNoun=new Set(['embrapa','mapa','agrofit','anvisa','ibama','brasil','brasileiro','brasileira','mip','mid','irac','frac','hrac','ndvi','zarc','val','rr','bt','ipm','eua','estados','unidos','janeiro','fevereiro','marco','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro','soja','milho','trigo','algodao','arroz','feijao','cafe','cana','sorgo','cevada','aveia','canola','girassol','pastagem','cerrado','sul','norte','nordeste','sudeste','centro','oeste'])
+// A lista fechada nao dava conta do vocabulario normal da agronomia brasileira: genero de binomio,
+// unidade da federacao, instituicao e programa entravam como "marca" e a resposta conceitual era
+// recusada com um texto REGULATORIO mandando consultar a bula. Medido: 6 de 12 respostas legitimas
+// barradas. Os toponimos e as instituicoes sao conjunto fechado e entram aqui; o genero e conjunto
+// aberto e e resolvido pela regra de binomio abaixo, que nao depende de lista.
+const nonBrandProperNoun=new Set(['embrapa','mapa','agrofit','anvisa','ibama','conab','inmet','incra','iac','iapar','esalq','ufv','unesp','usp','embrapii','senar','aprosoja','abrapa','brasil','brasileiro','brasileira','mip','mid','irac','frac','hrac','ndvi','zarc','val','rr','bt','ipm','eua','estados','unidos','janeiro','fevereiro','marco','abril','maio','junho','julho','agosto','setembro','outubro','novembro','dezembro','soja','milho','trigo','algodao','arroz','feijao','cafe','cana','sorgo','cevada','aveia','canola','girassol','pastagem','cerrado','pampa','pantanal','amazonia','caatinga','mata','atlantica','sul','norte','nordeste','sudeste','centro','oeste','acre','alagoas','amapa','amazonas','bahia','ceara','distrito','federal','espirito','santo','goias','maranhao','mato','grosso','minas','gerais','para','paraiba','parana','pernambuco','piaui','rio','grande','janeiro','rondonia','roraima','catarina','paulo','sergipe','tocantins','matopiba','plano','safra','instrucao','normativa','ministerio','agricultura','pecuaria','abastecimento','lei','decreto','portaria','resolucao','programa','politica','nacional','codigo','florestal','car','pra','brachiaria','urochloa','panicum','crotalaria','bacillus','trichoderma','beauveria','metarhizium','phakopsora','spodoptera','helicoverpa','sclerotinia','fusarium','rhizoctonia','pratylenchus','meloidogyne','heterodera','diabrotica','euschistus','dalbulus','aspergillus','pseudomonas','azospirillum','bradyrhizobium','glomus','pochonia','purpureocillium'])
+// Nome cientifico e um par: genero em maiuscula seguido de epiteto em minuscula. Marca comercial nao
+// tem essa forma, e a regra vale para qualquer genero, inclusive os que nao estao na lista acima.
+// O epiteto precisa PARECER latim, nao qualquer palavra minuscula: com "qualquer minuscula",
+// "O Lannate controla a lagarta" virava binomio e a marca escapava. As terminacoes abaixo sao de
+// morfologia latina e nenhuma delas e terminacao de verbo conjugado em portugues.
+const speciesEpithet=/^[a-z][a-z-]{3,}(?:us|um|is|ii|i|ae|ana|anum|ense|ensis|icola|oides|formis|ceps|cola|phaga|fera|spora|zae|ium|osa|osum|ida|idae|ella|ellus|inia|iana)$/
 export function namedProductMentions(answer=''){
  const found=[]
  for(const sentence of String(answer??'').split(/(?<=[.!?;:])\s+|\n+/)){
@@ -86,6 +97,10 @@ export function namedProductMentions(answer=''){
    const raw=words[index].replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
    if(!/^[A-ZÀ-Ý][\p{L}\p{N}-]*$/u.test(raw))continue
    if(nonBrandProperNoun.has(normalize(raw)))continue
+   // Binomio cientifico: o proximo token e o epiteto em minuscula. Nem o genero nem o epiteto sao
+   // marca, e os dois saem juntos.
+   const next=(words[index+1]||'').replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
+   if(speciesEpithet.test(next)){index+=1;continue}
    found.push(raw)
   }
  }

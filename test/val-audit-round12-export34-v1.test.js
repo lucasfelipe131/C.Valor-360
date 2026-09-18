@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict'
 import {readFileSync} from 'node:fs'
 import test from 'node:test'
-import {csvExportIsPartial,csvExportScope,managementCsv,recordedTravel,summarizeManagement} from '../src/lib/management-data.js'
+import {csvExportIsPartial,csvExportScope,implausibleGroundStep,managementCsv,recordedTravel,summarizeManagement} from '../src/lib/management-data.js'
+
+const distanciaKm=(a,b)=>{const r=Math.PI/180;const dlat=(b.lat-a.lat)*r;const dlng=(b.lng-a.lng)*r;const v=Math.sin(dlat/2)**2+Math.cos(a.lat*r)*Math.cos(b.lat*r)*Math.sin(dlng/2)**2;return 6371*2*Math.atan2(Math.sqrt(v),Math.sqrt(1-v))}
 
 const at=iso=>new Date(iso).toISOString()
 
@@ -70,4 +72,46 @@ test('EXPORT-03 — a tela de gestao exporta a coluna de abrangencia e marca o n
  assert.equal(pagina.match(/\['exportScope','Abrangência do arquivo'\]/g)?.length,3)
  assert.match(pagina,/csvExportScope\(\{truncated:kind==='producers'&&Boolean\(data\?\.truncated\?\.producers\)/)
  assert.match(pagina,/csvExportIsPartial\(exportScope\)\?'-parcial':''/)
+})
+
+
+test('EXPORT-04 — a tela do consultor e a do gestor leem o mesmo numero do mesmo trace',()=>{
+ // O teto de 200 km/h entrou primeiro só no painel de gestão. Medido pela rodada 13: no mesmo trace
+ // do mesmo dia o consultor lia "81 km registrados por GPS" e o gestor lia 1,2 km — e o aviso do
+ // descarte existia só num dos dois lados. A regra agora vive num lugar só.
+ const telaDoConsultor=trace=>{
+  const segmentos=[];let pontos=[];let descartados=0
+  for(const ponto of trace){
+   const anterior=pontos.at(-1)
+   if(anterior){
+    const segundos=(Date.parse(ponto.timestamp)-Date.parse(anterior.timestamp))/1000
+    const salto=implausibleGroundStep(distanciaKm(anterior,ponto),segundos)
+    if(segundos>120||salto){if(salto)descartados+=1;if(pontos.length>1)segmentos.push(pontos);pontos=[]}
+   }
+   pontos.push(ponto)
+  }
+  if(pontos.length>1)segmentos.push(pontos)
+  return {km:segmentos.reduce((total,item)=>total+item.slice(1).reduce((soma,ponto,indice)=>soma+distanciaKm(item[indice],ponto),0),0),descartados}
+ }
+ for(const [nome,trace] of [['trajeto real',trajetoReal],['com salto de GPS',comSaltoDeGps],['só o salto',[{lat:-28.0,lng:-54.0,timestamp:at('2026-09-12T15:00:00Z')},{lat:-28.76,lng:-54.0,timestamp:at('2026-09-12T15:01:45Z')}]]]){
+  const gestor=recordedTravel(trace)
+  const consultor=telaDoConsultor(trace)
+  assert.ok(Math.abs((gestor.distanceKm||0)-consultor.km)<0.001,`${nome}: gestor ${gestor.distanceKm} km, consultor ${consultor.km} km`)
+  assert.equal(gestor.discardedSegments,consultor.descartados,`${nome}: contagem de descartes diferente`)
+ }
+})
+
+test('EXPORT-03 — coluna nova entra no fim e nao desloca coluna existente',()=>{
+ const pagina=readFileSync(new URL('../src/pages/Management.jsx',import.meta.url),'utf8')
+ const rotas=pagina.slice(pagina.indexOf(' routes:['),pagina.indexOf('\n}',pagina.indexOf(' routes:[')))
+ const chaves=[...rotas.matchAll(/\['([a-zA-Z]+)',/g)].map(item=>item[1])
+ // A ordem histórica precisa ser prefixo da ordem atual: quem lê o CSV por posição não pode quebrar.
+ assert.deepEqual(chaves.slice(0,9),['unitId','consultantId','consultant','date','distanceKm','recordedSeconds','segments','timeZone','dataStatus'])
+ assert.deepEqual(chaves.slice(9),['discardedSegments','exportScope'])
+})
+
+test('EXPORT-04 — a tela do consultor avisa o descarte, como o painel de gestao',()=>{
+ const mapa=readFileSync(new URL('../src/components/map/RouteMap.jsx',import.meta.url),'utf8')
+ assert.match(mapa,/implausibleGroundStep/,'a tela do consultor usa a mesma regra')
+ assert.match(mapa,/trecho\$\{recorded\.discarded>1\?'s':''\} de GPS descartado/,'e diz que descartou')
 })

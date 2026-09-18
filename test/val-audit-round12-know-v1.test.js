@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {buildGeneralNoClientResponse,regulatedClaimStub} from '../server/decision-copilot/capability-executor.js'
+import {routeSystemCapability} from '../server/decision-copilot/capability-router.js'
 import {namedProductMentions,regulatedBrandClaim,safeGeneralModelAnswer} from '../server/knowledge/general-answer-provider.js'
 
 // Respostas que a VAL não pode entregar: afirmam eficácia, alvo, cultura ou superioridade de marca.
@@ -90,4 +91,56 @@ test('pergunta geral legitima continua entregue pelo modelo', async () => {
  const ia=resposta.advice.ai_reasoning
  assert.equal(ia.run.tool_result.capability,'AI_GENERAL_KNOWLEDGE')
  assert.match(String(ia.recommended_strategy?.reading||''),/barter/i)
+})
+
+
+test('KNOW-01 — nome cientifico, toponimo e instituicao nao sao marca',()=>{
+ // A rodada 13 mediu 6 de 12 respostas conceituais legítimas recusadas com um texto REGULATÓRIO
+ // mandando consultar a bula, porque qualquer palavra maiúscula no meio da oração virava "marca".
+ // Na agronomia brasileira isso é o vocabulário normal.
+ for(const resposta of [
+  'O controle biologico de lagartas usa Bacillus thuringiensis, que controla larvas de lepidopteros ao produzir toxinas no intestino do inseto.',
+  'Trichoderma harzianum atua sobre patogenos de solo por competicao e parasitismo, e e eficaz em condicoes de boa umidade.',
+  'Beauveria bassiana e um fungo entomopatogenico que combate percevejos em condicoes de alta umidade relativa.',
+  'A ferrugem asiatica e causada por Phakopsora pachyrhizi. O fungo elimina area foliar e reduz o enchimento de graos.',
+  'A adubacao verde com Crotalaria spectabilis controla nematoides de galha por ser planta nao hospedeira.',
+  'Spodoptera frugiperda combate-se melhor com manejo integrado do que com aplicacao isolada.',
+  'Em Mato Grosso a janela de semeadura e mais estreita, e o vazio sanitario protege a lavoura da ferrugem.',
+  'O Plano Safra define condicoes de custeio; ele nao e indicado para capital de giro de curto prazo.',
+  'A Instrucao Normativa do Ministerio da Agricultura e a fonte que registra o uso autorizado.',
+  'Em Goias e no Parana a Brachiaria em consorcio protege o solo da erosao.',
+  'Sclerotinia sclerotiorum e favorecida por temperatura amena e molhamento foliar prolongado.'
+ ])assert.equal(regulatedBrandClaim(resposta),false,`recusou resposta legítima: ${resposta.slice(0,70)} | nomes=${JSON.stringify(namedProductMentions(resposta))}`)
+})
+
+test('KNOW-01 — o binomio nao pode virar porta de saida para a marca',()=>{
+ // A primeira versão da regra de binômio aceitava qualquer palavra minúscula como epíteto, e
+ // "O Lannate controla a lagarta" passava a ser lido como nome científico.
+ for(const resposta of [
+  'O Lannate controla a lagarta-do-cartucho no milho.',
+  'O Fox Xpro e indicado para ferrugem asiatica na soja.',
+  'O Roundup Transorb elimina as principais daninhas em soja RR.',
+  'A Elatus tem maior residual que a Aproach Prima.',
+  'O Engeo Pleno funciona bem contra percevejo na soja.',
+  'O Standak Top protege a semente contra pragas iniciais.'
+ ])assert.equal(regulatedBrandClaim(resposta),true,`deixou passar: ${resposta}`)
+})
+
+test('KNOW-01 — falha do provedor nao e anunciada como bloqueio de bula',async()=>{
+ // regulatedClaim é calculado sobre o texto DESCARTADO: bastava a primeira resposta ser rejeitada e
+ // a segunda chamada morrer no provedor para o consultor ler "consulte a bula" quando a causa era
+ // HTTP 500 no modelo.
+ const message='o que e fotossintese?'
+ const route=routeSystemCapability({message,hasClient:false})
+ let chamada=0
+ const aiClient={responses:{create:async()=>{
+  chamada+=1
+  if(chamada===1)return {status:'completed',output_text:'O Fox Xpro e eficaz contra a ferrugem asiatica da soja.',usage:{input_tokens:10,output_tokens:10}}
+  throw Object.assign(new Error('Internal Server Error'),{status:500})
+ }}}
+ const payload=await buildGeneralNoClientResponse({message,route,organizationId:'00000000-0000-4000-8000-000000000001',ownerId:'owner-r13',conversationId:'r13',contextEpoch:0,now:new Date('2026-08-30T12:00:00.000Z'),aiClient,aiModel:'gpt-5-mini'})
+ const tool=payload.advice.ai_reasoning.run.tool_result
+ assert.equal(tool.title,'IA indisponível',`título disse "${tool.title}" com o provedor em 500`)
+ assert.doesNotMatch(tool.summary,/informação de bula/i)
+ assert.equal(payload.advice.ai_reasoning.run.status,'completed')
 })

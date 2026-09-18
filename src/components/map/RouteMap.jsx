@@ -6,6 +6,7 @@ import {buildDayItinerary,getNearbySuggestions,proposeRouteOrder} from '../../li
 import {routeDayPath,routeRequest,routeTimeZone} from '../../lib/visit-route-api'
 import {useNavigationGuard} from '../../lib/use-navigation-guard'
 import '../../val-visit-routes.css'
+import {implausibleGroundStep} from '../../lib/management-data'
 
 const today=()=>{const now=new Date();return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`}
 const clock=at=>at instanceof Date&&!Number.isNaN(at.getTime())?at.toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}):'Sem horário'
@@ -72,13 +73,24 @@ export default function RouteMap({visits=[],clients=[],storageScope='',initialSt
   ...(position&&date===today()?[{id:'my-position',...position,label:'',title:'Minha posição',tone:'position'}]:[])
  ],[stops,suggestions,position,date,properties,search,showNames])
  const visibleStops=stops.filter(stop=>`${stop.name} ${stop.place}`.toLocaleLowerCase('pt-BR').includes(search.toLocaleLowerCase('pt-BR')))
- const recordedRoutes=useMemo(()=>{
-  // Uma interrupção longa de GPS não vira um segmento imaginário no mapa.
-  const segments=[];let points=[]
-  for(const point of trace){if(points.length&&Date.parse(point.timestamp)-Date.parse(points.at(-1).timestamp)>120000){if(points.length>1)segments.push(points);points=[]}points.push(point)}
+ const recorded=useMemo(()=>{
+  // Uma interrupção longa de GPS não vira um segmento imaginário no mapa. Um salto de antena também
+  // não: a mesma regra do painel de gestão (implausibleGroundStep) vale aqui, senão o consultor e o
+  // gestor leem quilometragens diferentes do mesmo percurso — medido, 81 km contra 1,2 km.
+  const segments=[];let points=[];let discarded=0
+  for(const point of trace){
+   const previous=points.at(-1)
+   if(previous){
+    const seconds=(Date.parse(point.timestamp)-Date.parse(previous.timestamp))/1000
+    const salto=implausibleGroundStep(pathDistance([previous,point]),seconds)
+    if(seconds>120||salto){if(salto)discarded+=1;if(points.length>1)segments.push(points);points=[]}
+   }
+   points.push(point)
+  }
   if(points.length>1)segments.push(points)
-  return segments.map(points=>({points:points.map(point=>[point.lat,point.lng]),kind:'recorded',distanceKm:pathDistance(points)}))
+  return {routes:segments.map(points=>({points:points.map(point=>[point.lat,point.lng]),kind:'recorded',distanceKm:pathDistance(points)})),discarded}
  },[trace])
+ const recordedRoutes=recorded.routes
  const routes=[...recordedRoutes,...(road?.available&&road.geometry?.length>1?[{points:road.geometry,kind:'planned'}]:[])]
  const traveledKm=recordedRoutes.reduce((total,item)=>total+item.distanceKm,0)
  useEffect(()=>{
@@ -190,7 +202,7 @@ export default function RouteMap({visits=[],clients=[],storageScope='',initialSt
     <div className="vr-map-legend"><span><MapPin size={13}/>Propriedade</span><span><i className="vr-dot is-visited"/>Visitada</span><span><i className="vr-dot is-current"/>Em andamento</span><span><i className="vr-dot is-planned"/>Programada</span><span><Plus size={13}/>Sugestão</span><span><b className="vr-line"/>Percurso GPS</span><span><b className="vr-line is-planned"/>Rota planejada</span></div>
    </div>}
   </div>
-  <div className="vr-trip-bar"><div><strong>{trace.length?`${km(traveledKm)} km registrados por GPS`:'Percurso GPS ainda não registrado'}</strong><span>{roadBusy?'Calculando percurso por estrada…':road?.available?`${km(road.distanceMeters/1000)} km planejados · ${Math.ceil(road.durationSeconds/60)} min de trajeto estimados`:missingRemaining.length?`${missingRemaining.length} parada(s) sem localização: complete o cadastro para calcular o trajeto inteiro.`:drivingIds.length>15?'Mostre até 15 paradas para calcular a rota por estrada.':drivingIds.length>1?'Rota por estrada indisponível. Os pins mostram as localizações cadastradas.':'Adicione pelo menos duas propriedades localizadas para calcular a rota.'}</span></div><div className="vr-trip-actions"><button className="soft-btn" onClick={locate} disabled={date!==today()}><LocateFixed size={16}/>Minha posição</button><button className={tracking.tracking?'vr-recording':'primary-btn'} disabled={tracking.busy||date!==today()} onClick={tracking.tracking?tracking.stop:tracking.start}>{tracking.tracking?<Pause size={16}/>:<Navigation size={16}/>} {tracking.busy?'Aguarde…':tracking.tracking?'Pausar percurso':'Iniciar percurso'}</button></div></div>
+  <div className="vr-trip-bar"><div><strong>{trace.length?`${km(traveledKm)} km registrados por GPS${recorded.discarded?` · ${recorded.discarded} trecho${recorded.discarded>1?'s':''} de GPS descartado${recorded.discarded>1?'s':''}`:''}`:'Percurso GPS ainda não registrado'}</strong><span>{roadBusy?'Calculando percurso por estrada…':road?.available?`${km(road.distanceMeters/1000)} km planejados · ${Math.ceil(road.durationSeconds/60)} min de trajeto estimados`:missingRemaining.length?`${missingRemaining.length} parada(s) sem localização: complete o cadastro para calcular o trajeto inteiro.`:drivingIds.length>15?'Mostre até 15 paradas para calcular a rota por estrada.':drivingIds.length>1?'Rota por estrada indisponível. Os pins mostram as localizações cadastradas.':'Adicione pelo menos duas propriedades localizadas para calcular a rota.'}</span></div><div className="vr-trip-actions"><button className="soft-btn" onClick={locate} disabled={date!==today()}><LocateFixed size={16}/>Minha posição</button><button className={tracking.tracking?'vr-recording':'primary-btn'} disabled={tracking.busy||date!==today()} onClick={tracking.tracking?tracking.stop:tracking.start}>{tracking.tracking?<Pause size={16}/>:<Navigation size={16}/>} {tracking.busy?'Aguarde…':tracking.tracking?'Pausar percurso':'Iniciar percurso'}</button></div></div>
   <p className="vr-footnote">O GPS registra apenas enquanto esta tela está aberta e o percurso está ativo. Visita registrada não significa percurso rastreado. Estimativas de viagem não incluem a duração das visitas.</p>
   <section className="vr-suggestions" aria-label="Sugestões de produtores próximos"><header><div><Sparkles size={25}/><div><h3>Sugestões da VAL</h3><p>Produtores próximos da sua rota</p></div></div><label>Proximidade <select aria-label="Distância máxima dos produtores próximos" value={maxKm} onChange={event=>setMaxKm(Number(event.target.value))}><option value={5}>Até 5 km</option><option value={10}>Até 10 km</option><option value={20}>Até 20 km</option><option value={50}>Até 50 km</option></select></label></header>
    {suggestions.length?<div className="vr-suggestion-grid">{suggestions.map(item=>{const detour=detours[item.clientId];return <article key={item.clientId} className="vr-suggestion-card"><button className="vr-suggestion-pin" aria-label={`Ver sugestão ${item.name} no mapa`} onClick={()=>{setView('map');setSelectedId(`suggestion:${item.clientId}`)}}><MapPin size={27}/><Plus size={13}/></button><div><span className="vr-status">Sugestão</span><h4>{item.name}</h4><p>{detour&&detour.signature===drivingSignature?`Desvio estimado por estrada: +${km(detour.km)} km · +${detour.minutes} min`:`${km(item.distanceKm)} km de proximidade · linha reta`}</p><small>{item.reason}</small><button className="vr-text-button" disabled={Boolean(detourBusy)||!drivingIds.length||Boolean(missingRemaining.length)} onClick={()=>calculateDetour(item)}>{detourBusy===item.clientId?'Calculando…':'Calcular desvio por estrada'}</button></div><button className="soft-btn" onClick={()=>onAddClient?.(item.clientId,date,item.reason)}><Plus size={16}/>Adicionar ao roteiro</button></article>})}</div>:<div className="vr-empty-suggestions">{clients.some(client=>client.location)?'Nenhum produtor disponível nesta distância. Aumente a proximidade ou escolha outro dia.':'Marque a localização das propriedades no cadastro dos produtores para receber sugestões.'}</div>}

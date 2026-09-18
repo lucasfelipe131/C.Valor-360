@@ -91,7 +91,7 @@ function SafeContextTrace({trace}){
  return <details className="global-val-layer val-context-trace"><summary aria-label="Abrir Context Trace seguro"><ShieldCheck aria-hidden="true" focusable="false"/><span>Context Trace seguro</span><ChevronDown aria-hidden="true" focusable="false"/></summary><div><p><b>Domínio:</b> <code>{trace.domain}</code></p><div className="val-context-trace-groups"><section aria-label="Contextos selecionados"><h4>Selected ({trace.selected.length})</h4>{trace.selected.length?<ul>{trace.selected.map((item,index)=><li key={`selected-${item.sourceType}-${item.reasonSelected}-${index}`}><code>{item.sourceType}</code><span>{item.reasonSelected}</span></li>)}</ul>:<p>Nenhum item.</p>}</section><section aria-label="Contextos rejeitados"><h4>Rejected ({trace.rejected.length})</h4>{trace.rejected.length?<ul>{trace.rejected.map((item,index)=><li key={`rejected-${item.sourceType}-${item.reasonSelected}-${index}`}><code>{item.sourceType}</code><span>{item.reasonSelected}</span></li>)}</ul>:<p>Nenhum item.</p>}</section></div></div></details>
 }
 
-export function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onReply,onRegister,onOpenModule,onOpenEvidence}){
+export function ReasoningResponse({payload,sourceAttachments=[],density,outputMode,onReply,onRegister,onOpenModule,onOpenEvidence,readOnly=false}){
  const advice=payload?.advice||{}
  const reasoning=advice.ai_reasoning||{}
  const thesis=reasoning.decision_thesis||{}
@@ -119,6 +119,15 @@ export function ReasoningResponse({payload,sourceAttachments=[],density,outputMo
  const scopedTarget=(target,extra={})=>({...((target&&typeof target==='object')?target:{page:target}),...extra,responseCardAction:true,responseScope})
  const openScoped=target=>onOpenModule?.(scopedTarget(target))
  const openWithSources=target=>onOpenModule?.(scopedTarget(target,{sourceAttachments}))
+ // A resposta de um assunto anterior voltou a aparecer na tela (o filtro de visibilidade passou a
+ // ser por dono, nao por epoca), mas AGIR a partir dela continua exigindo o escopo exato - e certo
+ // que continue. O que nao pode e desenhar quatro botoes que nao fazem nada e responder ao clique
+ // com "abra a conversa de origem", uma instrucao impossivel: e a mesma conversa, o mesmo produtor,
+ // o mesmo consultor. Leitura antiga se apresenta como leitura.
+ if(readOnly)return <article className={`global-val-answer is-${density} is-previous-topic`}>
+  <p className="global-val-previous-topic">Leitura de um assunto anterior desta conversa. As ações valem para o assunto atual.</p>
+  <DecisionCard reasoning={reasoning} answer={answer} action="" audioNode={audioNode}/>
+ </article>
  return <article className={`global-val-answer is-${density}`}>
   {isBehavioralProfile?<ProfileResponse reasoning={reasoning} answer={answer} facts={facts} outputMode={outputMode} audioNode={audioNode}/>:<>
   <DecisionCard reasoning={reasoning} answer={answer} action={degraded||generalGuidance?'':strategy.action} audioNode={audioNode}/>
@@ -661,9 +670,9 @@ export default function GlobalValCopilot({open,onClose,onPresentationChange,embe
   if(intent==='REGISTER'){setMode('REGISTER');clientSelectRef.current?.focus();return}
   ask(prompt,intent)
  }
+ const activeCardScope={tenantId:identityTenantId,ownerId:identityOwnerId,conversationId:conversationId(threadKey,storageScope),producerId:client?.id||null,contextEpoch:conversationContextEpoch(visibleThread,{conversationId:conversationId(threadKey,storageScope),producerId:client?.id||'',fallbackContextEpoch:metadataContextEpoch}),domain:activeDomain}
  const responseCardActionAllowed=responseScope=>{
-  const activeConversationId=conversationId(threadKey,storageScope)
-  const activeScope={tenantId:identityTenantId,ownerId:identityOwnerId,conversationId:activeConversationId,producerId:client?.id||null,contextEpoch:conversationContextEpoch(visibleThread,{conversationId:activeConversationId,producerId:client?.id||'',fallbackContextEpoch:metadataContextEpoch}),domain:activeDomain}
+  const activeScope=activeCardScope
   if(responseCardActionMatchesScope(responseScope,activeScope))return true
   setError('Este card pertence a outro tenant, usuário, produtor, conversa, epoch ou domínio. Abra a conversa de origem para executar esta ação.')
   return false
@@ -749,7 +758,7 @@ export default function GlobalValCopilot({open,onClose,onPresentationChange,embe
     />}
     {!voiceStageFocused&&<div ref={threadRef} className="global-val-thread" aria-live="polite" onScroll={event=>{const target=event.currentTarget;followThreadBottom.current=target.scrollHeight-target.scrollTop-target.clientHeight<80}}>
      {!visibleThread.length&&mode==='ASK'&&<section className="global-val-empty"><span><BrainCircuit/></span><small>VAL • AMBIENTE DE TRABALHO</small><h2>{client?`Estou com ${firstName(client.name)} aberto.`:'Pode falar comigo.'}</h2><p>{client?'Quer preparar uma conversa, revisar o que ficou pendente ou tirar uma dúvida geral?':'Pergunte sobre agronomia ou outros assuntos. Para consultar dados da carteira, escolha o produtor acima.'}</p><div>{(client?clientQuickPrompts:globalQuickPrompts).map(([intent,label,prompt])=><button type="button" key={`${intent}-${label}`} disabled={busy} onClick={()=>runQuickAction(intent,prompt)}><b>{label}</b>{!client&&prompt&&<small>{prompt}</small>}</button>)}</div></section>}
-     {visibleThread.map((item,index)=>item.role==='assistant'&&item.payload?<ReasoningResponse key={`${item.at||index}-${index}`} payload={item.payload} sourceAttachments={item.sourceAttachments} density={density} outputMode={outputMode} onReply={(question,responseScope)=>{if(!responseCardActionAllowed(responseScope))return;setReplyingTo(question);setMessage('');setMode('ASK');requestAnimationFrame(()=>messageInput.current?.focus())}} onRegister={responseScope=>{if(responseCardActionAllowed(responseScope))setMode('REGISTER')}} onOpenModule={openModule} onOpenEvidence={openEvidence}/>:item.role==='assistant_text'&&item.command==='OUTPUT_AUDIO'?<article key={`${item.at||index}-${index}`} className="global-val-local-audio"><p className="global-val-message is-assistant">{item.text}</p><ValAudioResponse text={item.text} autoPlay={item.playAudio===true}/></article>:<p key={`${item.at||index}-${index}`} className={`global-val-message is-${item.role==='assistant_text'?'assistant':item.role}`}>{item.text}</p>)}
+     {visibleThread.map((item,index)=>item.role==='assistant'&&item.payload?<ReasoningResponse key={`${item.at||index}-${index}`} payload={item.payload} sourceAttachments={item.sourceAttachments} density={density} outputMode={outputMode} readOnly={!responseCardActionMatchesScope(item.payload?.responseScope,activeCardScope)} onReply={(question,responseScope)=>{if(!responseCardActionAllowed(responseScope))return;setReplyingTo(question);setMessage('');setMode('ASK');requestAnimationFrame(()=>messageInput.current?.focus())}} onRegister={responseScope=>{if(responseCardActionAllowed(responseScope))setMode('REGISTER')}} onOpenModule={openModule} onOpenEvidence={openEvidence}/>:item.role==='assistant_text'&&item.command==='OUTPUT_AUDIO'?<article key={`${item.at||index}-${index}`} className="global-val-local-audio"><p className="global-val-message is-assistant">{item.text}</p><ValAudioResponse text={item.text} autoPlay={item.playAudio===true}/></article>:<p key={`${item.at||index}-${index}`} className={`global-val-message is-${item.role==='assistant_text'?'assistant':item.role}`}>{item.text}</p>)}
      {mode==='REGISTER'&&<section className="global-val-register"><ShieldCheck/><h3>Atualize as premissas com confirmação.</h3><p>{client?'Fale ou digite o que mudou. A VAL separa fatos, hipóteses e compromissos para você revisar antes de incorporar à memória.':'Escolha um produtor acima. Uma informação só pode entrar na memória quando sabemos a qual conta ela pertence.'}</p><VoiceCapture key={`register:${client?.id||'none'}:${threadKey}`} clientId={client?.id||''} interactionType="CLIENT_NOTE" label="Falar ou digitar" description="Revisar antes de salvar" initialText={registerInitialText} autoOpenKey={registrationAutoOpenKey} onOpenChange={isOpen=>{if(isOpen)setRegistrationAutoOpenKey('')}} sourceContext={{page:'GLOBAL_VAL_COPILOT',persistence_mode:'CONFIRM_REQUIRED',conversation_thread:threadKey}} onConfirmed={payload=>registered(payload,{clientId:client?.id||'',threadKey})}/></section>}
      {busy&&<div className="global-val-thinking" role="status"><LoaderCircle/><span><b>{progress?.label||'Analisando a solicitação…'}</b><small>{client?'Etapa real do processamento. Se faltar algo material, a VAL perguntará.':'A VAL não usa memória antiga como dado atual.'}</small></span></div>}
     </div>}

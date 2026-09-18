@@ -888,8 +888,12 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  // IA estourado e provedor fora do ar. So a primeira e um pedido legitimo de esclarecimento.
  const noCoverageExecution=(providerFailure=false,regulatedClaim=false)=>{
   const unavailable=aiBudgetExhausted||providerFailure||regulatedClaim
-  const summary=regulatedClaim?regulatedClaimStub:aiBudgetExhausted?aiBudgetExhaustedStub:providerFailure?aiProviderUnavailableStub:(topicClarification||noKnowledgeCoverageStub)
-  const title=regulatedClaim?'Informação de bula':aiBudgetExhausted?'Limite de IA atingido':providerFailure?'IA indisponível':'Orientação geral'
+  // A falha do provedor vem PRIMEIRO. regulatedClaim e calculado sobre o texto DESCARTADO, entao
+  // bastava a primeira resposta ser rejeitada e a segunda chamada morrer no provedor para o
+  // consultor ler "consulte a bula" quando a causa real era HTTP 500 no modelo - desfazendo na
+  // pratica a separacao de causas que este bloco existe para fazer.
+  const summary=providerFailure?aiProviderUnavailableStub:aiBudgetExhausted?aiBudgetExhaustedStub:regulatedClaim?regulatedClaimStub:(topicClarification||noKnowledgeCoverageStub)
+  const title=providerFailure?'IA indisponível':aiBudgetExhausted?'Limite de IA atingido':regulatedClaim?'Informação de bula':'Orientação geral'
   return deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'NO_DATA',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title,summary,page:'copilot',manual_page:null,mode:'no_coverage',context:{client_id:null,private_memory_used:false},required_inputs:unavailable?[]:['topic']},active_context:null})
  }
  const curatedExecution=deepFreeze(catalog

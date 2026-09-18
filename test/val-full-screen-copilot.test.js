@@ -165,7 +165,10 @@ test('ação de card exige tenant, owner, produtor, conversa, contextEpoch e dom
  assert.match(copilot,/responseCardAction:true,responseScope/)
  assert.match(copilot,/responseCardActionMatchesScope\(responseScope,activeScope\)/)
  assert.match(copilot,/const currentScope=\{tenantId:identityTenantId,ownerId:identityOwnerId,conversationId:currentConversationId,producerId:/)
- assert.match(copilot,/const activeScope=\{tenantId:identityTenantId,ownerId:identityOwnerId,conversationId:activeConversationId,producerId:/)
+ // CONV-02: o escopo de ação virou uma constante reaproveitada — o mesmo objeto decide se o card é
+ // renderizado como leitura e se a ação é permitida, para os dois nunca discordarem.
+ assert.match(copilot,/const activeCardScope=\{tenantId:identityTenantId,ownerId:identityOwnerId,conversationId:conversationId\(threadKey,storageScope\),producerId:/)
+ assert.match(copilot,/const activeScope=activeCardScope/)
  assert.match(app,/identityScope=\{\{tenantId:currentUser\?\.tenantId\|\|'',ownerId:currentUser\?\.ownerId\|\|''\}\}/)
  assert.match(server,/tenantId:session\.tenantId\|\|config\.defaultTenantId,ownerId:session\.id\|\|session\.sub\|\|session\.email/)
  assert.match(server,/tenantId:config\.defaultTenantId,ownerId:'demo@valor360\.local'/)

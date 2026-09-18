@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import {readFileSync} from 'node:fs'
 import {conversationTurnVisibleInScope,readConversationWorkspace,responseCardActionMatchesScope,writeConversationWorkspace} from '../src/lib/full-screen-conversation.js'
 
 // CONV-02. Mudar de assunto na mesma conversa sobe o context_epoch no servidor (clearedDomainOverlay)
@@ -56,4 +57,17 @@ test('CONV-02 — isolamento por dono continua exato, e agir a partir do card co
  // Época e domínio antigos: o texto continua à vista, a ação não.
  assert.equal(responseCardActionMatchesScope(escopo(0,'AGRONOMY'),agora),false)
  assert.equal(responseCardActionMatchesScope(escopo(1,'OPPORTUNITY'),agora),true)
+})
+
+
+test('CONV-02 — o card do assunto anterior nao oferece acao que o portao vai recusar',()=>{
+ // A rodada 13 mediu: o card restaurado desenhava os quatro botões de sempre e todos morriam no
+ // portão de ação (que continua 6D, e deve continuar). O consultor clicava e lia "abra a conversa de
+ // origem" — instrução impossível, é a mesma conversa, o mesmo produtor, o mesmo consultor.
+ const copiloto=readFileSync(new URL('../src/components/GlobalValCopilot.jsx',import.meta.url),'utf8')
+ assert.match(copiloto,/readOnly=\{!responseCardActionMatchesScope\(item\.payload\?\.responseScope,activeCardScope\)\}/,'a tela decide por card se a ação é possível')
+ assert.match(copiloto,/if\(readOnly\)return <article/,'card sem ação possível é renderizado como leitura')
+ assert.match(copiloto,/Leitura de um assunto anterior desta conversa/,'e diz ao consultor o que está vendo')
+ // O portão de ação em si não pode ter sido afrouxado para isso.
+ assert.match(copiloto,/responseCardActionMatchesScope\(responseScope,activeScope\)/)
 })

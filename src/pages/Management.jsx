@@ -10,7 +10,10 @@ const initialFilters=()=>{const end=new Intl.DateTimeFormat('en-CA',{timeZone:'A
 const exports={
  producers:[['unitId','Unidade'],['id','Produtor ID'],['name','Produtor'],['consultantId','Consultor ID'],['consultant','Consultor'],['municipality','Município'],['areaHa','Área (ha)'],['cultures','Culturas'],['updatedAt','Atualizado em'],['dataStatus','Origem'],['exportScope','Abrangência do arquivo']],
  visits:[['unitId','Unidade'],['id','Visita ID'],['clientId','Produtor ID'],['producer','Produtor'],['consultantId','Consultor ID'],['consultant','Consultor'],['scheduledAt','Agendada'],['occurredAt','Realizada'],['lifecycleStatus','Situação'],['objective','Objetivo'],['reportId','Relatório ID'],['reportSummary','Relato confirmado'],['reportNotes','Notas do consultor'],['reportConfirmedAt','Confirmado em'],['dataStatus','Origem'],['exportScope','Abrangência do arquivo']],
- routes:[['unitId','Unidade'],['consultantId','Consultor ID'],['consultant','Consultor'],['date','Data'],['distanceKm','Distância GPS (km)'],['recordedSeconds','Tempo com GPS (s)'],['segments','Trechos GPS'],['discardedSegments','Trechos GPS descartados'],['timeZone','Fuso'],['dataStatus','Origem'],['exportScope','Abrangência do arquivo']]
+ // Coluna nova entra no FIM. discardedSegments tinha sido inserida no meio e empurrou timeZone e
+ // dataStatus uma casa: uma consulta do Power Query montada sobre val-routes-*.csv passava a ler a
+ // contagem de descartes na coluna que se chamava timeZone.
+ routes:[['unitId','Unidade'],['consultantId','Consultor ID'],['consultant','Consultor'],['date','Data'],['distanceKm','Distância GPS (km)'],['recordedSeconds','Tempo com GPS (s)'],['segments','Trechos GPS'],['timeZone','Fuso'],['dataStatus','Origem'],['discardedSegments','Trechos GPS descartados'],['exportScope','Abrangência do arquivo']]
 }
 
 export default function Management({currentUser,standalone=false,onLogout,onConfigure}){
