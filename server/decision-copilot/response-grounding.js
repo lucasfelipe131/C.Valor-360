@@ -180,7 +180,16 @@ const globalAggregateAnchor=/\b(?:mercado|cotacao|bolsa|brasil|pais|nacional|est
 const globalConceptAnchor=/\b(?:conceito|definicao|ctc|ph|roi|margem|custo por hectare|ferramenta|modulo|catalogo|manual|bula|rotulo|capacidade do solo|calculo|agronomi\w*|solo|adubacao|calagem|fertilidade|fertilizante|praga\w*|doenca\w*|daninha\w*|fungicid\w*|herbicid\w*|inseticid\w*|resistencia|manejo|basis|hedge|wasde|estoque|frete|cambio|producao|plantio|colheita|aversao a perda|vies de status quo|adocao\w*|frac|hrac|irac|mecanismo de acao)\b/
 const implicitIndividualAttribute=/\b(?:cultiva\w*|patrimonio|total cultivad\w*|area (?:cultivad\w*|propria)|hectares?|\d+\s*ha\b|divida (?:financeira|pendente|oculta|total|de r\$)|cpf (?:financeiro|pendente|bloqueado)|credito (?:dele|dela|bloquead\w*)|contrato (?:dele|dela|travado)|fazenda|propriedade)\b/
 const strategyInstruction=/^(?:nao\s+)?(?:abra|acompanhe|acompanhar|adapte|adaptar|apresente|apresentar|colete|coletar|confirme|confirmar|construa|construir|cruze|cruzar|defina|definir|discuta|discutir|encaminhe|encaminhar|envie|enviar|evite|evitar|fabrique|fabricar|inicie|iniciar|mantenha|manter|mostre|mostrar|pergunte|perguntar|priorize|priorizar|proponha|propor|recomende|recomendar|reduza|reduzir|registre|registrar|revise|revisar|selecione|selecionar|use|usar|valide|validar|verifique|verificar)\b/
-const genericAssertion=/\b(?:ele|ela|produtor\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:e|esta|tem|possui|carrega|mantem|demonstra|desvia|cultiva|quer|pretende|vai|parece|opera)\b/
+// A lista de verbos era so de estado e posse, e por isso todo verbo de ACAO escapava. Medido: 10 de
+// 10 frases sobre produtor individual com pronome nu - "Ele plantou soja e vendeu a producao", "Ela
+// deve ao banco e nao pagou a parcela do custeio" - passaram de barradas a entregues verbatim ao
+// consultor, rotuladas apenas como conhecimento geral do modelo. Verbo no passado com sujeito
+// pronominal e narracao de um caso individual: explicacao geral nao conta o que "ele" fez ontem.
+const genericAssertion=/\b(?:ele|ela|produtor\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:e|esta|tem|possui|carrega|mantem|demonstra|desvia|cultiva|quer|pretende|vai|parece|opera|plantou|colheu|vendeu|comprou|pagou|arrendou|contratou|assinou|reclamou|atrasou|quitou|renegociou|aplicou|entregou|recebeu|fechou|perdeu|ganhou|investiu|financiou|antecipou|travou|fixou|deixou|prometeu|aceitou|recusou|cancelou)\b/
+// "deve" e a excecao que a lista nao resolve: modal ("ele deve ser aplicado antes da floracao") e
+// explicacao geral legitima, obrigacao ("ela deve ao banco") e afirmacao sobre uma pessoa. O que
+// separa os dois e o infinitivo logo depois.
+const pronounObligation=/\b(?:ele|ela)\s+deve\b(?!\s+\w*(?:ar|er|ir)\b)/
 const safeNamedObjectFollower=new Set(['antes','como','com','depois','durante','em','na','nas','no','nos','para','por','sobre'])
 const nonNameClauseLeads=new Set(['a','ainda','basis','biblioteca','calagem','chuva','clima','como','confianca','cotacao','ctc','custo','estoque','evite','fitoscan','frete','hedge','informe','inteligencia','manual','margem','mercado','milho','na','nao','nenhum','nenhuma','nutriscan','o','perfil','ph','por','preco','priorize','producao','roi','safra','selecione','soja','sua','temperatura','trigo','use','valide','wasde'])
 // Termos que ESCOLHEM entre registros ja selecionados ("a ultima", "a proxima", "a atual") em vez
@@ -573,7 +582,7 @@ function evidenceEntries(evidence=[],scope={}){
   // pronome + verbo de estado/posse ("ele tem", "ela esta", "ele e") - medido em 8 de 8.
   const globalProducerSpecific=global&&sourceType!=='general_knowledge'&&/\b(?:este produtor|esse produtor|aquele produtor|o produtor|a produtora|do produtor|da produtora|para o produtor|para a produtora|este cliente|esse cliente|o cliente|do cliente|da cliente)\b/.test(entry.text)
   if(globalProducerSpecific)aliasConflictCodes.push('GLOBAL_PRODUCER_SPECIFIC_CLAIM')
-  if(global&&sourceType!=='general_knowledge'&&(genericAssertion.test(entry.text)||hasNamedIndividualAssertion(rawText)))aliasConflictCodes.push('GLOBAL_INDIVIDUAL_ASSERTION')
+  if(global&&sourceType!=='general_knowledge'&&(genericAssertion.test(entry.text)||pronounObligation.test(entry.text)||hasNamedIndividualAssertion(rawText)))aliasConflictCodes.push('GLOBAL_INDIVIDUAL_ASSERTION')
   if(global&&!semanticallyGeneralGlobalEvidence(entry))aliasConflictCodes.push('GLOBAL_NOT_SEMANTICALLY_GENERAL')
   if(global&&entry.producerId)aliasConflictCodes.push('GLOBAL_WITH_PRODUCER_ID')
   if(global&&!trustedGlobalSourceTypes.has(sourceType))aliasConflictCodes.push('UNTRUSTED_GLOBAL_SOURCE_TYPE')

@@ -10,12 +10,21 @@ const clean=value=>String(value??'').replace(/\s+/g,' ').trim()
 // carencia de um defensivo?", "o que e o intervalo de reentrada?", "o que e uma mistura de tanque?" -
 // recebiam o texto de pergunta incompleta, com required_inputs ["topic"], culpando o consultor por
 // uma pergunta que ele ja tinha formulado por completo. Definir um termo nao e prescrever com ele.
-const conceptWords=new Set('o a os as um uma de do da dos das em no na e ou entre versus vs que qual quais significa significado conceito conceitos definicao diferenca diferencas explique explicar me defina dose doses dosagem dosagens produto produtos comercial comerciais ingrediente ingredientes ativo ativos principio principios herbicida herbicidas fungicida fungicidas inseticida inseticidas defensivo defensivos fitossanitario fitossanitarios carencia carencias reentrada reentradas bula bulas registro registros registrado registrada registrados registradas mistura misturas tanque tanques intervalo intervalos periodo periodos seguranca agronomia agronomica agronomico diagnostico diagnosticos deficiencia deficiencias nutricional nutricionais'.split(' '))
+const conceptWords=new Set('o a os as um uma de do da dos das em no na e ou entre versus vs que qual quais significa significado conceito conceitos definicao diferenca diferencas explique explicar me defina dose doses dosagem dosagens produto produtos comercial comerciais ingrediente ingredientes ativo ativos principio principios herbicida herbicidas fungicida fungicidas inseticida inseticidas defensivo defensivos fitossanitario fitossanitarios carencia carencias reentrada reentradas bula bulas registro registros registrado registrada registrados registradas mistura misturas misturar misturabilidade tanque tanques intervalo intervalos periodo periodos seguranca agronomia agronomica agronomico diagnostico diagnosticos deficiencia deficiencias nutricional nutricionais'.split(' '))
 // Os termos que fazem o portao de entrada fechar. A isencao so vale quando a pergunta e sobre UM
 // deles como conceito.
-const regulatedConceptTerm=/\b(?:dose|doses|dosagem|dosagens|carencia|carencias|reentrada|reentradas|bula|bulas|registro|registros|registrado|registrada|registrados|registradas|mistura|misturas|diagnostico|diagnosticos)\b/
+const regulatedConceptTerm=/\b(?:dose|doses|dosagem|dosagens|carencia|carencias|reentrada|reentradas|bula|bulas|registro|registros|registrado|registrada|registrados|registradas|mistura|misturas|misturar|misturabilidade|diagnostico|diagnosticos)\b/
+// Definir um termo nao enumera aquilo sobre o que ele se aplica. "explique a mistura de herbicida e
+// inseticida no tanque" cabia inteiro na lista fechada - "mistura", "tanque", "herbicida" e
+// "inseticida" estao todos nela - e virava pedido operacional respondido com ordem de adicao. Nomear
+// o que vai ser misturado e pedir a mistura, nao a definicao dela.
+const productCategory=/\b(?:herbicida|herbicidas|fungicida|fungicidas|inseticida|inseticidas|defensivo|defensivos|fitossanitario|fitossanitarios)\b/g
+const mixtureTerm=/\b(?:mistura|misturas|misturar|misturabilidade)\b/
 export function isGeneralRegulatedConcept(message=''){
  const question=stripMessagePreamble(normalize(message)).replace(/[.!?]+$/,'').trim()
+ const categories=new Set(question.match(productCategory)||[])
+ if(categories.size>1)return false
+ if(categories.size&&mixtureTerm.test(question))return false
  // Exempt only a definition/comparison of generic terminology. Unknown brand
  // names, numbers, producer context and application verbs cannot use this path:
  // o prefixo de definicao e a lista fechada de palavras garantem as duas coisas.
@@ -28,18 +37,26 @@ export function requiresVerifiedGeneralSource(message=''){
  const source=normalize(message)
  // Product/category explanations are valid general questions. Product choice,
  // application, rates and regulatory claims still require verified evidence.
- if(isGeneralRegulatedConcept(message))return false
- return /\b(?:dose|dosagem)\b/.test(source)
+ // A isencao vale SO para as ramificacoes de terminologia regulada. Ela ja esteve no topo da funcao,
+ // como um return antecipado, e isso foi medido como buraco: a lista fechada de palavras contem
+ // "mistura", "tanque", "herbicida" e "inseticida", entao "explique a mistura de herbicida e
+ // inseticida no tanque" - pedido operacional inteiro - passava a ser respondido pelo modelo, com
+ // ordem de adicao e tudo. Preco, clima, credito e escolha de produto nunca sao "conceito" e nunca
+ // foram isentos; as tres ramificacoes abaixo sao as unicas que definir um termo dispensa.
+ const concept=isGeneralRegulatedConcept(message)
+ return !concept&&/\b(?:dose|dosagem)\b/.test(source)
   // "mistura" e "misture" estavam na lista e "misturar" nao: "posso misturar X com Y no tanque?"
-  // atravessava o portao. A forma verbal completa fecha a lacuna sem tocar no conceito, que sai
-  // antes por isGeneralRegulatedConcept.
-  ||/\b(?:mistur\w*|receita agronomica|diagnostico|aplique|prescreva|diagnostique|pulverize)\b/.test(source)
+  // atravessava o portao. A forma verbal completa fecha a lacuna.
+  ||!concept&&/\b(?:mistur\w*|receita agronomica|diagnostico|aplique|prescreva|diagnostique|pulverize)\b/.test(source)
   ||/\b(?:qual (?:e )?a composicao|quem fabrica|qual (?:e )?o (?:fabricante|ingrediente ativo|principio ativo)|o que e o produto|sobre (?:o produto|a marca))\b/.test(source)
   ||/\b(?:qual|quais|quanto|indique|recomende|devo|posso)\b.{0,80}\bprodutos?\b.{0,60}\b(?:aplicar|usar|utilizar|controlar|combater|recomenda|indica|melhor)\b/.test(source)
   ||/\b(?:qual|quais)\b.{0,30}\bprodutos?\b\s+(?:para|contra)\b/.test(source)
   ||/\b(?:posso|devo|recomende|indique)\b.{0,80}\b(?:aplicar|usar|utilizar|fungicida|herbicida|inseticida)\b/.test(source)
-  ||/\b(?:bula|registro vigente|registrado|carencia|reentrada)\b/.test(source)
-  ||/\b(?:financiamento|emprestimo|credito|taxa de juros|parcelamento)\b.{0,40}\b(?:aprovar|aprovacao|liberar|liminar|contratar|contratacao|limite)\b/.test(source)
+  ||!concept&&/\b(?:bula|registro vigente|registrado|carencia|reentrada)\b/.test(source)
+  // As formas do particpio nao casavam o infinitivo: "o financiamento vai ser aprovado?" e "o credito
+  // foi liberado?" atravessavam porque a lista tinha "aprovar" e "liberar". Lacuna pre-existente,
+  // fechada aqui porque alargar o lado que BLOQUEIA e a direcao segura.
+  ||/\b(?:financiamento|emprestimo|credito|taxa de juros|parcelamento)\b.{0,40}\b(?:aprova\w*|libera\w*|liminar|contrat\w*|limite)\b/.test(source)
   ||/\b(?:cotacao|preco atual|clima atual|previsao do tempo|quanto esta|hoje|agora)\b/.test(source)
 }
 

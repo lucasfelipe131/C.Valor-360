@@ -67,3 +67,30 @@ test('KNOW-04b — o consultor le o motivo da recusa, nao um pedido para reformu
  assert.equal(reasoning.run.status,'completed',JSON.stringify(reasoning.grounding))
  assert.deepEqual(reasoning.run.tool_result.required_inputs,[],'não há entrada faltando: a pergunta está completa')
 })
+
+
+test('KNOW-04b — a isencao de conceito nao cobre pedido de mistura, preco, clima nem credito',()=>{
+ // A isenção já esteve no topo de requiresVerifiedGeneralSource, como return antecipado, e a rodada
+ // 13 mediu o buraco: "explique a mistura de herbicida e inseticida no tanque" cabia inteiro na
+ // lista fechada de palavras e passava a ser respondido com ordem de adição.
+ for(const pergunta of [
+  'explique a mistura de herbicida e inseticida no tanque',
+  'explique a mistura de fungicida e inseticida',
+  'posso misturar herbicida e inseticida no tanque?',
+  'qual a cotacao da soja hoje?',
+  'qual a previsao do tempo para amanha?',
+  'o financiamento vai ser aprovado?',
+  'o credito foi liberado?',
+  'o emprestimo foi contratado?'
+ ])assert.equal(requiresVerifiedGeneralSource(pergunta),true,`passou e não podia: ${pergunta}`)
+})
+
+test('KNOW-04b — definir o proprio termo de mistura continua respondido',()=>{
+ // O par estava invertido: o pedido operacional passava e a definição pura era recusada com o texto
+ // de bula.
+ for(const pergunta of ['o que significa misturar em tanque?','o que e misturabilidade?','o que e uma mistura de tanque?'])
+  assert.equal(requiresVerifiedGeneralSource(pergunta),false,pergunta)
+ // Conceito de crédito continua sendo conceito.
+ for(const pergunta of ['o que e credito rural?','o que e taxa de juros?'])
+  assert.equal(requiresVerifiedGeneralSource(pergunta),false,pergunta)
+})

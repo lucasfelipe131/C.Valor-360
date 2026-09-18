@@ -201,11 +201,31 @@ const discriminating=(token,frequency)=>!conceptTerms.has(token)&&(frequency?.ge
 // e morfologico, nao uma lista de palavras: lista fechada de verbos nunca fecha, do mesmo jeito que
 // a lista de palavras de cortesia nao fechava. Substantivo desconhecido continua vetando - ele e o
 // assunto, e assunto que o acervo nao conhece nao pode ser respondido por um item qualquer.
+//
+// A primeira versao desta isencao era so morfologica - terminar em -ar/-er/-ir, menos uma lista de
+// sufixos de substantivo - e foi derrubada por medicao: 60 de 60 perguntas fora do acervo voltaram a
+// ser respondidas com item curado, fonte SRC- e confianca VERIFICADO 0.9. "qual o risco do souvenir
+// para a marca?" e "qual o risco do cesar para a marca?" recebiam o guardrail FRAC de fungicida.
+// Substantivo terminado em -ar/-er/-ir e conjunto aberto (souvenir, cancer, avatar, paladar, pomar,
+// altar) e antroponimo mais ainda (Cesar, Valter, Gilmar, Wagner): nenhuma lista de sufixo fecha.
+//
+// O sinal que separa nao e a forma da palavra, e a POSICAO dela. Em portugues, o infinitivo de uma
+// pergunta ocupa slot verbal - vem depois de "como", "por que", "para", de um modal: "como LIDAR",
+// "por que ROTACIONAR". O substantivo vem depois de determinante: "do SOUVENIR", "do VALTER". A
+// lista abaixo e de palavras gramaticais, classe fechada de verdade, nao de temas nem de verbos.
 const infinitiveEnding=/(?:ar|er|ir)$/
-// Substantivos e adjetivos comuns terminados em -ar/-er/-ir nao sao infinitivos e nao ganham a
-// isencao; sao poucos e fechados por sufixo, nao por tema.
-const verbLikeNoun=/(?:ular|iliar|olar|inar|elar|ilar|scolar|ilitar|ular|uclear|ineir)$/
-const askingVerb=token=>token.length>=5&&infinitiveEnding.test(token)&&!verbLikeNoun.test(token)
+const verbalSlotLead=new Set(['como','quando','que','porque','para','posso','pode','podemos','podera','devo','deve','devemos','quero','queremos','pretendo','pretende','preciso','precisa','precisamos','consigo','consegue','vou','vamos','sem','tentar','ajuda','serve','recomenda','costuma','costumam','vale','convem','permite','impede','evita','busco','busca'])
+// Quais infinitivos desta pergunta estao em slot verbal. Recebe o texto ja normalizado, para casar
+// com os tokens que baseTokens produz.
+function askingVerbsIn(value=''){
+ const words=String(value).split(' ').filter(Boolean)
+ const found=new Set()
+ for(let index=1;index<words.length;index+=1){
+  const word=words[index]
+  if(word.length>=5&&infinitiveEnding.test(word)&&verbalSlotLead.has(words[index-1]))found.add(singular(word))
+ }
+ return found
+}
 const genericTopicTerms=new Set(['aplicacao','aplicacoes','cultura','cultivo','opcao','opcoes','funcao','papel','efeito','efeitos','vantagem','desvantagem','diferenca','corrigido'])
 
 // Lexical overlap with "milho" or "aplicação" is insufficient if the answer
@@ -374,7 +394,8 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
  const excludedReasonCounts={}
  const ranked=[]
  const corpusFrequency=corpusVocabulary(source)
- const unknownTokens=[...queryBaseTokens].filter(token=>token.length>=5&&!corpusFrequency.has(token)&&!genericTopicTerms.has(token)&&!askingVerb(token))
+ const askingVerbs=askingVerbsIn(question)
+ const unknownTokens=[...queryBaseTokens].filter(token=>token.length>=5&&!corpusFrequency.has(token)&&!genericTopicTerms.has(token)&&!askingVerbs.has(token))
  const unknownTopic=unknownTokens.length>0
  const offDomainQuestion=!corpusKnowsQuestion(queryBaseTokens,corpusFrequency)||cappedLimit===1&&unknownTopic
 

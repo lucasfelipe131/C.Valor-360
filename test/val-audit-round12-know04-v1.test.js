@@ -45,3 +45,30 @@ test('KNOW-04 — afirmacao sobre produtor individual continua barrada em eviden
   ['o que e risco de credito?','O produtor esta inadimplente desde a safra passada.']
  ])assert.equal(avaliar(pergunta,resposta).blocked===true,true,`passou e não podia: ${resposta}`)
 })
+
+
+test('KNOW-04 — pronome nu com verbo de ACAO continua barrado em evidencia global',()=>{
+ // A rodada 13 mediu o custo de ter apoiado a remoção do pronome nu só em genericAssertion: a lista
+ // de verbos era de estado e posse, então todo verbo de ação escapava — 10 de 10 frases sobre
+ // produtor individual passaram a ser entregues verbatim ao consultor como "conhecimento geral".
+ for(const [pergunta,resposta] of [
+  ['o que e custeio?','Ele plantou soja e vendeu a producao antecipada.'],
+  ['o que e colheita?','Ela colheu a soja e entregou o lote na cooperativa.'],
+  ['o que e inadimplencia?','Inadimplencia no custeio e o nao pagamento da parcela no vencimento. Ela deve ao banco e nao pagou a parcela do custeio.'],
+  ['o que e arrendamento?','Ele arrendou area do vizinho e assumiu o custo.'],
+  ['o que e terceirizacao?','Ela contratou a pulverizacao terceirizada.'],
+  ['o que e objecao?','Ele reclamou do preco da proposta.'],
+  ['o que e contrato?','Ela assinou o contrato de compra na semana passada.'],
+  ['o que e barter?','Ele fechou barter e antecipou a entrega de insumo.'],
+  ['o que e hedge?','Ela travou preco e fixou 40% da producao.'],
+  ['o que e renegociacao?','Ele renegociou a divida e quitou duas parcelas.']
+ ])assert.equal(avaliar(pergunta,resposta).blocked===true,true,`passou e não podia: ${resposta}`)
+})
+
+test('KNOW-04 — "deve" modal continua sendo explicacao geral, nao obrigacao de pessoa',()=>{
+ // "ela deve ao banco" é afirmação sobre alguém; "ele deve ser aplicado" é explicação. O que separa
+ // os dois é o infinitivo logo depois — não uma lista de assuntos.
+ assert.equal(avaliar('o que e um fungicida sistemico?','Um fungicida sistemico e absorvido pela planta. Ele deve ser aplicado antes do fechamento das linhas para alcancar o terco inferior.').blocked===true,false)
+ assert.equal(avaliar('o que e monitoramento?','O monitoramento e a amostragem periodica da lavoura. Ele deve comecar antes do fechamento do dossel.').blocked===true,false)
+ assert.equal(avaliar('o que e inadimplencia?','Ela deve ao banco desde a safra passada.').blocked===true,true)
+})

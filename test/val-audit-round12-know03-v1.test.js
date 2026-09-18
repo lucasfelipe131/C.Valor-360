@@ -47,7 +47,11 @@ test('KNOW-03 — assunto que o acervo nao conhece continua sem resposta da Bibl
 })
 
 test('KNOW-03 — substantivo terminado em -ar/-er/-ir nao ganha a isencao de verbo',()=>{
- // A isenção é morfológica; estes casos existem para que ela não vire um buraco.
+ // A isenção é posicional. A primeira versão era morfológica (sufixo de infinitivo menos uma lista
+ // de sufixos de substantivo) e a rodada 13 a derrubou: 60 de 60 perguntas fora do acervo voltaram a
+ // ser respondidas com item curado, fonte SRC- e VERIFICADO 0.9 — "qual o risco do souvenir para a
+ // marca?" recebia o guardrail FRAC de fungicida. Substantivo em -ar/-er/-ir é conjunto aberto e
+ // nenhuma lista de sufixo fecha sobre ele.
  for(const pergunta of [
   'como configurar o celular corporativo da equipe?',
   'qual o calendário escolar do município?',
@@ -64,4 +68,26 @@ test('KNOW-03 — substantivo de assunto ausente do acervo continua vetando a pe
  // "amostragem" não está no vocabulário da Biblioteca. O portão segue valendo para substantivo:
  // é o assunto, e assunto ausente não pode ser respondido por um item qualquer.
  assert.equal(perguntar('por que a amostragem de solo precisa respeitar a camada?'),null)
+})
+
+
+test('KNOW-03 — substantivo e antroponimo em posicao de assunto nunca sao isentos',()=>{
+ // Corpus do ataque da rodada 13: o termo desconhecido é O ASSUNTO da pergunta, depois de
+ // determinante. Antroponimo é conjunto aberto — Cesar, Valter, Gilmar, Wagner terminam em -ar/-er.
+ const substantivos=['souvenir','cancer','revolver','hamster','caviar','jaguar','container','poster','talher','elixir','menir','nectar','paladar','avatar','bazar','altar','pomar','milhar','jantar','manjar']
+ const nomes=['cesar','valter','gilmar','gleyber','wagner','wilmar','edinar']
+ const moldes=['qual o risco do %s para a marca?','qual a margem do %s na venda?','qual o peso do %s na compra?']
+ for(const termo of [...substantivos,...nomes]){
+  for(const molde of moldes){
+   const pergunta=molde.replace('%s',termo)
+   const item=perguntar(pergunta)
+   assert.equal(item,null,`respondeu "${pergunta}" com ${item?.knowledge_item_id} "${item?.title}"`)
+  }
+ }
+})
+
+test('KNOW-03 — o infinitivo so e isento no slot verbal, nao em qualquer posicao',()=>{
+ // "como LIDAR" e "por que ROTACIONAR" são forma de perguntar; "do SOUVENIR" é assunto.
+ assert.ok(perguntar('como lidar com resistência de plantas daninhas?'),'slot verbal preservado')
+ assert.equal(perguntar('qual o lidar da resistência de plantas daninhas?'),null,'mesma palavra fora do slot verbal continua vetando')
 })
