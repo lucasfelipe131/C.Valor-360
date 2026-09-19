@@ -357,9 +357,23 @@ export function rehomeResolvedProducerExchange({threads={},sourceThreadKey='',ta
 }
 
 /** Epoch confirmado pela resposta de backend mais recente do escopo ativo. */
+// A epoca corrente e a ULTIMA que o servidor declarou, nao a do turno mais novo que esta na tela. As
+// duas coincidiam enquanto turno antigo ficava escondido; com a exibicao por dono, a resposta da
+// epoca anterior voltou a aparecer e passou a mandar aqui - e o efeito que grava threadMetadata
+// desfazia a sincronizacao que o servidor tinha acabado de impor no 409 da sessao de voz. Resultado
+// medido: o consultor fala, a VAL responde por voz, e NADA entra no fio, sem erro e sem aviso,
+// porque o portao de escopo do transcrito compara com uma epoca velha.
+// O metadado do fio e escrito nos dois lugares em que o servidor se pronuncia - a cada resposta e no
+// onContextSync - entao ele e a declaracao mais recente. A varredura dos turnos continua valendo
+// quando nao ha declaracao nenhuma, que e o caso de um fio restaurado do armazenamento.
 export function conversationContextEpoch(turns=[],scope={}){
  const conversationId=clean(scope.conversationId,180)
  const producerId=clean(scope.producerId??scope.clientId,180)
+ if(own(scope,'fallbackContextEpoch')){
+  const declared=exactEpoch(scope.fallbackContextEpoch)
+  if(declared===null)throw followUpScopeError('contextEpoch','invalid','fallbackContextEpoch')
+  return declared
+ }
  for(const turn of [...(Array.isArray(turns)?turns:[])].reverse()){
   if(turn?.role!=='assistant'||!turn?.payload)continue
   const candidate=normalizeCompletedAssistantTurn(turn)

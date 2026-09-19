@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import {readFileSync} from 'node:fs'
-import {conversationTurnVisibleInScope,readConversationWorkspace,responseCardActionMatchesScope,writeConversationWorkspace} from '../src/lib/full-screen-conversation.js'
+import {conversationContextEpoch,conversationTurnVisibleInScope,readConversationWorkspace,responseCardActionMatchesScope,writeConversationWorkspace} from '../src/lib/full-screen-conversation.js'
 
 // CONV-02. Mudar de assunto na mesma conversa sobe o context_epoch no servidor (clearedDomainOverlay)
 // e troca o domain. O filtro de visibilidade exigia igualdade nas SEIS dimensoes, entao as respostas
@@ -70,4 +70,19 @@ test('CONV-02 — o card do assunto anterior nao oferece acao que o portao vai r
  assert.match(copiloto,/Leitura de um assunto anterior desta conversa/,'e diz ao consultor o que está vendo')
  // O portão de ação em si não pode ter sido afrouxado para isso.
  assert.match(copiloto,/responseCardActionMatchesScope\(responseScope,activeScope\)/)
+})
+
+
+test('CONV-02 — a epoca corrente e a ultima que o servidor declarou, nao a do turno visivel',()=>{
+ // Medido na rodada 13: com a resposta da época anterior visível de novo, o epoch derivado da tela
+ // voltava a 0 e DESFAZIA a sincronização que o servidor tinha imposto no 409 da sessão de voz. O
+ // consultor falava, a VAL respondia por voz, e nada entrava no fio — sem erro e sem aviso.
+ const anterior=resposta(0,'AGRONOMY','Leitura do assunto anterior.')
+ const escopo={conversationId,producerId}
+ // Sem declaração do servidor, vale o turno mais recente visível.
+ assert.equal(conversationContextEpoch([anterior],escopo),0)
+ // Com declaração do servidor (o metadado do fio), ela manda — é informação mais nova que o turno.
+ assert.equal(conversationContextEpoch([anterior],{...escopo,fallbackContextEpoch:1}),1)
+ // E um turno com época que a conversa nunca alcançou não empurra a época para a frente.
+ assert.equal(conversationContextEpoch([resposta(9,'AGRONOMY','Turno adulterado.')],{...escopo,fallbackContextEpoch:1}),1)
 })
