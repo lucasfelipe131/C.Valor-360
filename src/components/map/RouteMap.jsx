@@ -83,7 +83,9 @@ export default function RouteMap({visits=[],clients=[],storageScope='',initialSt
    if(previous){
     const seconds=(Date.parse(point.timestamp)-Date.parse(previous.timestamp))/1000
     const salto=implausibleGroundStep(pathDistance([previous,point]),seconds)
-    if(seconds>120||salto){if(salto)discarded+=1;if(points.length>1)segments.push(points);points=[]}
+    // Acima de 120 s o corte ja veio do intervalo, nao do salto: contar os dois divergia do painel do
+  // gestor, que so conta descarte por velocidade impossivel. Mesmo numero nos dois lugares.
+  if(seconds>120||salto){if(salto&&seconds<=120)discarded+=1;if(points.length>1)segments.push(points);points=[]}
    }
    points.push(point)
   }

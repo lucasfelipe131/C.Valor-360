@@ -17,8 +17,11 @@ const sections=[
 
 export function buildOptionMap(){return matrix.reduce((map,item)=>{(map[item.Pergunta]??=[]).push(item.Alternativa);return map},{})}
 
-export default function SurveyForm({initialAnswers={},producerName='',onSubmit,embedded=false,submitLabel='Enviar respostas',onDirtyChange}){
- const draftScope=activeStorageScope()
+export default function SurveyForm({initialAnswers={},producerName='',onSubmit,embedded=false,submitLabel='Enviar respostas',onDirtyChange,draftScope:scopeOverride}){
+ // O questionario publico nao tem sessao, entao activeStorageScope() nao tem o que devolver e o
+ // rascunho nao era gravado: o produtor perdia as 45 respostas em qualquer recarga. Ele ja tem um
+ // escopo - o token que esta na URL. A aplicacao assistida nao passa a prop e segue como antes.
+ const draftScope=scopeOverride??activeStorageScope()
  const restored=useMemo(()=>readSurveyDraft(draftScope),[draftScope])
  const [step,setStep]=useState(0)
  const seedSignature=JSON.stringify({initialAnswers,producerName})

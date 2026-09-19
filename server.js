@@ -1085,12 +1085,20 @@ async function handleApi(request,response,url){
  }
  const surveyMatch=url.pathname.match(/^\/api\/surveys\/([a-zA-Z0-9_-]+)$/)
  if(surveyMatch&&request.method==='GET'){
-  if(!consumeRateLimit('survey',requestIdentity(request),60))return json(response,429,{error:'Muitas tentativas. Aguarde alguns minutos.'})
-  const survey=await repository.getSurvey(surveyMatch[1]);if(!survey)return json(response,404,{error:'Este convite não foi encontrado.'});if(survey.expiresAt&&new Date(survey.expiresAt)<new Date())return json(response,410,{error:'Este convite expirou.'});return json(response,200,{token:survey.token,producerName:survey.producerName,consultantName:survey.consultantName,status:survey.status,createdAt:survey.createdAt,expiresAt:survey.expiresAt})
+  // O balde era por endereco de socket e era cobrado ANTES de saber se o token existe. Atras de um
+  // CDN, de um NAT de cooperativa ou do wi-fi de um escritorio, todos os produtores compartilham o
+  // mesmo endereco: 60 tentativas de UMA maquina desligavam o questionario para todos eles, e o
+  // produtor legitimo pagava a cota gasta pela adivinhacao alheia. Quem gasta o balde agora e so o
+  // token DESCONHECIDO, que e o comportamento de quem esta adivinhando.
+  const survey=await repository.getSurvey(surveyMatch[1])
+  if(!survey){if(!consumeRateLimit('survey-miss',requestIdentity(request),60))return json(response,429,{error:'Muitas tentativas. Aguarde alguns minutos.'});return json(response,404,{error:'Este convite não foi encontrado.'})}
+  if(survey.expiresAt&&new Date(survey.expiresAt)<new Date())return json(response,410,{error:'Este convite expirou.'});return json(response,200,{token:survey.token,producerName:survey.producerName,consultantName:survey.consultantName,status:survey.status,createdAt:survey.createdAt,expiresAt:survey.expiresAt})
  }
  const submitMatch=url.pathname.match(/^\/api\/surveys\/([a-zA-Z0-9_-]+)\/submit$/)
  if(submitMatch&&request.method==='POST'){
-  if(!consumeRateLimit('survey-submit',requestIdentity(request),20))return json(response,429,{error:'Muitas tentativas. Aguarde alguns minutos.'})
+  // Por TOKEN, nao por endereco: um convite so pode ser respondido algumas vezes, e isso nao pode
+  // depender de quem mais esta atras do mesmo IP.
+  if(!consumeRateLimit('survey-submit',submitMatch[1],20))return json(response,429,{error:'Muitas tentativas. Aguarde alguns minutos.'})
   const payload=await body(request)
   const answers=validatedSurveyAnswers(payload.answers)
   const survey=await repository.submitSurvey({token:submitMatch[1],answers,result:calculateProfile(answers,profileMatrix,'Questionário externo validado no servidor')});return json(response,200,{saved:true,status:survey.status})
