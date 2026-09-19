@@ -2219,7 +2219,7 @@ export class ValRepository{
     tenantId=assertTenantScope(this.tenantId,tenantId)
     if(!this.db.configured)return {persisted:false}
     const archivedSkipped=[]
-    let orphanEvents=0
+    let orphanEvents=0,unrecognizedOutcome=0,unrecognizedDate=0,persistedEvents=0
     try{
       await this.db.transaction(async connection=>{
         await connection.query(`INSERT INTO import_jobs (id,tenant_id,owner_user_id,source_type,file_name,status,row_count,recognized_count,summary,completed_at) VALUES ($1,$2,$3,'commercial_history',$4,'completed',$5,$6,$7,NOW()) ON CONFLICT (id) DO NOTHING`,[summary.id,tenantId,ownerId,summary.fileName,summary.rowCount,clients.length,jsonbParameter(summary)])
@@ -2232,14 +2232,20 @@ export class ValRepository{
         for(const row of archivedRows.rows||[])if(!archivedSkipped.includes(row.external_key))archivedSkipped.push(row.external_key)
         for(const externalKey of lockKeys)await connection.query(`SELECT pg_advisory_xact_lock(hashtextextended($1::text||':'||$2::text||':'||$3::text,0))`,[tenantId,ownerId,externalKey])
         for(const item of importedClients){const area=parseCultivatedArea(item.area);const externalKey=String(item.id||'').slice(0,180);if(archivedSkipped.includes(externalKey))continue;const upserted=await connection.query(`INSERT INTO clients (tenant_id,consultant_id,external_key,name,municipality,total_area_ha,area_band,commercial_profile,status,source,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active','commercial_import',NOW()) ON CONFLICT (tenant_id,consultant_id,external_key) DO UPDATE SET name=EXCLUDED.name,municipality=COALESCE(EXCLUDED.municipality,clients.municipality),total_area_ha=COALESCE(EXCLUDED.total_area_ha,clients.total_area_ha),area_band=COALESCE(EXCLUDED.area_band,clients.area_band),commercial_profile=(clients.commercial_profile||EXCLUDED.commercial_profile)||CASE WHEN clients.commercial_profile?'property' THEN jsonb_build_object('property',clients.commercial_profile->'property') ELSE '{}'::jsonb END,updated_at=NOW() RETURNING id,external_key,status`,[tenantId,ownerId,externalKey,String(item.name||'').slice(0,180),importedMunicipality(item.municipality),area.totalAreaHa,area.areaBand,jsonbParameter(derivedCommercial(item.commercial||{}))]);if(String(upserted.rows[0].status||'active')==='archived'){archivedSkipped.push(upserted.rows[0].external_key);continue}clientInternalIds.set(upserted.rows[0].external_key,upserted.rows[0].id)}
-        const clientKeys=new Map(clients.map(item=>[normalize(item.name),item.id]))
+        // A chave gravada em clients.external_key e fatiada em 180; aqui ela ficava inteira, entao
+        // razao social longa nunca casava e TODAS as compras daquele produtor viravam orfas - o
+        // cadastro entrava vazio e a tela declarava sucesso.
+        const clientKeys=new Map(clients.map(item=>[normalize(item.name),String(item.id||'').slice(0,180)]))
         // external_id derivado do conteúdo (não do id do job): reenviar a mesma planilha atualiza os
         // eventos pelo ON CONFLICT em vez de duplicar as compras a cada importação.
         const fingerprints=new Map()
         for(let index=0;index<rows.slice(0,5000).length;index++){
           const row=rows[index]||{};const name=String(row[mapping.client]||'').trim();if(!name)continue
           const status=mapping.status?row[mapping.status]:null;const eventOutcome=outcome(status);const occurredAt=parsedDate(mapping.date?row[mapping.date]:null)
-          if(!eventOutcome||!occurredAt)continue
+          // Nao inventar resultado para linha sem status ou sem data e a decisao certa. Contar quantas
+          // foram descartadas, e por que, e o que faltava: a tela dizia "REGISTROS INCORPORADOS 120"
+          // com zero compras no banco, e o Cliente 360 do mesmo produtor mostrava R$ 0.
+          if(!eventOutcome||!occurredAt){if(!eventOutcome)unrecognizedOutcome+=1;else unrecognizedDate+=1;continue}
           const safeRow={client:name.slice(0,180),value:row[mapping.value]??null,date:row[mapping.date]??null,product:String(row[mapping.product]||'').slice(0,180)||null,status:String(status||'').slice(0,240)||null,municipality:String(row[mapping.municipality]||'').slice(0,140)||null,culture:String(row[mapping.culture]||'').slice(0,160)||null,area:row[mapping.area]??null}
           const externalKey=clientKeys.get(normalize(name))||normalize(name).replace(/\s+/g,'-').slice(0,180)
           if(archivedSkipped.includes(externalKey))continue
@@ -2248,14 +2254,20 @@ export class ValRepository{
           const resolvedImportClientId=clientInternalIds.get(externalKey)
           if(!resolvedImportClientId){orphanEvents++;continue}
           const occurredIso=new Date(occurredAt).toISOString()
-          const fingerprint=createHash('sha256').update(JSON.stringify([tenantId,ownerId,externalKey,occurredIso,safeRow.product||'',String(safeRow.value??''),eventOutcome,safeRow.status||''])).digest('hex').slice(0,40)
+          // A impressao digital carregava valor, resultado e status - justamente os campos que o consultor
+          // corrige na planilha antes de reimportar. Com eles na chave, o ON CONFLICT DO UPDATE logo abaixo
+          // nunca casava e a correcao criava um SEGUNDO evento: a venda de 10 mil virava 25 mil e
+          // "negocios reconhecidos" virava 2 para uma venda so. A chave e a identidade da linha; o ordinal
+          // continua separando duas vendas reais do mesmo produto no mesmo dia.
+          const fingerprint=createHash('sha256').update(JSON.stringify([tenantId,ownerId,externalKey,occurredIso,safeRow.product||''])).digest('hex').slice(0,40)
           const ordinal=(fingerprints.get(fingerprint)||0)+1;fingerprints.set(fingerprint,ordinal)
           const eventExternalId=`commercial_import:${fingerprint}:${ordinal}`
           await connection.query(`INSERT INTO business_events (tenant_id,owner_user_id,client_id,client_external_key,source,external_id,occurred_at,outcome,category,product,value,currency,loss_reason,payload)
-            VALUES ($1,$12,$2,$3,'commercial_import',$4,$5,$6,$7,$8,$9,'BRL',$10,$11) ON CONFLICT (tenant_id,owner_user_id,source,external_id) DO UPDATE SET client_id=EXCLUDED.client_id,client_external_key=EXCLUDED.client_external_key,occurred_at=EXCLUDED.occurred_at,outcome=EXCLUDED.outcome,category=EXCLUDED.category,product=EXCLUDED.product,value=EXCLUDED.value,loss_reason=EXCLUDED.loss_reason,payload=EXCLUDED.payload`,[tenantId,resolvedImportClientId,externalKey,eventExternalId,occurredAt,eventOutcome,String(row[mapping.product]||'').trim()||null,String(row[mapping.product]||'').trim()||null,parseMoney(row[mapping.value]),eventOutcome==='lost'?String(status||'').slice(0,240):null,jsonbParameter(safeRow),ownerId])
+            VALUES ($1,$12,$2,$3,'commercial_import',$4,$5,$6,$7,$8,$9,'BRL',$10,$11) ON CONFLICT (tenant_id,owner_user_id,source,external_id) DO UPDATE SET client_id=EXCLUDED.client_id,client_external_key=EXCLUDED.client_external_key,occurred_at=EXCLUDED.occurred_at,outcome=EXCLUDED.outcome,category=EXCLUDED.category,product=EXCLUDED.product,value=EXCLUDED.value,loss_reason=EXCLUDED.loss_reason,payload=EXCLUDED.payload`,[tenantId,resolvedImportClientId,externalKey,eventExternalId,occurredAt,eventOutcome,String(row[mapping.product]||'').trim().slice(0,140)||null,String(row[mapping.product]||'').trim().slice(0,180)||null,parseMoney(row[mapping.value]),eventOutcome==='lost'?String(status||'').slice(0,240):null,jsonbParameter(safeRow),ownerId])
+          persistedEvents+=1
         }
       })
-      return {persisted:true,rawRows:Math.min(rows.length,5000),truncated:Boolean(summary.truncated),persistedClientCount:Math.min(clients.length,2000)-archivedSkipped.length,clientsTruncated:clients.length>2000,archivedSkipped,skippedEventCount:orphanEvents,clientLimit:2000}
+      return {persisted:true,rawRows:Math.min(rows.length,5000),truncated:Boolean(summary.truncated),persistedClientCount:Math.min(clients.length,2000)-archivedSkipped.length,clientsTruncated:clients.length>2000,archivedSkipped,skippedEventCount:orphanEvents,clientLimit:2000,persistedEventCount:persistedEvents,unrecognizedOutcomeCount:unrecognizedOutcome,unrecognizedDateCount:unrecognizedDate}
     }catch{throw serviceError('A importação não pôde ser persistida no PostgreSQL configurado.')}
   }
 }
