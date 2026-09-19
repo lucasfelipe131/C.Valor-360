@@ -419,7 +419,7 @@ export default function App(){
     {page==='opportunities'&&<Opportunities key={copilotOwnerScope} currentUser={currentUser} visits={visits} workspaceContext={workspaceContext} onNavigate={navigate} onPrepare={prepareClient} externalCopilotSeed={copilotSeed} onRefreshPortfolio={refreshPortfolio} loadError={portfolioError} clients={clientList} storageScope={currentUser?.storageScope} persistedItems={opportunities} onPersist={saveOpportunity} onClient={openClient} onAsk={openCopilot} onContextChange={updateCopilotPageContext} onSaved={notify}/>}
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
     {page==='management'&&<Management currentUser={currentUser} onConfigure={()=>navigate('admin')}/>}
-    {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
+    {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} loadError={portfolioError} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
     {page==='admin'&&currentUser?.role==='admin'&&<Admin currentUser={currentUser} onNotify={notify}/>}
     </Suspense>
     </RouteBoundary>

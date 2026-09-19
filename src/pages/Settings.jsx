@@ -5,6 +5,8 @@ import {
  LogOut,RefreshCw,Server,ShieldCheck,Trash2,UserCog,Zap
 } from 'lucide-react'
 import {buildOpportunityWorkspace} from '../lib/opportunity-workspace'
+import {clearCopilotSessionStorage} from '../lib/copilot-session-storage'
+import {clearSurveyDraft} from '../lib/survey-draft.js'
 import {opportunityCacheKey} from '../lib/opportunity-pipeline'
 
 function displayValue(value,fallback='Não informado'){
@@ -45,7 +47,7 @@ function databaseState(value,error){
  return {label:'PostgreSQL indisponível',detail:value.error||'Revise a conexão do banco.',ready:false}
 }
 
-export default function Settings({clients,visits,opportunities=[],currentUser,onLogout,onNotify}){
+export default function Settings({clients,visits,opportunities=[],currentUser,onLogout,onNotify,loadError=''}){
  const [valStatus,setValStatus]=useState({loading:true,data:null,error:''})
  const scopedOpportunityKey=opportunityCacheKey(currentUser?.storageScope)
 
@@ -66,10 +68,17 @@ export default function Settings({clients,visits,opportunities=[],currentUser,on
  const backup=()=>{
   // O backup exporta o que o consultor vê no quadro: pelo cache do navegador, as oportunidades
   // criadas na tela de Oportunidades saíam de fora do arquivo.
+  // Fecha-se em duvida: exportar a carteira vazia de quem tem carteira e pior que nao exportar.
+  if(loadError){onNotify?.('A carteira não carregou. O backup não foi gerado para não salvar um arquivo vazio.');return}
   const payload={version:'0.4.0',exportedAt:new Date().toISOString(),clients,visits,opportunities:buildOpportunityWorkspace(clients,opportunities)}
   const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='valor360-backup.json';a.click();URL.revokeObjectURL(url);onNotify?.('Backup do piloto gerado com sucesso.')
  }
- const clear=()=>{if(window.confirm('Limpar rascunhos e dados locais deste dispositivo? Os registros do PostgreSQL não serão apagados.')){for(const key of ['valor360-clients','valor360-visits','valor360-opportunities',scopedOpportunityKey])if(key)localStorage.removeItem(key);Object.keys(localStorage).filter(key=>key.startsWith('valor360-tech-')||key.startsWith('valor360-client-context:')).forEach(key=>localStorage.removeItem(key));Object.keys(sessionStorage).filter(key=>key.startsWith('valor360-tech-')).forEach(key=>sessionStorage.removeItem(key));window.location.reload()}}
+ // O botao promete "limpar rascunhos e dados locais deste dispositivo" e deixava no aparelho as
+ // duas coisas mais sensiveis que a VAL guarda: a conversa inteira do copiloto e o rascunho do
+ // questionario do produtor. O cenario e o obvio - emprestar o tablet no escritorio da fazenda,
+ // devolver o aparelho, deixar a maquina com o colega -, e a tela recarrega dando tudo por feito.
+ // 'valor360-pending-logout' NAO sai daqui: e marcador de saida pendente e precisa sobreviver.
+ const clear=()=>{if(window.confirm('Limpar rascunhos e dados locais deste dispositivo? Os registros do PostgreSQL não serão apagados.')){for(const key of ['valor360-clients','valor360-visits','valor360-opportunities',scopedOpportunityKey])if(key)localStorage.removeItem(key);Object.keys(localStorage).filter(key=>key.startsWith('valor360-tech-')||key.startsWith('valor360-client-context:')).forEach(key=>localStorage.removeItem(key));Object.keys(sessionStorage).filter(key=>key.startsWith('valor360-tech-')).forEach(key=>sessionStorage.removeItem(key));clearCopilotSessionStorage(sessionStorage,{storageScope:currentUser?.storageScope});clearSurveyDraft(currentUser?.storageScope||sessionStorage.getItem('valor360-active-storage-scope'));window.location.reload()}}
 
  const statusKnown=Boolean(valStatus.data)&&!valStatus.error
  const keyConfigured=statusKnown?Boolean(valStatus.data?.keyConfigured??valStatus.data?.aiConfigured):null
@@ -111,7 +120,12 @@ export default function Settings({clients,visits,opportunities=[],currentUser,on
 
   <section className="settings-grid">
    <article className="panel setting-card"><div className="setting-icon"><UserCog/></div><h3>Meu perfil</h3><ProfileEditor/><div className="user-setting"><div className="user-avatar">{accountInitials}</div><div><b>{accountLabel}</b><span>{currentUser?.demo?'Modo demonstrativo sem credencial configurada':'Acesso protegido do piloto'}</span></div></div><button className="soft-btn danger-text" onClick={onLogout}><LogOut size={16}/>Encerrar sessão</button></article>
-   <article className="panel setting-card"><div className="setting-icon green-icon"><Database/></div><h3>Dados da operação</h3><dl className="setting-list"><div><dt>Produtores</dt><dd>{clients.length}</dd></div><div><dt>Visitas</dt><dd>{visits.length}</dd></div><div><dt>Backup local</dt><dd>JSON não criptografado</dd></div></dl><button className="soft-btn" onClick={backup}><Download size={16}/>Baixar backup JSON</button></article>
+   {/* Quando a carteira nao carrega, App zera as listas - decisao correta, nao inventar dado. O erro
+       so nao chegava ate aqui, entao a tela AFIRMAVA "Produtores 0 / Visitas 0" para quem tem a
+       carteira inteira no PostgreSQL, e logo abaixo mandava exportar antes de limpar o aparelho.
+       O backup saia com cinco linhas anunciando "gerado com sucesso". Sem numero e melhor que
+       numero errado, e com a carteira nao carregada o backup fica bloqueado. */}
+   <article className="panel setting-card"><div className="setting-icon green-icon"><Database/></div><h3>Dados da operação</h3><dl className="setting-list"><div><dt>Produtores</dt><dd>{loadError?'—':clients.length}</dd></div><div><dt>Visitas</dt><dd>{loadError?'—':visits.length}</dd></div><div><dt>Backup local</dt><dd>JSON não criptografado</dd></div></dl>{loadError&&<p className="setting-warning" role="alert">A carteira não carregou, então estes números não são a sua operação. O backup fica indisponível até a carteira voltar.</p>}<button className="soft-btn" onClick={backup} disabled={Boolean(loadError)}><Download size={16}/>Baixar backup JSON</button></article>
    <article className="panel setting-card"><div className="setting-icon cyan-icon"><ShieldCheck/></div><h3>Governança da VAL</h3><ul className="guardrail-list"><li><CheckCircle2/>Premissas e confiança visíveis</li><li><CheckCircle2/>Evidências rastreáveis</li><li><CheckCircle2/>Decisão final do consultor</li><li><CheckCircle2/>Sem inventar dado agronômico</li></ul><span className="version-chip">VAL Engine • ambiente controlado</span></article>
   </section>
 

@@ -223,6 +223,14 @@ export class AccessRepository{
     if(!validPassword(newPassword))throw domainError('A nova senha precisa ter de 8 a 72 caracteres, com maiúscula, minúscula e número.')
     const current=await this.db.query(`SELECT password_hash FROM users WHERE id=$1 LIMIT 1`,[actor.id])
     if(!current.rowCount||!await verifyPassword(currentPassword,current.rows[0].password_hash))throw domainError('A senha atual não confere.')
+    // A senha temporaria e entregue por fora do produto - WhatsApp, e-mail, papel - e a tela de
+    // Primeiro Acesso promete em texto que ela "sera invalidada assim que a troca for concluida".
+    // Repetir a mesma string nos dois campos era aceito: a credencial que circulou no grupo do
+    // escritorio continuava valendo, e os dois lugares que deveriam avisar diziam o contrario - a
+    // tela dava a troca por concluida e o painel de Acessos parava de marcar primeiro acesso.
+    // A comparacao e contra o HASH guardado, nao contra a string currentPassword: e a fonte
+    // autoritativa e pega o reuso mesmo que o cliente mande os campos de outro jeito.
+    if(await verifyPassword(newPassword,current.rows[0].password_hash))throw domainError('A nova senha precisa ser diferente da senha atual.')
     const updated=await this.db.query(`UPDATE users SET password_hash=$1,must_change_password=false,session_version=session_version+1,updated_at=NOW() WHERE id=$2 RETURNING *`,[await hashPassword(newPassword),actor.id])
     return accountFromRow({...updated.rows[0],role:actor.role},this.tenantId)
   }
