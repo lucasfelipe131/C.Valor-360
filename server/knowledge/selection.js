@@ -79,7 +79,7 @@ const exclusiveConceptGroups=Object.freeze([
 
 function tokens(value){
  const result=new Set()
- for(const raw of normalizeSearchText(value).split(' ')){
+ for(const raw of contentText(value).split(' ')){
   if(raw.length<3||stopWords.has(raw))continue
   const token=singular(raw)
   result.add(token)
@@ -93,11 +93,26 @@ function tokens(value){
 // so casa com sinonimo generico.
 function baseTokens(value){
  const result=new Set()
- for(const raw of normalizeSearchText(value).split(' ')){
+ for(const raw of contentText(value).split(' ')){
   if(raw.length<3||stopWords.has(raw))continue
   result.add(singular(raw))
  }
  return result
+}
+
+// These are grammatical relations, not subjects. A rare connective such as
+// "diante da" must not outrank the noun phrase it introduces in strict subject
+// coverage. Apply the same tokenization to query and corpus, without adding
+// domain terms, answers or item IDs to a query whitelist.
+function contentText(value){
+ const words=normalizeSearchText(value).split(' ')
+ const relations=new Map([
+  ['diante',new Set(['de','da','das','do','dos'])],
+  ['acerca',new Set(['de','da','das','do','dos'])],
+  ['frente',new Set(['a','as','ao','aos'])],
+  ['atraves',new Set(['de','da','das','do','dos'])]
+ ])
+ return words.filter((word,index)=>!relations.get(word)?.has(words[index+1])).join(' ')
 }
 
 function exclusiveConcepts(value){
@@ -222,7 +237,7 @@ function askingVerbsIn(value=''){
  const found=new Set()
  for(let index=1;index<words.length;index+=1){
   const word=words[index]
-  if(word.length>=5&&infinitiveEnding.test(word)&&verbalSlotLead.has(words[index-1]))found.add(singular(word))
+  if(word.length>=4&&infinitiveEnding.test(word)&&verbalSlotLead.has(words[index-1]))found.add(singular(word))
  }
  return found
 }
@@ -238,7 +253,7 @@ export function generalAnswerTopicMatches(question,answer){
  return anchors.every(anchor=>answerWords.some(word=>word===anchor||word.length>=5&&word.slice(0,5)===anchor.slice(0,5)))&&!conceptConflict(exclusiveConcepts(question),exclusiveConcepts(answer))
 }
 
-function scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens=new Set(),normalizedQuery='',corpusFrequency,queryConcepts,requestedModules,requestedGeography,sourceById,now,strictSubject=false}){
+function scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens=new Set(),normalizedQuery='',corpusFrequency,queryConcepts,requestedModules,requestedGeography,sourceById,now,askingVerbs=new Set(),strictSubject=false}){
  const reasonCodes=[]
  if(!item.retrieval_eligible)return {eligible:false,reason:item.prompt_safety==='BLOCKED'?'PROMPT_INJECTION_BLOCKED':'STATUS_NOT_ELIGIBLE'}
  if(item.status!=='APPROVED')return {eligible:false,reason:'STATUS_NOT_APPROVED'}
@@ -273,7 +288,7 @@ function scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens=new Set(),no
   // A crop/category is not the subject of a specific question. In particular,
   // "inseticida para cigarrinha no milho" cannot select rotation of canola or a
   // generic insecticide card while silently dropping the pest the user named.
-  const subjectTerms=[...queryBaseTokens].filter(token=>!conceptTerms.has(token)&&corpusFrequency.has(token)&&discriminating(token,corpusFrequency))
+  const subjectTerms=[...queryBaseTokens].filter(token=>!askingVerbs.has(token)&&!conceptTerms.has(token)&&corpusFrequency.has(token)&&discriminating(token,corpusFrequency))
   if(strictSubject&&subjectTerms.length&&!subjectTerms.some(token=>itemTokens.has(token)))return {eligible:false,reason:'SUBJECT_NOT_COVERED'}
   const covered=[...queryBaseTokens].filter(token=>itemTokens.has(token)).length
   // triggers sao escritos pelo curador para dizer "este item responde sobre X",
@@ -375,6 +390,7 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
  // piso. Enumerar cada palavra de cortesia em stopWords nunca fecha a lista — o preâmbulo sai
  // inteiro antes de tokenizar. Se a frase for só cortesia, mede-se a frase original.
  const question=stripMessagePreamble(normalizeSearchText(query))||query
+ const askingVerbs=askingVerbsIn(normalizeSearchText(question))
  const queryTokens=tokens(question)
  const queryBaseTokens=baseTokens(question)
  const normalizedQuery=normalizeSearchText(question)
@@ -394,14 +410,13 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
  const excludedReasonCounts={}
  const ranked=[]
  const corpusFrequency=corpusVocabulary(source)
- const askingVerbs=askingVerbsIn(question)
  const unknownTokens=[...queryBaseTokens].filter(token=>token.length>=5&&!corpusFrequency.has(token)&&!genericTopicTerms.has(token)&&!askingVerbs.has(token))
  const unknownTopic=unknownTokens.length>0
  const offDomainQuestion=!corpusKnowsQuestion(queryBaseTokens,corpusFrequency)||cappedLimit===1&&unknownTopic
 
  for(const item of source.items){
   if(offDomainQuestion){excludedReasonCounts.QUESTION_OUTSIDE_CORPUS=(excludedReasonCounts.QUESTION_OUTSIDE_CORPUS||0)+1;continue}
-  const result=scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens,normalizedQuery,corpusFrequency,queryConcepts,requestedModules,requestedGeography:geography,sourceById,now,strictSubject:cappedLimit===1})
+  const result=scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens,normalizedQuery,corpusFrequency,queryConcepts,requestedModules,requestedGeography:geography,sourceById,now,askingVerbs,strictSubject:cappedLimit===1})
   if(!result.eligible){
    excludedReasonCounts[result.reason]=(excludedReasonCounts[result.reason]||0)+1
    continue

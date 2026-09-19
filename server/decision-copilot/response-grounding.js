@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto'
+import {legacyVisitLifecycle} from '../visit-loop/lifecycle.js'
 import {classifyValContextDomain,matchedValContextDomains} from './context-selector.js'
 
 export const responseGroundingVersion='val.response_grounding.v2'
@@ -471,6 +472,38 @@ function evidenceMatchesFacet(facet,text='',sourceType=''){
  return true
 }
 
+// Resolve only a local, explicit conceptual antecedent. A passive clause about
+// that concept is not a private producer attribute. Ambiguous, active, personal
+// or mixed predicates retain the existing fail-closed behavior.
+function hasGlobalIndividualAssertion(rawText=''){
+ let antecedent=null
+ for(const clause of splitClaims(rawText)){
+  const source=normalize(clause)
+  const domains=matchedValContextDomains(source)
+  const privateDomain=domains.some(domain=>!['AGRONOMY','GRAINS'].includes(domain))
+  const named=hasNamedIndividualAssertion(clause)
+  const unsafe=implicitIndividualAttribute.test(source)||hasNamedIndividualAssertion(clause.replace(/^(Ele|Ela)\b/,word=>word.toLowerCase()))||pronounObligation.test(source)
+  if(genericAssertion.test(source)){
+   const passive=source.match(/^(ele|ela)\s+(?:e|esta)\s+([a-z]+(?:ad|id)[oa])\b/)
+   const remainder=passive?source.slice(passive[0].length):source
+   const resolved=passive&&antecedent&&passive[1]===antecedent.pronoun&&domains.includes('AGRONOMY')&&!privateDomain&&!unsafe&&!genericAssertion.test(remainder)
+   if(!resolved)return true
+  }else if(named||pronounObligation.test(source))return true
+  // A new nominal subject replaces the antecedent; a pronoun does not establish
+  // one. Gender must agree, and a domain label alone never authorizes a person.
+  const nominal=source.match(/^(a|o|um|uma)\s+([a-z-]+)/)
+  if(nominal){
+   const subjectDomains=matchedValContextDomains(nominal[2])
+   const definition=source.match(/^(?:a|o|um|uma)\s+[a-z-]+\s+e\s+(?:um|uma)\s+([a-z-]+)/)
+   const definedConcept=definition&&matchedValContextDomains(definition[1]).includes('AGRONOMY')
+   const subjectIsProperName=/^(?:A|O|Um|Uma|a|o|um|uma)\s+\p{Lu}/u.test(clause)
+   antecedent=!subjectIsProperName&&(subjectDomains.includes('AGRONOMY')||definedConcept)&&!privateDomain&&!unsafe&&!genericAssertion.test(source)
+    ?{pronoun:['a','uma'].includes(nominal[1])?'ela':'ele'}:null
+  }else if(!/^(?:ele|ela)\b/.test(source))antecedent=null
+ }
+ return false
+}
+
 function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}){
  // GLOBAL describes the subject of the evidence; it cannot be used as an
  // escape hatch for an omitted producer id.  Market facts need an aggregate
@@ -480,7 +513,7 @@ function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}
  // Statement curado da Biblioteca fala do "produtor" como categoria ("o produtor tende a...") e
  // cita autores ("Fisher e Ury propõem"): não é afirmação sobre um indivíduo da carteira. O caminho
  // geral nunca lê dado de produtor, e a ingestão da Biblioteca é curada e fail-closed.
- if(sourceType!=='general_knowledge'&&(genericAssertion.test(text)||hasNamedIndividualAssertion(rawText)))return false
+ if(sourceType!=='general_knowledge'&&(sourceType==='model_general_knowledge'?hasGlobalIndividualAssertion(rawText):genericAssertion.test(text)||hasNamedIndividualAssertion(rawText)))return false
  if(sourceType==='market_snapshot'){
   if(!globalAggregateAnchor.test(text))return false
   // An aggregate prefix such as "Mercado:" must never launder an individual
@@ -528,7 +561,8 @@ function evidenceEntries(evidence=[],scope={}){
    id:sourceId,auditId:sourceId||`unresolved:${index+1}`,sourceType,
    text:normalize(rawText),rawText,
    producerId:producerOf(object),tenantId:tenantOf(object),ownerId:ownerOf(object),
-   evidenceType,global,scopeMarker
+   evidenceType,global,scopeMarker,
+   visitLifecycle:sourceType==='visit'?legacyVisitLifecycle({...object,status:object.status||rawText}):null
   }
   const aliasConflictCodes=[]
   const recursiveAliases=(node,extractor,seen=new Set())=>{
@@ -582,7 +616,7 @@ function evidenceEntries(evidence=[],scope={}){
   // pronome + verbo de estado/posse ("ele tem", "ela esta", "ele e") - medido em 8 de 8.
   const globalProducerSpecific=global&&sourceType!=='general_knowledge'&&/\b(?:este produtor|esse produtor|aquele produtor|o produtor|a produtora|do produtor|da produtora|para o produtor|para a produtora|este cliente|esse cliente|o cliente|do cliente|da cliente)\b/.test(entry.text)
   if(globalProducerSpecific)aliasConflictCodes.push('GLOBAL_PRODUCER_SPECIFIC_CLAIM')
-  if(global&&sourceType!=='general_knowledge'&&(genericAssertion.test(entry.text)||pronounObligation.test(entry.text)||hasNamedIndividualAssertion(rawText)))aliasConflictCodes.push('GLOBAL_INDIVIDUAL_ASSERTION')
+  if(global&&sourceType!=='general_knowledge'&&(sourceType==='model_general_knowledge'?hasGlobalIndividualAssertion(rawText):genericAssertion.test(entry.text)||pronounObligation.test(entry.text)||hasNamedIndividualAssertion(rawText)))aliasConflictCodes.push('GLOBAL_INDIVIDUAL_ASSERTION')
   if(global&&!semanticallyGeneralGlobalEvidence(entry))aliasConflictCodes.push('GLOBAL_NOT_SEMANTICALLY_GENERAL')
   if(global&&entry.producerId)aliasConflictCodes.push('GLOBAL_WITH_PRODUCER_ID')
   if(global&&!trustedGlobalSourceTypes.has(sourceType))aliasConflictCodes.push('UNTRUSTED_GLOBAL_SOURCE_TYPE')
@@ -815,7 +849,7 @@ const cropOnlyGrainsQuestion=question=>{
  return matchedValContextDomains(source).includes('GRAINS')&&!remaining.includes('GRAINS')&&remaining.length>0
 }
 
-function directlyAnswersQuestion({domain,question,answer,unsupportedClaims,activeProducerName=''}){
+function directlyAnswersQuestion({domain,question,answer,unsupportedClaims,activeProducerName='',facetEvidence=false}){
  const source=normalize(answer)
  if(!source)return false
  if(unsupportedClaims.length)return false
@@ -832,6 +866,10 @@ function directlyAnswersQuestion({domain,question,answer,unsupportedClaims,activ
  const facet=contextFacet(domain,question)
  if(!answerClaimsMatchFacet(facet,answer))return false
  if(facet&&!evidenceMatchesFacet(facet,source,''))return false
+ // The authorized typed record, validated claim by claim, is the relevance
+ // proof for a completed visit. Lexical overlap is not a second source of truth
+ // for completion labels such as Realizada versus concluída.
+ if(facet==='LAST_VISIT'&&facetEvidence)return true
  const answerDomains=matchedValContextDomains(source)
  if(domain==='MULTI_DOMAIN'){
   // Um nome de cultura ("soja", "milho") classifica a pergunta também como GRAINS. Quando esse é o
@@ -840,7 +878,9 @@ function directlyAnswersQuestion({domain,question,answer,unsupportedClaims,activ
   const requested=matchedValContextDomains(question).filter(item=>!(item==='GRAINS'&&cropOnlyGrainsQuestion(question)))
   if(!(requested.length>0&&requested.every(item=>answerDomains.includes(item))))return false
  }
- const domainCompatible=domain==='MULTI_DOMAIN'||answerDomains.includes(domain)||domain==='COMMERCIAL'&&answerDomains.includes('OPPORTUNITY')
+ // No domain keyword is an unknown classification, not a conflicting domain.
+ // Elliptical definitions still have to pass material-topic overlap below.
+ const domainCompatible=answerDomains.length===0||domain==='MULTI_DOMAIN'||answerDomains.includes(domain)||domain==='COMMERCIAL'&&answerDomains.includes('OPPORTUNITY')
  if(!['GENERAL','MULTI_DOMAIN'].includes(domain)&&!domainCompatible)return false
  // Resumos determinísticos de calculadora devolvem o resultado, não repetem
  // todas as entradas da pergunta. Considere-os diretamente relevantes apenas
@@ -904,6 +944,14 @@ export function factMatchesQuestionFacet({domain='',question='',statement='',sou
  return evidenceMatchesFacet(facet,normalize(statement),clean(sourceType,120))
 }
 
+function authorizedVisitFacet({domain,question,claims,evidence,activeProducerId,tenantId,ownerId,now}){
+ if(contextFacet(domain,question)!=='LAST_VISIT'||!activeProducerId)return false
+ const entries=evidenceEntries(evidence,{domain,question,activeProducerId,tenantId,ownerId,now})
+ const authorized=new Set(entries.filter(entry=>entry.sourceType==='visit'&&entry.visitLifecycle==='COMPLETED'&&entry.scopeCompatible&&entry.domainCompatible&&entry.provenanceCompatible&&entry.temporalCompatible&&evidenceMatchesFacet('LAST_VISIT',entry.text,entry.sourceType)).map(entry=>entry.id))
+ const facts=claims.filter(claim=>claim.type==='FACT')
+ return facts.length>0&&facts.every(claim=>claim.supported&&claim.evidence_refs.length>0&&claim.evidence_refs.every(ref=>authorized.has(ref)))
+}
+
 export function evaluateResponseGrounding({question='',answer='',domain='',evidence=[],activeProducerId='',activeProducerName='',tenantId='',ownerId='',field='answer',now=new Date(),checkQuestionRelevance=true}={}){
  const selectedDomain=domain||classifyValContextDomain(question)
  // O nome so e escopo do turno quando ha um produtor selecionado. Sem produtor, o chamador
@@ -929,7 +977,8 @@ export function evaluateResponseGrounding({question='',answer='',domain='',evide
  const provenanceViolations=entries.filter(item=>!item.provenanceCompatible).map(item=>Object.freeze({source_ref:item.auditId,reason_codes:item.provenanceCodes}))
  const temporalViolations=entries.filter(item=>!item.temporalCompatible).map(item=>item.auditId)
  const unsupportedClaims=claims.filter(item=>!item.supported)
- const directlyAnswers=!checkQuestionRelevance||directlyAnswersQuestion({domain:selectedDomain,question,answer,unsupportedClaims,activeProducerName:scopeName})
+ const facetEvidence=checkQuestionRelevance&&authorizedVisitFacet({domain:selectedDomain,question,claims,evidence,activeProducerId,tenantId,ownerId,now:evaluatedAt})
+ const directlyAnswers=!checkQuestionRelevance||directlyAnswersQuestion({domain:selectedDomain,question,answer,unsupportedClaims,activeProducerName:scopeName,facetEvidence})
  return Object.freeze({
   version:responseGroundingVersion,domain:selectedDomain,
   passed:unsupportedClaims.length===0&&scopeViolations.length===0&&incompatibleEvidence.length===0&&provenanceViolations.length===0&&temporalViolations.length===0&&directlyAnswers,
@@ -950,7 +999,9 @@ export function evaluateReasoningGrounding({question='',domain='',evidence=[],ac
  // caminho rapido: com a visita selecionada e em facts_used, "quando foi a ultima visita
  // concluida do Joao Pereira?" continuava respondida com "Nao ha evidencia selecionada
  // suficiente" - a VAL negando o dado que ela mesma carregou.
- const relevance=directlyAnswersQuestion({domain:domain||classifyValContextDomain(question),question,answer:answerEntries.map(([,value])=>value).join(' '),unsupportedClaims,activeProducerName:clean(activeProducerId,180)?clean(activeProducerName,180):''})
+ const selectedDomain=domain||classifyValContextDomain(question)
+ const facetEvidence=authorizedVisitFacet({domain:selectedDomain,question,claims:claimLedger.filter(claim=>answerFields.test(claim.field)),evidence,activeProducerId,tenantId,ownerId,now})
+ const relevance=directlyAnswersQuestion({domain:selectedDomain,question,answer:answerEntries.map(([,value])=>value).join(' '),unsupportedClaims,activeProducerName:clean(activeProducerId,180)?clean(activeProducerName,180):'',facetEvidence})
  return Object.freeze({
   version:responseGroundingVersion,domain:domain||classifyValContextDomain(question),
   passed:results.length>0&&results.every(result=>result.passed)&&relevance,
