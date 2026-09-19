@@ -21,12 +21,19 @@ const regulatedConceptTerm=/\b(?:dose|doses|dosagem|dosagens|carencia|carencias|
 // "inseticida" estao todos nela - e virava pedido operacional respondido com ordem de adicao. Nomear
 // o que vai ser misturado e pedir a mistura, nao a definicao dela.
 const productCategory=/\b(?:herbicida|herbicidas|fungicida|fungicidas|inseticida|inseticidas|defensivo|defensivos|fitossanitario|fitossanitarios)\b/g
-const mixtureTerm=/\b(?:mistura|misturas|misturar|misturabilidade)\b/
+// Nomear o que vai ser misturado exige DOIS componentes. Uma categoria generica qualificando o
+// termo - "o que e mistura de tanque de um defensivo?" - ainda e a definicao do termo, nao a
+// receita, e a guarda antiga recusava isso com texto de bula.
+const mixtureEnumeration=/\bmistur\w*\b[^?]{0,60}?\b(?:com|e)\s+(?:o |a |os |as |um |uma |do |da |de )*(?:herbicida|herbicidas|fungicida|fungicidas|inseticida|inseticidas|defensivo|defensivos|fitossanitario|fitossanitarios|adjuvante|adjuvantes|produto|produtos)\b/
 export function isGeneralRegulatedConcept(message=''){
  const question=stripMessagePreamble(normalize(message)).replace(/[.!?]+$/,'').trim()
  const categories=new Set(question.match(productCategory)||[])
- if(categories.size>1)return false
- if(categories.size&&mixtureTerm.test(question))return false
+ // A rodada 13 tinha aqui uma guarda de CONTAGEM - "duas categorias, entao e operacional". Medido na
+ // rodada 14: ela nao pegava nenhum caso que a enumeracao abaixo ja nao pegue, e convertia comparacao
+ // definicional legitima ("qual a diferenca entre a carencia de um fungicida e a de um herbicida?")
+ // em recusa com texto de bula. Contava tokens, ainda por cima: singular e plural da mesma palavra
+ // contavam dois.
+ if(categories.size&&mixtureEnumeration.test(question))return false
  // Exempt only a definition/comparison of generic terminology. Unknown brand
  // names, numbers, producer context and application verbs cannot use this path:
  // o prefixo de definicao e a lista fechada de palavras garantem as duas coisas.
@@ -139,7 +146,7 @@ export function namedProductMentions(answer=''){
 }
 export const regulatedBrandClaim=answer=>efficacyAssertion.test(String(answer??''))&&namedProductMentions(answer).length>0
 
-export const safeGeneralModelAnswer=answer=>!regulatedBrandClaim(answer)&&!/(?:\b(?:aplique|misture|pulverize|prescrevo|recomendo|garanto)\b|\d[\d.,]*\s*(?:kg|g|ml|l)\s*(?:\/|por)\s*ha\b|(?:segundo|de acordo com)\s+(?:a\s+)?(?:embrapa|fonte|pesquisa))/i.test(answer)
+export const safeGeneralModelAnswer=answer=>!regulatedBrandClaim(answer)&&!/(?:\b(?:aplique|misture|pulverize|prescrevo|recomendo|garanto)\b|ordem\s+de\s+(?:adi[cç][aã]o|mistura|enchimento)|primeiro\s+os?\s+p[oó]s|adicione\s+(?:primeiro|por\s+[uú]ltimo|em\s+seguida)|agitador|com\s+o\s+tanque\s+(?:pela\s+)?metade|\d[\d.,]*\s*(?:kg|g|ml|l)\s*(?:\/|por)\s*ha\b|(?:segundo|de acordo com)\s+(?:a\s+)?(?:embrapa|fonte|pesquisa))/i.test(answer)
 
 // Preserve the existing budget estimate for the fast tier. This is not a model
 // price table or a billing claim; metered provider cost must be reconciled apart.
