@@ -3,6 +3,7 @@ import {knowledgeSelectionVersion,assertKnowledgeContract,validateKnowledgeSelec
 import {loadKnowledgeLibrary} from './library.js'
 import {authorityRank,evaluateGeography,evaluateKnowledgeLifecycle,knowledgePolicyVersion,list,normalizeSearchText,text,uniqueText} from './policy.js'
 import {stripMessagePreamble} from '../message-preamble.js'
+import {functionWord,verbInfinitive} from './agronomic-vocabulary.js'
 
 const stopWords=new Set([
  'a','ao','aos','as','com','como','da','das','de','do','dos','e','ele','ela','em','entre','essa','esse','esta','este','eu','foi','ha','isso','ja','mais','mas','na','nas','no','nos','o','os','ou','para','pela','pelo','por','que','se','sem','ser','sua','suas','seu','seus','tem','um','uma','voce',
@@ -213,17 +214,17 @@ const discriminating=(token,frequency)=>!conceptTerms.has(token)&&(frequency?.ge
 // pergunta ocupa slot verbal - vem depois de "como", "por que", "para", de um modal: "como LIDAR",
 // "por que ROTACIONAR". O substantivo vem depois de determinante: "do SOUVENIR", "do VALTER". A
 // lista abaixo e de palavras gramaticais, classe fechada de verdade, nao de temas nem de verbos.
-const infinitiveEnding=/(?:ar|er|ir)$/
-const verbalSlotLead=new Set(['como','quando','que','porque','para','posso','pode','podemos','podera','devo','deve','devemos','quero','queremos','pretendo','pretende','preciso','precisa','precisamos','consigo','consegue','vou','vamos','sem','tentar','ajuda','serve','recomenda','costuma','costumam','vale','convem','permite','impede','evita','busco','busca'])
-// Quais infinitivos desta pergunta estao em slot verbal. Recebe o texto ja normalizado, para casar
-// com os tokens que baseTokens produz.
+// A rodada 13 trocou "sufixo" por "posicao" e a posicao tambem nao separa: medido, 100 perguntas
+// que a VAL respondia pararam de ser respondidas, porque as locucoes mais comuns do portugues
+// falado poem outra palavra no slot ("a melhor forma DE manejar", "vale a PENA combater", "ANTES DE
+// combater", e o verbo em inicio de frase). E o buraco oposto continuou aberto: nome comercial e
+// ingrediente ativo tambem terminam em ar/er/ir e tambem vem depois de "para" e "sem", entao
+// "Premier" era lido como verbo e a pergunta atravessava o portao do acervo.
+// Nem a forma nem a posicao respondem "esta palavra e um verbo?". So o lexico responde. A lista
+// e grande, mas e fechada e verificavel item a item - e nome de produto nao entra nela.
 function askingVerbsIn(value=''){
- const words=String(value).split(' ').filter(Boolean)
  const found=new Set()
- for(let index=1;index<words.length;index+=1){
-  const word=words[index]
-  if(word.length>=5&&infinitiveEnding.test(word)&&verbalSlotLead.has(words[index-1]))found.add(singular(word))
- }
+ for(const word of String(value).split(' ').filter(Boolean))if(verbInfinitive.has(word))found.add(singular(word))
  return found
 }
 const genericTopicTerms=new Set(['aplicacao','aplicacoes','cultura','cultivo','opcao','opcoes','funcao','papel','efeito','efeitos','vantagem','desvantagem','diferenca','corrigido'])
@@ -395,7 +396,10 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
  const ranked=[]
  const corpusFrequency=corpusVocabulary(source)
  const askingVerbs=askingVerbsIn(question)
- const unknownTokens=[...queryBaseTokens].filter(token=>token.length>=5&&!corpusFrequency.has(token)&&!genericTopicTerms.has(token)&&!askingVerbs.has(token))
+// Palavra gramatical tambem nao e assunto. O acervo e prosa expositiva de 198 itens e nunca vai
+ // conter "deveria", "talvez" ou "sobretudo"; sem esta linha, a pergunta inteira era reprovada por
+ // causa de um adverbio.
+ const unknownTokens=[...queryBaseTokens].filter(token=>token.length>=5&&!corpusFrequency.has(token)&&!genericTopicTerms.has(token)&&!askingVerbs.has(token)&&!functionWord.has(token))
  const unknownTopic=unknownTokens.length>0
  const offDomainQuestion=!corpusKnowsQuestion(queryBaseTokens,corpusFrequency)||cappedLimit===1&&unknownTopic
 

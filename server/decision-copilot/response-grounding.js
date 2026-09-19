@@ -185,11 +185,31 @@ const strategyInstruction=/^(?:nao\s+)?(?:abra|acompanhe|acompanhar|adapte|adapt
 // deve ao banco e nao pagou a parcela do custeio" - passaram de barradas a entregues verbatim ao
 // consultor, rotuladas apenas como conhecimento geral do modelo. Verbo no passado com sujeito
 // pronominal e narracao de um caso individual: explicacao geral nao conta o que "ele" fez ontem.
-const genericAssertion=/\b(?:ele|ela|produtor\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:e|esta|tem|possui|carrega|mantem|demonstra|desvia|cultiva|quer|pretende|vai|parece|opera|plantou|colheu|vendeu|comprou|pagou|arrendou|contratou|assinou|reclamou|atrasou|quitou|renegociou|aplicou|entregou|recebeu|fechou|perdeu|ganhou|investiu|financiou|antecipou|travou|fixou|deixou|prometeu|aceitou|recusou|cancelou)\b/
+// A rodada 13 somou os 28 verbos no passado no MESMO alternador dos verbos de estado, e o pronome
+// anaforico de COISA passou a ser lido como pessoa: "A calda perdeu eficacia", "Ela perdeu o efeito
+// residual", "Ele fechou negativo quando o frete subiu" sao explicacao geral e foram barradas -
+// medido, 20 de 20. Verbo no passado so acusa caso individual quando ha, na mesma clausula, objeto
+// de transacao ou de relacionamento. Verbo de estado continua valendo com o sujeito nu.
+const genericAssertionState=/\b(?:ele|ela|produtor\\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:e|esta|tem|possui|carrega|mantem|demonstra|desvia|cultiva|quer|pretende|vai|parece|opera)\b/
+const genericAssertionPast=/\b(?:ele|ela|produtor\\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:plantou|colheu|vendeu|comprou|pagou|arrendou|contratou|assinou|reclamou|atrasou|quitou|renegociou|aplicou|entregou|recebeu|fechou|perdeu|ganhou|investiu|financiou|antecipou|travou|fixou|deixou|prometeu|aceitou|recusou|cancelou)\b[^.!?;]{0,60}?\b(?:soja|milho|trigo|algodao|cafe|graos?|producao|safra|lavoura|talhao|hectares?|contratos?|propostas?|pedido|parcelas?|custeio|divida|credito|financiamento|emprestimo|banco|fatura|boleto|saldo|visita|compromisso|reuniao|atendimento|insumos?|fertilizante|defensivo|semente|adubo|maquina|trator|arrendamento|concorrente|desconto|pagamento|assinatura)\b/
+const genericAssertion={test:value=>genericAssertionState.test(value)||genericAssertionPast.test(value)}
 // "deve" e a excecao que a lista nao resolve: modal ("ele deve ser aplicado antes da floracao") e
 // explicacao geral legitima, obrigacao ("ela deve ao banco") e afirmacao sobre uma pessoa. O que
 // separa os dois e o infinitivo logo depois.
-const pronounObligation=/\b(?:ele|ela)\s+deve\b(?!\s+\w*(?:ar|er|ir)\b)/
+// O criterio da rodada 13 era so "tem infinitivo logo depois", e ele erra nos dois sentidos:
+// qualquer adverbio ou clitico entre o modal e o verbo derrubava resposta geral legitima ("ele deve
+// sempre ser aplicado"), e "ele deve ter atrasado" passava como modal deontico quando e conjectura
+// sobre uma pessoa. As duas listas abaixo sao fechadas, como o resto do arquivo.
+const modalInterposer='(?:se|o|a|os|as|lhe|lhes|nos|me|te|nao|sempre|nunca|jamais|tambem|apenas|so|somente|ainda|entao|portanto|primeiro|depois|logo|ja|talvez|preferencialmente|idealmente|necessariamente|obrigatoriamente|essencialmente|sobretudo|inclusive|previamente|posteriormente|de preferencia|no minimo|no maximo|em tese|por principio)'
+const pronounStateWord='inadimplente|adimplente|endividad\\w*|devendo|negativad\\w*|bloquead\\w*|atrasad\\w*'
+const pronounObligation=new RegExp(
+ '\\b(?:ele|ela)\\s+deve\\s+(?:ter|haver)\\s+(?!sido\\b)\\w+(?:ad[oa]s?|id[oa]s?|to|ta|eito|eita)\\b'
+ +`|\\b(?:ele|ela)\\s+deve\\s+estar\\s+(?:${pronounStateWord})\\b`
+ +`|\\b(?:ele|ela)\\s+deve\\b(?!(?:,?\\s+${modalInterposer})*,?\\s+\\w*(?:ar|er|ir)\\b)`
+  // O infinitivo sozinho nao prova que a frase e geral: "ele deve aceitar o desconto" e "ela deve
+  // entregar os graos na cooperativa" sao obrigacao de UMA pessoa com cara de modal. O que separa e
+  // o mesmo sinal usado no verbo no passado - objeto de transacao ou de relacionamento na clausula.
+ +`|\\b(?:ele|ela)\\s+deve\\s+(?:${modalInterposer}\\s+)?\\w*(?:ar|er|ir)\\b[^.!?;]{0,50}?\\b(?:soja|milho|trigo|algodao|cafe|graos?|producao|safra|lavoura|talhao|hectares?|contratos?|propostas?|pedido|parcelas?|custeio|divida|credito|financiamento|emprestimo|banco|fatura|boleto|saldo|visita|compromisso|reuniao|atendimento|insumos?|fertilizante|defensivo|semente|adubo|maquina|trator|arrendamento|concorrente|desconto|pagamento|assinatura)\\b`)
 const safeNamedObjectFollower=new Set(['antes','como','com','depois','durante','em','na','nas','no','nos','para','por','sobre'])
 const nonNameClauseLeads=new Set(['a','ainda','basis','biblioteca','calagem','chuva','clima','como','confianca','cotacao','ctc','custo','estoque','evite','fitoscan','frete','hedge','informe','inteligencia','manual','margem','mercado','milho','na','nao','nenhum','nenhuma','nutriscan','o','perfil','ph','por','preco','priorize','producao','roi','safra','selecione','soja','sua','temperatura','trigo','use','valide','wasde'])
 // Termos que ESCOLHEM entre registros ja selecionados ("a ultima", "a proxima", "a atual") em vez

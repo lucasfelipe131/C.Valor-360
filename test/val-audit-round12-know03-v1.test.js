@@ -86,8 +86,32 @@ test('KNOW-03 — substantivo e antroponimo em posicao de assunto nunca sao isen
  }
 })
 
-test('KNOW-03 — o infinitivo so e isento no slot verbal, nao em qualquer posicao',()=>{
- // "como LIDAR" e "por que ROTACIONAR" são forma de perguntar; "do SOUVENIR" é assunto.
- assert.ok(perguntar('como lidar com resistência de plantas daninhas?'),'slot verbal preservado')
- assert.equal(perguntar('qual o lidar da resistência de plantas daninhas?'),null,'mesma palavra fora do slot verbal continua vetando')
+test('KNOW-03 — a isencao de verbo vem do lexico, nao da posicao nem do sufixo',()=>{
+ // A rodada 13 decidia pela POSICAO ("como LIDAR" isenta, "do LIDAR" nao) e a rodada 14 mediu o
+ // preco: 100 perguntas que a Biblioteca respondia pararam de ser respondidas, porque as locucoes
+ // mais comuns do portugues poem outra palavra no slot. E o buraco oposto seguia aberto: nome
+ // comercial tambem termina em -ar/-er/-ir e tambem vem depois de "para" e "sem".
+ // Contrato atual: verbo do lexico e isento em QUALQUER posicao; palavra fora do lexico nunca e
+ // isenta, nem em slot verbal.
+ for(const pergunta of [
+  'qual a melhor forma de manejar a ferrugem asiática na soja?',
+  'vale a pena combater o percevejo na soja?',
+  'antes de combater o percevejo na soja, o que avaliar?',
+  'é possível enfrentar a ferrugem asiática na soja?',
+  'o produtor deveria manejar a resistência de plantas daninhas?',
+  'dá pra manejar a ferrugem asiática na soja?'
+ ])assert.ok(perguntar(pergunta),`verbo fora do slot verbal nao pode desligar a Biblioteca: "${pergunta}"`)
+
+ // O outro lado: produto desconhecido em slot verbal continua vetando, com e sem artigo. Antes
+ // dependia do artigo - "para Premier" respondia e "para o Premier" recusava, e o consultor nao
+ // tinha como saber qual das duas respostas era a verdadeira.
+ for(const produto of ['Premier','Cruiser','Cropstar','Talstar','imazetapir','clorfenapir']){
+  for(const molde of ['existe restrição de aplicação para %s na cultura da soja?','da para fazer o tratamento de sementes da soja sem %s?','por que %s falhou no controle da ferrugem asiática da soja?']){
+   const pergunta=molde.replace('%s',produto)
+   const item=perguntar(pergunta)
+   assert.equal(item,null,`respondeu "${pergunta}" com ${item?.knowledge_item_id} "${item?.title}"`)
+   const comArtigo=molde.replace('%s',`o ${produto}`)
+   assert.equal(perguntar(comArtigo),null,`o artigo nao pode mudar o veredito: "${comArtigo}"`)
+  }
+ }
 })

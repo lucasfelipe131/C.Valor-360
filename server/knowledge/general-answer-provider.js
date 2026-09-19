@@ -2,6 +2,7 @@
 // labelled as model knowledge; it must never supply a prescription or live fact.
 import {loadKnowledgeLibrary} from './library.js'
 import {stripMessagePreamble} from '../message-preamble.js'
+import {knownAgronomicTerm,scientificGenus} from './agronomic-vocabulary.js'
 const normalize=value=>String(value??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
 const sentinel='PRECISA_FONTE'
 const clean=value=>String(value??'').replace(/\s+/g,' ').trim()
@@ -88,7 +89,11 @@ const nonBrandProperNoun=new Set(['embrapa','mapa','agrofit','anvisa','ibama','c
 // O epiteto precisa PARECER latim, nao qualquer palavra minuscula: com "qualquer minuscula",
 // "O Lannate controla a lagarta" virava binomio e a marca escapava. As terminacoes abaixo sao de
 // morfologia latina e nenhuma delas e terminacao de verbo conjugado em portugues.
-const speciesEpithet=/^[a-z][a-z-]{3,}(?:us|um|is|ii|i|ae|ana|anum|ense|ensis|icola|oides|formis|ceps|cola|phaga|fera|spora|zae|ium|osa|osum|ida|idae|ella|ellus|inia|iana)$/
+// Nome cientifico e um par: genero em maiuscula seguido de epiteto em minuscula. A rodada 13
+// tentou reconhecer o EPITETO por terminacao latina e isso nao funciona - medido, a melhor versao
+// aceitava 23 de 78 palavras comuns do portugues, e "O Lannate possui acao" virava binomio. Quem
+// decide agora e o GENERO, que e conjunto fechado e onde marca comercial nao entra.
+const scientificPair=(genus,epithet)=>scientificGenus.has(normalize(genus))&&/^[a-z][\p{L}-]{2,}$/u.test(epithet)
 // A marca na PRIMEIRA palavra da oracao era a forma mais comum de alegacao e a unica que escapava
 // inteira: "Lannate controla a lagarta-do-cartucho no milho" passava. Comecar a oracao em maiuscula
 // e gramatica, entao a posicao sozinha nao diz nada - o que diz e a palavra nao existir no
@@ -110,16 +115,23 @@ export function namedProductMentions(answer=''){
  for(const sentence of String(answer??'').split(/(?<=[.!?;:])\s+|\n+/)){
   const words=sentence.trim().split(/\s+/)
   const first=(words[0]||'').replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
-  if(/^[A-ZÀ-Ý][\p{L}\p{N}-]*$/u.test(first)&&!nonBrandProperNoun.has(normalize(first))&&first.length>=4&&!corpusVocabulary().has(normalize(first))&&leadingBrandClaim.test(words.slice(1).join(' ')))found.push(first)
+  const second=(words[1]||'').replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
+  // A adjacencia estrita deixava passar qualquer adverbio ou aposto entre a marca e o verbo
+  // ("Lannate tambem controla", "Lannate, um inseticida carbamato, controla"): medido, 28 de 45.
+  // O verbo de eficacia vale em qualquer ponto da oracao, e o que protege o termo legitimo e o
+  // vocabulario fechado - o acervo curado nao serve de dicionario de agronomia.
+  if(/^[A-ZÀ-Ý][\p{L}\p{N}-]*$/u.test(first)&&!nonBrandProperNoun.has(normalize(first))&&first.length>=3&&!knownAgronomicTerm(normalize(first))&&!scientificPair(first,second)&&efficacyAssertion.test(words.slice(1).join(' ')))found.push(first)
   // A partir da SEGUNDA palavra: inicio de oracao e maiusculo por gramatica, nao por ser marca.
   for(let index=1;index<words.length;index+=1){
    const raw=words[index].replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
    if(!/^[A-ZÀ-Ý][\p{L}\p{N}-]*$/u.test(raw))continue
-   if(nonBrandProperNoun.has(normalize(raw)))continue
+   if(nonBrandProperNoun.has(normalize(raw))||knownAgronomicTerm(normalize(raw)))continue
+   // Sigla de sitio de acao e simbolo de elemento nao sao marca: EPSPS, ALS, ACCase, GABA, N.
+   if(raw.length<2)continue
    // Binomio cientifico: o proximo token e o epiteto em minuscula. Nem o genero nem o epiteto sao
    // marca, e os dois saem juntos.
    const next=(words[index+1]||'').replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
-   if(speciesEpithet.test(next)){index+=1;continue}
+   if(scientificPair(raw,next)){index+=1;continue}
    found.push(raw)
   }
  }
