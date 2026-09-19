@@ -172,9 +172,32 @@ const derivedCommercial=value=>{
 }
 const snapshotFor=(result,source)=>({...jsonObject(result),profileVersion:String(result?.profileVersion||'producer-360-v1'),profileSource:source})
 const profileSourceKey=(source,externalKey,answers)=>`${source}:${externalKey}:${createHash('sha256').update(JSON.stringify(answers||{})).digest('hex')}`.slice(0,240)
-const resolveSurveyExternalKey=async(connection,tenantId,ownerId,candidateKey,name)=>{
-  const existing=await connection.query(`SELECT external_key FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND status='active' AND (external_key=$3 OR LOWER(BTRIM(name))=LOWER(BTRIM($4))) ORDER BY CASE WHEN external_key=$3 THEN 0 ELSE 1 END LIMIT 1 FOR UPDATE`,[tenantId,ownerId,candidateKey,String(name||'').slice(0,180)])
-  return String(existing.rows[0]?.external_key||candidateKey).slice(0,180)
+// A identidade do produtor vinda do questionario era so o nome. Dois xaras - comum no campo, e
+// frequente em carteira herdada - colapsavam num cadastro so: o segundo sobrescrevia o primeiro,
+// sem aviso e com 200 {saved:true} como se fosse cadastro novo. Medido em Postgres real: o Jose da
+// Silva de 1.800 ha em Sorriso vira Lucas do Rio Verde, 120 ha, e as 45 respostas dele ficam orfas
+// em client_profiles. A consultora perde um produtor inteiro e a VAL passa a preparar visita e
+// recomendar produto com os dados da pessoa errada.
+// A regra e a MESMA que server/survey-import.js ja aplica na planilha, e agora vale para os tres
+// caminhos: mesmo nome e mesmo municipio (ou municipio ausente de um dos lados) e a mesma pessoa;
+// municipios diferentes sao pessoas diferentes. O primeiro mantem a chave historica - senao o
+// cadastro ja gravado deixaria de casar no proximo envio e viraria duplicata - e os demais ganham
+// o municipio na identidade.
+const surveyPlaceSlug=value=>normalize(value).replace(/\s+/g,'-')
+const resolveSurveyExternalKey=async(connection,tenantId,ownerId,candidateKey,name,municipality='')=>{
+  const existing=await connection.query(`SELECT external_key,municipality FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND status='active' AND (external_key=$3 OR LOWER(BTRIM(name))=LOWER(BTRIM($4))) ORDER BY CASE WHEN external_key=$3 THEN 0 ELSE 1 END FOR UPDATE`,[tenantId,ownerId,candidateKey,String(name||'').slice(0,180)])
+  const place=surveyPlaceSlug(municipality)
+  // A checagem de municipio vale inclusive para o casamento exato de chave. A chave candidata deriva
+  // do NOME, entao "external_key igual" nao distingue o mesmo produtor reenviando de um xara: era
+  // exatamente por ali que o segundo Jose da Silva sobrescrevia o primeiro.
+  for(const row of existing.rows){
+    const rowPlace=surveyPlaceSlug(row.municipality)
+    if(!place||!rowPlace||rowPlace===place)return String(row.external_key).slice(0,180)
+  }
+  // Sem nenhum cadastro com este nome, a chave continua sendo so o nome. O sufixo de municipio so
+  // aparece quando ha xara de fato, para nao mudar a chave de quem ja esta gravado.
+  if(!existing.rows.length||!place)return candidateKey
+  return `${candidateKey}-${place}`.slice(0,180)
 }
 const sanitizeProfileResult=value=>{
   const result=jsonObject(value);if(!Object.keys(result).length)return value
@@ -765,7 +788,7 @@ export class ValRepository{
       const selected=await connection.query('SELECT id,status,answers,result FROM survey_invitations WHERE tenant_id=$1 AND token=$2 AND owner_user_id=$3 FOR UPDATE',[this.tenantId,token,ownerId]);if(!selected.rowCount)throw domainError('Resposta não encontrada.',404)
       const survey=selected.rows[0];if(!survey.result)throw domainError('O questionário ainda não foi respondido.',409)
       if(survey.status!=='integrado'){
-        const result=sanitizeProfileResult(survey.result);let externalKey=String(result.id||normalize(result.name).replace(/\s+/g,'-')||randomUUID()).slice(0,180);externalKey=await resolveSurveyExternalKey(connection,this.tenantId,ownerId,externalKey,result.name);const area=parseCultivatedArea(result.area)
+        const result=sanitizeProfileResult(survey.result);let externalKey=String(result.id||normalize(result.name).replace(/\s+/g,'-')||randomUUID()).slice(0,180);externalKey=await resolveSurveyExternalKey(connection,this.tenantId,ownerId,externalKey,result.name,result.municipality);const area=parseCultivatedArea(result.area)
         const commercial=await surveyCommercialForWrite(connection,this.tenantId,ownerId,externalKey,result)
         const relationship=sanitizeSurveyRelationship(result.relationship||{})
         const client=await connection.query(`INSERT INTO clients (tenant_id,consultant_id,external_key,name,municipality,total_area_ha,area_band,cultures,preferred_channel,commercial_profile,relationship_profile,status,source,updated_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'active','producer_360',NOW()) ON CONFLICT (tenant_id,consultant_id,external_key) DO UPDATE SET name=EXCLUDED.name,municipality=EXCLUDED.municipality,total_area_ha=COALESCE(EXCLUDED.total_area_ha,clients.total_area_ha),area_band=COALESCE(EXCLUDED.area_band,clients.area_band),cultures=EXCLUDED.cultures,preferred_channel=EXCLUDED.preferred_channel,commercial_profile=EXCLUDED.commercial_profile,relationship_profile=clients.relationship_profile||EXCLUDED.relationship_profile,updated_at=NOW() RETURNING id`,[this.tenantId,ownerId,externalKey,String(result.name||'Produtor').slice(0,180),String(result.municipality||'').slice(0,140)||null,area.totalAreaHa,area.areaBand,String(result.cultures||'').slice(0,1000)||null,String(result.servicePreference||'').slice(0,60)||null,jsonbParameter(commercial),jsonbParameter(relationship)])
@@ -781,7 +804,7 @@ export class ValRepository{
     if(!this.db.configured)return result
     try{return await this.db.transaction(async connection=>{
       let externalKey=String(result.id||normalize(result.name).replace(/\s+/g,'-')||randomUUID()).slice(0,180)
-      externalKey=await resolveSurveyExternalKey(connection,this.tenantId,ownerId,externalKey,result.name)
+      externalKey=await resolveSurveyExternalKey(connection,this.tenantId,ownerId,externalKey,result.name,result.municipality)
       const area=parseCultivatedArea(result.area)
       const commercial=await surveyCommercialForWrite(connection,this.tenantId,ownerId,externalKey,result)
       const relationship=sanitizeSurveyRelationship(result.relationship||{})

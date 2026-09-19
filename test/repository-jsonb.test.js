@@ -54,7 +54,9 @@ test('perfil importado atualiza o produtor existente pelo nome sem criar uma seg
   const calls=[]
   const query=async(sql,params=[])=>{
     calls.push({sql,params})
-    if(sql.startsWith('SELECT external_key FROM clients'))return {rowCount:1,rows:[{external_key:'crm-produtor-42'}]}
+    // A projecao passou a trazer o municipio junto: e ele que separa dois xaras (PS-01). Aqui nao ha
+    // municipio dos dois lados, entao continua sendo a mesma pessoa e a chave do CRM e reaproveitada.
+    if(sql.startsWith('SELECT external_key,municipality FROM clients'))return {rowCount:1,rows:[{external_key:'crm-produtor-42',municipality:null}]}
     if(sql.includes('INSERT INTO clients'))return {rowCount:1,rows:[{id:'client-db-id'}]}
     return {rowCount:1,rows:[]}
   }
@@ -63,7 +65,7 @@ test('perfil importado atualiza o produtor existente pelo nome sem criar uma seg
   const clientCall=calls.find(call=>call.sql.includes('INSERT INTO clients'))
   assert.equal(saved.id,'crm-produtor-42')
   assert.equal(clientCall.params[2],'crm-produtor-42')
-  assert.match(calls.find(call=>call.sql.startsWith('SELECT external_key FROM clients')).sql,/consultant_id=\$2/)
+  assert.match(calls.find(call=>call.sql.startsWith('SELECT external_key,municipality FROM clients')).sql,/consultant_id=\$2/)
 })
 
 test('perfil 360 mantém Q27 no snapshot e não sobrescreve oportunidade comercial canônica',async()=>{
