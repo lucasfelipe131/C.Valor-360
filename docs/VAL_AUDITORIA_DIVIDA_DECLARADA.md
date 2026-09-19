@@ -51,6 +51,20 @@ varrer o histórico da conversa, e enunciado que só existe em transcript se per
   e "ele tem 500 hectares" — medido em 8 de 8. Separar as duas exige semântica, não regex.
 - **O que custa consertar**: distinguir predicado agronômico de atributo de produtor. Precisa de
   corpus e medição própria nas duas pernas.
+- **Rodada 14**: a perna do verbo no PASSADO foi separada e fechada — ela agora exige objeto de
+  transação na mesma cláusula, e a medição caiu de 15 em 20 para 2 em 20. A perna da cópula, acima,
+  continua aberta pelo mesmo motivo de sempre.
+
+### genericAssertion — pronome anafórico de coisa numa definição comercial
+- **Medido**: "O barter troca insumo por grão. **Ele fechou** o ciclo entre o custeio e a entrega" é
+  barrada. O `ele` retoma *o barter*, que é uma coisa, mas a frase é uma definição comercial e por
+  isso menciona custeio e entrega — que são justamente o sinal usado para reconhecer caso individual.
+  5 casos em 20, contra 20 em 20 antes da rodada 14.
+- **Por que ficou**: a regra não enxerga antecedente. Nenhuma lista fecha isso: o vocabulário de
+  transação é o mesmo nas duas leituras, e é ele que separa "ele pagou a parcela" de "ele perdeu
+  eficácia".
+- **O que custa consertar**: resolução de anáfora, ou um sinal de que o sujeito da frase anterior é
+  um conceito e não uma pessoa. Precisa de corpus próprio e medição nas duas pernas.
 
 ### question_relevance — recusa resposta correta
 - **Medido**: "Um sistêmico é absorvido pela planta... Ele exige menos cobertura" é reprovada com
@@ -76,6 +90,30 @@ varrer o histórico da conversa, e enunciado que só existe em transcript se per
 - **Nota**: a frente de **tela** do GROUND-02 foi corrigida: com registro selecionado e resposta
   descartada, a tela diz isso na densidade padrão e oferece abrir o que foi selecionado. O aviso fica
   só na tela — no payload de raciocínio viraria claim e derrubaria o próprio grounding.
+
+### Isenção de terminologia regulada — o portão de entrada é permissivo por decisão
+- **Medido**: 13 de 18 pedidos operacionais disfarçados de conceituais atravessam o portão de
+  **entrada** de `isGeneralRegulatedConcept`.
+- **Por que ficou**: não é descuido, é a divisão de trabalho entre os dois portões. A isenção de
+  entrada para prefixo definicional com vocabulário 100% genérico é decisão registrada do produto
+  (8780fbd); estreitá-la reabre o falso bloqueio que custou 15 de 28 perguntas conceituais na
+  rodada 13. Quem recusa a prescrição é o portão de **saída**, que na rodada 14 passou a reconhecer
+  também ordem de adição, ordem de enchimento, agitador e "tanque pela metade" — 4 de 4 barradas,
+  6 de 6 definições preservadas.
+- **Gatilho de reabertura**: aparecer receita operacional que o portão de saída não reconheça. O
+  conserto é lá, não na entrada.
+
+### Portão de assunto do acervo — palavra comum ausente do corpus ainda veta
+- **Medido**: 72 de 192 perguntas com verbo real continuam caindo no stub de cobertura ausente, por
+  causa de palavras comuns do português que não estão nos 198 itens do acervo ("deveria" antes do
+  léxico, "possível", "produtor" em certos moldes).
+- **Por que ficou**: é anterior à rodada 13 e a rodada 14 não o piorou — a árvore pré-13 bloqueava
+  exatamente os mesmos casos. O léxico fechado resolveu a classe dos verbos e das palavras
+  gramaticais; o que resta é substantivo e adjetivo comum, que é classe aberta.
+- **O que custa consertar**: o acervo é prosa expositiva de 198 itens e nunca vai conter o
+  vocabulário geral do português. A saída é medir a pergunta pelo que ela tem de **assunto**, não
+  pelo que ela tem de palavra desconhecida — é o mesmo problema da relevância item a item, logo
+  acima, e deve ser resolvido junto.
 
 ---
 
