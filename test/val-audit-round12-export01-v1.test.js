@@ -73,3 +73,26 @@ test('EXPORT-01 — o aviso deixa de afirmar que o ativo fora da pagina nao cont
  assert.match(notices,/Um produtor arquivado tem visita neste período/)
  assert.match(notices,/Um produtor ativo tem visita neste período e ficou fora das primeiras 5000 linhas da lista; ele continua contado na carteira/)
 })
+
+
+test('EXPORT-01 — a comparacao de status e exata, igual a do SQL',async()=>{
+ // A rodada 13 mediu o vão: archived usava toLowerCase em JS enquanto a carteira conta com
+ // c.status='active' exato no SQL. Uma grafia como 'Active' ficava fora da página, fora da contagem
+ // e ainda assim rotulada como ativa — e o painel avisava "continua contado na carteira" sobre quem
+ // não estava contado.
+ const grafiaEstranha=id(900003)
+ await pg.query(`INSERT INTO clients(id,tenant_id,external_key,consultant_id,name,municipality,cultures,source,status)
+  VALUES($1::uuid,$2,$1::text,$3,'ZZZ TEST grafia estranha','TEST Town','Soja','manual','Active')`,[grafiaEstranha,tenantId,consultant])
+ await pg.query(`INSERT INTO visits(id,tenant_id,client_id,consultant_id,scheduled_at,lifecycle_status,objective)
+  VALUES($1,$2,$3::uuid,$4,'2026-09-12T15:00Z','COMPLETED','TEST objective')`,[id(800003),tenantId,grafiaEstranha,consultant])
+ try{
+  const resultado=await service.overview(viewer,period)
+  const item=resultado.archivedProducers.find(entry=>entry.id===grafiaEstranha)
+  assert.ok(item,'ele tem visita no período e precisa aparecer para o gestor')
+  assert.equal(item.archived,true,'não está na contagem da carteira, então não pode ser anunciado como ativo')
+  assert.equal(resultado.summary.producers,5001,'a contagem não mudou: o SQL nunca o contou')
+ }finally{
+  await pg.query('DELETE FROM visits WHERE id=$1',[id(800003)])
+  await pg.query('DELETE FROM clients WHERE id=$1::uuid',[grafiaEstranha])
+ }
+})

@@ -18,15 +18,10 @@ const PRECACHE_EXTRA=['/manifest.webmanifest','/brand/val-symbol-official.png']
 // O build carimba aqui os arquivos que o proprio index.html referencia. Os pedacos lazy continuam
 // entrando por uso: eles nao sao necessarios para o app abrir, e baixar o bundle inteiro a cada
 // release custaria caro na conexao fraca que este cache existe para atender.
-const PRECACHE_BUILD=__VAL_BUILD_ASSETS__
-self.addEventListener('install',event=>{
- self.skipWaiting()
- event.waitUntil(caches.open(CACHE).then(async cache=>{
-  await cache.addAll(PRECACHE_SHELL)
-  await Promise.allSettled([...PRECACHE_BUILD,...PRECACHE_EXTRA].map(asset=>cache.add(asset)))
- }))
-})
-self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())))
+// O marcador do build fica DENTRO de um comentario, nao solto no codigo. Como identificador livre
+// ele fazia o template cru de public/sw.js lancar ReferenceError antes de registrar qualquer
+// listener: o register('/sw.js') rejeitava e a aba ficava sem service worker nenhum. Assim, sem
+// carimbo o pre-cache e vazio e o worker instala igual ao que era antes.
 // Um deploy renomeia os pedacos por hash. Se o servidor devolvesse index.html com 200 para um .js que
 // sumiu, guardar essa resposta envenenava o cache do release: a tela lazy nunca mais abriria naquela
 // aba. So guardamos resposta cujo tipo bate com o que foi pedido.
@@ -39,6 +34,31 @@ const cacheableResponse=(request,response)=>{
  if(request.destination==='document')return type.includes('html')
  return true
 }
+const PRECACHE_BUILD=[/*__VAL_BUILD_ASSETS__*/]
+// cache.add() so rejeita status fora de 2xx e NAO olha o tipo do conteudo - exatamente a guarda que
+// cacheableResponse existe para dar. Com ele, um servidor que devolve index.html com 200 para um .js
+// que sumiu envenena o cache do release: como o fetch e cache-first, o HTML continua sendo servido
+// no lugar do modulo mesmo depois de a origem ser consertada, e a tela fica em branco ate o proximo
+// release ativar. O pre-cache passa pela mesma guarda do resto.
+// cacheableResponse decide pelo request.destination, que vem vazio num Request criado a mao - por
+// isso o pre-cache tem a sua propria versao, que le o tipo esperado da extensao do caminho.
+const precacheTypeMatches=(asset,response)=>{
+ if(!response.ok||response.type==='opaque')return false
+ const type=String(response.headers.get('Content-Type')||'').toLowerCase()
+ if(!type)return true
+ if(/\.m?js$/i.test(asset))return /javascript|ecmascript/.test(type)
+ if(/\.css$/i.test(asset))return type.includes('css')
+ return true
+}
+const precache=(cache,asset)=>fetch(asset,{cache:'reload'}).then(response=>precacheTypeMatches(asset,response)?cache.put(asset,response):Promise.reject(new Error(`resposta de tipo inesperado para ${asset}`)))
+self.addEventListener('install',event=>{
+ self.skipWaiting()
+ event.waitUntil(caches.open(CACHE).then(async cache=>{
+  await cache.addAll(PRECACHE_SHELL)
+  await Promise.allSettled([...PRECACHE_BUILD,...PRECACHE_EXTRA].map(asset=>precache(cache,asset)))
+ }))
+})
+self.addEventListener('activate',event=>event.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(key=>key!==CACHE).map(key=>caches.delete(key)))).then(()=>self.clients.claim())))
 const store=(request,response)=>{if(cacheableResponse(request,response)){const copy=response.clone();return caches.open(CACHE).then(cache=>cache.put(request,copy))}return Promise.resolve()}
 self.addEventListener('fetch',event=>{
  const url=new URL(event.request.url)

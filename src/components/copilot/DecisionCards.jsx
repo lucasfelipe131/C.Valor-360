@@ -77,10 +77,21 @@ export function EvidenceCard({facts=[],onOpen}){
  </Card>
 }
 
+// Este card passou a aparecer no fluxo da conversa quando knowledge_refs deixou de vir vazio, e
+// mostrava apenas o TITULO do item - que num item GUARDRAIL_ONLY de risco alto e uma frase seca
+// ("Mofo branco nao tem controle isolado eficaz") solta no meio da conversa. Ou o card carrega a
+// proveniencia que o painel lateral carrega, ou ele desinforma: e a mesma fonte, a mesma autoridade
+// e o mesmo caveat da curadoria.
+const knowledgeProvenance=item=>[
+ list(item.source_refs).length?`Fonte ${list(item.source_refs).join(', ')}`:'',
+ item.authority?`Autoridade ${item.authority}`:'',
+ item.risk?`Risco ${item.risk}`:'',
+ item.requires_human_review?'Exige responsável técnico':''
+].filter(Boolean).join(' • ')
 export function KnowledgeCard({items=[]}){
  if(!list(items).length)return null
  return <Card className="val-knowledge-card" icon={BookOpenCheck} label="BIBLIOTECA / MANUAL" title="Conhecimento usado na leitura">
-  <ul>{items.slice(0,4).map((item,index)=><li key={item.id||item.knowledge_item_id||index}><Database/>{item.title||item.source_ref||item.id||'Referência governada'}</li>)}</ul>
+  <ul>{items.slice(0,4).map((item,index)=><li key={item.id||item.knowledge_item_id||index}><Database/><div><b>{item.title||item.source_ref||item.id||'Referência governada'}</b>{knowledgeProvenance(item)&&<small>{knowledgeProvenance(item)}</small>}{list(item.geography_caveats).concat(list(item.freshness_caveats)).slice(0,2).map((caveat,posicao)=><em key={posicao}>{caveat}</em>)}</div></li>)}</ul>
  </Card>
 }
 

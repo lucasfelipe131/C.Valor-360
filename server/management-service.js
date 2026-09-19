@@ -140,6 +140,10 @@ export function createManagementService({db,tenantId}){
    // Arquivar um produtor nao apaga a visita que ja aconteceu nem o relatorio ja confirmado: eles
    // sao fatos de um periodo fechado. Eles voltam para o painel, e o produtor arquivado viaja junto
    // — so para o gestor ver de quem e a visita, sem entrar na contagem da carteira.
+   // A comparacao e EXATA, igual a do SQL (c.status='active'). Com toLowerCase em JS e igualdade
+   // exata no banco, uma grafia como 'Active' caia no vao: fora da pagina, fora da contagem, e ainda
+   // assim rotulada como ativa - o painel avisava "continua contado na carteira" sobre quem nao
+   // estava contado.
    // Ausencia da pagina nao e arquivamento. Com a lista cortada em MAX_ROWS, todo produtor ATIVO
    // alem da ultima linha que tivesse visita no periodo saia marcado archived:true, e o gestor lia
    // que ele "nao entra na contagem da carteira" - entrava, porque o total vem de count(*) sobre
@@ -154,7 +158,7 @@ export function createManagementService({db,tenantId}){
    // mesma lista: a que o gestor ve.
    const shownVisitIds=new Set(visits.map(visit=>String(visit.id)))
    const outOfPageProducers=[...new Map(visitRows.rows.filter(row=>shownVisitIds.has(String(row.id))&&!active.has(String(row.client_id)))
-    .map(row=>[String(row.client_id),{id:row.client_id,name:row.client_name,consultantId:row.consultant_id,archived:String(row.client_status||'').toLowerCase()!=='active',status:row.client_status||null,dataStatus:'REAL DATA'}])).values()]
+    .map(row=>[String(row.client_id),{id:row.client_id,name:row.client_name,consultantId:row.consultant_id,archived:String(row.client_status||'')!=='active',status:row.client_status||null,dataStatus:'REAL DATA'}])).values()]
    const archivedProducers=outOfPageProducers
    const archivedCount=outOfPageProducers.filter(item=>item.archived).length
    const beyondPageCount=outOfPageProducers.length-archivedCount

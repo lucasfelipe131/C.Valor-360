@@ -26,7 +26,9 @@ test('um arquivo faltando nao pode mais derrubar o modo offline inteiro', () => 
  assert.match(worker,/await cache\.addAll\(PRECACHE_SHELL\)/)
  // OFFLINE-02 somou os arquivos de entrada do build à mesma lista item a item; a propriedade que
  // este caso protege — um arquivo que falha não derruba o install inteiro — continua valendo.
- assert.match(worker,/await Promise\.allSettled\(\[\.\.\.PRECACHE_BUILD,\.\.\.PRECACHE_EXTRA\]\.map\(asset=>cache\.add\(asset\)\)\)/)
+ // A rodada 13 trocou cache.add por precache(), que passa pela checagem de Content-Type; a
+ // propriedade protegida aqui — um arquivo que falha não derruba o install inteiro — é a mesma.
+ assert.match(worker,/await Promise\.allSettled\(\[\.\.\.PRECACHE_BUILD,\.\.\.PRECACHE_EXTRA\]\.map\(asset=>precache\(cache,asset\)\)\)/)
  assert.equal([...lista('PRECACHE_SHELL'),...lista('PRECACHE_EXTRA')].includes('/icon.svg'),false)
 })
 

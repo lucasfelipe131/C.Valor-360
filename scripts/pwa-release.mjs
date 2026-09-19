@@ -7,6 +7,9 @@ import {RELEASE_SCHEMA_VERSION,resolveSourceCommit} from '../server/release-meta
 
 export const PWA_RELEASE_PLACEHOLDER='__VAL_RELEASE__'
 export const PWA_ASSETS_PLACEHOLDER='__VAL_BUILD_ASSETS__'
+// A troca mira a forma de COMENTARIO. Mirar o marcador nu acertava a primeira ocorrencia, que podia
+// ser um comentario explicativo do proprio worker - e foi o que aconteceu na primeira tentativa.
+const PWA_ASSETS_SLOT='/*__VAL_BUILD_ASSETS__*/'
 export const PWA_CACHE_PREFIX='valor360-v'
 
 const RELEASE_ENV_KEYS=[
@@ -84,8 +87,14 @@ export function buildEntryAssets({root=process.cwd(),htmlPath='dist/index.html'}
 }
 
 function replaceAssets(source,assets){
- if(!source.includes(PWA_ASSETS_PLACEHOLDER))return source
- return source.replace(PWA_ASSETS_PLACEHOLDER,JSON.stringify(assets))
+ if(!source.includes(PWA_ASSETS_SLOT))return source
+ const ocorrencias=source.split(PWA_ASSETS_SLOT).length-1
+ if(ocorrencias!==1)throw new Error(`O service worker precisa conter exatamente um marcador ${PWA_ASSETS_SLOT}; encontrei ${ocorrencias}.`)
+ // Funcao de substituicao, nao string: com padrao string o Node expande $&, $` e $' dentro do texto
+ // de troca. Um caminho de asset com $` injetava o prefixo inteiro do sw.js dentro da string JSON e
+ // o arquivo compilado deixava de ser JavaScript valido; um com $& recriava o proprio marcador.
+ const declared=assets.map(asset=>JSON.stringify(asset)).join(',')
+ return source.replace(PWA_ASSETS_SLOT,()=>declared)
 }
 
 function replacePlaceholder(source,releaseId){
@@ -129,9 +138,11 @@ export function verifyServiceWorker({root=process.cwd(),outputPath='dist/sw.js',
  // offline, depois da proxima atualizacao, no campo.
  const expectedAssets=buildEntryAssets({root})
  if(expectedAssets.length){
-  const declared=worker.match(/const PRECACHE_BUILD=(\[[^\]]*\])/)
-  const parsed=declared?JSON.parse(declared[1]):[]
-  const faltando=expectedAssets.filter(asset=>!parsed.includes(asset))
+  // Conferencia por presenca do literal, nao por um regex que um ']' no caminho trunca. E o arquivo
+  // compilado tem que continuar sendo JavaScript valido - a checagem antiga nao veria um template
+  // quebrado pela propria substituicao.
+  const declaracao=worker.slice(worker.indexOf('const PRECACHE_BUILD=['))
+  const faltando=expectedAssets.filter(asset=>!declaracao.startsWith('const PRECACHE_BUILD=[')||!declaracao.slice(0,declaracao.indexOf('\n')).includes(JSON.stringify(asset)))
   if(faltando.length)throw new Error(`O service worker compilado não pré-carrega os arquivos de entrada do build: ${faltando.join(', ')}.`)
  }
  const match=worker.match(/const CACHE='valor360-v([a-z0-9._-]+)'/)

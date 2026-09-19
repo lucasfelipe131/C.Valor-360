@@ -22,8 +22,12 @@ const htmlDeBuild=(js,css)=>`<!doctype html><html><head><script type="module" cr
 
 test('OFFLINE-02 — o modelo do worker declara o pre-cache do build e o usa no install',()=>{
  const worker=modelo()
- assert.match(worker,/const PRECACHE_BUILD=__VAL_BUILD_ASSETS__/)
- assert.match(worker,/\[\.\.\.PRECACHE_BUILD,\.\.\.PRECACHE_EXTRA\]\.map\(asset=>cache\.add\(asset\)\)/)
+ // O marcador vive dentro de um comentário: como identificador livre ele fazia o template cru lançar
+ // ReferenceError e a aba ficava sem service worker nenhum.
+ assert.match(worker,/const PRECACHE_BUILD=\[\/\*__VAL_BUILD_ASSETS__\*\/\]/)
+ assert.match(worker,/\[\.\.\.PRECACHE_BUILD,\.\.\.PRECACHE_EXTRA\]\.map\(asset=>precache\(cache,asset\)\)/)
+ // E o pré-cache passa pela checagem de tipo, que cache.add() não tem.
+ assert.match(worker,/precacheTypeMatches\(asset,response\)\?cache\.put\(asset,response\)/)
  // A casca continua sendo tudo-ou-nada; o resto entra item a item.
  assert.match(worker,/await cache\.addAll\(PRECACHE_SHELL\)/)
 })
@@ -65,4 +69,27 @@ test('OFFLINE-02 — sem build presente o carimbo continua funcionando com pre-c
   assert.match(readFileSync(join(root,'dist','sw.js'),'utf8'),/const PRECACHE_BUILD=\[\]/)
   assert.equal(verifyServiceWorker({root,releaseId:'release-sem-build'}).cacheName,'valor360-vrelease-sem-build')
  }finally{rmSync(root,{recursive:true,force:true})}
+})
+
+
+test('OFFLINE-02 — o modelo cru do worker e JavaScript valido mesmo sem carimbo',()=>{
+ // Sem isto o template lança ReferenceError antes de registrar qualquer listener e a aba fica sem
+ // service worker — degradação de "funciona com nome de cache errado" para "não existe".
+ assert.doesNotThrow(()=>new Function(modelo().replace(/\bself\b/g,'globalThis')),'o template cru precisa avaliar')
+})
+
+test('OFFLINE-02 — caminho de asset com $ ou ] nao quebra o worker compilado',()=>{
+ // replaceAssets usava padrão string: $&, $` e $' eram expandidos dentro do texto de troca, e um
+ // caminho com $` injetava o prefixo inteiro do sw.js dentro da string JSON.
+ for(const asset of ['/assets/index-$`evil.js','/assets/index-$&evil.js','/assets/index]evil.js']){
+  const root=mkdtempSync(join(tmpdir(),'valor360-offline02-hostil-'))
+  try{
+   comBuild(root,`<!doctype html><html><head><script type="module" src="${asset}"></script></head><body></body></html>`)
+   stampServiceWorker({root,releaseId:'release-hostil'})
+   const compilado=readFileSync(join(root,'dist','sw.js'),'utf8')
+   assert.doesNotThrow(()=>new Function(compilado.replace(/\bself\b/g,'globalThis')),`caminho ${asset} quebrou o worker`)
+   assert.match(compilado,/const PRECACHE_BUILD=\[/)
+   assert.doesNotThrow(()=>verifyServiceWorker({root,releaseId:'release-hostil'}),`caminho ${asset} quebrou a verificação`)
+  }finally{rmSync(root,{recursive:true,force:true})}
+ }
 })
