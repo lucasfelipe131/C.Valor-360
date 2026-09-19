@@ -201,14 +201,17 @@ const valChatIdempotency=createValChatIdempotencyLedger()
 const valSessionContextCache=createSessionContextCache()
 const valConversationSessions=createConversationSessionStore()
 const valConversationRequests=createConversationRequestCoordinator()
-function invalidateValContextScope({tenantId=config.defaultTenantId,ownerId,clientId='',resetConversation=false}={}){
+function invalidateValContextScope({tenantId=config.defaultTenantId,ownerId,clientId='',resetConversation=false,keepChatReplay=false}={}){
  const scopedOwner=clean(ownerId);if(!scopedOwner)return {cache:0,conversations:0}
  const scope={tenantId:clean(tenantId)||config.defaultTenantId,ownerId:scopedOwner,...(clean(clientId)?{clientId:clean(clientId)}:{})}
  const cache=valSessionContextCache.invalidate(scope)
  const conversations=resetConversation?valConversationSessions.invalidate(scope):0
  // O verniz de reenvio do chat morre junto: registrar um fato novo e depois repetir a pergunta tem
  // que recalcular, nao devolver a analise de antes do registro.
- const replays=valChatIdempotency.invalidate(scope)
+ // Menos o proprio turno do chat: ele chama esta funcao para invalidar o cache de contexto DEPOIS de
+ // persistir a recomendacao, e apagava o registro inteiro do dono ao fazer isso. O verniz nunca
+ // guardava mais que o ultimo turno - medido, a segunda pergunta destruia a protecao da primeira.
+ const replays=keepChatReplay?0:valChatIdempotency.invalidate(scope)
  return {cache,conversations,replays}
 }
 function invalidateDerivedPortfolioCaches({tenantId=config.defaultTenantId,ownerId,grains=false,objections=false}={}){
@@ -725,18 +728,6 @@ async function handleApi(request,response,url){
    return json(response,409,{error:guidance[workspaceRoute.intent],code:'val_canonical_module_required',globalIntent:workspaceRoute,canonicalModule:writeTarget||null})
   }
   const requestId=normalizeValProgressRequestId(payload.requestId)||randomUUID()
-  // Reenvio do MESMO turno depois de a resposta se perder na volta: devolve o que o servidor ja
-  // produziu, em vez de produzir, persistir e cobrar de novo. A chave e o turno, nao o requestId -
-  // o cliente gera um requestId novo a cada envio.
-  const idempotencyKey=valChatTurnFingerprint({tenantId,ownerId:scopedOwnerId,conversationId,clientId,mode:clean(payload.mode)||'daily',message,attachmentIds,contextEpoch:storedConversation?.context_epoch??0})
-  const replayedTurn=valChatIdempotency.replay(idempotencyKey)
-  if(replayedTurn){
-   observe('val.chat.idempotent_replay',{conversationId,outcome:'ok'})
-   // O payload repetido afirmava premises.recomputed_for_request=true, declarando ter sido recalculado
-   // para ESTE pedido sobre o contexto atual - o que nao aconteceu. A repeticao se declara.
-   const replayedAdvice=replayedTurn.advice?{...replayedTurn.advice,ai_reasoning:{...(replayedTurn.advice.ai_reasoning||{}),premises:{...(replayedTurn.advice.ai_reasoning?.premises||{}),recomputed_for_request:false}}}:replayedTurn.advice
-   return json(response,200,{...replayedTurn,...(replayedAdvice?{advice:replayedAdvice}:{}),requestId,responseMetadata:{...(replayedTurn.responseMetadata||{}),idempotentReplay:true}})
-  }
   const preferences=conversationPreferences(payload,requestedAttachmentTypes)
   if(preferences.inputModality==='voice')valRequestServiceClass='VOICE'
   // Um objeto ativo declarado pelo browser só entra no overlay depois de ser
@@ -748,6 +739,23 @@ async function handleApi(request,response,url){
   let sessionState=storedConversation||createConversationState(sessionScope)
   if(!turnOnlyClientOverride&&storedConversation&&conversationResolution?.changed_client&&clientId!==storedClientId)sessionState=switchConversationClient(storedConversation,sessionClient,{tenantId,ownerId:scopedOwnerId,conversationId,clientId,client:sessionClient,activeContext:null})
   if(!turnOnlyClientOverride)sessionState=prepareConversationTurnState(sessionState,{message:generalMessage,intent:routedIntent.intent,sessionCommand:routedIntent.session_command,scope:sessionScope})
+  // Reenvio do MESMO turno depois de a resposta se perder na volta: devolve o que o servidor ja
+  // produziu, em vez de produzir, persistir e cobrar de novo. A chave e o turno, nao o requestId -
+  // o cliente gera um requestId novo a cada envio.
+  // A chave precisa da epoca em que o turno REALMENTE roda. Na rodada 13 ela usava a epoca lida do
+  // banco, de ANTES do turno, e o proprio turno sobe a epoca quando o assunto muda: o remember
+  // gravava sob a epoca antiga e o reenvio, que ja le a nova, procurava outra chave e nunca casava.
+  // Medido: mudar de assunto e reenviar recalculava e cobrava sempre. Por isso o bloco vive DEPOIS
+  // de prepareConversationTurnState - que e onde a epoca sobe - e antes de qualquer efeito.
+  const idempotencyKey=valChatTurnFingerprint({tenantId,ownerId:scopedOwnerId,conversationId,clientId,mode:clean(payload.mode)||'daily',message,attachmentIds,contextEpoch:sessionState.context_epoch})
+  const replayedTurn=valChatIdempotency.replay(idempotencyKey)
+  if(replayedTurn){
+   observe('val.chat.idempotent_replay',{conversationId,outcome:'ok'})
+   // O payload repetido afirmava premises.recomputed_for_request=true, declarando ter sido recalculado
+   // para ESTE pedido sobre o contexto atual - o que nao aconteceu. A repeticao se declara.
+   const replayedAdvice=replayedTurn.advice?{...replayedTurn.advice,ai_reasoning:{...(replayedTurn.advice.ai_reasoning||{}),premises:{...(replayedTurn.advice.ai_reasoning?.premises||{}),recomputed_for_request:false}}}:replayedTurn.advice
+   return json(response,200,{...replayedTurn,...(replayedAdvice?{advice:replayedAdvice}:{}),requestId,responseMetadata:{...(replayedTurn.responseMetadata||{}),idempotentReplay:true}})
+  }
   // Um fato pedido explicitamente sobre outro produtor e apenas uma consulta
   // deste turno. Nao deixe modalidade, objetivo, fatos ou turns contaminarem a
   // sessao que continua vinculada ao produtor atual.
@@ -1016,7 +1024,7 @@ async function handleApi(request,response,url){
    const coreResponse=await valCore.execute(requestEnvelope,{engineInput:{tenantId:organizationId,ownerId:scopedOwnerId,clientId,client:deepContext.client||{...(payload.client||{}),id:clientId},message,attachmentIds,mode:requestMode,deadlineAt:Date.now()+Math.max(1_000,config.valChatRequestTimeoutMs-Math.round(performance.now()-requestStartedAt)),requestedStage:clean(payload.requestedStage),intent:routedIntent.intent,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent),sessionState:requestConversationState,preloadedContext:{scope:{tenantId:organizationId,ownerId:scopedOwnerId,clientId},context:deepContext},finalizeRecommendation,signal:controller.signal,onProgress:stage=>valProgress.update({requestId,tenantId,ownerId:ownerKey,stage})}})
    // A recomendação persistida passa a compor o contexto do produtor em todas
    // as threads do mesmo owner. Invalide o produtor inteiro, não só esta conversa.
-   invalidateValContextScope({tenantId,ownerId:scopedOwnerId,clientId})
+   invalidateValContextScope({tenantId,ownerId:scopedOwnerId,clientId,keepChatReplay:true})
    latency.end('MODEL')
    let result=coreResponse.recommendation
    latency.start('VALIDATION')
@@ -1034,7 +1042,7 @@ async function handleApi(request,response,url){
    result=completeClient(result,toolExecution)
    const effectiveCoreResponse={...coreResponse,recommendation:result}
    const completedPayload=url.pathname==='/api/v1/val/recommendations'?effectiveCoreResponse:legacyRecommendationResponse(effectiveCoreResponse,requestId)
-   valChatIdempotency.remember(idempotencyKey,completedPayload,Date.now(),{tenantId,ownerId:scopedOwnerId})
+   valChatIdempotency.remember(idempotencyKey,completedPayload,Date.now(),{tenantId,ownerId:scopedOwnerId,clientId})
    return json(response,200,completedPayload)
   }catch(error){valProgress.fail({requestId,tenantId,ownerId:ownerKey});throw error}
  }

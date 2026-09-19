@@ -151,3 +151,53 @@ test('OFFLINE-03 — o servidor liga a invalidacao do registro ao mesmo lugar da
  // E a repetição não pode continuar declarando que foi recalculada para este pedido.
  assert.match(servidor,/recomputed_for_request:false/)
 })
+
+// Rodada 14. Os tres defeitos abaixo conviviam com os testes acima porque todos eles reenviam o
+// turno NA HORA, sem nada no meio. Bastava uma segunda pergunta, uma mudanca de assunto ou uma
+// escrita sobre outro produtor para o verniz sumir - e nenhum dos tres aparecia.
+test('rodada 14 — uma segunda pergunta nao pode destruir o verniz da primeira',()=>{
+ // idem-01: o proprio turno do chat chamava a invalidacao de escopo depois de persistir, e ela
+ // apagava TODO o registro do dono. O verniz nunca guardava mais que o ultimo turno.
+ const registro=createValChatIdempotencyLedger()
+ const escopo={tenantId:'t-1',ownerId:'o-1',clientId:'p-1'}
+ const primeira=valChatTurnFingerprint(turno({message:'Qual o preço de venda e a margem dele?'}))
+ const segunda=valChatTurnFingerprint(turno({conversationId:'c-2',message:'Como está a carteira este mês?'}))
+ registro.remember(primeira,{rec:'a'},Date.now(),escopo)
+ registro.remember(segunda,{rec:'b'},Date.now(),escopo)
+ assert.deepEqual(registro.replay(primeira),{rec:'a'},'a segunda pergunta apagou a protecao da primeira')
+ assert.deepEqual(registro.replay(segunda),{rec:'b'})
+})
+
+test('rodada 14 — escrita sobre outro produtor nao apaga o verniz do primeiro',()=>{
+ // idem-03: invalidate() descartava o clientId que o chamador ja passava, entao registrar uma visita
+ // do produtor B derrubava a protecao do produtor A - que aquela escrita nao podia ter mudado.
+ const registro=createValChatIdempotencyLedger()
+ const chave=cliente=>valChatTurnFingerprint(turno({clientId:cliente,conversationId:`c-${cliente}`}))
+ registro.remember(chave('p-1'),{rec:'a'},Date.now(),{tenantId:'t-1',ownerId:'o-1',clientId:'p-1'})
+ registro.remember(chave('p-2'),{rec:'b'},Date.now(),{tenantId:'t-1',ownerId:'o-1',clientId:'p-2'})
+ const semProdutor=valChatTurnFingerprint(turno({clientId:'',conversationId:'c-carteira'}))
+ registro.remember(semProdutor,{rec:'carteira'},Date.now(),{tenantId:'t-1',ownerId:'o-1'})
+
+ assert.equal(registro.invalidate({tenantId:'t-1',ownerId:'o-1',clientId:'p-2'}),2)
+ assert.deepEqual(registro.replay(chave('p-1')),{rec:'a'},'escrita sobre p-2 nao pode tocar em p-1')
+ assert.equal(registro.replay(chave('p-2')),null,'escrita sobre p-2 tem de invalidar p-2')
+ // Fecha-se em duvida: resposta de carteira nao tem produtor e pode depender de qualquer um deles.
+ assert.equal(registro.replay(semProdutor),null,'resposta sem produtor tem de cair em qualquer escrita do dono')
+ // E escrita de OUTRO dono nunca toca neste.
+ registro.remember(chave('p-1'),{rec:'a'},Date.now(),{tenantId:'t-1',ownerId:'o-1',clientId:'p-1'})
+ assert.equal(registro.invalidate({tenantId:'t-1',ownerId:'outro',clientId:'p-1'}),0)
+ assert.deepEqual(registro.replay(chave('p-1')),{rec:'a'})
+})
+
+test('rodada 14 — a chave do turno usa a epoca em que o turno roda, nao a de antes dele',()=>{
+ // idem-02: a chave era montada com a epoca lida do banco, de ANTES do turno, e o proprio turno sobe
+ // a epoca quando o assunto muda. O remember gravava sob a epoca antiga e o reenvio, que ja le a
+ // nova, procurava outra chave: mudar de assunto e reenviar recalculava e cobrava sempre.
+ const antes=valChatTurnFingerprint(turno({message:'Como controlar a ferrugem asiática?',contextEpoch:0}))
+ const depois=valChatTurnFingerprint(turno({message:'Como controlar a ferrugem asiática?',contextEpoch:1}))
+ assert.notEqual(antes,depois,'a epoca tem de fazer parte da chave')
+ const registro=createValChatIdempotencyLedger()
+ registro.remember(depois,{rec:'agro'},Date.now(),{tenantId:'t-1',ownerId:'o-1',clientId:'p-1'})
+ assert.deepEqual(registro.replay(depois),{rec:'agro'},'o reenvio le a epoca ja avancada e tem de casar')
+ assert.equal(registro.replay(antes),null,'a epoca antiga nao pode casar')
+})

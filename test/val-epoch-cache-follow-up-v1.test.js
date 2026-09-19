@@ -358,7 +358,10 @@ test('server prepara epoch antes do request context e invalida rotas materiais d
   const invalidationAt=server.indexOf('invalidateValContextScope',mutationAt)
   assert.ok(mutationAt>0&&invalidationAt>mutationAt&&invalidationAt-mutationAt<1_200,mutation)
  }
- assert.match(server,/valCore\.execute[\s\S]{0,1600}invalidateValContextScope\(\{tenantId,ownerId:scopedOwnerId,clientId\}\)/)
+ // keepChatReplay: o turno do chat invalida o contexto do produtor DEPOIS de persistir, como sempre,
+ // mas nao pode apagar o proprio verniz de reenvio. Sem a bandeira, o registro nunca guardava mais
+ // que o ultimo turno e a segunda pergunta destruia a protecao da primeira (rodada 14, idem-01).
+ assert.match(server,/valCore\.execute[\s\S]{0,1600}invalidateValContextScope\(\{tenantId,ownerId:scopedOwnerId,clientId,keepChatReplay:true\}\)/)
  assert.match(server,/updateClient[^\n]*invalidateValContextScope\(\{tenantId:[^\n]*ownerId:[^\n]*resetConversation:true\}/)
  assert.match(server,/archiveClient[^\n]*invalidateValContextScope\([^\n]*resetConversation:true/)
 })

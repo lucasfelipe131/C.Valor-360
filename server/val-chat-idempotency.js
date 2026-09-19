@@ -51,17 +51,23 @@ export function createValChatIdempotencyLedger({ttlMs=90_000,maxEntries=200}={})
   remember(key,payload,now=Date.now(),scope={}){
    if(!key||payload==null)return false
    entries.delete(key)
-   entries.set(key,{payload,at:now,tenantId:text(scope.tenantId,180),ownerId:text(scope.ownerId,180)})
+   entries.set(key,{payload,at:now,tenantId:text(scope.tenantId,180),ownerId:text(scope.ownerId,180),clientId:text(scope.clientId,180)})
    prune(now)
    return true
   },
-  invalidate({tenantId='',ownerId=''}={}){
-   const scopedTenant=text(tenantId,180),scopedOwner=text(ownerId,180)
+  // O registro era o unico dos tres caches invalidados pelo mesmo escopo que DESCARTAVA o clientId
+  // recebido - session-context-cache respeita. Resultado medido: registrar uma visita do produtor B
+  // apagava o verniz de reenvio do produtor A, que aquela escrita nao podia ter mudado.
+  // A guarda "&&entry.clientId" preserva o fecha-se-em-duvida: entrada sem produtor (pergunta de
+  // carteira) continua sendo apagada por qualquer escrita do dono.
+  invalidate({tenantId='',ownerId='',clientId=''}={}){
+   const scopedTenant=text(tenantId,180),scopedOwner=text(ownerId,180),scopedClient=text(clientId,180)
    if(!scopedOwner)return 0
    let removed=0
    for(const [key,entry] of entries){
     if(entry.ownerId!==scopedOwner)continue
     if(scopedTenant&&entry.tenantId&&entry.tenantId!==scopedTenant)continue
+    if(scopedClient&&entry.clientId&&entry.clientId!==scopedClient)continue
     entries.delete(key);removed+=1
    }
    return removed
