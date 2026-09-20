@@ -3,7 +3,13 @@ import {knowledgeSelectionVersion,assertKnowledgeContract,validateKnowledgeSelec
 import {loadKnowledgeLibrary} from './library.js'
 import {authorityRank,evaluateGeography,evaluateKnowledgeLifecycle,knowledgePolicyVersion,list,normalizeSearchText,text,uniqueText} from './policy.js'
 import {stripMessagePreamble} from '../message-preamble.js'
-import {functionWord,verbInfinitive} from './agronomic-vocabulary.js'
+import {functionWord,verbForm,verbInfinitive} from './agronomic-vocabulary.js'
+// functionWord guarda a forma do dicionario ("varios"); o token ja chegou passado por singular(),
+// que corta o -s de palavras com 5+ letras e produz uma forma que a lista nunca tem. Testar as duas
+// formas, em vez de mexer na lista, mantem o conserto valendo para a proxima entrada em -s.
+const exemptFunctionWord=token=>functionWord.has(token)||functionWord.has(`${token}s`)
+// A deteccao de assunto tambem isenta forma conjugada - ela nunca e o assunto da pergunta.
+const exemptWordForm=token=>exemptFunctionWord(token)||verbForm.has(token)||verbForm.has(`${token}s`)
 
 const stopWords=new Set([
  'a','ao','aos','as','com','como','da','das','de','do','dos','e','ele','ela','em','entre','essa','esse','esta','este','eu','foi','ha','isso','ja','mais','mas','na','nas','no','nos','o','os','ou','para','pela','pelo','por','que','se','sem','ser','sua','suas','seu','seus','tem','um','uma','voce',
@@ -414,7 +420,7 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
  // Palavra gramatical tambem nao e assunto. O acervo e prosa expositiva de 198 itens e nunca vai
  // conter "deveria", "talvez" ou "sobretudo"; sem esta linha, a pergunta inteira era reprovada por
  // causa de um adverbio.
- const unknownTokens=[...queryBaseTokens].filter(token=>token.length>=5&&!corpusFrequency.has(token)&&!genericTopicTerms.has(token)&&!askingVerbs.has(token)&&!functionWord.has(token))
+ const unknownTokens=[...queryBaseTokens].filter(token=>token.length>=5&&!corpusFrequency.has(token)&&!genericTopicTerms.has(token)&&!askingVerbs.has(token)&&!exemptWordForm(token))
  const unknownTopic=unknownTokens.length>0
  const offDomainQuestion=!corpusKnowsQuestion(queryBaseTokens,corpusFrequency)||cappedLimit===1&&unknownTopic
 
