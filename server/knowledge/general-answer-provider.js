@@ -117,17 +117,28 @@ const corpusVocabulary=()=>{
 }
 // A copula pode separar a marca do verbo: "Standak e indicado", "Verdadero e eficaz".
 const leadingBrandClaim=/^\s*(?:[ée]|esta|est[áa]|foi|s[ãa]o|tem)?\s*(?:eficaz|efic[áa]cia|controla|controlam|combate|elimina|erradica|protege|atua|funciona|indicad[oa]|registrad[oa]|desempenho|residual)\b/i
+// Determinante e contracao abrem oracao o tempo todo e nao estao em functionWord. Com o piso de 3
+// letras que a rodada 14 baixou, "Uma lavoura bem manejada controla a praga" lia "Uma" como marca.
+const leadingDeterminer=new Set(['um','uma','uns','umas','no','na','nos','nas','do','da','dos','das','ao','aos','seu','sua','seus','suas','este','esta','esse','essa','aquele','aquela'])
 export function namedProductMentions(answer=''){
  const found=[]
  for(const sentence of String(answer??'').split(/(?<=[.!?;:])\s+|\n+/)){
+  // Alegacao de marca tem a marca e o verbo de eficacia na MESMA oracao, por construcao.
+  // regulatedBrandClaim cruzava o verbo do texto INTEIRO com qualquer nome proprio de qualquer
+  // outra oracao: "A mancha da folha do trigo e causada por Zymoseptoria tritici." morria por causa
+  // de "O manejo integrado combate a doenca com rotacao." - duas oracoes, nenhuma delas alegacao.
+  if(!efficacyAssertion.test(sentence))continue
   const words=sentence.trim().split(/\s+/)
   const first=(words[0]||'').replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
   const second=(words[1]||'').replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
-  // A adjacencia estrita deixava passar qualquer adverbio ou aposto entre a marca e o verbo
-  // ("Lannate tambem controla", "Lannate, um inseticida carbamato, controla"): medido, 28 de 45.
-  // O verbo de eficacia vale em qualquer ponto da oracao, e o que protege o termo legitimo e o
-  // vocabulario fechado - o acervo curado nao serve de dicionario de agronomia.
-  if(/^[A-ZÀ-Ý][\p{L}\p{N}-]*$/u.test(first)&&!nonBrandProperNoun.has(normalize(first))&&first.length>=3&&!knownAgronomicTerm(normalize(first))&&!scientificPair(first,second)&&efficacyAssertion.test(words.slice(1).join(' ')))found.push(first)
+  // A adjacencia estrita deixava passar adverbio e aposto ("Lannate tambem controla", "Lannate, um
+  // inseticida carbamato, controla"): medido, 28 de 45. A rodada 14 abriu para a oracao INTEIRA e
+  // comprou o erro oposto - qualquer frase legitima com verbo de eficacia 20 palavras adiante tinha
+  // a primeira palavra lida como marca. A janela de 8 foi medida no portao inteiro, nao escolhida:
+  //   janela 7 -> 11/12 marcas pegas, 0/15 legitimas barradas
+  //   janela 8 -> 12/12 marcas pegas, 0/15 legitimas barradas (com 'tolerancia' no glossario)
+  //   janela 9 -> 12/12 marcas pegas, 4/15 legitimas barradas
+  if(/^[A-ZÀ-Ý][\p{L}\p{N}-]*$/u.test(first)&&!nonBrandProperNoun.has(normalize(first))&&first.length>=3&&!knownAgronomicTerm(normalize(first))&&!leadingDeterminer.has(normalize(first))&&!scientificPair(first,second)&&efficacyAssertion.test(words.slice(1,9).join(' ')))found.push(first)
   // A partir da SEGUNDA palavra: inicio de oracao e maiusculo por gramatica, nao por ser marca.
   for(let index=1;index<words.length;index+=1){
    const raw=words[index].replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
@@ -135,6 +146,10 @@ export function namedProductMentions(answer=''){
    if(nonBrandProperNoun.has(normalize(raw))||knownAgronomicTerm(normalize(raw)))continue
    // Sigla de sitio de acao e simbolo de elemento nao sao marca: EPSPS, ALS, ACCase, GABA, N.
    if(raw.length<2)continue
+   // Sigla e simbolo tecnico se escrevem SEM minuscula (CO2, MT, NDRE, LMR, ILPF, SPD, MAP, DAP);
+   // marca comercial em prosa vem em caixa de titulo (Lannate, Fox Xpro, Standak Top). Medido: 51
+   // dos 56 falsos positivos saem por esta guarda, sem reabrir nenhuma alegacao de marca.
+   if(raw.length<=6&&!/\p{Ll}/u.test(raw))continue
    // Binomio cientifico: o proximo token e o epiteto em minuscula. Nem o genero nem o epiteto sao
    // marca, e os dois saem juntos.
    const next=(words[index+1]||'').replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')

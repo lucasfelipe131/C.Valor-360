@@ -39,6 +39,10 @@ saccharum coffea citrus musa manihot solanum capsicum lycopersicon allium daucus
 crotalaria canavalia mucuna cajanus stylosanthes leucaena gliricidia
 pinus eucalyptus tectona khaya
 pasteuria steinernema heterorhabditis xylella xanthomonas leifsonia
+zymoseptoria verticillium hemileia gibberella nigrospora lasiodiplodia neofusicoccum
+rhizopus mucor trichothecium epicoccum phoma ascochyta didymella leptosphaeria
+meloidogyne tylenchorhynchus paratrichodorus criconemella hoplolaimus
+lagenidium olpidium polymyxa spongospora synchytrium plasmodiophora
 sphaceloma elsinoe verticillium thielaviopsis ceratocystis monilinia
 apis bombus melipona scaptotrigona tetragonisca
 `.trim().split(/\s+/).filter(Boolean))
@@ -97,12 +101,19 @@ acido graxo carotenoide esterol tubulina octopamina ryr rianodina
 feromonio entomopatogeno graminicida herbicida fungicida inseticida acaricida nematicida
 biologico biologicos amostragem monitoramento armadilha limiar dano economico
 protetor curativo sistemico translaminar contato ingestao residual
+tolerancia suscetibilidade seletividade fitotoxicidade persistencia degradacao lixiviacao
+volatilizacao sorcao eficiencia eficacia antagonismo sinergismo compatibilidade incompatibilidade
+deriva evaporacao adsorcao mobilidade solubilidade formulacao concentracao
 `.trim().split(/\s+/).filter(Boolean))
 
 // O acervo curado foi usado como dicionario de agronomia e nao e um: 2580 palavras, e nenhum
 // dos 36 ingredientes ativos e grupos quimicos medidos estava la.
 const plain=word=>String(word||'').replace(/-/g,'')
-export const knownAgronomicTerm=word=>functionWord.has(word)||agronomicTerm.has(word)||agronomicTerm.has(plain(word))||/^[ivx]{1,4}$/.test(word)||(word.length>4&&word.endsWith('s')&&agronomicTerm.has(word.slice(0,-1)))||(word.length>5&&word.endsWith('es')&&agronomicTerm.has(word.slice(0,-2)))
+// verbInfinitive entra aqui porque o oraculo de marca perguntava "esta palavra esta em alguma lista"
+// e nao consultava a lista de verbos que este mesmo modulo criou: 341 de 341 infinitivos ficavam de
+// fora, e oracao aberta por infinitivo - o registro em que o proprio acervo curado esta escrito -
+// tinha a primeira palavra lida como marca comercial.
+export const knownAgronomicTerm=word=>functionWord.has(word)||verbInfinitive.has(word)||agronomicTerm.has(word)||agronomicTerm.has(plain(word))||/^[ivx]{1,4}$/.test(word)||(word.length>4&&word.endsWith('s')&&agronomicTerm.has(word.slice(0,-1)))||(word.length>5&&word.endsWith('es')&&agronomicTerm.has(word.slice(0,-2)))
 
 // Classe fechada do portugues: determinante, pronome, adverbio, conjuncao e quantificador. Comecar
 // a oracao em maiuscula e gramatica, entao estas palavras aparecem capitalizadas o tempo todo sem
@@ -123,6 +134,8 @@ existe existem havia houve deve devem pode podem precisa precisam costuma costum
 deveria deveriam poderia poderiam seria seriam teria teriam faria fariam iria iriam daria
 haveria precisaria precisariam conseguiria valeria custaria bastaria convem conviria
 nesse neste nessa nesta naquele naquela nisso nisto aqui ali assim entao logo
+principal principais diverso diversos diversa diversas demais varias respectivo respectivos
+seguinte seguintes anteriores atuais gerais especificos especificas comuns raros frequentes
 `.trim().split(/\s+/).filter(Boolean))
 
 // Infinitivos do portugues correntes numa pergunta de consultor. Classe grande mas fechada, e a
@@ -158,6 +171,7 @@ exigir requerer demandar necessitar dispensar
 justificar explicar fundamentar sustentar embasar
 esperar aguardar adiar antecipar programar agendar marcar
 lidar abordar auxiliar consultar declarar desligar ligar entregar enumerar perguntar responder
+reforcar enfraquecer fortalecer sustentar amparar embasar respaldar apoiar
 pontuar repetir respeitar girar puxar empurrar apertar soltar
 cortar quebrar romper furar rasgar juntar somar dividir multiplicar subtrair
 anotar apontar assinalar destacar ressaltar enfatizar lembrar esquecer notar reparar
@@ -169,3 +183,18 @@ brotar enraizar enraizar perfilhar afilhar espigar granar encher vingar
 pegar largar prender soltar amarrar desamarrar erguer baixar subir descer entrar sair
 voltar retornar repassar revisitar reavaliar recalcular refazer reaplicar reiniciar
 `.trim().split(/\s+/).filter(Boolean))
+
+// "esta palavra e assunto?" e "esta palavra e marca?" sao perguntas diferentes e pedem conjuntos
+// diferentes. Forma conjugada nao e assunto - "quais modos de acao CONTROLAM a ferrugem?" perguntava
+// sobre ferrugem, e o portao reprovava a pergunta inteira por causa de "controlam". Mas ela NAO pode
+// entrar no oraculo de marca: "opera" e forma de "operar" e tambem e um fungicida registrado.
+// As formas sao geradas do proprio lexico, nao listadas a mao: 3.036 formas a partir de 343 verbos.
+const brandHomograph=new Set(['opera'])
+const conjugate=infinitive=>{
+ const stem=infinitive.slice(0,-2),ending=infinitive.slice(-2)
+ if(ending==='ar')return [stem+'a',stem+'am',stem+'ou',stem+'aram',stem+'ando',stem+'ado',stem+'ada',stem+'ados',stem+'adas']
+ if(ending==='er')return [stem+'e',stem+'em',stem+'eu',stem+'eram',stem+'endo',stem+'ido',stem+'ida',stem+'idos',stem+'idas']
+ if(ending==='ir')return [stem+'e',stem+'em',stem+'iu',stem+'iram',stem+'indo',stem+'ido',stem+'ida',stem+'idos',stem+'idas']
+ return []
+}
+export const verbForm=new Set([...verbInfinitive,...[...verbInfinitive].flatMap(conjugate)].filter(word=>!brandHomograph.has(word)))
