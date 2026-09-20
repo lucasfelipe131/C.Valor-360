@@ -190,9 +190,14 @@ const strategyInstruction=/^(?:nao\s+)?(?:abra|acompanhe|acompanhar|adapte|adapt
 // residual", "Ele fechou negativo quando o frete subiu" sao explicacao geral e foram barradas -
 // medido, 20 de 20. Verbo no passado so acusa caso individual quando ha, na mesma clausula, objeto
 // de transacao ou de relacionamento. Verbo de estado continua valendo com o sujeito nu.
-const genericAssertionState=/\b(?:ele|ela|produtor\\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:e|esta|tem|possui|carrega|mantem|demonstra|desvia|cultiva|quer|pretende|vai|parece|opera)\b/
-const genericAssertionPast=/\b(?:ele|ela|produtor\\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:plantou|colheu|vendeu|comprou|pagou|arrendou|contratou|assinou|reclamou|atrasou|quitou|renegociou|aplicou|entregou|recebeu|fechou|perdeu|ganhou|investiu|financiou|antecipou|travou|fixou|deixou|prometeu|aceitou|recusou|cancelou)\b[^.!?;]{0,60}?\b(?:soja|milho|trigo|algodao|cafe|graos?|producao|safra|lavoura|talhao|hectares?|contratos?|propostas?|pedido|parcelas?|custeio|divida|credito|financiamento|emprestimo|banco|fatura|boleto|saldo|visita|compromisso|reuniao|atendimento|insumos?|fertilizante|defensivo|semente|adubo|maquina|trator|arrendamento|concorrente|desconto|pagamento|assinatura)\b/
-const genericAssertion={test:value=>genericAssertionState.test(value)||genericAssertionPast.test(value)}
+const genericAssertionState=/\b(?:ele|ela|produtor\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:e|esta|tem|possui|carrega|mantem|demonstra|desvia|cultiva|quer|pretende|vai|parece|opera)\b/
+const genericAssertionPast=/\b(?:ele|ela|produtor\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:plantou|colheu|vendeu|comprou|pagou|arrendou|contratou|assinou|reclamou|atrasou|quitou|renegociou|aplicou|entregou|recebeu|fechou|perdeu|ganhou|investiu|financiou|antecipou|travou|fixou|deixou|prometeu|aceitou|recusou|cancelou)\b[^.!?;]{0,60}?\b(?:soja|milho|trigo|algodao|cafe|graos?|producao|safra|lavoura|talhao|hectares?|contratos?|propostas?|pedido|parcelas?|custeio|divida|credito|financiamento|emprestimo|banco|fatura|boleto|saldo|visita|compromisso|reuniao|atendimento|insumos?|fertilizante|defensivo|semente|adubo|maquina|trator|arrendamento|concorrente|desconto|pagamento|assinatura)\b/
+const genericAssertionPastBare=/\b(?:ele|ela|produtor\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:plantou|colheu|vendeu|comprou|pagou|arrendou|contratou|assinou|reclamou|atrasou|quitou|renegociou|aplicou|entregou|recebeu|fechou|perdeu|ganhou|investiu|financiou|antecipou|travou|fixou|deixou|prometeu|aceitou|recusou|cancelou)\b/
+// O objeto de transacao separa narracao individual de explicacao geral porque a explicacao retoma
+// uma COISA com pronome anaforico. Na PRIMEIRA frase do texto nao ha frase anterior que introduza a
+// coisa retomada, entao ali nao existe leitura anaforica e vale a forma larga - sem exigir objeto.
+const genericAssertionFirstSentence=value=>String(value??'').split(/(?<=[.!?])\s+/)[0]||''
+const genericAssertion={test:value=>genericAssertionState.test(value)||genericAssertionPast.test(value)||genericAssertionPastBare.test(genericAssertionFirstSentence(value))}
 // "deve" e a excecao que a lista nao resolve: modal ("ele deve ser aplicado antes da floracao") e
 // explicacao geral legitima, obrigacao ("ela deve ao banco") e afirmacao sobre uma pessoa. O que
 // separa os dois e o infinitivo logo depois.
@@ -200,11 +205,15 @@ const genericAssertion={test:value=>genericAssertionState.test(value)||genericAs
 // qualquer adverbio ou clitico entre o modal e o verbo derrubava resposta geral legitima ("ele deve
 // sempre ser aplicado"), e "ele deve ter atrasado" passava como modal deontico quando e conjectura
 // sobre uma pessoa. As duas listas abaixo sao fechadas, como o resto do arquivo.
-const modalInterposer='(?:se|o|a|os|as|lhe|lhes|nos|me|te|nao|sempre|nunca|jamais|tambem|apenas|so|somente|ainda|entao|portanto|primeiro|depois|logo|ja|talvez|preferencialmente|idealmente|necessariamente|obrigatoriamente|essencialmente|sobretudo|inclusive|previamente|posteriormente|de preferencia|no minimo|no maximo|em tese|por principio)'
+const modalInterposer='(?:\\w+mente|se|o|a|os|as|lhe|lhes|nos|me|te|nao|sempre|nunca|jamais|tambem|apenas|so|somente|ainda|entao|portanto|primeiro|depois|logo|ja|talvez|preferencialmente|idealmente|necessariamente|obrigatoriamente|essencialmente|sobretudo|inclusive|previamente|posteriormente|de preferencia|no minimo|no maximo|em tese|por principio)'
 const pronounStateWord='inadimplente|adimplente|endividad\\w*|devendo|negativad\\w*|bloquead\\w*|atrasad\\w*'
+// O teste por SUFIXO lia substantivo comum como participio: "ele deve ter cuidado", "ele deve ter
+// contato", "ela deve ter conta". A lista fechada e dos MESMOS verbos de transacao que o ramo do
+// passado ja enumera - mesmo metodo, mesma disciplina.
+const pastParticiple='(?:plantad[oa]s?|colhid[oa]s?|vendid[oa]s?|comprad[oa]s?|pag[oa]s?|pagad[oa]s?|arrendad[oa]s?|contratad[oa]s?|assinad[oa]s?|reclamad[oa]s?|atrasad[oa]s?|quitad[oa]s?|renegociad[oa]s?|aplicad[oa]s?|entregue?s?|entregad[oa]s?|recebid[oa]s?|fechad[oa]s?|perdid[oa]s?|ganh[oa]s?|ganhad[oa]s?|investid[oa]s?|financiad[oa]s?|antecipad[oa]s?|travad[oa]s?|fixad[oa]s?|deixad[oa]s?|prometid[oa]s?|aceit[oa]s?|aceitad[oa]s?|recusad[oa]s?|cancelad[oa]s?)'
 const pronounObligation=new RegExp(
- '\\b(?:ele|ela)\\s+deve\\s+(?:ter|haver)\\s+(?!sido\\b)\\w+(?:ad[oa]s?|id[oa]s?|to|ta|eito|eita)\\b'
- +`|\\b(?:ele|ela)\\s+deve\\s+estar\\s+(?:${pronounStateWord})\\b`
+ `\\b(?:ele|ela)\\s+deve\\s+(?:${modalInterposer}\\s+)?(?:ter|haver)\\s+${pastParticiple}\\b`
+ +`|\\b(?:ele|ela)\\s+deve\\s+(?:${modalInterposer}\\s+)?estar\\s+(?:${pronounStateWord})\\b`
  +`|\\b(?:ele|ela)\\s+deve\\b(?!(?:,?\\s+${modalInterposer})*,?\\s+\\w*(?:ar|er|ir)\\b)`
   // O infinitivo sozinho nao prova que a frase e geral: "ele deve aceitar o desconto" e "ela deve
   // entregar os graos na cooperativa" sao obrigacao de UMA pessoa com cara de modal. O que separa e
