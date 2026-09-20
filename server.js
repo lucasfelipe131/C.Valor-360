@@ -1298,8 +1298,9 @@ async function handleApi(request,response,url){
   // arquivado reaparecer na carteira da tela e o contador prometer 2.500 produtores quando 2.000
   // foram gravados.
   const archivedSkipped=persistence.archivedSkipped||[]
-  const acceptedClients=persistence.persisted?clients.slice(0,persistence.clientLimit||clients.length).filter(item=>!archivedSkipped.includes(String(item.id||'').slice(0,180))):clients
-  const acceptedSummary={...summary,clientCount:acceptedClients.length,rowCount:summary.rowCount,...(acceptedClients.length===clients.length?{}:{declaredClientCount:clients.length})}
+  const acceptedClients=persistence.persisted?persistence.acceptedClients:clients
+  const importCounts=persistence.persisted?Object.fromEntries(['persistedEventCount','createdEventCount','updatedEventCount','ignoredEventCount','ambiguousEventCount','rejectedEventCount','unrecognizedOutcomeCount','unrecognizedDateCount','rowResults'].map(key=>[key,persistence[key]])):{}
+  const acceptedSummary={...summary,...summarizeLearning(acceptedClients,summary.rowCount,summary.fileName),id:summary.id,...importCounts,clientCount:acceptedClients.length,rowCount:summary.rowCount,...(acceptedClients.length===clients.length?{}:{declaredClientCount:clients.length})}
   await accessRepository.recordUsage(identity,{eventType:'commercial_import',page:'datahub',metadata:{clientCount:acceptedClients.length,rowCount:rows.length}});return json(response,201,{saved:true,clientCount:acceptedClients.length,database:persistence.persisted,clients:acceptedClients,summary:acceptedSummary,...(persistence.clientsTruncated?{clientsTruncated:true,persistedClientCount:persistence.persistedClientCount,declaredClientCount:clients.length}:{}),...(archivedSkipped.length?{archivedSkipped}:{}),...(persistence.skippedEventCount?{skippedEventCount:persistence.skippedEventCount}:{}),...(persistence.persisted?{persistedEventCount:persistence.persistedEventCount,unrecognizedOutcomeCount:persistence.unrecognizedOutcomeCount,unrecognizedDateCount:persistence.unrecognizedDateCount}:{})})
  }
  if(url.pathname==='/api/import/google-sheet'&&request.method==='POST'){

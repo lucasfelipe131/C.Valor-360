@@ -231,6 +231,11 @@ jobs:
         run: mkdir -p .gate .backups/staging
       - name: Apply baseline and versioned migrations
         run: npm run db:migrate | tee .gate/migrations.log
+      - name: Verify commercial LEG matrix and concurrent imports in PostgreSQL 16
+        env:
+          VAL_LEG_TEST_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_staging
+          VAL_LEG_EVIDENCE_FILE: .gate/commercial-leg-postgres.json
+        run: node --test --test-reporter=tap test/commercial-import-legacy.test.js | tee .gate/commercial-leg-postgres.tap
       - name: Prove negative tenant isolation with synthetic data
         env:
           GATE_EVIDENCE_FILE: .gate/tenant-isolation-source.json

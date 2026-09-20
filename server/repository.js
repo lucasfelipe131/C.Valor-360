@@ -14,6 +14,8 @@ import {buildAgronomicScanProvenance} from './agronomic-scan-provenance.js'
 import {resolveAuthorizedClientReference as reconcileAuthorizedClientReference} from './decision-copilot/client-reference-resolver.js'
 import {createProducerEntityIndexCache} from './decision-copilot/producer-entity-index-cache.js'
 import {selectScopedPriorRecommendations} from './conversation-thread-context.js'
+import {commercialSourceScope,resolveCommercialRows} from './commercial-import-identity.js'
+import {buildCommercialIntelligence} from '../src/lib/commercial-intelligence.js'
 
 export function jsonbParameter(value){
   if(value===undefined)return null
@@ -2220,6 +2222,7 @@ export class ValRepository{
     if(!this.db.configured)return {persisted:false}
     const archivedSkipped=[]
     let orphanEvents=0,unrecognizedOutcome=0,unrecognizedDate=0,persistedEvents=0
+    const rowResults=[],acceptedClients=[]
     try{
       await this.db.transaction(async connection=>{
         await connection.query(`INSERT INTO import_jobs (id,tenant_id,owner_user_id,source_type,file_name,status,row_count,recognized_count,summary,completed_at) VALUES ($1,$2,$3,'commercial_history',$4,'completed',$5,$6,$7,NOW()) ON CONFLICT (id) DO NOTHING`,[summary.id,tenantId,ownerId,summary.fileName,summary.rowCount,clients.length,jsonbParameter(summary)])
@@ -2238,36 +2241,56 @@ export class ValRepository{
         const clientKeys=new Map(clients.map(item=>[normalize(item.name),String(item.id||'').slice(0,180)]))
         // external_id derivado do conteúdo (não do id do job): reenviar a mesma planilha atualiza os
         // eventos pelo ON CONFLICT em vez de duplicar as compras a cada importação.
-        const fingerprints=new Map()
+        const prepared=[]
         for(let index=0;index<rows.slice(0,5000).length;index++){
-          const row=rows[index]||{};const name=String(row[mapping.client]||'').trim();if(!name)continue
+          const row=rows[index]||{};const name=String(row[mapping.client]||'').trim();if(!name){rowResults.push({row:index+1,status:'REJECTED',reason:'MISSING_PRODUCER'});continue}
           const status=mapping.status?row[mapping.status]:null;const eventOutcome=outcome(status);const occurredAt=parsedDate(mapping.date?row[mapping.date]:null)
           // Nao inventar resultado para linha sem status ou sem data e a decisao certa. Contar quantas
           // foram descartadas, e por que, e o que faltava: a tela dizia "REGISTROS INCORPORADOS 120"
           // com zero compras no banco, e o Cliente 360 do mesmo produtor mostrava R$ 0.
-          if(!eventOutcome||!occurredAt){if(!eventOutcome)unrecognizedOutcome+=1;else unrecognizedDate+=1;continue}
+          if(!eventOutcome||!occurredAt){if(!eventOutcome)unrecognizedOutcome+=1;else unrecognizedDate+=1;rowResults.push({row:index+1,status:'REJECTED',reason:!eventOutcome?'UNRECOGNIZED_STATUS':'INVALID_DATE'});continue}
+          const value=parseMoney(row[mapping.value]),hasValue=String(row[mapping.value]??'').trim()!==''
+          if((hasValue&&value===null)||(value!==null&&Math.abs(value)>=1e14)){rowResults.push({row:index+1,status:'REJECTED',reason:value===null?'INVALID_AMOUNT':'AMOUNT_OUT_OF_RANGE'});continue}
           const safeRow={client:name.slice(0,180),value:row[mapping.value]??null,date:row[mapping.date]??null,product:String(row[mapping.product]||'').slice(0,180)||null,status:String(status||'').slice(0,240)||null,municipality:String(row[mapping.municipality]||'').slice(0,140)||null,culture:String(row[mapping.culture]||'').slice(0,160)||null,area:row[mapping.area]??null}
           const externalKey=clientKeys.get(normalize(name))||normalize(name).replace(/\s+/g,'-').slice(0,180)
-          if(archivedSkipped.includes(externalKey))continue
+          if(archivedSkipped.includes(externalKey)){rowResults.push({row:index+1,status:'REJECTED',reason:'ARCHIVED_PRODUCER'});continue}
           // Produtor acima do corte de 2.000 nao foi gravado: sem este guarda o evento entrava com
           // client_id NULL e a compra ficava no livro sem dono, invisivel e irrecuperavel pela tela.
           const resolvedImportClientId=clientInternalIds.get(externalKey)
-          if(!resolvedImportClientId){orphanEvents++;continue}
+          if(!resolvedImportClientId){orphanEvents++;rowResults.push({row:index+1,status:'REJECTED',reason:'UNRESOLVED_PRODUCER'});continue}
           const occurredIso=new Date(occurredAt).toISOString()
-          // A impressao digital carregava valor, resultado e status - justamente os campos que o consultor
-          // corrige na planilha antes de reimportar. Com eles na chave, o ON CONFLICT DO UPDATE logo abaixo
-          // nunca casava e a correcao criava um SEGUNDO evento: a venda de 10 mil virava 25 mil e
-          // "negocios reconhecidos" virava 2 para uma venda so. A chave e a identidade da linha; o ordinal
-          // continua separando duas vendas reais do mesmo produto no mesmo dia.
-          const fingerprint=createHash('sha256').update(JSON.stringify([tenantId,ownerId,externalKey,occurredIso,safeRow.product||''])).digest('hex').slice(0,40)
-          const ordinal=(fingerprints.get(fingerprint)||0)+1;fingerprints.set(fingerprint,ordinal)
-          const eventExternalId=`commercial_import:${fingerprint}:${ordinal}`
+          prepared.push({index,clientId:resolvedImportClientId,externalKey,occurredIso,eventOutcome,value,productIdentity:String(row[mapping.product]||'').trim().normalize('NFC'),safeRow,...commercialSourceScope({row,mapping,fileName:summary.fileName})})
+        }
+        // The existing per-producer advisory locks serialize all import requests in
+        // this tenant/owner. Resolve persisted identities before INSERT, under the
+        // same transaction; nothing depends on a process cache or row ordering.
+        const existing=await connection.query(`SELECT * FROM business_events WHERE tenant_id=$1 AND owner_user_id=$2 AND source='commercial_import' AND client_id=ANY($3::uuid[]) FOR UPDATE`,[tenantId,ownerId,[...clientInternalIds.values()]])
+        for(const resolved of resolveCommercialRows(prepared,existing.rows,{tenantId,ownerId})){
+          rowResults.push({row:resolved.index+1,status:resolved.status,reason:resolved.reason,...(resolved.externalId?{externalId:resolved.externalId}:{})})
+          if(resolved.status==='REVIEW_REQUIRED')continue
+          const {clientId,externalKey,externalId,occurredIso,eventOutcome,safeRow,value,payload}=resolved
           await connection.query(`INSERT INTO business_events (tenant_id,owner_user_id,client_id,client_external_key,source,external_id,occurred_at,outcome,category,product,value,currency,loss_reason,payload)
-            VALUES ($1,$12,$2,$3,'commercial_import',$4,$5,$6,$7,$8,$9,'BRL',$10,$11) ON CONFLICT (tenant_id,owner_user_id,source,external_id) DO UPDATE SET client_id=EXCLUDED.client_id,client_external_key=EXCLUDED.client_external_key,occurred_at=EXCLUDED.occurred_at,outcome=EXCLUDED.outcome,category=EXCLUDED.category,product=EXCLUDED.product,value=EXCLUDED.value,loss_reason=EXCLUDED.loss_reason,payload=EXCLUDED.payload`,[tenantId,resolvedImportClientId,externalKey,eventExternalId,occurredAt,eventOutcome,String(row[mapping.product]||'').trim().slice(0,140)||null,String(row[mapping.product]||'').trim().slice(0,180)||null,parseMoney(row[mapping.value]),eventOutcome==='lost'?String(status||'').slice(0,240):null,jsonbParameter(safeRow),ownerId])
+            VALUES ($1,$12,$2,$3,'commercial_import',$4,$5,$6,$7,$8,$9,'BRL',$10,$11) ON CONFLICT (tenant_id,owner_user_id,source,external_id) DO UPDATE SET occurred_at=EXCLUDED.occurred_at,outcome=EXCLUDED.outcome,category=EXCLUDED.category,product=EXCLUDED.product,value=EXCLUDED.value,loss_reason=EXCLUDED.loss_reason,payload=EXCLUDED.payload WHERE business_events.client_id=EXCLUDED.client_id`,[tenantId,clientId,externalKey,externalId,occurredIso,eventOutcome,safeRow.product?.slice(0,140)||null,safeRow.product||null,value,eventOutcome==='lost'?safeRow.status:null,jsonbParameter(payload),ownerId])
           persistedEvents+=1
         }
+        rowResults.sort((a,b)=>a.row-b.row)
+        // Rejected/ambiguous input must not become portfolio revenue through
+        // the imported profile either. Reuse existing derivation on persisted
+        // canonical events, including earlier accepted files, in this transaction.
+        const canonical=await connection.query(`SELECT client_id,payload FROM business_events WHERE tenant_id=$1 AND owner_user_id=$2 AND source='commercial_import' AND client_id=ANY($3::uuid[])`,[tenantId,ownerId,[...clientInternalIds.values()]])
+        for(const item of importedClients){
+          const externalKey=String(item.id||'').slice(0,180),clientId=clientInternalIds.get(externalKey)
+          if(!clientId)continue
+          const acceptedRows=canonical.rows.filter(event=>event.client_id===clientId).map(event=>({...event.payload,client:item.name}))
+          const commercial=buildCommercialIntelligence(acceptedRows,{client:'client',value:'value',date:'date',product:'product',status:'status',municipality:'municipality',culture:'culture',area:'area'})[0]?.commercial||{revenue:0,frequency:0,averageTicket:null,knownOutcomes:0,categories:[],lastBusinessAt:null,score:0,evidenceCoverage:0,conversion:null,priority:'Nutrir',opportunity:'Sem negócios reconhecidos nesta importação'}
+          delete commercial.property
+          const updated=await connection.query(`UPDATE clients SET commercial_profile=commercial_profile||$1::jsonb WHERE tenant_id=$2 AND consultant_id=$3 AND id=$4 RETURNING commercial_profile`,[jsonbParameter(commercial),tenantId,ownerId,clientId])
+          acceptedClients.push({...item,id:externalKey,commercial:updated.rows[0]?.commercial_profile||commercial})
+        }
+        await connection.query(`UPDATE import_jobs SET summary=summary||$1::jsonb WHERE id=$2 AND tenant_id=$3 AND owner_user_id=$4`,[jsonbParameter({rowResults,persistedEventCount:persistedEvents,totalRevenue:acceptedClients.reduce((sum,item)=>sum+Number(item.commercial.revenue||0),0),createdEventCount:rowResults.filter(row=>row.status==='CREATED').length,updatedEventCount:rowResults.filter(row=>row.status==='UPDATED').length,ignoredEventCount:rowResults.filter(row=>row.status==='IGNORED_IDEMPOTENT').length,ambiguousEventCount:rowResults.filter(row=>row.status==='REVIEW_REQUIRED').length,rejectedEventCount:rowResults.filter(row=>row.status==='REJECTED').length}),summary.id,tenantId,ownerId])
       })
-      return {persisted:true,rawRows:Math.min(rows.length,5000),truncated:Boolean(summary.truncated),persistedClientCount:Math.min(clients.length,2000)-archivedSkipped.length,clientsTruncated:clients.length>2000,archivedSkipped,skippedEventCount:orphanEvents,clientLimit:2000,persistedEventCount:persistedEvents,unrecognizedOutcomeCount:unrecognizedOutcome,unrecognizedDateCount:unrecognizedDate}
+      const count=status=>rowResults.filter(row=>row.status===status).length
+      return {persisted:true,rawRows:Math.min(rows.length,5000),truncated:Boolean(summary.truncated),persistedClientCount:Math.min(clients.length,2000)-archivedSkipped.length,clientsTruncated:clients.length>2000,archivedSkipped,skippedEventCount:orphanEvents,clientLimit:2000,persistedEventCount:persistedEvents,unrecognizedOutcomeCount:unrecognizedOutcome,unrecognizedDateCount:unrecognizedDate,createdEventCount:count('CREATED'),updatedEventCount:count('UPDATED'),ignoredEventCount:count('IGNORED_IDEMPOTENT'),ambiguousEventCount:count('REVIEW_REQUIRED'),rejectedEventCount:count('REJECTED'),rowResults,acceptedClients}
     }catch{throw serviceError('A importação não pôde ser persistida no PostgreSQL configurado.')}
   }
 }
