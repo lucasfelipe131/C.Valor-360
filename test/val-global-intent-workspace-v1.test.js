@@ -2,8 +2,35 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {globalIntentRouterVersion,routeGlobalIntent} from '../server/decision-copilot/global-intent-router.js'
 import {createValWorkspaceContext,validateValWorkspaceAction,VAL_WORKSPACE_CONTEXT_VERSION} from '../src/lib/val-workspace-context.js'
+import {workspaceGuide} from '../server/decision-copilot/workspace-guide.js'
 
 const antonio={id:'client-antonio',name:'Antônio Silva'}
+
+test('screen help uses allowlisted page/tool/tab metadata without inventing screen data or navigating',()=>{
+ for(const page of ['dashboard','clients','client360','visits','opportunities','datahub','reports','management','settings','admin','questionnaire','agro','val','copilot']){
+  const route=routeGlobalIntent({message:'Como uso esta tela?',workspaceContext:{current_module:page,current_client:{name:'UNTRUSTED_SCREEN_VALUE'}},role:'admin'})
+  assert.equal(route.direct,true,page)
+  assert.equal(route.reason,'WORKSPACE_GUIDE',page)
+  assert.equal(route.workspace_action,null,page)
+  assert.doesNotMatch(route.summary,/UNTRUSTED_SCREEN_VALUE/)
+ }
+ assert.match(workspaceGuide({message:'Me ajuda nesta guia',workspaceContext:{current_module:'agro',current_tool:'solo'}}).summary,/Análise de solo/)
+ assert.match(workspaceGuide({message:'Como uso esta tela?',workspaceContext:{current_module:'client360',current_tab:'credit'}}).summary,/guia Crédito/)
+ for(const message of ['Como manejar cigarrinha na soja?','Me ajuda a calcular a adubação','Qual o perfil do produtor?','Salve o telefone dele'])assert.equal(workspaceGuide({message,workspaceContext:{current_module:'agro'}}),null,message)
+ assert.equal(workspaceGuide({message:'Como uso esta tela?',workspaceContext:{current_module:'unknown-private-page'}}),null)
+})
+
+test('voice navigation reaches existing guides and enforces role limits',()=>{
+ for(const [message,page,tool] of [['Pode abrir Relatórios?','reports',''],['Abra Coletar preferências','questionnaire',''],['Abra Preferências','settings',''],['Abra Manual do Agrônomo','agro','manual'],['Abra Clima e mercado','agro','clima'],['Abra Bulas e registros','agro','bulas'],['Abra Documentos','agro','biblioteca']]){
+  const route=routeGlobalIntent({message,client:antonio})
+  assert.equal(route.workspace_action?.page,page,message)
+  assert.equal(route.workspace_action?.tool||'',tool,message)
+ }
+ for(const [message,page] of [['Abra Administração','admin'],['Abra Visão gerencial','management']]){
+  assert.equal(routeGlobalIntent({message,role:'consultant'}).workspace_action,null)
+  assert.equal(routeGlobalIntent({message,role:'admin'}).workspace_action.page,page)
+ }
+})
 
 test('GlobalIntentRouter v1 abre produtor, prepara visita e navega sem modelo',()=>{
  const opened=routeGlobalIntent({message:'Abra o produtor Antônio.',client:antonio})
