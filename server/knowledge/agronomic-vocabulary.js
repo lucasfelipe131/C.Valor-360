@@ -129,7 +129,7 @@ nesse neste nessa nesta naquele naquela nisso nisto aqui ali assim entao logo
 // unica coisa que separa "manejar" de "Premier": as duas terminam em -ar, as duas podem vir depois
 // de "para". A rodada 13 tentou separar pela POSICAO e custou 100 perguntas que a VAL respondia.
 export const verbInfinitive=new Set(`
-manejar combater enfrentar controlar atacar mitigar tratar prevenir evitar eliminar erradicar
+agir manejar combater enfrentar controlar atacar mitigar tratar prevenir evitar eliminar erradicar
 proteger aplicar pulverizar dessecar semear plantar colher adubar calcariar gessar irrigar
 monitorar amostrar identificar reconhecer diagnosticar avaliar medir calcular estimar prever
 planejar programar escalonar priorizar decidir escolher selecionar comparar classificar

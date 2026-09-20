@@ -18,6 +18,35 @@ const later=new Date('2026-08-23T15:10:00.000Z')
 const audioDataUrl=`data:audio/wav;base64,${Buffer.from('fixture-audio').toString('base64')}`
 const marketScope={tenant_id:tenantId,owner_id:actorId,scope:'MARKET'}
 
+test('MEMW-03: mixed subjects retain the original clause, individual review and idempotent confirmation',async()=>{
+ const context=harness({extractor:createVoiceCandidateExtractor()})
+ const transcript='O sócio participa da decisão e o produtor achou caro.'
+ const created=await context.service.create({tenantId,ownerId:actorId,actorId,requestId,now,input:{client_id:clientId,interaction_type:'CLIENT_NOTE',manual_text:transcript,language:'pt-BR',source_context:{surface:'GLOBAL_VAL_COPILOT'}}})
+ const id=created.voice_interaction.voice_interaction_id
+ const processed=await context.service.process({tenantId,ownerId:actorId,actorId,id,requestId,now})
+ const candidates=processed.voice_interaction.candidates
+ assert.ok(candidates.length>=2,'exercise the multi-category clause from the declared debt')
+ for(const candidate of candidates){
+  assert.equal(candidate.statement,transcript.slice(0,-1))
+  assert.equal(candidate.evidence_excerpt,transcript.slice(0,-1))
+  assert.ok(transcript.includes(candidate.statement))
+  assert.equal(candidate.requires_confirmation,true)
+ }
+ assert.equal(context.repository.memories.length,0)
+ assert.equal(context.repository.commitments.length,0)
+ await assert.rejects(()=>context.service.confirm({tenantId,ownerId:actorId,actorId,id,requestId,now:later,input:{}}))
+ assert.equal(context.repository.memories.length,0)
+ const input={items:candidates.map((candidate,index)=>({candidate_id:candidate.candidate_id,decision:index===0?'CONFIRMED':'REJECTED'}))}
+ await context.service.confirm({tenantId,ownerId:actorId,actorId,id,requestId,now:later,input})
+ assert.equal(context.repository.memories.length,1)
+ assert.equal(context.repository.memories[0].value.statement,transcript.slice(0,-1))
+ assert.equal(context.repository.memories[0].client_id,clientId)
+ assert.equal(context.repository.memories[0].created_by,actorId)
+ assert.equal(context.repository.commitments.length,0)
+ await context.service.confirm({tenantId,ownerId:actorId,actorId,id,requestId,now:later,input})
+ assert.equal(context.repository.memories.length,1)
+})
+
 const clone=value=>value==null?value:structuredClone(value)
 const serial=(prefix,value)=>`${prefix}-${String(value).padStart(4,'0')}`
 
