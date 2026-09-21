@@ -1,5 +1,6 @@
 import {saveWorkspaceOpportunity,workspaceDetails} from './opportunity-workspace.js'
 import {createHash,randomUUID} from 'node:crypto'
+import {readFileSync} from 'node:fs'
 import {hasTechnicalApproval} from './ingestion.js'
 import {assertTenantScope} from './tenant-scope.js'
 import {observe} from './observability.js'
@@ -185,8 +186,58 @@ const profileSourceKey=(source,externalKey,answers)=>`${source}:${externalKey}:$
 // municipios diferentes sao pessoas diferentes. O primeiro mantem a chave historica - senao o
 // cadastro ja gravado deixaria de casar no proximo envio e viraria duplicata - e os demais ganham
 // o municipio na identidade.
-const surveyPlaceSlug=value=>normalize(value).replace(/\s+/g,'-')
+// A Q2 e texto livre e o mesmo produtor escreve o municipio de tres jeitos entre uma resposta e
+// outra: "Sorriso", "Sorriso/MT", "Sorriso - MT", "Zona rural de Sorriso". Comparado literalmente,
+// cada grafia virava uma PESSOA diferente, e o cadastro novo nascia sem o historico do anterior.
+// A canonizacao usa a referencia que o produto ja embarca (public/geo/municipalities.json) e so
+// cai na comparacao literal quando nenhum dos lados resolve - fail-safe: continua distinguindo
+// xara de municipios de verdade.
+const brazilianStateCode=new Set(['ac','al','ap','am','ba','ce','df','es','go','ma','mt','ms','mg','pa','pb','pr','pe','pi','rj','rn','rs','ro','rr','sc','sp','se','to'])
+let municipalityIndex=null
+// Dois indices de proposito. Com a UF na resposta, ela DISTINGUE - ha 5 "Bom Jesus" no Brasil, e
+// descartar a sigla fundiria produtores de estados diferentes. Sem a UF, so vale nome que e unico no
+// pais; nome ambiguo cai na comparacao literal, que e o comportamento seguro.
+const loadMunicipalityIndex=()=>{
+ if(municipalityIndex)return municipalityIndex
+ const byNameState=new Map(),nameCount=new Map(),byName=new Map()
+ try{
+  for(const row of JSON.parse(readFileSync(new URL('../public/geo/municipalities.json',import.meta.url),'utf8'))){
+   const name=normalize(row[1]),state=String(row[2]||'').toLowerCase(),code=String(row[0])
+   if(!name)continue
+   byNameState.set(`${name}|${state}`,code)
+   nameCount.set(name,(nameCount.get(name)||0)+1)
+   byName.set(name,code)
+  }
+  for(const [name,count] of nameCount)if(count>1)byName.delete(name)
+ }catch{}
+ municipalityIndex={byNameState,byName}
+ return municipalityIndex
+}
+const surveyPlaceSlug=value=>{
+ const words=normalize(value).split(' ').filter(Boolean)
+ if(!words.length)return ''
+ const state=words.findLast?words.findLast(word=>brazilianStateCode.has(word)):[...words].reverse().find(word=>brazilianStateCode.has(word))
+ const place=words.filter(word=>!brazilianStateCode.has(word))
+ if(!place.length)return words.join('-')
+ const {byNameState,byName}=loadMunicipalityIndex()
+ // O municipio vem DEPOIS do ruido em texto livre - "Zona rural de Sorriso", "Fazenda Boa Vista,
+ // Sorriso" -, e nome de fazenda no Brasil e quase sempre nome de cidade. Por isso a busca comeca
+ // pelo fim: o trecho mais a direita vence, e entre os que terminam no mesmo ponto vence o maior.
+ for(let end=place.length;end>0;end-=1)
+  for(let size=Math.min(end,6);size>0;size-=1){
+   const name=place.slice(end-size,end).join(' ')
+   const code=state?byNameState.get(`${name}|${state}`):byName.get(name)
+   if(code)return `ibge-${code}`
+  }
+ // Sem correspondencia comprovada, mantenha o texto e a UF: desconhecido/RS nao e desconhecido/RN.
+ return words.join('-')
+}
 const resolveSurveyExternalKey=async(connection,tenantId,ownerId,candidateKey,name,municipality='')=>{
+  // O SELECT ... FOR UPDATE nao trava nada quando ainda NAO existe linha com aquele nome: duas
+  // respostas simultaneas de xaras leem vazio, escolhem a mesma chave e a segunda sobrescreve a
+  // primeira no ON CONFLICT. A trava e pelo NOME normalizado porque a chave so existe depois da
+  // resolucao. xact_lock solta sozinho no COMMIT, e este e o ponto comum dos tres caminhos.
+  await connection.query(`SELECT pg_advisory_xact_lock(hashtextextended($1::text||':'||$2::text||':survey-name:'||$3::text,0))`,[tenantId,ownerId,normalize(name)])
   const existing=await connection.query(`SELECT external_key,municipality FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND status='active' AND (external_key=$3 OR LOWER(BTRIM(name))=LOWER(BTRIM($4))) ORDER BY CASE WHEN external_key=$3 THEN 0 ELSE 1 END FOR UPDATE`,[tenantId,ownerId,candidateKey,String(name||'').slice(0,180)])
   const place=surveyPlaceSlug(municipality)
   // A checagem de municipio vale inclusive para o casamento exato de chave. A chave candidata deriva
@@ -199,7 +250,11 @@ const resolveSurveyExternalKey=async(connection,tenantId,ownerId,candidateKey,na
   // Sem nenhum cadastro com este nome, a chave continua sendo so o nome. O sufixo de municipio so
   // aparece quando ha xara de fato, para nao mudar a chave de quem ja esta gravado.
   if(!existing.rows.length||!place)return candidateKey
-  return `${candidateKey}-${place}`.slice(0,180)
+  // O slice cortava o sufixo fora quando a razao social ja ocupava os 180, e os xaras colapsavam de
+  // novo. Quem cede caracteres e o nome; o municipio, que e o que DISTINGUE, nunca.
+  const suffix=`-${place}`
+  if(suffix.length>179)return `${candidateKey.slice(0,139)}-${createHash('sha256').update(place).digest('hex').slice(0,40)}`
+  return `${candidateKey.slice(0,180-suffix.length)}${suffix}`
 }
 const sanitizeProfileResult=value=>{
   const result=jsonObject(value);if(!Object.keys(result).length)return value

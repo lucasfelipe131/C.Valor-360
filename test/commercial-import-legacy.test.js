@@ -203,3 +203,25 @@ leg('LEG-extra-unverified-history','similar payload with unverified historical f
  await act();await makeLegacy();await db.query("UPDATE business_events SET external_id='commercial_import:unverified:1' WHERE tenant_id=$1",[tenant]);await checkpoint()
  const r=await act();assert.equal(r.ambiguousEventCount,1);assert.equal((await events()).length,1);assert.equal((await events())[0].external_id,'commercial_import:unverified:1')
 })
+
+for(const version of ['current','ffbe53a4','round14']){
+ leg(`LEG-subset-${version}`,'reimport only one of two real sales','both events, original IDs and 25000 revenue remain',async({act,checkpoint})=>{
+  const rows=[row({value:'10000'}),row({value:'15000'})]
+  await act(input(rows))
+  if(version!=='current'){
+   const ordinals=new Map()
+   for(const event of await events()){
+    const p=event.payload,base=[tenant,owner,event.client_external_key,new Date(event.occurred_at).toISOString(),p.product||'']
+    const h=createHash('sha256').update(JSON.stringify(version==='round14'?base:[...base,String(p.value??''),event.outcome,p.status||''])).digest('hex').slice(0,40)
+    const ordinal=(ordinals.get(h)||0)+1;ordinals.set(h,ordinal)
+    await db.query("UPDATE business_events SET external_id=$1,payload=payload-'import_identity' WHERE id=$2",[`commercial_import:${h}:${ordinal}`,event.id])
+   }
+  }
+  const before=await snapshot();await checkpoint()
+  const result=await act(input([rows[0]]))
+  assert.deepEqual(await snapshot(),before,'a missing row is not deletion or cancellation authority')
+  assert.equal(result.ignoredEventCount,1)
+  assert.equal(result.createdEventCount,0)
+  assert.equal(result.acceptedClients[0].commercial.revenue,25000)
+ })
+}
