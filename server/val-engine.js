@@ -10,6 +10,7 @@ import {buildOpenAIRetryPolicy} from './openai-retry.js'
 import {observe} from './observability.js'
 import {assertContextSnapshot,contextSnapshotForModel,contextSnapshotVersion,scopeContextSnapshotForModel} from './memory/context-snapshot.js'
 import {classifyValContextDomain,conversationReferenceKind,valContextDomains} from './decision-copilot/context-selector.js'
+import {sessionInputEvidence,sessionInputInstructions} from './ai-reasoning/session-input.js'
 import {selectKnowledge} from './knowledge/library.js'
 import {compactKnowledgeRefs,knowledgeForModel,normalizeKnowledgeRetrieval} from './commercial/knowledge-support.js'
 
@@ -336,9 +337,11 @@ export function compactValContext(context,max=30000,message='',options={}){
   const maxChars=Math.max(4_000,Number(max)||30_000)
   if(context?.contextSnapshot){
     const retrievedKnowledge=context?.retrievedKnowledge?.items?.length||context?.retrievedKnowledge?.status==='NO_APPLICABLE_KNOWLEDGE'?context.retrievedKnowledge:null
+    const sessionObservations=sessionInputEvidence(context,message)
     return {
       client:{id:context.client?.id||null,name:compactText(context.client?.name,180),municipality:compactText(context.client?.municipality,140)},
-      contextSnapshot:contextSnapshotForModel(context.contextSnapshot,Math.max(4_000,maxChars-(retrievedKnowledge?7_000:800))),
+      contextSnapshot:contextSnapshotForModel(context.contextSnapshot,Math.max(4_000,maxChars-(retrievedKnowledge?7_000:800)-JSON.stringify(sessionObservations).length)),
+      ...(sessionObservations.length?{session_observations:sessionObservations}:{}),
       ...(retrievedKnowledge?{retrievedKnowledge}:{})
     }
   }
@@ -793,7 +796,7 @@ export class ValEngine{
     const routeAudit=emitValRouteAudit(this.logger,buildValRouteAudit({message,mode,route,at:this.clock()}))
     const fallbackAdvice=buildFallbackAdvice({...context,message,mode:route.tier,requestedStage:selectedWorkingStage})
     const instructionBlocks=buildValInstructionBlocks(route.tier)
-    const instructions=buildValInstructions(instructionBlocks.tier)+(context.contextSnapshot?.context_scope?.domain==='VISIT'?`\n${visitPreparationInstructions}\n${visitPreparationOutputInstructions}\nData atual: ${new Date().toISOString().slice(0,10)}`:'')
+    const instructions=buildValInstructions(instructionBlocks.tier)+`\n${sessionInputInstructions}`+(context.contextSnapshot?.context_scope?.domain==='VISIT'?`\n${visitPreparationInstructions}\n${visitPreparationOutputInstructions}\nData atual: ${new Date().toISOString().slice(0,10)}`:'')
     const promptPrefixHash=createHash('sha256').update(instructionBlocks.fixed).digest('hex')
     let advice,engineMode='demonstration',warning='',responseMetadata={},providerHumanReview=null
     if(!this.client)advice=fallbackAdvice

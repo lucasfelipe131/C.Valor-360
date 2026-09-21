@@ -9,6 +9,7 @@ import {evaluateConversationalNaturalness} from './conversational-naturalness.js
 import {evaluateReasoningGrounding,evaluateResponseGrounding,factMatchesQuestionFacet} from '../decision-copilot/response-grounding.js'
 import {observe} from '../observability.js'
 import {visitPreparationEvidence,visitPreparationMethod,visitPreparationMethodEvidence,visitPreparationOutline} from './visit-preparation-context.js'
+import {sessionGroundingQuestion,sessionInputEvidence} from './session-input.js'
 
 export {aiReasoningResultVersion,goldenQuestionQualityVersion,valResponseQualityVersion} from './contracts.js'
 export {routeValIntent,valIntents,valIntentRouterVersion} from './intent-router.js'
@@ -99,10 +100,11 @@ function factsUsed(advice={},context={},message='',intentHint=''){
    preparationEvidence.unshift({id:`visit-preparation:${sourceRef}`,source_ref:sourceRef,source_type:'consultant_input',epistemic_type:'OBSERVATION',producer_id:producerId,tenant_id:tenantId,owner_id:snapshot.context_scope?.owner_id,observed_at:new Date().toISOString(),statement:`Relato do consultor neste turno: ${report}`})
   }
  }
- const authorized=[...preparationEvidence,...snapshotEvidence,...deterministicEvidence].filter(item=>clean(item?.producer_id??item?.producerId,180)===producerId&&clean(item?.tenant_id??item?.tenantId,180)===tenantId&&clean(item?.source_ref??item?.evidence_ref?.id,240)&&clean(item?.evidence_type??item?.epistemic_type??item?.memory_state??item?.epistemic_state,40))
+ const sessionEvidence=sessionInputEvidence(context,message)
+ const authorized=[...sessionEvidence,...preparationEvidence,...snapshotEvidence,...deterministicEvidence].filter(item=>clean(item?.producer_id??item?.producerId,180)===producerId&&clean(item?.tenant_id??item?.tenantId,180)===tenantId&&clean(item?.source_ref??item?.evidence_ref?.id,240)&&clean(item?.evidence_type??item?.epistemic_type??item?.memory_state??item?.epistemic_state,40))
  const authorizedById=new Map(authorized.map(item=>[idOf(item),item]).filter(([id])=>id))
  const requestedIds=list(advice.evidence_used).map(idOf).filter(id=>authorizedById.has(id))
- const ordered=[...preparationEvidence,...requestedIds.map(id=>authorizedById.get(id)),...authorized]
+ const ordered=[...sessionEvidence,...preparationEvidence,...requestedIds.map(id=>authorizedById.get(id)),...authorized]
  if(advice.human_review?.required===true)ordered.unshift({id:'system_safety_policy:human_review',source_type:'system_safety_policy',source_ref:'val.safety.human_review',evidence_type:'FACT',producer_id:producerId,tenant_id:tenantId,owner_id:snapshot.context_scope?.owner_id||null,statement:'A VAL reteve qualquer orientação técnica acionável até revisão do responsável habilitado.'})
  const seen=new Set()
  // A mesma fonte entrava por dois caminhos (preparacao + deterministico) com ids diferentes, e o
@@ -119,7 +121,7 @@ function factsUsed(advice={},context={},message='',intentHint=''){
   seen.add(id)
   const itemProducer=clean(item.producer_id??item.producerId,180);const itemTenant=clean(item.tenant_id??item.tenantId,180)
   if(itemProducer!==producerId||itemTenant!==tenantId)return []
-  return [{id,source_type:clean(item.source_type??item.evidence_ref?.type??item.memory_state??'context',120),source_ref:clean(item.source_ref??item.source_id??item.evidence_ref?.id,240)||null,epistemic_type:clean(item.evidence_type??item.epistemic_type??item.memory_state??item.epistemic_state,40).toUpperCase(),statement,observed_at:item.observed_at||null,valid_until:item.valid_until||null,confidence:item.confidence??null,producer_id:itemProducer,tenant_id:itemTenant,owner_id:clean(item.owner_id??item.ownerId,180)||null}]
+  return [{id,source_type:clean(item.source_type??item.evidence_ref?.type??item.memory_state??'context',120),source_ref:clean(item.source_ref??item.source_id??item.evidence_ref?.id,240)||null,epistemic_type:clean(item.evidence_type??item.epistemic_type??item.memory_state??item.epistemic_state,40).toUpperCase(),statement,observed_at:item.observed_at||null,valid_until:item.valid_until||null,confidence:item.confidence??null,producer_id:itemProducer,tenant_id:itemTenant,owner_id:clean(item.owner_id??item.ownerId,180)||null,...(item.persistence==='SESSION_ONLY'?{persistence:'SESSION_ONLY',conversation_id:item.conversation_id,context_epoch:item.context_epoch,field:item.field}:{})}]
  }).slice(0,12)
 }
 
@@ -504,6 +506,27 @@ function applyGroundingFallback(result,context,domain,message='',retainedFacts=[
  return result
 }
 
+function recoverSessionInput(result,context,scope,message){
+ const observations=list(result.facts_used).filter(item=>item.persistence==='SESSION_ONLY'&&item.source_type==='consultant_input')
+ if(!observations.length||!observations.some(item=>result.recommended_strategy?.reading?.includes(item.statement)))return result
+ const candidate=structuredClone(result)
+ const interview=buildDecisionInterview({intent:result.intent,message,context,result})
+ const next=interview.questions[0]?.question||'Qual é o próximo passo que você quer avaliar com essas informações?'
+ const reading=candidate.recommended_strategy.reading
+ candidate.objective=next
+ candidate.recommended_strategy={reading,action:next,do_not_do:''}
+ candidate.decision_thesis={CURRENT_SITUATION:reading,WHAT_MATTERS:next,KEY_UNCERTAINTY:next,THESIS:next,WHY:reading,WHAT_TO_VALIDATE:next,WHAT_WOULD_CHANGE_MY_VIEW:'Que informação mudaria essa leitura?'}
+ candidate.next_commitment=next
+ candidate.missing_information=[]
+ candidate.confidence={level:'MODERADA',score:.5,rationale:observations[0].statement}
+ candidate.voice_output={...candidate.voice_output,speakable_text:`${reading} ${next}`}
+ candidate.decision_interview={...interview,questions:[],material_missing_information:[],non_material_missing_information:[],explanation:''}
+ const checked=evaluateReasoningGrounding({...scope,evidence:candidate.facts_used,blocks:reasoningGroundingBlocks(candidate)})
+ if(!checked.passed)return result
+ candidate.run.status='SESSION_INPUT_RECOVERED'
+ return candidate
+}
+
 function recoverVisitPreparation(result,scope){
  if(result.intent!=='PREPARE_VISIT')return result
  const available=list(result.facts_used).filter(item=>item.id.startsWith('visit-preparation:'))
@@ -597,12 +620,13 @@ export function composeAIReasoning({advice={},context={},message='',run={},conve
  }
  if(!quality.passed&&!safetyPreserved)result=insufficientResult(result)
  const selectedDomain=context.contextSnapshot?.context_scope?.domain||''
- const groundingScope={question:message,domain:selectedDomain,evidence:result.facts_used,activeProducerId:result.client?.id,activeProducerName:context.client?.name||result.client?.name||'',tenantId:result.organization?.id,ownerId:context.contextSnapshot?.context_scope?.owner_id||''}
+ const groundingScope={question:sessionGroundingQuestion(message),domain:selectedDomain,evidence:result.facts_used,activeProducerId:result.client?.id,activeProducerName:context.client?.name||result.client?.name||'',tenantId:result.organization?.id,ownerId:context.contextSnapshot?.context_scope?.owner_id||''}
  const initialGrounding=evaluateReasoningGrounding({...groundingScope,blocks:reasoningGroundingBlocks(result)})
  const groundingFallbackApplied=!initialGrounding.passed
  const retainedFacts=groundingFallbackApplied&&!safetyPreserved?selfSupportedFacts(result,groundingScope):[]
  if(groundingFallbackApplied)result=safetyPreserved?applySafetyGroundingFallback(result):applyGroundingFallback(result,context,selectedDomain,message,retainedFacts)
  if(groundingFallbackApplied&&!safetyPreserved&&retainedFacts.length)result=applyFactualFallbackReading(result,groundingScope)
+ if(groundingFallbackApplied&&!safetyPreserved)result=recoverSessionInput(result,context,groundingScope,message)
  if(groundingFallbackApplied&&!safetyPreserved)result=recoverVisitPreparation(result,groundingScope)
  result.reasoning_confidence=buildReasoningConfidence({context,result})
  result.decision_interview=buildDecisionInterview({intent:result.intent,message,context,result})

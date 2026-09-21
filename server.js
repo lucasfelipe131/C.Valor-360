@@ -1097,11 +1097,17 @@ async function handleApi(request,response,url){
  }
  const submitMatch=url.pathname.match(/^\/api\/surveys\/([a-zA-Z0-9_-]+)\/submit$/)
  if(submitMatch&&request.method==='POST'){
-  // Por TOKEN, nao por endereco: um convite so pode ser respondido algumas vezes, e isso nao pode
-  // depender de quem mais esta atras do mesmo IP.
-  if(!consumeRateLimit('survey-submit',submitMatch[1],20))return json(response,429,{error:'Muitas tentativas. Aguarde alguns minutos.'})
+  // Token + origem impede que uma origem esgote a cota de outra para o mesmo convite.
+  // Convites legados continuam aceitos; tokens absurdamente longos nao ocupam baldes.
+  if(String(submitMatch[1]).length>64)return json(response,404,{error:'Este convite não foi encontrado.'})
+  // Identifique token desconhecido antes do corpo e do balde por convite. Assim payload
+  // invalido nao evade o limite por origem nem cria um balde por token inventado.
+  const invitation=await repository.getSurvey(submitMatch[1])
+  if(!invitation){if(!consumeRateLimit('survey-miss',requestIdentity(request),60))return json(response,429,{error:'Muitas tentativas. Aguarde alguns minutos.'});return json(response,404,{error:'Este convite não foi encontrado.'})}
+  if(!consumeRateLimit('survey-submit',`${submitMatch[1]}|${requestIdentity(request)}`,20))return json(response,429,{error:'Muitas tentativas. Aguarde alguns minutos.'})
   const payload=await body(request)
   const answers=validatedSurveyAnswers(payload.answers)
+  // O repository revalida existencia, expiracao e estado dentro da transacao.
   const survey=await repository.submitSurvey({token:submitMatch[1],answers,result:calculateProfile(answers,profileMatrix,'Questionário externo validado no servidor')});return json(response,200,{saved:true,status:survey.status})
  }
  const integrateMatch=url.pathname.match(/^\/api\/surveys\/([a-zA-Z0-9_-]+)\/integrate$/)
