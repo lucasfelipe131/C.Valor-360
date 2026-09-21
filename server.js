@@ -1096,12 +1096,25 @@ async function handleApi(request,response,url){
  }
  const submitMatch=url.pathname.match(/^\/api\/surveys\/([a-zA-Z0-9_-]+)\/submit$/)
  if(submitMatch&&request.method==='POST'){
-  // Por TOKEN, nao por endereco: um convite so pode ser respondido algumas vezes, e isso nao pode
-  // depender de quem mais esta atras do mesmo IP.
-  if(!consumeRateLimit('survey-submit',submitMatch[1],20))return json(response,429,{error:'Muitas tentativas. Aguarde alguns minutos.'})
+  // A rodada 14 trocou o balde de endereco pelo de TOKEN para que uma maquina atras de um CDN nao
+  // derrubasse o questionario de todos. Isso fechou a negacao de servico ampla e abriu uma dirigida:
+  // quem tem o link do convite gasta as 20 tentativas e TRANCA o produtor fora do proprio
+  // questionario. A chave e o par token+endereco: o vizinho de NAT nao paga pelo atacante, e o
+  // atacante remoto nao paga pelo produtor.
+  if(String(submitMatch[1]).length>64)return json(response,404,{error:'Este convite não foi encontrado.'})
+  if(!consumeRateLimit('survey-submit',`${submitMatch[1]}|${requestIdentity(request)}`,20))return json(response,429,{error:'Muitas tentativas. Aguarde alguns minutos.'})
   const payload=await body(request)
   const answers=validatedSurveyAnswers(payload.answers)
-  const survey=await repository.submitSurvey({token:submitMatch[1],answers,result:calculateProfile(answers,profileMatrix,'Questionário externo validado no servidor')});return json(response,200,{saved:true,status:survey.status})
+  // Token que nao existe e comportamento de quem esta adivinhando, e ai o balde por endereco volta a
+  // valer - o mesmo orcamento que a leitura ja usa. Sem isso a unica rota de escrita sem
+  // autenticacao ficou sem nenhum freio por origem.
+  let survey
+  try{survey=await repository.submitSurvey({token:submitMatch[1],answers,result:calculateProfile(answers,profileMatrix,'Questionário externo validado no servidor')})}
+  catch(error){
+   if(Number(error?.statusCode)===404&&!consumeRateLimit('survey-miss',requestIdentity(request),60))return json(response,429,{error:'Muitas tentativas. Aguarde alguns minutos.'})
+   throw error
+  }
+  return json(response,200,{saved:true,status:survey.status})
  }
  const integrateMatch=url.pathname.match(/^\/api\/surveys\/([a-zA-Z0-9_-]+)\/integrate$/)
  if(integrateMatch&&request.method==='POST'){

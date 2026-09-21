@@ -46,7 +46,10 @@ test('PS-01 — dois produtores homonimos de municipios diferentes viram dois ca
  // O primeiro mantem a chave historica: senao o cadastro ja gravado deixaria de casar no proximo
  // envio e viraria duplicata a cada questionario respondido.
  assert.equal(sorriso.external_key,'jose-da-silva')
- assert.equal(lucas.external_key,'jose-da-silva-lucas-do-rio-verde')
+ // Rodada 15: o sufixo passou a ser o codigo IBGE, nao o texto que o produtor digitou. A Q2 e texto
+ // livre e a mesma pessoa escreve "Sorriso", "Sorriso/MT" e "Zona rural de Sorriso" - com o texto
+ // na chave, cada grafia virava um cadastro. O codigo e estavel entre as grafias.
+ assert.equal(lucas.external_key,'jose-da-silva-ibge-5105259')
 })
 
 test('PS-01 — o MESMO produtor reenviando continua atualizando o mesmo cadastro',async()=>{
