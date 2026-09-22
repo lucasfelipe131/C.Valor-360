@@ -294,7 +294,14 @@ async function handleApi(request,response,url){
   const payload=await body(request)
   const loginKey=`${requestIdentity(request)}|${String(payload?.email||'').trim().toLowerCase()}`
   if(!rateLimitAllows('login',loginKey,config.loginAttemptsPerTenMinutes))return json(response,429,{error:'Muitas tentativas de acesso. Aguarde alguns minutos.'})
-  const identity=await accessRepository.authenticate(payload.email,payload.password)
+  let identity=await accessRepository.authenticate(payload.email,payload.password)
+  // VAL_ADMIN_PASSWORD is a break-glass credential after bootstrap. If it is rotated in the
+  // environment, presenting the new bootstrap credentials once performs an audited recovery of
+  // the persisted admin hash instead of leaving Railway and PostgreSQL with two different truths.
+  if(!identity&&auth.verifyBootstrapCredentials(payload.email,payload.password)){
+    identity=await accessRepository.recoverBootstrapAdminPassword()
+    observe('auth.bootstrap_admin_recovered',{outcome:'ok'})
+  }
   if(!identity){consumeRateLimit('login',loginKey,config.loginAttemptsPerTenMinutes);return json(response,401,{error:'E-mail ou senha inválidos, acesso bloqueado ou expirado.'})}
   rateBuckets.delete(`login:${loginKey}`)
   const token=auth.issue(identity);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{authenticated:true,required:true,demo:false,user:userPayload(identity)})

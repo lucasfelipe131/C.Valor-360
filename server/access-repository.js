@@ -50,6 +50,33 @@ export class AccessRepository{
     return this.bootstrapPromise
   }
 
+  // VAL_ADMIN_PASSWORD is a bootstrap/break-glass credential. Once the admin exists,
+  // changing the Railway variable alone must not silently overwrite a password chosen in the UI.
+  // When the configured bootstrap credentials are explicitly presented at login, however, this
+  // audited recovery path synchronizes the persisted hash and invalidates every older session.
+  async recoverBootstrapAdminPassword(){
+    if(!this.db.configured)throw domainError('O PostgreSQL é obrigatório para recuperar o acesso administrativo.',503)
+    const email=normalizeEmail(this.config.adminEmail)
+    const password=String(this.config.adminPassword||'')
+    if(!validEmail(email)||password.length<8)throw domainError('O acesso administrativo de recuperação não está configurado.',503)
+    const account=await this.db.transaction(async connection=>{
+      const current=await connection.query(`SELECT user_record.*,membership.role FROM users user_record LEFT JOIN memberships membership ON membership.user_id=user_record.id AND membership.tenant_id=$1 WHERE LOWER(user_record.email)=LOWER($2) LIMIT 1 FOR UPDATE`,[this.tenantId,email])
+      const row=current.rows[0]
+      if(!row)throw domainError('A conta administrativa de recuperação não foi encontrada.',404)
+      const updated=await connection.query(`UPDATE users SET password_hash=$1,status='active',must_change_password=false,session_version=session_version+1,last_login_at=NOW(),updated_at=NOW() WHERE id=$2 RETURNING *`,[await hashPassword(password,{enforcePolicy:false}),row.id])
+      await connection.query(`INSERT INTO memberships (tenant_id,user_id,role) VALUES ($1,$2,'admin') ON CONFLICT (tenant_id,user_id) DO UPDATE SET role='admin'`,[this.tenantId,row.id])
+      await connection.query(`INSERT INTO audit_events (tenant_id,actor_id,action,entity_type,entity_id,before_data,after_data,created_at) VALUES ($1,$2,'bootstrap_admin_password_recovered','user',$2,$3,$4,NOW())`,[
+        this.tenantId,
+        row.id,
+        JSON.stringify({status:String(row.status||'unknown'),sessionVersion:Number(row.session_version||0)}),
+        JSON.stringify({status:'active',sessionVersion:Number(updated.rows[0]?.session_version||0)})
+      ])
+      return accountFromRow({...updated.rows[0],role:'admin'},this.tenantId)
+    })
+    await this.recordUsage(account,{eventType:'login',page:'login'})
+    return account
+  }
+
   async authenticate(email,password){
     await this.ensureBootstrapAdmin()
     const normalized=normalizeEmail(email)
