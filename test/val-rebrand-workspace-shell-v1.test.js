@@ -23,10 +23,17 @@ const FERRAMENTAS_ANTES=[
 
 test('nenhum módulo do inventário desapareceu na navegação por workspaces',()=>{
  for(const id of MODULOS_ANTES)assert.ok(MODULES[id],`módulo "${id}" sumiu do registro`)
- assert.deepEqual(Object.keys(MODULES).filter(id=>!MODULOS_ANTES.includes(id)),['management'],'somente o módulo gerencial foi acrescentado')
+ assert.deepEqual(Object.keys(MODULES).filter(id=>!MODULOS_ANTES.includes(id)),['management','knowledge-review'],'somente o gerencial e a revisão de fontes foram acrescentados')
  assert.ok(workspaceModules('gestao','admin').some(item=>item.id==='management'))
  assert.ok(workspaceModules('gestao','manager').some(item=>item.id==='management'))
  assert.ok(!workspaceModules('gestao','consultant').some(item=>item.id==='management'))
+ // Aprovar uma fonte muda o que a VAL responde para a organização inteira: a revisão técnica
+ // alcança essa tela e continua sem alcançar Administração, que tem métricas globais e acessos.
+ const revisao=role=>workspaceModules('gestao',role).some(item=>item.id==='knowledge-review')
+ assert.ok(revisao('admin'))
+ assert.ok(revisao('technical_reviewer'))
+ for(const role of ['consultant','manager','bi_viewer'])assert.ok(!revisao(role),role)
+ assert.deepEqual(settingsModules('technical_reviewer').map(item=>item.id),['settings'])
 
  const alcancaveis=new Set(assertModuleCoverage('admin'))
  for(const id of MODULOS_ANTES){

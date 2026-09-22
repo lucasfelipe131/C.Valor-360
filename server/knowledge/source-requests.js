@@ -41,10 +41,15 @@ export function isOfficialRegulatedSourceUrl(value){
 // uma linha com o peso dela, não vinte linhas iguais. O tenant entra na chave porque acervo aprovado
 // é por organização, e a pergunta entra normalizada de propósito, para "qual a carência do produto?"
 // e "carencia do produto" colidirem. A chave é hash: a fila indexa sem guardar texto no índice.
-export function sourceRequestKey({tenantId='',domain='',question=''}={}){
+//
+// O domínio NÃO entra na chave. Ele é atribuído pelo roteador a partir do estado da conversa e a
+// mesma pergunta pode cair em buckets diferentes em conversas diferentes — o que fragmentaria a
+// fila e, pior, faria a fonte já aprovada não ser encontrada na próxima vez que alguém perguntasse.
+// A pergunta é a mesma pergunta independentemente do bucket; o domínio fica como metadado da linha.
+export function sourceRequestKey({tenantId='',question=''}={}){
  const normalized=normalizeSearchText(question)
  if(!normalized||!text(tenantId))return ''
- return createHash('sha256').update(`${text(tenantId)}\u001f${text(domain).toUpperCase()||'GENERAL'}\u001f${normalized}`).digest('hex').slice(0,32)
+ return createHash('sha256').update(`${text(tenantId)}\u001f${normalized}`).digest('hex').slice(0,32)
 }
 
 export function buildSourceRequest({tenantId='',ownerId='',question='',domain='GENERAL',reason='LIBRARY_NO_COVERAGE',clientId='',now=new Date()}={}){
@@ -59,7 +64,7 @@ export function buildSourceRequest({tenantId='',ownerId='',question='',domain='G
  if(!asked)violations.push('question')
  else if(containsPromptInjection(asked))violations.push('question.injection')
  if(!sourceRequestReasons.includes(reason))violations.push('reason')
- const requestKey=sourceRequestKey({tenantId,domain,question:asked})
+ const requestKey=sourceRequestKey({tenantId,question:asked})
  if(!requestKey)violations.push('request_key')
  if(violations.length)fail('knowledge_source_request_invalid',violations)
  const at=new Date(now).toISOString()

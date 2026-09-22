@@ -49,6 +49,32 @@ const records=Object.freeze([
   cost:'No credential or paid service is present; no formal machine-readable update entitlement is evidenced.',
   integration_status:'MANUAL_REFERENCE_PRESENT_COPILOT_BLOCKED',current_claim_allowed:false,
   external_blocker:'Provide an authorized, versioned Agrofit/MAPA feed or approved dated export/update process (including permitted use and review owner) before enabling current-label answers in Copilot.'
+ }),
+ Object.freeze({
+  id:'knowledge-approved-source-request',domain:'BULAS',consumer:'COPILOT',provider:'Fonte oficial registrada e aprovada por um revisor nomeado da própria organização (val_knowledge_source_requests).',
+  source:'URL oficial em https sob gov.br ou embrapa.br, com o trecho citado e a data de consulta gravados no momento da aprovação.',
+  freshness:'A vigência é declarada na aprovação (source.valid_until). Vencida, a resposta deixa de ser servida e a dúvida volta a ser recusa regulada.',
+  timestamp:'accessed_at é quando o revisor consultou a fonte; approved_at é quando ele assumiu a responsabilidade. Os dois viajam na citação.',
+  failure_behavior:'Sem fonte aprovada e vigente o Copilot mantém a recusa regulada. Sem PostgreSQL a fila não existe e o comportamento é o anterior a este caminho.',
+  cache:'Nenhum cache externo: a leitura é da própria tabela, escopada por tenant.',
+  authority:'A autoridade é do documento oficial citado, não do modelo. O texto entregue é o excerto literal, e a responsabilidade técnica é da pessoa nomeada em approved_by.',
+  tenant_implications:'Escopo por tenant. O pedido recusa produtor colado, e o grounding continua barrando afirmação sobre indivíduo nomeado mesmo com a fonte aprovada.',
+  cost:'Nenhuma credencial ou serviço pago. A curadoria é humana e o custo é o tempo do revisor.',
+  integration_status:'HUMAN_APPROVED_SOURCE_AVAILABLE',current_claim_allowed:true,
+  external_blocker:'Nenhum para este caminho, que é curadoria humana e não feed automático. A busca automática de fontes permanece bloqueada — ver research-governed-lookup.'
+ }),
+ Object.freeze({
+  id:'research-governed-lookup',domain:'PESQUISA',consumer:'COPILOT',provider:'Não contratado. Registro existe para nomear o que falta antes de a VAL poder pesquisar sozinha.',
+  source:'Allow-list de domínios oficiais a definir (Embrapa, MAPA/AGROFIT, Anvisa, Ibama, Conab, Inmet, institutos estaduais e universidades).',
+  freshness:'A definir com o provedor: uma busca sem data de coleta não pode sustentar afirmação atual.',
+  timestamp:'Cada resultado precisa chegar com URL, publicador e data de coleta, ou não entra como candidata.',
+  failure_behavior:'Indisponível até a contratação. A ausência mantém o comportamento atual e nunca degrada para resposta do modelo apresentada como pesquisada.',
+  cache:'A definir. Resultado de busca não pode ser reaproveitado entre tenants sem política de uso declarada.',
+  authority:'Nenhuma. O resultado é candidata a fonte, jamais resposta: quem responde é a fonte aprovada por uma pessoa.',
+  tenant_implications:'A pergunta enviada ao provedor é conteúdo do consultor e sai da organização; exige termos de uso e decisão explícita antes de qualquer chamada.',
+  cost:'Sem credencial e sem teto definido. Pesquisa custa por consulta e precisa do próprio limite, separado do teto de IA geral por consultor.',
+  integration_status:'AUTHORIZATION_BLOCKED',current_claim_allowed:false,
+  external_blocker:'Contratar provedor de busca com termos de uso comercial, fixar a allow-list de domínios oficiais, definir o teto de custo por consultor e confirmar que a saída entra como candidata DRAFT para aprovação humana — nunca como resposta direta.'
  })
 ])
 

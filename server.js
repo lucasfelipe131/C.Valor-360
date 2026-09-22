@@ -62,6 +62,8 @@ import {readReleaseMetadata} from './server/release-metadata.js'
 import {createReadinessReport} from './server/readiness.js'
 import {technicalBootstrapFromValClients} from './server/agronomic-geometry-bridge.js'
 import {normalizePublicAttachmentPatch} from './server/attachment-public-patch.js'
+import {createKnowledgeSourceRequestStore} from './server/knowledge/source-request-repository.js'
+import {createKnowledgeSourceRequestService} from './server/knowledge/source-request-service.js'
 import {createPostgresRealtimeCostStore} from './server/realtime-voice/cost-control.js'
 import {createRealtimeVoiceService} from './server/realtime-voice/service.js'
 import {routeGlobalIntent} from './server/decision-copilot/global-intent-router.js'
@@ -225,6 +227,10 @@ function invalidateDerivedPortfolioCaches({tenantId=config.defaultTenantId,owner
 }
 const mutationClientId=value=>clean(value?.client_id??value?.clientId??value?.client?.id??value?.visit?.client_id??value?.visit?.clientId??value?.action_plan?.client_id??value?.actionPlan?.clientId??value?.outcome?.client_id??value?.outcome?.clientId)
 const realtimeVoiceCostStore=createPostgresRealtimeCostStore({database,tenantId:config.defaultTenantId})
+// Sem PostgreSQL a fila não existe e o copiloto responde exatamente como antes: a dúvida sem fonte
+// volta a ser beco sem saída, sem promessa de revisão na tela.
+const knowledgeSourceRequests=createKnowledgeSourceRequestStore({database})
+const knowledgeSourceReview=createKnowledgeSourceRequestService({store:knowledgeSourceRequests})
 const realtimeVoice=createRealtimeVoiceService({runtimeConfig:config,client:voiceOpenAI,repository,conversationSessions:valConversationSessions,costStore:realtimeVoiceCostStore,logger:event=>observe('val.realtime_voice',{sessionId:event.sessionId,model:event.model,costUsd:event.costUsd,outcome:event.event,errorCode:event.failureCode,providerStatus:event.providerStatus,retryAfterSeconds:event.retryAfterSeconds,disconnectReason:event.disconnectReason,transportDetail:event.transportDetail})})
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
@@ -338,7 +344,7 @@ async function handleApi(request,response,url){
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
  const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
- const protectedPath=url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/knowledge/')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const requestStartedAt=performance.now()
  let valRequestController=null
@@ -395,6 +401,17 @@ async function handleApi(request,response,url){
   const result=await realtimeVoice.createSession({identity,input:await body(request),requestId:currentRequestContext()?.requestId})
   await accessRepository.recordUsage(identity,{eventType:'realtime_voice_session_created',page:'val',entityType:'realtime_voice_session',entityId:result.sessionId,metadata:{model:result.model,transport:result.transport,clientScoped:Boolean(result.context.clientId),contentFree:true}}).catch(()=>null)
   return json(response,201,result)
+ }
+ if(url.pathname==='/api/v1/knowledge/source-requests'&&request.method==='GET')return json(response,200,await knowledgeSourceReview.list({identity,status:url.searchParams.get('status')||''}))
+ const sourceRequestMatch=url.pathname.match(/^\/api\/v1\/knowledge\/source-requests\/([a-f0-9]{32})$/i)
+ if(sourceRequestMatch&&request.method==='POST'){
+  const payload=await body(request)
+  const requestKey=sourceRequestMatch[1]
+  const action=clean(payload.action).toLowerCase()
+  if(action==='review')return json(response,200,await knowledgeSourceReview.review({identity,requestKey}))
+  if(action==='approve')return json(response,200,await knowledgeSourceReview.approve({identity,requestKey,source:payload.source}))
+  if(action==='reject')return json(response,200,await knowledgeSourceReview.reject({identity,requestKey,reason:payload.reason}))
+  return json(response,400,{error:'Ação inválida para o pedido de fonte.',code:'knowledge_source_request_action_invalid'})
  }
  if(url.pathname==='/api/v1/realtime-voice/status'&&request.method==='GET')return json(response,200,await realtimeVoice.availability({identity}))
  if(url.pathname==='/api/v1/realtime-voice/budget'&&request.method==='GET')return json(response,200,await realtimeVoice.budget({identity}))
@@ -844,7 +861,7 @@ async function handleApi(request,response,url){
     return json(response,200,complete(direct,execution))
    }
    const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
-   const general=await buildGeneralNoClientResponse({message:generalMessage,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,aiUnavailableReason:aiGeneralKnowledgeBudget.allowed?'':'BUDGET_EXHAUSTED',sharedAnswerCache,signal:requestController.signal})
+   const general=await buildGeneralNoClientResponse({message:generalMessage,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,aiUnavailableReason:aiGeneralKnowledgeBudget.allowed?'':'BUDGET_EXHAUSTED',sharedAnswerCache,sourceRequests:knowledgeSourceRequests,signal:requestController.signal})
    general.responseMetadata.questionContinued=generalQuestion.continued
    const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
    if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})
@@ -913,7 +930,7 @@ async function handleApi(request,response,url){
    // responseScope apontem para o mesmo produtor, senao "oi" com produtor aberto e rejeitado na tela.
    const generalDomain=requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent)
    const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
-   const general=await buildGeneralNoClientResponse({message:generalMessage,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:generalDomain,aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,aiUnavailableReason:aiGeneralKnowledgeBudget.allowed?'':'BUDGET_EXHAUSTED',sharedAnswerCache,signal:requestController.signal})
+   const general=await buildGeneralNoClientResponse({message:generalMessage,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:generalDomain,aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,aiUnavailableReason:aiGeneralKnowledgeBudget.allowed?'':'BUDGET_EXHAUSTED',sharedAnswerCache,sourceRequests:knowledgeSourceRequests,signal:requestController.signal})
    general.responseMetadata.questionContinued=generalQuestion.continued
    const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
    if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})

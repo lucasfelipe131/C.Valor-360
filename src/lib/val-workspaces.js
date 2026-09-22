@@ -12,7 +12,7 @@
 // Manual do Agrônomo (`tool`), que já são destinos distintos dentro do iframe.
 
 import {
- BarChart3,BookOpen,BrainCircuit,Calculator,Camera,CalendarCheck2,CalendarDays,ClipboardList,CloudSun,
+ BarChart3,BookCheck,BookOpen,BrainCircuit,Calculator,Camera,CalendarCheck2,CalendarDays,ClipboardList,CloudSun,
  DatabaseZap,FileBarChart,FlaskConical,LandPlot,Layers3,Library,LayoutDashboard,Search,
  Settings,ShieldCheck,Sprout,Target,UserRound,Users
 } from 'lucide-react'
@@ -35,6 +35,7 @@ export const MODULES={
  management:{label:'Visão gerencial',icon:BarChart3,workspace:'gestao',roles:['admin','manager','bi_viewer']},
  reports:{label:'Indicadores e relatórios',icon:FileBarChart,workspace:'gestao'},
  settings:{label:'Preferências',icon:Settings,workspace:'gestao'},
+ 'knowledge-review':{label:'Revisão de fontes',icon:BookCheck,workspace:'gestao',roles:['admin','technical_reviewer']},
  admin:{label:'Administração',icon:ShieldCheck,workspace:'gestao',role:'admin'}
 }
 
@@ -78,7 +79,9 @@ const NAV={
  gestao:[
   {id:'management',label:'Visão gerencial',icon:BarChart3,page:'management',roles:['admin','manager','bi_viewer']},
   {id:'reports',label:'Indicadores e relatórios',icon:FileBarChart,page:'reports'},
-  {id:'biblioteca',label:'Documentos',icon:Library,page:'agro',tool:'biblioteca'}
+  {id:'biblioteca',label:'Documentos',icon:Library,page:'agro',tool:'biblioteca'},
+  // Revisão técnica aprova a fonte que fará a VAL responder; não vê métricas globais nem acessos.
+  {id:'knowledge-review',label:'Revisão de fontes',icon:BookCheck,page:'knowledge-review',roles:['admin','technical_reviewer']}
  ]
 }
 

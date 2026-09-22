@@ -30,6 +30,10 @@ const sourceContracts=new Map([
  ['crop_season',sourceContract(['FACT','OBSERVATION'])],
  ['official_product_catalog',sourceContract(['FACT','VALIDATED_KNOWLEDGE'],{staticSource:true})],
  ['general_knowledge',sourceContract(['FACT','VALIDATED_KNOWLEDGE'],{staticSource:true})],
+ // Trecho literal de fonte oficial aprovada por um responsável nomeado. A vigência é controlada na
+ // própria aprovação (valid_until derruba a resposta antes de ela ser montada), não pela idade do
+ // turno: um registro de bula não envelhece em 24 horas como uma cotação.
+ ['approved_official_source',sourceContract(['FACT','VALIDATED_KNOWLEDGE'],{staticSource:true})],
  ['system_safety_policy',sourceContract(['FACT','VALIDATED_KNOWLEDGE'],{staticSource:true})],
  // 7 dias = a janela DATED de VAL_MARKET_COMMODITY_ACCESS_v1 §Atualidade. Com 3 dias, toda cotacao
  // entre 72 h e 168 h era classificada como utilizavel com ressalva e recusada por idade no mesmo
@@ -78,7 +82,7 @@ const sourceContracts=new Map([
 // GLOBAL is an isolation marker, not a licence to relabel arbitrary producer
 // records.  Only sources whose semantics are genuinely non-individual may use
 // it; producer observations/quotes/intentions must always carry producer_id.
-const trustedGlobalSourceTypes=new Set(['general_knowledge','market_snapshot','official_product_catalog','system_capability','system_safety_policy','model_general_knowledge','calculation'])
+const trustedGlobalSourceTypes=new Set(['general_knowledge','market_snapshot','official_product_catalog','system_capability','system_safety_policy','model_general_knowledge','calculation','approved_official_source'])
 const globalScopeOf=item=>clean(item?.scope??item?.context_scope??item?.subject_type??item?.entity_type??item?.entityType,80).toUpperCase()
 const explicitlyGlobal=item=>['GLOBAL','MARKET','GENERAL_KNOWLEDGE'].includes(globalScopeOf(item))
 const processGuidanceDomains=Object.freeze({
@@ -536,6 +540,11 @@ function hasGlobalIndividualAssertion(rawText=''){
 }
 
 function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}){
+ // Fonte oficial aprovada é documento regulatório sobre um produto, conferido por uma pessoa antes
+ // de entrar. Não se exige âncora de conceito dela — o texto é o excerto da fonte, não uma
+ // paráfrase —, mas afirmação sobre um indivíduo da carteira continua barrada como em toda fonte
+ // global: nenhuma aprovação autoriza falar de um produtor específico por este caminho.
+ if(sourceType==='approved_official_source')return !hasNamedIndividualAssertion(rawText)
  // GLOBAL describes the subject of the evidence; it cannot be used as an
  // escape hatch for an omitted producer id.  Market facts need an aggregate
  // anchor, while catalog/knowledge facts need an explicit concept anchor.

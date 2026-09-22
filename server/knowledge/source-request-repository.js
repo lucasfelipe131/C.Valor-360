@@ -19,7 +19,9 @@ const columns='tenant_id,request_key,domain,reason,question,status,asked_count,a
 // continua sendo beco. Registrar a dúvida é um ganho, não uma dependência nova para responder.
 export function createKnowledgeSourceRequestStore({database}={}){
  if(!database?.configured)return null
- return Object.freeze({
+ // A API é nomeada em vez de depender de `this`: desestruturar a loja (const {transition}=store)
+ // quebraria silenciosamente a leitura do estado atual antes da transição.
+ const store=Object.freeze({
   // A soma de peso acontece no próprio INSERT. Ler-modificar-escrever perderia contagem quando dois
   // consultores fazem a mesma pergunta ao mesmo tempo, que é exatamente quando o peso importa.
   async register(input={}){
@@ -52,7 +54,7 @@ export function createKnowledgeSourceRequestStore({database}={}){
   // A transição é decidida pelo módulo de domínio e só então gravada, com o status esperado no
   // WHERE: duas aprovações simultâneas não podem sobrescrever uma à outra em silêncio.
   async transition({tenantId='',requestKey='',next='',source=null,actor='',rejectionReason='',now=new Date()}={}){
-   const current=await this.get({tenantId,requestKey})
+   const current=await store.get({tenantId,requestKey})
    if(!current)return null
    const updated=sourceRequestTransition(current,next,{source,actor,rejectionReason,now})
    const result=await database.query(
@@ -64,11 +66,12 @@ export function createKnowledgeSourceRequestStore({database}={}){
    return row(result.rows[0])
   },
   // Caminho de resposta: a pergunta vira chave e só uma fonte aprovada e vigente devolve citação.
-  async findApprovedAnswer({tenantId='',domain='',question='',now=new Date()}={}){
-   const requestKey=sourceRequestKey({tenantId,domain,question})
+  async findApprovedAnswer({tenantId='',question='',now=new Date()}={}){
+   const requestKey=sourceRequestKey({tenantId,question})
    if(!requestKey)return null
-   const request=await this.get({tenantId,requestKey})
+   const request=await store.get({tenantId,requestKey})
    return request?approvedSourceAnswer(request,now):null
   }
  })
+ return store
 }

@@ -12,7 +12,9 @@ test('a mesma dúvida de consultores diferentes colide numa linha só, e outro t
  const key=sourceRequestKey({tenantId,domain:'AGRONOMY',question:'Qual é a CARÊNCIA do defensivo?'})
  assert.equal(key,sourceRequestKey({tenantId,domain:'AGRONOMY',question:'qual e a carencia do defensivo'}))
  assert.notEqual(key,sourceRequestKey({tenantId:'outro-tenant',domain:'AGRONOMY',question:'Qual é a CARÊNCIA do defensivo?'}))
- assert.notEqual(key,sourceRequestKey({tenantId,domain:'COMMERCIAL',question:'Qual é a CARÊNCIA do defensivo?'}))
+ // O domínio é atribuído pelo roteador e varia entre conversas: se entrasse na chave, a fonte já
+ // aprovada não seria encontrada quando a mesma pergunta caísse em outro bucket.
+ assert.equal(key,sourceRequestKey({tenantId,domain:'COMMERCIAL',question:'Qual é a CARÊNCIA do defensivo?'}))
  assert.equal(sourceRequestKey({tenantId,domain:'AGRONOMY',question:'   '}),'')
  assert.equal(sourceRequestKey({domain:'AGRONOMY',question:'carência'}),'')
  assert.equal(key.length,32)
