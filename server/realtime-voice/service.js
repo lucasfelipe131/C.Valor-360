@@ -152,7 +152,13 @@ export function createRealtimeVoiceService({runtimeConfig,client,repository,conv
    assertAccess(identity);if(!/^[0-9a-f-]{36}$/i.test(String(sessionId||'')))throw voiceError('Sessão realtime inválida.','realtime_voice_session_invalid',400);activeSession(identity,sessionId)
    const estimated=input.kind==='TRANSCRIPTION'?estimateRealtimeTranscriptionCost(input.usage||{}):estimateRealtimeVoiceCost(input.usage||{})
    const result=await costStore.record({sessionId,userId:identity.id,responseId:clean(input.responseId,180)||null,costUsd:estimated.estimatedCostUsd,final:input.final===true,budgetUsd,model,usage:estimated.tokens})
-   logger({event:'val.realtime_voice.usage_recorded',sessionId,tenantId:identity.tenantId,ownerId:identity.id,model,costUsd:estimated.estimatedCostUsd,final:input.final===true})
+   // O browser já mandava disconnectReason no encerramento e o servidor descartava o campo:
+   // uma sessão que morria antes do primeiro turno virava só mais um custo zero no log, sem
+   // nada que dissesse se faltou microfone, rede, provider ou código. Agora o motivo fica.
+   const disconnectReason=clean(input.disconnectReason,60)
+   const transportDetail=clean(input.transportDetail,180)
+   const providerStatus=Number(input.providerStatus)
+   logger({event:'val.realtime_voice.usage_recorded',sessionId,tenantId:identity.tenantId,ownerId:identity.id,model,costUsd:estimated.estimatedCostUsd,final:input.final===true,...(disconnectReason?{disconnectReason}:{}),...(transportDetail?{transportDetail}:{}),...(Number.isFinite(providerStatus)&&providerStatus>0?{providerStatus}:{})})
    if(input.final===true){const session=sessions.get(String(sessionId));if(session)sessions.set(String(sessionId),{...session,finalized:true,expiresAt:Date.now()+5*60_000})}
    return {contractVersion:'val.realtime_voice.cost.v1',accepted:result.recorded||result.duplicate===true,duplicate:Boolean(result.duplicate),model,sessionId,estimatedCostUsd:estimated.estimatedCostUsd,totalEstimatedUsd:result.totalUsd,remainingUsd:result.remainingUsd,budgetUsd,exhausted:result.exhausted,contentFree:true}
   },

@@ -1,5 +1,5 @@
 import {useCallback,useEffect,useMemo,useRef,useState} from 'react'
-import {realtimeRetrySeconds,realtimeRetryDelay,realtimeFailureMessage,realtimeEventSuppressedWhilePaused} from '../lib/realtime-recovery.js'
+import {realtimeRetrySeconds,realtimeRetryDelay,realtimeFailureMessage,realtimeTransportDetail,realtimeEventSuppressedWhilePaused} from '../lib/realtime-recovery.js'
 import {realtimeCompletedTranscript,realtimePartialMessageIds,realtimeTurnFailureMessage,realtimeTurnResponseOptions} from '../lib/realtime-turn-recovery.js'
 import {NATURAL_REALTIME_STATES as STATES,NATURAL_REALTIME_VERSION,parseRealtimeEvent,realtimeLatencySample,realtimeStatusLabel,realtimeWebRTCCapabilities,toolOutputEvent} from '../lib/realtime-webrtc.js'
 
@@ -88,7 +88,7 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   if(id)responseTurns.current.set(id,response)
   return response
  },[beginTurn])
- const cleanup=useCallback(async({final=true,reason='EXIT',nextStatus=STATES.IDLE}={})=>{
+ const cleanup=useCallback(async({final=true,reason='EXIT',nextStatus=STATES.IDLE,detail=null}={})=>{
   lifecycle.current+=1
   clearThinkingWatchdog()
   const current=resources.current
@@ -102,7 +102,7 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   try{current.pc?.close()}catch{}
   for(const track of current.stream?.getTracks?.()||[])try{track.stop()}catch{}
   if(current.audio){try{current.audio.pause()}catch{};try{current.audio.srcObject=null;current.audio.remove()}catch{}}
-  if(final&&!current.finalized&&current.sessionId){current.finalized=true;postSession('usage',{final:true,disconnectReason:reason},{keepalive:true,sessionId:current.sessionId}).catch(()=>null)}
+  if(final&&!current.finalized&&current.sessionId){current.finalized=true;postSession('usage',{final:true,disconnectReason:reason,...(detail||{})},{keepalive:true,sessionId:current.sessionId}).catch(()=>null)}
   pendingReconnect.current=null
   pendingToolResponse.current=null
   if(reason!=='CONTEXT_SCOPE_CHANGED')pendingVerifiedResume.current=null
@@ -122,7 +122,15 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
   const code=String(typeof error?.code==='string'&&error.code||error?.name||'realtime_voice_failed')
   const message=realtimeFailureMessage(error)
   if(eventScope&&!eventIsCurrent(eventScope))return {ok:false,reason:'REALTIME_STALE_EVENT',error:message}
-  const finishing=cleanup({final:true,reason:code,nextStatus:fallback?STATES.FALLBACK:STATES.ERROR})
+  // A sessão já foi criada e paga quando o transporte falha. O encerramento era a única coisa
+  // que chegava ao servidor, e ia sem motivo nenhum: o log ficava com custo zero e ninguém
+  // conseguia dizer em que passo a conversa morreu. O motivo viaja junto do final agora.
+  const detail={}
+  const providerStatus=Number(error?.providerStatus)
+  if(Number.isFinite(providerStatus)&&providerStatus>0)detail.providerStatus=providerStatus
+  const transportDetail=safeText(error?.transportDetail||realtimeTransportDetail(error),180)
+  if(transportDetail)detail.transportDetail=transportDetail
+  const finishing=cleanup({final:true,reason:code,nextStatus:fallback?STATES.FALLBACK:STATES.ERROR,detail})
   const failureGeneration=lifecycle.current
   await finishing
   if(lifecycle.current!==failureGeneration)return {ok:false,reason:'REALTIME_STALE_EVENT'}
@@ -448,9 +456,21 @@ export default function useNaturalRealtimeVoice({clientId='',conversationId='',c
    for(const track of stream.getAudioTracks())pc.addTrack(track,stream)
    const dc=pc.createDataChannel('oai-events');attempt.dc=dc;dc.onmessage=event=>handleEvent(event.data,eventScope);dc.onerror=()=>{if(eventIsCurrent(eventScope))fail(Object.assign(new Error('O canal de eventos realtime falhou.'),{code:'WEBRTC_DATA_CHANNEL_ERROR'}),{eventScope})};dc.onopen=()=>{if(!eventIsCurrent(eventScope))return;if(attempt.connectionTimer)globalThis.clearTimeout(attempt.connectionTimer);attempt.connectionTimer=null;for(const track of stream.getAudioTracks())track.enabled=!userPaused.current;update({status:userPaused.current?STATES.PAUSED:STATES.LISTENING,microphoneActive:!userPaused.current});resumeVerifiedServerResponse()}
    const offer=await pc.createOffer();if(!isCurrent())return abandon(attempt.sessionId);await pc.setLocalDescription(offer);if(!isCurrent())return abandon(attempt.sessionId)
-   const answerResponse=await fetch(session.callUrl,{method:'POST',body:offer.sdp,headers:{Authorization:`Bearer ${session.clientSecret}`,'Content-Type':'application/sdp'},signal:attempt.controller.signal})
+   // Única chamada cross-origin do fluxo. Quando ela falha o browser entrega um TypeError cru,
+   // sem status e sem corpo, que virava "verifique sua internet" mesmo com o microfone já
+   // capturando e o resto da aba respondendo em milissegundos. O passo que falhou e a resposta
+   // do provider precisam sobreviver ao encerramento, senão não há o que investigar depois.
+   let answerResponse
+   try{answerResponse=await fetch(session.callUrl,{method:'POST',body:offer.sdp,headers:{Authorization:`Bearer ${session.clientSecret}`,'Content-Type':'application/sdp'},signal:attempt.controller.signal})}
+   catch(error){
+    if(error?.name==='AbortError')throw error
+    throw Object.assign(new Error('Não consegui abrir o canal de áudio com o servidor de voz.'),{code:'WEBRTC_SDP_EXCHANGE_FAILED',transportDetail:realtimeTransportDetail(error)||`${session.callUrl} recusou a conexão`,retryAfterSeconds:3})
+   }
    if(!isCurrent())return abandon(attempt.sessionId)
-   if(!answerResponse.ok)throw Object.assign(new Error('O provider recusou a conexão WebRTC.'),{code:'WEBRTC_PROVIDER_REJECTED'})
+   if(!answerResponse.ok){
+    const providerBody=await answerResponse.text().catch(()=>'')
+    throw Object.assign(new Error('O provider recusou a conexão WebRTC.'),{code:'WEBRTC_PROVIDER_REJECTED',providerStatus:answerResponse.status,transportDetail:safeText(providerBody,180),retryAfterSeconds:realtimeRetryDelay({},answerResponse.headers)||3})
+   }
    const answer=await answerResponse.text();if(!isCurrent())return abandon(attempt.sessionId);await pc.setRemoteDescription({type:'answer',sdp:answer});if(!isCurrent())return abandon(attempt.sessionId)
    attempt.timer=globalThis.setTimeout(()=>{if(eventIsCurrent(eventScope))fail(Object.assign(new Error('A sessão atingiu o limite de duração do UAT.'),{code:'REALTIME_SESSION_TIME_LIMIT'}),{eventScope})},Math.max(60,Number(session.maxSessionSeconds)||600)*1000)
    return {ok:true,transport:'WEBRTC',sessionId:attempt.sessionId,scope:eventScope}

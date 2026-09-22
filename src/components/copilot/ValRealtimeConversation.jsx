@@ -2,6 +2,7 @@ import React,{useEffect,useRef} from 'react'
 import {Keyboard,LoaderCircle,Mic,MicOff,Play,Power,RotateCcw,Volume2} from 'lucide-react'
 import useNaturalRealtimeVoice from '../../hooks/useNaturalRealtimeVoice.js'
 import {REALTIME_CONVERSATION_POLICY,REALTIME_CONVERSATION_STATES} from '../../lib/realtime-conversation.js'
+import {realtimeFailureIsMicrophone} from '../../lib/realtime-recovery.js'
 import '../../val-realtime-conversation.css'
 
 const countdownLabel=seconds=>`${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`
@@ -20,6 +21,10 @@ export function ValRealtimeConversationStage({
  const unavailable=[REALTIME_CONVERSATION_STATES.ERROR,REALTIME_CONVERSATION_STATES.FALLBACK].includes(state.status)
  const paused=state.status===REALTIME_CONVERSATION_STATES.PAUSED
  const connecting=state.status==='CONNECTING'
+ // O palco anunciava "seu microfone está desligado" para qualquer falha. Quando o que caiu foi
+ // o transporte, o microfone já tinha sido concedido e capturado: a mensagem mandava o
+ // consultor conferir permissão de áudio enquanto o problema estava do outro lado da conexão.
+ const microphoneFault=realtimeFailureIsMicrophone(state.fallbackReason)
  // `processing` e o trabalho do proprio copiloto (ferramenta governada em voo): o palco precisa
  // dizer que esta preparando a resposta em vez de convidar o consultor a falar.
  const thinking=processing||[REALTIME_CONVERSATION_STATES.PROCESSING,REALTIME_CONVERSATION_STATES.TURN_DETECTED,'THINKING'].includes(state.status)
@@ -34,7 +39,7 @@ export function ValRealtimeConversationStage({
  const displayStatus=unavailable?state.status.toLowerCase():paused?'paused':connecting?'connecting':recovering?'recovering':turnRetryAvailable?'turn-interrupted':speaking?'speaking':thinking?'thinking':state.status.toLowerCase()
  const rootClass=['val-realtime-conversation','has-fixed-controls',`is-${displayStatus}`,className].filter(Boolean).join(' ')
  const label=unavailable?'A conversa foi interrompida':paused?'Conversa pausada':connecting?'Conectando sua conversa':recovering?'Recuperando a resposta':turnRetryAvailable?'Resposta interrompida':speaking?'VAL está falando':thinking?'Pensando na sua pergunta':state.microphoneActive?'Estou ouvindo':state.label||'Preparando o microfone'
- const detail=unavailable?'Seu microfone está desligado. Você pode continuar por texto.':paused?'Retome quando quiser. Seu microfone está desligado.':connecting?'Um instante. Estamos preparando o áudio.':recovering?'Sua pergunta foi preservada. Estou tentando concluir a resposta.':turnRetryAvailable?'Sua pergunta foi preservada. A nova tentativa começa a resposta desde o início.':speaking?state.canBargeIn?'Pode me interromper para perguntar ou complementar.':'Estou concluindo a resposta em áudio.':thinking?'Estou preparando a resposta.':state.microphoneActive?'Fale naturalmente. Eu respondo quando você terminar.':'Aguarde o indicador de microfone ativo para falar.'
+ const detail=unavailable?microphoneFault?'Seu microfone está desligado. Você pode continuar por texto.':'A captura de áudio foi encerrada, mas o microfone continua liberado. Tente novamente ou continue por texto.':paused?'Retome quando quiser. Seu microfone está desligado.':connecting?'Um instante. Estamos preparando o áudio.':recovering?'Sua pergunta foi preservada. Estou tentando concluir a resposta.':turnRetryAvailable?'Sua pergunta foi preservada. A nova tentativa começa a resposta desde o início.':speaking?state.canBargeIn?'Pode me interromper para perguntar ou complementar.':'Estou concluindo a resposta em áudio.':thinking?'Estou preparando a resposta.':state.microphoneActive?'Fale naturalmente. Eu respondo quando você terminar.':'Aguarde o indicador de microfone ativo para falar.'
  const permissionDenied=['MICROPHONE_PERMISSION_DENIED','NotAllowedError'].includes(state.fallbackReason)
  const failureText=permissionDenied?'Permita o microfone nas configurações deste site no navegador e tente novamente.':readableVoiceError(errorMessage||state.error,'Não foi possível manter a conexão de voz. Você pode tentar novamente ou continuar por texto.')
  const turnFailureText=readableVoiceError(state.error,turnRetryAvailable?'Não consegui concluir esta resposta. Sua pergunta foi preservada.':'Não consegui concluir esta resposta. Você pode continuar por texto.')
@@ -44,7 +49,7 @@ export function ValRealtimeConversationStage({
  return <section className={rootClass} aria-label="Modo conversa por voz" data-version={state.version||REALTIME_CONVERSATION_POLICY.version} data-transport={state.transport||'WEBRTC'} data-microphone-active={state.microphoneActive?'true':'false'}>
   <div className="val-conversation-topline">
    <span className="val-conversation-eyebrow">Conversa por voz</span>
-   <span className={`val-conversation-connection ${state.microphoneActive?'is-live':''}`}><span aria-hidden="true"/>{connecting?'Conectando':state.microphoneActive?'Microfone ativo':'Microfone desligado'}</span>
+   <span className={`val-conversation-connection ${state.microphoneActive?'is-live':''}`}><span aria-hidden="true"/>{connecting?'Conectando':state.microphoneActive?'Microfone ativo':unavailable&&!microphoneFault?'Voz desconectada':'Microfone desligado'}</span>
   </div>
   <div className="val-conversation-stage">
    <div className="val-conversation-orb" aria-hidden="true"><span className="val-orb-ring r3"/><span className="val-orb-ring r2"/><span className="val-orb-ring"/><span className="val-orb-core"/><span className="val-orb-shimmer"/></div>

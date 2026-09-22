@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {realtimeRetrySeconds,realtimeRetryDelay,realtimeFailureMessage,realtimeEventSuppressedWhilePaused} from '../src/lib/realtime-recovery.js'
+import {realtimeRetrySeconds,realtimeRetryDelay,realtimeFailureMessage,realtimeFailureIsMicrophone,realtimeTransportDetail,realtimeEventSuppressedWhilePaused} from '../src/lib/realtime-recovery.js'
 
 test('voice cooldown counts down from a fixed deadline and enables retry exactly at expiry',()=>{
  const deadline=12_500
@@ -62,4 +62,20 @@ test('native DOMException numeric codes do not hide microphone names',()=>{
  assert.match(realtimeFailureMessage(new DOMException('Requested device not found','NotFoundError')),/Conecte um microfone/)
  assert.match(realtimeFailureMessage(new DOMException('Permission denied','NotAllowedError')),/Permita o acesso ao microfone/)
  assert.match(realtimeFailureMessage(new DOMException('Aborted','AbortError')),/demorou demais/)
+})
+
+test('transport failures are separated from microphone failures and keep a loggable detail',()=>{
+ // getUserMedia acontece antes da troca de SDP: se o transporte caiu, o microfone foi concedido.
+ for(const code of ['NotAllowedError','NotFoundError','NotReadableError','OverconstrainedError','SecurityError','MICROPHONE_PERMISSION_DENIED'])assert.equal(realtimeFailureIsMicrophone(code),true,code)
+ for(const code of ['WEBRTC_SDP_EXCHANGE_FAILED','WEBRTC_PROVIDER_REJECTED','WEBRTC_DISCONNECTED','REALTIME_CONNECT_TIMEOUT','TypeError','',null])assert.equal(realtimeFailureIsMicrophone(code),false,String(code))
+ const exchange=realtimeFailureMessage({code:'WEBRTC_SDP_EXCHANGE_FAILED'})
+ assert.match(exchange,/servidor de voz/)
+ assert.match(exchange,/Apertar para falar/)
+ assert.doesNotMatch(exchange,/Verifique sua internet/)
+ assert.match(realtimeFailureMessage({code:'WEBRTC_PROVIDER_REJECTED'}),/recusou a conexão de áudio/)
+ assert.equal(realtimeTransportDetail(new TypeError('Failed to fetch')),'TypeError: Failed to fetch')
+ assert.equal(realtimeTransportDetail(Object.assign(new Error('wrapper'),{cause:new TypeError('Load failed')})),'TypeError: Load failed')
+ assert.equal(realtimeTransportDetail({name:'TypeError',message:'a\n\nb'}),'TypeError: a b')
+ assert.equal(realtimeTransportDetail({name:'X',message:'y'.repeat(400)}).length,180)
+ assert.equal(realtimeTransportDetail({}),'')
 })

@@ -55,3 +55,18 @@ test('o mesmo request_id liga API, ValEngine, banco e integração',async()=>{
   assert.ok(logs.every(item=>item.request_id===requestId))
   assert.equal(logs[2].operation,'SELECT')
 })
+
+// O motivo do encerramento da voz precisa atravessar o filtro de detalhes: sem isso, a correção
+// no browser e no serviço morre na última fronteira e o log volta a ser só custo zero.
+test('o encerramento da voz chega ao log com motivo, status e detalhe do transporte',()=>{
+  const logs=[]
+  runWithRequestContext({requestId,method:'POST',path:'/api/v1/realtime-voice/sessions/abc/usage',tenantId:'tenant-a'},()=>{
+    observe('val.realtime_voice',{outcome:'val.realtime_voice.usage_recorded',sessionId:'sess-a',costUsd:0,disconnectReason:'WEBRTC_SDP_EXCHANGE_FAILED',transportDetail:'TypeError: Failed to fetch',providerStatus:401,transcript:'o que o produtor falou'})
+  },{logger:value=>logs.push(JSON.parse(value))})
+  assert.equal(logs.length,1)
+  assert.equal(logs[0].disconnectReason,'WEBRTC_SDP_EXCHANGE_FAILED')
+  assert.equal(logs[0].transportDetail,'TypeError: Failed to fetch')
+  assert.equal(logs[0].providerStatus,401)
+  assert.equal(logs[0].path,'/api/v1/realtime-voice/sessions/:id/usage')
+  assert.equal(logs[0].transcript,undefined)
+})
