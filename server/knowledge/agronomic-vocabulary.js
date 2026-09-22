@@ -124,6 +124,7 @@ nenhum nenhuma nenhuns nenhumas todo toda todos todas cada qualquer quaisquer al
 algumas outro outra outros outras mesmo mesma mesmos mesmas tanto tanta tantos tantas tal tais
 muito muita muitos muitas pouco pouca poucos poucas varios varias ambos ambas certo certa
 este esta estes estas esse essa esses essas aquele aquela aqueles aquelas isso isto aquilo
+ele ela eles elas
 quando onde como porque pois porem contudo todavia entretanto embora caso enquanto conforme
 apenas somente tambem ainda sempre nunca jamais talvez quase geralmente normalmente idealmente
 tipicamente comumente frequentemente raramente possivelmente provavelmente certamente

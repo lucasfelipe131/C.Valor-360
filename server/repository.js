@@ -536,7 +536,10 @@ const canonicalProfileText=value=>{
 const profileContextClientValue=(field,value)=>{
   const candidate=profileAnswerText(value)
   if(field!=='servicePreference'||!candidate)return candidate||null
-  return candidate.replace(/^visitas?\s+presenciais?\s+frequentes?/i,'Prefere atendimento presencial frequente').replace(/^visitas?\s+presenciais?/i,'Prefere atendimento presencial')
+  // The verified field supplies its behavioral meaning even when the answer
+  // has no word such as "prefere" (e.g. scheduled meetings or WhatsApp). Keep
+  // the literal answer in the signal; canonical answers/evidence stay intact.
+  return `Preferência de atendimento: ${candidate}`
 }
 const objectAt=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{}
 const profileAliasState=(source,aliases,normalizeValue=value=>String(value??'').trim())=>{
@@ -701,6 +704,7 @@ function materializeCanonicalBehavioralProfileEvidence({
   }
   for(const spec of canonicalProfileFields.filter(item=>!item.question)){
     const value=spec.field==='primaryProfile'?primaryProfile:secondaryProfile
+    if(/^(?:a classificar|a aprofundar)$/.test(normalize(value)))continue
     if(value)add({spec,value,locator:spec.field==='primaryProfile'?'primary_profile':'secondary_profile',priority:5,sourceType:'behavioral_profile_evidence',epistemicType:'FACT',sourceId:String(profileId),evidenceRefs:[]})
   }
 

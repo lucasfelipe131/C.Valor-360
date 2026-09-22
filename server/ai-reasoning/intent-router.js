@@ -94,11 +94,22 @@ function semanticCurrentDataIntent(source=''){
 // Objecao e oportunidade sao comandos sobre um produtor concreto (o selecionado, ou "ele",
 // "dele", "esse cliente"). Sem essa referencia, "produtor nao quer mudar" e "custo de
 // oportunidade da terra" sao perguntas de conhecimento e seguem para a Biblioteca.
+// Resistance of an organism or to a pesticide is an agronomic subject. An
+// open producer must not turn it into that producer's commercial objection.
+// Explicit objection/refusal still wins, including mixed agricultural topics.
+const agronomicResistance=/^resistencia\s+(?:(?:de|da|das|do|dos|em|na|nas|no|nos)\s+(?:plantas?\s+daninhas?|daninhas?|pragas?|insetos?|fungos?|patogenos?)|(?:a|as|ao|aos)\s+(?:herbicidas?|inseticidas?|fungicidas?))\b/
+const commercialObjection=source=>{
+ if(/\b(?:obje[cç][aã]o|discord|recus|n[aã]o quer)\b/i.test(source))return true
+ const normalized=fold(source)
+ // Each occurrence keeps its own subject: a later agronomic resistance does
+ // not erase an earlier "resistência do produtor/dele" in the same question.
+ return [...normalized.matchAll(/\bresistencia\b/g)].some(match=>!agronomicResistance.test(normalized.slice(match.index)))
+}
 function semanticCommandIntent(source='',hasClient=false){
  const folded=fold(source)
  const individual=hasClient||individualReference.test(folded)
  if(/\b(?:prepar|roteiro|conduz|antes da)\w*\b.*\b(?:visit\w*|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b|\b(?:visit\w*|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))return 'PREPARE_VISIT'
- if(individual&&/\b(?:obje[cç][aã]o|resist[eê]ncia|discord|recus|n[aã]o quer)\b/i.test(source))return 'OBJECTION_HELP'
+ if(individual&&commercialObjection(source))return 'OBJECTION_HELP'
  if(individual&&(/\b(?:oportunidades?|pipeline|neg[oó]cios?|propostas?)\b/i.test(source)||nextActionShape.test(source)))return 'CHECK_OPPORTUNITY'
  if(/\b(?:follow.?up|retomar|cobrar retorno|pr[oó]ximo contato)\b/i.test(source))return 'FOLLOW_UP_HELP'
  return ''
@@ -171,7 +182,7 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
   else if(/\b(?:prepar|roteiro|conduz|antes da)\w*\b.*\bvisit\w*\b|\bvisit\w*\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))intent='PREPARE_VISIT'
   else if(/^(?:val[, ]+)?(?:registra|registre|anota|anote)\s+que\b/i.test(source)||/\b(?:registr|salv|grav|anot|memoriz)\w*\b.*\b(?:informa[cç][aã]o|nota|hist[oó]rico|mem[oó]ria|fato)\b/i.test(source))intent='REGISTER_INFORMATION'
   else if(/\b(?:p[oó]s[- ]?visita|depois da visita|resultado da visita)\b/i.test(source))intent='POST_VISIT'
-  else if(individual&&/\b(?:obje[cç][aã]o|resist[eê]ncia|discord|recus|n[aã]o quer)\b/i.test(source))intent='OBJECTION_HELP'
+  else if(individual&&commercialObjection(source))intent='OBJECTION_HELP'
   else if(individual&&(/\b(?:oportunidades?|pipeline|neg[oó]cios?|propostas?)\b/i.test(source)||nextActionShape.test(source)))intent='CHECK_OPPORTUNITY'
   else if(/\b(?:follow.?up|retomar|cobrar retorno|pr[oó]ximo contato)\b/i.test(source))intent='FOLLOW_UP_HELP'
   // Pergunta aritmetica de plantabilidade ("300 mil plantas por hectare em 45 cm") ou de custo
