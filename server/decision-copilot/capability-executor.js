@@ -10,7 +10,8 @@ import {describeSelectionMatch,generalAnswerTopicMatches} from '../knowledge/sel
 import {generalTopicClarification} from './general-question-context.js'
 import {stripMessagePreamble} from '../message-preamble.js'
 import {generalProductCatalogGuidance} from '../product-intelligence.js'
-import {generateGeneralModelAnswer,isGeneralRegulatedConcept,regulatedBrandClaim,safeGeneralModelAnswer} from '../knowledge/general-answer-provider.js'
+import {generateGeneralModelAnswer,isGeneralRegulatedConcept,regulatedBrandClaim,requiresVerifiedGeneralSource,safeGeneralModelAnswer,safeResearchAnswer} from '../knowledge/general-answer-provider.js'
+import {researchQuestion} from '../knowledge/web-research.js'
 import {isClientOverviewRequest} from './capability-router.js'
 
 export const capabilityExecutorVersion='val.capability_executor.v1'
@@ -769,7 +770,7 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
   const live=['MARKET_COMMODITY','WEATHER','LABELS'].includes(capability)
   const globalSource=explicitlyGlobalContext(context)
   const globalOrigin=globalSource?validateGlobalLiveScope({...context,source_ref:item.source_ref},{tenantId:clean(organizationId,180),ownerId:clean(ownerId,180)},`response_${capability.toLowerCase()}`):null
-  const sourceType=live?'market_snapshot':capability==='AGRONOMIC_WORKSPACE'?'official_product_catalog':capability==='SESSION_COMMAND'?'conversation_turn':capability==='CLIENT_CONTEXT'?'client_registration':capability==='CONFIRMED_MEMORY'?clean(context.source_type,120).toLowerCase()||'confirmed_memory':capability==='COMMERCIAL_HISTORY'?'commitment':capability==='SOIL_ANALYSIS'?'soil_analysis':['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?'attachment_analysis':capability==='AREA_MAPPING'?'context_snapshot':capability==='CALCULATORS'?'calculation':capability==='APPROVED_SOURCE'?'approved_official_source':capability==='AI_GENERAL_KNOWLEDGE'?'model_general_knowledge':capability==='GENERAL_GUIDANCE'?context.product_catalog_ref?'official_product_catalog':'general_knowledge':'system_capability'
+  const sourceType=live?'market_snapshot':capability==='AGRONOMIC_WORKSPACE'?'official_product_catalog':capability==='SESSION_COMMAND'?'conversation_turn':capability==='CLIENT_CONTEXT'?'client_registration':capability==='CONFIRMED_MEMORY'?clean(context.source_type,120).toLowerCase()||'confirmed_memory':capability==='COMMERCIAL_HISTORY'?'commitment':capability==='SOIL_ANALYSIS'?'soil_analysis':['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?'attachment_analysis':capability==='AREA_MAPPING'?'context_snapshot':capability==='CALCULATORS'?'calculation':capability==='APPROVED_SOURCE'?'approved_official_source':capability==='WEB_RESEARCH'?'web_research_cited':capability==='AI_GENERAL_KNOWLEDGE'?'model_general_knowledge':capability==='GENERAL_GUIDANCE'?context.product_catalog_ref?'official_product_catalog':'general_knowledge':'system_capability'
   const sourceEpistemic=capability==='SESSION_COMMAND'?'INFERENCE':capability==='CONFIRMED_MEMORY'?clean(context.epistemic_type,40).toUpperCase()||'FACT':['SOIL_ANALYSIS','IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?'OBSERVATION':'FACT'
   // Comando local da sessao ("por escrito") nao tem turno anterior: a observacao e o proprio momento.
   const sourceObservedAt=capability==='GENERAL_GUIDANCE'&&context.product_catalog_ref?null:capability==='SESSION_COMMAND'?context.source_turn_created_at||(route?.session_command?.local_only?createdAt:null):live?context.observed_at:capability==='CONFIRMED_MEMORY'||capability==='COMMERCIAL_HISTORY'?context.observed_at:capability==='SOIL_ANALYSIS'?item.tool_result?.facts?.sampled_at:['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?item.tool_result?.facts?.result_created_at:createdAt
@@ -886,7 +887,7 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  return {route:route?.path||execution?.path||'TOOL',engineMode:'rules',model:'rules-capability-executor-v1',warning:'',responseMetadata:{toolExecutionVersion:capabilityExecutorVersion,executionBudget},advice:{answer,executive_brief:{headline:blocked?'Resposta bloqueada por grounding':tool?.title||'Capacidade da VAL',reason:answer,action:reasoning.recommended_strategy.action},next_best_action:reasoning.recommended_strategy.action,ai_reasoning:reasoning}}
 }
 
-export async function buildGeneralNoClientResponse({message='',route={},organizationId='unknown',ownerId='',conversationId='',contextEpoch=0,contextDomain='',now=new Date(),aiClient=null,aiModel='',aiUnavailableReason='',sharedAnswerCache=null,sourceRequests=null,signal}={}){
+export async function buildGeneralNoClientResponse({message='',route={},organizationId='unknown',ownerId='',conversationId='',contextEpoch=0,contextDomain='',now=new Date(),aiClient=null,aiModel='',aiUnavailableReason='',sharedAnswerCache=null,sourceRequests=null,research=null,signal}={}){
  const aiBudgetExhausted=aiUnavailableReason==='BUDGET_EXHAUSTED'&&!aiClient
  throwIfCancelled(signal)
  const catalog=route?.tool_hint==='AGRONOMIC_TOOL_CATALOG'&&list(route.capabilities).includes('AGRONOMIC_WORKSPACE')
@@ -929,7 +930,7 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
     // e nao deve ser submetido ao teste lexical de relevancia (a selecao governada ja atestou o
     // casamento em knowledge_match).
     :{path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:guidance?.knowledge_item_id?['KNOWLEDGE_LIBRARY']:[],capability_results:list(route.capabilities).map(capability=>({capability,status:capability==='KNOWLEDGE_LIBRARY'&&guidance?.knowledge_item_id?'EXECUTED':'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'EXECUTED',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:'Orientação geral',summary:curatedSummary,page:'copilot',manual_page:null,mode:'general',context:{client_id:null,private_memory_used:false,...(guidance?.knowledge_item_id?{knowledge_item_id:guidance.knowledge_item_id,knowledge_match:guidance.knowledge_match}:{}),...(guidance?.product_catalog_ref?{product_catalog_ref:guidance.product_catalog_ref}:{})}},active_context:null})
- const finalize=(execution,{unverified=false,approvedSource=null}={})=>{
+ const finalize=(execution,{unverified=false,approvedSource=null,researched=null}={})=>{
   trustedCapabilityExecutions.add(execution)
   const built=buildCapabilityExecutionResponse({execution,route,message,organizationId,ownerId,conversationId,contextEpoch,contextDomain,now,executionCounts:{entityResolutions:0,dataLookups:0,toolCalls:catalog?1:0,hops:catalog?1:0}})
   built.advice.ai_reasoning.client={id:'portfolio',name:'Conversa geral'}
@@ -961,6 +962,12 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
    built.advice.ai_reasoning.knowledge_refs=[approvedSource.citation]
    built.advice.ai_reasoning.confidence={level:'FONTE_OFICIAL_APROVADA',score:null,rationale:`Trecho literal de fonte oficial aprovada por ${approvedSource.approved_by} em ${approvedSource.approved_at}; a vigência da fonte é responsabilidade da revisão.`}
   }
+  // Pesquisada tem fonte, mas não tem revisor: o consultor lê de onde veio e que ninguém conferiu.
+  if(researched&&!built.advice.ai_reasoning.grounding?.blocked){
+   built.advice.ai_reasoning.evidence_status='WEB_RESEARCH_CITED'
+   built.advice.ai_reasoning.knowledge_refs=researched.citations.map(citation=>({...citation}))
+   built.advice.ai_reasoning.confidence={level:'PESQUISA_CITADA',score:null,rationale:`Síntese do modelo a partir de ${researched.citations.length} fonte(s) em domínio permitido (${[...new Set(researched.citations.map(citation=>citation.host))].join(', ')}); não passou por revisão humana.`}
+  }
   return built
  }
  const curatedResponse=finalize(curatedExecution)
@@ -981,6 +988,27 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   const summary=`${approved.excerpt}\n\nFonte: ${citation.title} — ${citation.publisher}${citation.year?` (${citation.year})`:''}. ${citation.url}`
   const tool={status:'EXECUTED',capability:'APPROVED_SOURCE',tool:'approved_source',title:'Fonte oficial aprovada',summary,page:'copilot',manual_page:null,mode:'approved_source',context:{client_id:null,private_memory_used:false,source_request_key:approved.request_key,approved_by:approved.approved_by,...(approved.valid_until?{valid_until:approved.valid_until}:{})}}
   return finalize(deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['APPROVED_SOURCE'],capability_results:[{capability:'APPROVED_SOURCE',status:'EXECUTED',source_ref:`approved-source:${approved.request_key}`,tool_result:tool}],tool_result:tool,active_context:null}),{approvedSource:approved})
+ }
+ // Pesquisa com fonte vem antes da memória do modelo: a mesma pergunta, respondida com o endereço de
+ // onde veio. Assunto regulado nunca é respondido por aqui — dose e bula só saem de fonte aprovada
+ // por uma pessoa, e a pesquisa para isso é disparada pelo revisor, não pelo consultor.
+ let researchCostUsd=0,researchModelCalls=0
+ if(research&&aiClient&&aiModel&&!requiresVerifiedGeneralSource(message)){
+  let researched=null
+  try{researched=await researchQuestion({message,aiClient,model:aiModel,domains:research.domains,callCostUsd:research.callCostUsd,mode:'ANSWER',signal})}
+  catch(error){if(signal?.aborted)throw error}
+  researchCostUsd=Number(researched?.costUsd)||0;researchModelCalls=Number(researched?.modelCalls)||0
+  const citations=researched?.citations||[]
+  if(researched?.text&&citations.length&&generalAnswerTopicMatches(message,researched.text)&&safeResearchAnswer(researched.text)){
+   const summary=`${researched.text}\n\nFontes: ${citations.map(citation=>`${citation.title} (${citation.host})`).join('; ')}.`
+   const tool={status:'EXECUTED',capability:'WEB_RESEARCH',tool:'web_research',title:'Pesquisa em fontes permitidas',summary,page:'copilot',manual_page:null,mode:'web_research',context:{client_id:null,private_memory_used:false,citation_count:citations.length}}
+   const delivered=finalize(deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['WEB_RESEARCH'],capability_results:[{capability:'WEB_RESEARCH',status:'EXECUTED',source_ref:'system:web-research:v1',tool_result:tool}],tool_result:tool,active_context:null}),{researched:{citations}})
+   if(delivered.advice.ai_reasoning.grounding?.blocked!==true){
+    delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:researchCostUsd,aiGeneralKnowledgeModelCalls:researchModelCalls,webResearch:{citations:citations.length,searchCalls:Number(researched.searchCalls)||0}}
+    delivered.responseMetadata.executionBudget={...delivered.responseMetadata.executionBudget,modelCalls:researchModelCalls,estimatedCostUsd:researchCostUsd}
+    return delivered
+   }
+  }
  }
  const buildAiResponse=answer=>{
   const tool={status:'EXECUTED',capability:'AI_GENERAL_KNOWLEDGE',tool:'ai_general_knowledge',title:'Conhecimento geral do modelo (não verificado)',summary:answer,page:'copilot',manual_page:null,mode:'general_unverified',context:{client_id:null,private_memory_used:false}}
@@ -1011,8 +1039,8 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   ?await registerSourceRequest({sourceRequests,tenantId:organizationId,ownerId,message,domain:contextDomain,reason:regulatedClaim?'REGULATED_SOURCE_REQUIRED':'LIBRARY_NO_COVERAGE',now})
   :false
  const delivered=answered?buildAiResponse(result.text):finalize(noCoverageExecution(providerFailure,regulatedClaim,registered))
- delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:result.costUsd,aiGeneralKnowledgeModelCalls:result.modelCalls,sharedKnowledgeCache:result.cache||null,...(providerFailure?{aiProviderStatus:result.providerStatus??null,aiProviderRetryAfterSeconds:result.retryAfterSeconds??null}:{})}
- delivered.responseMetadata.executionBudget={...delivered.responseMetadata.executionBudget,modelCalls:result.modelCalls,estimatedCostUsd:result.costUsd}
- delivered.advice.ai_reasoning.run={...delivered.advice.ai_reasoning.run,model_call_count:result.modelCalls,estimated_cost_usd:result.costUsd}
+ delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:result.costUsd+researchCostUsd,aiGeneralKnowledgeModelCalls:result.modelCalls+researchModelCalls,sharedKnowledgeCache:result.cache||null,...(providerFailure?{aiProviderStatus:result.providerStatus??null,aiProviderRetryAfterSeconds:result.retryAfterSeconds??null}:{})}
+ delivered.responseMetadata.executionBudget={...delivered.responseMetadata.executionBudget,modelCalls:result.modelCalls+researchModelCalls,estimatedCostUsd:result.costUsd+researchCostUsd}
+ delivered.advice.ai_reasoning.run={...delivered.advice.ai_reasoning.run,model_call_count:result.modelCalls+researchModelCalls,estimated_cost_usd:result.costUsd+researchCostUsd}
  return delivered
 }

@@ -17,7 +17,7 @@ before(async()=>{
  directory=await mkdtemp(join(tmpdir(),'val-source-requests-'))
  pg=new PGlite(directory)
  const database={configured:true,query:(...args)=>pg.query(...args),transaction:work=>pg.transaction(tx=>work({query:(...args)=>tx.query(...args)}))}
- await pg.exec(await readFile(new URL('../database/migrations/20260922_015_knowledge_source_requests_expand.sql',import.meta.url),'utf8'))
+ for(const migration of ['20260922_015_knowledge_source_requests_expand.sql','20260922_016_knowledge_source_candidates_expand.sql'])await pg.exec(await readFile(new URL(`../database/migrations/${migration}`,import.meta.url),'utf8'))
  store=createKnowledgeSourceRequestStore({database})
 })
 after(async()=>{await pg?.close();await rm(directory,{recursive:true,force:true})})
@@ -81,4 +81,31 @@ test('o banco recusa aprovação sem fonte e sem responsável',async()=>{
  const {request_key:requestKey}=(await store.list({tenantId,status:'APPROVED'}))[0]
  await assert.rejects(()=>pg.query(`UPDATE val_knowledge_source_requests SET status='APPROVED',source=NULL,approved_by=NULL,approved_at=NULL WHERE tenant_id=$1 AND request_key=$2`,[tenantId,requestKey]),/val_knowledge_source_requests_approved_has_owner/)
  await assert.rejects(()=>pg.query(`UPDATE val_knowledge_source_requests SET status='REJECTED',rejection_reason=NULL WHERE tenant_id=$1 AND request_key=$2`,[tenantId,requestKey]),/val_knowledge_source_requests_rejected_has_reason/)
+})
+
+// A pesquisa só sugere onde procurar. Guarda endereço oficial e título — nenhum texto do modelo — e
+// não mexe num pedido que já tem fonte escolhida.
+test('candidatas guardam só endereço oficial e título, e não tocam pedido já aprovado',async()=>{
+ const open=await store.register({tenantId,ownerId,question:'qual o intervalo de reentrada do produto na soja?',domain:'AGRONOMY',reason:'REGULATED_SOURCE_REQUIRED'})
+ const saved=await store.saveCandidates({tenantId,requestKey:open.request_key,actor:'agronomo@val.test',now:new Date('2026-09-22T14:00:00.000Z'),citations:[
+  {url:'https://agrofit.agricultura.gov.br/agrofit_cons/produto',title:'Ficha AGROFIT',summary:'texto escrito pelo modelo'},
+  {url:'https://blog-agro.exemplo.com/bula',title:'Blog'},
+  {url:'http://www.embrapa.br/x',title:'sem https'},
+  {url:'https://agrofit.agricultura.gov.br/agrofit_cons/produto',title:'repetida'}
+ ]})
+ assert.deepEqual(saved.candidates.map(item=>({...item})),[{url:'https://agrofit.agricultura.gov.br/agrofit_cons/produto',title:'Ficha AGROFIT',host:'agrofit.agricultura.gov.br'}])
+ assert.equal(saved.candidates_researched_by,'agronomo@val.test')
+ assert.equal(saved.candidates_researched_at,'2026-09-22T14:00:00.000Z')
+ assert.doesNotMatch(JSON.stringify(saved),/texto escrito pelo modelo/)
+ // Novas perguntas iguais somam peso sem apagar as candidatas já pagas.
+ const again=await store.register({tenantId,ownerId,question:'qual o intervalo de reentrada do produto na soja?',domain:'AGRONOMY',reason:'REGULATED_SOURCE_REQUIRED'})
+ assert.equal(again.candidates.length,1)
+ const approved=(await store.list({tenantId,status:'APPROVED'}))[0]
+ assert.equal(await store.saveCandidates({tenantId,requestKey:approved.request_key,citations:[{url:'https://www.gov.br/x',title:'x'}]}),null)
+ assert.equal((await store.get({tenantId,requestKey:approved.request_key})).candidates.length,0)
+})
+
+test('o banco recusa candidatas que não sejam lista',async()=>{
+ const {request_key:requestKey}=(await store.list({tenantId,status:'DRAFT'}))[0]
+ await assert.rejects(()=>pg.query(`UPDATE val_knowledge_source_requests SET candidates='{"url":"x"}'::jsonb WHERE tenant_id=$1 AND request_key=$2`,[tenantId,requestKey]),/candidates_is_array/)
 })

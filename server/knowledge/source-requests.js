@@ -123,6 +123,21 @@ export function sourceRequestTransition(request,next,{source=null,actor='',rejec
  return Object.freeze({...request,status:next})
 }
 
+// Candidata é endereço e título, nada mais. O texto que o modelo escreveu durante a busca não é
+// guardado: ao lado do endereço ele pareceria conteúdo da fonte, e quem aprova precisa ler a fonte.
+const MAX_CANDIDATES=5
+export function sourceCandidates(citations=[]){
+ const seen=new Set(),kept=[]
+ for(const citation of Array.isArray(citations)?citations:[]){
+  const url=text(citation?.url)
+  if(!url||seen.has(url)||!isOfficialRegulatedSourceUrl(url))continue
+  seen.add(url)
+  kept.push(Object.freeze({url,title:text(citation.title).slice(0,240)||new URL(url).hostname,host:new URL(url).hostname.toLowerCase()}))
+  if(kept.length>=MAX_CANDIDATES)break
+ }
+ return Object.freeze(kept)
+}
+
 // A resposta só é servida enquanto a fonte vale. Bula é revisada e substituída, e uma citação
 // vencida é pior do que a recusa que ela substituiu: parece verificada e não está mais.
 export function approvedSourceAnswer(request,now=new Date()){

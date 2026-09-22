@@ -1,4 +1,4 @@
-import {approvedSourceAnswer,buildSourceRequest,sourceRequestKey,sourceRequestTransition} from './source-requests.js'
+import {approvedSourceAnswer,buildSourceRequest,sourceCandidates,sourceRequestKey,sourceRequestTransition} from './source-requests.js'
 import {text} from './policy.js'
 
 const MAX_ASKED_BY=50
@@ -10,10 +10,13 @@ const row=value=>value?Object.freeze({
  last_asked_at:value.last_asked_at instanceof Date?value.last_asked_at.toISOString():value.last_asked_at,
  source:value.source?Object.freeze({...value.source}):null,approved_by:value.approved_by||null,
  approved_at:value.approved_at instanceof Date?value.approved_at.toISOString():value.approved_at||null,
- rejection_reason:value.rejection_reason||null
+ rejection_reason:value.rejection_reason||null,
+ candidates:Object.freeze(Array.isArray(value.candidates)?value.candidates.map(item=>Object.freeze({...item})):[]),
+ candidates_researched_at:value.candidates_researched_at instanceof Date?value.candidates_researched_at.toISOString():value.candidates_researched_at||null,
+ candidates_researched_by:value.candidates_researched_by||null
 }):null
 
-const columns='tenant_id,request_key,domain,reason,question,status,asked_count,asked_by,source,approved_by,approved_at,rejection_reason,created_at,last_asked_at'
+const columns='tenant_id,request_key,domain,reason,question,status,asked_count,asked_by,source,approved_by,approved_at,rejection_reason,created_at,last_asked_at,candidates,candidates_researched_at,candidates_researched_by'
 
 // Sem PostgreSQL a loja não existe e o copiloto se comporta exatamente como antes: o beco sem saída
 // continua sendo beco. Registrar a dúvida é um ganho, não uma dependência nova para responder.
@@ -27,8 +30,8 @@ export function createKnowledgeSourceRequestStore({database}={}){
   async register(input={}){
    const request=buildSourceRequest(input)
    const result=await database.query(
-    `INSERT INTO val_knowledge_source_requests (${columns})
-     VALUES ($1,$2,$3,$4,$5,$6,1,$7::jsonb,NULL,NULL,NULL,NULL,$8,$8)
+    `INSERT INTO val_knowledge_source_requests (tenant_id,request_key,domain,reason,question,status,asked_count,asked_by,created_at,last_asked_at)
+     VALUES ($1,$2,$3,$4,$5,$6,1,$7::jsonb,$8,$8)
      ON CONFLICT (tenant_id,request_key) DO UPDATE SET
       asked_count=val_knowledge_source_requests.asked_count+1,
       asked_by=(SELECT COALESCE(jsonb_agg(item),'[]'::jsonb) FROM (SELECT DISTINCT value item FROM jsonb_array_elements(val_knowledge_source_requests.asked_by||EXCLUDED.asked_by) LIMIT ${MAX_ASKED_BY}) unique_askers),
@@ -63,6 +66,16 @@ export function createKnowledgeSourceRequestStore({database}={}){
     [text(tenantId),text(requestKey),updated.status,updated.source?JSON.stringify(updated.source):null,updated.approved_by,updated.approved_at,updated.rejection_reason,current.status]
    )
    if(!result.rowCount)throw Object.assign(new Error('O pedido de fonte mudou de estado durante a revisão. Recarregue a fila.'),{statusCode:409,code:'knowledge_source_request_conflict',exposeMessage:true})
+   return row(result.rows[0])
+  },
+  // Candidatas só não sobrescrevem uma aprovação: depois de APPROVED, a fonte já foi escolhida.
+  async saveCandidates({tenantId='',requestKey='',citations=[],actor='',now=new Date()}={}){
+   const candidates=sourceCandidates(citations)
+   const result=await database.query(
+    `UPDATE val_knowledge_source_requests SET candidates=$3::jsonb,candidates_researched_at=$4,candidates_researched_by=$5,updated_at=NOW()
+     WHERE tenant_id=$1 AND request_key=$2 AND status IN ('DRAFT','UNDER_REVIEW','REJECTED','EXPIRED') RETURNING ${columns}`,
+    [text(tenantId),text(requestKey),JSON.stringify(candidates),new Date(now).toISOString(),text(actor)||null]
+   )
    return row(result.rows[0])
   },
   // Caminho de resposta: a pergunta vira chave e só uma fonte aprovada e vigente devolve citação.

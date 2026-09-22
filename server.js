@@ -64,6 +64,7 @@ import {technicalBootstrapFromValClients} from './server/agronomic-geometry-brid
 import {normalizePublicAttachmentPatch} from './server/attachment-public-patch.js'
 import {createKnowledgeSourceRequestStore} from './server/knowledge/source-request-repository.js'
 import {createKnowledgeSourceRequestService} from './server/knowledge/source-request-service.js'
+import {researchQuestion} from './server/knowledge/web-research.js'
 import {createPostgresRealtimeCostStore} from './server/realtime-voice/cost-control.js'
 import {createRealtimeVoiceService} from './server/realtime-voice/service.js'
 import {routeGlobalIntent} from './server/decision-copilot/global-intent-router.js'
@@ -230,7 +231,18 @@ const realtimeVoiceCostStore=createPostgresRealtimeCostStore({database,tenantId:
 // Sem PostgreSQL a fila não existe e o copiloto responde exatamente como antes: a dúvida sem fonte
 // volta a ser beco sem saída, sem promessa de revisão na tela.
 const knowledgeSourceRequests=createKnowledgeSourceRequestStore({database})
-const knowledgeSourceReview=createKnowledgeSourceRequestService({store:knowledgeSourceRequests})
+const webResearch=config.webResearchEnabled?Object.freeze({domains:config.webResearchDomains,callCostUsd:config.webResearchCallCostUsd}):null
+// O revisor paga a busca com o próprio teto de IA geral, como o consultor paga a dele. Busca
+// recusada ou vazia ainda custou, e por isso o custo é gravado antes de qualquer outra decisão.
+const findSourceCandidates=webResearch?async({identity,question,signal})=>{
+ const budget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
+ if(!budget.allowed)throw Object.assign(new Error('O limite de uso da IA deste acesso foi atingido. Um novo login restaura.'),{statusCode:429,code:'knowledge_source_research_budget',exposeMessage:true})
+ const result=await researchQuestion({message:question,aiClient:voiceOpenAI,model:config.modelFast,domains:webResearch.domains,callCostUsd:webResearch.callCostUsd,mode:'CANDIDATES',signal})
+ if(result.costUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'knowledge_source_research',entityId:null,metadata:{costUsd:result.costUsd,model:config.modelFast}}).catch(()=>null)
+ if(result.unavailableReason==='PROVIDER_ERROR')throw Object.assign(new Error('A pesquisa de fontes está indisponível agora. Tente novamente em instantes.'),{statusCode:502,code:'knowledge_source_research_unavailable',exposeMessage:true})
+ return result
+}:null
+const knowledgeSourceReview=createKnowledgeSourceRequestService({store:knowledgeSourceRequests,findCandidates:findSourceCandidates})
 const realtimeVoice=createRealtimeVoiceService({runtimeConfig:config,client:voiceOpenAI,repository,conversationSessions:valConversationSessions,costStore:realtimeVoiceCostStore,logger:event=>observe('val.realtime_voice',{sessionId:event.sessionId,model:event.model,costUsd:event.costUsd,outcome:event.event,errorCode:event.failureCode,providerStatus:event.providerStatus,retryAfterSeconds:event.retryAfterSeconds,disconnectReason:event.disconnectReason,transportDetail:event.transportDetail})})
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
@@ -402,7 +414,7 @@ async function handleApi(request,response,url){
   await accessRepository.recordUsage(identity,{eventType:'realtime_voice_session_created',page:'val',entityType:'realtime_voice_session',entityId:result.sessionId,metadata:{model:result.model,transport:result.transport,clientScoped:Boolean(result.context.clientId),contentFree:true}}).catch(()=>null)
   return json(response,201,result)
  }
- if(url.pathname==='/api/v1/knowledge/source-requests'&&request.method==='GET')return json(response,200,await knowledgeSourceReview.list({identity,status:url.searchParams.get('status')||''}))
+ if(url.pathname==='/api/v1/knowledge/source-requests'&&request.method==='GET')return json(response,200,{...await knowledgeSourceReview.list({identity,status:url.searchParams.get('status')||''}),research_available:knowledgeSourceReview.researchAvailable})
  const sourceRequestMatch=url.pathname.match(/^\/api\/v1\/knowledge\/source-requests\/([a-f0-9]{32})$/i)
  if(sourceRequestMatch&&request.method==='POST'){
   const payload=await body(request)
@@ -411,6 +423,7 @@ async function handleApi(request,response,url){
   if(action==='review')return json(response,200,await knowledgeSourceReview.review({identity,requestKey}))
   if(action==='approve')return json(response,200,await knowledgeSourceReview.approve({identity,requestKey,source:payload.source}))
   if(action==='reject')return json(response,200,await knowledgeSourceReview.reject({identity,requestKey,reason:payload.reason}))
+  if(action==='research')return json(response,200,await knowledgeSourceReview.researchCandidates({identity,requestKey}))
   return json(response,400,{error:'Ação inválida para o pedido de fonte.',code:'knowledge_source_request_action_invalid'})
  }
  if(url.pathname==='/api/v1/realtime-voice/status'&&request.method==='GET')return json(response,200,await realtimeVoice.availability({identity}))
@@ -861,7 +874,7 @@ async function handleApi(request,response,url){
     return json(response,200,complete(direct,execution))
    }
    const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
-   const general=await buildGeneralNoClientResponse({message:generalMessage,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,aiUnavailableReason:aiGeneralKnowledgeBudget.allowed?'':'BUDGET_EXHAUSTED',sharedAnswerCache,sourceRequests:knowledgeSourceRequests,signal:requestController.signal})
+   const general=await buildGeneralNoClientResponse({message:generalMessage,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,aiUnavailableReason:aiGeneralKnowledgeBudget.allowed?'':'BUDGET_EXHAUSTED',sharedAnswerCache,sourceRequests:knowledgeSourceRequests,research:webResearch,signal:requestController.signal})
    general.responseMetadata.questionContinued=generalQuestion.continued
    const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
    if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})
@@ -930,7 +943,7 @@ async function handleApi(request,response,url){
    // responseScope apontem para o mesmo produtor, senao "oi" com produtor aberto e rejeitado na tela.
    const generalDomain=requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent)
    const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
-   const general=await buildGeneralNoClientResponse({message:generalMessage,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:generalDomain,aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,aiUnavailableReason:aiGeneralKnowledgeBudget.allowed?'':'BUDGET_EXHAUSTED',sharedAnswerCache,sourceRequests:knowledgeSourceRequests,signal:requestController.signal})
+   const general=await buildGeneralNoClientResponse({message:generalMessage,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:generalDomain,aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,aiUnavailableReason:aiGeneralKnowledgeBudget.allowed?'':'BUDGET_EXHAUSTED',sharedAnswerCache,sourceRequests:knowledgeSourceRequests,research:webResearch,signal:requestController.signal})
    general.responseMetadata.questionContinued=generalQuestion.continued
    const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
    if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})

@@ -167,7 +167,14 @@ export function namedProductMentions(answer=''){
 }
 export const regulatedBrandClaim=answer=>efficacyAssertion.test(String(answer??''))&&namedProductMentions(answer).length>0
 
-export const safeGeneralModelAnswer=answer=>!regulatedBrandClaim(answer)&&!/(?:\b(?:aplique|misture|pulverize|prescrevo|recomendo|garanto)\b|ordem\s+de\s+(?:adi[cç][aã]o|mistura|enchimento)|primeiro\s+os?\s+p[oó]s|adicione\s+(?:primeiro|por\s+[uú]ltimo|em\s+seguida)|agitador|com\s+o\s+tanque\s+(?:pela\s+)?metade|\d[\d.,]*\s*(?:kg|g|ml|l)\s*(?:\/|por)\s*ha\b|(?:segundo|de acordo com)\s+(?:a\s+)?(?:embrapa|fonte|pesquisa))/i.test(answer)
+// Conteúdo prescritivo é barrado em qualquer resposta automática, com ou sem fonte: dose por área,
+// ordem de mistura e verbo de prescrição só saem de fonte oficial aprovada por uma pessoa.
+const prescriptiveContent=/(?:\b(?:aplique|misture|pulverize|prescrevo|recomendo|garanto)\b|ordem\s+de\s+(?:adi[cç][aã]o|mistura|enchimento)|primeiro\s+os?\s+p[oó]s|adicione\s+(?:primeiro|por\s+[uú]ltimo|em\s+seguida)|agitador|com\s+o\s+tanque\s+(?:pela\s+)?metade|\d[\d.,]*\s*(?:kg|g|ml|l)\s*(?:\/|por)\s*ha\b)/i
+// Atribuir a uma fonte só é mentira quando não houve fonte: a resposta de memória do modelo não pode
+// dizer "segundo a Embrapa", mas a pesquisa que de fato citou a Embrapa pode — e deve.
+const unsourcedAttribution=/(?:segundo|de acordo com)\s+(?:a\s+)?(?:embrapa|fonte|pesquisa)/i
+export const safeGeneralModelAnswer=answer=>!regulatedBrandClaim(answer)&&!prescriptiveContent.test(answer)&&!unsourcedAttribution.test(answer)
+export const safeResearchAnswer=answer=>!regulatedBrandClaim(answer)&&!prescriptiveContent.test(answer)
 
 // Preserve the existing budget estimate for the fast tier. This is not a model
 // price table or a billing claim; metered provider cost must be reconciled apart.

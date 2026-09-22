@@ -74,3 +74,38 @@ test('a rota de revisão não vaza a chave do pedido no log',()=>{
  assert.equal(routeShape(`/api/v1/knowledge/source-requests/${requestKey}`),'/api/v1/knowledge/source-requests/:id')
  assert.equal(routeShape('/api/v1/knowledge/source-requests'),'/api/v1/knowledge/source-requests')
 })
+
+function researchService({status='UNDER_REVIEW',findCandidates=async()=>({citations:[{url:'https://agrofit.agricultura.gov.br/x',title:'Ficha'}]}),saved=true}={}){
+ const calls=[]
+ const store={
+  get:async input=>{calls.push({op:'get',...input});return status?{request_key:requestKey,status,question:'qual a carência do produto na soja?'}:null},
+  saveCandidates:async input=>{calls.push({op:'save',...input});return saved?{request_key:requestKey,status,candidates:input.citations}:null}
+ }
+ return {calls,api:createKnowledgeSourceRequestService({store,findCandidates:findCandidates&&(async input=>{calls.push({op:'find',...input});return findCandidates(input)})})}
+}
+
+// A busca é paga e roda no teto de quem a disparou: consultor não dispara, e ela não roda desligada.
+test('pesquisa de candidatas é do revisor, pesquisa a pergunta gravada e guarda o resultado',async()=>{
+ const {api,calls}=researchService()
+ assert.equal(api.researchAvailable,true)
+ assert.equal(await status(()=>api.researchCandidates({identity:consultant,requestKey})),403)
+ assert.equal(calls.length,0)
+ const updated=await api.researchCandidates({identity:reviewer,requestKey})
+ assert.equal(updated.candidates.length,1)
+ const find=calls.find(call=>call.op==='find')
+ assert.equal(find.question,'qual a carência do produto na soja?')
+ assert.equal(find.identity,reviewer)
+ assert.equal(calls.find(call=>call.op==='save').actor,'agronomo@val.test')
+})
+
+test('pesquisa desligada, pedido inexistente, já aprovado ou alterado no meio não gastam à toa',async()=>{
+ const off=researchService({findCandidates:null})
+ assert.equal(off.api.researchAvailable,false)
+ assert.equal(await status(()=>off.api.researchCandidates({identity:admin,requestKey})),503)
+ assert.equal(await status(()=>researchService({status:null}).api.researchCandidates({identity:admin,requestKey})),404)
+ const approved=researchService({status:'APPROVED'})
+ assert.equal(await status(()=>approved.api.researchCandidates({identity:admin,requestKey})),409)
+ assert.equal(approved.calls.some(call=>call.op==='find'),false,'pedido aprovado não dispara busca paga')
+ assert.equal(await status(()=>researchService({saved:false}).api.researchCandidates({identity:admin,requestKey})),409)
+ assert.equal(await status(()=>researchService().api.researchCandidates({identity:admin,requestKey:'x'})),400)
+})

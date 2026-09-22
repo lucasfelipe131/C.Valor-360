@@ -64,17 +64,17 @@ const records=Object.freeze([
   external_blocker:'Nenhum para este caminho, que é curadoria humana e não feed automático. A busca automática de fontes permanece bloqueada — ver research-governed-lookup.'
  }),
  Object.freeze({
-  id:'research-governed-lookup',domain:'PESQUISA',consumer:'COPILOT',provider:'Não contratado. Registro existe para nomear o que falta antes de a VAL poder pesquisar sozinha.',
-  source:'Allow-list de domínios oficiais a definir (Embrapa, MAPA/AGROFIT, Anvisa, Ibama, Conab, Inmet, institutos estaduais e universidades).',
-  freshness:'A definir com o provedor: uma busca sem data de coleta não pode sustentar afirmação atual.',
-  timestamp:'Cada resultado precisa chegar com URL, publicador e data de coleta, ou não entra como candidata.',
-  failure_behavior:'Indisponível até a contratação. A ausência mantém o comportamento atual e nunca degrada para resposta do modelo apresentada como pesquisada.',
-  cache:'A definir. Resultado de busca não pode ser reaproveitado entre tenants sem política de uso declarada.',
-  authority:'Nenhuma. O resultado é candidata a fonte, jamais resposta: quem responde é a fonte aprovada por uma pessoa.',
-  tenant_implications:'A pergunta enviada ao provedor é conteúdo do consultor e sai da organização; exige termos de uso e decisão explícita antes de qualquer chamada.',
-  cost:'Sem credencial e sem teto definido. Pesquisa custa por consulta e precisa do próprio limite, separado do teto de IA geral por consultor.',
-  integration_status:'AUTHORIZATION_BLOCKED',current_claim_allowed:false,
-  external_blocker:'Contratar provedor de busca com termos de uso comercial, fixar a allow-list de domínios oficiais, definir o teto de custo por consultor e confirmar que a saída entra como candidata DRAFT para aprovação humana — nunca como resposta direta.'
+  id:'research-governed-lookup',domain:'PESQUISA',consumer:'COPILOT',provider:'OpenAI Responses API, ferramenta web_search, na mesma conta e cliente já usados pela VAL (server/knowledge/web-research.js).',
+  source:'Allow-list configurável (VAL_WEB_RESEARCH_DOMAINS). Padrão: gov.br, embrapa.br e universidades com pesquisa agronômica. O filtro é pedido ao provedor e conferido de novo em cada citação devolvida.',
+  freshness:'Busca feita na hora da pergunta. A citação guarda endereço e título; a data de coleta é a da resposta.',
+  timestamp:'Cada trecho da resposta vem com url_citation do provedor. Resposta sem nenhuma citação é descartada.',
+  failure_behavior:'Falha do provedor, citação fora da lista, resposta sem citação ou conteúdo prescritivo descartam a pesquisa e o Copilot segue o caminho anterior (memória do modelo marcada como não verificada, ou recusa).',
+  cache:'Sem cache. A resposta pesquisada não entra em val_shared_knowledge_answers, que é compartilhada entre tenants e só aceita conhecimento não verificado.',
+  authority:'Síntese do modelo a partir das páginas encontradas: tem fonte, não tem revisor, e sai marcada assim. Dúvida regulada nunca é respondida pela pesquisa — ela só sugere fontes oficiais candidatas ao revisor, e jamais responde ao consultor sem aprovação humana.',
+  tenant_implications:'A pergunta do consultor sai para o provedor. O caminho é o geral, sem produtor selecionado nem memória privada; o grounding segue barrando afirmação sobre indivíduo nomeado.',
+  cost:'Cobrada por busca na conta OpenAI da organização. Entra no mesmo teto de IA geral por consultor (US$ 5 por login). A taxa por busca é estimativa conservadora em VAL_WEB_RESEARCH_CALL_COST_USD e deve ser ajustada pelo preço vigente.',
+  integration_status:'IMPLEMENTED_DISABLED_BY_FLAG',current_claim_allowed:false,
+  external_blocker:'Nenhum provedor a contratar. Para ligar: VAL_WEB_RESEARCH_ENABLED=true, confirmar a allow-list e ajustar o custo por busca ao preço vigente. Assunto regulado continua exigindo candidata DRAFT aprovada por uma pessoa, com ou sem a flag.'
  })
 ])
 

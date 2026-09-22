@@ -7,7 +7,7 @@ const REVIEW_ROLES=new Set(['admin','technical_reviewer'])
 const accessError=(message,statusCode,code)=>Object.assign(new Error(message),{statusCode,code,exposeMessage:true})
 const requestKeyPattern=/^[a-f0-9]{32}$/
 
-export function createKnowledgeSourceRequestService({store=null}={}){
+export function createKnowledgeSourceRequestService({store=null,findCandidates=null}={}){
  const assertReviewer=identity=>{
   if(!identity?.tenantId)throw accessError('Sessão sem organização válida.',403,'knowledge_source_request_scope_invalid')
   if(!REVIEW_ROLES.has(text(identity.role)))throw accessError('A revisão de fontes é restrita à administração e à revisão técnica.',403,'knowledge_source_request_forbidden')
@@ -27,6 +27,7 @@ export function createKnowledgeSourceRequestService({store=null}={}){
  }
  return Object.freeze({
   available:Boolean(store),
+  researchAvailable:Boolean(store&&findCandidates),
   async list({identity,status=''}={}){
    assertReviewer(identity);assertAvailable()
    return {contract_version:'val.knowledge_source_request_queue.v1',requests:await store.list({tenantId:identity.tenantId,status})}
@@ -41,6 +42,20 @@ export function createKnowledgeSourceRequestService({store=null}={}){
    const actor=assertReviewer(identity);assertAvailable()
    const updated=await store.transition({tenantId:identity.tenantId,requestKey:assertKey(requestKey),next:'APPROVED',source,actor})
    if(!updated)throw accessError('Pedido de fonte não encontrado nesta organização.',404,'knowledge_source_request_not_found')
+   return updated
+  },
+  // A busca é paga e roda com o limite de quem a disparou. Ela sugere onde procurar; aprovar
+  // continua exigindo abrir a fonte e colar o trecho literal.
+  async researchCandidates({identity,requestKey='',signal}={}){
+   const actor=assertReviewer(identity);assertAvailable()
+   if(!findCandidates)throw accessError('A pesquisa de fontes está desligada neste ambiente (VAL_WEB_RESEARCH_ENABLED).',503,'knowledge_source_research_disabled')
+   const key=assertKey(requestKey)
+   const request=await store.get({tenantId:identity.tenantId,requestKey:key})
+   if(!request)throw accessError('Pedido de fonte não encontrado nesta organização.',404,'knowledge_source_request_not_found')
+   if(request.status==='APPROVED')throw accessError('Este pedido já tem fonte aprovada.',409,'knowledge_source_request_already_approved')
+   const result=await findCandidates({identity,question:request.question,signal})
+   const updated=await store.saveCandidates({tenantId:identity.tenantId,requestKey:key,citations:result?.citations||[],actor})
+   if(!updated)throw accessError('O pedido mudou de estado durante a pesquisa. Recarregue a fila.',409,'knowledge_source_request_conflict')
    return updated
   },
   async reject({identity,requestKey='',reason=''}={}){

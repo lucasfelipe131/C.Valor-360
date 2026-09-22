@@ -63,16 +63,23 @@ test('governança não adiciona segredo, conta ou provider pago fictício',()=>{
  assert.doesNotMatch(source,/sk-[A-Za-z0-9]/)
 })
 
-// Responder bula sobre fonte aprovada por uma pessoa é um caminho; a VAL pesquisar sozinha é outro,
-// e ele não está contratado. O registro existe para o segundo não ser confundido com o primeiro.
-test('pesquisa automática segue bloqueada e nomeia o que falta contratar',()=>{
+// A pesquisa usa a OpenAI que a VAL já tem: não há provedor a contratar. O registro precisa dizer
+// isso, e o código precisa confirmar o que ele diz — desligada por padrão e nunca respondendo bula.
+test('pesquisa governada existe, vem desligada e não responde assunto regulado',()=>{
  const research=currentSourceGovernance({domain:'PESQUISA',consumer:'COPILOT'})[0]
  assert.equal(research.current_claim_allowed,false)
- assert.equal(research.integration_status,'AUTHORIZATION_BLOCKED')
- assert.match(research.external_blocker,/allow-list/)
- assert.match(research.external_blocker,/teto de custo/)
- assert.match(research.external_blocker,/candidata DRAFT/)
- assert.match(research.authority,/jamais resposta/)
+ assert.equal(research.integration_status,'IMPLEMENTED_DISABLED_BY_FLAG')
+ assert.match(research.external_blocker,/VAL_WEB_RESEARCH_ENABLED/)
+ assert.match(research.external_blocker,/candidata DRAFT aprovada por uma pessoa/)
+ assert.match(research.authority,/jamais responde ao consultor sem aprovação humana/)
+ assert.match(research.cost,/mesmo teto/)
+ const config=read('server/config.js')
+ const executor=read('server/decision-copilot/capability-executor.js')
+ const provider=read('server/knowledge/web-research.js')
+ assert.match(config,/webResearchEnabled:readBoolean\(process\.env\.VAL_WEB_RESEARCH_ENABLED,false\)/)
+ assert.match(executor,/research&&aiClient&&aiModel&&!requiresVerifiedGeneralSource\(message\)/)
+ assert.match(provider,/filters:\{allowed_domains:/)
+ assert.match(provider,/if\(rejected\.length\)return/)
 })
 
 test('bula respondida por fonte aprovada tem dono nomeado e vigência declarada',()=>{

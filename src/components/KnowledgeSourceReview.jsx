@@ -1,5 +1,5 @@
 import React,{useCallback,useEffect,useState} from 'react'
-import {BookCheck,CircleSlash,LoaderCircle,RefreshCw,ShieldCheck,Users} from 'lucide-react'
+import {BookCheck,CircleSlash,ExternalLink,LoaderCircle,RefreshCw,Search,ShieldCheck,Users} from 'lucide-react'
 import {fetchJsonResource,requestJsonResource,useAsyncResource} from '../hooks/useAsyncResource'
 import '../knowledge-source-review.css'
 
@@ -17,9 +17,12 @@ export default function KnowledgeSourceReview({currentUser,onNotify}){
  const [openKey,setOpenKey]=useState('')
  const [source,setSource]=useState(emptySource)
  const [saving,setSaving]=useState(false)
+ const [researchAvailable,setResearchAvailable]=useState(false)
+ const [researchingKey,setResearchingKey]=useState('')
  const allowed=REVIEW_ROLES.includes(currentUser?.role)&&!currentUser?.demo
  const load=useCallback(()=>run(async({signal})=>{
   const payload=await fetchJsonResource(`${queueApi}${filter?`?status=${encodeURIComponent(filter)}`:''}`,{signal,fallbackMessage:'Não foi possível carregar a fila de fontes.'})
+  setResearchAvailable(payload.research_available===true)
   return payload.requests||[]
  },{keepData:true}),[run,filter])
  useEffect(()=>{if(allowed)load()},[allowed,load])
@@ -35,6 +38,16 @@ export default function KnowledgeSourceReview({currentUser,onNotify}){
   event.preventDefault()
   const year=Number(source.year)
   act(request.request_key,{action:'approve',source:{...source,year:Number.isInteger(year)&&year>0?year:null,valid_until:source.valid_until||null}},'Fonte aprovada. A VAL passa a responder citando a origem.')
+ }
+ // A busca é paga e demora: fica visível qual pedido está pesquisando, e o botão não repete.
+ const research=async request=>{
+  setResearchingKey(request.request_key)
+  try{await act(request.request_key,{action:'research'},request.candidates?.length?'Candidatas atualizadas.':'Pesquisa concluída. Abra a fonte e copie o trecho literal.')}
+  finally{setResearchingKey('')}
+ }
+ const pickCandidate=(request,candidate)=>{
+  setOpenKey(request.request_key)
+  setSource({...emptySource,title:candidate.title,url:candidate.url,publisher:candidate.host,authority:'A',accessed_at:new Date().toISOString().slice(0,10)})
  }
  const reject=request=>{
   const reason=window.prompt('Por que esta dúvida não vira fonte aprovada?')
@@ -75,9 +88,17 @@ export default function KnowledgeSourceReview({currentUser,onNotify}){
      <small>Aprovada por {request.approved_by} em {date(request.approved_at)}{request.source.valid_until?` · vigente até ${date(request.source.valid_until)}`:''}</small>
     </div>}
     {request.status==='REJECTED'&&<p className="source-review-rejected" role="status">Recusada: {request.rejection_reason}</p>}
+    {request.status!=='APPROVED'&&request.candidates?.length>0&&<div className="source-review-candidates">
+     <small>Sugestões da pesquisa em {date(request.candidates_researched_at)} — abra a fonte, confira e copie o trecho literal. Nada daqui é mostrado ao consultor.</small>
+     <ul>{request.candidates.map(candidate=><li key={candidate.url}>
+      <a href={candidate.url} target="_blank" rel="noreferrer noopener"><ExternalLink size={12}/>{candidate.title}<em>{candidate.host}</em></a>
+      <button type="button" onClick={()=>pickCandidate(request,candidate)}>Usar esta fonte</button>
+     </li>)}</ul>
+    </div>}
     <footer>
      {request.status==='DRAFT'&&<button type="button" disabled={saving} onClick={()=>act(request.request_key,{action:'review'},'Pedido movido para revisão.')}>Assumir revisão</button>}
      {['UNDER_REVIEW','REJECTED','EXPIRED'].includes(request.status)&&<button type="button" className="primary-btn" disabled={saving} onClick={()=>{setOpenKey(openKey===request.request_key?'':request.request_key);setSource(emptySource)}}>{openKey===request.request_key?'Cancelar':'Anexar fonte oficial'}</button>}
+     {researchAvailable&&request.status!=='APPROVED'&&request.status!=='SUPERSEDED'&&<button type="button" disabled={saving||Boolean(researchingKey)} onClick={()=>research(request)}>{researchingKey===request.request_key?<LoaderCircle className="val-spinner" size={13}/>:<Search size={13}/>}{request.candidates?.length?'Pesquisar de novo':'Pesquisar fontes oficiais'}</button>}
      {['DRAFT','UNDER_REVIEW'].includes(request.status)&&<button type="button" className="source-review-reject" disabled={saving} onClick={()=>reject(request)}>Recusar</button>}
     </footer>
     {openKey===request.request_key&&<form className="source-review-form" onSubmit={event=>approve(event,request)}>

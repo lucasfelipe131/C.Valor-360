@@ -42,6 +42,10 @@ const sourceContracts=new Map([
  ['context_snapshot',sourceContract(['FACT'],{maxAgeMs:DAY_MS,validUntilMayExtend:false})],
  ['system_capability',sourceContract(['FACT'],{maxAgeMs:DAY_MS,validUntilMayExtend:false})],
  ['model_general_knowledge',sourceContract(['FACT'],{staticSource:true})],
+ // Resposta escrita pelo modelo a partir de páginas encontradas na hora, com o endereço de cada
+ // trecho. Tem fonte, mas continua sendo síntese do modelo: recebe o mesmo contrato e o mesmo crivo
+ // da resposta de memória, sem atalho de relevância — o atalho é só do trecho literal aprovado.
+ ['web_research_cited',sourceContract(['FACT'],{staticSource:true})],
  ['calculation',sourceContract(['FACT'],{maxAgeMs:DAY_MS,validUntilMayExtend:false})],
  ['conversation_turn',sourceContract(['INFERENCE'],{maxAgeMs:180*DAY_MS,validUntilMayExtend:false})],
  ['business_event',sourceContract(['FACT','OBSERVATION'],{maxAgeMs:180*DAY_MS})],
@@ -82,7 +86,7 @@ const sourceContracts=new Map([
 // GLOBAL is an isolation marker, not a licence to relabel arbitrary producer
 // records.  Only sources whose semantics are genuinely non-individual may use
 // it; producer observations/quotes/intentions must always carry producer_id.
-const trustedGlobalSourceTypes=new Set(['general_knowledge','market_snapshot','official_product_catalog','system_capability','system_safety_policy','model_general_knowledge','calculation','approved_official_source'])
+const trustedGlobalSourceTypes=new Set(['general_knowledge','market_snapshot','official_product_catalog','system_capability','system_safety_policy','model_general_knowledge','calculation','approved_official_source','web_research_cited'])
 const globalScopeOf=item=>clean(item?.scope??item?.context_scope??item?.subject_type??item?.entity_type??item?.entityType,80).toUpperCase()
 const explicitlyGlobal=item=>['GLOBAL','MARKET','GENERAL_KNOWLEDGE'].includes(globalScopeOf(item))
 const processGuidanceDomains=Object.freeze({
@@ -553,7 +557,7 @@ function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}
  // Statement curado da Biblioteca fala do "produtor" como categoria ("o produtor tende a...") e
  // cita autores ("Fisher e Ury propõem"): não é afirmação sobre um indivíduo da carteira. O caminho
  // geral nunca lê dado de produtor, e a ingestão da Biblioteca é curada e fail-closed.
- if(sourceType!=='general_knowledge'&&(sourceType==='model_general_knowledge'?hasGlobalIndividualAssertion(rawText):genericAssertion.test(text)||hasNamedIndividualAssertion(rawText)))return false
+ if(sourceType!=='general_knowledge'&&(['model_general_knowledge','web_research_cited'].includes(sourceType)?hasGlobalIndividualAssertion(rawText):genericAssertion.test(text)||hasNamedIndividualAssertion(rawText)))return false
  if(sourceType==='market_snapshot'){
   if(!globalAggregateAnchor.test(text))return false
   // An aggregate prefix such as "Mercado:" must never launder an individual
@@ -581,7 +585,7 @@ function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}
  // general_knowledge/system_capability, o vocabulário aqui é por definição imprevisível (qualquer
  // conceito), então a lista fechada de âncoras não se aplica; a proteção contra atribuição
  // individual acima (genericAssertion/hasNamedIndividualAssertion) continua valendo.
- if(sourceType==='model_general_knowledge')return !implicitIndividualAttribute.test(conceptText)
+ if(['model_general_knowledge','web_research_cited'].includes(sourceType))return !implicitIndividualAttribute.test(conceptText)
  if(sourceType==='system_safety_policy')return deterministicSafetyPolicy.test(text)
  return false
 }
