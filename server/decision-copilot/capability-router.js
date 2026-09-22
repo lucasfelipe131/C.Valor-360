@@ -249,8 +249,9 @@ export function classifyStructuredClientFact(message=''){
  // when it contains one of the same nouns.
  if(/^(?:agora\s+)?(?:compara|compare)\s+(?:os dois|ambos|essas duas contas|esses dois produtores)$/.test(source))return 'CLIENT_COMPARISON'
  const owner='(?:\\s+(?:dele|dela)|\\s+(?:do|da)\\s+[a-z][a-z0-9 \'-]{0,120})?'
+ const profileOwner='(?:\\s+(?:dele|dela)|\\s+(?:do|da)\\s+[a-z][a-z0-9 \'-]{0,120}|\\s+(?:deste|desse)\\s+produtor|\\s+(?:desta|dessa)\\s+produtora)?'
  if(new RegExp(`^(?:e\\s+)?qual\\s+(?:e\\s+)?(?:a\\s+)?area${owner}$`).test(source))return 'REGISTERED_AREA'
- const profileQuestion=new RegExp(`^(?:e\\s+)?(?:(?:qual|como)\\s+(?:e\\s+)?(?:o\\s+)?perfil(?:\\s+comportamental)?${owner}|(?:mostre|mostra|me\\s+mostre)\\s+(?:o\\s+)?perfil(?:\\s+comportamental)?${owner})$`)
+ const profileQuestion=new RegExp(`^(?:e\\s+)?(?:(?:qual|como)\\s+(?:e\\s+)?(?:o\\s+)?perfil(?:\\s+comportamental)?${profileOwner}|(?:mostre|mostra|me\\s+mostre)\\s+(?:o\\s+)?perfil(?:\\s+comportamental)?${profileOwner})$`)
  // The profile contract already supplies an evidence-based approach. Accept
  // only these two complete profile clauses; additional domains/actions stay contextual.
  const profileClauses=source.split(/\s+e\s+(?=como\b)/)
@@ -261,7 +262,7 @@ export function classifyStructuredClientFact(message=''){
  // Forma nominal, sem interrogativo: "perfil dele", "o perfil dele", "me fala do perfil comportamental
  // dele". O registro e o mesmo que "qual o perfil dele?" entrega; sem isto a VAL afirmava que nao ha
  // evidencia comportamental para um produtor com perfil e evidencia validas.
- if(new RegExp(`^(?:e\\s+)?(?:(?:me\\s+)?(?:fala|fale|conta|conte|diga|diz)\\s+(?:(?:do|da|sobre)\\s+)?)?(?:(?:o|a)\\s+)?perfil(?:\\s+comportamental)?${owner}$`).test(source))return 'BEHAVIORAL_PROFILE'
+ if(new RegExp(`^(?:e\\s+)?(?:(?:me\\s+)?(?:fala|fale|conta|conte|diga|diz)\\s+(?:(?:do|da|sobre)\\s+)?)?(?:(?:o|a)\\s+)?perfil(?:\\s+comportamental)?${profileOwner}$`).test(source))return 'BEHAVIORAL_PROFILE'
  if(/^(?:e\s+)?como\s+(?:eu\s+)?devo\s+abordar\s+(?:ele|ela|o\s+produtor|a\s+produtora)$/.test(source))return 'BEHAVIORAL_PROFILE'
  // Confirmacao ("ele e analitico?") e escolha ("ele e analitico ou relacional?") perguntam o mesmo
  // registro que "qual o perfil dele?" ja entrega. Fora da allowlist, a rota caia em CONTEXT, cujo
