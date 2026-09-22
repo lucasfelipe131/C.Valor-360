@@ -7,6 +7,12 @@ import {ValRepository} from '../server/repository.js'
 import {listVersionedMigrations} from '../server/migration-runner.js'
 import {validateContextSnapshot} from '../server/memory/context-snapshot.js'
 import {calculateProfile} from '../src/lib/profile.js'
+import {installConversionComposition} from '../server/conversion-bootstrap.js'
+import {ValEngine} from '../server/val-engine.js'
+import {buildFastClientResponse,routeSystemCapability} from '../server/decision-copilot/capability-router.js'
+import {routeValIntent} from '../server/ai-reasoning/intent-router.js'
+import {createConversationState,prepareConversationTurnState} from '../server/decision-copilot/conversation-state.js'
+import {behavioralProfileViewModel} from '../src/lib/full-screen-conversation.js'
 
 // Real persisted assisted profiles, not canned PostgreSQL rows or a mock of the
 // context selector. No provider or external database is used by these cases.
@@ -92,4 +98,55 @@ test('H05 perfil persistido continua restrito ao produtor, owner e tenant autori
  await assert.rejects(()=>foreign.getClientContext({tenantId:otherTenant,ownerId,clientId:client.id}),error=>error.statusCode===404)
  await assert.rejects(()=>contextFor({...client,id:'synthetic-missing-producer'}),error=>error.statusCode===404)
  assertCanonicalService(await contextFor(client),client,answersFor(client.name)[11])
+})
+
+test('H05 perfil assistido permanece na apresentação após memória comportamental confirmada',async()=>{
+ installConversionComposition()
+ const {client}=await createProfile('VAL HML20260922 B fictício com memória')
+ const message='Qual é o perfil deste produtor?'
+ const literal='Homologação fictícia H11-B-20260922: o produtor fictício prefere receber o comparativo de custos por escrito antes da próxima conversa.'
+ const engine=new ValEngine({runtimeConfig:{openaiApiKey:'',openaiProject:'',openaiTimeoutMs:1000,openaiMaxRetries:0,modelDaily:'daily',modelStrategic:'strategic',modelFast:'fast',knowledgeVectorStoreId:'',maxContextChars:10_000,maxOutputTokens:10_000,strategicMaxOutputTokens:10_000,openaiStoreResponses:false},repository,logger:()=>{}})
+ for(const withMemory of [false,true]){
+  if(withMemory){
+   const {rows:[row]}=await db.query('SELECT id FROM clients WHERE tenant_id=$1 AND external_key=$2',[tenantId,client.id])
+   await db.query(`INSERT INTO val_memories (id,tenant_id,client_id,subject_type,subject_id,memory_type,memory_state,memory_domain,key,value,evidence,confidence,status,source,source_ref,source_type,observed_at,source_updated_at,freshness_policy_version,freshness_metadata,valid_from,created_by,acl) VALUES ($1,$2,$3,'client',$4,'fact','FACT','BEHAVIORAL','visit_report.behavioral_signal',$5,$6,95,'verified','confirmed_voice_interaction',$7,'confirmed_voice_interaction',NOW(),NOW(),'val.context.freshness.v1','{}',NOW(),$8,'{"scope":"own_portfolio"}')`,[randomUUID(),tenantId,row.id,row.id,JSON.stringify({statement:literal,category:'BEHAVIORAL_SIGNAL',profile_certainty:false}),JSON.stringify([{id:randomUUID(),confirmation_status:'CONFIRMED'}]),`voice-interaction:${randomUUID()}`,ownerId])
+  }
+  // Mirror the server dispatch through intent, state, repository lookup,
+  // grounding and the profile card. Before the fix this takes CONTEXT and
+  // renders "Não comprovado", retaining only the H11 observation when present.
+  const scope={tenantId,ownerId,clientId:client.id,client,conversationId:'synthetic-h05-profile'}
+  const intent=routeValIntent({message,hasClient:true})
+  const state=prepareConversationTurnState(createConversationState(scope),{message,intent:intent.intent,scope})
+  const route=routeSystemCapability({message,intentHint:intent.intent,hasClient:true})
+  const contextRequest={requestId:randomUUID(),tenantId,ownerId,producerId:client.id,message,objective:'copilot_context',intent:intent.intent,contextEpoch:state.context_epoch,contextDomain:state.current_domain,actorRole:'admin',scope:'own_portfolio',conversationId:scope.conversationId}
+  const context=await contextFor(client)
+  const payload=route.direct&&route.path==='FAST'&&route.data_path
+   ?buildFastClientResponse({facts:await repository.getFastClientFacts({tenantId,ownerId,clientId:client.id,dataPath:route.data_path}),message,organizationId:tenantId,ownerId,conversationId:scope.conversationId,contextEpoch:state.context_epoch,contextDomain:state.current_domain})
+   :await engine.answer({...scope,message,intent:intent.intent,contextRequest})
+  const reasoning=payload.advice.ai_reasoning
+  const view=behavioralProfileViewModel({reasoning,answer:payload.advice.answer,facts:reasoning.facts_used})
+  assert.equal(view.primary,'Analítico',`perfil canônico com memória=${withMemory}`)
+  assert.equal(view.confidence,'alta')
+  assert.equal(payload.responseMetadata.dataPath,'BEHAVIORAL_PROFILE')
+  assert.equal(state.current_domain,'PROFILE')
+  assert.equal(reasoning.grounding.passed,true)
+  assert.ok(reasoning.facts_used.some(item=>item.evidence_claims?.some(claim=>claim.field==='primaryProfile')))
+  assert.ok(reasoning.facts_used.some(item=>item.evidence_claims?.some(claim=>claim.question_id==='7')))
+  assert.ok(reasoning.facts_used.every(item=>item.producer_id===client.id&&item.tenant_id===tenantId&&item.owner_id===ownerId))
+  assertCanonicalService(context,client,answersFor(client.name)[11])
+  if(withMemory){
+   assert.ok(context.memories.some(item=>item.value?.statement===literal),'a memória confirmada continua disponível')
+   assert.equal((await db.query('SELECT COUNT(*)::integer count FROM val_memories WHERE tenant_id=$1 AND key=$2',[tenantId,'visit_report.behavioral_signal'])).rows[0].count,1)
+  }
+ }
+})
+
+test('H05 referências demonstrativas de perfil usam a mesma rota sem absorver pedidos mistos',()=>{
+ for(const question of ['Qual é o perfil deste produtor?','Qual é o perfil desse produtor?','Qual é o perfil desta produtora?','Mostre o perfil dessa produtora.','Perfil deste produtor.']){
+  const route=routeSystemCapability({message:question,hasClient:true})
+  assert.equal(route.data_path,'BEHAVIORAL_PROFILE',question)
+  assert.equal(route.path,'FAST',question)
+  assert.equal(routeSystemCapability({message:question,hasClient:false}).data_path,null)
+ }
+ for(const question of ['Qual é o perfil deste produtor e qual a dívida dele?','Qual é o perfil deste produtor e qual produto aplicar?','Qual é o perfil deste produtor na próxima safra?','Qual é o perfil deste solo?'])assert.notEqual(routeSystemCapability({message:question,hasClient:true}).data_path,'BEHAVIORAL_PROFILE',question)
 })

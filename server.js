@@ -632,7 +632,7 @@ async function handleApi(request,response,url){
   }
   // A comparação já resolveu e autorizou os dois nomes pela thread; não tratar
   // o texto "compare os dois" como candidato a um terceiro produtor.
-  const naturalClientReference=sessionCommandPreview||comparisonResolution?{kind:'NONE',reference:null}:extractNaturalClientReference(message)
+  const naturalClientReference=sessionCommandPreview||comparisonResolution||generalQuestion.conceptContinuation?{kind:'NONE',reference:null}:extractNaturalClientReference(message)
   if(naturalClientReference.kind==='CURRENT_CLIENT'&&!clientId)return json(response,422,{error:'Ainda não há um produtor ativo nesta conversa. Diga o nome para eu localizar a carteira correta.',code:'val_client_reference_context_required',conversationId,clarification:{question:'De qual produtor você está falando?'}})
   if(['EXPLICIT_NAME','AUTHORIZED_NAME_CANDIDATE','FACT_OWNER','PREVIOUS_CLIENT'].includes(naturalClientReference.kind)){
    entityLookupCount+=1

@@ -18,7 +18,7 @@ const STALE_MS=548*24*60*60*1000
 export function registeredFactPresentation({query,client,declaredSeasons=[],properties=[],narratives=[],now=new Date()}){
  const rows=[]
  if(query.kind==='hobby'){
-  const hobby=client.hobby||client.hobbies||client.commercial?.hobby||client.commercial?.hobbies
+  const hobby=client.relationship?.hobbies||client.hobby||client.hobbies||client.commercial?.hobby||client.commercial?.hobbies
   if(hobby)rows.push({id:`client:${client.id}:hobby`,source_type:'client_registration',observed_at:client.updatedAt||client.updated_at||null,statement:`Hobby registrado de ${client.name}: ${Array.isArray(hobby)?hobby.join(', '):String(hobby)}.`})
  }
  if(query.kind==='crop_area'){
