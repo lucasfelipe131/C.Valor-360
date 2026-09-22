@@ -954,7 +954,7 @@ async function handleApi(request,response,url){
   // era invisivel: a consultora perguntava pelo Sirlei, recebia os hectares do Ivo e nada na frase
   // dizia de quem era. O resolvedor devolve status NONE (AUTHORIZED_NAME_EVIDENCE_ABSENT) nesse caso,
   // e nao NOT_FOUND, por isso o 422 mais acima nao alcancava este caminho.
-  if(detailQuery&&['EXPLICIT_NAME','AUTHORIZED_NAME_CANDIDATE'].includes(naturalClientReference.kind)&&conversationResolution?.status!=='RESOLVED'){
+  if(detailQuery&&(['EXPLICIT_NAME','AUTHORIZED_NAME_CANDIDATE'].includes(naturalClientReference.kind)||detailQuery.kind==='spouse'&&naturalClientReference.kind==='FACT_OWNER')&&conversationResolution?.status!=='RESOLVED'){
    return json(response,422,{error:`Não encontrei “${clean(naturalClientReference.reference,120)}” na sua carteira autorizada. Confirme o nome do produtor.`,code:'val_client_reference_not_found',conversationId,clarification:{question:'Qual é o nome do produtor na sua carteira?'}})
   }
   if(detailQuery&&!attachmentIds.length){

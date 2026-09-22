@@ -5,6 +5,7 @@ import {evaluateSourceFreshness} from '../memory/freshness-policy.js'
 import {assertResponseGrounding,assertResponseQuestionRelevance,evaluateResponseGrounding} from './response-grounding.js'
 import {assertActiveProducerBoundary,classifyValContextDomain,contextTraceEntry,matchedValContextDomains} from './context-selector.js'
 import {repairFacetTypos,stripMessagePreamble} from '../message-preamble.js'
+import {registeredFactQuery} from '../registered-fact-query.js'
 
 export const systemCapabilityRouterVersion='val.system_capability_router.v1'
 
@@ -319,6 +320,8 @@ export function routeSystemCapability({message='',intentHint='',sessionCommandHi
   }else if(intentRoute.session_command.deterministic_follow_up){
    path='FAST';direct=true
   }else path='FAST',direct=true
+ }else if(hasClient&&!attachmentTypes.length&&registeredFactQuery(message)?.kind==='spouse'){
+  capabilities.push('CLIENT_CONTEXT');path='FAST';direct=true;dataPath='REGISTERED_DETAIL'
  }else if(structuredFact){
   const selected=structuredFact==='CLIENT_COMPARISON'
    ?['CLIENT_CONTEXT','VISIT_HISTORY','COMMERCIAL_HISTORY']
