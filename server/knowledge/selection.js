@@ -1,3 +1,5 @@
+import {observe} from '../observability.js'
+import {retrieveLatentKnowledge} from './latent-retrieval.js'
 import {createHash} from 'node:crypto'
 import {knowledgeSelectionVersion,assertKnowledgeContract,validateKnowledgeSelection} from './contracts.js'
 import {loadKnowledgeLibrary} from './library.js'
@@ -413,6 +415,10 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
  const objectiveConcepts=exclusiveConcepts(question)
  const contextConcepts=exclusiveConcepts(contextText)
  const queryConcepts=objectiveConcepts.size?objectiveConcepts:contextConcepts
+ // Semantic query uses only the user's public knowledge question, never private context.
+ // Injected/custom libraries have no matching release index and remain lexical.
+ const semantic=source===loadKnowledgeLibrary()?retrieveLatentKnowledge(question):{method:'UNINDEXED_LIBRARY',results:[]}
+ const semanticById=new Map(semantic.results.map(row=>[row.id,row.similarity]))
  const sourceById=new Map(source.sources.map(entry=>[entry.source_id,entry]))
  const excludedReasonCounts={}
  const ranked=[]
@@ -431,7 +437,8 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
    excludedReasonCounts[result.reason]=(excludedReasonCounts[result.reason]||0)+1
    continue
   }
-  ranked.push({item,...result})
+  const semanticScore=semanticById.get(item.knowledge_item_id)||0
+  ranked.push({item,...result,lexicalScore:result.score,semanticScore,score:result.score+semanticScore*5})
  }
 
  ranked.sort((left,right)=>right.score-left.score||(authorityRank[left.item.authority]??99)-(authorityRank[right.item.authority]??99)||left.item.knowledge_item_id.localeCompare(right.item.knowledge_item_id))
@@ -458,9 +465,21 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
   high_risk_selected:selected.filter(item=>item.risk==='HIGH').length,
   prompt_content_included:false,
   corpus_dumped:false,
+  retrieval:{
+   lexical_method:'GOVERNED_WEIGHTED_TERMS_V1',semantic_method:semantic.method,
+   semantic_corpus_sha256:semantic.corpus_sha256||null,
+   private_context_indexed:false,
+   composition:'existing governance and subject filters, lexical score + 5 * latent cosine; authority/id tie break',
+   lexical_result:[...ranked].sort((a,b)=>b.lexicalScore-a.lexicalScore||a.item.knowledge_item_id.localeCompare(b.item.knowledge_item_id)).slice(0,3).map(e=>({id:e.item.knowledge_item_id,score:e.lexicalScore})),
+   semantic_result:[...ranked].filter(e=>e.semanticScore>0).sort((a,b)=>b.semanticScore-a.semanticScore||a.item.knowledge_item_id.localeCompare(b.item.knowledge_item_id)).slice(0,3).map(e=>({id:e.item.knowledge_item_id,score:e.semanticScore})),
+   selected_evidence:ranked.slice(0,cappedLimit).map(e=>({id:e.item.knowledge_item_id,version:e.item.version,source_refs:e.item.source_refs,lexical_score:e.lexicalScore,semantic_score:e.semanticScore,combined_score:e.score}))
+  },
   evaluated_at:evaluateKnowledgeLifecycle({},now).evaluated_at
  }
  const items=portfolioQuestion?[]:selected
+ observe('knowledge.hybrid.summary',{selectionPolicy:semantic.method,outcome:status,source:audit.query_fingerprint,rowCount:items.length,contractVersion:source.library_version})
+ for(const [channel,rows] of [['lexical',audit.retrieval.lexical_result],['semantic',audit.retrieval.semantic_result]])for(const [rank,row] of rows.entries())observe('knowledge.hybrid.candidate',{mode:channel,source:row.id,confidence:row.score,rowCount:rank+1,contractVersion:source.library_version})
+ for(const row of audit.retrieval.selected_evidence)observe('knowledge.hybrid.selected',{source:row.id,confidence:row.combined_score,reasonCodes:row.source_refs.join(','),contractVersion:row.version})
  const selection={contract_version:knowledgeSelectionVersion,policy_version:knowledgePolicyVersion,status,items,selected:items,reason_code:reasonCode,audit}
  return assertKnowledgeContract(selection,validateKnowledgeSelection,'KnowledgeSelection v1')
 }

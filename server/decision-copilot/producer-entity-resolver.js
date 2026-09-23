@@ -1,4 +1,5 @@
 import {matchedValContextDomains} from './context-selector.js'
+import {registeredSpouseQuestion} from '../registered-fact-query.js'
 
 export const producerEntityResolverVersion='val.producer_entity_resolver.v1'
 export const clientReferenceResolutionVersion='val.client_reference_resolution.v1'
@@ -85,6 +86,13 @@ const stripReference=value=>{
 export function extractNaturalClientReference(message){
  const source=clean(message,2000)
  if(!source)return Object.freeze({kind:'NONE',reference:null})
+ const spouse=registeredSpouseQuestion(source)
+ if(spouse){
+  if(!spouse.ownerReference)return Object.freeze({kind:'CURRENT_CLIENT',reference:'produtor atual'})
+  // An indirect relation is not an alias for the active producer. Require an
+  // explicit authorized identity instead of accepting a trailing "dele".
+  return Object.freeze({kind:spouse.indirectOwner?'EXPLICIT_NAME':'FACT_OWNER',reference:stripReference(spouse.ownerReference)})
+ }
  if(/\b(?:volta|volte|retoma|retome)\s+(?:(?:para|pro|pra|ao|no)\s+)?(?:(?:o\s+)?produtor\s+)?anterior\b/iu.test(source))return Object.freeze({kind:'PREVIOUS_CLIENT',reference:'anterior'})
  for(const {kind,pattern} of naturalReferencePatterns){
   const match=source.match(pattern)

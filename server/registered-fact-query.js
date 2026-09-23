@@ -1,7 +1,23 @@
 const normalized=value=>String(value??'').normalize('NFD').replace(/\p{Diacritic}/gu,'').toLowerCase()
 const list=value=>Array.isArray(value)?value:[]
+export function registeredSpouseQuestion(message){
+ // Family narratives (q32) are not a spouse-name field. Only a standalone
+ // literal question may use this lookup; mixed advice/questions keep routing.
+ // The entity resolver uses the SAME parsed owner so a long name or an indirect
+ // relative can never silently become the producer currently open in the UI.
+ const spouse=normalized(message).trim().match(/^(?:(?:qual\s+(?:e\s+)?(?:o\s+)?nome\s+d[ao])|(?:como\s+se\s+chama\s+(?:a|o))|(?:quem\s+e\s+(?:a|o)))\s+(?:esposa|esposo|conjuge|marido)(?:\s+(?<owner>(?:dele|dela|(?:deste|desse|desta|dessa)\s+(?:produtor|produtora|cliente)|(?:de|do|da)\s+[a-z][a-z' -]{0,120})))?\s*[?.!]*$/)
+ if(!spouse||/\b(?:e|qual|quais|quanto|como|porque|recomende|prepare|manejo|dose|preco|custo)\b/.test(spouse.groups.owner||''))return null
+ const owner=String(spouse.groups.owner||'').trim()
+ if(!owner||/^(?:dele|dela|(?:deste|desse|desta|dessa)\s+(?:produtor|produtora|cliente)|(?:do|da)\s+(?:produtor|produtora|cliente)(?:\s+(?:atual|aberto|aberta))?)$/.test(owner))return {ownerReference:null,indirectOwner:false}
+ const ownerReference=owner.replace(/^(?:de|do|da)\s+/,'')
+ const indirectOwner=/\b(?:ele|ela|dele|dela|deles|delas|seu|sua|meu|minha)\b/.test(ownerReference)||/^(?:(?:o|a)\s+)?(?:vizinh[oa]s?|pai|mae|irmaos?|irmas?|filh[oa]s?|sogr[oa]s?|cunhad[oa]s?|prim[oa]s?|ti[oa]s?|avos?|net[oa]s?|sobrinh[oa]s?|amig[oa]s?|soci[oa]s?|compadre|comadre|parceir[oa]s?)\b/.test(ownerReference)
+ return {ownerReference,indirectOwner}
+}
 export function registeredFactQuery(message,{previousMessage=''}={}){
  const text=normalized(message)
+ const spouse=registeredSpouseQuestion(message)
+ if(spouse&&!spouse.indirectOwner)return {kind:'spouse'}
+ if(/\b(?:esposa|esposo|conjuge|marido)\b/.test(text))return null
  if(/\b(?:recomende|devo|prepare|manejo|dose|cotacao|preco|custo|produz|producao)\b/.test(text))return null
  const crop=text.match(/\b(milho|soja|trigo|canola|arroz|sorgo|feijao)\b/)?.[1]
  const area=/\b(?:hectares?|ha|area|planta|plantados?)\b/.test(text)
@@ -16,6 +32,14 @@ export function registeredFactQuery(message,{previousMessage=''}={}){
 const thirdPartyArea=/\b(?:vizinh[oa]s?|compadre|comadre|irmaos?|irmas?|prim[oa]s?|sogr[oa]|genro|nora|cunhad[oa]s?|soci[oa]s?|arrendatari[oa]s?|arrendante|parceir[oa]s?|outro produtor|produtor ao lado)\b/
 const STALE_MS=548*24*60*60*1000
 export function registeredFactPresentation({query,client,declaredSeasons=[],properties=[],narratives=[],now=new Date()}){
+ if(query.kind==='spouse'){
+  const spouse=typeof client.relationship?.spouse==='string'?client.relationship.spouse.trim():''
+  const found=Boolean(spouse)
+  const statement=found?`Cônjuge registrado de ${client.name}: ${spouse}.`:'Informação ausente: nome do cônjuge no cadastro deste produtor.'
+  const sourceRef=found?`client:${client.id}:relationship.spouse`:null
+  const factsUsed=found?[{id:sourceRef,source_type:'client_registration',observed_at:client.updatedAt||client.updated_at||null,statement}]:[]
+  return {dataPath:'REGISTERED_DETAIL',answer:statement,primaryFound:found,sourceRef,factsUsed,action:found?'':'Confirme a informação e registre no campo Cônjuge do produtor.',missing:'nome do cônjuge no cadastro',doNotDo:'Não inferir o nome do cônjuge a partir de relatos de família, de outra pessoa ou da conversa.',capabilityStatus:found?'EXECUTED':'NO_DATA',stale:false}
+ }
  const rows=[]
  if(query.kind==='hobby'){
   const hobby=client.relationship?.hobbies||client.hobby||client.hobbies||client.commercial?.hobby||client.commercial?.hobbies
