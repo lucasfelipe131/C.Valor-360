@@ -6,7 +6,7 @@ import {assertActiveProducerBoundary,assertContextScopeAliases,classifyValContex
 import {evaluateReasoningGrounding} from './response-grounding.js'
 import {compactKnowledgeRefs} from '../commercial/knowledge-support.js'
 import {selectKnowledge} from '../knowledge/library.js'
-import {describeSelectionMatch,generalAnswerTopicMatches} from '../knowledge/selection.js'
+import {describeSelectionMatch,generalAnswerTopicMatches,curatedAnswerCoversQuestion} from '../knowledge/selection.js'
 import {generalTopicClarification} from './general-question-context.js'
 import {stripMessagePreamble} from '../message-preamble.js'
 import {generalProductCatalogGuidance} from '../product-intelligence.js'
@@ -692,6 +692,7 @@ function governedGeneralAnswer(message){
  catch{return null}
  const item=selection?.items?.[0]
  if(!item?.statement)return null
+ if(!curatedAnswerCoversQuestion(message,item))return null
  // A regulatory warning triggered by "dose" is not a definition of dose.
  // Keep that policy for prescriptions; an uncovered generic concept uses AI.
  if(isGeneralRegulatedConcept(message)&&!/\b(?:dose|dosagem)\b/i.test(item.statement))return null
@@ -952,7 +953,12 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   const tool={status:'EXECUTED',capability:'AI_GENERAL_KNOWLEDGE',tool:'ai_general_knowledge',title:'Conhecimento geral do modelo (não verificado)',summary:answer,page:'copilot',manual_page:null,mode:'general_unverified',context:{client_id:null,private_memory_used:false}}
   return finalize(deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['AI_GENERAL_KNOWLEDGE'],capability_results:[{capability:'AI_GENERAL_KNOWLEDGE',status:'EXECUTED',source_ref:aiUnverifiedSourceRef,tool_result:tool}],tool_result:tool,active_context:null}),{unverified:true})
  }
- const validAnswer=answer=>Boolean(answer)&&generalAnswerTopicMatches(message,answer)&&safeGeneralModelAnswer(answer)&&buildAiResponse(answer).advice.ai_reasoning.grounding?.blocked!==true
+ const rejectedReasons=new Set()
+ const validAnswer=answer=>{
+  const reason=!answer?'EMPTY_ANSWER':!generalAnswerTopicMatches(message,answer)?'TOPIC_MISMATCH':!safeGeneralModelAnswer(answer)?'UNSAFE_GENERAL_ANSWER':buildAiResponse(answer).advice.ai_reasoning.grounding?.blocked===true?'GROUNDING_BLOCKED':null
+  if(reason)rejectedReasons.add(reason)
+  return reason===null
+ }
  const generate=async()=>{
   const first=await generateGeneralModelAnswer({message,aiClient,model:aiModel,signal})
   if(!first.retryable&&(!first.text||validAnswer(first.text)))return first
@@ -970,7 +976,7 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  const providerFailure=result?.unavailableReason==='PROVIDER_ERROR'
  const regulatedClaim=Boolean(result?.regulatedClaim)
  const delivered=result.text&&validAnswer(result.text)?buildAiResponse(result.text):finalize(noCoverageExecution(providerFailure,regulatedClaim))
- delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:result.costUsd,aiGeneralKnowledgeModelCalls:result.modelCalls,sharedKnowledgeCache:result.cache||null,...(providerFailure?{aiProviderStatus:result.providerStatus??null,aiProviderRetryAfterSeconds:result.retryAfterSeconds??null}:{})}
+ delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:result.costUsd,aiGeneralKnowledgeModelCalls:result.modelCalls,aiGeneralKnowledgeRejectionReasons:[...rejectedReasons],aiGeneralKnowledgeUnavailableReason:result.unavailableReason||null,sharedKnowledgeCache:result.cache||null,...(providerFailure?{aiProviderStatus:result.providerStatus??null,aiProviderRetryAfterSeconds:result.retryAfterSeconds??null}:{})}
  delivered.responseMetadata.executionBudget={...delivered.responseMetadata.executionBudget,modelCalls:result.modelCalls,estimatedCostUsd:result.costUsd}
  delivered.advice.ai_reasoning.run={...delivered.advice.ai_reasoning.run,model_call_count:result.modelCalls,estimated_cost_usd:result.costUsd}
  return delivered

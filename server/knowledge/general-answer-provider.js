@@ -53,10 +53,16 @@ export function requiresVerifiedGeneralSource(message=''){
  // ordem de adicao e tudo. Preco, clima, credito e escolha de produto nunca sao "conceito" e nunca
  // foram isentos; as tres ramificacoes abaixo sao as unicas que definir um termo dispensa.
  const concept=isGeneralRegulatedConcept(message)
+ // Separating soil-sampling strata is not a tank-mix prescription. Only
+ // remove this bounded, negative sampling instruction; any other mixture or
+ // regulated request elsewhere in the question still goes through the guard.
+ const regulatorySource=/\bamostragem\b/.test(source)
+  ?source.replace(/\bsem misturar\s+(?:amostras?|solo|solos|baixadas?|encostas?|camadas?|profundidades?|talhoes|areas|e|de|da|do|das|dos|a|o|as|os|\s)+(?=[?.!]|$)/g,'')
+  :source
  return !concept&&/\b(?:dose|dosagem)\b/.test(source)
   // "mistura" e "misture" estavam na lista e "misturar" nao: "posso misturar X com Y no tanque?"
   // atravessava o portao. A forma verbal completa fecha a lacuna.
-  ||!concept&&/\b(?:mistur\w*|receita agronomica|diagnostico|aplique|prescreva|diagnostique|pulverize)\b/.test(source)
+  ||!concept&&/\b(?:mistur\w*|receita agronomica|diagnostico|aplique|prescreva|diagnostique|pulverize)\b/.test(regulatorySource)
   ||/\b(?:qual (?:e )?a composicao|quem fabrica|qual (?:e )?o (?:fabricante|ingrediente ativo|principio ativo)|o que e o produto|sobre (?:o produto|a marca))\b/.test(source)
   ||/\b(?:qual|quais|quanto|indique|recomende|devo|posso)\b.{0,80}\bprodutos?\b.{0,60}\b(?:aplicar|usar|utilizar|controlar|combater|recomenda|indica|melhor)\b/.test(source)
   ||/\b(?:qual|quais)\b.{0,30}\bprodutos?\b\s+(?:para|contra)\b/.test(source)
@@ -181,7 +187,7 @@ export async function generateGeneralModelAnswer({message='',aiClient=null,model
  // required_inputs ["topic"], por uma pergunta que ele ja tinha feito por completo. A frase honesta
  // ja existia no repositorio (regulatedClaimStub), ligada apenas ao portao de SAIDA.
  if(requiresVerifiedGeneralSource(message))return empty({regulatedClaim:true})
- if(!aiClient||!model)return empty()
+ if(!aiClient||!model)return empty({unavailableReason:'MODEL_UNAVAILABLE'})
  const instructions='Responda em português do Brasil com conhecimento geral amplamente estabelecido, com extensão proporcional à pergunta: 2–3 frases para uma dúvida simples; até 250 palavras quando a pessoa pede explicação, comparação ou aprofundamento.\n'+
   'Explique diretamente agronomia, manejo integrado, categorias de produtos, mecanismos de ação e critérios comerciais quando forem conceitos gerais. Preserve a cultura, a praga e o objetivo perguntados. Em explicações aprofundadas, conecte mecanismo, finalidade, condições que alteram o resultado e limitações; explique o porquê, sem alegar superioridade comercial. Não exija produtor para uma dúvida geral.\n'+
   'Pode explicar o significado de dose e a diferença entre quantidade de produto comercial e de ingrediente ativo. Não informe valores de dose, instrução de mistura, indicação de uso de marca em cultura ou alvo, recomendação técnica prescritiva, preço/cotação atual, previsão do tempo ou dados de um produtor. Não invente composição, registro, desempenho ou superioridade de marcas; isso exige catálogo/ficha ou bula consultados.\n'+
@@ -203,10 +209,10 @@ export async function generateGeneralModelAnswer({message='',aiClient=null,model
  // An incomplete Responses result can contain grammatical but truncated text.
  // Discard it before grounding/cache and allow the caller one bounded retry.
  const incomplete=response?.status==='incomplete'||response?.incomplete_details!=null||response?.output?.some(item=>item?.status==='incomplete')
- if(incomplete)return empty({costUsd,modelCalls:1,retryable:response?.incomplete_details?.reason==='max_output_tokens'})
- if(response?.status&&response.status!=='completed'||response?.error)return empty({costUsd,modelCalls:1})
+ if(incomplete)return empty({costUsd,modelCalls:1,unavailableReason:'INCOMPLETE_RESPONSE',retryable:response?.incomplete_details?.reason==='max_output_tokens'})
+ if(response?.status&&response.status!=='completed'||response?.error)return empty({costUsd,modelCalls:1,unavailableReason:'FAILED_RESPONSE'})
  const answer=clean(response?.output_text)
  // Do not turn truncation by our own string limit into a complete answer either.
- if(!answer||answer.length>2200||answer.toUpperCase().includes(sentinel))return empty({costUsd,modelCalls:1,retryable:answer.length>2200})
+ if(!answer||answer.length>2200||answer.toUpperCase().includes(sentinel))return empty({costUsd,modelCalls:1,unavailableReason:!answer?'EMPTY_RESPONSE':answer.length>2200?'OUTPUT_LENGTH_LIMIT':'SOURCE_REQUIRED',retryable:answer.length>2200})
  return {text:answer,costUsd,modelCalls:1}
 }
