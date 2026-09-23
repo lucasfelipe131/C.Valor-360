@@ -41,3 +41,11 @@ test('runtime retrieval trace uses request scope without query/private text',()=
  assert.match(text,/TFIDF_TRUNCATED_SVD_COSINE_V1/)
  assert.doesNotMatch(text,/PRIVATE_DATA|O que é basis/)
 })
+
+import {buildGeneralNoClientResponse} from '../server/decision-copilot/capability-executor.js'
+test('explicit library search abstains without paid generation when no evidence exists',async()=>{
+ let calls=0
+ const result=await buildGeneralNoClientResponse({message:'Buscar na biblioteca: zqxv inexistente',route:{path:'CONTEXT',capabilities:['KNOWLEDGE_LIBRARY']},aiClient:{responses:{create:async()=>{calls++;throw new Error('unexpected paid call')}}},aiModel:'unused'})
+ assert.equal(calls,0)
+ assert.match(result.advice.answer,/Nenhum trecho aplicável/)
+})

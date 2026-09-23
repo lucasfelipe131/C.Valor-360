@@ -634,6 +634,7 @@ export async function executeCapabilityPlan(options={}){
 export const regulatedClaimStub='Indicação de uso, alvo ou comparação de desempenho de um produto registrado é informação de bula, e a VAL só responde isso com a fonte oficial conectada. Consulte a bula ou a ficha técnica vigente. Posso explicar o conceito, o mecanismo de ação e o manejo integrado do alvo.'
 export const aiProviderUnavailableStub='A IA de conhecimento geral está indisponível neste momento e a VAL não arrisca responder sem ela. Tente novamente em alguns instantes; perguntas com produtor selecionado, memória e fontes registradas continuam funcionando normalmente.'
 export const aiBudgetExhaustedStub='O limite de uso da IA de conhecimento geral deste acesso foi atingido. Ele é por consultor e por acesso, e um novo login restaura. Perguntas com produtor selecionado, memória e fontes registradas continuam funcionando normalmente.'
+const librarySearchAbsence='Nenhum trecho aplicável foi encontrado na biblioteca aprovada para esta consulta.'
 const noKnowledgeCoverageStub='Posso tratar esta dúvida sem selecionar um produtor e sem consultar memória privada. Informe a cultura, o conceito ou a decisão geral que deseja entender; dados atuais e recomendações técnicas continuam exigindo fonte, contexto e revisão.'
 
 // Um cumprimento puro ("oi", "bom dia") não tem nenhuma palavra com 4+ letras para o
@@ -651,7 +652,9 @@ const thanksOnlyRequest=/^\s*(?:val[, ]+)?(?:(?:muito\s+)?(?:obrigad[oa]s?|valeu
 // objeto é recomputado em validateGeneralGuidanceSource, byte a byte, para que um envelope forjado
 // não ganhe a confiança do item curado.
 const curatedGuidance=(summary,coverage='CURATED')=>Object.freeze({summary,knowledge_item_id:null,knowledge_match:null,coverage})
+const libraryOnlyQuery=value=>/^\s*(?:buscar|pesquisar|consultar)\s+na\s+biblioteca\s*:\s*([\s\S]*)$/i.exec(String(value||''))
 function generalGuidance(message=''){
+ message=libraryOnlyQuery(message)?.[1]??message
  const normalized=String(message).normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase()
  const source=stripMessagePreamble(normalized).replace(/[.!?]+$/,'').trim()
  if(isCurrentClientIdentityRequest(source))return curatedGuidance('Nenhum produtor está selecionado nesta conversa.')
@@ -794,7 +797,7 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  const trustedGeneralGuidance=Boolean(!clientId&&sourceRefs.length===1&&sourceRefs[0].id==='system:general-guidance:v1'&&sourceRefs[0].capability==='GENERAL_GUIDANCE'&&tool?.capability==='GENERAL_GUIDANCE'&&evaluatedGrounding.question_relevance==='PASS'&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  // Pedido de esclarecimento por falta de cobertura curada: texto fixo do servidor, sem fonte e
  // sem claim factual; e o que o consultor deve ler quando nao ha item nem modelo disponivel.
- const noCoverageGuidance=Boolean(!sourceRefs.length&&tool?.capability==='GENERAL_GUIDANCE'&&tool?.status==='NO_DATA'&&tool?.mode==='no_coverage'&&[clean(noKnowledgeCoverageStub,1200),clean(aiBudgetExhaustedStub,1200),clean(aiProviderUnavailableStub,1200),clean(regulatedClaimStub,1200),generalTopicClarification(message)].includes(summary))
+ const noCoverageGuidance=Boolean(!sourceRefs.length&&tool?.capability==='GENERAL_GUIDANCE'&&tool?.status==='NO_DATA'&&tool?.mode==='no_coverage'&&[clean(noKnowledgeCoverageStub,1200),clean(aiBudgetExhaustedStub,1200),clean(aiProviderUnavailableStub,1200),clean(regulatedClaimStub,1200),generalTopicClarification(message),...(libraryOnlyQuery(message)?[librarySearchAbsence]:[])].includes(summary))
  // Comando local da sessao ("por escrito", "nao registra"): a resposta e a confirmacao fixa da
  // preferencia, sem afirmacao factual; nao precisa de turno anterior nem de overlap com a frase.
  const localSessionCommand=Boolean(route?.session_command?.local_only&&sourceRefs.length===1&&sourceRefs[0].capability==='SESSION_COMMAND'&&tool?.capability==='SESSION_COMMAND'&&tool?.status==='EXECUTED'&&trustedCapabilityExecutions.has(execution)&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
@@ -868,6 +871,7 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
 }
 
 export async function buildGeneralNoClientResponse({message='',route={},organizationId='unknown',ownerId='',conversationId='',contextEpoch=0,contextDomain='',now=new Date(),aiClient=null,aiModel='',aiUnavailableReason='',sharedAnswerCache=null,signal}={}){
+ const libraryOnly=Boolean(libraryOnlyQuery(message))
  const aiBudgetExhausted=aiUnavailableReason==='BUDGET_EXHAUSTED'&&!aiClient
  throwIfCancelled(signal)
  const catalog=route?.tool_hint==='AGRONOMIC_TOOL_CATALOG'&&list(route.capabilities).includes('AGRONOMIC_WORKSPACE')
@@ -892,7 +896,7 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   // bastava a primeira resposta ser rejeitada e a segunda chamada morrer no provedor para o
   // consultor ler "consulte a bula" quando a causa real era HTTP 500 no modelo - desfazendo na
   // pratica a separacao de causas que este bloco existe para fazer.
-  const summary=providerFailure?aiProviderUnavailableStub:aiBudgetExhausted?aiBudgetExhaustedStub:regulatedClaim?regulatedClaimStub:(topicClarification||noKnowledgeCoverageStub)
+  const summary=libraryOnly?librarySearchAbsence:providerFailure?aiProviderUnavailableStub:aiBudgetExhausted?aiBudgetExhaustedStub:regulatedClaim?regulatedClaimStub:(topicClarification||noKnowledgeCoverageStub)
   const title=providerFailure?'IA indisponível':aiBudgetExhausted?'Limite de IA atingido':regulatedClaim?'Informação de bula':'Orientação geral'
   return deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'NO_DATA',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title,summary,page:'copilot',manual_page:null,mode:'no_coverage',context:{client_id:null,private_memory_used:false},required_inputs:unavailable?[]:['topic']},active_context:null})
  }
@@ -943,7 +947,7 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  // sem fonte; perguntas de alto risco continuam bloqueadas dentro de
  // unverifiedModelKnowledgeAnswer. Sem modelo, o pedido de esclarecimento e o que o usuario le.
  const noCoverage=guidance?.coverage==='NONE'
- if(catalog||contextRequired||topicClarification||!noCoverage&&curatedResponse.advice.ai_reasoning.grounding?.blocked!==true)return curatedResponse
+ if(libraryOnly||catalog||contextRequired||topicClarification||!noCoverage&&curatedResponse.advice.ai_reasoning.grounding?.blocked!==true)return curatedResponse
  const buildAiResponse=answer=>{
   const tool={status:'EXECUTED',capability:'AI_GENERAL_KNOWLEDGE',tool:'ai_general_knowledge',title:'Conhecimento geral do modelo (não verificado)',summary:answer,page:'copilot',manual_page:null,mode:'general_unverified',context:{client_id:null,private_memory_used:false}}
   return finalize(deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['AI_GENERAL_KNOWLEDGE'],capability_results:[{capability:'AI_GENERAL_KNOWLEDGE',status:'EXECUTED',source_ref:aiUnverifiedSourceRef,tool_result:tool}],tool_result:tool,active_context:null}),{unverified:true})
