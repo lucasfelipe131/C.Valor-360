@@ -49,3 +49,22 @@ test('explicit library search abstains without paid generation when no evidence 
  assert.equal(calls,0)
  assert.match(result.advice.answer,/Nenhum trecho aplicável/)
 })
+
+import {routeValIntent} from '../server/ai-reasoning/intent-router.js'
+import {routeSystemCapability} from '../server/decision-copilot/capability-router.js'
+test('nominal public comparisons retain knowledge routing with an active producer',async()=>{
+ for(const hasClient of [false,true]){
+  const message='diferença entre preço local e cotação futura'
+  const route=routeSystemCapability({message,hasClient})
+  assert.equal(route.intent,'ASK_GENERAL')
+  assert.deepEqual(route.capabilities,['KNOWLEDGE_LIBRARY'])
+  let calls=0
+  const result=await buildGeneralNoClientResponse({message,route,aiClient:{responses:{create:async()=>{calls++;throw Error('unexpected')}}},aiModel:'unused'})
+  assert.equal(calls,0)
+  assert.match(result.advice.answer,/Basis/)
+  assert.equal(result.advice.ai_reasoning.run.tool_result.context.private_memory_used,false)
+ }
+ assert.equal(routeValIntent({message:'Buscar na biblioteca: zqxv inexistente',hasClient:true}).intent,'ASK_GENERAL')
+ for(const message of ['diferença entre o saldo dele e a entrega dele','comparação entre a propriedade dele e a fazenda dela'])assert.notEqual(routeValIntent({message,hasClient:true}).intent,'ASK_GENERAL')
+ assert.notEqual(routeValIntent({message:'diferença entre Antonio e Maria',hasClient:true,resolvedClientReference:true}).intent,'ASK_GENERAL')
+})

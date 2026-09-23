@@ -67,6 +67,10 @@ function semanticGeneralConceptIntent(source='',allowOpenQuestion=true){
  const question=folded.replace(greetingPrefix,'')
  if(generalTopicClarification(question))return 'ASK_GENERAL'
  if(/\b(?:ureia|nitrogenio|cigarrinha|lagarta|inseticida|herbicida|fungicida)\b/.test(question)&&!contextualReference.test(question)&&!individualReference.test(question))return 'ASK_GENERAL'
+ // Nominal comparisons are concepts too; selecting an account does not
+ // turn 'difference between X and Y' into a private fact. Explicit owners,
+ // pronouns and registered account fields retain the scoped route.
+ if(/^(?:(?:diferenca|distincao|comparacao) entre|(?:buscar|pesquisar|consultar) na biblioteca\s*:)/.test(question)&&!contextualReference.test(question)&&!individualReference.test(question)&&!accountFieldReference.test(question))return 'ASK_GENERAL'
  if(definitionalShape.test(question)&&!contextualReference.test(question))return 'ASK_GENERAL'
  if(narrativeShape.test(question)&&!contextualReference.test(question)&&!individualReference.test(question))return 'ASK_GENERAL'
  if(allowOpenQuestion&&openGeneralQuestion.test(question)&&!contextualReference.test(question)&&!individualReference.test(question)&&!accountFieldReference.test(question))return 'ASK_GENERAL'
