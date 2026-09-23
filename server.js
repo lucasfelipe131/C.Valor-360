@@ -18,6 +18,7 @@ import {AccessRepository} from './server/access-repository.js'
 import {deriveSignals,normalizeIntegrationEvent,requiresTechnicalSignature,verifyIntegrationToken,verifyWebhookSignature} from './server/ingestion.js'
 import {normalizeGrainIntent,normalizeGrainMarketSnapshot,normalizeGrainProfile,intentStatuses} from './server/grain-intelligence.js'
 import {GrainRepository} from './server/grain-repository.js'
+import {readGrainBalance,appendGrainMovement} from './server/grain-balance.js'
 import {readProducerWorkspace} from './server/producer-workspace.js'
 import {ValRepository} from './server/repository.js'
 import {createVisitRouteService} from './server/visit-route-service.js'
@@ -477,6 +478,14 @@ async function handleApi(request,response,url){
  if(url.pathname==='/api/grains/bootstrap'&&request.method==='GET'){
   const workspace=await grainRepository.getWorkspace(identity?.id||identity?.email)
   return json(response,200,workspace)
+ }
+ if(url.pathname==='/api/grains/balance'&&request.method==='GET'){
+  return json(response,200,await readGrainBalance(grainRepository,url.searchParams.get('clientId'),identity?.id||identity?.email))
+ }
+ if(url.pathname==='/api/grains/movements'&&request.method==='POST'){
+  const payload=await body(request)
+  const saved=await appendGrainMovement(grainRepository,payload.clientId,identity?.id||identity?.email,payload)
+  return json(response,saved.idempotent?200:201,{saved:true,...saved})
  }
  if(url.pathname==='/api/grains/profiles'&&request.method==='PUT'){
   const profile=normalizeGrainProfile(await body(request));const saved=await grainRepository.saveProfile(profile,identity?.id||identity?.email)

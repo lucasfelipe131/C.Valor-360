@@ -6,6 +6,7 @@ import {
 } from 'lucide-react'
 import {requestJsonResource,useAsyncResource} from '../hooks/useAsyncResource'
 import {marketFormPayload} from '../lib/sog-market-form'
+import GrainBalance from './GrainBalance'
 
 const emptyWorkspace={producers:[],profiles:[],intentions:[],marketSnapshots:[],opportunities:[],summary:{},catalog:{commodities:[],volumeUnits:[],priceUnits:[],marketKinds:[]},governance:{}}
 const commodityFallback=[{value:'soja',label:'Soja'},{value:'milho',label:'Milho'},{value:'trigo',label:'Trigo'},{value:'sorgo',label:'Sorgo'},{value:'feijao',label:'Feijão'},{value:'arroz',label:'Arroz'},{value:'cevada',label:'Cevada'}]
@@ -157,7 +158,7 @@ export default function SogWorkspace({clients=[],onSelect}){
  const openClient=clientId=>{const client=clients.find(item=>String(item.id)===String(clientId));if(client&&onSelect)onSelect(client)}
  const updateStatus=async(id,status)=>{try{await api(`/api/grains/intents/${id}`,{method:'PATCH',body:JSON.stringify({status})});await saved(status==='negotiating'?'Intenção movida para negociação.':'Intenção concluída no histórico da SOG.')}catch(exception){setNotice(exception.message)}}
  const summary=workspace.summary||{}
- const tabs=[['opportunities','Oportunidades',workspace.opportunities?.length||0,Target],['intentions','Intenções',summary.activeIntentions||0,Handshake],['market','Mercado',workspace.marketSnapshots?.length||0,LineChart],['producers','Produtores',producers.length,UserRound],['ecosystem','Alimentação',null,Database]]
+ const tabs=[['opportunities','Oportunidades',workspace.opportunities?.length||0,Target],['intentions','Intenções',summary.activeIntentions||0,Handshake],['market','Mercado',workspace.marketSnapshots?.length||0,LineChart],['balance','Saldo',null,Warehouse],['producers','Produtores',producers.length,UserRound],['ecosystem','Alimentação',null,Database]]
  if(loading&&!workspace.producers?.length)return <section className="sog-loading" role="status"><LoaderCircle className="spin"/><b>Conectando a SOG à carteira protegida…</b><span>Carregando produtores, intenções e referências de mercado.</span></section>
  if(error&&!workspace.producers?.length)return <section className="sog-load-error" role="alert"><AlertCircle/><div><b>A SOG não conseguiu carregar a base.</b><p>{error}</p><button type="button" onClick={load}><RefreshCw/>Tentar novamente</button></div></section>
  return <section className="sog-workspace" aria-labelledby="sog-title">
@@ -173,6 +174,7 @@ export default function SogWorkspace({clients=[],onSelect}){
    <SogMetric icon={Target} label="AÇÃO PRIORITÁRIA" value={summary.highPriority||0} detail={`${summary.generatedOpportunities||0} leituras geradas`} tone="is-red"/>
   </div>
   <nav className="sog-tabs" aria-label="Módulos da SOG" role="tablist">{tabs.map(([id,label,count,Icon])=><button type="button" role="tab" aria-selected={tab===id} className={tab===id?'is-active':''} key={id} onClick={()=>setTab(id)}><Icon/><span>{label}</span>{count!==null&&<em>{count}</em>}</button>)}</nav>
+  {tab==='balance'&&<GrainBalance producers={producers}/>}
 
   {tab==='opportunities'&&<section className="sog-panel" aria-labelledby="sog-opportunities-title"><header className="sog-panel-head"><div><span className="eyebrow">FILA EXPLICÁVEL</span><h3 id="sog-opportunities-title">Oportunidades e próximo movimento</h3><p>Priorização baseada em confirmação, proximidade do preço, atualidade da fonte e janela de entrega.</p></div><button type="button" className="sog-refresh" onClick={load} disabled={loading}><RefreshCw className={loading?'spin':''}/>Atualizar</button></header>{workspace.opportunities?.length?<div className="sog-opportunity-list">{workspace.opportunities.map(item=><OpportunityCard key={item.id} opportunity={item} onProducer={clients.length?()=>openClient(item.clientId):null}/>)}</div>:<SogEmpty icon={Target} title="A fila nasce de dados reais" description="Registre uma intenção e uma referência de mercado do mesmo grão. A SOG fará o cruzamento sem fabricar preços ou interesses." action={producers.length?'Registrar primeira intenção':null} onAction={()=>setModal('intent')}/>}</section>}
 
