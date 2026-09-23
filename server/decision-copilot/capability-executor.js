@@ -10,8 +10,9 @@ import {describeSelectionMatch,generalAnswerTopicMatches} from '../knowledge/sel
 import {generalTopicClarification} from './general-question-context.js'
 import {stripMessagePreamble} from '../message-preamble.js'
 import {generalProductCatalogGuidance} from '../product-intelligence.js'
-import {generateGeneralModelAnswer,isGeneralRegulatedConcept,regulatedBrandClaim,requiresVerifiedGeneralSource,safeGeneralModelAnswer,safeResearchAnswer} from '../knowledge/general-answer-provider.js'
+import {containsPrescriptiveContent,generateGeneralModelAnswer,isGeneralRegulatedConcept,mentionsRegulatedTopic,regulatedBrandClaim,requiresVerifiedGeneralSource,safeGeneralModelAnswer,safeResearchAnswer} from '../knowledge/general-answer-provider.js'
 import {researchQuestion} from '../knowledge/web-research.js'
+import {questionReferencesIndividual} from '../knowledge/source-requests.js'
 import {isClientOverviewRequest} from './capability-router.js'
 
 export const capabilityExecutorVersion='val.capability_executor.v1'
@@ -641,11 +642,28 @@ export const sourceRequestRegisteredNote=' Registrei esta dúvida para revisão:
 export const withSourceRequestNote=stub=>`${stub}${sourceRequestRegisteredNote}`
 
 // Gravar o pedido nunca pode derrubar a resposta. Se a fila falhar, o consultor lê exatamente o
-// que lia antes — sem a promessa.
-async function registerSourceRequest({sourceRequests,tenantId,ownerId,message,domain,reason,now}){
- if(!sourceRequests)return false
- try{await sourceRequests.register({tenantId:String(tenantId||''),ownerId:String(ownerId||''),question:message,domain:clean(domain,40)||'GENERAL',reason,now});return true}
- catch{return false}
+// que lia antes — sem a promessa. A fila é lida por outra pessoa: pergunta que aponta um produtor
+// ou um CPF não é conhecimento geral e não sai daqui, seja qual for o repositório por trás.
+async function registerSourceRequest({sourceRequests,tenantId,ownerId,message,domain,reason,now,signal}){
+ if(!sourceRequests||questionReferencesIndividual(message))return null
+ try{return await sourceRequests.register({tenantId:String(tenantId||''),ownerId:String(ownerId||''),question:message,domain:clean(domain,40)||'GENERAL',reason,now},{signal})||null}
+ catch{return null}
+}
+// A promessa "registrei para revisão" só é verdadeira enquanto a linha está de fato à espera de
+// revisão. Recusada, substituída, vencida ou já aprovada (e portanto não servida por outro motivo)
+// somam peso, mas não prometem nada.
+const awaitingReview=row=>Boolean(row&&['DRAFT','UNDER_REVIEW'].includes(String(row.status||'')))
+// O resumo entregue é cortado em 1200 caracteres a jusante. Um trecho aprovado de até 2000 perdia
+// a citação e acabava no meio da frase. O corte acontece aqui, no fim de uma frase, e a citação —
+// que é o que torna a resposta auditável — sobrevive inteira.
+const fitExcerpt=(value,limit)=>{
+ const excerpt=String(value||'').trim()
+ if(excerpt.length<=limit)return excerpt
+ const slice=excerpt.slice(0,Math.max(0,limit-1))
+ const sentenceEnd=Math.max(slice.lastIndexOf('. '),slice.lastIndexOf('; '),slice.lastIndexOf('! '),slice.lastIndexOf('? '))
+ const wordEnd=slice.lastIndexOf(' ')
+ const cut=sentenceEnd>limit*0.5?slice.slice(0,sentenceEnd+1):slice.slice(0,wordEnd>0?wordEnd:slice.length)
+ return `${cut.trim()}…`
 }
 
 const noKnowledgeCoverageStub='Posso tratar esta dúvida sem selecionar um produtor e sem consultar memória privada. Informe a cultura, o conceito ou a decisão geral que deseja entender; dados atuais e recomendações técnicas continuam exigindo fonte, contexto e revisão.'
@@ -981,13 +999,21 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  // Uma fonte oficial já aprovada para esta mesma pergunta responde antes de qualquer chamada ao
  // modelo: é mais barata, é citável, e é o único caminho pelo qual assunto regulado pode ser
  // respondido. O texto entregue é o trecho da fonte, não uma paráfrase do modelo sobre ela.
- let approved=null
- try{approved=sourceRequests?await sourceRequests.findApprovedAnswer({tenantId:String(organizationId),question:message,now}):null}catch{approved=null}
+ let approved=null,approvedSourceBlocked=''
+ try{approved=sourceRequests?await sourceRequests.findApprovedAnswer({tenantId:String(organizationId),question:message,now},{signal}):null}catch{approved=null}
  if(approved?.excerpt){
   const citation=approved.citation
-  const summary=`${approved.excerpt}\n\nFonte: ${citation.title} — ${citation.publisher}${citation.year?` (${citation.year})`:''}. ${citation.url}`
-  const tool={status:'EXECUTED',capability:'APPROVED_SOURCE',tool:'approved_source',title:'Fonte oficial aprovada',summary,page:'copilot',manual_page:null,mode:'approved_source',context:{client_id:null,private_memory_used:false,source_request_key:approved.request_key,approved_by:approved.approved_by,...(approved.valid_until?{valid_until:approved.valid_until}:{})}}
-  return finalize(deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['APPROVED_SOURCE'],capability_results:[{capability:'APPROVED_SOURCE',status:'EXECUTED',source_ref:`approved-source:${approved.request_key}`,tool_result:tool}],tool_result:tool,active_context:null}),{approvedSource:approved})
+  // O endereço fica na citação estruturada (knowledge_refs), não no texto: lido em voz alta, um
+  // link é ruído; e o texto entregue precisa caber com a citação inteira.
+  const citationLine=`Fonte: ${citation.title} — ${citation.publisher}${citation.year?` (${citation.year})`:''}.`
+  const summary=`${fitExcerpt(approved.excerpt,1200-citationLine.length-2)}\n\n${citationLine}`
+  const tool={status:'EXECUTED',capability:'APPROVED_SOURCE',tool:'approved_source',title:'Fonte oficial aprovada',summary,page:'copilot',manual_page:null,mode:'approved_source',context:{client_id:null,private_memory_used:false,source_request_key:approved.request_key,source_url:citation.url,approved_by:approved.approved_by,...(approved.valid_until?{valid_until:approved.valid_until}:{})}}
+  const delivered=finalize(deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['APPROVED_SOURCE'],capability_results:[{capability:'APPROVED_SOURCE',status:'EXECUTED',source_ref:`approved-source:${approved.request_key}`,tool_result:tool}],tool_result:tool,active_context:null}),{approvedSource:approved})
+  if(delivered.advice.ai_reasoning.grounding?.blocked!==true)return delivered
+  // Um trecho oficial pode conter "não determinado" ou "não há dados" e o grounding o bloqueia.
+  // Devolver o bloqueio como resposta deixava a aprovação PIOR do que a ausência dela. O caminho
+  // segue como se não houvesse fonte, e a chave fica na resposta para o revisor descobrir.
+  approvedSourceBlocked=approved.request_key
  }
  // Pesquisa com fonte vem antes da memória do modelo: a mesma pergunta, respondida com o endereço de
  // onde veio. Assunto regulado nunca é respondido por aqui — dose e bula só saem de fonte aprovada
@@ -1004,7 +1030,7 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
    const tool={status:'EXECUTED',capability:'WEB_RESEARCH',tool:'web_research',title:'Pesquisa em fontes permitidas',summary,page:'copilot',manual_page:null,mode:'web_research',context:{client_id:null,private_memory_used:false,citation_count:citations.length}}
    const delivered=finalize(deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['WEB_RESEARCH'],capability_results:[{capability:'WEB_RESEARCH',status:'EXECUTED',source_ref:'system:web-research:v1',tool_result:tool}],tool_result:tool,active_context:null}),{researched:{citations}})
    if(delivered.advice.ai_reasoning.grounding?.blocked!==true){
-    delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:researchCostUsd,aiGeneralKnowledgeModelCalls:researchModelCalls,webResearch:{citations:citations.length,searchCalls:Number(researched.searchCalls)||0}}
+    delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:researchCostUsd,aiGeneralKnowledgeModelCalls:researchModelCalls,webResearch:{citations:citations.length,searchCalls:Number(researched.searchCalls)||0},...(approvedSourceBlocked?{approvedSourceBlocked}:{})}
     delivered.responseMetadata.executionBudget={...delivered.responseMetadata.executionBudget,modelCalls:researchModelCalls,estimatedCostUsd:researchCostUsd}
     return delivered
    }
@@ -1025,7 +1051,9 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   // some junto com a resposta e a tela volta a pedir que o consultor reformule a pergunta.
   const accepted=validAnswer(retry.text)
   const rejected=accepted?'':(retry.text||first.text)
-  return {...retry,text:accepted?retry.text:'',regulatedClaim:Boolean(rejected)&&regulatedBrandClaim(rejected),costUsd:first.costUsd+retry.costUsd,modelCalls:first.modelCalls+retry.modelCalls}
+  // Texto descartado com dose ou mistura é tão regulado quanto com marca: a causa do pedido de fonte
+  // precisa nascer regulada, senão a fila aceita qualquer https como fonte.
+  return {...retry,text:accepted?retry.text:'',regulatedClaim:Boolean(rejected)&&containsPrescriptiveContent(rejected),costUsd:first.costUsd+retry.costUsd,modelCalls:first.modelCalls+retry.modelCalls}
  }
  const result=sharedAnswerCache?await sharedAnswerCache.resolve({question:message,model:aiModel,generate,validate:validAnswer}):await generate()
  throwIfCancelled(signal)
@@ -1035,10 +1063,12 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  // Provedor fora do ar e teto de orçamento são temporários: a próxima tentativa responde, e a fila
  // de revisão não pode encher de dúvidas que já têm resposta. Só o que a VAL não sabe responder
  // vira pedido de fonte — o assunto regulado e a falta de cobertura no acervo.
- const registered=!answered&&!providerFailure&&!aiBudgetExhausted
-  ?await registerSourceRequest({sourceRequests,tenantId:organizationId,ownerId,message,domain:contextDomain,reason:regulatedClaim?'REGULATED_SOURCE_REQUIRED':'LIBRARY_NO_COVERAGE',now})
-  :false
+ const registeredRow=!answered&&!providerFailure&&!aiBudgetExhausted
+  ?await registerSourceRequest({sourceRequests,tenantId:organizationId,ownerId,message,domain:contextDomain,reason:regulatedClaim||mentionsRegulatedTopic(message)?'REGULATED_SOURCE_REQUIRED':'LIBRARY_NO_COVERAGE',now,signal})
+  :null
+ const registered=awaitingReview(registeredRow)
  const delivered=answered?buildAiResponse(result.text):finalize(noCoverageExecution(providerFailure,regulatedClaim,registered))
+ if(approvedSourceBlocked)delivered.responseMetadata={...delivered.responseMetadata,approvedSourceBlocked}
  delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:result.costUsd+researchCostUsd,aiGeneralKnowledgeModelCalls:result.modelCalls+researchModelCalls,sharedKnowledgeCache:result.cache||null,...(providerFailure?{aiProviderStatus:result.providerStatus??null,aiProviderRetryAfterSeconds:result.retryAfterSeconds??null}:{})}
  delivered.responseMetadata.executionBudget={...delivered.responseMetadata.executionBudget,modelCalls:result.modelCalls+researchModelCalls,estimatedCostUsd:result.costUsd+researchCostUsd}
  delivered.advice.ai_reasoning.run={...delivered.advice.ai_reasoning.run,model_call_count:result.modelCalls+researchModelCalls,estimated_cost_usd:result.costUsd+researchCostUsd}

@@ -1,4 +1,4 @@
-import React,{useCallback,useEffect,useState} from 'react'
+import React,{useCallback,useEffect,useRef,useState} from 'react'
 import {BookCheck,CircleSlash,ExternalLink,LoaderCircle,RefreshCw,Search,ShieldCheck,Users} from 'lucide-react'
 import {fetchJsonResource,requestJsonResource,useAsyncResource} from '../hooks/useAsyncResource'
 import '../knowledge-source-review.css'
@@ -8,7 +8,10 @@ const REVIEW_ROLES=['admin','technical_reviewer']
 const statusLabels={DRAFT:'Na fila',UNDER_REVIEW:'Em revisão',APPROVED:'Aprovada',REJECTED:'Recusada',SUPERSEDED:'Substituída',EXPIRED:'Vencida'}
 const reasonLabels={REGULATED_SOURCE_REQUIRED:'Exige fonte oficial',LIBRARY_NO_COVERAGE:'Sem cobertura no acervo'}
 const emptySource={title:'',publisher:'',url:'',authority:'A',year:'',excerpt:'',accessed_at:'',valid_until:''}
-const date=value=>{if(!value)return '—';const parsed=new Date(value);return Number.isNaN(parsed.getTime())?'—':parsed.toLocaleDateString('pt-BR')}
+// Só-data ("2026-09-30") lida por new Date vira meia-noite UTC e aparece um dia antes no Brasil.
+// Fica como está escrita; só data-hora completa passa pelo fuso.
+const date=value=>{if(!value)return '—';const raw=String(value);const only=raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);if(only)return `${only[3]}/${only[2]}/${only[1]}`;const parsed=new Date(raw);return Number.isNaN(parsed.getTime())?'—':parsed.toLocaleDateString('pt-BR')}
+const localDate=()=>{const now=new Date();return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`}
 const regulated=request=>request?.reason==='REGULATED_SOURCE_REQUIRED'
 
 export default function KnowledgeSourceReview({currentUser,onNotify}){
@@ -25,14 +28,23 @@ export default function KnowledgeSourceReview({currentUser,onNotify}){
   setResearchAvailable(payload.research_available===true)
   return payload.requests||[]
  },{keepData:true}),[run,filter])
+ const loadRef=useRef(load)
+ useEffect(()=>{loadRef.current=load},[load])
  useEffect(()=>{if(allowed)load()},[allowed,load])
  if(!allowed)return <section className="panel admin-denied"><ShieldCheck/><h2>Área restrita</h2><p>A revisão de fontes é da administração e da revisão técnica: aprovar uma fonte muda o que a VAL responde para a organização inteira.</p></section>
- const act=async(requestKey,payload,message)=>{
+ // Uma ação num pedido não fecha o formulário aberto em outro; e a recarga usa o filtro atual, não o
+ // da renderização em que a ação começou. A pesquisa pode demorar mais que o prazo padrão: em erro,
+ // a fila é recarregada para mostrar o que já foi gravado em vez de induzir outra busca paga.
+ const act=async(requestKey,payload,message,{timeoutMs=15_000,reloadOnError=false}={})=>{
   setSaving(true);setError('')
   try{
-   await requestJsonResource(`${queueApi}/${requestKey}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),timeoutMs:15_000,fallbackMessage:'Não foi possível atualizar o pedido.'})
-   setOpenKey('');setSource(emptySource);await load();onNotify?.(message)
-  }catch(exception){setError(exception.message)}finally{setSaving(false)}
+   const result=await requestJsonResource(`${queueApi}/${requestKey}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),timeoutMs,fallbackMessage:'Não foi possível atualizar o pedido.'})
+   setOpenKey(current=>current===requestKey?'':current)
+   if(openKey===requestKey)setSource(emptySource)
+   await loadRef.current()
+   if(typeof message==='function')onNotify?.(message(result));else onNotify?.(message)
+   return result
+  }catch(exception){setError(exception.message);if(reloadOnError)await loadRef.current().catch(()=>null);return null}finally{setSaving(false)}
  }
  const approve=(event,request)=>{
   event.preventDefault()
@@ -42,12 +54,12 @@ export default function KnowledgeSourceReview({currentUser,onNotify}){
  // A busca é paga e demora: fica visível qual pedido está pesquisando, e o botão não repete.
  const research=async request=>{
   setResearchingKey(request.request_key)
-  try{await act(request.request_key,{action:'research'},request.candidates?.length?'Candidatas atualizadas.':'Pesquisa concluída. Abra a fonte e copie o trecho literal.')}
+  try{await act(request.request_key,{action:'research'},result=>{const found=Number(result?.research_found)||0;return found?`${found} fonte(s) oficial(is) sugerida(s). Abra a fonte e copie o trecho literal.`:request.candidates?.length?'Nenhuma fonte oficial nova; as sugestões anteriores foram mantidas.':'Nenhuma fonte oficial encontrada para esta dúvida.'},{timeoutMs:40_000,reloadOnError:true})}
   finally{setResearchingKey('')}
  }
  const pickCandidate=(request,candidate)=>{
   setOpenKey(request.request_key)
-  setSource({...emptySource,title:candidate.title,url:candidate.url,publisher:candidate.host,authority:'A',accessed_at:new Date().toISOString().slice(0,10)})
+  setSource({...emptySource,title:candidate.title,url:candidate.url,publisher:candidate.host,authority:'A',accessed_at:localDate()})
  }
  const reject=request=>{
   const reason=window.prompt('Por que esta dúvida não vira fonte aprovada?')
@@ -102,7 +114,7 @@ export default function KnowledgeSourceReview({currentUser,onNotify}){
      {['DRAFT','UNDER_REVIEW'].includes(request.status)&&<button type="button" className="source-review-reject" disabled={saving} onClick={()=>reject(request)}>Recusar</button>}
     </footer>
     {openKey===request.request_key&&<form className="source-review-form" onSubmit={event=>approve(event,request)}>
-     {regulated(request)&&<p className="source-review-hint">Assunto regulado: exige autoridade A, endereço oficial em https sob gov.br ou embrapa.br, o trecho citado e a data de consulta.</p>}
+     <p className="source-review-hint">{regulated(request)?'Assunto regulado: exige autoridade A, endereço oficial em https sob gov.br ou embrapa.br, o trecho citado e a data de consulta.':'O trecho citado é obrigatório: é ele que a VAL entrega. Se contiver dose, mistura ou eficácia de marca, a fonte precisa ser oficial (gov.br ou embrapa.br) e a data de consulta é obrigatória.'}</p>
      <label>Título<input required value={source.title} onChange={event=>setSource(current=>({...current,title:event.target.value}))} placeholder="Ex.: Ficha do registro no AGROFIT"/></label>
      <label>Publicador<input required value={source.publisher} onChange={event=>setSource(current=>({...current,publisher:event.target.value}))} placeholder="Ex.: MAPA/AGROFIT"/></label>
      <label>Endereço<input required type="url" value={source.url} onChange={event=>setSource(current=>({...current,url:event.target.value}))} placeholder="https://…"/></label>
@@ -110,7 +122,7 @@ export default function KnowledgeSourceReview({currentUser,onNotify}){
      <label>Ano<input type="number" min="1900" value={source.year} onChange={event=>setSource(current=>({...current,year:event.target.value}))}/></label>
      <label>Consultada em<input required={regulated(request)} type="date" value={source.accessed_at} onChange={event=>setSource(current=>({...current,accessed_at:event.target.value}))}/></label>
      <label>Vigente até<input type="date" value={source.valid_until} onChange={event=>setSource(current=>({...current,valid_until:event.target.value}))}/></label>
-     <label className="source-review-excerpt">Trecho citado<textarea required={regulated(request)} rows={4} maxLength={2000} value={source.excerpt} onChange={event=>setSource(current=>({...current,excerpt:event.target.value}))} placeholder="Cole o trecho literal da fonte que responde a esta dúvida. É ele que a VAL vai entregar."/></label>
+     <label className="source-review-excerpt">Trecho citado<textarea required rows={4} maxLength={2000} value={source.excerpt} onChange={event=>setSource(current=>({...current,excerpt:event.target.value}))} placeholder="Cole o trecho literal da fonte que responde a esta dúvida. É ele que a VAL vai entregar."/></label>
      <button className="primary-btn" disabled={saving}><ShieldCheck/>{saving?'Aprovando…':'Aprovar em meu nome'}</button>
     </form>}
    </li>)}

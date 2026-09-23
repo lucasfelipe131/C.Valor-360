@@ -660,7 +660,10 @@ function evidenceEntries(evidence=[],scope={}){
   // pronome + verbo de estado/posse ("ele tem", "ela esta", "ele e") - medido em 8 de 8.
   const globalProducerSpecific=global&&sourceType!=='general_knowledge'&&/\b(?:este produtor|esse produtor|aquele produtor|o produtor|a produtora|do produtor|da produtora|para o produtor|para a produtora|este cliente|esse cliente|o cliente|do cliente|da cliente)\b/.test(entry.text)
   if(globalProducerSpecific)aliasConflictCodes.push('GLOBAL_PRODUCER_SPECIFIC_CLAIM')
-  if(global&&sourceType!=='general_knowledge'&&(sourceType==='model_general_knowledge'?hasGlobalIndividualAssertion(rawText):genericAssertion.test(entry.text)||pronounObligation.test(entry.text)||hasNamedIndividualAssertion(rawText)))aliasConflictCodes.push('GLOBAL_INDIVIDUAL_ASSERTION')
+  // web_research_cited recebe o mesmo crivo da memória do modelo aqui e nas duas checagens acima:
+  // texto sintetizado por conceito, com pronome anafórico legítimo. O trecho aprovado continua na
+  // régua estrita, porque é literal e a aprovação não conferiu isso.
+  if(global&&sourceType!=='general_knowledge'&&(['model_general_knowledge','web_research_cited'].includes(sourceType)?hasGlobalIndividualAssertion(rawText):genericAssertion.test(entry.text)||pronounObligation.test(entry.text)||hasNamedIndividualAssertion(rawText)))aliasConflictCodes.push('GLOBAL_INDIVIDUAL_ASSERTION')
   if(global&&!semanticallyGeneralGlobalEvidence(entry))aliasConflictCodes.push('GLOBAL_NOT_SEMANTICALLY_GENERAL')
   if(global&&entry.producerId)aliasConflictCodes.push('GLOBAL_WITH_PRODUCER_ID')
   if(global&&!trustedGlobalSourceTypes.has(sourceType))aliasConflictCodes.push('UNTRUSTED_GLOBAL_SOURCE_TYPE')

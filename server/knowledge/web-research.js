@@ -74,7 +74,12 @@ const answerInstructions='Responda em português do Brasil usando somente o que 
 const candidateInstructions='Encontre a fonte oficial (registro no AGROFIT/MAPA, bula registrada, norma ou publicação da Embrapa) que responde à pergunta. '+
  'Responda com uma frase curta dizendo onde a informação está. Não recomende nada: o resultado vai para revisão humana e não é mostrado ao consultor.'
 
-export async function researchQuestion({message='',aiClient=null,model='',domains=DEFAULT_RESEARCH_DOMAINS,callCostUsd=0.03,mode='ANSWER',signal}={}){
+// O chat inteiro tem 28 s. Uma busca de 25 s deixava a resposta de fallback estourar o prazo: o
+// consultor lia 504 e a busca paga era perdida. Dez segundos com search_context_size low cabem, e
+// sobra tempo para a memória do modelo responder se a busca não render.
+const RESEARCH_TIMEOUT_MS=10_000
+
+export async function researchQuestion({message='',aiClient=null,model='',domains=DEFAULT_RESEARCH_DOMAINS,callCostUsd=0.03,mode='ANSWER',timeoutMs=RESEARCH_TIMEOUT_MS,signal}={}){
  const question=text(message).slice(0,2000)
  const empty=(extra={})=>({text:'',citations:[],rejected:[],costUsd:0,modelCalls:0,...extra})
  if(!aiClient||!model||!question)return empty()
@@ -91,7 +96,7 @@ export async function researchQuestion({message='',aiClient=null,model='',domain
    include:['web_search_call.action.sources'],
    max_output_tokens:1600,
    ...(/^gpt-5(?:[.-]|$)/i.test(model)?{reasoning:{effort:'low'}}:{})
-  },{...(signal?{signal}:{}),timeout:25_000,maxRetries:0})
+  },{...(signal?{signal}:{}),timeout:Math.max(1_000,Number(timeoutMs)||RESEARCH_TIMEOUT_MS),maxRetries:0})
  }catch(error){
   if(signal?.aborted)throw signal.reason||error
   return empty({modelCalls:1,unavailableReason:'PROVIDER_ERROR',providerStatus:Number(error?.status)||null})
@@ -104,6 +109,9 @@ export async function researchQuestion({message='',aiClient=null,model='',domain
  if(mode==='CANDIDATES')return {...base,text:''}
  const answer=cleanResearchText(response?.output_text)
  if(!answer||answer.toUpperCase().includes(sentinel)||answer.length>MAX_ANSWER||!citations.length)return {...base,text:'',unavailableReason:citations.length?'NO_SUPPORTED_ANSWER':'NO_CITATION'}
+ // Texto e títulos vêm de páginas da web e seguem para a tela e para o modelo de voz. O mesmo
+ // filtro que protege a fila de revisão vale aqui: instrução escondida numa página não passa.
+ if(containsPromptInjection([answer,...citations.map(citation=>citation.title)]))return {...base,text:'',citations:[],unavailableReason:'INJECTION'}
  return {...base,text:answer}
 }
 

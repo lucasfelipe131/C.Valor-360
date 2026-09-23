@@ -11,10 +11,11 @@ const consultant={id:'u3',email:'consultor@val.test',role:'consultant',tenantId}
 const source={title:'Ficha',publisher:'MAPA/AGROFIT',url:'https://agrofit.agricultura.gov.br/x',authority:'A',excerpt:'trecho',accessed_at:'2026-09-22T12:00:00.000Z'}
 const status=work=>work().then(()=>null,error=>error.statusCode)
 
-function service({found=true}={}){
+function service({found=true,status='UNDER_REVIEW'}={}){
  const calls=[]
  const store={
   list:async input=>{calls.push({op:'list',...input});return []},
+  get:async input=>{calls.push({op:'get',...input});return found?{request_key:input.requestKey,status}:null},
   transition:async input=>{calls.push({op:'transition',...input});return found?{...input,status:input.next}:null}
  }
  return {calls,api:createKnowledgeSourceRequestService({store})}
@@ -50,6 +51,22 @@ test('a aprovação grava quem aprovou e carrega tenant e chave até a loja',asy
  assert.equal(calls.at(-1).actor,'admin@val.test')
  await api.review({identity:admin,requestKey})
  assert.equal(calls.at(-1).next,'UNDER_REVIEW')
+})
+
+// A tela oferecia "Anexar fonte" em DRAFT, REJECTED e EXPIRED, e o servidor recusava a transição
+// direta: o revisor preenchia tudo e lia um erro. Aprovar a partir desses estados passa por
+// UNDER_REVIEW no mesmo gesto, com o mesmo responsável.
+test('aprovar a partir de rascunho, recusado ou vencido passa pela revisão no mesmo gesto',async()=>{
+ for(const status of ['DRAFT','REJECTED','EXPIRED']){
+  const {api,calls}=service({status})
+  await api.approve({identity:reviewer,requestKey,source})
+  const transitions=calls.filter(call=>call.op==='transition').map(call=>call.next)
+  assert.deepEqual(transitions,['UNDER_REVIEW','APPROVED'],status)
+  assert.ok(calls.filter(call=>call.op==='transition').every(call=>call.actor==='agronomo@val.test'))
+ }
+ const direct=service({status:'UNDER_REVIEW'})
+ await direct.api.approve({identity:reviewer,requestKey,source})
+ assert.deepEqual(direct.calls.filter(call=>call.op==='transition').map(call=>call.next),['APPROVED'])
 })
 
 test('chave malformada não chega à loja e pedido inexistente responde 404',async()=>{
@@ -92,6 +109,10 @@ test('pesquisa de candidatas é do revisor, pesquisa a pergunta gravada e guarda
  assert.equal(calls.length,0)
  const updated=await api.researchCandidates({identity:reviewer,requestKey})
  assert.equal(updated.candidates.length,1)
+ // A tela decide a mensagem pelo que a busca trouxe AGORA, não pelo que já estava gravado.
+ assert.equal(updated.research_found,1)
+ const empty=researchService({findCandidates:async()=>({citations:[{url:'https://blog.exemplo.com/x',title:'fora da lista'}]})})
+ assert.equal((await empty.api.researchCandidates({identity:reviewer,requestKey})).research_found,0)
  const find=calls.find(call=>call.op==='find')
  assert.equal(find.question,'qual a carência do produto na soja?')
  assert.equal(find.identity,reviewer)

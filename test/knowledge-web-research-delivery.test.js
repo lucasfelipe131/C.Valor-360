@@ -51,7 +51,7 @@ test('com a pesquisa desligada nada muda: nenhuma busca, resposta de memória co
 test('assunto regulado nunca é pesquisado para responder: recusa e vira pedido de fonte',async()=>{
  const aiClient=provider()
  const registered=[]
- const {answer}=await ask('qual a dose de glifosato por hectare',{aiClient,sourceRequests:{register:async input=>{registered.push(input)},findApprovedAnswer:async()=>null}})
+ const {answer}=await ask('qual a dose de glifosato por hectare',{aiClient,sourceRequests:{register:async input=>{registered.push(input);return {...input,status:'DRAFT'}},findApprovedAnswer:async()=>null}})
  assert.equal(aiClient.calls.includes('web_search'),false)
  assert.equal(answer,`${regulatedClaimStub}${sourceRequestRegisteredNote}`)
  assert.equal(registered[0].reason,'REGULATED_SOURCE_REQUIRED')
@@ -85,4 +85,22 @@ test('pesquisa que prescreve dose é descartada mesmo com citação válida',asy
 test('sem cliente de IA — teto estourado — não há pesquisa',async()=>{
  const {reasoning}=await ask(concept,{aiClient:null})
  assert.notEqual(reasoning.evidence_status,'WEB_RESEARCH_CITED')
+})
+
+// A resposta pesquisada é síntese do modelo, com pronome anafórico legítimo ("Ela ocorre nos
+// cloroplastos"). Recebia a régua estrita do trecho literal e era barrada onde a memória passava.
+test('pronome anafórico numa resposta pesquisada não é lido como afirmação sobre um indivíduo',async()=>{
+ const question='como funciona a fotossíntese nas plantas'
+ const text='A fotossíntese converte luz em energia química nas plantas. Ela ocorre nos cloroplastos das folhas.'
+ const aiClient=provider({searchResult:researchOutput(text,[{url:'https://www.embrapa.br/fotossintese',title:'Fotossíntese'}])})
+ const {reasoning}=await ask(question,{aiClient})
+ assert.equal(reasoning.evidence_status,'WEB_RESEARCH_CITED')
+ assert.equal(reasoning.grounding?.blocked===true,false)
+})
+
+test('carência com número de dias numa resposta pesquisada é descartada mesmo citada',async()=>{
+ const withInterval=provider({searchResult:researchOutput('No plantio direto a palhada reduz a erosão. A carência do dessecante é de 7 dias.')})
+ const {reasoning,answer}=await ask(concept,{aiClient:withInterval})
+ assert.notEqual(reasoning.evidence_status,'WEB_RESEARCH_CITED')
+ assert.doesNotMatch(answer,/7 dias/)
 })

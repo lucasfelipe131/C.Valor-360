@@ -1,4 +1,5 @@
 import {text} from './policy.js'
+import {sourceCandidates} from './source-requests.js'
 
 // technical_reviewer já existe no conjunto de papéis do produto e é exatamente quem responde
 // tecnicamente por uma afirmação de bula. Consultor vê a própria dúvida virar pedido, mas não
@@ -38,9 +39,16 @@ export function createKnowledgeSourceRequestService({store=null,findCandidates=n
    if(!updated)throw accessError('Pedido de fonte não encontrado nesta organização.',404,'knowledge_source_request_not_found')
    return updated
   },
+  // Aprovar a partir de DRAFT, REJECTED ou EXPIRED passa por UNDER_REVIEW no mesmo gesto. A tela
+  // oferecia "Anexar fonte" nesses estados e o servidor recusava a transição direta — o revisor
+  // preenchia tudo e lia um erro sem saída.
   async approve({identity,requestKey='',source=null}={}){
    const actor=assertReviewer(identity);assertAvailable()
-   const updated=await store.transition({tenantId:identity.tenantId,requestKey:assertKey(requestKey),next:'APPROVED',source,actor})
+   const key=assertKey(requestKey)
+   const current=await store.get({tenantId:identity.tenantId,requestKey:key})
+   if(!current)throw accessError('Pedido de fonte não encontrado nesta organização.',404,'knowledge_source_request_not_found')
+   if(['DRAFT','REJECTED','EXPIRED'].includes(current.status))await store.transition({tenantId:identity.tenantId,requestKey:key,next:'UNDER_REVIEW',actor})
+   const updated=await store.transition({tenantId:identity.tenantId,requestKey:key,next:'APPROVED',source,actor})
    if(!updated)throw accessError('Pedido de fonte não encontrado nesta organização.',404,'knowledge_source_request_not_found')
    return updated
   },
@@ -54,9 +62,11 @@ export function createKnowledgeSourceRequestService({store=null,findCandidates=n
    if(!request)throw accessError('Pedido de fonte não encontrado nesta organização.',404,'knowledge_source_request_not_found')
    if(request.status==='APPROVED')throw accessError('Este pedido já tem fonte aprovada.',409,'knowledge_source_request_already_approved')
    const result=await findCandidates({identity,question:request.question,signal})
+   const found=sourceCandidates(result?.citations||[]).length
    const updated=await store.saveCandidates({tenantId:identity.tenantId,requestKey:key,citations:result?.citations||[],actor})
    if(!updated)throw accessError('O pedido mudou de estado durante a pesquisa. Recarregue a fila.',409,'knowledge_source_request_conflict')
-   return updated
+   // A tela decide a mensagem pelo que a busca trouxe agora, não pelo que já havia gravado.
+   return {...updated,research_found:found}
   },
   async reject({identity,requestKey='',reason=''}={}){
    const actor=assertReviewer(identity);assertAvailable()

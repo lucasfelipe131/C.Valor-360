@@ -109,3 +109,39 @@ test('o banco recusa candidatas que não sejam lista',async()=>{
  const {request_key:requestKey}=(await store.list({tenantId,status:'DRAFT'}))[0]
  await assert.rejects(()=>pg.query(`UPDATE val_knowledge_source_requests SET candidates='{"url":"x"}'::jsonb WHERE tenant_id=$1 AND request_key=$2`,[tenantId,requestKey]),/candidates_is_array/)
 })
+
+// A mesma pergunta pode chegar primeiro como "sem cobertura" e depois como regulada (o texto descartado
+// tinha dose). A causa só sobe, nunca desce: senão a fila aceitaria qualquer https para uma bula.
+test('a causa do pedido só é promovida para regulada, nunca rebaixada',async()=>{
+ const question='qual o intervalo de segurança do produto no trigo?'
+ const first=await store.register({tenantId,ownerId,question,domain:'AGRONOMY',reason:'LIBRARY_NO_COVERAGE'})
+ assert.equal(first.reason,'LIBRARY_NO_COVERAGE')
+ const promoted=await store.register({tenantId,ownerId,question,domain:'AGRONOMY',reason:'REGULATED_SOURCE_REQUIRED'})
+ assert.equal(promoted.reason,'REGULATED_SOURCE_REQUIRED')
+ const kept=await store.register({tenantId,ownerId,question,domain:'AGRONOMY',reason:'LIBRARY_NO_COVERAGE'})
+ assert.equal(kept.reason,'REGULATED_SOURCE_REQUIRED')
+ assert.equal(kept.asked_count,3)
+})
+
+// Fonte vencida deixa de responder E volta para a fila: presa em APPROVED, ficava invisível ao revisor
+// enquanto o consultor lia a promessa de revisão.
+test('fonte aprovada vencida deixa de responder e volta para a fila como vencida',async()=>{
+ const question='qual a carência do produto na aveia?'
+ const created=await store.register({tenantId,ownerId,question,domain:'AGRONOMY',reason:'REGULATED_SOURCE_REQUIRED'})
+ await store.transition({tenantId,requestKey:created.request_key,next:'UNDER_REVIEW'})
+ await store.transition({tenantId,requestKey:created.request_key,next:'APPROVED',source:{...officialSource,valid_until:'2020-01-01'},actor:'agronomo@val.test'})
+ assert.equal(await store.findApprovedAnswer({tenantId,question}),null)
+ assert.equal((await store.get({tenantId,requestKey:created.request_key})).status,'EXPIRED')
+ // Vencida pode ser reaberta e reaprovada com fonte nova.
+ assert.equal((await store.transition({tenantId,requestKey:created.request_key,next:'UNDER_REVIEW'})).status,'UNDER_REVIEW')
+})
+
+test('uma busca sem resultado não apaga as candidatas já pagas',async()=>{
+ const question='qual o intervalo de reentrada do produto na soja?'
+ const {request_key:requestKey}=await store.register({tenantId,ownerId,question,domain:'AGRONOMY',reason:'REGULATED_SOURCE_REQUIRED'})
+ const before=await store.get({tenantId,requestKey})
+ assert.equal(before.candidates.length,1)
+ const after=await store.saveCandidates({tenantId,requestKey,citations:[],actor:'outro@val.test'})
+ assert.equal(after.candidates.length,1)
+ assert.equal(after.candidates_researched_by,before.candidates_researched_by)
+})
