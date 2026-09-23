@@ -19,6 +19,20 @@ test('voice stage — estados, controles e falha preservam uma saída utilizáve
    assert.match(markup,/aria-label="Continuar a conversa por texto"/)
    assert.match(markup,/aria-label="Sair do modo conversa"/)
   })
+  // "Continua liberado" só é verdade quando o microfone foi obtido nesta tentativa. O 409 de contexto
+  // acontece antes do getUserMedia e não sabe nada sobre o microfone.
+  await t.test('falha antes do microfone não afirma que ele continua liberado',()=>{
+   const beforeMic=stage({status:'FALLBACK',microphoneActive:false,microphonePermission:'PROMPT',fallbackReason:'realtime_voice_context_epoch_mismatch',error:'A conversa foi atualizada. Sincronize o contexto para retomar a voz.'})
+   assert.match(beforeMic,/Seu microfone está desligado/)
+   assert.match(beforeMic,/Microfone desligado/)
+   assert.doesNotMatch(beforeMic,/continua liberado|Voz desconectada/)
+   const afterMic=stage({status:'FALLBACK',microphoneActive:false,microphonePermission:'GRANTED',fallbackReason:'WEBRTC_SDP_EXCHANGE_FAILED',error:'Seu microfone está liberado, mas não consegui falar com o servidor de voz.'})
+   assert.match(afterMic,/continua liberado/)
+   assert.match(afterMic,/Voz desconectada/)
+   const denied=stage({status:'FALLBACK',microphoneActive:false,microphonePermission:'DENIED',fallbackReason:'NotAllowedError',error:'O microfone não foi liberado.'})
+   assert.match(denied,/Seu microfone está desligado/)
+   assert.doesNotMatch(denied,/Voz desconectada/)
+  })
   await t.test('pausa informa microfone desligado e permite retomar',()=>{
    const markup=stage({status:'PAUSED',microphoneActive:false})
    assert.match(markup,/Conversa pausada/)
