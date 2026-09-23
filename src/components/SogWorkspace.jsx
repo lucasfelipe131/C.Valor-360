@@ -5,6 +5,7 @@ import {
  MapPin,Plus,RefreshCw,Route,ShieldCheck,Target,UserRound,Warehouse,X
 } from 'lucide-react'
 import {requestJsonResource,useAsyncResource} from '../hooks/useAsyncResource'
+import {marketFormPayload} from '../lib/sog-market-form'
 
 const emptyWorkspace={producers:[],profiles:[],intentions:[],marketSnapshots:[],opportunities:[],summary:{},catalog:{commodities:[],volumeUnits:[],priceUnits:[],marketKinds:[]},governance:{}}
 const commodityFallback=[{value:'soja',label:'Soja'},{value:'milho',label:'Milho'},{value:'trigo',label:'Trigo'},{value:'sorgo',label:'Sorgo'},{value:'feijao',label:'Feijão'},{value:'arroz',label:'Arroz'},{value:'cevada',label:'Cevada'}]
@@ -51,7 +52,7 @@ function OpportunityCard({opportunity,onProducer}){
   <div className="sog-opportunity-metrics">
    <div><small>VOLUME</small><b>{numberFormat.format(opportunity.volume)} {volumeUnitLabel[opportunity.volumeUnit]||opportunity.volumeUnit}</b></div>
    <div><small>PREÇO-ALVO</small><b>{opportunity.targetPrice?`${moneyFormat.format(opportunity.targetPrice)} / ${priceUnitLabel[opportunity.priceUnit]?.replace('R$/','')||opportunity.priceUnit}`:'A completar'}</b></div>
-   <div><small>MERCADO</small><b>{market?`${moneyFormat.format(market.price)} / ${priceUnitLabel[market.priceUnit]?.replace('R$/','')||market.priceUnit}`:'Sem referência'}</b></div>
+   <div><small>MERCADO</small><b>{market?`${moneyFormat.format(market.price)} / ${priceUnitLabel[market.priceUnit]?.replace('R$/','')||market.priceUnit}`:'Sem referência'}</b>{market&&<small>{market.sourceName} • {formatDateTime(market.observedAt)} • {freshness(market.observedAt).label}</small>}</div>
    <div><small>ENTREGA</small><b>{opportunity.deliveryStart?formatDate(opportunity.deliveryStart):opportunity.deliveryEnd?`Até ${formatDate(opportunity.deliveryEnd)}`:'A completar'}</b></div>
   </div>
   <div className="sog-opportunity-reading"><div><span><Target/></span><p><small>DIRECIONAMENTO SOG</small><b>{opportunity.nextAction}</b></p></div><ul>{opportunity.reasons.slice(0,3).map(reason=><li key={reason}><CheckCircle2/>{reason}</li>)}{opportunity.reasons.length>3&&<li className="sog-more"><CheckCircle2/>{`+${opportunity.reasons.length-3} ${opportunity.reasons.length-3===1?'outro motivo registrado':'outros motivos registrados'}`}</li>}</ul>{/* Todo aviso aparece: antes só o primeiro era renderizado e "cotação vencida" ou "reconfirme com o produtor" sumiam sem nada indicar que existiam. */}
@@ -119,7 +120,7 @@ function MarketForm({catalog,onSaved,onClose}){
  const [form,setForm]=useState({commodity:'soja',marketKind:'spot',region:'',price:'',priceUnit:'BRL/sc_60kg',deliveryStart:'',deliveryEnd:'',sourceName:'',sourceType:'manual_quote',sourceUrl:'',confidence:'',notes:'',observedAt:localDateTime()})
  const [saving,setSaving]=useState(false);const [error,setError]=useState('');const commodities=catalog.commodities?.length?catalog.commodities:commodityFallback
  const change=event=>setForm(current=>({...current,[event.target.name]:event.target.value}))
- const submit=async event=>{event.preventDefault();setSaving(true);setError('');try{await api('/api/grains/market',{method:'POST',body:JSON.stringify(form)});await onSaved('Referência de mercado salva com fonte, horário e confiança.');onClose()}catch(exception){setError(exception.message)}finally{setSaving(false)}}
+ const submit=async event=>{event.preventDefault();setSaving(true);setError('');try{await api('/api/grains/market',{method:'POST',body:JSON.stringify(marketFormPayload(form))});await onSaved('Referência de mercado salva com fonte, horário e confiança.');onClose()}catch(exception){setError(exception.message)}finally{setSaving(false)}}
  return <form className="sog-form" onSubmit={submit}>
   <div className="sog-form-grid">
    <Field label="Grão" required><select name="commodity" value={form.commodity} onChange={change}>{commodities.map(item=><option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>
