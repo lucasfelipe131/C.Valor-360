@@ -101,8 +101,14 @@ Guardrails reduzem a prioridade quando a intenção não foi confirmada, tem con
 - `POST /api/grains/intents`
 - `PATCH /api/grains/intents/:id`
 - `POST /api/grains/market`
+- `GET /api/grains/market-brief`: briefing datado da praça e última cotação registrada por grão
+- `POST /api/grains/analysis`: análise personalizada do pedido do produtor (`sog-analysis-v1`)
 
 Todas são protegidas pela sessão e registram eventos de uso. A API não oferece endpoint de execução automática de negócio.
+
+## Análise personalizada `sog-analysis-v1`
+
+A guia **Análise** recebe o pedido do produtor (grão, volume, preço-alvo, custo, objetivo, janela, caixa, armazenagem) e devolve leitura de mercado, base contra porto, três alvos de fechamento escalonados por objetivo, cenários, dicas e lacunas. A comparação de preço usa somente cotações registradas com fonte e horário; o perfil da praça em `server/data/sog-praca-sao-luiz-gonzaga.json` fornece calendário, base histórica e dicas regionais. Detalhes em `docs/SOG_ESBOCO_SISTEMA.md` e `docs/SOG_ANALISE_MERCADO_SLG.md`.
 
 ## Próxima evolução segura
 

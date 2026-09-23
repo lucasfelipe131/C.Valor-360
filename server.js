@@ -10,6 +10,7 @@ import {AccessRepository} from './server/access-repository.js'
 import {deriveSignals,normalizeIntegrationEvent,requiresTechnicalSignature,verifyIntegrationToken,verifyWebhookSignature} from './server/ingestion.js'
 import {normalizeGrainIntent,normalizeGrainMarketSnapshot,normalizeGrainProfile,intentStatuses} from './server/grain-intelligence.js'
 import {GrainRepository} from './server/grain-repository.js'
+import {analyzeProducerRequest,buildMarketBrief,loadPracaProfile,normalizeGrainAnalysisRequest} from './server/grain-analysis.js'
 import {ValRepository} from './server/repository.js'
 import {publicStorageScope} from './server/storage-policy.js'
 import {ValEngine} from './server/val-engine.js'
@@ -62,6 +63,7 @@ const auth=createAuth(config)
 const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,storageScope:auth.storageScope(session)}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,storageScope:'demo'}
 const repository=new ValRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
+const pracaProfile=loadPracaProfile()
 const accessRepository=new AccessRepository({db:database,tenantId:config.defaultTenantId,runtimeConfig:config})
 const valEngine=new ValEngine({runtimeConfig:config,repository})
 const valProgress=createValProgressTracker()
@@ -150,6 +152,19 @@ async function handleApi(request,response,url){
  if(url.pathname==='/api/grains/bootstrap'&&request.method==='GET'){
   const workspace=await grainRepository.getWorkspace(identity?.id)
   return json(response,200,workspace)
+ }
+ if(url.pathname==='/api/grains/market-brief'&&request.method==='GET'){
+  const workspace=await grainRepository.getWorkspace(identity?.id)
+  return json(response,200,buildMarketBrief({praca:pracaProfile,marketSnapshots:workspace.marketSnapshots}))
+ }
+ if(url.pathname==='/api/grains/analysis'&&request.method==='POST'){
+  const analysisRequest=normalizeGrainAnalysisRequest(await body(request))
+  const workspace=await grainRepository.getWorkspace(identity?.id)
+  const producer=workspace.producers.find(item=>String(item.id)===analysisRequest.clientId)||null
+  const profile=workspace.profiles.find(item=>String(item.clientId)===analysisRequest.clientId)||null
+  const analysis=analyzeProducerRequest({request:analysisRequest,producer,profile,intentions:workspace.intentions,marketSnapshots:workspace.marketSnapshots,praca:pracaProfile})
+  await accessRepository.recordUsage(identity,{eventType:'sog_analysis_requested',page:'val',entityType:'client',entityId:analysisRequest.clientId,metadata:{commodity:analysisRequest.commodity,objective:analysisRequest.objective,hasReference:Boolean(analysis.marketReading.reference)}})
+  return json(response,200,{analysis})
  }
  if(url.pathname==='/api/grains/profiles'&&request.method==='PUT'){
   const profile=normalizeGrainProfile(await body(request));const saved=await grainRepository.saveProfile(profile,identity?.id)

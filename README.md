@@ -22,6 +22,7 @@ Ela não se “retreina sozinha”. O modelo raciocina; o PostgreSQL memoriza; e
 - importação comercial validada novamente no servidor;
 - autenticação mínima fail-closed para o piloto;
 - VAL Grãos com SOG operacional: perfil de grãos, intenções com evidência, referências de mercado rastreáveis e priorização determinística;
+- análise personalizada de grãos por pedido do produtor (`sog-analysis-v1`): leitura de mercado, base contra porto, três alvos de fechamento escalonados por objetivo, cenários e dicas explicáveis, com perfil versionado da praça de São Luiz Gonzaga/RS;
 - revisão humana obrigatória para diagnóstico, prescrição, dose, mistura e conteúdo agronômico sensível;
 - dataset dourado e testes locais independentes da Evals API.
 
@@ -65,11 +66,15 @@ Antes de qualquer publicação, siga o checklist em [`docs/DEPLOY_CHECKLIST.md`]
 - `server/repository.js`: persistência PostgreSQL e modo demo.
 - `server/grain-intelligence.js`: validação e regras explicáveis da SOG.
 - `server/grain-repository.js`: persistência isolada do domínio de grãos.
+- `server/grain-analysis.js`: análise personalizada por pedido do produtor, briefing e alvos de fechamento.
+- `server/data/sog-praca-sao-luiz-gonzaga.json`: perfil da praça (calendário, compradores, logística, qualidade, briefing datado).
 - `database/schema.sql`: banco canônico e migração do MVP anterior.
 - `knowledge/approved/`: materiais aprovados para a base semântica.
 - `evals/`: casos dourados independentes de fornecedor.
 - `docs/VAL_ENGINE.md`: arquitetura, contratos e limites.
 - `docs/SOG_DATA_ECOSYSTEM.md`: fontes, fluxo, score, APIs e governança da VAL Grãos.
+- `docs/SOG_ESBOCO_SISTEMA.md`: esboço do sistema de oportunidades de grãos e hospedagem GitHub + Railway.
+- `docs/SOG_ANALISE_MERCADO_SLG.md`: análise de mercado da praça de São Luiz Gonzaga e target de dicas de fechamento.
 - `docs/DEPLOY_CHECKLIST.md`: validações obrigatórias antes e depois de cada publicação.
 
 ## Limites atuais

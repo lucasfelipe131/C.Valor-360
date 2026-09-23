@@ -209,4 +209,5 @@ export function summarizeGrainWorkspace({producers=[],profiles=[],intentions=[],
  }
 }
 
-export {commodityLabels,intentStatuses}
+export const selectMarketReference=(intent,quotes,now=new Date())=>matchingQuote(intent,quotes,now instanceof Date?now:new Date(now))
+export {commodityLabels,intentStatuses,freshnessFor,pricePerTonne}
