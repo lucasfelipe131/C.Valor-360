@@ -1,3 +1,4 @@
+import {observe} from '../observability.js'
 // This path has no producer records or external sources. Its answer is always
 // labelled as model knowledge; it must never supply a prescription or live fact.
 import {loadKnowledgeLibrary} from './library.js'
@@ -196,6 +197,7 @@ export async function generateGeneralModelAnswer({message='',aiClient=null,model
   (reformulate?'\nProduza uma resposta completa e breve; a primeira tentativa ficou incompleta ou não respondeu ao assunto. Não repita o texto rejeitado.':'')
  let response
  try{
+  observe('knowledge.general.provider_call',{model,attempt:reformulate?2:1,sampleCount:1})
   response=await aiClient.responses.create({model,instructions,input:[{role:'user',content:clean(message).slice(0,2000)}],max_output_tokens:reformulate?3200:1600,...(/^gpt-5(?:[.-]|$)/i.test(model)?{reasoning:{effort:'low'}}:{}),text:{format:{type:'text'}}},{...(signal?{signal}:{}),timeout:15_000,maxRetries:0})
  }catch(error){
   if(signal?.aborted)throw signal.reason||error
@@ -206,6 +208,7 @@ export async function generateGeneralModelAnswer({message='',aiClient=null,model
   return empty({modelCalls:1,unavailableReason:'PROVIDER_ERROR',providerStatus:Number(error?.status)||null,retryAfterSeconds:Number.isFinite(retryAfterHeader)&&retryAfterHeader>0?Math.min(600,Math.round(retryAfterHeader)):null})
  }
  const costUsd=estimateCost(response?.usage)
+ observe('knowledge.general.provider_usage',{model,attempt:reformulate?2:1,costUsd,inputTokens:response?.usage?.input_tokens??null,outputTokens:response?.usage?.output_tokens??null,outcome:response?.status||'unknown'})
  // An incomplete Responses result can contain grammatical but truncated text.
  // Discard it before grounding/cache and allow the caller one bounded retry.
  const incomplete=response?.status==='incomplete'||response?.incomplete_details!=null||response?.output?.some(item=>item?.status==='incomplete')

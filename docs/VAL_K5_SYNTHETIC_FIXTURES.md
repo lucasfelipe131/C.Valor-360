@@ -21,3 +21,5 @@ O seed exercita o repository/resolver com os dois owners consultores: leitura pr
 ## Reteste
 
 Somente após todas as precondições PASS: exatamente AG-001 a AG-030 novamente, nova medição, até 60 chamadas internas, sem as outras 270 e sem repetição automática. Avaliação de IA não será registrada como média humana. Autorização de custo já fornecida pelo usuário.
+
+A rota geral registra `knowledge.general.provider_call` antes de cada chamada (SDK com retries=0) e `knowledge.general.provider_usage` com tokens quando disponíveis e a estimativa interna já existente. O valor é estimativa da engine, não fatura/preço atualizado. Nenhum prompt, resposta ou segredo entra nesses eventos. A rota possui no máximo duas tentativas por submissão; a reserva de duas chamadas por caso limita as 30 submissões a 60, inclusive quando uma chamada falha sem informar uso.
