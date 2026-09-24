@@ -50,7 +50,7 @@ const narrativeShape=/^(?:me\s+)?(?:fala|fale|falar|conta|conte|contar|comenta|c
 // A proxima acao e campo de primeira classe do quadro de oportunidades, mas so era alcancavel se o
 // consultor citasse o nome do modulo ("oportunidade", "pipeline", "negocio", "proposta"). No campo
 // a pergunta e outra: "qual o proximo passo?", "o que eu faco agora?", "como eu avanco?".
-const nextActionShape=/\b(?:pr[oó]xim[ao]\s+(?:a[cç][aã]o|passo)|pr[oó]ximos?\s+passos?|o que (?:eu )?fa[cç]o agora|o que fazer agora|como (?:eu )?(?:sigo|avan[cç]o|fecho))\b/i
+const nextActionShape=/\b(?:pr[oó]xim[ao]\s+(?:a[cç][aã]o|passo)|pr[oó]ximos?\s+passos?|o que (?:eu )?fa[cç]o agora|o que fazer agora|como (?:eu )?(?:sigo|avan[cç]o|fecho)|como (?:n[oó]s )?(?:seguimos|continuamos|avan[cç]amos))\b/i
 const currentMoment=/\b(?:hoje|amanha|agora|atual(?:mente)?|previsao|proxim[oa]s? (?:dias|semana|horas)|esta semana|nesta semana|fim de semana|ontem|semana que vem|nos proximos)\b/
 // Open questions outside agronomy must not become producer-fact queries just
 // because the side panel has a producer selected. Ambiguous account fields and

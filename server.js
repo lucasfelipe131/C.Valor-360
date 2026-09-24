@@ -715,7 +715,7 @@ async function handleApi(request,response,url){
   // sem produtor autorizado e nao abria tela nenhuma, enquanto a mesma frase numa conversa em
   // andamento abria. Mesma familia do ajuste feito adiante para o actionClient.
   const requestRouteClient=clientId?{id:clientId,name:clean(payload.client?.name)||null}:null
-  const workspaceRoute=routeGlobalIntent({message,client:conversationResolution?.client||storedRouteClient||requestRouteClient,workspaceContext:payload.workspaceContext})
+  const workspaceRoute=routeGlobalIntent({message,client:conversationResolution?.client||storedRouteClient||requestRouteClient,workspaceContext:payload.workspaceContext,role:identity?.role||'consultant'})
   const intentResolutionMs=performance.now()-intentResolutionStartedAt
   if(routedIntent.persistence_mode!=='NONE'){
    if(clientId)invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId})
@@ -808,15 +808,16 @@ async function handleApi(request,response,url){
    const withResolution=conversationResolution?.status==='RESOLVED'?{...completed,conversationResolution}:completed
    return workspaceRoute.workspace_action?{...withResolution,workspaceAction:workspaceRoute.workspace_action,globalIntent:workspaceRoute}:withResolution
   }
-  if(workspaceRoute.direct&&workspaceRoute.workspace_action){
+  if(workspaceRoute.direct&&(workspaceRoute.workspace_action||workspaceRoute.workspace_guide)){
    if(preferences.inputModality!=='voice')valRequestServiceClass='FAST'
    // O produtor da acao e o mesmo que ficara na sessao: o resolvido pela frase, ou o que o
    // browser enviou nesta requisicao (sessionState ja o incorporou), nao apenas o ja armazenado.
    // Sem isto, "abre a agenda" com produtor selecionado numa conversa nova declarava produtor
    // nulo na resposta e o contrato de escopo bloqueava a navegacao com 500.
    const actionClient=conversationResolution?.client||(sessionState.current_client?.id?{id:sessionState.current_client.id,name:sessionState.current_client.label||sessionState.current_client.name||null}:null)
-   const workspaceToolResult={status:'EXECUTED',capability:'WORKSPACE_NAVIGATION',tool:'workspace_action',title:workspaceRoute.workspace_action.label,summary:workspaceRoute.summary,page:workspaceRoute.workspace_action.page,context:{client_id:actionClient?.id||null},source_ref:`workspace:${workspaceRoute.workspace_action.page}`}
-   const execution={path:'FAST',capabilities_planned:['WORKSPACE_NAVIGATION'],capabilities_used:['WORKSPACE_NAVIGATION'],capability_results:[{capability:'WORKSPACE_NAVIGATION',status:'EXECUTED',source_ref:`workspace:${workspaceRoute.workspace_action.page}`,tool_result:workspaceToolResult}],tool_result:workspaceToolResult,active_context:null}
+   const workspaceTarget=workspaceRoute.workspace_action||workspaceRoute.workspace_guide
+   const workspaceToolResult={status:'EXECUTED',capability:'WORKSPACE_NAVIGATION',tool:workspaceRoute.workspace_action?'workspace_action':'workspace_guide',title:workspaceTarget.label,summary:workspaceRoute.summary,page:workspaceTarget.page,context:{client_id:actionClient?.id||null},source_ref:`workspace:${workspaceTarget.page}`}
+   const execution={path:'FAST',capabilities_planned:['WORKSPACE_NAVIGATION'],capabilities_used:['WORKSPACE_NAVIGATION'],capability_results:[{capability:'WORKSPACE_NAVIGATION',status:'EXECUTED',source_ref:`workspace:${workspaceTarget.page}`,tool_result:workspaceToolResult}],tool_result:workspaceToolResult,active_context:null}
    const actionRoute={path:'FAST',intent:workspaceRoute.intent,capabilities:['WORKSPACE_NAVIGATION']}
    const actionTrace=createLatencyTrace({path:'FAST',intent:workspaceRoute.intent,startAt:requestStartedAt});actionTrace.set('AUTH',authLatencyMs);actionTrace.set('ENTITY',entityResolutionMs);actionTrace.set('INTENT',intentResolutionMs);actionTrace.firstUseful()
    const direct=attachLatencyPerformance(buildCapabilityExecutionResponse({execution,route:actionRoute,message,organizationId:tenantId,ownerId:scopedOwnerId,clientId:actionClient?.id||'',clientName:actionClient?.name||'',conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,workspaceRoute.intent),executionCounts:{entityResolutions:entityLookupCount,dataLookups:0,toolCalls:1,hops:entityLookupCount+1}}),{latency:actionTrace.finish({record:false}),path:'FAST',intent:workspaceRoute.intent,toolExecution:execution})
@@ -1353,7 +1354,7 @@ createServer((request,response)=>{
   try{const technicalIdentity=await sessionIdentity(request);if(!managementOnlyAllowed(technicalIdentity,url.pathname,request.method))return json(response,403,{error:'Este acesso permite somente consulta gerencial.'});if(technicalWorkspace.handle(request,response,url,technicalIdentity,{demoAllowed:!auth.configured&&config.demoMode}))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
  }
  if(url.pathname==='/live'||url.pathname==='/ready'||url.pathname==='/health'||url.pathname.startsWith('/api/')){
-  try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){const programmingError=exception instanceof TypeError||exception instanceof RangeError||exception instanceof ReferenceError||exception instanceof SyntaxError;const status=Number(exception.statusCode)||(programmingError?500:400);const safeMessage=status<500||exception.safeToRetry===true||exception.exposeMessage===true?exception.message:'Não foi possível processar a solicitação.';const retryAfterSeconds=Math.max(0,Math.min(600,Math.ceil(Number(exception.retryAfterSeconds)||0)));if(retryAfterSeconds)response.setHeader('Retry-After',String(retryAfterSeconds));return json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception.code?{code:String(exception.code).slice(0,100)}:{}),...(exception.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{}),...(retryAfterSeconds?{retryAfterSeconds}:{})})}
+  try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){const programmingError=exception instanceof TypeError||exception instanceof RangeError||exception instanceof ReferenceError||exception instanceof SyntaxError;const status=Number(exception.statusCode)||(programmingError?500:400);const safeMessage=status<500||exception.safeToRetry===true||exception.exposeMessage===true?exception.message:'Não foi possível processar a solicitação.';const retryAfterSeconds=Math.max(0,Math.min(600,Math.ceil(Number(exception.retryAfterSeconds)||0)));if(retryAfterSeconds)response.setHeader('Retry-After',String(retryAfterSeconds));return json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception.code?{code:String(exception.code).slice(0,100)}:{}),...(exception.code==='realtime_voice_context_epoch_mismatch'&&exception.currentContext?{currentContext:exception.currentContext}:{}),...(exception.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{}),...(retryAfterSeconds?{retryAfterSeconds}:{})})}
   return json(response,404,{error:'Rota não encontrada.'})
  }
  const relative=normalize(url.pathname==='/'?'index.html':url.pathname.replace(/^\/+/,''))

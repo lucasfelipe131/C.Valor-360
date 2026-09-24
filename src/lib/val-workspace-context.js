@@ -1,6 +1,6 @@
 export const VAL_WORKSPACE_CONTEXT_VERSION='val.workspace_context.v1'
 
-export const VAL_WORKSPACE_MODULES=Object.freeze(['dashboard','clients','datahub','client360','visits','opportunities','val','agro','questionnaire','reports','settings','admin','copilot'])
+export const VAL_WORKSPACE_MODULES=Object.freeze(['dashboard','clients','datahub','client360','visits','opportunities','val','agro','questionnaire','reports','management','settings','admin','copilot'])
 const modules=new Set(VAL_WORKSPACE_MODULES)
 const clean=(value,max=180)=>String(value??'').replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,max)
 const ref=(value,type)=>{
@@ -10,7 +10,7 @@ const ref=(value,type)=>{
  return id||label?Object.freeze({type,id:id||null,label:label||null}):null
 }
 
-export function createValWorkspaceContext({module='dashboard',client=null,property=null,field=null,visit=null,opportunity=null,attachment=null,analysis=null,conversation=null}={}){
+export function createValWorkspaceContext({module='dashboard',tool='',tab='',client=null,property=null,field=null,visit=null,opportunity=null,attachment=null,analysis=null,conversation=null}={}){
  const currentModule=modules.has(String(module))?String(module):'dashboard'
  const currentClient=ref(client,'client')
  const currentProperty=currentClient?ref(property,'property'):null
@@ -18,6 +18,8 @@ export function createValWorkspaceContext({module='dashboard',client=null,proper
  return Object.freeze({
   contract_version:VAL_WORKSPACE_CONTEXT_VERSION,
   current_module:currentModule,
+  current_tool:clean(tool,80),
+  current_tab:clean(tab,80),
   current_client:currentClient,
   current_property:currentProperty,
   current_field:currentField,
@@ -46,6 +48,8 @@ export function scopeWorkspaceToConversation(workspace,{client=null,conversation
  const sameClient=Boolean(client?.id&&String(workspace.current_client?.id||'')===String(client.id))
  return createValWorkspaceContext({
   module:workspace.current_module,
+  tool:workspace.current_tool,
+  tab:workspace.current_tab,
   client,
   property:sameClient?workspace.current_property:null,
   field:sameClient?workspace.current_field:null,

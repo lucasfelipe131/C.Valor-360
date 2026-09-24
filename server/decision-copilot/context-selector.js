@@ -50,7 +50,7 @@ export function classifyValContextDomain(message='',intent=''){
  // estreita: preço, custo, venda ou negociação mantêm MULTI_DOMAIN.
  const technicalSeedMargin=/\bmargem tecnica\b/.test(source)&&/\b(?:semente\w*|semeadur\w*)\b/.test(source)
  const explicitCommercial=/\b(?:comercial|venda\w*|preco\w*|custo\w*|compra\w*|negociacao\w*|objec(?:ao|oes)\w*|valor(?:es)?)\b/.test(source)
- const explicitGrainBusiness=/\b(?:graos?|commodity|commodities|contrato|trava\w*|fixa\w*|saca\w*|basis|saldo|entrega\w*)\b/.test(source)
+ const explicitGrainBusiness=/\b(?:graos?|commodity|commodities|cpr|contrato|trava\w*|fixa\w*|saca\w*|basis|saldo|entrega\w*)\b/.test(source)
  if(unique.length===2&&unique.includes('AGRONOMY')&&unique.includes('GRAINS')&&!explicitCommercial&&!explicitGrainBusiness)return 'AGRONOMY'
  if(technicalSeedMargin&&!explicitCommercial&&unique.includes('AGRONOMY')&&unique.includes('COMMERCIAL'))return 'AGRONOMY'
  const dominantPairs=Object.freeze({GRAINS:'COMMERCIAL',CREDIT:'COMMERCIAL',GEO:'AGRONOMY',OPPORTUNITY:'COMMERCIAL'})
