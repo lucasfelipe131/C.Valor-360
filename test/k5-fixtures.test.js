@@ -3,6 +3,7 @@ import assert from 'node:assert/strict'
 import {readFile,readdir} from 'node:fs/promises'
 import {PGlite} from '@electric-sql/pglite'
 import {prepareK5StagingFixtures,K5_STAGING,K5_ACCOUNTS,K5_SOURCE,isK5Staging} from '../server/k5-staging-fixtures.js'
+import {ValRepository} from '../server/repository.js'
 import {AccessRepository} from '../server/access-repository.js'
 import {relationshipSummary} from '../src/lib/commercial-metrics.js'
 import {realBusinessClients,realBusinessRecords} from '../src/lib/business-metrics-scope.js'
@@ -42,6 +43,10 @@ test('canonical seed is idempotent, owns separate portfolios and does not change
   assert.equal(new Set(result.fixtures.map(f=>f.owner)).size,2)
   assert.equal(result.fixtures.filter(f=>f.owner===id(1)).length,2)
   assert.equal(result.fixtures.filter(f=>f.owner===id(2)).length,1)
+  const portfolio=await new ValRepository({db,tenantId}).getIntelligence(id(1))
+  assert.equal(portfolio.clients.filter(c=>c.source===K5_SOURCE).length,2)
+  assert.equal(relationshipSummary(portfolio.clients).total,1)
+  assert.equal(realBusinessRecords(portfolio.visits,portfolio.clients).length,0)
   const repeat=await prepareK5StagingFixtures(args)
   assert.ok(repeat.fixtures.every(f=>!f.created))
   assert.equal(Number((await pg.query("SELECT COUNT(*) FROM audit_events WHERE action='k5_fixture_seeded'")).rows[0].count),3)
