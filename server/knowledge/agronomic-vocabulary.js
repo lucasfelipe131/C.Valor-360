@@ -144,6 +144,7 @@ seguinte seguintes anteriores atuais gerais especificos especificas comuns raros
 // de "para". A rodada 13 tentou separar pela POSICAO e custou 100 perguntas que a VAL respondia.
 export const verbInfinitive=new Set(`
 agir manejar combater enfrentar controlar atacar mitigar tratar prevenir evitar eliminar erradicar
+bastar garantir concluir atribuir
 proteger aplicar pulverizar dessecar semear plantar colher adubar calcariar gessar irrigar
 monitorar amostrar identificar reconhecer diagnosticar avaliar medir calcular estimar prever
 planejar programar escalonar priorizar decidir escolher selecionar comparar classificar

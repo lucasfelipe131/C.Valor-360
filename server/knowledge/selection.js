@@ -254,12 +254,34 @@ const genericTopicTerms=new Set(['aplicacao','aplicacoes','cultura','cultivo','o
 
 // Lexical overlap with "milho" or "aplicação" is insufficient if the answer
 // drops the actual pest/concept. This checks relevance, not factual truth.
-export function generalAnswerTopicMatches(question,answer){
+export function generalAnswerTopicMatches(question,answer,{curated=false}={}){
  const frequency=corpusVocabulary(loadKnowledgeLibrary())
  const requested=baseTokens(stripMessagePreamble(question)||question)
- const anchors=[...requested].filter(token=>token.length>=5&&!conceptTerms.has(token)&&!genericTopicTerms.has(token)&&(frequency.get(token)||0)<=discriminatingFrequency)
+ const anchors=[...requested].filter(token=>token.length>=5&&!exemptWordForm(token)&&!conceptTerms.has(token)&&!genericTopicTerms.has(token)&&(curated||(frequency.get(token)||0)<=discriminatingFrequency))
  const answerWords=[...baseTokens(answer)]
  return anchors.every(anchor=>answerWords.some(word=>word===anchor||word.length>=5&&word.slice(0,5)===anchor.slice(0,5)))&&!conceptConflict(exclusiveConcepts(question),exclusiveConcepts(answer))
+}
+
+// Retrieval relevance does not imply that a statement answers the whole question.
+// Exact catalog requests retain their curated delivery; longer questions must
+// also cover the requested subject and cannot silently assume a crop.
+export function curatedAnswerCoversQuestion(question,item){
+ const requested=baseTokens(stripMessagePreamble(question)||question)
+ const exactSubject=[item.title,...(item.triggers||[])].some(value=>{
+  const words=baseTokens(`${value} ${item.statement}`)
+  return requested.size>0&&[...requested].every(word=>words.has(word))
+ })
+ if(exactSubject)return true
+ // A general principle is not a yes/no answer to a universal claim.
+ // Let the general-answer path address that qualification explicitly.
+ if(/\b(?:sempre|nunca)\b/.test(normalizeSearchText(question))&&!/\b(?:sempre|nunca|necessariamente)\b/.test(normalizeSearchText(item.statement)))return false
+ const cropGroups=new Set(['CORN','SOYBEAN','WHEAT','BEANS','RICE','CANOLA','SORGHUM'])
+ const questionCrops=[...exclusiveConcepts(question)].filter(group=>cropGroups.has(group))
+ const answerCrops=[...exclusiveConcepts(item.statement)].filter(group=>cropGroups.has(group))
+ if(!questionCrops.length&&answerCrops.length)return false
+ // Curator-authored title/triggers carry terminology aliases (e.g. local
+ // quotation versus spot price); they cannot supply a missing subject.
+ return generalAnswerTopicMatches(question,[item.statement,item.title,...(item.triggers||[])].join(' '),{curated:true})
 }
 
 function scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens=new Set(),normalizedQuery='',corpusFrequency,queryConcepts,requestedModules,requestedGeography,sourceById,now,askingVerbs=new Set(),strictSubject=false}){
