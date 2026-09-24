@@ -296,3 +296,36 @@ test('voice continuity includes only server-scoped dialogue and excludes foreign
  assert.equal(context.evidencePolicy.factsIncluded,false)
  assert.equal(context.conversation.persistent_memory_unchanged,true)
 })
+
+// Uma sessão que morre antes do primeiro turno chegava ao log como custo zero e nada mais. O
+// browser já enviava o motivo do encerramento e o servidor descartava o campo, então a única
+// evidência de uma falha de transporte era a ausência de turnos.
+test('encerramento informa ao log por que o browser fechou a sessão realtime',async()=>{
+ const events=[]
+ const provider={realtime:{clientSecrets:{create:async()=>({value:'ek_test_only',expires_at:123456,session:{id:'sess_test'}})}}}
+ const service=createRealtimeVoiceService({
+  runtimeConfig,
+  client:provider,
+  repository:{getClientContext:async()=>contextFor({})},
+  conversationSessions:{ensure:scope=>stateFor({conversationId:scope.conversationId})},
+  costStore:createInMemoryRealtimeCostStore(),
+  logger:event=>events.push(event)
+ })
+ const session=await service.createSession({identity,input:{clientId,conversationId:'thread-a',contextEpoch:0}})
+ const usage=await service.recordUsage({identity,sessionId:session.sessionId,input:{final:true,disconnectReason:'WEBRTC_SDP_EXCHANGE_FAILED',transportDetail:'TypeError: Failed to fetch',providerStatus:401,usage:{}}})
+ assert.equal(usage.accepted,true)
+ assert.equal(usage.estimatedCostUsd,0)
+ const recorded=events.find(event=>event.event==='val.realtime_voice.usage_recorded')
+ assert.equal(recorded.disconnectReason,'WEBRTC_SDP_EXCHANGE_FAILED')
+ assert.equal(recorded.transportDetail,'TypeError: Failed to fetch')
+ assert.equal(recorded.providerStatus,401)
+ assert.equal(recorded.final,true)
+ // Encerramento normal não inventa motivo nenhum, e nada do que foi falado entra no log.
+ const clean=await service.recordUsage({identity,sessionId:session.sessionId,input:{final:true,responseId:'resp-a',usage:{}}})
+ assert.equal(clean.accepted,true)
+ const last=events.filter(event=>event.event==='val.realtime_voice.usage_recorded').at(-1)
+ assert.equal(last.disconnectReason,undefined)
+ assert.equal(last.transportDetail,undefined)
+ assert.equal(last.providerStatus,undefined)
+ assert.doesNotMatch(JSON.stringify(events),/POISON/)
+})

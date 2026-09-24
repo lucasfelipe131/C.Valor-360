@@ -174,7 +174,28 @@ export function namedProductMentions(answer=''){
 }
 export const regulatedBrandClaim=answer=>efficacyAssertion.test(String(answer??''))&&namedProductMentions(answer).length>0
 
-export const safeGeneralModelAnswer=answer=>!regulatedBrandClaim(answer)&&!/(?:\b(?:aplique|misture|pulverize|prescrevo|recomendo|garanto)\b|ordem\s+de\s+(?:adi[cç][aã]o|mistura|enchimento)|primeiro\s+os?\s+p[oó]s|adicione\s+(?:primeiro|por\s+[uú]ltimo|em\s+seguida)|agitador|com\s+o\s+tanque\s+(?:pela\s+)?metade|\d[\d.,]*\s*(?:kg|g|ml|l)\s*(?:\/|por)\s*ha\b|(?:segundo|de acordo com)\s+(?:a\s+)?(?:embrapa|fonte|pesquisa))/i.test(answer)
+// Conteúdo prescritivo é barrado em qualquer resposta automática, com ou sem fonte: dose por área,
+// ordem de mistura e verbo de prescrição só saem de fonte oficial aprovada por uma pessoa.
+const prescriptiveContent=/(?:\b(?:aplique|misture|pulverize|prescrevo|recomendo|garanto)\b|ordem\s+de\s+(?:adi[cç][aã]o|mistura|enchimento)|primeiro\s+os?\s+p[oó]s|adicione\s+(?:primeiro|por\s+[uú]ltimo|em\s+seguida)|agitador|com\s+o\s+tanque\s+(?:pela\s+)?metade|\d[\d.,]*\s*(?:kg|g|ml|l)\s*(?:\/|por)\s*ha\b)/i
+// Atribuir a uma fonte só é mentira quando não houve fonte: a resposta de memória do modelo não pode
+// dizer "segundo a Embrapa", mas a pesquisa que de fato citou a Embrapa pode — e deve.
+const unsourcedAttribution=/(?:segundo|de acordo com)\s+(?:a\s+)?(?:embrapa|fonte|pesquisa)/i
+export const safeGeneralModelAnswer=answer=>!regulatedBrandClaim(answer)&&!prescriptiveContent.test(answer)&&!unsourcedAttribution.test(answer)
+export const containsPrescriptiveContent=answer=>prescriptiveContent.test(String(answer??''))||regulatedBrandClaim(answer)
+// A pesquisa lê páginas de bula e de recomendação, então o texto dela chega com dose, carência e
+// reentrada escritos de todo jeito ("2 litros por hectare", "L ha-1", "mL/100 L", "carência de 21
+// dias"). A régua da memória do modelo só pegava dose por área; aqui qualquer quantidade de volume
+// ou massa, qualquer intervalo em dias ligado a carência/reentrada e qualquer "dose" com número são
+// barrados — esse conteúdo só sai de fonte aprovada por uma pessoa. Percentual continua permitido.
+const researchQuantity=/\d[\d.,]*\s*(?:l|ml|kg|g|t|ton|litros?|mililitros?|quilos?|quilogramas?|gramas?|toneladas?)\b/i
+const researchInterval=/\b(?:car[eê]ncia|reentrada|intervalo\s+de\s+seguran[cç]a|per[ií]odo\s+de\s+(?:car[eê]ncia|seguran[cç]a))\b[^.]{0,60}?\d+\s*(?:dias?|horas?|h)\b/i
+const researchDose=/\bdos(?:e|es|agem|agens)\b[^.]{0,40}?\d/i
+export const safeResearchAnswer=answer=>!regulatedBrandClaim(answer)&&!prescriptiveContent.test(answer)&&!researchQuantity.test(answer)&&!researchInterval.test(answer)&&!researchDose.test(answer)
+// O classificador de entrada (requiresVerifiedGeneralSource) reconhece pedido operacional. Uma
+// pergunta como "qual a carência do produto na soja?" ou "posso misturar X com Y?" pode escapar dele
+// e ainda assim é assunto de bula: quando vira pedido de fonte, precisa nascer regulado, senão pode
+// ser aprovada com qualquer endereço https e sair rotulada como fonte oficial.
+export const mentionsRegulatedTopic=message=>/\b(?:dose|doses|dosagem|dosagens|carencia|carencias|reentrada|reentradas|bula|bulas|mistur\w*|calda|intervalo de seguranca|periodo de carencia|registro (?:vigente|no mapa|agrofit)|agrofit)\b/.test(normalize(message))
 
 // Preserve the existing budget estimate for the fast tier. This is not a model
 // price table or a billing claim; metered provider cost must be reconciled apart.

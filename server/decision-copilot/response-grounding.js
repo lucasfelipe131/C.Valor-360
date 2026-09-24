@@ -30,6 +30,10 @@ const sourceContracts=new Map([
  ['crop_season',sourceContract(['FACT','OBSERVATION'])],
  ['official_product_catalog',sourceContract(['FACT','VALIDATED_KNOWLEDGE'],{staticSource:true})],
  ['general_knowledge',sourceContract(['FACT','VALIDATED_KNOWLEDGE'],{staticSource:true})],
+ // Trecho literal de fonte oficial aprovada por um responsável nomeado. A vigência é controlada na
+ // própria aprovação (valid_until derruba a resposta antes de ela ser montada), não pela idade do
+ // turno: um registro de bula não envelhece em 24 horas como uma cotação.
+ ['approved_official_source',sourceContract(['FACT','VALIDATED_KNOWLEDGE'],{staticSource:true})],
  ['system_safety_policy',sourceContract(['FACT','VALIDATED_KNOWLEDGE'],{staticSource:true})],
  // 7 dias = a janela DATED de VAL_MARKET_COMMODITY_ACCESS_v1 §Atualidade. Com 3 dias, toda cotacao
  // entre 72 h e 168 h era classificada como utilizavel com ressalva e recusada por idade no mesmo
@@ -38,6 +42,10 @@ const sourceContracts=new Map([
  ['context_snapshot',sourceContract(['FACT'],{maxAgeMs:DAY_MS,validUntilMayExtend:false})],
  ['system_capability',sourceContract(['FACT'],{maxAgeMs:DAY_MS,validUntilMayExtend:false})],
  ['model_general_knowledge',sourceContract(['FACT'],{staticSource:true})],
+ // Resposta escrita pelo modelo a partir de páginas encontradas na hora, com o endereço de cada
+ // trecho. Tem fonte, mas continua sendo síntese do modelo: recebe o mesmo contrato e o mesmo crivo
+ // da resposta de memória, sem atalho de relevância — o atalho é só do trecho literal aprovado.
+ ['web_research_cited',sourceContract(['FACT'],{staticSource:true})],
  ['calculation',sourceContract(['FACT'],{maxAgeMs:DAY_MS,validUntilMayExtend:false})],
  ['conversation_turn',sourceContract(['INFERENCE'],{maxAgeMs:180*DAY_MS,validUntilMayExtend:false})],
  ['business_event',sourceContract(['FACT','OBSERVATION'],{maxAgeMs:180*DAY_MS})],
@@ -78,7 +86,7 @@ const sourceContracts=new Map([
 // GLOBAL is an isolation marker, not a licence to relabel arbitrary producer
 // records.  Only sources whose semantics are genuinely non-individual may use
 // it; producer observations/quotes/intentions must always carry producer_id.
-const trustedGlobalSourceTypes=new Set(['general_knowledge','market_snapshot','official_product_catalog','system_capability','system_safety_policy','model_general_knowledge','calculation'])
+const trustedGlobalSourceTypes=new Set(['general_knowledge','market_snapshot','official_product_catalog','system_capability','system_safety_policy','model_general_knowledge','calculation','approved_official_source','web_research_cited'])
 const globalScopeOf=item=>clean(item?.scope??item?.context_scope??item?.subject_type??item?.entity_type??item?.entityType,80).toUpperCase()
 const explicitlyGlobal=item=>['GLOBAL','MARKET','GENERAL_KNOWLEDGE'].includes(globalScopeOf(item))
 const processGuidanceDomains=Object.freeze({
@@ -536,6 +544,11 @@ function hasGlobalIndividualAssertion(rawText=''){
 }
 
 function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}){
+ // Fonte oficial aprovada é documento regulatório sobre um produto, conferido por uma pessoa antes
+ // de entrar. Não se exige âncora de conceito dela — o texto é o excerto da fonte, não uma
+ // paráfrase —, mas afirmação sobre um indivíduo da carteira continua barrada como em toda fonte
+ // global: nenhuma aprovação autoriza falar de um produtor específico por este caminho.
+ if(sourceType==='approved_official_source')return !hasNamedIndividualAssertion(rawText)
  // GLOBAL describes the subject of the evidence; it cannot be used as an
  // escape hatch for an omitted producer id.  Market facts need an aggregate
  // anchor, while catalog/knowledge facts need an explicit concept anchor.
@@ -544,7 +557,7 @@ function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}
  // Statement curado da Biblioteca fala do "produtor" como categoria ("o produtor tende a...") e
  // cita autores ("Fisher e Ury propõem"): não é afirmação sobre um indivíduo da carteira. O caminho
  // geral nunca lê dado de produtor, e a ingestão da Biblioteca é curada e fail-closed.
- if(sourceType!=='general_knowledge'&&(sourceType==='model_general_knowledge'?hasGlobalIndividualAssertion(rawText):genericAssertion.test(text)||hasNamedIndividualAssertion(rawText)))return false
+ if(sourceType!=='general_knowledge'&&(['model_general_knowledge','web_research_cited'].includes(sourceType)?hasGlobalIndividualAssertion(rawText):genericAssertion.test(text)||hasNamedIndividualAssertion(rawText)))return false
  if(sourceType==='market_snapshot'){
   if(!globalAggregateAnchor.test(text))return false
   // An aggregate prefix such as "Mercado:" must never launder an individual
@@ -572,7 +585,7 @@ function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}
  // general_knowledge/system_capability, o vocabulário aqui é por definição imprevisível (qualquer
  // conceito), então a lista fechada de âncoras não se aplica; a proteção contra atribuição
  // individual acima (genericAssertion/hasNamedIndividualAssertion) continua valendo.
- if(sourceType==='model_general_knowledge')return !implicitIndividualAttribute.test(conceptText)
+ if(['model_general_knowledge','web_research_cited'].includes(sourceType))return !implicitIndividualAttribute.test(conceptText)
  if(sourceType==='system_safety_policy')return deterministicSafetyPolicy.test(text)
  return false
 }
@@ -647,7 +660,10 @@ function evidenceEntries(evidence=[],scope={}){
   // pronome + verbo de estado/posse ("ele tem", "ela esta", "ele e") - medido em 8 de 8.
   const globalProducerSpecific=global&&sourceType!=='general_knowledge'&&/\b(?:este produtor|esse produtor|aquele produtor|o produtor|a produtora|do produtor|da produtora|para o produtor|para a produtora|este cliente|esse cliente|o cliente|do cliente|da cliente)\b/.test(entry.text)
   if(globalProducerSpecific)aliasConflictCodes.push('GLOBAL_PRODUCER_SPECIFIC_CLAIM')
-  if(global&&sourceType!=='general_knowledge'&&(sourceType==='model_general_knowledge'?hasGlobalIndividualAssertion(rawText):genericAssertion.test(entry.text)||pronounObligation.test(entry.text)||hasNamedIndividualAssertion(rawText)))aliasConflictCodes.push('GLOBAL_INDIVIDUAL_ASSERTION')
+  // web_research_cited recebe o mesmo crivo da memória do modelo aqui e nas duas checagens acima:
+  // texto sintetizado por conceito, com pronome anafórico legítimo. O trecho aprovado continua na
+  // régua estrita, porque é literal e a aprovação não conferiu isso.
+  if(global&&sourceType!=='general_knowledge'&&(['model_general_knowledge','web_research_cited'].includes(sourceType)?hasGlobalIndividualAssertion(rawText):genericAssertion.test(entry.text)||pronounObligation.test(entry.text)||hasNamedIndividualAssertion(rawText)))aliasConflictCodes.push('GLOBAL_INDIVIDUAL_ASSERTION')
   if(global&&!semanticallyGeneralGlobalEvidence(entry))aliasConflictCodes.push('GLOBAL_NOT_SEMANTICALLY_GENERAL')
   if(global&&entry.producerId)aliasConflictCodes.push('GLOBAL_WITH_PRODUCER_ID')
   if(global&&!trustedGlobalSourceTypes.has(sourceType))aliasConflictCodes.push('UNTRUSTED_GLOBAL_SOURCE_TYPE')

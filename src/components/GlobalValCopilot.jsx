@@ -106,7 +106,9 @@ export function ReasoningResponse({payload,sourceAttachments=[],density,outputMo
  const degraded=quality.status==='REASONING_DEGRADED'||reasoning.run?.status==='REASONING_DEGRADED'||reasoning.grounding?.passed===false
  // Orientação geral (cumprimento, conceito da Biblioteca) já é a própria leitura: não há
  // ferramenta executada nem ação a abrir, e o card 'FERRAMENTA EXECUTADA' repetia o texto.
- const generalGuidance=['general_guidance','ai_general_knowledge'].includes(toolResult?.tool)
+ // Pesquisa citada e fonte aprovada também são a própria leitura: sem card de ferramenta nem ação
+ // padrão, e cada uma com o seu aviso — o consultor precisa saber se alguém revisou aquilo.
+ const generalGuidance=['general_guidance','ai_general_knowledge','web_research','approved_source'].includes(toolResult?.tool)
  const unverifiedGeneral=reasoning.evidence_status==='UNVERIFIED_MODEL_KNOWLEDGE'
  const reusedKnowledge=['HIT','COALESCED'].includes(payload?.responseMetadata?.sharedKnowledgeCache?.status)
  const answer=strategy.reading||advice.answer||'A orientação chegou sem uma leitura principal.'
@@ -140,6 +142,8 @@ export function ReasoningResponse({payload,sourceAttachments=[],density,outputMo
       derrubaria o proprio grounding. */}
   {degraded&&facts.length>0&&<p className="global-val-withheld" role="status"><ShieldCheck aria-hidden="true"/><span>A VAL tem {facts.length===1?'1 registro selecionado':`${facts.length} registros selecionados`} para esta pergunta e descartou a propria resposta por nao conseguir sustenta-la neles. Nao e ausencia de registro.{onOpenEvidence?<> <button type="button" className="link-btn" onClick={()=>onOpenEvidence(responseScope)}>Ver o que foi selecionado</button></>:null}</span></p>}
   {unverifiedGeneral&&<p className="global-val-knowledge-note"><Sparkles aria-hidden="true"/><span>{reusedKnowledge?'Resposta geral reutilizada do banco':'Resposta geral formulada pela IA'} · sem fonte verificada</span></p>}
+  {reasoning.evidence_status==='WEB_RESEARCH_CITED'&&<p className="global-val-knowledge-note"><Sparkles aria-hidden="true"/><span>Pesquisa da IA em fontes permitidas · sem revisão humana{knowledge.length?<> · {knowledge.map((ref,index)=><span key={ref.url||index}>{index?', ':''}<a href={ref.url} target="_blank" rel="noreferrer noopener">{ref.title||ref.host||ref.url}</a></span>)}</>:null}</span></p>}
+  {reasoning.evidence_status==='APPROVED_EXTERNAL_SOURCE'&&<p className="global-val-knowledge-note"><ShieldCheck aria-hidden="true"/><span>Trecho de fonte oficial aprovada pela revisão técnica{knowledge[0]?.url?<> · <a href={knowledge[0].url} target="_blank" rel="noreferrer noopener">{knowledge[0].title||knowledge[0].publisher||'abrir fonte'}</a></>:null}</span></p>}
   {toolResult&&!generalGuidance?<GenericToolCard title={toolResult.title} summary={toolResult.summary} status={toolResult.status} onOpen={toolResult.page==='copilot'?undefined:()=>openWithSources({page:toolResult.page||'agro',tool:toolResult.tool,manualPage:toolResult.manual_page,mode:toolResult.mode,context:toolResult.context})}/>:null}
   {!degraded&&intent==='PREPARE_VISIT'&&toolResult?.status!=='CONTEXT_REQUIRED'&&<PrepareVisitCard reasoning={reasoning} questions={questions} onOpen={openScoped}/>}
   {!degraded&&toolResult?.status!=='CATALOG'&&['ASK_AGRONOMIC','ANALYZE_SOIL'].includes(intent)&&<AgronomicInsightCard reasoning={reasoning} onOpen={openScoped}/>}

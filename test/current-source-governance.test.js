@@ -5,9 +5,9 @@ import {CURRENT_SOURCE_GOVERNANCE,CURRENT_SOURCE_GOVERNANCE_VERSION,currentSourc
 
 const read=relative=>readFileSync(new URL(`../${relative}`,import.meta.url),'utf8')
 
-test('fontes atuais — contrato registra todos os campos de governança e os três domínios',()=>{
+test('fontes atuais — contrato registra todos os campos de governança e os quatro domínios',()=>{
  assert.equal(CURRENT_SOURCE_GOVERNANCE_VERSION,'CurrentSourceGovernance.v1')
- assert.deepEqual([...new Set(CURRENT_SOURCE_GOVERNANCE.map(item=>item.domain))].sort(),['BULAS','CLIMA','MERCADO'])
+ assert.deepEqual([...new Set(CURRENT_SOURCE_GOVERNANCE.map(item=>item.domain))].sort(),['BULAS','CLIMA','MERCADO','PESQUISA'])
  const required=['provider','source','freshness','timestamp','failure_behavior','cache','authority','tenant_implications','cost','integration_status','external_blocker']
  for(const record of CURRENT_SOURCE_GOVERNANCE){
   for(const field of required)assert.ok(String(record[field]||'').trim(),`${record.id}.${field}`)
@@ -61,4 +61,35 @@ test('governança não adiciona segredo, conta ou provider pago fictício',()=>{
  const source=read('server/current-source-governance.js')
  assert.doesNotMatch(source,/(?:api[_-]?key|bearer|password|secret)\s*[:=]\s*['"][^'"]+/i)
  assert.doesNotMatch(source,/sk-[A-Za-z0-9]/)
+})
+
+// A pesquisa usa a OpenAI que a VAL já tem: não há provedor a contratar. O registro precisa dizer
+// isso, e o código precisa confirmar o que ele diz — desligada por padrão e nunca respondendo bula.
+test('pesquisa governada existe, vem desligada e não responde assunto regulado',()=>{
+ const research=currentSourceGovernance({domain:'PESQUISA',consumer:'COPILOT'})[0]
+ assert.equal(research.current_claim_allowed,false)
+ assert.equal(research.integration_status,'IMPLEMENTED_DISABLED_BY_FLAG')
+ assert.match(research.external_blocker,/VAL_WEB_RESEARCH_ENABLED/)
+ assert.match(research.external_blocker,/candidata DRAFT aprovada por uma pessoa/)
+ assert.match(research.authority,/jamais responde ao consultor sem aprovação humana/)
+ assert.match(research.cost,/mesmo teto/)
+ const config=read('server/config.js')
+ const executor=read('server/decision-copilot/capability-executor.js')
+ const provider=read('server/knowledge/web-research.js')
+ assert.match(config,/webResearchEnabled:readBoolean\(process\.env\.VAL_WEB_RESEARCH_ENABLED,false\)/)
+ assert.match(executor,/research&&aiClient&&aiModel&&!requiresVerifiedGeneralSource\(message\)/)
+ assert.match(provider,/filters:\{allowed_domains:/)
+ assert.match(provider,/if\(rejected\.length\)return/)
+})
+
+test('bula respondida por fonte aprovada tem dono nomeado e vigência declarada',()=>{
+ const approved=currentSourceGovernance({domain:'BULAS',consumer:'COPILOT'})[0]
+ assert.equal(approved.current_claim_allowed,true)
+ assert.equal(approved.integration_status,'HUMAN_APPROVED_SOURCE_AVAILABLE')
+ assert.match(approved.authority,/approved_by/)
+ assert.match(approved.freshness,/valid_until/)
+ assert.match(approved.tenant_implications,/indivíduo nomeado/)
+ // O caminho automático de bula do Manual continua bloqueado e não é confundido com este.
+ const manual=currentSourceGovernance({domain:'BULAS',consumer:'MANUAL'})[0]
+ assert.equal(manual.current_claim_allowed,false)
 })

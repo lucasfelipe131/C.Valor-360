@@ -10,7 +10,9 @@ import {describeSelectionMatch,generalAnswerTopicMatches,curatedAnswerCoversQues
 import {generalTopicClarification} from './general-question-context.js'
 import {stripMessagePreamble} from '../message-preamble.js'
 import {generalProductCatalogGuidance} from '../product-intelligence.js'
-import {generateGeneralModelAnswer,isGeneralRegulatedConcept,regulatedBrandClaim,safeGeneralModelAnswer} from '../knowledge/general-answer-provider.js'
+import {containsPrescriptiveContent,generateGeneralModelAnswer,isGeneralRegulatedConcept,mentionsRegulatedTopic,regulatedBrandClaim,requiresVerifiedGeneralSource,safeGeneralModelAnswer,safeResearchAnswer} from '../knowledge/general-answer-provider.js'
+import {researchQuestion} from '../knowledge/web-research.js'
+import {questionReferencesIndividual} from '../knowledge/source-requests.js'
 import {isClientOverviewRequest} from './capability-router.js'
 
 export const capabilityExecutorVersion='val.capability_executor.v1'
@@ -634,6 +636,36 @@ export async function executeCapabilityPlan(options={}){
 export const regulatedClaimStub='Indicação de uso, alvo ou comparação de desempenho de um produto registrado é informação de bula, e a VAL só responde isso com a fonte oficial conectada. Consulte a bula ou a ficha técnica vigente. Posso explicar o conceito, o mecanismo de ação e o manejo integrado do alvo.'
 export const aiProviderUnavailableStub='A IA de conhecimento geral está indisponível neste momento e a VAL não arrisca responder sem ela. Tente novamente em alguns instantes; perguntas com produtor selecionado, memória e fontes registradas continuam funcionando normalmente.'
 export const aiBudgetExhaustedStub='O limite de uso da IA de conhecimento geral deste acesso foi atingido. Ele é por consultor e por acesso, e um novo login restaura. Perguntas com produtor selecionado, memória e fontes registradas continuam funcionando normalmente.'
+// A promessa de revisão só pode ser feita quando ela é verdadeira: sem PostgreSQL a fila não
+// existe, e uma gravação que falhou não pode virar "registrei sua dúvida" na tela do consultor.
+export const sourceRequestRegisteredNote=' Registrei esta dúvida para revisão: quando a fonte oficial for aprovada, a VAL passa a responder com ela e cita a origem.'
+export const withSourceRequestNote=stub=>`${stub}${sourceRequestRegisteredNote}`
+
+// Gravar o pedido nunca pode derrubar a resposta. Se a fila falhar, o consultor lê exatamente o
+// que lia antes — sem a promessa. A fila é lida por outra pessoa: pergunta que aponta um produtor
+// ou um CPF não é conhecimento geral e não sai daqui, seja qual for o repositório por trás.
+async function registerSourceRequest({sourceRequests,tenantId,ownerId,message,domain,reason,now,signal}){
+ if(!sourceRequests||questionReferencesIndividual(message))return null
+ try{return await sourceRequests.register({tenantId:String(tenantId||''),ownerId:String(ownerId||''),question:message,domain:clean(domain,40)||'GENERAL',reason,now},{signal})||null}
+ catch{return null}
+}
+// A promessa "registrei para revisão" só é verdadeira enquanto a linha está de fato à espera de
+// revisão. Recusada, substituída, vencida ou já aprovada (e portanto não servida por outro motivo)
+// somam peso, mas não prometem nada.
+const awaitingReview=row=>Boolean(row&&['DRAFT','UNDER_REVIEW'].includes(String(row.status||'')))
+// O resumo entregue é cortado em 1200 caracteres a jusante. Um trecho aprovado de até 2000 perdia
+// a citação e acabava no meio da frase. O corte acontece aqui, no fim de uma frase, e a citação —
+// que é o que torna a resposta auditável — sobrevive inteira.
+const fitExcerpt=(value,limit)=>{
+ const excerpt=String(value||'').trim()
+ if(excerpt.length<=limit)return excerpt
+ const slice=excerpt.slice(0,Math.max(0,limit-1))
+ const sentenceEnd=Math.max(slice.lastIndexOf('. '),slice.lastIndexOf('; '),slice.lastIndexOf('! '),slice.lastIndexOf('? '))
+ const wordEnd=slice.lastIndexOf(' ')
+ const cut=sentenceEnd>limit*0.5?slice.slice(0,sentenceEnd+1):slice.slice(0,wordEnd>0?wordEnd:slice.length)
+ return `${cut.trim()}…`
+}
+
 const librarySearchAbsence='Nenhum trecho aplicável foi encontrado na biblioteca aprovada para esta consulta.'
 const noKnowledgeCoverageStub='Posso tratar esta dúvida sem selecionar um produtor e sem consultar memória privada. Informe a cultura, o conceito ou a decisão geral que deseja entender; dados atuais e recomendações técnicas continuam exigindo fonte, contexto e revisão.'
 
@@ -760,7 +792,7 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
   const live=['MARKET_COMMODITY','WEATHER','LABELS'].includes(capability)
   const globalSource=explicitlyGlobalContext(context)
   const globalOrigin=globalSource?validateGlobalLiveScope({...context,source_ref:item.source_ref},{tenantId:clean(organizationId,180),ownerId:clean(ownerId,180)},`response_${capability.toLowerCase()}`):null
-  const sourceType=live?'market_snapshot':capability==='AGRONOMIC_WORKSPACE'?'official_product_catalog':capability==='SESSION_COMMAND'?'conversation_turn':capability==='CLIENT_CONTEXT'?'client_registration':capability==='CONFIRMED_MEMORY'?clean(context.source_type,120).toLowerCase()||'confirmed_memory':capability==='COMMERCIAL_HISTORY'?'commitment':capability==='SOIL_ANALYSIS'?'soil_analysis':['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?'attachment_analysis':capability==='AREA_MAPPING'?'context_snapshot':capability==='CALCULATORS'?'calculation':capability==='AI_GENERAL_KNOWLEDGE'?'model_general_knowledge':capability==='GENERAL_GUIDANCE'?context.product_catalog_ref?'official_product_catalog':'general_knowledge':'system_capability'
+  const sourceType=live?'market_snapshot':capability==='AGRONOMIC_WORKSPACE'?'official_product_catalog':capability==='SESSION_COMMAND'?'conversation_turn':capability==='CLIENT_CONTEXT'?'client_registration':capability==='CONFIRMED_MEMORY'?clean(context.source_type,120).toLowerCase()||'confirmed_memory':capability==='COMMERCIAL_HISTORY'?'commitment':capability==='SOIL_ANALYSIS'?'soil_analysis':['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?'attachment_analysis':capability==='AREA_MAPPING'?'context_snapshot':capability==='CALCULATORS'?'calculation':capability==='APPROVED_SOURCE'?'approved_official_source':capability==='WEB_RESEARCH'?'web_research_cited':capability==='AI_GENERAL_KNOWLEDGE'?'model_general_knowledge':capability==='GENERAL_GUIDANCE'?context.product_catalog_ref?'official_product_catalog':'general_knowledge':'system_capability'
   const sourceEpistemic=capability==='SESSION_COMMAND'?'INFERENCE':capability==='CONFIRMED_MEMORY'?clean(context.epistemic_type,40).toUpperCase()||'FACT':['SOIL_ANALYSIS','IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?'OBSERVATION':'FACT'
   // Comando local da sessao ("por escrito") nao tem turno anterior: a observacao e o proprio momento.
   const sourceObservedAt=capability==='GENERAL_GUIDANCE'&&context.product_catalog_ref?null:capability==='SESSION_COMMAND'?context.source_turn_created_at||(route?.session_command?.local_only?createdAt:null):live?context.observed_at:capability==='CONFIRMED_MEMORY'||capability==='COMMERCIAL_HISTORY'?context.observed_at:capability==='SOIL_ANALYSIS'?item.tool_result?.facts?.sampled_at:['IMAGE_DIAGNOSIS','NUTRISCAN','FITOSCAN'].includes(capability)?item.tool_result?.facts?.result_created_at:createdAt
@@ -798,7 +830,7 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  const trustedGeneralGuidance=Boolean(!clientId&&sourceRefs.length===1&&sourceRefs[0].id==='system:general-guidance:v1'&&sourceRefs[0].capability==='GENERAL_GUIDANCE'&&tool?.capability==='GENERAL_GUIDANCE'&&evaluatedGrounding.question_relevance==='PASS'&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  // Pedido de esclarecimento por falta de cobertura curada: texto fixo do servidor, sem fonte e
  // sem claim factual; e o que o consultor deve ler quando nao ha item nem modelo disponivel.
- const noCoverageGuidance=Boolean(!sourceRefs.length&&tool?.capability==='GENERAL_GUIDANCE'&&tool?.status==='NO_DATA'&&tool?.mode==='no_coverage'&&[clean(noKnowledgeCoverageStub,1200),clean(aiBudgetExhaustedStub,1200),clean(aiProviderUnavailableStub,1200),clean(regulatedClaimStub,1200),generalTopicClarification(message),...(libraryOnlyQuery(message)?[librarySearchAbsence]:[])].includes(summary))
+ const noCoverageGuidance=Boolean(!sourceRefs.length&&tool?.capability==='GENERAL_GUIDANCE'&&tool?.status==='NO_DATA'&&tool?.mode==='no_coverage'&&[...[noKnowledgeCoverageStub,aiBudgetExhaustedStub,aiProviderUnavailableStub,regulatedClaimStub].flatMap(stub=>[clean(stub,1200),clean(withSourceRequestNote(stub),1200)]),generalTopicClarification(message),...(libraryOnlyQuery(message)?[librarySearchAbsence]:[])].includes(summary))
  // Comando local da sessao ("por escrito", "nao registra"): a resposta e a confirmacao fixa da
  // preferencia, sem afirmacao factual; nao precisa de turno anterior nem de overlap com a frase.
  const localSessionCommand=Boolean(route?.session_command?.local_only&&sourceRefs.length===1&&sourceRefs[0].capability==='SESSION_COMMAND'&&tool?.capability==='SESSION_COMMAND'&&tool?.status==='EXECUTED'&&trustedCapabilityExecutions.has(execution)&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
@@ -822,6 +854,10 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  // curador na seleção, e o overlap lexical do grounding não pode derrubar a resposta ("janela de
  // plantio da soja" respondida pelo item do ZARC). Todas as outras barreiras seguem obrigatórias.
  const libraryTriggerGuidance=Boolean(!clientId&&sourceRefs.length===1&&sourceRefs[0].id==='system:general-guidance:v1'&&sourceRefs[0].capability==='GENERAL_GUIDANCE'&&tool?.capability==='GENERAL_GUIDANCE'&&['TRIGGER_PHRASE','TITLE_PHRASE'].includes(tool?.context?.knowledge_match)&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
+ // O texto entregue é o trecho literal da fonte mais a citação, montado pelo servidor — não é
+ // afirmação do modelo. A procedência que o grounding mediria já foi verificada na aprovação, por
+ // uma pessoa nomeada e sobre um endereço oficial. Todas as demais barreiras seguem obrigatórias.
+ const approvedOfficialSource=Boolean(!clientId&&sourceRefs.length===1&&sourceRefs[0].capability==='APPROVED_SOURCE'&&/^approved-source:[a-f0-9]{32}$/.test(String(sourceRefs[0].id||''))&&tool?.capability==='APPROVED_SOURCE'&&tool?.status==='EXECUTED'&&trustedCapabilityExecutions.has(execution)&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  const safeAbsence=Boolean(
   !sourceRefs.length
   &&['CONTEXT_REQUIRED','NO_DATA','INPUT_REQUIRED','SOURCE_UNAVAILABLE'].includes(String(tool?.status||''))
@@ -848,6 +884,8 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
    ?{...evaluatedGrounding,passed:true,question_relevance:'SESSION_COMMAND_INPUT_REQUIRED'}
   :workspaceNavigation&&!evaluatedGrounding.passed
    ?{...evaluatedGrounding,passed:true,question_relevance:'WORKSPACE_ACTION'}
+  :approvedOfficialSource&&!evaluatedGrounding.passed
+   ?{...evaluatedGrounding,passed:true,question_relevance:'APPROVED_OFFICIAL_SOURCE'}
   :noCoverageGuidance&&!evaluatedGrounding.passed
    ?{...evaluatedGrounding,passed:true,question_relevance:'SAFE_NO_COVERAGE'}
   :safeAbsence
@@ -871,7 +909,7 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  return {route:route?.path||execution?.path||'TOOL',engineMode:'rules',model:'rules-capability-executor-v1',warning:'',responseMetadata:{toolExecutionVersion:capabilityExecutorVersion,executionBudget},advice:{answer,executive_brief:{headline:blocked?'Resposta bloqueada por grounding':tool?.title||'Capacidade da VAL',reason:answer,action:reasoning.recommended_strategy.action},next_best_action:reasoning.recommended_strategy.action,ai_reasoning:reasoning}}
 }
 
-export async function buildGeneralNoClientResponse({message='',route={},organizationId='unknown',ownerId='',conversationId='',contextEpoch=0,contextDomain='',now=new Date(),aiClient=null,aiModel='',aiUnavailableReason='',sharedAnswerCache=null,signal}={}){
+export async function buildGeneralNoClientResponse({message='',route={},organizationId='unknown',ownerId='',conversationId='',contextEpoch=0,contextDomain='',now=new Date(),aiClient=null,aiModel='',aiUnavailableReason='',sharedAnswerCache=null,sourceRequests=null,research=null,signal}={}){
  const libraryOnly=Boolean(libraryOnlyQuery(message))
  const aiBudgetExhausted=aiUnavailableReason==='BUDGET_EXHAUSTED'&&!aiClient
  throwIfCancelled(signal)
@@ -891,13 +929,14 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  // recuperado foi bloqueado a jusante e nao ha modelo disponivel para o fallback.
  // Tres causas diferentes chegavam aqui com o MESMO texto: sem cobertura na Biblioteca, teto de
  // IA estourado e provedor fora do ar. So a primeira e um pedido legitimo de esclarecimento.
- const noCoverageExecution=(providerFailure=false,regulatedClaim=false)=>{
+ const noCoverageExecution=(providerFailure=false,regulatedClaim=false,registered=false)=>{
   const unavailable=aiBudgetExhausted||providerFailure||regulatedClaim
   // A falha do provedor vem PRIMEIRO. regulatedClaim e calculado sobre o texto DESCARTADO, entao
   // bastava a primeira resposta ser rejeitada e a segunda chamada morrer no provedor para o
   // consultor ler "consulte a bula" quando a causa real era HTTP 500 no modelo - desfazendo na
   // pratica a separacao de causas que este bloco existe para fazer.
-  const summary=libraryOnly?librarySearchAbsence:providerFailure?aiProviderUnavailableStub:aiBudgetExhausted?aiBudgetExhaustedStub:regulatedClaim?regulatedClaimStub:(topicClarification||noKnowledgeCoverageStub)
+  const base=libraryOnly?librarySearchAbsence:providerFailure?aiProviderUnavailableStub:aiBudgetExhausted?aiBudgetExhaustedStub:regulatedClaim?regulatedClaimStub:(topicClarification||noKnowledgeCoverageStub)
+  const summary=registered?withSourceRequestNote(base):base
   const title=providerFailure?'IA indisponível':aiBudgetExhausted?'Limite de IA atingido':regulatedClaim?'Informação de bula':'Orientação geral'
   return deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'NO_DATA',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title,summary,page:'copilot',manual_page:null,mode:'no_coverage',context:{client_id:null,private_memory_used:false},required_inputs:unavailable?[]:['topic']},active_context:null})
  }
@@ -914,7 +953,7 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
     // e nao deve ser submetido ao teste lexical de relevancia (a selecao governada ja atestou o
     // casamento em knowledge_match).
     :{path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:guidance?.knowledge_item_id?['KNOWLEDGE_LIBRARY']:[],capability_results:list(route.capabilities).map(capability=>({capability,status:capability==='KNOWLEDGE_LIBRARY'&&guidance?.knowledge_item_id?'EXECUTED':'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'EXECUTED',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title:'Orientação geral',summary:curatedSummary,page:'copilot',manual_page:null,mode:'general',context:{client_id:null,private_memory_used:false,...(guidance?.knowledge_item_id?{knowledge_item_id:guidance.knowledge_item_id,knowledge_match:guidance.knowledge_match}:{}),...(guidance?.product_catalog_ref?{product_catalog_ref:guidance.product_catalog_ref}:{})}},active_context:null})
- const finalize=(execution,{unverified=false}={})=>{
+ const finalize=(execution,{unverified=false,approvedSource=null,researched=null}={})=>{
   trustedCapabilityExecutions.add(execution)
   const built=buildCapabilityExecutionResponse({execution,route,message,organizationId,ownerId,conversationId,contextEpoch,contextDomain,now,executionCounts:{entityResolutions:0,dataLookups:0,toolCalls:catalog?1:0,hops:catalog?1:0}})
   built.advice.ai_reasoning.client={id:'portfolio',name:'Conversa geral'}
@@ -939,6 +978,19 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
    built.advice.ai_reasoning.confidence={level:'NAO_VERIFICADO',score:null,rationale:'Resposta de conhecimento geral do modelo, sem fonte na Biblioteca de Conhecimento; não passou por verificação de evidência ou revisão humana.'}
    built.advice.ai_reasoning.evidence_status='UNVERIFIED_MODEL_KNOWLEDGE'
   }
+  // A confiança nomeia quem aprovou. A fonte é oficial e o trecho é literal, mas a atualidade dela
+  // continua sendo responsabilidade da revisão — e o consultor precisa ler de quem é essa resposta.
+  if(approvedSource&&!built.advice.ai_reasoning.grounding?.blocked){
+   built.advice.ai_reasoning.evidence_status='APPROVED_EXTERNAL_SOURCE'
+   built.advice.ai_reasoning.knowledge_refs=[approvedSource.citation]
+   built.advice.ai_reasoning.confidence={level:'FONTE_OFICIAL_APROVADA',score:null,rationale:`Trecho literal de fonte oficial aprovada por ${approvedSource.approved_by} em ${approvedSource.approved_at}; a vigência da fonte é responsabilidade da revisão.`}
+  }
+  // Pesquisada tem fonte, mas não tem revisor: o consultor lê de onde veio e que ninguém conferiu.
+  if(researched&&!built.advice.ai_reasoning.grounding?.blocked){
+   built.advice.ai_reasoning.evidence_status='WEB_RESEARCH_CITED'
+   built.advice.ai_reasoning.knowledge_refs=researched.citations.map(citation=>({...citation}))
+   built.advice.ai_reasoning.confidence={level:'PESQUISA_CITADA',score:null,rationale:`Síntese do modelo a partir de ${researched.citations.length} fonte(s) em domínio permitido (${[...new Set(researched.citations.map(citation=>citation.host))].join(', ')}); não passou por revisão humana.`}
+  }
   return built
  }
  const curatedResponse=finalize(curatedExecution)
@@ -949,6 +1001,46 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  // unverifiedModelKnowledgeAnswer. Sem modelo, o pedido de esclarecimento e o que o usuario le.
  const noCoverage=guidance?.coverage==='NONE'
  if(libraryOnly||catalog||contextRequired||topicClarification||!noCoverage&&curatedResponse.advice.ai_reasoning.grounding?.blocked!==true)return curatedResponse
+ // Uma fonte oficial já aprovada para esta mesma pergunta responde antes de qualquer chamada ao
+ // modelo: é mais barata, é citável, e é o único caminho pelo qual assunto regulado pode ser
+ // respondido. O texto entregue é o trecho da fonte, não uma paráfrase do modelo sobre ela.
+ let approved=null,approvedSourceBlocked=''
+ try{approved=sourceRequests?await sourceRequests.findApprovedAnswer({tenantId:String(organizationId),question:message,now},{signal}):null}catch{approved=null}
+ if(approved?.excerpt){
+  const citation=approved.citation
+  // O endereço fica na citação estruturada (knowledge_refs), não no texto: lido em voz alta, um
+  // link é ruído; e o texto entregue precisa caber com a citação inteira.
+  const citationLine=`Fonte: ${citation.title} — ${citation.publisher}${citation.year?` (${citation.year})`:''}.`
+  const summary=`${fitExcerpt(approved.excerpt,1200-citationLine.length-2)}\n\n${citationLine}`
+  const tool={status:'EXECUTED',capability:'APPROVED_SOURCE',tool:'approved_source',title:'Fonte oficial aprovada',summary,page:'copilot',manual_page:null,mode:'approved_source',context:{client_id:null,private_memory_used:false,source_request_key:approved.request_key,source_url:citation.url,approved_by:approved.approved_by,...(approved.valid_until?{valid_until:approved.valid_until}:{})}}
+  const delivered=finalize(deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['APPROVED_SOURCE'],capability_results:[{capability:'APPROVED_SOURCE',status:'EXECUTED',source_ref:`approved-source:${approved.request_key}`,tool_result:tool}],tool_result:tool,active_context:null}),{approvedSource:approved})
+  if(delivered.advice.ai_reasoning.grounding?.blocked!==true)return delivered
+  // Um trecho oficial pode conter "não determinado" ou "não há dados" e o grounding o bloqueia.
+  // Devolver o bloqueio como resposta deixava a aprovação PIOR do que a ausência dela. O caminho
+  // segue como se não houvesse fonte, e a chave fica na resposta para o revisor descobrir.
+  approvedSourceBlocked=approved.request_key
+ }
+ // Pesquisa com fonte vem antes da memória do modelo: a mesma pergunta, respondida com o endereço de
+ // onde veio. Assunto regulado nunca é respondido por aqui — dose e bula só saem de fonte aprovada
+ // por uma pessoa, e a pesquisa para isso é disparada pelo revisor, não pelo consultor.
+ let researchCostUsd=0,researchModelCalls=0
+ if(research&&aiClient&&aiModel&&!requiresVerifiedGeneralSource(message)){
+  let researched=null
+  try{researched=await researchQuestion({message,aiClient,model:aiModel,domains:research.domains,callCostUsd:research.callCostUsd,mode:'ANSWER',signal})}
+  catch(error){if(signal?.aborted)throw error}
+  researchCostUsd=Number(researched?.costUsd)||0;researchModelCalls=Number(researched?.modelCalls)||0
+  const citations=researched?.citations||[]
+  if(researched?.text&&citations.length&&generalAnswerTopicMatches(message,researched.text)&&safeResearchAnswer(researched.text)){
+   const summary=`${researched.text}\n\nFontes: ${citations.map(citation=>`${citation.title} (${citation.host})`).join('; ')}.`
+   const tool={status:'EXECUTED',capability:'WEB_RESEARCH',tool:'web_research',title:'Pesquisa em fontes permitidas',summary,page:'copilot',manual_page:null,mode:'web_research',context:{client_id:null,private_memory_used:false,citation_count:citations.length}}
+   const delivered=finalize(deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['WEB_RESEARCH'],capability_results:[{capability:'WEB_RESEARCH',status:'EXECUTED',source_ref:'system:web-research:v1',tool_result:tool}],tool_result:tool,active_context:null}),{researched:{citations}})
+   if(delivered.advice.ai_reasoning.grounding?.blocked!==true){
+    delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:researchCostUsd,aiGeneralKnowledgeModelCalls:researchModelCalls,webResearch:{citations:citations.length,searchCalls:Number(researched.searchCalls)||0},...(approvedSourceBlocked?{approvedSourceBlocked}:{})}
+    delivered.responseMetadata.executionBudget={...delivered.responseMetadata.executionBudget,modelCalls:researchModelCalls,estimatedCostUsd:researchCostUsd}
+    return delivered
+   }
+  }
+ }
  const buildAiResponse=answer=>{
   const tool={status:'EXECUTED',capability:'AI_GENERAL_KNOWLEDGE',tool:'ai_general_knowledge',title:'Conhecimento geral do modelo (não verificado)',summary:answer,page:'copilot',manual_page:null,mode:'general_unverified',context:{client_id:null,private_memory_used:false}}
   return finalize(deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['AI_GENERAL_KNOWLEDGE'],capability_results:[{capability:'AI_GENERAL_KNOWLEDGE',status:'EXECUTED',source_ref:aiUnverifiedSourceRef,tool_result:tool}],tool_result:tool,active_context:null}),{unverified:true})
@@ -969,15 +1061,26 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   // some junto com a resposta e a tela volta a pedir que o consultor reformule a pergunta.
   const accepted=validAnswer(retry.text)
   const rejected=accepted?'':(retry.text||first.text)
-  return {...retry,text:accepted?retry.text:'',regulatedClaim:Boolean(rejected)&&regulatedBrandClaim(rejected),costUsd:first.costUsd+retry.costUsd,modelCalls:first.modelCalls+retry.modelCalls}
+  // Texto descartado com dose ou mistura é tão regulado quanto com marca: a causa do pedido de fonte
+  // precisa nascer regulada, senão a fila aceita qualquer https como fonte.
+  return {...retry,text:accepted?retry.text:'',regulatedClaim:Boolean(rejected)&&containsPrescriptiveContent(rejected),costUsd:first.costUsd+retry.costUsd,modelCalls:first.modelCalls+retry.modelCalls}
  }
  const result=sharedAnswerCache?await sharedAnswerCache.resolve({question:message,model:aiModel,generate,validate:validAnswer}):await generate()
  throwIfCancelled(signal)
  const providerFailure=result?.unavailableReason==='PROVIDER_ERROR'
  const regulatedClaim=Boolean(result?.regulatedClaim)
- const delivered=result.text&&validAnswer(result.text)?buildAiResponse(result.text):finalize(noCoverageExecution(providerFailure,regulatedClaim))
- delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:result.costUsd,aiGeneralKnowledgeModelCalls:result.modelCalls,aiGeneralKnowledgeRejectionReasons:[...rejectedReasons],aiGeneralKnowledgeUnavailableReason:result.unavailableReason||null,sharedKnowledgeCache:result.cache||null,...(providerFailure?{aiProviderStatus:result.providerStatus??null,aiProviderRetryAfterSeconds:result.retryAfterSeconds??null}:{})}
- delivered.responseMetadata.executionBudget={...delivered.responseMetadata.executionBudget,modelCalls:result.modelCalls,estimatedCostUsd:result.costUsd}
- delivered.advice.ai_reasoning.run={...delivered.advice.ai_reasoning.run,model_call_count:result.modelCalls,estimated_cost_usd:result.costUsd}
+ const answered=Boolean(result.text&&validAnswer(result.text))
+ // Provedor fora do ar e teto de orçamento são temporários: a próxima tentativa responde, e a fila
+ // de revisão não pode encher de dúvidas que já têm resposta. Só o que a VAL não sabe responder
+ // vira pedido de fonte — o assunto regulado e a falta de cobertura no acervo.
+ const registeredRow=!answered&&!providerFailure&&!aiBudgetExhausted
+  ?await registerSourceRequest({sourceRequests,tenantId:organizationId,ownerId,message,domain:contextDomain,reason:regulatedClaim||mentionsRegulatedTopic(message)?'REGULATED_SOURCE_REQUIRED':'LIBRARY_NO_COVERAGE',now,signal})
+  :null
+ const registered=awaitingReview(registeredRow)
+ const delivered=answered?buildAiResponse(result.text):finalize(noCoverageExecution(providerFailure,regulatedClaim,registered))
+ if(approvedSourceBlocked)delivered.responseMetadata={...delivered.responseMetadata,approvedSourceBlocked}
+ delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:result.costUsd+researchCostUsd,aiGeneralKnowledgeModelCalls:result.modelCalls+researchModelCalls,aiGeneralKnowledgeRejectionReasons:[...rejectedReasons],aiGeneralKnowledgeUnavailableReason:result.unavailableReason||null,sharedKnowledgeCache:result.cache||null,...(providerFailure?{aiProviderStatus:result.providerStatus??null,aiProviderRetryAfterSeconds:result.retryAfterSeconds??null}:{})}
+ delivered.responseMetadata.executionBudget={...delivered.responseMetadata.executionBudget,modelCalls:result.modelCalls+researchModelCalls,estimatedCostUsd:result.costUsd+researchCostUsd}
+ delivered.advice.ai_reasoning.run={...delivered.advice.ai_reasoning.run,model_call_count:result.modelCalls+researchModelCalls,estimated_cost_usd:result.costUsd+researchCostUsd}
  return delivered
 }

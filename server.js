@@ -64,6 +64,9 @@ import {readReleaseMetadata} from './server/release-metadata.js'
 import {createReadinessReport} from './server/readiness.js'
 import {technicalBootstrapFromValClients} from './server/agronomic-geometry-bridge.js'
 import {normalizePublicAttachmentPatch} from './server/attachment-public-patch.js'
+import {createKnowledgeSourceRequestStore} from './server/knowledge/source-request-repository.js'
+import {createKnowledgeSourceRequestService} from './server/knowledge/source-request-service.js'
+import {researchQuestion} from './server/knowledge/web-research.js'
 import {createPostgresRealtimeCostStore} from './server/realtime-voice/cost-control.js'
 import {createRealtimeVoiceService} from './server/realtime-voice/service.js'
 import {routeGlobalIntent} from './server/decision-copilot/global-intent-router.js'
@@ -229,7 +232,22 @@ function invalidateDerivedPortfolioCaches({tenantId=config.defaultTenantId,owner
 }
 const mutationClientId=value=>clean(value?.client_id??value?.clientId??value?.client?.id??value?.visit?.client_id??value?.visit?.clientId??value?.action_plan?.client_id??value?.actionPlan?.clientId??value?.outcome?.client_id??value?.outcome?.clientId)
 const realtimeVoiceCostStore=createPostgresRealtimeCostStore({database,tenantId:config.defaultTenantId})
-const realtimeVoice=createRealtimeVoiceService({runtimeConfig:config,client:voiceOpenAI,repository,conversationSessions:valConversationSessions,costStore:realtimeVoiceCostStore,logger:event=>observe('val.realtime_voice',{sessionId:event.sessionId,model:event.model,costUsd:event.costUsd,outcome:event.event,errorCode:event.failureCode,providerStatus:event.providerStatus,retryAfterSeconds:event.retryAfterSeconds})})
+// Sem PostgreSQL a fila não existe e o copiloto responde exatamente como antes: a dúvida sem fonte
+// volta a ser beco sem saída, sem promessa de revisão na tela.
+const knowledgeSourceRequests=createKnowledgeSourceRequestStore({database})
+const webResearch=config.webResearchEnabled?Object.freeze({domains:config.webResearchDomains,callCostUsd:config.webResearchCallCostUsd}):null
+// O revisor paga a busca com o próprio teto de IA geral, como o consultor paga a dele. Busca
+// recusada ou vazia ainda custou, e por isso o custo é gravado antes de qualquer outra decisão.
+const findSourceCandidates=webResearch?async({identity,question,signal})=>{
+ const budget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
+ if(!budget.allowed)throw Object.assign(new Error('O limite de uso da IA deste acesso foi atingido. Um novo login restaura.'),{statusCode:429,code:'knowledge_source_research_budget',exposeMessage:true})
+ const result=await researchQuestion({message:question,aiClient:voiceOpenAI,model:config.modelFast,domains:webResearch.domains,callCostUsd:webResearch.callCostUsd,mode:'CANDIDATES',signal})
+ if(result.costUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'knowledge_source_research',entityId:null,metadata:{costUsd:result.costUsd,model:config.modelFast}}).catch(()=>null)
+ if(result.unavailableReason==='PROVIDER_ERROR')throw Object.assign(new Error('A pesquisa de fontes está indisponível agora. Tente novamente em instantes.'),{statusCode:502,code:'knowledge_source_research_unavailable',exposeMessage:true})
+ return result
+}:null
+const knowledgeSourceReview=createKnowledgeSourceRequestService({store:knowledgeSourceRequests,findCandidates:findSourceCandidates})
+const realtimeVoice=createRealtimeVoiceService({runtimeConfig:config,client:voiceOpenAI,repository,conversationSessions:valConversationSessions,costStore:realtimeVoiceCostStore,logger:event=>observe('val.realtime_voice',{sessionId:event.sessionId,model:event.model,costUsd:event.costUsd,outcome:event.event,errorCode:event.failureCode,providerStatus:event.providerStatus,retryAfterSeconds:event.retryAfterSeconds,disconnectReason:event.disconnectReason,transportDetail:event.transportDetail})})
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
 function consumeRateLimit(scope,key,limit){const now=Date.now();const bucketKey=`${scope}:${key}`;const current=rateBuckets.get(bucketKey);if(!current||current.resetAt<=now){rateBuckets.set(bucketKey,{count:1,resetAt:now+600_000});return true}if(current.count>=limit)return false;current.count+=1;return true}
@@ -342,7 +360,7 @@ async function handleApi(request,response,url){
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
  const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
- const protectedPath=url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/knowledge/')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const requestStartedAt=performance.now()
  let valRequestController=null
@@ -399,6 +417,18 @@ async function handleApi(request,response,url){
   const result=await realtimeVoice.createSession({identity,input:await body(request),requestId:currentRequestContext()?.requestId})
   await accessRepository.recordUsage(identity,{eventType:'realtime_voice_session_created',page:'val',entityType:'realtime_voice_session',entityId:result.sessionId,metadata:{model:result.model,transport:result.transport,clientScoped:Boolean(result.context.clientId),contentFree:true}}).catch(()=>null)
   return json(response,201,result)
+ }
+ if(url.pathname==='/api/v1/knowledge/source-requests'&&request.method==='GET')return json(response,200,{...await knowledgeSourceReview.list({identity,status:url.searchParams.get('status')||''}),research_available:knowledgeSourceReview.researchAvailable})
+ const sourceRequestMatch=url.pathname.match(/^\/api\/v1\/knowledge\/source-requests\/([a-f0-9]{32})$/i)
+ if(sourceRequestMatch&&request.method==='POST'){
+  const payload=await body(request)
+  const requestKey=sourceRequestMatch[1]
+  const action=clean(payload.action).toLowerCase()
+  if(action==='review')return json(response,200,await knowledgeSourceReview.review({identity,requestKey}))
+  if(action==='approve')return json(response,200,await knowledgeSourceReview.approve({identity,requestKey,source:payload.source}))
+  if(action==='reject')return json(response,200,await knowledgeSourceReview.reject({identity,requestKey,reason:payload.reason}))
+  if(action==='research')return json(response,200,await knowledgeSourceReview.researchCandidates({identity,requestKey}))
+  return json(response,400,{error:'Ação inválida para o pedido de fonte.',code:'knowledge_source_request_action_invalid'})
  }
  if(url.pathname==='/api/v1/realtime-voice/status'&&request.method==='GET')return json(response,200,await realtimeVoice.availability({identity}))
  if(url.pathname==='/api/v1/realtime-voice/budget'&&request.method==='GET')return json(response,200,await realtimeVoice.budget({identity}))
@@ -856,7 +886,7 @@ async function handleApi(request,response,url){
     return json(response,200,complete(direct,execution))
    }
    const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
-   const general=await buildGeneralNoClientResponse({message:generalMessage,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,aiUnavailableReason:aiGeneralKnowledgeBudget.allowed?'':'BUDGET_EXHAUSTED',sharedAnswerCache,signal:requestController.signal})
+   const general=await buildGeneralNoClientResponse({message:generalMessage,route:capability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,aiUnavailableReason:aiGeneralKnowledgeBudget.allowed?'':'BUDGET_EXHAUSTED',sharedAnswerCache,sourceRequests:knowledgeSourceRequests,research:webResearch,signal:requestController.signal})
    general.responseMetadata.questionContinued=generalQuestion.continued
    const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
    if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})
@@ -925,7 +955,7 @@ async function handleApi(request,response,url){
    // responseScope apontem para o mesmo produtor, senao "oi" com produtor aberto e rejeitado na tela.
    const generalDomain=requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent)
    const aiGeneralKnowledgeBudget=await accessRepository.checkAiGeneralKnowledgeBudget(identity).catch(()=>({allowed:true}))
-   const general=await buildGeneralNoClientResponse({message:generalMessage,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:generalDomain,aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,aiUnavailableReason:aiGeneralKnowledgeBudget.allowed?'':'BUDGET_EXHAUSTED',sharedAnswerCache,signal:requestController.signal})
+   const general=await buildGeneralNoClientResponse({message:generalMessage,route:clientCapability,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:generalDomain,aiClient:aiGeneralKnowledgeBudget.allowed?voiceOpenAI:null,aiModel:config.modelFast,aiUnavailableReason:aiGeneralKnowledgeBudget.allowed?'':'BUDGET_EXHAUSTED',sharedAnswerCache,sourceRequests:knowledgeSourceRequests,research:webResearch,signal:requestController.signal})
    general.responseMetadata.questionContinued=generalQuestion.continued
    const aiGeneralKnowledgeCostUsd=Number(general?.responseMetadata?.aiGeneralKnowledgeCostUsd)||0
    if(aiGeneralKnowledgeCostUsd>0)await accessRepository.recordUsage(identity,{eventType:'ai_general_knowledge_usage',page:'val',entityType:'ai_general_knowledge',entityId:null,metadata:{costUsd:aiGeneralKnowledgeCostUsd,model:config.modelFast}})
@@ -1356,7 +1386,7 @@ createServer((request,response)=>{
   try{const technicalIdentity=await sessionIdentity(request);if(!managementOnlyAllowed(technicalIdentity,url.pathname,request.method))return json(response,403,{error:'Este acesso permite somente consulta gerencial.'});if(technicalWorkspace.handle(request,response,url,technicalIdentity,{demoAllowed:!auth.configured&&config.demoMode}))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
  }
  if(url.pathname==='/live'||url.pathname==='/ready'||url.pathname==='/health'||url.pathname.startsWith('/api/')){
-  try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){const programmingError=exception instanceof TypeError||exception instanceof RangeError||exception instanceof ReferenceError||exception instanceof SyntaxError;const status=Number(exception.statusCode)||(programmingError?500:400);const safeMessage=status<500||exception.safeToRetry===true||exception.exposeMessage===true?exception.message:'Não foi possível processar a solicitação.';const retryAfterSeconds=Math.max(0,Math.min(600,Math.ceil(Number(exception.retryAfterSeconds)||0)));if(retryAfterSeconds)response.setHeader('Retry-After',String(retryAfterSeconds));return json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception.code?{code:String(exception.code).slice(0,100)}:{}),...(exception.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{}),...(retryAfterSeconds?{retryAfterSeconds}:{})})}
+  try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){const programmingError=exception instanceof TypeError||exception instanceof RangeError||exception instanceof ReferenceError||exception instanceof SyntaxError;const status=Number(exception.statusCode)||(programmingError?500:400);const safeMessage=status<500||exception.safeToRetry===true||exception.exposeMessage===true?exception.message:'Não foi possível processar a solicitação.';const retryAfterSeconds=Math.max(0,Math.min(600,Math.ceil(Number(exception.retryAfterSeconds)||0)));if(retryAfterSeconds)response.setHeader('Retry-After',String(retryAfterSeconds));return json(response,status,{error:safeMessage||'Não foi possível processar a solicitação.',...(exception.code?{code:String(exception.code).slice(0,100)}:{}),...(exception.code==='realtime_voice_context_epoch_mismatch'&&exception.currentContext?{currentContext:exception.currentContext}:{}),...(exception.safeToRetry!==undefined?{safe_to_retry:Boolean(exception.safeToRetry)}:{}),...(retryAfterSeconds?{retryAfterSeconds}:{})})}
   return json(response,404,{error:'Rota não encontrada.'})
  }
  const relative=normalize(url.pathname==='/'?'index.html':url.pathname.replace(/^\/+/,''))

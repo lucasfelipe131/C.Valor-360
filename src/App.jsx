@@ -31,6 +31,7 @@ const Management=lazy(()=>import('./pages/Management'))
 const Settings=lazy(()=>import('./pages/Settings'))
 const DataHub=lazy(()=>import('./pages/DataHub'))
 const Admin=lazy(()=>import('./pages/Admin'))
+const KnowledgeSourceReview=lazy(()=>import('./components/KnowledgeSourceReview'))
 const PublicSurvey=lazy(()=>import('./pages/PublicSurvey'))
 
 
@@ -97,6 +98,7 @@ const meta={
  management:['Visão gerencial','Indicadores e relatórios da sua unidade'],
  settings:['Configurações','Conta, governança e parâmetros'],
  admin:['Administração','Acessos, uso e métricas globais do sistema'],
+ 'knowledge-review':['Revisão de fontes','Dúvidas sem fonte aprovada e a origem oficial que as responde'],
  copilot:['VAL Copilot','Centro de conversa, decisão e orquestração do ecossistema']
 }
 export default function App(){
@@ -420,6 +422,7 @@ export default function App(){
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
     {page==='management'&&<Management currentUser={currentUser} onConfigure={()=>navigate('admin')}/>}
     {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} loadError={portfolioError} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
+    {page==='knowledge-review'&&<KnowledgeSourceReview currentUser={currentUser} onNotify={notify}/>}
     {page==='admin'&&currentUser?.role==='admin'&&<Admin currentUser={currentUser} onNotify={notify}/>}
     </Suspense>
     </RouteBoundary>

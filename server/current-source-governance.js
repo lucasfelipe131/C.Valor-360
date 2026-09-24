@@ -49,6 +49,32 @@ const records=Object.freeze([
   cost:'No credential or paid service is present; no formal machine-readable update entitlement is evidenced.',
   integration_status:'MANUAL_REFERENCE_PRESENT_COPILOT_BLOCKED',current_claim_allowed:false,
   external_blocker:'Provide an authorized, versioned Agrofit/MAPA feed or approved dated export/update process (including permitted use and review owner) before enabling current-label answers in Copilot.'
+ }),
+ Object.freeze({
+  id:'knowledge-approved-source-request',domain:'BULAS',consumer:'COPILOT',provider:'Fonte oficial registrada e aprovada por um revisor nomeado da própria organização (val_knowledge_source_requests).',
+  source:'URL oficial em https sob gov.br ou embrapa.br, com o trecho citado e a data de consulta gravados no momento da aprovação.',
+  freshness:'A vigência é declarada na aprovação (source.valid_until). Vencida, a resposta deixa de ser servida e a dúvida volta a ser recusa regulada.',
+  timestamp:'accessed_at é quando o revisor consultou a fonte; approved_at é quando ele assumiu a responsabilidade. Os dois viajam na citação.',
+  failure_behavior:'Sem fonte aprovada e vigente o Copilot mantém a recusa regulada. Sem PostgreSQL a fila não existe e o comportamento é o anterior a este caminho.',
+  cache:'Nenhum cache externo: a leitura é da própria tabela, escopada por tenant.',
+  authority:'A autoridade é do documento oficial citado, não do modelo. O texto entregue é o excerto literal, e a responsabilidade técnica é da pessoa nomeada em approved_by.',
+  tenant_implications:'Escopo por tenant. O pedido recusa produtor colado, e o grounding continua barrando afirmação sobre indivíduo nomeado mesmo com a fonte aprovada.',
+  cost:'Nenhuma credencial ou serviço pago. A curadoria é humana e o custo é o tempo do revisor.',
+  integration_status:'HUMAN_APPROVED_SOURCE_AVAILABLE',current_claim_allowed:true,
+  external_blocker:'Nenhum para este caminho, que é curadoria humana e não feed automático. A busca automática de fontes permanece bloqueada — ver research-governed-lookup.'
+ }),
+ Object.freeze({
+  id:'research-governed-lookup',domain:'PESQUISA',consumer:'COPILOT',provider:'OpenAI Responses API, ferramenta web_search, na mesma conta e cliente já usados pela VAL (server/knowledge/web-research.js).',
+  source:'Allow-list configurável (VAL_WEB_RESEARCH_DOMAINS). Padrão: gov.br, embrapa.br e universidades com pesquisa agronômica. O filtro é pedido ao provedor e conferido de novo em cada citação devolvida.',
+  freshness:'Busca feita na hora da pergunta. A citação guarda endereço e título; a data de coleta é a da resposta.',
+  timestamp:'Cada trecho da resposta vem com url_citation do provedor. Resposta sem nenhuma citação é descartada.',
+  failure_behavior:'Falha do provedor, citação fora da lista, resposta sem citação ou conteúdo prescritivo descartam a pesquisa e o Copilot segue o caminho anterior (memória do modelo marcada como não verificada, ou recusa).',
+  cache:'Sem cache. A resposta pesquisada não entra em val_shared_knowledge_answers, que é compartilhada entre tenants e só aceita conhecimento não verificado.',
+  authority:'Síntese do modelo a partir das páginas encontradas: tem fonte, não tem revisor, e sai marcada assim. Dúvida regulada nunca é respondida pela pesquisa — ela só sugere fontes oficiais candidatas ao revisor, e jamais responde ao consultor sem aprovação humana.',
+  tenant_implications:'A pergunta do consultor sai para o provedor. O caminho é o geral, sem produtor selecionado nem memória privada; o grounding segue barrando afirmação sobre indivíduo nomeado.',
+  cost:'Cobrada por busca na conta OpenAI da organização. Entra no mesmo teto de IA geral por consultor (US$ 5 por login). A taxa por busca é estimativa conservadora em VAL_WEB_RESEARCH_CALL_COST_USD e deve ser ajustada pelo preço vigente.',
+  integration_status:'IMPLEMENTED_DISABLED_BY_FLAG',current_claim_allowed:false,
+  external_blocker:'Nenhum provedor a contratar. Para ligar: VAL_WEB_RESEARCH_ENABLED=true, confirmar a allow-list e ajustar o custo por busca ao preço vigente. Assunto regulado continua exigindo candidata DRAFT aprovada por uma pessoa, com ou sem a flag.'
  })
 ])
 

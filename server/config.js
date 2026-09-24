@@ -1,3 +1,5 @@
+import {researchDomains} from './knowledge/web-research.js'
+
 const readBoolean=(value,fallback=false)=>value===undefined?fallback:/^(1|true|yes|on)$/i.test(String(value))
 const boundedNumber=(value,fallback,min,max)=>{const parsed=Number(value);return Math.max(min,Math.min(max,Number.isFinite(parsed)?parsed:fallback))}
 const choice=(value,allowed,fallback)=>allowed.includes(String(value||'').toLowerCase())?String(value).toLowerCase():fallback
@@ -64,6 +66,12 @@ export const config=Object.freeze({
   realtimeVoiceRequestsPerTenMinutes:boundedNumber(process.env.VAL_REALTIME_VOICE_REQUESTS_PER_10_MINUTES,6,1,20),
   realtimeVoiceTesters:String(process.env.VAL_REALTIME_VOICE_TESTERS||'').split(',').map(value=>value.trim().toLowerCase()).filter(Boolean).slice(0,50),
   knowledgeVectorStoreId:String(process.env.VAL_KNOWLEDGE_VECTOR_STORE_ID||''),
+  // Pesquisa custa por busca na conta OpenAI da organização. Desligada por padrão, como a voz em
+  // tempo real: ninguém paga por ela sem ter decidido ligá-la. O custo entra no mesmo teto de IA
+  // geral por consultor, e a taxa por busca é estimativa conservadora a ajustar pelo preço vigente.
+  webResearchEnabled:readBoolean(process.env.VAL_WEB_RESEARCH_ENABLED,false),
+  webResearchDomains:researchDomains(process.env.VAL_WEB_RESEARCH_DOMAINS),
+  webResearchCallCostUsd:boundedNumber(process.env.VAL_WEB_RESEARCH_CALL_COST_USD,0.03,0,1),
   manualWebhookSecret:String(process.env.VAL_MANUAL_WEBHOOK_SECRET||''),
   integrationToken:String(process.env.VAL_INTEGRATION_TOKEN||''),
   adminEmail:String(process.env.VAL_ADMIN_EMAIL||''),

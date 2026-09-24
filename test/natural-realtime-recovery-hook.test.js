@@ -7,7 +7,7 @@ import useNaturalRealtimeVoice from '../src/hooks/useNaturalRealtimeVoice.js'
 const deferred=()=>{let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no});return {promise,resolve,reject}}
 const json=(value,status=200)=>new Response(JSON.stringify(value),{status,headers:{'Content-Type':'application/json'}})
 
-async function mountVoice({permissionQuery=async()=>({state:'granted'}),statusResponse=null,getMedia=null,usageResponse=null,onToolCall=null,sessionResponse=null,onAssistantTranscript=null,onUserTranscript=null,onError=null}={}){
+async function mountVoice({permissionQuery=async()=>({state:'granted'}),statusResponse=null,getMedia=null,usageResponse=null,onToolCall=null,sessionResponse=null,callResponse=null,onAssistantTranscript=null,onUserTranscript=null,onError=null}={}){
  const saved=new Map()
  const replace=(key,value)=>{saved.set(key,Object.getOwnPropertyDescriptor(globalThis,key));Object.defineProperty(globalThis,key,{value,writable:true,configurable:true})}
  const requests=[],streams=[],audios=[],peers=[]
@@ -31,7 +31,7 @@ async function mountVoice({permissionQuery=async()=>({state:'granted'}),statusRe
   requests.push({path:String(path),payload,signal:options.signal})
   if(path==='/api/v1/realtime-voice/status')return statusResponse?statusResponse():json({available:true,canRetry:true})
   if(path==='/api/v1/realtime-voice/sessions'){sessionCount++;if(sessionResponse)return sessionResponse(payload);return json({sessionId:`voice-session-${sessionCount}`,clientSecret:'ek_mock',model:'test-model',callUrl:'https://voice.mock/realtime/calls',maxSessionSeconds:600,budget:{remainingUsd:24},context:{clientId:payload.clientId||null,conversationId:payload.conversationId,contextEpoch:payload.contextEpoch}},201)}
-  if(path==='https://voice.mock/realtime/calls')return new Response('v=0\n',{status:200})
+  if(path==='https://voice.mock/realtime/calls')return callResponse?callResponse():new Response('v=0\n',{status:200})
   if(String(path).endsWith('/usage'))return usageResponse?usageResponse(payload):json({accepted:true,remainingUsd:24,exhausted:false})
   if(String(path).endsWith('/turns'))return json({accepted:true,reconnectRequired:false})
   throw new Error(`Unexpected mock request ${path}`)
@@ -524,4 +524,44 @@ test('missing response.created and response.done cannot leave recovery thinking 
   assert.equal(app.sessionCount,1)
   assert.equal(app.peers[0].dc.sent.filter(event=>event.type==='response.create').length,1)
  }finally{await app.dispose();t.mock.timers.reset()}
+})
+
+// O consultor abriu o modo conversa com o microfone concedido e recebeu "verifique sua internet"
+// enquanto todas as outras chamadas da aba respondiam. A troca de SDP é a única chamada
+// cross-origin do fluxo e o browser a rejeita com um TypeError cru: sem identificar o passo, uma
+// falha de transporte fica indistinguível de um bug de código e de uma queda de rede do usuário.
+test('sdp exchange rejected by the browser is reported as transport, not as microphone or internet',async()=>{
+ const app=await mountVoice({callResponse:()=>{throw new TypeError('Failed to fetch')}})
+ try{
+  const result=await app.start()
+  assert.equal(result.ok,false)
+  assert.equal(result.reason,'WEBRTC_SDP_EXCHANGE_FAILED')
+  assert.equal(app.microphoneCalls,1)
+  assert.equal(app.voice.state.microphonePermission,'GRANTED')
+  assert.equal(app.voice.state.fallbackReason,'WEBRTC_SDP_EXCHANGE_FAILED')
+  assert.match(app.voice.state.error,/servidor de voz/)
+  assert.doesNotMatch(app.voice.state.error,/Verifique sua internet/)
+  assert.equal(app.streams[0].track.stopped,true)
+  const final=app.requests.find(request=>request.payload?.final===true)
+  assert.equal(final.payload.disconnectReason,'WEBRTC_SDP_EXCHANGE_FAILED')
+  assert.equal(final.payload.transportDetail,'TypeError: Failed to fetch')
+  assert.equal(final.payload.providerStatus,undefined)
+ }finally{await app.dispose()}
+})
+
+// Um 4xx do provider era colapsado em "O provider recusou a conexão WebRTC" com status e corpo
+// descartados. Era exatamente a informação necessária para corrigir a sessão e nunca saiu do browser.
+test('sdp exchange refused by the provider keeps status and body for the server log',async()=>{
+ const app=await mountVoice({callResponse:()=>new Response('{"error":{"code":"invalid_client_secret"}}',{status:401})})
+ try{
+  const result=await app.start()
+  assert.equal(result.ok,false)
+  assert.equal(result.reason,'WEBRTC_PROVIDER_REJECTED')
+  assert.equal(app.voice.state.microphonePermission,'GRANTED')
+  const final=app.requests.find(request=>request.payload?.final===true)
+  assert.equal(final.payload.disconnectReason,'WEBRTC_PROVIDER_REJECTED')
+  assert.equal(final.payload.providerStatus,401)
+  assert.match(final.payload.transportDetail,/invalid_client_secret/)
+  assert.equal(app.voice.state.retryAfterSeconds>0,true)
+ }finally{await app.dispose()}
 })
