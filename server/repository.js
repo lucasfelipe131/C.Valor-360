@@ -1,5 +1,6 @@
 import {saveWorkspaceOpportunity,workspaceDetails} from './opportunity-workspace.js'
 import {createHash,randomUUID} from 'node:crypto'
+import {readFileSync} from 'node:fs'
 import {hasTechnicalApproval} from './ingestion.js'
 import {assertTenantScope} from './tenant-scope.js'
 import {observe} from './observability.js'
@@ -14,6 +15,8 @@ import {buildAgronomicScanProvenance} from './agronomic-scan-provenance.js'
 import {resolveAuthorizedClientReference as reconcileAuthorizedClientReference} from './decision-copilot/client-reference-resolver.js'
 import {createProducerEntityIndexCache} from './decision-copilot/producer-entity-index-cache.js'
 import {selectScopedPriorRecommendations} from './conversation-thread-context.js'
+import {commercialSourceScope,resolveCommercialRows} from './commercial-import-identity.js'
+import {buildCommercialIntelligence} from '../src/lib/commercial-intelligence.js'
 
 export function jsonbParameter(value){
   if(value===undefined)return null
@@ -183,8 +186,58 @@ const profileSourceKey=(source,externalKey,answers)=>`${source}:${externalKey}:$
 // municipios diferentes sao pessoas diferentes. O primeiro mantem a chave historica - senao o
 // cadastro ja gravado deixaria de casar no proximo envio e viraria duplicata - e os demais ganham
 // o municipio na identidade.
-const surveyPlaceSlug=value=>normalize(value).replace(/\s+/g,'-')
+// A Q2 e texto livre e o mesmo produtor escreve o municipio de tres jeitos entre uma resposta e
+// outra: "Sorriso", "Sorriso/MT", "Sorriso - MT", "Zona rural de Sorriso". Comparado literalmente,
+// cada grafia virava uma PESSOA diferente, e o cadastro novo nascia sem o historico do anterior.
+// A canonizacao usa a referencia que o produto ja embarca (public/geo/municipalities.json) e so
+// cai na comparacao literal quando nenhum dos lados resolve - fail-safe: continua distinguindo
+// xara de municipios de verdade.
+const brazilianStateCode=new Set(['ac','al','ap','am','ba','ce','df','es','go','ma','mt','ms','mg','pa','pb','pr','pe','pi','rj','rn','rs','ro','rr','sc','sp','se','to'])
+let municipalityIndex=null
+// Dois indices de proposito. Com a UF na resposta, ela DISTINGUE - ha 5 "Bom Jesus" no Brasil, e
+// descartar a sigla fundiria produtores de estados diferentes. Sem a UF, so vale nome que e unico no
+// pais; nome ambiguo cai na comparacao literal, que e o comportamento seguro.
+const loadMunicipalityIndex=()=>{
+ if(municipalityIndex)return municipalityIndex
+ const byNameState=new Map(),nameCount=new Map(),byName=new Map()
+ try{
+  for(const row of JSON.parse(readFileSync(new URL('../public/geo/municipalities.json',import.meta.url),'utf8'))){
+   const name=normalize(row[1]),state=String(row[2]||'').toLowerCase(),code=String(row[0])
+   if(!name)continue
+   byNameState.set(`${name}|${state}`,code)
+   nameCount.set(name,(nameCount.get(name)||0)+1)
+   byName.set(name,code)
+  }
+  for(const [name,count] of nameCount)if(count>1)byName.delete(name)
+ }catch{}
+ municipalityIndex={byNameState,byName}
+ return municipalityIndex
+}
+const surveyPlaceSlug=value=>{
+ const words=normalize(value).split(' ').filter(Boolean)
+ if(!words.length)return ''
+ const state=words.findLast?words.findLast(word=>brazilianStateCode.has(word)):[...words].reverse().find(word=>brazilianStateCode.has(word))
+ const place=words.filter(word=>!brazilianStateCode.has(word))
+ if(!place.length)return words.join('-')
+ const {byNameState,byName}=loadMunicipalityIndex()
+ // O municipio vem DEPOIS do ruido em texto livre - "Zona rural de Sorriso", "Fazenda Boa Vista,
+ // Sorriso" -, e nome de fazenda no Brasil e quase sempre nome de cidade. Por isso a busca comeca
+ // pelo fim: o trecho mais a direita vence, e entre os que terminam no mesmo ponto vence o maior.
+ for(let end=place.length;end>0;end-=1)
+  for(let size=Math.min(end,6);size>0;size-=1){
+   const name=place.slice(end-size,end).join(' ')
+   const code=state?byNameState.get(`${name}|${state}`):byName.get(name)
+   if(code)return `ibge-${code}`
+  }
+ // Sem correspondencia comprovada, mantenha o texto e a UF: desconhecido/RS nao e desconhecido/RN.
+ return words.join('-')
+}
 const resolveSurveyExternalKey=async(connection,tenantId,ownerId,candidateKey,name,municipality='')=>{
+  // O SELECT ... FOR UPDATE nao trava nada quando ainda NAO existe linha com aquele nome: duas
+  // respostas simultaneas de xaras leem vazio, escolhem a mesma chave e a segunda sobrescreve a
+  // primeira no ON CONFLICT. A trava e pelo NOME normalizado porque a chave so existe depois da
+  // resolucao. xact_lock solta sozinho no COMMIT, e este e o ponto comum dos tres caminhos.
+  await connection.query(`SELECT pg_advisory_xact_lock(hashtextextended($1::text||':'||$2::text||':survey-name:'||$3::text,0))`,[tenantId,ownerId,normalize(name)])
   const existing=await connection.query(`SELECT external_key,municipality FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND status='active' AND (external_key=$3 OR LOWER(BTRIM(name))=LOWER(BTRIM($4))) ORDER BY CASE WHEN external_key=$3 THEN 0 ELSE 1 END FOR UPDATE`,[tenantId,ownerId,candidateKey,String(name||'').slice(0,180)])
   const place=surveyPlaceSlug(municipality)
   // A checagem de municipio vale inclusive para o casamento exato de chave. A chave candidata deriva
@@ -197,7 +250,11 @@ const resolveSurveyExternalKey=async(connection,tenantId,ownerId,candidateKey,na
   // Sem nenhum cadastro com este nome, a chave continua sendo so o nome. O sufixo de municipio so
   // aparece quando ha xara de fato, para nao mudar a chave de quem ja esta gravado.
   if(!existing.rows.length||!place)return candidateKey
-  return `${candidateKey}-${place}`.slice(0,180)
+  // O slice cortava o sufixo fora quando a razao social ja ocupava os 180, e os xaras colapsavam de
+  // novo. Quem cede caracteres e o nome; o municipio, que e o que DISTINGUE, nunca.
+  const suffix=`-${place}`
+  if(suffix.length>179)return `${candidateKey.slice(0,139)}-${createHash('sha256').update(place).digest('hex').slice(0,40)}`
+  return `${candidateKey.slice(0,180-suffix.length)}${suffix}`
 }
 const sanitizeProfileResult=value=>{
   const result=jsonObject(value);if(!Object.keys(result).length)return value
@@ -256,7 +313,7 @@ const clientFromRow=(row,{defaults=false}={})=>{
     profileUpdatedAt:iso(row.profile_assessed_at)||snapshot.profileUpdatedAt||null,
     profileValidUntil:iso(row.profile_valid_until)||null,
     location:row.property_location===undefined?null:locationFromMetadata({location:row.property_location}),
-    source:'Banco VALOR 360'
+    source:row.source||'Banco VALOR 360'
   }
 }
 const surveyRecord=row=>({token:row.token,producerName:row.producer_name,consultantName:row.consultant_name,status:row.status,answers:row.answers||undefined,result:sanitizeProfileResult(row.result)||undefined,createdAt:iso(row.created_at),expiresAt:iso(row.expires_at),submittedAt:iso(row.submitted_at),integratedAt:iso(row.integrated_at)})
@@ -479,7 +536,10 @@ const canonicalProfileText=value=>{
 const profileContextClientValue=(field,value)=>{
   const candidate=profileAnswerText(value)
   if(field!=='servicePreference'||!candidate)return candidate||null
-  return candidate.replace(/^visitas?\s+presenciais?\s+frequentes?/i,'Prefere atendimento presencial frequente').replace(/^visitas?\s+presenciais?/i,'Prefere atendimento presencial')
+  // The verified field supplies its behavioral meaning even when the answer
+  // has no word such as "prefere" (e.g. scheduled meetings or WhatsApp). Keep
+  // the literal answer in the signal; canonical answers/evidence stay intact.
+  return `Preferência de atendimento: ${candidate}`
 }
 const objectAt=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{}
 const profileAliasState=(source,aliases,normalizeValue=value=>String(value??'').trim())=>{
@@ -644,6 +704,7 @@ function materializeCanonicalBehavioralProfileEvidence({
   }
   for(const spec of canonicalProfileFields.filter(item=>!item.question)){
     const value=spec.field==='primaryProfile'?primaryProfile:secondaryProfile
+    if(/^(?:a classificar|a aprofundar)$/.test(normalize(value)))continue
     if(value)add({spec,value,locator:spec.field==='primaryProfile'?'primary_profile':'secondary_profile',priority:5,sourceType:'behavioral_profile_evidence',epistemicType:'FACT',sourceId:String(profileId),evidenceRefs:[]})
   }
 
@@ -820,7 +881,7 @@ export class ValRepository{
     try{
       const [importResult,clientResult,visitResult,opportunityResult]=await Promise.all([
         this.db.query('SELECT summary FROM import_jobs WHERE tenant_id=$1 AND owner_user_id=$2 ORDER BY created_at DESC LIMIT 20',[this.tenantId,ownerId]),
-        this.db.query(`SELECT c.external_key,c.name,c.municipality,c.total_area_ha,c.area_band,c.cultures,c.preferred_channel,c.commercial_profile,c.relationship_profile,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,
+        this.db.query(`SELECT c.source,c.external_key,c.name,c.municipality,c.total_area_ha,c.area_band,c.cultures,c.preferred_channel,c.commercial_profile,c.relationship_profile,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,
             COALESCE((SELECT SUM(value) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won'),0) purchase_total,
             COALESCE((SELECT COUNT(*) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won'),0) purchase_count,
             (SELECT MAX(occurred_at) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won') last_purchase_at,
@@ -881,7 +942,7 @@ export class ValRepository{
       return (intelligence.clients||[]).map(client=>({...client,properties:[]}))
     }
     try{
-      const result=await this.db.query(`SELECT c.external_key,c.name,c.municipality,c.total_area_ha,c.area_band,c.cultures,c.preferred_channel,c.commercial_profile,c.relationship_profile,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,COALESCE(NULLIF(p.profile_snapshot,'{}'::jsonb),survey.result,'{}'::jsonb) profile_snapshot,
+      const result=await this.db.query(`SELECT c.source,c.external_key,c.name,c.municipality,c.total_area_ha,c.area_band,c.cultures,c.preferred_channel,c.commercial_profile,c.relationship_profile,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,COALESCE(NULLIF(p.profile_snapshot,'{}'::jsonb),survey.result,'{}'::jsonb) profile_snapshot,
         COALESCE((SELECT jsonb_agg(property_record ORDER BY property_record.updated_at DESC) FROM (
           SELECT property.id,property.external_key,property.name,property.municipality,property.area_ha,property.metadata,property.updated_at,
             COALESCE((SELECT jsonb_agg(field_record ORDER BY field_record.updated_at DESC) FROM (
@@ -1503,8 +1564,8 @@ export class ValRepository{
   async saveVisitOutcome({tenantId=this.tenantId,ownerId,actorId=ownerId,outcome}={}){
     tenantId=assertTenantScope(this.tenantId,tenantId)
     if(String(outcome?.organization_id||'')!==String(tenantId)||String(outcome?.recorded_by||'')!==String(actorId))throw domainError('O outcome pertence a outro escopo.',403)
-    if(!this.db.configured){const store=this.fallback();const visit=store.visits.find(item=>String(item.id)===String(outcome.visit_id)&&String(item.tenantId||tenantId)===String(tenantId)&&String(item.ownerId??ownerId)===String(ownerId));if(!visit)throw domainError('Visita não encontrada na carteira autorizada.',404);const stored={...structuredClone(outcome),tenantId,ownerId};store.val.outcomes.push(stored);this.saveStore(store);return stored}
-    try{const result=await this.db.query(`INSERT INTO val_outcomes (id,tenant_id,visit_id,client_id,visit_report_id,recommendation_id,action_plan_id,commitment_id,contract_version,outcome_type,result,evidence_refs,measured_at,recorded_by,confidence,notes,created_at) SELECT $1,$2,visit.id,visit.client_id,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15 FROM visits visit JOIN clients client ON client.tenant_id=visit.tenant_id AND client.id=visit.client_id WHERE visit.tenant_id=$2 AND visit.id=$16 AND visit.consultant_id=$12 AND client.consultant_id=$12 RETURNING val_outcomes.*,(SELECT external_key FROM clients WHERE id=val_outcomes.client_id) client_external_key`,[outcome.outcome_id,tenantId,outcome.visit_report_id,outcome.recommendation_id,outcome.action_plan_id,outcome.commitment_id,outcome.contract_version,outcome.outcome_type,jsonbParameter(outcome.result),jsonbParameter(outcome.evidence_refs),outcome.measured_at,actorId,outcome.confidence,outcome.notes||null,outcome.created_at,outcome.visit_id]);if(!result.rowCount)throw domainError('Visita não encontrada na carteira autorizada.',404);return outcomeRecord(result.rows[0])}catch(error){if(error.statusCode)throw error;throw serviceError('O outcome não pôde ser salvo no PostgreSQL configurado.')}
+    if(!this.db.configured){const store=this.fallback();const visit=store.visits.find(item=>String(item.id)===String(outcome.visit_id)&&String(item.tenantId||tenantId)===String(tenantId)&&String(item.ownerId??ownerId)===String(ownerId));if(!visit)throw domainError('Visita não encontrada na carteira autorizada.',404);if(outcome.commitment_id&&!store.val.commitments.some(item=>String(item.commitment_id)===String(outcome.commitment_id)&&String(item.tenantId)===String(tenantId)&&String(item.ownerId)===String(ownerId)&&String(item.client_id)===String(visit.clientId)&&(item.owner_type!=='USER'||String(item.owner_id)===String(actorId))))throw domainError('Compromisso não encontrado na carteira autorizada.',404);const stored={...structuredClone(outcome),tenantId,ownerId};store.val.outcomes.push(stored);this.saveStore(store);return stored}
+    try{const result=await this.db.query(`INSERT INTO val_outcomes (id,tenant_id,visit_id,client_id,visit_report_id,recommendation_id,action_plan_id,commitment_id,contract_version,outcome_type,result,evidence_refs,measured_at,recorded_by,confidence,notes,created_at) SELECT $1,$2,visit.id,visit.client_id,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15 FROM visits visit JOIN clients client ON client.tenant_id=visit.tenant_id AND client.id=visit.client_id WHERE visit.tenant_id=$2 AND visit.id=$16 AND visit.consultant_id=$12 AND client.consultant_id=$12 AND ($6::uuid IS NULL OR EXISTS (SELECT 1 FROM val_commitments commitment WHERE commitment.tenant_id=visit.tenant_id AND commitment.id=$6::uuid AND commitment.client_id=visit.client_id AND (commitment.owner_type<>'USER' OR commitment.owner_id=$12::text))) RETURNING val_outcomes.*,(SELECT external_key FROM clients WHERE id=val_outcomes.client_id) client_external_key`,[outcome.outcome_id,tenantId,outcome.visit_report_id,outcome.recommendation_id,outcome.action_plan_id,outcome.commitment_id,outcome.contract_version,outcome.outcome_type,jsonbParameter(outcome.result),jsonbParameter(outcome.evidence_refs),outcome.measured_at,actorId,outcome.confidence,outcome.notes||null,outcome.created_at,outcome.visit_id]);if(!result.rowCount)throw domainError('Visita ou compromisso não encontrado na carteira autorizada.',404);return outcomeRecord(result.rows[0])}catch(error){if(error.statusCode)throw error;throw serviceError('O outcome não pôde ser salvo no PostgreSQL configurado.')}
   }
 
   async getVisitLearningContext({tenantId=this.tenantId,ownerId,visitId}={}){
@@ -2220,6 +2281,7 @@ export class ValRepository{
     if(!this.db.configured)return {persisted:false}
     const archivedSkipped=[]
     let orphanEvents=0,unrecognizedOutcome=0,unrecognizedDate=0,persistedEvents=0
+    const rowResults=[],acceptedClients=[]
     try{
       await this.db.transaction(async connection=>{
         await connection.query(`INSERT INTO import_jobs (id,tenant_id,owner_user_id,source_type,file_name,status,row_count,recognized_count,summary,completed_at) VALUES ($1,$2,$3,'commercial_history',$4,'completed',$5,$6,$7,NOW()) ON CONFLICT (id) DO NOTHING`,[summary.id,tenantId,ownerId,summary.fileName,summary.rowCount,clients.length,jsonbParameter(summary)])
@@ -2238,36 +2300,56 @@ export class ValRepository{
         const clientKeys=new Map(clients.map(item=>[normalize(item.name),String(item.id||'').slice(0,180)]))
         // external_id derivado do conteúdo (não do id do job): reenviar a mesma planilha atualiza os
         // eventos pelo ON CONFLICT em vez de duplicar as compras a cada importação.
-        const fingerprints=new Map()
+        const prepared=[]
         for(let index=0;index<rows.slice(0,5000).length;index++){
-          const row=rows[index]||{};const name=String(row[mapping.client]||'').trim();if(!name)continue
+          const row=rows[index]||{};const name=String(row[mapping.client]||'').trim();if(!name){rowResults.push({row:index+1,status:'REJECTED',reason:'MISSING_PRODUCER'});continue}
           const status=mapping.status?row[mapping.status]:null;const eventOutcome=outcome(status);const occurredAt=parsedDate(mapping.date?row[mapping.date]:null)
           // Nao inventar resultado para linha sem status ou sem data e a decisao certa. Contar quantas
           // foram descartadas, e por que, e o que faltava: a tela dizia "REGISTROS INCORPORADOS 120"
           // com zero compras no banco, e o Cliente 360 do mesmo produtor mostrava R$ 0.
-          if(!eventOutcome||!occurredAt){if(!eventOutcome)unrecognizedOutcome+=1;else unrecognizedDate+=1;continue}
+          if(!eventOutcome||!occurredAt){if(!eventOutcome)unrecognizedOutcome+=1;else unrecognizedDate+=1;rowResults.push({row:index+1,status:'REJECTED',reason:!eventOutcome?'UNRECOGNIZED_STATUS':'INVALID_DATE'});continue}
+          const value=parseMoney(row[mapping.value]),hasValue=String(row[mapping.value]??'').trim()!==''
+          if((hasValue&&value===null)||(value!==null&&Math.abs(value)>=1e14)){rowResults.push({row:index+1,status:'REJECTED',reason:value===null?'INVALID_AMOUNT':'AMOUNT_OUT_OF_RANGE'});continue}
           const safeRow={client:name.slice(0,180),value:row[mapping.value]??null,date:row[mapping.date]??null,product:String(row[mapping.product]||'').slice(0,180)||null,status:String(status||'').slice(0,240)||null,municipality:String(row[mapping.municipality]||'').slice(0,140)||null,culture:String(row[mapping.culture]||'').slice(0,160)||null,area:row[mapping.area]??null}
           const externalKey=clientKeys.get(normalize(name))||normalize(name).replace(/\s+/g,'-').slice(0,180)
-          if(archivedSkipped.includes(externalKey))continue
+          if(archivedSkipped.includes(externalKey)){rowResults.push({row:index+1,status:'REJECTED',reason:'ARCHIVED_PRODUCER'});continue}
           // Produtor acima do corte de 2.000 nao foi gravado: sem este guarda o evento entrava com
           // client_id NULL e a compra ficava no livro sem dono, invisivel e irrecuperavel pela tela.
           const resolvedImportClientId=clientInternalIds.get(externalKey)
-          if(!resolvedImportClientId){orphanEvents++;continue}
+          if(!resolvedImportClientId){orphanEvents++;rowResults.push({row:index+1,status:'REJECTED',reason:'UNRESOLVED_PRODUCER'});continue}
           const occurredIso=new Date(occurredAt).toISOString()
-          // A impressao digital carregava valor, resultado e status - justamente os campos que o consultor
-          // corrige na planilha antes de reimportar. Com eles na chave, o ON CONFLICT DO UPDATE logo abaixo
-          // nunca casava e a correcao criava um SEGUNDO evento: a venda de 10 mil virava 25 mil e
-          // "negocios reconhecidos" virava 2 para uma venda so. A chave e a identidade da linha; o ordinal
-          // continua separando duas vendas reais do mesmo produto no mesmo dia.
-          const fingerprint=createHash('sha256').update(JSON.stringify([tenantId,ownerId,externalKey,occurredIso,safeRow.product||''])).digest('hex').slice(0,40)
-          const ordinal=(fingerprints.get(fingerprint)||0)+1;fingerprints.set(fingerprint,ordinal)
-          const eventExternalId=`commercial_import:${fingerprint}:${ordinal}`
+          prepared.push({index,clientId:resolvedImportClientId,externalKey,occurredIso,eventOutcome,value,productIdentity:String(row[mapping.product]||'').trim().normalize('NFC'),safeRow,...commercialSourceScope({row,mapping,fileName:summary.fileName})})
+        }
+        // The existing per-producer advisory locks serialize all import requests in
+        // this tenant/owner. Resolve persisted identities before INSERT, under the
+        // same transaction; nothing depends on a process cache or row ordering.
+        const existing=await connection.query(`SELECT * FROM business_events WHERE tenant_id=$1 AND owner_user_id=$2 AND source='commercial_import' AND client_id=ANY($3::uuid[]) FOR UPDATE`,[tenantId,ownerId,[...clientInternalIds.values()]])
+        for(const resolved of resolveCommercialRows(prepared,existing.rows,{tenantId,ownerId})){
+          rowResults.push({row:resolved.index+1,status:resolved.status,reason:resolved.reason,...(resolved.externalId?{externalId:resolved.externalId}:{})})
+          if(resolved.status==='REVIEW_REQUIRED')continue
+          const {clientId,externalKey,externalId,occurredIso,eventOutcome,safeRow,value,payload}=resolved
           await connection.query(`INSERT INTO business_events (tenant_id,owner_user_id,client_id,client_external_key,source,external_id,occurred_at,outcome,category,product,value,currency,loss_reason,payload)
-            VALUES ($1,$12,$2,$3,'commercial_import',$4,$5,$6,$7,$8,$9,'BRL',$10,$11) ON CONFLICT (tenant_id,owner_user_id,source,external_id) DO UPDATE SET client_id=EXCLUDED.client_id,client_external_key=EXCLUDED.client_external_key,occurred_at=EXCLUDED.occurred_at,outcome=EXCLUDED.outcome,category=EXCLUDED.category,product=EXCLUDED.product,value=EXCLUDED.value,loss_reason=EXCLUDED.loss_reason,payload=EXCLUDED.payload`,[tenantId,resolvedImportClientId,externalKey,eventExternalId,occurredAt,eventOutcome,String(row[mapping.product]||'').trim().slice(0,140)||null,String(row[mapping.product]||'').trim().slice(0,180)||null,parseMoney(row[mapping.value]),eventOutcome==='lost'?String(status||'').slice(0,240):null,jsonbParameter(safeRow),ownerId])
+            VALUES ($1,$12,$2,$3,'commercial_import',$4,$5,$6,$7,$8,$9,'BRL',$10,$11) ON CONFLICT (tenant_id,owner_user_id,source,external_id) DO UPDATE SET occurred_at=EXCLUDED.occurred_at,outcome=EXCLUDED.outcome,category=EXCLUDED.category,product=EXCLUDED.product,value=EXCLUDED.value,loss_reason=EXCLUDED.loss_reason,payload=EXCLUDED.payload WHERE business_events.client_id=EXCLUDED.client_id`,[tenantId,clientId,externalKey,externalId,occurredIso,eventOutcome,safeRow.product?.slice(0,140)||null,safeRow.product||null,value,eventOutcome==='lost'?safeRow.status:null,jsonbParameter(payload),ownerId])
           persistedEvents+=1
         }
+        rowResults.sort((a,b)=>a.row-b.row)
+        // Rejected/ambiguous input must not become portfolio revenue through
+        // the imported profile either. Reuse existing derivation on persisted
+        // canonical events, including earlier accepted files, in this transaction.
+        const canonical=await connection.query(`SELECT client_id,payload FROM business_events WHERE tenant_id=$1 AND owner_user_id=$2 AND source='commercial_import' AND client_id=ANY($3::uuid[])`,[tenantId,ownerId,[...clientInternalIds.values()]])
+        for(const item of importedClients){
+          const externalKey=String(item.id||'').slice(0,180),clientId=clientInternalIds.get(externalKey)
+          if(!clientId)continue
+          const acceptedRows=canonical.rows.filter(event=>event.client_id===clientId).map(event=>({...event.payload,client:item.name}))
+          const commercial=buildCommercialIntelligence(acceptedRows,{client:'client',value:'value',date:'date',product:'product',status:'status',municipality:'municipality',culture:'culture',area:'area'})[0]?.commercial||{revenue:0,frequency:0,averageTicket:null,knownOutcomes:0,categories:[],lastBusinessAt:null,score:0,evidenceCoverage:0,conversion:null,priority:'Nutrir',opportunity:'Sem negócios reconhecidos nesta importação'}
+          delete commercial.property
+          const updated=await connection.query(`UPDATE clients SET commercial_profile=commercial_profile||$1::jsonb WHERE tenant_id=$2 AND consultant_id=$3 AND id=$4 RETURNING commercial_profile`,[jsonbParameter(commercial),tenantId,ownerId,clientId])
+          acceptedClients.push({...item,id:externalKey,commercial:updated.rows[0]?.commercial_profile||commercial})
+        }
+        await connection.query(`UPDATE import_jobs SET summary=summary||$1::jsonb WHERE id=$2 AND tenant_id=$3 AND owner_user_id=$4`,[jsonbParameter({rowResults,persistedEventCount:persistedEvents,totalRevenue:acceptedClients.reduce((sum,item)=>sum+Number(item.commercial.revenue||0),0),createdEventCount:rowResults.filter(row=>row.status==='CREATED').length,updatedEventCount:rowResults.filter(row=>row.status==='UPDATED').length,ignoredEventCount:rowResults.filter(row=>row.status==='IGNORED_IDEMPOTENT').length,ambiguousEventCount:rowResults.filter(row=>row.status==='REVIEW_REQUIRED').length,rejectedEventCount:rowResults.filter(row=>row.status==='REJECTED').length}),summary.id,tenantId,ownerId])
       })
-      return {persisted:true,rawRows:Math.min(rows.length,5000),truncated:Boolean(summary.truncated),persistedClientCount:Math.min(clients.length,2000)-archivedSkipped.length,clientsTruncated:clients.length>2000,archivedSkipped,skippedEventCount:orphanEvents,clientLimit:2000,persistedEventCount:persistedEvents,unrecognizedOutcomeCount:unrecognizedOutcome,unrecognizedDateCount:unrecognizedDate}
+      const count=status=>rowResults.filter(row=>row.status===status).length
+      return {persisted:true,rawRows:Math.min(rows.length,5000),truncated:Boolean(summary.truncated),persistedClientCount:Math.min(clients.length,2000)-archivedSkipped.length,clientsTruncated:clients.length>2000,archivedSkipped,skippedEventCount:orphanEvents,clientLimit:2000,persistedEventCount:persistedEvents,unrecognizedOutcomeCount:unrecognizedOutcome,unrecognizedDateCount:unrecognizedDate,createdEventCount:count('CREATED'),updatedEventCount:count('UPDATED'),ignoredEventCount:count('IGNORED_IDEMPOTENT'),ambiguousEventCount:count('REVIEW_REQUIRED'),rejectedEventCount:count('REJECTED'),rowResults,acceptedClients}
     }catch{throw serviceError('A importação não pôde ser persistida no PostgreSQL configurado.')}
   }
 }

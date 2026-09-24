@@ -1,4 +1,5 @@
 import {classifyValContextDomain,conversationReferenceKind} from './context-selector.js'
+import {registeredFactQuery} from '../registered-fact-query.js'
 
 export const conversationStateVersion='val.conversation_state.v1'
 
@@ -350,6 +351,10 @@ export function switchConversationClient(current={},client,scope={}){
 function shouldPreserveDomain(message,event={},classifiedDomain='GENERAL'){
  const referenceKind=conversationReferenceKind(message)
  if(event.preserveDomain===true||event.sessionCommand)return referenceKind==='TURN_CONTENT'&&classifiedDomain==='GENERAL'
+ // Perguntas literais sobre hobby/cônjuge mantêm o produtor, mas pedem outro fato.
+ // Herdar AGRONOMY/VISIT por causa de “dele” conflita com a consulta GENERAL
+ // e faz o validador rejeitar a resposta. A fronteira muda antes do lookup.
+ if(['hobby','spouse'].includes(registeredFactQuery(message)?.kind))return false
  // “E nessa área?” aponta para o objeto autorizado da sessão. Retirar apenas o demonstrativo
  // antes de classificar distingue a continuidade de uma pergunta nova sobre crédito/mercado.
  const source=normalize(message)

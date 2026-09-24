@@ -32,7 +32,7 @@ O modo atual continua sendo um **piloto para uma organização**. Antes de atend
 Nunca coloque segredos no frontend, no GitHub ou em mensagens. Configure-os no ambiente privado do servidor nesta ordem:
 
 1. `DATABASE_URL` e execute `npm run db:migrate`.
-2. `VAL_ADMIN_EMAIL`, `VAL_ADMIN_PASSWORD` (mínimo 12 caracteres) e `VAL_SESSION_SECRET` (mínimo 32 caracteres).
+2. `VAL_ADMIN_EMAIL`, `VAL_ADMIN_PASSWORD` (mínimo 12 caracteres) e `VAL_SESSION_SECRET` (mínimo 32 caracteres). `VAL_ADMIN_PASSWORD` também funciona como credencial break-glass: após uma rotação, o primeiro login com `VAL_ADMIN_EMAIL` + a nova senha sincroniza de forma auditada o hash persistido e invalida as sessões antigas; alterar a variável sozinho não sobrescreve uma senha escolhida na aplicação.
 3. `VAL_MANUAL_WEBHOOK_SECRET` para a integração servidor-servidor.
 4. Somente depois, adicione `OPENAI_API_KEY`.
 5. Faça o deploy e confirme `/health` e **Configurações → Engine da VAL**.

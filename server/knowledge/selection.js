@@ -1,9 +1,17 @@
+import {observe} from '../observability.js'
+import {retrieveLatentKnowledge} from './latent-retrieval.js'
 import {createHash} from 'node:crypto'
 import {knowledgeSelectionVersion,assertKnowledgeContract,validateKnowledgeSelection} from './contracts.js'
 import {loadKnowledgeLibrary} from './library.js'
 import {authorityRank,evaluateGeography,evaluateKnowledgeLifecycle,knowledgePolicyVersion,list,normalizeSearchText,text,uniqueText} from './policy.js'
 import {stripMessagePreamble} from '../message-preamble.js'
-import {functionWord,verbInfinitive} from './agronomic-vocabulary.js'
+import {functionWord,verbForm,verbInfinitive} from './agronomic-vocabulary.js'
+// functionWord guarda a forma do dicionario ("varios"); o token ja chegou passado por singular(),
+// que corta o -s de palavras com 5+ letras e produz uma forma que a lista nunca tem. Testar as duas
+// formas, em vez de mexer na lista, mantem o conserto valendo para a proxima entrada em -s.
+const exemptFunctionWord=token=>functionWord.has(token)||functionWord.has(`${token}s`)
+// A deteccao de assunto tambem isenta forma conjugada - ela nunca e o assunto da pergunta.
+const exemptWordForm=token=>exemptFunctionWord(token)||verbForm.has(token)||verbForm.has(`${token}s`)
 
 const stopWords=new Set([
  'a','ao','aos','as','com','como','da','das','de','do','dos','e','ele','ela','em','entre','essa','esse','esta','este','eu','foi','ha','isso','ja','mais','mas','na','nas','no','nos','o','os','ou','para','pela','pelo','por','que','se','sem','ser','sua','suas','seu','seus','tem','um','uma','voce',
@@ -80,7 +88,7 @@ const exclusiveConceptGroups=Object.freeze([
 
 function tokens(value){
  const result=new Set()
- for(const raw of normalizeSearchText(value).split(' ')){
+ for(const raw of contentText(value).split(' ')){
   if(raw.length<3||stopWords.has(raw))continue
   const token=singular(raw)
   result.add(token)
@@ -94,11 +102,26 @@ function tokens(value){
 // so casa com sinonimo generico.
 function baseTokens(value){
  const result=new Set()
- for(const raw of normalizeSearchText(value).split(' ')){
+ for(const raw of contentText(value).split(' ')){
   if(raw.length<3||stopWords.has(raw))continue
   result.add(singular(raw))
  }
  return result
+}
+
+// These are grammatical relations, not subjects. A rare connective such as
+// "diante da" must not outrank the noun phrase it introduces in strict subject
+// coverage. Apply the same tokenization to query and corpus, without adding
+// domain terms, answers or item IDs to a query whitelist.
+function contentText(value){
+ const words=normalizeSearchText(value).split(' ')
+ const relations=new Map([
+  ['diante',new Set(['de','da','das','do','dos'])],
+  ['acerca',new Set(['de','da','das','do','dos'])],
+  ['frente',new Set(['a','as','ao','aos'])],
+  ['atraves',new Set(['de','da','das','do','dos'])]
+ ])
+ return words.filter((word,index)=>!relations.get(word)?.has(words[index+1])).join(' ')
 }
 
 function exclusiveConcepts(value){
@@ -231,15 +254,37 @@ const genericTopicTerms=new Set(['aplicacao','aplicacoes','cultura','cultivo','o
 
 // Lexical overlap with "milho" or "aplicação" is insufficient if the answer
 // drops the actual pest/concept. This checks relevance, not factual truth.
-export function generalAnswerTopicMatches(question,answer){
+export function generalAnswerTopicMatches(question,answer,{curated=false}={}){
  const frequency=corpusVocabulary(loadKnowledgeLibrary())
  const requested=baseTokens(stripMessagePreamble(question)||question)
- const anchors=[...requested].filter(token=>token.length>=5&&!conceptTerms.has(token)&&!genericTopicTerms.has(token)&&(frequency.get(token)||0)<=discriminatingFrequency)
+ const anchors=[...requested].filter(token=>token.length>=5&&!exemptWordForm(token)&&!conceptTerms.has(token)&&!genericTopicTerms.has(token)&&(curated||(frequency.get(token)||0)<=discriminatingFrequency))
  const answerWords=[...baseTokens(answer)]
  return anchors.every(anchor=>answerWords.some(word=>word===anchor||word.length>=5&&word.slice(0,5)===anchor.slice(0,5)))&&!conceptConflict(exclusiveConcepts(question),exclusiveConcepts(answer))
 }
 
-function scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens=new Set(),normalizedQuery='',corpusFrequency,queryConcepts,requestedModules,requestedGeography,sourceById,now,strictSubject=false}){
+// Retrieval relevance does not imply that a statement answers the whole question.
+// Exact catalog requests retain their curated delivery; longer questions must
+// also cover the requested subject and cannot silently assume a crop.
+export function curatedAnswerCoversQuestion(question,item){
+ const requested=baseTokens(stripMessagePreamble(question)||question)
+ const exactSubject=[item.title,...(item.triggers||[])].some(value=>{
+  const words=baseTokens(`${value} ${item.statement}`)
+  return requested.size>0&&[...requested].every(word=>words.has(word))
+ })
+ if(exactSubject)return true
+ // A general principle is not a yes/no answer to a universal claim.
+ // Let the general-answer path address that qualification explicitly.
+ if(/\b(?:sempre|nunca)\b/.test(normalizeSearchText(question))&&!/\b(?:sempre|nunca|necessariamente)\b/.test(normalizeSearchText(item.statement)))return false
+ const cropGroups=new Set(['CORN','SOYBEAN','WHEAT','BEANS','RICE','CANOLA','SORGHUM'])
+ const questionCrops=[...exclusiveConcepts(question)].filter(group=>cropGroups.has(group))
+ const answerCrops=[...exclusiveConcepts(item.statement)].filter(group=>cropGroups.has(group))
+ if(!questionCrops.length&&answerCrops.length)return false
+ // Curator-authored title/triggers carry terminology aliases (e.g. local
+ // quotation versus spot price); they cannot supply a missing subject.
+ return generalAnswerTopicMatches(question,[item.statement,item.title,...(item.triggers||[])].join(' '),{curated:true})
+}
+
+function scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens=new Set(),normalizedQuery='',corpusFrequency,queryConcepts,requestedModules,requestedGeography,sourceById,now,askingVerbs=new Set(),strictSubject=false}){
  const reasonCodes=[]
  if(!item.retrieval_eligible)return {eligible:false,reason:item.prompt_safety==='BLOCKED'?'PROMPT_INJECTION_BLOCKED':'STATUS_NOT_ELIGIBLE'}
  if(item.status!=='APPROVED')return {eligible:false,reason:'STATUS_NOT_APPROVED'}
@@ -274,7 +319,7 @@ function scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens=new Set(),no
   // A crop/category is not the subject of a specific question. In particular,
   // "inseticida para cigarrinha no milho" cannot select rotation of canola or a
   // generic insecticide card while silently dropping the pest the user named.
-  const subjectTerms=[...queryBaseTokens].filter(token=>!conceptTerms.has(token)&&corpusFrequency.has(token)&&discriminating(token,corpusFrequency))
+  const subjectTerms=[...queryBaseTokens].filter(token=>!askingVerbs.has(token)&&!conceptTerms.has(token)&&corpusFrequency.has(token)&&discriminating(token,corpusFrequency))
   if(strictSubject&&subjectTerms.length&&!subjectTerms.some(token=>itemTokens.has(token)))return {eligible:false,reason:'SUBJECT_NOT_COVERED'}
   const covered=[...queryBaseTokens].filter(token=>itemTokens.has(token)).length
   // triggers sao escritos pelo curador para dizer "este item responde sobre X",
@@ -376,6 +421,7 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
  // piso. Enumerar cada palavra de cortesia em stopWords nunca fecha a lista — o preâmbulo sai
  // inteiro antes de tokenizar. Se a frase for só cortesia, mede-se a frase original.
  const question=stripMessagePreamble(normalizeSearchText(query))||query
+ const askingVerbs=askingVerbsIn(normalizeSearchText(question))
  const queryTokens=tokens(question)
  const queryBaseTokens=baseTokens(question)
  const normalizedQuery=normalizeSearchText(question)
@@ -391,26 +437,30 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
  const objectiveConcepts=exclusiveConcepts(question)
  const contextConcepts=exclusiveConcepts(contextText)
  const queryConcepts=objectiveConcepts.size?objectiveConcepts:contextConcepts
+ // Semantic query uses only the user's public knowledge question, never private context.
+ // Injected/custom libraries have no matching release index and remain lexical.
+ const semantic=source===loadKnowledgeLibrary()?retrieveLatentKnowledge(question):{method:'UNINDEXED_LIBRARY',results:[]}
+ const semanticById=new Map(semantic.results.map(row=>[row.id,row.similarity]))
  const sourceById=new Map(source.sources.map(entry=>[entry.source_id,entry]))
  const excludedReasonCounts={}
  const ranked=[]
  const corpusFrequency=corpusVocabulary(source)
- const askingVerbs=askingVerbsIn(question)
-// Palavra gramatical tambem nao e assunto. O acervo e prosa expositiva de 198 itens e nunca vai
+ // Palavra gramatical tambem nao e assunto. O acervo e prosa expositiva de 198 itens e nunca vai
  // conter "deveria", "talvez" ou "sobretudo"; sem esta linha, a pergunta inteira era reprovada por
  // causa de um adverbio.
- const unknownTokens=[...queryBaseTokens].filter(token=>token.length>=5&&!corpusFrequency.has(token)&&!genericTopicTerms.has(token)&&!askingVerbs.has(token)&&!functionWord.has(token))
+ const unknownTokens=[...queryBaseTokens].filter(token=>token.length>=5&&!corpusFrequency.has(token)&&!genericTopicTerms.has(token)&&!askingVerbs.has(token)&&!exemptWordForm(token))
  const unknownTopic=unknownTokens.length>0
  const offDomainQuestion=!corpusKnowsQuestion(queryBaseTokens,corpusFrequency)||cappedLimit===1&&unknownTopic
 
  for(const item of source.items){
   if(offDomainQuestion){excludedReasonCounts.QUESTION_OUTSIDE_CORPUS=(excludedReasonCounts.QUESTION_OUTSIDE_CORPUS||0)+1;continue}
-  const result=scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens,normalizedQuery,corpusFrequency,queryConcepts,requestedModules,requestedGeography:geography,sourceById,now,strictSubject:cappedLimit===1})
+  const result=scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens,normalizedQuery,corpusFrequency,queryConcepts,requestedModules,requestedGeography:geography,sourceById,now,askingVerbs,strictSubject:cappedLimit===1})
   if(!result.eligible){
    excludedReasonCounts[result.reason]=(excludedReasonCounts[result.reason]||0)+1
    continue
   }
-  ranked.push({item,...result})
+  const semanticScore=semanticById.get(item.knowledge_item_id)||0
+  ranked.push({item,...result,lexicalScore:result.score,semanticScore,score:result.score+semanticScore*5})
  }
 
  ranked.sort((left,right)=>right.score-left.score||(authorityRank[left.item.authority]??99)-(authorityRank[right.item.authority]??99)||left.item.knowledge_item_id.localeCompare(right.item.knowledge_item_id))
@@ -437,9 +487,21 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
   high_risk_selected:selected.filter(item=>item.risk==='HIGH').length,
   prompt_content_included:false,
   corpus_dumped:false,
+  retrieval:{
+   lexical_method:'GOVERNED_WEIGHTED_TERMS_V1',semantic_method:semantic.method,
+   semantic_corpus_sha256:semantic.corpus_sha256||null,
+   private_context_indexed:false,
+   composition:'existing governance and subject filters, lexical score + 5 * latent cosine; authority/id tie break',
+   lexical_result:[...ranked].sort((a,b)=>b.lexicalScore-a.lexicalScore||a.item.knowledge_item_id.localeCompare(b.item.knowledge_item_id)).slice(0,3).map(e=>({id:e.item.knowledge_item_id,score:e.lexicalScore})),
+   semantic_result:[...ranked].filter(e=>e.semanticScore>0).sort((a,b)=>b.semanticScore-a.semanticScore||a.item.knowledge_item_id.localeCompare(b.item.knowledge_item_id)).slice(0,3).map(e=>({id:e.item.knowledge_item_id,score:e.semanticScore})),
+   selected_evidence:ranked.slice(0,cappedLimit).map(e=>({id:e.item.knowledge_item_id,version:e.item.version,source_refs:e.item.source_refs,lexical_score:e.lexicalScore,semantic_score:e.semanticScore,combined_score:e.score}))
+  },
   evaluated_at:evaluateKnowledgeLifecycle({},now).evaluated_at
  }
  const items=portfolioQuestion?[]:selected
+ observe('knowledge.hybrid.summary',{selectionPolicy:semantic.method,outcome:status,source:audit.query_fingerprint,rowCount:items.length,contractVersion:source.library_version})
+ for(const [channel,rows] of [['lexical',audit.retrieval.lexical_result],['semantic',audit.retrieval.semantic_result]])for(const [rank,row] of rows.entries())observe('knowledge.hybrid.candidate',{mode:channel,source:row.id,confidence:row.score,rowCount:rank+1,contractVersion:source.library_version})
+ for(const row of audit.retrieval.selected_evidence)observe('knowledge.hybrid.selected',{source:row.id,confidence:row.combined_score,reasonCodes:row.source_refs.join(','),contractVersion:row.version})
  const selection={contract_version:knowledgeSelectionVersion,policy_version:knowledgePolicyVersion,status,items,selected:items,reason_code:reasonCode,audit}
  return assertKnowledgeContract(selection,validateKnowledgeSelection,'KnowledgeSelection v1')
 }

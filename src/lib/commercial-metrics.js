@@ -1,3 +1,4 @@
+import {realBusinessClients} from './business-metrics-scope.js'
 const hasNumber=(value,key)=>Object.prototype.hasOwnProperty.call(value||{},key)&&value?.[key]!==''&&value?.[key]!==null&&value?.[key]!==undefined&&Number.isFinite(Number(value[key]))
 const number=(value,key)=>hasNumber(value,key)?Math.max(0,Number(value[key])):0
 
@@ -35,7 +36,7 @@ export function commercialMetrics(client={}){
 }
 
 export function relationshipSummary(clients=[]){
- const portfolio=Array.isArray(clients)?clients:[]
+ const portfolio=realBusinessClients(Array.isArray(clients)?clients:[])
  const measured=portfolio.map(client=>({client,metrics:commercialMetrics(client)}))
  const irtValues=measured.filter(item=>item.metrics.irtKnown).map(item=>Number(item.client.irt))
  const npsValues=measured.filter(item=>item.metrics.npsKnown).map(item=>Number(item.client.nps))

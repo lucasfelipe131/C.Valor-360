@@ -1,3 +1,4 @@
+import {isK5Synthetic} from '../lib/business-metrics-scope.js'
 import React,{useEffect,useMemo,useState} from 'react'
 import {ArrowDownUp,ChevronRight,Clock3,MapPin,MessageCircle,Percent,Search,Sprout,Target,WalletCards} from 'lucide-react'
 import {compactBRL,commercialMetrics,metricValue} from '../lib/commercial-metrics'
@@ -32,14 +33,15 @@ export default function Clients({storageScope='',clients=[],opportunities=[],onC
   if(sort==='name')return clean(a.client.name).localeCompare(clean(b.client.name),'pt-BR')
   return attentionScore(b.client,b.opportunity)-attentionScore(a.client,a.opportunity)||clean(a.client.name).localeCompare(clean(b.client.name),'pt-BR')
  }),[prepared,q,filter,sort])
- const openTotal=prepared.reduce((sum,item)=>sum+(item.metrics.openPotentialKnown?item.metrics.openPotential:0),0)
- const activeCount=prepared.filter(item=>item.candidate||item.opportunity).length
- const pendingProfiles=prepared.filter(item=>!item.metrics.profileMeasured).length
+ const metricPrepared=prepared.filter(item=>!isK5Synthetic(item.client))
+ const openTotal=metricPrepared.reduce((sum,item)=>sum+(item.metrics.openPotentialKnown?item.metrics.openPotential:0),0)
+ const activeCount=metricPrepared.filter(item=>item.candidate||item.opportunity).length
+ const pendingProfiles=metricPrepared.filter(item=>!item.metrics.profileMeasured).length
  const visibleList=list.slice(0,visibleCount)
  useEffect(()=>setVisibleCount(9),[q,filter,sort])
  const openClient=item=>onClient(item.client)
  return <div className="page-stack producer-list-page">
-  <section className="producer-portfolio-summary" aria-label="Resumo da carteira"><div><span className="eyebrow">CARTEIRA INTELIGENTE</span><h2>Produtores e prioridades</h2><p>Busque, filtre e abra cada dossiê sem perder o contexto comercial.</p></div><dl><div><dt>Produtores</dt><dd>{clients.length}</dd></div><div><dt>Potencial em aberto</dt><dd>{compactBRL(openTotal,{known:prepared.some(item=>item.metrics.openPotentialKnown)})}</dd></div><div><dt>Oportunidades</dt><dd>{activeCount}</dd></div><div><dt>Perfis pendentes</dt><dd>{pendingProfiles}</dd></div></dl></section>
+  <section className="producer-portfolio-summary" aria-label="Resumo da carteira"><div><span className="eyebrow">CARTEIRA INTELIGENTE</span><h2>Produtores e prioridades</h2><p>Busque, filtre e abra cada dossiê sem perder o contexto comercial.</p></div><dl><div><dt>Produtores</dt><dd>{metricPrepared.length}</dd></div><div><dt>Potencial em aberto</dt><dd>{compactBRL(openTotal,{known:metricPrepared.some(item=>item.metrics.openPotentialKnown)})}</dd></div><div><dt>Oportunidades</dt><dd>{activeCount}</dd></div><div><dt>Perfis pendentes</dt><dd>{pendingProfiles}</dd></div></dl></section>
   <section className="producer-list-controls" aria-label="Busca e organização da carteira">
    <div className="search-row"><div className="search-box"><Search size={18}/><input value={q} onChange={event=>setQ(event.target.value)} placeholder="Buscar nome, município, propriedade, cultura ou oportunidade..." aria-label="Buscar produtores"/></div><button className="primary-btn" onClick={onNew}>+ Novo produtor</button></div>
    <div className="producer-filter-row"><div role="group" aria-label="Filtrar produtores">{filters.map(([value,label])=><button type="button" key={value} className={filter===value?'active':''} aria-pressed={filter===value} onClick={()=>setFilter(value)}>{label}</button>)}</div><label><ArrowDownUp/><span>Ordenar</span><select value={sort} onChange={event=>setSort(event.target.value)} aria-label="Ordenar produtores"><option value="attention">Atenção comercial</option><option value="potential">Maior potencial em aberto</option><option value="contact">Mais tempo sem contato</option><option value="name">Nome A–Z</option></select></label></div>

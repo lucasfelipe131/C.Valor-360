@@ -1,3 +1,4 @@
+import {observe} from '../observability.js'
 // This path has no producer records or external sources. Its answer is always
 // labelled as model knowledge; it must never supply a prescription or live fact.
 import {loadKnowledgeLibrary} from './library.js'
@@ -53,10 +54,16 @@ export function requiresVerifiedGeneralSource(message=''){
  // ordem de adicao e tudo. Preco, clima, credito e escolha de produto nunca sao "conceito" e nunca
  // foram isentos; as tres ramificacoes abaixo sao as unicas que definir um termo dispensa.
  const concept=isGeneralRegulatedConcept(message)
+ // Separating soil-sampling strata is not a tank-mix prescription. Only
+ // remove this bounded, negative sampling instruction; any other mixture or
+ // regulated request elsewhere in the question still goes through the guard.
+ const regulatorySource=/\bamostragem\b/.test(source)
+  ?source.replace(/\bsem misturar\s+(?:amostras?|solo|solos|baixadas?|encostas?|camadas?|profundidades?|talhoes|areas|e|de|da|do|das|dos|a|o|as|os|\s)+(?=[?.!]|$)/g,'')
+  :source
  return !concept&&/\b(?:dose|dosagem)\b/.test(source)
   // "mistura" e "misture" estavam na lista e "misturar" nao: "posso misturar X com Y no tanque?"
   // atravessava o portao. A forma verbal completa fecha a lacuna.
-  ||!concept&&/\b(?:mistur\w*|receita agronomica|diagnostico|aplique|prescreva|diagnostique|pulverize)\b/.test(source)
+  ||!concept&&/\b(?:mistur\w*|receita agronomica|diagnostico|aplique|prescreva|diagnostique|pulverize)\b/.test(regulatorySource)
   ||/\b(?:qual (?:e )?a composicao|quem fabrica|qual (?:e )?o (?:fabricante|ingrediente ativo|principio ativo)|o que e o produto|sobre (?:o produto|a marca))\b/.test(source)
   ||/\b(?:qual|quais|quanto|indique|recomende|devo|posso)\b.{0,80}\bprodutos?\b.{0,60}\b(?:aplicar|usar|utilizar|controlar|combater|recomenda|indica|melhor)\b/.test(source)
   ||/\b(?:qual|quais)\b.{0,30}\bprodutos?\b\s+(?:para|contra)\b/.test(source)
@@ -117,17 +124,32 @@ const corpusVocabulary=()=>{
 }
 // A copula pode separar a marca do verbo: "Standak e indicado", "Verdadero e eficaz".
 const leadingBrandClaim=/^\s*(?:[ée]|esta|est[áa]|foi|s[ãa]o|tem)?\s*(?:eficaz|efic[áa]cia|controla|controlam|combate|elimina|erradica|protege|atua|funciona|indicad[oa]|registrad[oa]|desempenho|residual)\b/i
+// Determinante e contracao abrem oracao o tempo todo e nao estao em functionWord. Com o piso de 3
+// letras que a rodada 14 baixou, "Uma lavoura bem manejada controla a praga" lia "Uma" como marca.
+const leadingDeterminer=new Set(['um','uma','uns','umas','no','na','nos','nas','do','da','dos','das','ao','aos','seu','sua','seus','suas','este','esta','esse','essa','aquele','aquela'])
+const productPronoun=new Set(['ele','ela','eles','elas'])
+const leadingProductDefinition=/^\s*(?:e|sao|era|eram)\b.{0,65}\b(?:inseticidas?|fungicidas?|herbicidas?|defensivos?|produtos?|marcas?)\b/
 export function namedProductMentions(answer=''){
  const found=[]
+ let previousProducts=[]
  for(const sentence of String(answer??'').split(/(?<=[.!?;:])\s+|\n+/)){
+  // Carry a named antecedent only into a following pronoun clause. Crossing
+  // unrelated sentences would mistake scientific names for efficacy claims;
+  // forgetting the antecedent would admit "O Engeo Pleno ... Ele controla".
+  const hasClaim=efficacyAssertion.test(sentence)
+  const sentenceProducts=[]
   const words=sentence.trim().split(/\s+/)
   const first=(words[0]||'').replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
   const second=(words[1]||'').replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
-  // A adjacencia estrita deixava passar qualquer adverbio ou aposto entre a marca e o verbo
-  // ("Lannate tambem controla", "Lannate, um inseticida carbamato, controla"): medido, 28 de 45.
-  // O verbo de eficacia vale em qualquer ponto da oracao, e o que protege o termo legitimo e o
-  // vocabulario fechado - o acervo curado nao serve de dicionario de agronomia.
-  if(/^[A-ZÀ-Ý][\p{L}\p{N}-]*$/u.test(first)&&!nonBrandProperNoun.has(normalize(first))&&first.length>=3&&!knownAgronomicTerm(normalize(first))&&!scientificPair(first,second)&&efficacyAssertion.test(words.slice(1).join(' ')))found.push(first)
+  const pronoun=productPronoun.has(normalize(first))
+  // A adjacencia estrita deixava passar adverbio e aposto ("Lannate tambem controla", "Lannate, um
+  // inseticida carbamato, controla"): medido, 28 de 45. A rodada 14 abriu para a oracao INTEIRA e
+  // comprou o erro oposto - qualquer frase legitima com verbo de eficacia 20 palavras adiante tinha
+  // a primeira palavra lida como marca. A janela de 8 foi medida no portao inteiro, nao escolhida:
+  //   janela 7 -> 11/12 marcas pegas, 0/15 legitimas barradas
+  //   janela 8 -> 12/12 marcas pegas, 0/15 legitimas barradas (com 'tolerancia' no glossario)
+  //   janela 9 -> 12/12 marcas pegas, 4/15 legitimas barradas
+  if(/^[A-ZÀ-Ý][\p{L}\p{N}-]*$/u.test(first)&&!nonBrandProperNoun.has(normalize(first))&&first.length>=3&&!knownAgronomicTerm(normalize(first))&&!leadingDeterminer.has(normalize(first))&&!scientificPair(first,second)&&(efficacyAssertion.test(words.slice(1,9).join(' '))||leadingProductDefinition.test(normalize(words.slice(1,9).join(' ')))))sentenceProducts.push(first)
   // A partir da SEGUNDA palavra: inicio de oracao e maiusculo por gramatica, nao por ser marca.
   for(let index=1;index<words.length;index+=1){
    const raw=words[index].replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
@@ -135,12 +157,18 @@ export function namedProductMentions(answer=''){
    if(nonBrandProperNoun.has(normalize(raw))||knownAgronomicTerm(normalize(raw)))continue
    // Sigla de sitio de acao e simbolo de elemento nao sao marca: EPSPS, ALS, ACCase, GABA, N.
    if(raw.length<2)continue
+   // Sigla e simbolo tecnico se escrevem SEM minuscula (CO2, MT, NDRE, LMR, ILPF, SPD, MAP, DAP);
+   // marca comercial em prosa vem em caixa de titulo (Lannate, Fox Xpro, Standak Top). Medido: 51
+   // dos 56 falsos positivos saem por esta guarda, sem reabrir nenhuma alegacao de marca.
+   if(raw.length<=6&&!/\p{Ll}/u.test(raw))continue
    // Binomio cientifico: o proximo token e o epiteto em minuscula. Nem o genero nem o epiteto sao
    // marca, e os dois saem juntos.
    const next=(words[index+1]||'').replace(/^[("'«]+|[)"'»,.;:!?]+$/g,'')
    if(scientificPair(raw,next)){index+=1;continue}
-   found.push(raw)
+   sentenceProducts.push(raw)
   }
+  if(hasClaim)found.push(...sentenceProducts,...(pronoun?previousProducts:[]))
+  previousProducts=pronoun&&!sentenceProducts.length?previousProducts:sentenceProducts
  }
  return found
 }
@@ -160,7 +188,7 @@ export async function generateGeneralModelAnswer({message='',aiClient=null,model
  // required_inputs ["topic"], por uma pergunta que ele ja tinha feito por completo. A frase honesta
  // ja existia no repositorio (regulatedClaimStub), ligada apenas ao portao de SAIDA.
  if(requiresVerifiedGeneralSource(message))return empty({regulatedClaim:true})
- if(!aiClient||!model)return empty()
+ if(!aiClient||!model)return empty({unavailableReason:'MODEL_UNAVAILABLE'})
  const instructions='Responda em português do Brasil com conhecimento geral amplamente estabelecido, com extensão proporcional à pergunta: 2–3 frases para uma dúvida simples; até 250 palavras quando a pessoa pede explicação, comparação ou aprofundamento.\n'+
   'Explique diretamente agronomia, manejo integrado, categorias de produtos, mecanismos de ação e critérios comerciais quando forem conceitos gerais. Preserve a cultura, a praga e o objetivo perguntados. Em explicações aprofundadas, conecte mecanismo, finalidade, condições que alteram o resultado e limitações; explique o porquê, sem alegar superioridade comercial. Não exija produtor para uma dúvida geral.\n'+
   'Pode explicar o significado de dose e a diferença entre quantidade de produto comercial e de ingrediente ativo. Não informe valores de dose, instrução de mistura, indicação de uso de marca em cultura ou alvo, recomendação técnica prescritiva, preço/cotação atual, previsão do tempo ou dados de um produtor. Não invente composição, registro, desempenho ou superioridade de marcas; isso exige catálogo/ficha ou bula consultados.\n'+
@@ -169,6 +197,7 @@ export async function generateGeneralModelAnswer({message='',aiClient=null,model
   (reformulate?'\nProduza uma resposta completa e breve; a primeira tentativa ficou incompleta ou não respondeu ao assunto. Não repita o texto rejeitado.':'')
  let response
  try{
+  observe('knowledge.general.provider_call',{model,attempt:reformulate?2:1,sampleCount:1})
   response=await aiClient.responses.create({model,instructions,input:[{role:'user',content:clean(message).slice(0,2000)}],max_output_tokens:reformulate?3200:1600,...(/^gpt-5(?:[.-]|$)/i.test(model)?{reasoning:{effort:'low'}}:{}),text:{format:{type:'text'}}},{...(signal?{signal}:{}),timeout:15_000,maxRetries:0})
  }catch(error){
   if(signal?.aborted)throw signal.reason||error
@@ -179,13 +208,14 @@ export async function generateGeneralModelAnswer({message='',aiClient=null,model
   return empty({modelCalls:1,unavailableReason:'PROVIDER_ERROR',providerStatus:Number(error?.status)||null,retryAfterSeconds:Number.isFinite(retryAfterHeader)&&retryAfterHeader>0?Math.min(600,Math.round(retryAfterHeader)):null})
  }
  const costUsd=estimateCost(response?.usage)
+ observe('knowledge.general.provider_usage',{model,attempt:reformulate?2:1,costUsd,inputTokens:response?.usage?.input_tokens??null,outputTokens:response?.usage?.output_tokens??null,outcome:response?.status||'unknown'})
  // An incomplete Responses result can contain grammatical but truncated text.
  // Discard it before grounding/cache and allow the caller one bounded retry.
  const incomplete=response?.status==='incomplete'||response?.incomplete_details!=null||response?.output?.some(item=>item?.status==='incomplete')
- if(incomplete)return empty({costUsd,modelCalls:1,retryable:response?.incomplete_details?.reason==='max_output_tokens'})
- if(response?.status&&response.status!=='completed'||response?.error)return empty({costUsd,modelCalls:1})
+ if(incomplete)return empty({costUsd,modelCalls:1,unavailableReason:'INCOMPLETE_RESPONSE',retryable:response?.incomplete_details?.reason==='max_output_tokens'})
+ if(response?.status&&response.status!=='completed'||response?.error)return empty({costUsd,modelCalls:1,unavailableReason:'FAILED_RESPONSE'})
  const answer=clean(response?.output_text)
  // Do not turn truncation by our own string limit into a complete answer either.
- if(!answer||answer.length>2200||answer.toUpperCase().includes(sentinel))return empty({costUsd,modelCalls:1,retryable:answer.length>2200})
+ if(!answer||answer.length>2200||answer.toUpperCase().includes(sentinel))return empty({costUsd,modelCalls:1,unavailableReason:!answer?'EMPTY_RESPONSE':answer.length>2200?'OUTPUT_LENGTH_LIMIT':'SOURCE_REQUIRED',retryable:answer.length>2200})
  return {text:answer,costUsd,modelCalls:1}
 }
