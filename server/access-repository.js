@@ -1,3 +1,4 @@
+import {realBusinessClient,realBusinessRecord,realBusinessFeedback} from './business-metrics-scope.js'
 import {randomUUID} from 'node:crypto'
 import {generateTemporaryPassword,hashPassword,normalizeEmail,validEmail,validPassword,verifyPassword} from './auth.js'
 
@@ -113,7 +114,7 @@ export class AccessRepository{
 
   async listUsers(actor){
     if(actor?.role!=='admin')throw domainError('Acesso restrito à administração.',403)
-    const result=await this.db.query(`SELECT user_record.*,membership.role,COUNT(client.id)::int producer_count FROM users user_record JOIN memberships membership ON membership.user_id=user_record.id AND membership.tenant_id=$1 LEFT JOIN clients client ON client.tenant_id=membership.tenant_id AND client.consultant_id=user_record.id AND client.status='active' GROUP BY user_record.id,membership.role ORDER BY user_record.created_at DESC`,[this.tenantId])
+    const result=await this.db.query(`SELECT user_record.*,membership.role,COUNT(client.id)::int producer_count FROM users user_record JOIN memberships membership ON membership.user_id=user_record.id AND membership.tenant_id=$1 LEFT JOIN clients client ON client.tenant_id=membership.tenant_id AND client.consultant_id=user_record.id AND client.status='active' AND ${realBusinessClient('client')} GROUP BY user_record.id,membership.role ORDER BY user_record.created_at DESC`,[this.tenantId])
     return result.rows.map(row=>({...accountFromRow(row,this.tenantId),producerCount:Number(row.producer_count||0)}))
   }
 
@@ -148,19 +149,19 @@ export class AccessRepository{
     const interval=`${days} days`
     const [usersResult,dailyResult,pagesResult,operationsResult]=await Promise.all([
       this.db.query(`SELECT user_record.id,user_record.name,user_record.email,user_record.status,user_record.last_login_at,user_record.created_at,membership.role,
-        (SELECT COUNT(*) FROM clients client WHERE client.tenant_id=$1 AND client.consultant_id=user_record.id AND client.status='active')::int producer_count,
+        (SELECT COUNT(*) FROM clients client WHERE client.tenant_id=$1 AND client.consultant_id=user_record.id AND client.status='active' AND ${realBusinessClient('client')})::int producer_count,
         (SELECT COUNT(*) FROM usage_events event WHERE event.tenant_id=$1 AND event.user_id=user_record.id AND event.event_type='login' AND event.occurred_at>=NOW()-$2::interval)::int accesses,
         (SELECT COUNT(*) FROM usage_events event WHERE event.tenant_id=$1 AND event.user_id=user_record.id AND event.event_type='page_view' AND event.occurred_at>=NOW()-$2::interval)::int page_views,
         (SELECT COUNT(*) FROM usage_events event WHERE event.tenant_id=$1 AND event.user_id=user_record.id AND event.event_type NOT IN ('login','page_view','val_analysis') AND event.occurred_at>=NOW()-$2::interval)::int direct_interactions,
-        (SELECT COUNT(*) FROM val_recommendations recommendation WHERE recommendation.tenant_id=$1 AND recommendation.consultant_id=user_record.id AND recommendation.created_at>=NOW()-$2::interval)::int val_analyses,
-        (SELECT COUNT(*) FROM visits visit WHERE visit.tenant_id=$1 AND visit.consultant_id=user_record.id AND visit.created_at>=NOW()-$2::interval)::int visits,
-        (SELECT COUNT(*) FROM opportunities opportunity JOIN clients client ON client.id=opportunity.client_id AND client.tenant_id=opportunity.tenant_id WHERE opportunity.tenant_id=$1 AND client.consultant_id=user_record.id AND opportunity.updated_at>=NOW()-$2::interval)::int opportunities,
+        (SELECT COUNT(*) FROM val_recommendations recommendation WHERE recommendation.tenant_id=$1 AND recommendation.consultant_id=user_record.id AND ${realBusinessRecord('recommendation')} AND recommendation.created_at>=NOW()-$2::interval)::int val_analyses,
+        (SELECT COUNT(*) FROM visits visit WHERE visit.tenant_id=$1 AND visit.consultant_id=user_record.id AND ${realBusinessRecord('visit')} AND visit.created_at>=NOW()-$2::interval)::int visits,
+        (SELECT COUNT(*) FROM opportunities opportunity JOIN clients client ON client.id=opportunity.client_id AND client.tenant_id=opportunity.tenant_id WHERE opportunity.tenant_id=$1 AND client.consultant_id=user_record.id AND ${realBusinessClient('client')} AND opportunity.updated_at>=NOW()-$2::interval)::int opportunities,
         (SELECT MAX(event.occurred_at) FROM usage_events event WHERE event.tenant_id=$1 AND event.user_id=user_record.id) last_activity_at
         FROM users user_record JOIN memberships membership ON membership.user_id=user_record.id AND membership.tenant_id=$1
         ORDER BY COALESCE(user_record.last_login_at,user_record.created_at) DESC`,[this.tenantId,interval]),
       this.db.query(`WITH date_series AS (SELECT GENERATE_SERIES(CURRENT_DATE-($2::int-1),CURRENT_DATE,'1 day')::date AS event_day),
         usage AS (SELECT occurred_at::date AS event_day,COUNT(*) FILTER (WHERE event_type='login')::int accesses,COUNT(*) FILTER (WHERE event_type='page_view')::int page_views,COUNT(*) FILTER (WHERE event_type NOT IN ('login','page_view','val_analysis'))::int interactions FROM usage_events WHERE tenant_id=$1 AND occurred_at>=CURRENT_DATE-($2::int-1) GROUP BY occurred_at::date),
-        analyses AS (SELECT created_at::date AS event_day,COUNT(*)::int val_analyses FROM val_recommendations WHERE tenant_id=$1 AND created_at>=CURRENT_DATE-($2::int-1) GROUP BY created_at::date)
+        analyses AS (SELECT created_at::date AS event_day,COUNT(*)::int val_analyses FROM val_recommendations WHERE tenant_id=$1 AND ${realBusinessRecord('val_recommendations')} AND created_at>=CURRENT_DATE-($2::int-1) GROUP BY created_at::date)
         SELECT TO_CHAR(date_series.event_day,'YYYY-MM-DD') AS day_key,COALESCE(usage.accesses,0)::int accesses,COALESCE(usage.page_views,0)::int page_views,COALESCE(usage.interactions,0)::int interactions,COALESCE(analyses.val_analyses,0)::int val_analyses
         FROM date_series LEFT JOIN usage USING(event_day) LEFT JOIN analyses USING(event_day) ORDER BY date_series.event_day`,[this.tenantId,days]),
       this.db.query(`SELECT page,COUNT(*)::int views,COUNT(DISTINCT user_id)::int users FROM usage_events WHERE tenant_id=$1 AND event_type='page_view' AND occurred_at>=NOW()-$2::interval AND page IS NOT NULL GROUP BY page ORDER BY views DESC LIMIT 12`,[this.tenantId,interval]),
@@ -169,11 +170,11 @@ export class AccessRepository{
         (SELECT COUNT(*) FROM users user_record JOIN memberships membership ON membership.user_id=user_record.id AND membership.tenant_id=$1 WHERE user_record.status='active')::int users_active,
         (SELECT COUNT(*) FROM users user_record JOIN memberships membership ON membership.user_id=user_record.id AND membership.tenant_id=$1 WHERE user_record.status='blocked')::int users_blocked,
         (SELECT COUNT(DISTINCT user_id) FROM usage_events WHERE tenant_id=$1 AND occurred_at>=NOW()-$2::interval)::int active_users_period,
-        (SELECT COUNT(*) FROM clients WHERE tenant_id=$1 AND status='active')::int producers,
-        (SELECT COUNT(*) FROM visits WHERE tenant_id=$1 AND created_at>=NOW()-$2::interval)::int visits,
-        (SELECT COUNT(*) FROM opportunities WHERE tenant_id=$1 AND updated_at>=NOW()-$2::interval)::int opportunities,
-        (SELECT COUNT(*) FROM val_recommendations WHERE tenant_id=$1 AND created_at>=NOW()-$2::interval)::int val_analyses,
-        (SELECT COUNT(*) FROM val_feedback WHERE tenant_id=$1 AND created_at>=NOW()-$2::interval)::int val_feedback,
+        (SELECT COUNT(*) FROM clients WHERE tenant_id=$1 AND status='active' AND ${realBusinessClient('clients')})::int producers,
+        (SELECT COUNT(*) FROM visits WHERE tenant_id=$1 AND ${realBusinessRecord('visits')} AND created_at>=NOW()-$2::interval)::int visits,
+        (SELECT COUNT(*) FROM opportunities WHERE tenant_id=$1 AND ${realBusinessRecord('opportunities')} AND updated_at>=NOW()-$2::interval)::int opportunities,
+        (SELECT COUNT(*) FROM val_recommendations WHERE tenant_id=$1 AND ${realBusinessRecord('val_recommendations')} AND created_at>=NOW()-$2::interval)::int val_analyses,
+        (SELECT COUNT(*) FROM val_feedback WHERE tenant_id=$1 AND ${realBusinessFeedback('val_feedback')} AND created_at>=NOW()-$2::interval)::int val_feedback,
         (SELECT COUNT(*) FROM integration_events WHERE tenant_id=$1 AND source='manual-do-agronomo' AND occurred_at>=NOW()-$2::interval)::int manual_syncs,
         (SELECT COUNT(*) FROM usage_events WHERE tenant_id=$1 AND event_type='login' AND occurred_at>=NOW()-$2::interval)::int accesses,
         (SELECT COUNT(*) FROM usage_events WHERE tenant_id=$1 AND event_type='page_view' AND occurred_at>=NOW()-$2::interval)::int page_views,

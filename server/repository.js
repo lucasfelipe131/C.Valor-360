@@ -313,7 +313,7 @@ const clientFromRow=(row,{defaults=false}={})=>{
     profileUpdatedAt:iso(row.profile_assessed_at)||snapshot.profileUpdatedAt||null,
     profileValidUntil:iso(row.profile_valid_until)||null,
     location:row.property_location===undefined?null:locationFromMetadata({location:row.property_location}),
-    source:'Banco VALOR 360'
+    source:row.source||'Banco VALOR 360'
   }
 }
 const surveyRecord=row=>({token:row.token,producerName:row.producer_name,consultantName:row.consultant_name,status:row.status,answers:row.answers||undefined,result:sanitizeProfileResult(row.result)||undefined,createdAt:iso(row.created_at),expiresAt:iso(row.expires_at),submittedAt:iso(row.submitted_at),integratedAt:iso(row.integrated_at)})
@@ -881,7 +881,7 @@ export class ValRepository{
     try{
       const [importResult,clientResult,visitResult,opportunityResult]=await Promise.all([
         this.db.query('SELECT summary FROM import_jobs WHERE tenant_id=$1 AND owner_user_id=$2 ORDER BY created_at DESC LIMIT 20',[this.tenantId,ownerId]),
-        this.db.query(`SELECT c.external_key,c.name,c.municipality,c.total_area_ha,c.area_band,c.cultures,c.preferred_channel,c.commercial_profile,c.relationship_profile,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,
+        this.db.query(`SELECT c.source,c.external_key,c.name,c.municipality,c.total_area_ha,c.area_band,c.cultures,c.preferred_channel,c.commercial_profile,c.relationship_profile,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,
             COALESCE((SELECT SUM(value) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won'),0) purchase_total,
             COALESCE((SELECT COUNT(*) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won'),0) purchase_count,
             (SELECT MAX(occurred_at) FROM business_events business WHERE business.tenant_id=c.tenant_id AND business.client_id=c.id AND business.outcome='won') last_purchase_at,
@@ -942,7 +942,7 @@ export class ValRepository{
       return (intelligence.clients||[]).map(client=>({...client,properties:[]}))
     }
     try{
-      const result=await this.db.query(`SELECT c.external_key,c.name,c.municipality,c.total_area_ha,c.area_band,c.cultures,c.preferred_channel,c.commercial_profile,c.relationship_profile,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,COALESCE(NULLIF(p.profile_snapshot,'{}'::jsonb),survey.result,'{}'::jsonb) profile_snapshot,
+      const result=await this.db.query(`SELECT c.source,c.external_key,c.name,c.municipality,c.total_area_ha,c.area_band,c.cultures,c.preferred_channel,c.commercial_profile,c.relationship_profile,p.primary_profile,p.secondary_profile,p.irt_score,p.nps_score,p.valid_until profile_valid_until,p.assessed_at profile_assessed_at,COALESCE(NULLIF(p.profile_snapshot,'{}'::jsonb),survey.result,'{}'::jsonb) profile_snapshot,
         COALESCE((SELECT jsonb_agg(property_record ORDER BY property_record.updated_at DESC) FROM (
           SELECT property.id,property.external_key,property.name,property.municipality,property.area_ha,property.metadata,property.updated_at,
             COALESCE((SELECT jsonb_agg(field_record ORDER BY field_record.updated_at DESC) FROM (

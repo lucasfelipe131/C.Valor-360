@@ -1,3 +1,4 @@
+import {realBusinessClients,realBusinessRecords} from '../lib/business-metrics-scope.js'
 import React,{useEffect,useMemo,useState} from 'react'
 import {
  AlertTriangle,
@@ -55,6 +56,8 @@ const pipelineStages=[
 ]
 
 export default function Dashboard({clients,visits,opportunities=[],currentUser,setPage,onClient,onPrepare,onRefreshPortfolio,onOpenCopilot,onOpenProperty}){
+ const metricClients=useMemo(()=>realBusinessClients(clients),[clients])
+ const metricVisits=useMemo(()=>realBusinessRecords(visits,clients),[visits,clients])
  const firstName=String(currentUser?.name||currentUser?.email?.split('@')[0]||'Equipe').trim().split(/\s+/)[0]
  const [insights,setInsights]=useState(null)
  const [insightsError,setInsightsError]=useState('')
@@ -64,7 +67,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  const [voiceAnswerState,setVoiceAnswerState]=useState({loading:false,error:''})
  const [homeQuestion,setHomeQuestion]=useState('')
  const [insightsRevision,setInsightsRevision]=useState(0)
- const portfolioMetrics=clients.map(client=>({client,metrics:commercialMetrics(client)}))
+ const portfolioMetrics=metricClients.map(client=>({client,metrics:commercialMetrics(client)}))
  const totalPotential=portfolioMetrics.reduce((sum,item)=>sum+(item.metrics.potentialKnown?item.metrics.potentialTotal:0),0)
  const potentialKnown=portfolioMetrics.some(item=>item.metrics.potentialKnown)
  const relationships=relationshipSummary(clients)
@@ -90,7 +93,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  // Mesma fonte E mesmo recorte do quadro: sem filterOpportunities, negocio perdido e arquivado
  // caiam no degrau "Fechado" do funil da Home (o servidor obriga esses status a ficar la) e a
  // Home somava dinheiro perdido como negocio concluido enquanto o quadro mostrava a coluna vazia.
- const pipelineItems=useMemo(()=>filterOpportunities(buildOpportunityWorkspace(clients,opportunities),{archived:false}),[clients,opportunities])
+ const pipelineItems=useMemo(()=>filterOpportunities(buildOpportunityWorkspace(metricClients,opportunities),{archived:false}),[metricClients,opportunities])
  const priorities=useMemo(()=>insights??buildLocalHomePriorities({upcomingVisits,opportunities,clients}),[insights,upcomingVisits,opportunities,clients])
  const selectedVoiceClient=clients.find(client=>client.id===voiceClientId)||null
 
@@ -147,11 +150,11 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  // A faixa do dia, as pendencias e os produtores em foco contam pela MESMA fonte do funil
  // (reconcilePipeline): com o array cru a Home dizia "Oportunidades 00" e o funil da mesma tela
  // mostrava 1, e o card levava para uma pagina com outro numero.
- const briefing=useMemo(()=>buildDayBriefing({visits,opportunities:pipelineItems,clients}),[visits,pipelineItems,clients])
+ const briefing=useMemo(()=>buildDayBriefing({visits:metricVisits,opportunities:pipelineItems,clients:metricClients}),[metricVisits,pipelineItems,metricClients])
  const focus=useMemo(()=>buildFocusProducers({clients,visits,opportunities:pipelineItems}),[clients,visits,pipelineItems])
  const pendencies=useMemo(()=>buildPendencies({clients,visits,opportunities:pipelineItems}),[clients,visits,pipelineItems])
- const topCultures=useMemo(()=>buildTopCultures({clients,metricsOf:client=>commercialMetrics(client).openPotential}),[clients])
- const coverage={total:clients.length,measured:relationships.irtKnown,share:clients.length?Math.round(relationships.irtKnown/clients.length*100):0}
+ const topCultures=useMemo(()=>buildTopCultures({clients:metricClients,metricsOf:client=>commercialMetrics(client).openPotential}),[metricClients])
+ const coverage={total:metricClients.length,measured:relationships.irtKnown,share:metricClients.length?Math.round(relationships.irtKnown/metricClients.length*100):0}
  // A linha clicada identifica UMA visita: sem levar o id, Visitas escolhia sozinha a primeira futura
  // do produtor e o consultor recebia o roteiro de outro compromisso.
  const openVisit=entry=>{const client=clients.find(item=>String(item.id)===String(entry.clientId));if(client)onPrepare(client,{visitId:entry.id});else setPage('visits')}
@@ -310,7 +313,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
       <article className="home-panel">
        <header><h3>Indicadores da carteira</h3></header>
        <div className="home-analytics-kpis">
-        <div><small>Produtores</small><b>{clients.length}</b><span>Carteira consolidada</span></div>
+        <div><small>Produtores</small><b>{metricClients.length}</b><span>Carteira consolidada</span></div>
         <div><small>Visitas na agenda</small><b>{upcomingVisits.length}</b><span>Compromissos futuros</span></div>
         <div><small>Potencial mapeado</small><b>{compactBRL(totalPotential,{known:potentialKnown})}</b><span>{portfolioPriorities.length} {portfolioPriorities.length===1?'prioridade registrada':'prioridades registradas'}</span></div>
         <div><small>IRT médio</small><b>{irt}</b><span>{relationships.irtKnown} de {relationships.total} perfis medidos</span></div>

@@ -1,3 +1,4 @@
+import {prepareK5StagingFixtures} from './server/k5-staging-fixtures.js'
 import {registeredFactQuery,registeredFactPresentation} from './server/registered-fact-query.js'
 import {readDailyVisitSuggestions} from './server/daily-visit-suggestions.js'
 import {profilePhoto} from './server/profile-photo.js'
@@ -181,6 +182,8 @@ const validatedSurveyAnswers=input=>validateSurveyAnswers(input,surveyOptions)
 
 const runtimeComposition=assertValRuntimeComposition()
 const database=createDatabase(config)
+// One controlled, idempotent staging fixture job; no product endpoint or new config.
+try{const k5=await prepareK5StagingFixtures({db:database,tenantId:config.defaultTenantId});if(k5.status!=='SKIPPED_NOT_K5_STAGING')console.info(JSON.stringify({event:'k5_fixture_preparation',...k5}))}catch(error){console.error(JSON.stringify({event:'k5_fixture_preparation',status:'BLOCKED',reason:error.code||error.message}))}
 const sharedAnswerCache=createSharedKnowledgeAnswerCache({database})
 const auth=createAuth(config)
 const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,tenantId:session.tenantId||config.defaultTenantId,ownerId:session.id||session.sub||session.email,storageScope:auth.storageScope(session)}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,tenantId:config.defaultTenantId,ownerId:'demo@valor360.local',storageScope:'demo'}
