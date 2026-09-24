@@ -66,7 +66,7 @@ test('negative optional answers use discovery labels instead of false opportunit
  assert.match(profile,/noAdditionalNeedPatterns/)
  assert.match(client360,/Nenhuma necessidade adicional declarada/)
  assert.match(client360,/Ainda não identificada/)
- assert.match(dashboard,/buildOpportunityWorkspace\(clients,opportunities\)/)
+ assert.match(dashboard,/buildOpportunityWorkspace\(metricClients,opportunities\)/)
  assert.match(opportunities,/buildOpportunityWorkspace\(clients,persistedItems\)/)
  assert.match(read('src/lib/opportunity-workspace.js'),/reconcilePipeline\(clients,\[\]\)/)
  assert.doesNotMatch(dashboard,/fallbackOpportunities|pipelineStages\[Math\.min\(index,2\)\]/)
@@ -188,7 +188,7 @@ test('production bundle receives the protected portfolio only from the server',(
  assert.match(app,/const \[clientList,setClientList\]=useState\(\[\]\)/)
  assert.match(app,/const serverClients=Array\.isArray\(data\.clients\)\?data\.clients:\[\]/)
  assert.match(app,/<Dashboard[^>]+opportunities=\{opportunities\}/)
- assert.match(dashboard,/buildOpportunityWorkspace\(clients,opportunities\)/)
+ assert.match(dashboard,/buildOpportunityWorkspace\(metricClients,opportunities\)/)
  assert.doesNotMatch(dashboard,/nextVisit\?\.time\|\|['"]14:00/)
  // A agenda da Home deriva a data da propria visita (nunca um horario fixo) e conta pelo mesmo
  // ciclo de vida do resto da tela: sem isso a visita atrasada e a cancelada entravam em

@@ -31,7 +31,7 @@ before(async()=>{
  otherUnit=(await service.createUnit(admin,{name:'TEST other unit'})).unit
  foreignUnit=id(199);await pg.query('INSERT INTO val_management_units(tenant_id,id,name) VALUES($1,$2,$3)',[foreignTenant,foreignUnit,'TEST foreign unit'])
  for(const [userId,unitId] of [[viewer.id,unit.id],[consultant,unit.id],[outside,otherUnit.id]])await service.assignUnit(admin,{userId,unitId})
- for(const [key,owner,tenant,source,profile] of [[20,consultant,tenantId,'manual',{}],[21,outside,tenantId,'manual',{}],[22,foreign,foreignTenant,'manual',{}],[23,consultant,tenantId,'val-demo-synthetic-v1',{isDemo:true}],[24,consultant,tenantId,'manual',{isDemo:true}]]){
+ for(const [key,owner,tenant,source,profile] of [[20,consultant,tenantId,'manual',{}],[21,outside,tenantId,'manual',{}],[22,foreign,foreignTenant,'manual',{}],[23,consultant,tenantId,'val-demo-synthetic-v1',{isDemo:true}],[24,consultant,tenantId,'manual',{isDemo:true}],[29,consultant,tenantId,'k5_synthetic_fixture',{}]]){
   await pg.query(`INSERT INTO clients(id,tenant_id,external_key,consultant_id,name,municipality,cultures,source,commercial_profile) VALUES($1::uuid,$2,$1::text,$3,$4,'TEST Town','Soja',$5,$6)`,[id(key),tenant,owner,`TEST producer ${key}`,source,JSON.stringify(profile)])
   await pg.query('INSERT INTO properties(id,tenant_id,client_id,name,metadata) VALUES($1,$2,$3,$4,$5)',[id(key+10),tenant,id(key),`TEST property ${key}`,JSON.stringify({location:{lat:-28,lng:-54}})])
  }

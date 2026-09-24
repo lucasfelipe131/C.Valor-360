@@ -313,7 +313,7 @@ const clientFromRow=(row,{defaults=false}={})=>{
     profileUpdatedAt:iso(row.profile_assessed_at)||snapshot.profileUpdatedAt||null,
     profileValidUntil:iso(row.profile_valid_until)||null,
     location:row.property_location===undefined?null:locationFromMetadata({location:row.property_location}),
-    source:'Banco VALOR 360'
+    source:row.source||'Banco VALOR 360'
   }
 }
 const surveyRecord=row=>({token:row.token,producerName:row.producer_name,consultantName:row.consultant_name,status:row.status,answers:row.answers||undefined,result:sanitizeProfileResult(row.result)||undefined,createdAt:iso(row.created_at),expiresAt:iso(row.expires_at),submittedAt:iso(row.submitted_at),integratedAt:iso(row.integrated_at)})
