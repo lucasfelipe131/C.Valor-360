@@ -265,24 +265,27 @@ export function generalAnswerTopicMatches(question,answer,{curated=false}={}){
 // Retrieval relevance does not imply that a statement answers the whole question.
 // Exact catalog requests retain their curated delivery; longer questions must
 // also cover the requested subject and cannot silently assume a crop.
-export function curatedAnswerCoversQuestion(question,item){
+export function curatedAnswerCoverageDecision(question,item){
  const requested=baseTokens(stripMessagePreamble(question)||question)
  const exactSubject=[item.title,...(item.triggers||[])].some(value=>{
   const words=baseTokens(`${value} ${item.statement}`)
   return requested.size>0&&[...requested].every(word=>words.has(word))
  })
- if(exactSubject)return true
+ if(exactSubject)return {accepted:true,reason:'EXACT_SUBJECT_COVERAGE'}
  // A general principle is not a yes/no answer to a universal claim.
  // Let the general-answer path address that qualification explicitly.
- if(/\b(?:sempre|nunca)\b/.test(normalizeSearchText(question))&&!/\b(?:sempre|nunca|necessariamente)\b/.test(normalizeSearchText(item.statement)))return false
+ if(/\b(?:sempre|nunca)\b/.test(normalizeSearchText(question))&&!/\b(?:sempre|nunca|necessariamente)\b/.test(normalizeSearchText(item.statement)))return {accepted:false,reason:'UNIVERSAL_QUALIFIER_NOT_COVERED'}
  const cropGroups=new Set(['CORN','SOYBEAN','WHEAT','BEANS','RICE','CANOLA','SORGHUM'])
  const questionCrops=[...exclusiveConcepts(question)].filter(group=>cropGroups.has(group))
  const answerCrops=[...exclusiveConcepts(item.statement)].filter(group=>cropGroups.has(group))
- if(!questionCrops.length&&answerCrops.length)return false
+ if(!questionCrops.length&&answerCrops.length)return {accepted:false,reason:'UNREQUESTED_CROP_IN_STATEMENT'}
  // Curator-authored title/triggers carry terminology aliases (e.g. local
  // quotation versus spot price); they cannot supply a missing subject.
- return generalAnswerTopicMatches(question,[item.statement,item.title,...(item.triggers||[])].join(' '),{curated:true})
+ const accepted=generalAnswerTopicMatches(question,[item.statement,item.title,...(item.triggers||[])].join(' '),{curated:true})
+ return {accepted,reason:accepted?'SUBJECT_COVERED':'SUBJECT_NOT_FULLY_COVERED'}
 }
+
+export function curatedAnswerCoversQuestion(question,item){return curatedAnswerCoverageDecision(question,item).accepted}
 
 function scoreItem(item,{searchTokens,queryBaseTokens,derivedTokens=new Set(),normalizedQuery='',corpusFrequency,queryConcepts,requestedModules,requestedGeography,sourceById,now,askingVerbs=new Set(),strictSubject=false}){
  const reasonCodes=[]
@@ -480,6 +483,15 @@ export function selectKnowledge({query='',contextSnapshot=null,modules=[],geogra
   requested_geography:text(geography)||'General',
   requested_limit:Number(limit)||3,
   applied_limit:cappedLimit,
+  decision:{
+   candidate_count:ranked.length,selected_count:portfolioQuestion?0:selected.length,
+   candidate_ids:ranked.map(e=>e.item.knowledge_item_id),
+   selected_ids:portfolioQuestion?[]:selected.map(e=>e.knowledge_item_id),
+   rejected_ids:(portfolioQuestion?ranked:ranked.slice(cappedLimit)).map(e=>e.item.knowledge_item_id),
+   rejection_reason:portfolioQuestion?'PORTFOLIO_QUESTION_NOT_KNOWLEDGE':ranked.length>cappedLimit?'RANK_LIMIT':'NONE',
+   retrieval_reason:offDomainQuestion?'QUESTION_OUTSIDE_CORPUS':ranked.length?'ELIGIBLE_CANDIDATES_FOUND':'NO_ELIGIBLE_CANDIDATES',
+   selection_reason:reasonCode
+  },
   evaluated_count:source.items.length,
   eligible_count:ranked.length,
   excluded_reason_counts:excludedReasonCounts,

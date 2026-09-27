@@ -1,3 +1,4 @@
+import {observe} from './observability.js'
 import {createHash} from 'node:crypto'
 import {knowledgeForModel,normalizeKnowledgeRetrieval} from './commercial/knowledge-support.js'
 
@@ -38,7 +39,7 @@ function safeFailure(error){
   if(status===429)return {code:'rate_limit',status}
   if(code.toLocaleLowerCase('pt-BR').includes('timeout')||status===408)return {code:'timeout',status}
   if(status>=500)return {code:'provider_unavailable',status}
-  return {code,status}
+  return {code:['invalid_language_output','language_incomplete','SyntaxError','AbortError'].includes(code)?code:'provider_error',status}
 }
 
 function requiredProducts(orchestration={}){
@@ -142,8 +143,8 @@ function mergeLanguage(advice,payload,metadata){
 export async function enhanceDecisionLanguage({client,config,context={},message='',advice={},orchestration={},signal}){
   const startedAt=Date.now()
   const model=String(config?.modelFast||'gpt-5.6-luna')
-  const baseMetadata={version:VERSION,requested:true,used:false,model,status:'fallback',latencyMs:0}
-  if(!client)return {advice:mergeLanguage(advice,{answer:advice.answer||'',opening:advice.conversation_plan?.opening||'',headline:advice.executive_brief?.headline||''},{...baseMetadata,status:'not_configured'}),used:false,status:'not_configured',model,latencyMs:0}
+  const baseMetadata={version:VERSION,requested:true,used:false,model,status:'fallback',latencyMs:0,languageRejectionReason:'NOT_EVALUATED',providerReason:'NOT_CALLED'}
+  if(!client)return {advice:mergeLanguage(advice,{answer:advice.answer||'',opening:advice.conversation_plan?.opening||'',headline:advice.executive_brief?.headline||''},{...baseMetadata,status:'not_configured',languageRejectionReason:'NOT_CONFIGURED'}),used:false,status:'not_configured',model,latencyMs:0}
 
   try{
     const input=compactInput({context,message,advice,orchestration})
@@ -181,14 +182,18 @@ Devolva somente o JSON solicitado.`,
     if(response.status!=='completed'||!response.output_text)throw Object.assign(new Error('language_incomplete'),{code:'language_incomplete',status:response.status})
     const parsed=JSON.parse(response.output_text)
     const validation=validEnhancement(parsed,{message,advice,orchestration})
-    if(!validation.ok)throw Object.assign(new Error(validation.reason),{code:'invalid_language_output'})
+    if(!validation.ok)throw Object.assign(new Error('invalid_language_output'),{code:'invalid_language_output',validationReason:({too_short:'TOO_SHORT',generic:'GENERIC_LANGUAGE',unsafe_claim:'UNSAFE_CLAIM',missing_product:'REQUIRED_PRODUCT_OMITTED',invented_number:'INVENTED_NUMBER'})[validation.reason.split(':')[0]]||'INVALID_LANGUAGE_OUTPUT'})
     const latencyMs=Date.now()-startedAt
-    const metadata={...baseMetadata,used:true,status:'enhanced',latencyMs,responseId:response.id||null}
+    const metadata={...baseMetadata,used:true,status:'enhanced',latencyMs,responseId:response.id||null,languageRejectionReason:'NONE',providerReason:'COMPLETED'}
+    observe('val.language.decision',{languageRejectionReason:'NONE',providerReason:'COMPLETED',outcome:'accepted'})
     return {advice:mergeLanguage(advice,validation.payload,metadata),used:true,status:'enhanced',model,latencyMs,responseId:response.id||null}
   }catch(error){
     const latencyMs=Date.now()-startedAt
     const failure=safeFailure(error)
-    const metadata={...baseMetadata,status:'fallback',latencyMs,failureCode:failure.code,failureStatus:failure.status||null}
+    const languageRejectionReason=error?.code==='invalid_language_output'?(['TOO_SHORT','GENERIC_LANGUAGE','UNSAFE_CLAIM','REQUIRED_PRODUCT_OMITTED','INVENTED_NUMBER'].includes(error.validationReason)?error.validationReason:'INVALID_LANGUAGE_OUTPUT'):failure.code==='SyntaxError'?'INVALID_JSON':failure.code==='language_incomplete'?'INCOMPLETE_RESPONSE':'NOT_EVALUATED_PROVIDER_FAILURE'
+    const providerReason=failure.code==='invalid_language_output'||failure.code==='SyntaxError'?'COMPLETED':failure.code==='language_incomplete'?'INCOMPLETE_RESPONSE':failure.code.toUpperCase()
+    const metadata={...baseMetadata,status:'fallback',latencyMs,failureCode:failure.code,failureStatus:failure.status||null,languageRejectionReason,providerReason}
+    observe('val.language.decision',{languageRejectionReason,providerReason,providerStatus:failure.status||null,outcome:'rejected'})
     console.warn('[VAL_LANGUAGE_ENHANCER]',JSON.stringify({model,latencyMs,code:failure.code,status:failure.status||null}))
     return {
       advice:mergeLanguage(advice,{answer:advice.answer||'',opening:advice.conversation_plan?.opening||'',headline:advice.executive_brief?.headline||''},metadata),

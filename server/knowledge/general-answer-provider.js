@@ -181,14 +181,20 @@ export const safeGeneralModelAnswer=answer=>!regulatedBrandClaim(answer)&&!/(?:\
 const estimateCost=usage=>Number(((Number(usage?.input_tokens)||0)*.15/1_000_000+(Number(usage?.output_tokens)||0)*.6/1_000_000).toFixed(8))
 const empty=(extra={})=>({text:'',costUsd:0,modelCalls:0,...extra})
 
-export async function generateGeneralModelAnswer({message='',aiClient=null,model='',reformulate=false,signal}={}){
+export async function generateGeneralModelAnswer({message='',aiClient=null,model='',reformulate=false,signal,onDecision=null}={}){
+ const finish=result=>{
+  const decision={attempt:result.modelCalls?(reformulate?2:1):0,reason:result.unavailableReason||(result.regulatedClaim?'REGULATED_INPUT_REQUIRES_SOURCE':'COMPLETED_TEXT'),provider_status:result.providerStatus??null}
+  observe('knowledge.general.provider_decision',{attempt:decision.attempt,providerReason:decision.reason,providerStatus:decision.provider_status})
+  onDecision?.(decision)
+  return result
+ }
  if(signal?.aborted)throw signal.reason||Object.assign(new Error('Requisição cancelada.'),{name:'AbortError'})
  // Recusa regulada de ENTRADA precisa viajar com motivo. Sem isso ela era indistinguivel de "a
  // Biblioteca nao cobre este assunto" e o consultor lia o pedido de reformular a pergunta, com
  // required_inputs ["topic"], por uma pergunta que ele ja tinha feito por completo. A frase honesta
  // ja existia no repositorio (regulatedClaimStub), ligada apenas ao portao de SAIDA.
- if(requiresVerifiedGeneralSource(message))return empty({regulatedClaim:true})
- if(!aiClient||!model)return empty({unavailableReason:'MODEL_UNAVAILABLE'})
+ if(requiresVerifiedGeneralSource(message))return finish(empty({regulatedClaim:true}))
+ if(!aiClient||!model)return finish(empty({unavailableReason:'MODEL_UNAVAILABLE'}))
  const instructions='Responda em português do Brasil com conhecimento geral amplamente estabelecido, com extensão proporcional à pergunta: 2–3 frases para uma dúvida simples; até 250 palavras quando a pessoa pede explicação, comparação ou aprofundamento.\n'+
   'Explique diretamente agronomia, manejo integrado, categorias de produtos, mecanismos de ação e critérios comerciais quando forem conceitos gerais. Preserve a cultura, a praga e o objetivo perguntados. Em explicações aprofundadas, conecte mecanismo, finalidade, condições que alteram o resultado e limitações; explique o porquê, sem alegar superioridade comercial. Não exija produtor para uma dúvida geral.\n'+
   'Pode explicar o significado de dose e a diferença entre quantidade de produto comercial e de ingrediente ativo. Não informe valores de dose, instrução de mistura, indicação de uso de marca em cultura ou alvo, recomendação técnica prescritiva, preço/cotação atual, previsão do tempo ou dados de um produtor. Não invente composição, registro, desempenho ou superioridade de marcas; isso exige catálogo/ficha ou bula consultados.\n'+
@@ -206,17 +212,17 @@ export async function generateGeneralModelAnswer({message='',aiClient=null,model
   // Biblioteca nao cobre este assunto". O consultor lia um pedido para reformular a pergunta.
   const retryAfterHeader=Number(error?.headers?.['retry-after']??error?.response?.headers?.get?.('retry-after'))
   observe('knowledge.general.provider_failure',{outcome:'error',errorCode:'PROVIDER_ERROR',providerStatus:Number(error?.status)||null,attempt:reformulate?2:1})
-  return empty({modelCalls:1,unavailableReason:'PROVIDER_ERROR',providerStatus:Number(error?.status)||null,retryAfterSeconds:Number.isFinite(retryAfterHeader)&&retryAfterHeader>0?Math.min(600,Math.round(retryAfterHeader)):null})
+  return finish(empty({modelCalls:1,unavailableReason:'PROVIDER_ERROR',providerStatus:Number(error?.status)||null,retryAfterSeconds:Number.isFinite(retryAfterHeader)&&retryAfterHeader>0?Math.min(600,Math.round(retryAfterHeader)):null}))
  }
  const costUsd=estimateCost(response?.usage)
- observe('knowledge.general.provider_usage',{model,attempt:reformulate?2:1,costUsd,inputTokens:response?.usage?.input_tokens??null,outputTokens:response?.usage?.output_tokens??null,outcome:response?.status||'unknown'})
+ observe('knowledge.general.provider_usage',{model,attempt:reformulate?2:1,costUsd,inputTokens:response?.usage?.input_tokens??null,outputTokens:response?.usage?.output_tokens??null,outcome:['completed','incomplete','failed','in_progress','queued','cancelled'].includes(response?.status)?response.status:'unknown'})
  // An incomplete Responses result can contain grammatical but truncated text.
  // Discard it before grounding/cache and allow the caller one bounded retry.
  const incomplete=response?.status==='incomplete'||response?.incomplete_details!=null||response?.output?.some(item=>item?.status==='incomplete')
- if(incomplete)return empty({costUsd,modelCalls:1,unavailableReason:'INCOMPLETE_RESPONSE',retryable:response?.incomplete_details?.reason==='max_output_tokens'})
- if(response?.status&&response.status!=='completed'||response?.error)return empty({costUsd,modelCalls:1,unavailableReason:'FAILED_RESPONSE'})
+ if(incomplete)return finish(empty({costUsd,modelCalls:1,unavailableReason:'INCOMPLETE_RESPONSE',retryable:response?.incomplete_details?.reason==='max_output_tokens'}))
+ if(response?.status&&response.status!=='completed'||response?.error)return finish(empty({costUsd,modelCalls:1,unavailableReason:'FAILED_RESPONSE'}))
  const answer=clean(response?.output_text)
  // Do not turn truncation by our own string limit into a complete answer either.
- if(!answer||answer.length>2200||answer.toUpperCase().includes(sentinel))return empty({costUsd,modelCalls:1,unavailableReason:!answer?'EMPTY_RESPONSE':answer.length>2200?'OUTPUT_LENGTH_LIMIT':'SOURCE_REQUIRED',retryable:answer.length>2200})
- return {text:answer,costUsd,modelCalls:1}
+ if(!answer||answer.length>2200||answer.toUpperCase().includes(sentinel))return finish(empty({costUsd,modelCalls:1,unavailableReason:!answer?'EMPTY_RESPONSE':answer.length>2200?'OUTPUT_LENGTH_LIMIT':'SOURCE_REQUIRED',retryable:answer.length>2200}))
+ return finish({text:answer,costUsd,modelCalls:1})
 }
