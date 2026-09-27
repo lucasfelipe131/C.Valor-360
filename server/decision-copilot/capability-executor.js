@@ -997,7 +997,7 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  const delivered=accepted?buildAiResponse(result.text):finalize(noCoverageExecution(providerFailure,regulatedClaim))
  delivered.responseMetadata.decisionTrace={...delivered.responseMetadata.decisionTrace,provider_attempts:decisionTrace.provider_attempts,validation_checks:decisionTrace.validation_checks,
   PROVIDER_REASON:result.unavailableReason||decisionTrace.provider_attempts.at(-1)?.reason||(['HIT','COALESCED'].includes(result.cache?.status)?`CACHE_${result.cache.status}`:'NOT_CALLED'),
-  FALLBACK_ORIGIN:accepted?'NONE':aiBudgetExhausted?'AI_BUDGET_EXHAUSTED':providerFailure?'GENERAL_PROVIDER_FAILURE':regulatedClaim?'REGULATED_CLAIM_POLICY':rejectedReasons.size?'GENERAL_ANSWER_VALIDATOR':'GENERAL_PROVIDER_OUTPUT_UNAVAILABLE',
+  FALLBACK_ORIGIN:accepted?'NONE':aiBudgetExhausted?'AI_BUDGET_EXHAUSTED':providerFailure?'GENERAL_PROVIDER_FAILURE':regulatedClaim?'REGULATED_CLAIM_POLICY':result.unavailableReason?'GENERAL_PROVIDER_OUTPUT_UNAVAILABLE':rejectedReasons.size?'GENERAL_ANSWER_VALIDATOR':'GENERAL_PROVIDER_OUTPUT_UNAVAILABLE',
   LANGUAGE_REJECTION_REASON:'NOT_IN_GENERAL_ANSWER_PATH',
   GENERAL_VALIDATION_REASON:accepted?'ACCEPTED':[...rejectedReasons].join(',')||'NO_USABLE_PROVIDER_TEXT',
   general_validation_decision:decisionTrace.general_validation_decision,

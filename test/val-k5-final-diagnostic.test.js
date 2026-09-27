@@ -85,6 +85,7 @@ test('provider failure, output length and successful delivery have distinct diag
  assert.equal(failure.responseMetadata.decisionTrace.FALLBACK_ORIGIN,'GENERAL_PROVIDER_FAILURE')
  const lengthy=await response(f,'x'.repeat(2201))
  assert.equal(lengthy.responseMetadata.decisionTrace.PROVIDER_REASON,'OUTPUT_LENGTH_LIMIT')
+ assert.equal(lengthy.responseMetadata.decisionTrace.FALLBACK_ORIGIN,'GENERAL_PROVIDER_OUTPUT_UNAVAILABLE')
  assert.equal(lengthy.responseMetadata.decisionTrace.provider_attempts.length,2)
  const success=await response(f,f.answer)
  assert.equal(success.responseMetadata.decisionTrace.FALLBACK_ORIGIN,'NONE')
