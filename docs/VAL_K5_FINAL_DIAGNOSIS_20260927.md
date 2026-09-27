@@ -118,7 +118,7 @@ grounding, rate limit, secrets e quantidade máxima de tentativas foram preserva
 
 ROOT_CAUSE_KNOWN = 0/15 (causa final histórica)
 ROOT_CAUSE_GROUPS = 0 comprovados para o fallback final
-DETERMINISTIC_PREFIX_GROUPS = 5 (9 + 1 + 2 + 1 + 1 casos)
+DETERMINISTIC_PREFIX_GROUPS = 5 (9 + 2 + 2 + 1 + 1 casos)
 DETERMINISTIC_PREFIX_EXPLAINED = 15/15
 CASES_FIXED = 0/15 historicamente comprovados nesta fase
 CASES_CORRECT_NO_DATA = 0/15 comprovados no resultado final
