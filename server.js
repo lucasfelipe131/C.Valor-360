@@ -1,3 +1,4 @@
+import {attachValResponseOutcome} from './server/val-response-outcome.js'
 import {prepareK5StagingFixtures} from './server/k5-staging-fixtures.js'
 import {registeredFactQuery,registeredFactPresentation} from './server/registered-fact-query.js'
 import {readDailyVisitSuggestions} from './server/daily-visit-suggestions.js'
@@ -86,7 +87,7 @@ if(!existsSync(storePath))writeFileSync(storePath,JSON.stringify({surveys:[],imp
 
 function readStore(){try{return JSON.parse(readFileSync(storePath,'utf8'))}catch{return {surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[]}}}}
 function saveStore(store){const temporary=`${storePath}.tmp`;writeFileSync(temporary,JSON.stringify(store,null,2));renameSync(temporary,storePath)}
-function json(response,status,payload){response.writeHead(status,{...securityHeaders,'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify(payload))}
+function json(response,status,payload){const context=currentRequestContext();if(context?.method==='POST'&&context?.path==='/api/val/chat')payload=attachValResponseOutcome(payload,status,observe);response.writeHead(status,{...securityHeaders,'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify(payload))}
 // O corpo e acumulado em Buffer e decodificado uma unica vez no fim: concatenar cada chunk como
 // string quebra o caractere multibyte partido entre dois segmentos TCP (acento vira U+FFFD e era
 // gravado assim no banco). O limite continua sendo medido em bytes.
@@ -282,7 +283,7 @@ async function handleApi(request,response,url){
   if(auth.configured&&!statusIdentity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
   const databaseHealth=await database.health();const status=await valEngine.status(databaseHealth)
   const engineConfigured=Boolean(config.openaiApiKey&&auth.configured&&databaseHealth.ready)
-  return json(response,200,{...getPublicEngineConfig(),...status,mode:engineConfigured?'openai':config.openaiApiKey?'locked':'demonstration',configured:engineConfigured,keyConfigured:Boolean(config.openaiApiKey),securityReady:auth.configured,realtimeVoice:await realtimeVoice.availability({identity:statusIdentity}),core:valCore.status(),composition:{version:runtimeComposition.version,order:[...runtimeComposition.order]}})
+  return json(response,200,{...getPublicEngineConfig(),...status,rateLimit:{limit:config.aiRequestsPerTenMinutes,windowMs:600_000,scope:'identity',policy:'fixed-window'},mode:engineConfigured?'openai':config.openaiApiKey?'locked':'demonstration',configured:engineConfigured,keyConfigured:Boolean(config.openaiApiKey),securityReady:auth.configured,realtimeVoice:await realtimeVoice.availability({identity:statusIdentity}),core:valCore.status(),composition:{version:runtimeComposition.version,order:[...runtimeComposition.order]}})
  }
  if(url.pathname==='/api/auth/session'&&request.method==='GET'){
   const session=await sessionIdentity(request)
@@ -591,7 +592,16 @@ async function handleApi(request,response,url){
   const requestController=valRequestController
   throwIfRequestAborted(requestController.signal)
   const rateIdentity=identity?.id||identity?.email||requestIdentity(request)
-  if(!consumeRateLimit('val',rateIdentity,config.aiRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de análises atingido. Aguarde alguns minutos.'})
+  const rateAllowed=consumeRateLimit('val',rateIdentity,config.aiRequestsPerTenMinutes)
+  const rateBucket=rateBuckets.get(`val:${rateIdentity}`)
+  response.setHeader('X-RateLimit-Limit',String(config.aiRequestsPerTenMinutes))
+  response.setHeader('X-RateLimit-Remaining',String(Math.max(0,config.aiRequestsPerTenMinutes-rateBucket.count)))
+  response.setHeader('X-RateLimit-Reset',String(Math.ceil(rateBucket.resetAt/1000)))
+  if(!rateAllowed){
+   const retryAfterSeconds=Math.max(1,Math.ceil((rateBucket.resetAt-Date.now())/1000))
+   response.setHeader('Retry-After',String(retryAfterSeconds))
+   return json(response,429,{error:'Limite temporário de análises atingido. Aguarde alguns minutos.',reason_code:'APPLICATION_RATE_LIMIT',retryAfterSeconds})
+  }
   const payload=await body(request);throwIfRequestAborted(requestController.signal);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const requestedMessage=String(payload.message??payload.question??'').trim();const message=(requestedMessage||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).slice(0,3000)
   const tenantId=identity?.tenantId||config.defaultTenantId;const scopedOwnerId=identity?.id||identity?.email
   const rawClarificationSelection=payload.clarificationSelection

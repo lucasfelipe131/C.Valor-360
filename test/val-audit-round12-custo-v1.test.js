@@ -45,10 +45,10 @@ test('o teto nao pede assunto nem cai no bloqueio de integridade', async () => {
  assert.equal(comTeto.advice.ai_reasoning.run.status,'completed')
 })
 
-test('sem teto estourado nada muda', async () => {
+test('sem cobertura não inventa topic faltante numa pergunta completa', async () => {
  const semCobertura=await responder('')
  const resultado=semCobertura.advice.ai_reasoning.run.tool_result
- assert.deepEqual(resultado.required_inputs,['topic'])
+ assert.deepEqual(resultado.required_inputs,[])
  assert.equal(resultado.title,'Orientação geral')
  assert.equal(semCobertura.advice.ai_reasoning.run.status,'completed')
 })

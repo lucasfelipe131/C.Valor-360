@@ -205,6 +205,7 @@ export async function generateGeneralModelAnswer({message='',aiClient=null,model
   // fora do ar (500) e limite do provedor (429) viravam "resposta vazia", indistinguiveis de "a
   // Biblioteca nao cobre este assunto". O consultor lia um pedido para reformular a pergunta.
   const retryAfterHeader=Number(error?.headers?.['retry-after']??error?.response?.headers?.get?.('retry-after'))
+  observe('knowledge.general.provider_failure',{outcome:'error',errorCode:'PROVIDER_ERROR',providerStatus:Number(error?.status)||null,attempt:reformulate?2:1})
   return empty({modelCalls:1,unavailableReason:'PROVIDER_ERROR',providerStatus:Number(error?.status)||null,retryAfterSeconds:Number.isFinite(retryAfterHeader)&&retryAfterHeader>0?Math.min(600,Math.round(retryAfterHeader)):null})
  }
  const costUsd=estimateCost(response?.usage)

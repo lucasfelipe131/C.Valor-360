@@ -708,7 +708,8 @@ function hasNamedIndividualAssertion(value=''){
  for(const match of source.matchAll(pattern)){
   const lead=normalize(match[1]).split(' ')[0]
   const follower=normalize(match[2])
-  if(!nonNameClauseLeads.has(lead)&&!strategyInstruction.test(lead)&&!safeNamedObjectFollower.has(follower)&&individualPredicate.test(follower))return true
+  const demonstrative=/^(?:isso|isto|aquilo)$/i.test(match[1])
+  if(!demonstrative&&!nonNameClauseLeads.has(lead)&&!strategyInstruction.test(lead)&&!safeNamedObjectFollower.has(follower)&&individualPredicate.test(follower))return true
  }
  return false
 }

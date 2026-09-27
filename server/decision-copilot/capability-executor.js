@@ -1,3 +1,4 @@
+import {observe} from '../observability.js'
 import {createHash,randomUUID} from 'node:crypto'
 import {isCurrentClientIdentityRequest} from '../ai-reasoning/intent-router.js'
 import {executeCopilotCalculator} from '../agronomic-calculator-adapter.js'
@@ -747,7 +748,8 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
  validateCapabilityExecutionScope({execution,clientId,tenantId:organizationId,ownerId})
  const tool=execution?.tool_result||null
  const contextRequired=tool?.status==='CONTEXT_REQUIRED'
- const summary=clean(tool?.summary||'A capacidade solicitada não produziu resultado factual.',1200)
+ const summaryLimit=tool?.capability==='AI_GENERAL_KNOWLEDGE'?2200:1200
+ const summary=clean(tool?.summary||'A capacidade solicitada não produziu resultado factual.',summaryLimit)
  const selectedDomain=contextDomain||classifyValContextDomain(message,route?.intent)
  const executedSources=list(execution?.capability_results).filter(item=>item.status==='EXECUTED'&&item.source_ref)
  if(!executedSources.length&&!clientId&&tool?.status==='EXECUTED'&&tool?.capability==='GENERAL_GUIDANCE')executedSources.push({capability:'GENERAL_GUIDANCE',status:'EXECUTED',source_ref:'system:general-guidance:v1',tool_result:tool})
@@ -770,7 +772,7 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
    epistemic_type:sourceEpistemic,evidence_type:sourceEpistemic,
    ...(globalSource?{scope:globalOrigin.scope,producer_id:null}:clientId?{producer_id:String(clientId)}:capability==='SESSION_COMMAND'?{}:{scope:'GENERAL_KNOWLEDGE'}),
    tenant_id:globalSource?globalOrigin.tenantId:String(organizationId),...(globalSource?{context_owner_id:globalOrigin.ownerId}:ownerId?{owner_id:String(ownerId)}:{}),
-   ...(sourceObservedAt?{observed_at:sourceObservedAt}:{}),...(sourceValidUntil?{valid_until:sourceValidUntil}:{}),statement:clean(item.tool_result?.summary||summary,1200),capability
+   ...(sourceObservedAt?{observed_at:sourceObservedAt}:{}),...(sourceValidUntil?{valid_until:sourceValidUntil}:{}),statement:clean(item.tool_result?.summary||summary,summaryLimit),capability
   }
  })
  const client={id:clientId||'portfolio',name:clean(clientName,180)||'Carteira'}
@@ -885,21 +887,16 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   :contextRequired
    ?isCurrentClientIdentityRequest(message)?'Nenhum produtor está selecionado nesta conversa.':'Nenhum produtor está selecionado nesta conversa. Selecione um produtor autorizado para continuar.'
    :guidance.summary
- // Sem cobertura na Biblioteca e sem definicao fixa: o texto e um pedido de esclarecimento, nao
- // uma resposta factual. Entra como NO_DATA para nao passar por grounding de claims e nunca ser
- // trocado pela mensagem de bloqueio de integridade. Tambem e o que o consultor le quando o item
- // recuperado foi bloqueado a jusante e nao ha modelo disponivel para o fallback.
- // Tres causas diferentes chegavam aqui com o MESMO texto: sem cobertura na Biblioteca, teto de
- // IA estourado e provedor fora do ar. So a primeira e um pedido legitimo de esclarecimento.
+ // Ausência de cobertura não prova falta de contexto. O fallback genérico mantém
+ // NO_DATA; só generalTopicClarification pode solicitar um tópico materialmente ausente.
  const noCoverageExecution=(providerFailure=false,regulatedClaim=false)=>{
-  const unavailable=aiBudgetExhausted||providerFailure||regulatedClaim
   // A falha do provedor vem PRIMEIRO. regulatedClaim e calculado sobre o texto DESCARTADO, entao
   // bastava a primeira resposta ser rejeitada e a segunda chamada morrer no provedor para o
   // consultor ler "consulte a bula" quando a causa real era HTTP 500 no modelo - desfazendo na
   // pratica a separacao de causas que este bloco existe para fazer.
   const summary=libraryOnly?librarySearchAbsence:providerFailure?aiProviderUnavailableStub:aiBudgetExhausted?aiBudgetExhaustedStub:regulatedClaim?regulatedClaimStub:(topicClarification||noKnowledgeCoverageStub)
   const title=providerFailure?'IA indisponível':aiBudgetExhausted?'Limite de IA atingido':regulatedClaim?'Informação de bula':'Orientação geral'
-  return deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'NO_DATA',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title,summary,page:'copilot',manual_page:null,mode:'no_coverage',context:{client_id:null,private_memory_used:false},required_inputs:unavailable?[]:['topic']},active_context:null})
+  return deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:[],capability_results:list(route.capabilities).map(capability=>({capability,status:'PLANNED',source_ref:null,tool_result:null})),tool_result:{status:'NO_DATA',capability:'GENERAL_GUIDANCE',tool:'general_guidance',title,summary,page:'copilot',manual_page:null,mode:'no_coverage',context:{client_id:null,private_memory_used:false},required_inputs:topicClarification?['topic']:[]},active_context:null})
  }
  const curatedExecution=deepFreeze(catalog
   ?{path:route.path,capabilities_planned:[...list(route.capabilities)],capabilities_used:['AGRONOMIC_WORKSPACE'],capability_results:[catalogExecution],tool_result:catalogExecution.tool_result,active_context:null}
@@ -939,6 +936,7 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
    built.advice.ai_reasoning.confidence={level:'NAO_VERIFICADO',score:null,rationale:'Resposta de conhecimento geral do modelo, sem fonte na Biblioteca de Conhecimento; não passou por verificação de evidência ou revisão humana.'}
    built.advice.ai_reasoning.evidence_status='UNVERIFIED_MODEL_KNOWLEDGE'
   }
+  built.responseMetadata.generalKnowledge={coverage:guidance?.coverage||'NOT_APPLICABLE',contextRequired,topicClarification:Boolean(topicClarification),libraryOnly,aiUnavailableReason:aiUnavailableReason||null}
   return built
  }
  const curatedResponse=finalize(curatedExecution)
@@ -953,10 +951,15 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   const tool={status:'EXECUTED',capability:'AI_GENERAL_KNOWLEDGE',tool:'ai_general_knowledge',title:'Conhecimento geral do modelo (não verificado)',summary:answer,page:'copilot',manual_page:null,mode:'general_unverified',context:{client_id:null,private_memory_used:false}}
   return finalize(deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['AI_GENERAL_KNOWLEDGE'],capability_results:[{capability:'AI_GENERAL_KNOWLEDGE',status:'EXECUTED',source_ref:aiUnverifiedSourceRef,tool_result:tool}],tool_result:tool,active_context:null}),{unverified:true})
  }
- const rejectedReasons=new Set()
+ const rejectedReasons=new Set(),groundingReasons=new Set()
  const validAnswer=answer=>{
-  const reason=!answer?'EMPTY_ANSWER':!generalAnswerTopicMatches(message,answer)?'TOPIC_MISMATCH':!safeGeneralModelAnswer(answer)?'UNSAFE_GENERAL_ANSWER':buildAiResponse(answer).advice.ai_reasoning.grounding?.blocked===true?'GROUNDING_BLOCKED':null
-  if(reason)rejectedReasons.add(reason)
+  let grounding=null
+  const reason=!answer?'EMPTY_ANSWER':!generalAnswerTopicMatches(message,answer)?'TOPIC_MISMATCH':!safeGeneralModelAnswer(answer)?'UNSAFE_GENERAL_ANSWER':(grounding=buildAiResponse(answer).advice.ai_reasoning.grounding)?.blocked===true?'GROUNDING_BLOCKED':null
+  if(reason){
+   rejectedReasons.add(reason)
+   for(const violation of grounding?.provenance_violations||[])for(const code of violation.reason_codes||[])groundingReasons.add(code)
+   observe('knowledge.general.validation',{outcome:'rejected',reasonCodes:[reason,...groundingReasons].join(','),questionRelevance:grounding?.question_relevance,scopeViolationCount:grounding?.scope_violations?.length,provenanceViolationCount:grounding?.provenance_violations?.length})
+  }
   return reason===null
  }
  const generate=async()=>{
@@ -976,7 +979,7 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  const providerFailure=result?.unavailableReason==='PROVIDER_ERROR'
  const regulatedClaim=Boolean(result?.regulatedClaim)
  const delivered=result.text&&validAnswer(result.text)?buildAiResponse(result.text):finalize(noCoverageExecution(providerFailure,regulatedClaim))
- delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:result.costUsd,aiGeneralKnowledgeModelCalls:result.modelCalls,aiGeneralKnowledgeRejectionReasons:[...rejectedReasons],aiGeneralKnowledgeUnavailableReason:result.unavailableReason||null,sharedKnowledgeCache:result.cache||null,...(providerFailure?{aiProviderStatus:result.providerStatus??null,aiProviderRetryAfterSeconds:result.retryAfterSeconds??null}:{})}
+ delivered.responseMetadata={...delivered.responseMetadata,aiGeneralKnowledgeCostUsd:result.costUsd,aiGeneralKnowledgeModelCalls:result.modelCalls,aiGeneralKnowledgeRejectionReasons:[...rejectedReasons],aiGeneralKnowledgeGroundingReasons:[...groundingReasons],aiGeneralKnowledgeUnavailableReason:result.unavailableReason||null,sharedKnowledgeCache:result.cache||null,...(providerFailure?{aiProviderStatus:result.providerStatus??null,aiProviderRetryAfterSeconds:result.retryAfterSeconds??null}:{})}
  delivered.responseMetadata.executionBudget={...delivered.responseMetadata.executionBudget,modelCalls:result.modelCalls,estimatedCostUsd:result.costUsd}
  delivered.advice.ai_reasoning.run={...delivered.advice.ai_reasoning.run,model_call_count:result.modelCalls,estimated_cost_usd:result.costUsd}
  return delivered

@@ -1,0 +1,77 @@
+[
+  {
+    "id": "AG-001",
+    "question": "Por que a água infiltra devagar numa faixa do terreno e depressa na faixa vizinha?",
+    "answer": "A água pode infiltrar devagar numa faixa do terreno por compactação e depressa na faixa vizinha por maior porosidade. Textura, cobertura e umidade também afetam a infiltração; são hipóteses que precisam de observação do perfil."
+  },
+  {
+    "id": "AG-003",
+    "question": "Minhocas abundantes bastam para concluir que o solo está bem estruturado?",
+    "answer": "Minhocas abundantes são um indicador biológico, mas não demonstram sozinhas que o solo está bem estruturado. Avalie também agregados, porosidade e crescimento das raízes."
+  },
+  {
+    "id": "AG-006",
+    "question": "Um pH bom garante que o alumínio não limite as raízes?",
+    "answer": "Um pH bom não garante ausência de alumínio limitando as raízes em profundidade. A análise da camada superficial pode ocultar acidez no subsolo; avalie alumínio trocável e saturação por alumínio em cada camada."
+  },
+  {
+    "id": "AG-007",
+    "question": "Em que situação a análise de subsolo acrescenta informação à camada de 0 a 20 cm?",
+    "answer": "A análise de subsolo acrescenta informação quando a camada de 0 a 20 cm não explica restrições às raízes. Camadas profundas podem apresentar acidez, alumínio ou baixo cálcio mesmo com superfície corrigida."
+  },
+  {
+    "id": "AG-011",
+    "question": "O calcário corrige imediatamente toda a profundidade explorada pelas raízes?",
+    "answer": "O calcário não corrige imediatamente toda a profundidade explorada pelas raízes. Sua reação depende de água, granulometria e contato com o solo; a correção em profundidade costuma ser lenta."
+  },
+  {
+    "id": "AG-013",
+    "question": "Por que aplicar gesso não equivale a corrigir o pH com calcário?",
+    "answer": "O gesso fornece cálcio e enxofre, mas não neutraliza a acidez como o calcário. Por isso aplicar gesso não equivale a corrigir o pH; o efeito em profundidade depende das condições do solo."
+  },
+  {
+    "id": "AG-014",
+    "question": "O que devo verificar antes de relacionar folha amarelada à falta de nitrogênio?",
+    "answer": "Antes de relacionar folha amarelada à falta de nitrogênio, observe quais folhas amarelam, distribuição dos sintomas e condição das raízes. Encharcamento, doenças e outras deficiências também podem causar amarelecimento; confirme com histórico e análise."
+  },
+  {
+    "id": "AG-016",
+    "question": "Potássio elevado no solo significa automaticamente maior produtividade?",
+    "answer": "Potássio elevado no solo não significa automaticamente maior produtividade. Quando já há suficiência, água, outros nutrientes e sanidade podem limitar a produção; excesso também pode desequilibrar a nutrição."
+  },
+  {
+    "id": "AG-018",
+    "question": "Por que não se deve comparar análise foliar de estádios diferentes sem critério?",
+    "answer": "A análise foliar varia com os estádios de desenvolvimento por diluição e redistribuição de nutrientes. Comparar estádios diferentes exige referências apropriadas e o mesmo órgão amostrado; sem esse critério a interpretação pode ser incorreta."
+  },
+  {
+    "id": "AG-019",
+    "question": "Uma chuva leve depois da ureia sempre elimina o risco de volatilização?",
+    "answer": "Uma chuva leve depois da ureia não elimina sempre o risco de volatilização. Ela pode apenas umedecer a superfície sem incorporar o fertilizante, favorecendo hidrólise; o resultado depende de volume, intensidade e condições do solo."
+  },
+  {
+    "id": "AG-022",
+    "question": "O vigor das sementes importa mesmo quando o teste de germinação é alto?",
+    "answer": "O vigor das sementes importa mesmo quando o teste de germinação é alto. A germinação mede potencial em condições favoráveis, enquanto o vigor ajuda a avaliar desempenho sob estresse e uniformidade de emergência."
+  },
+  {
+    "id": "AG-024",
+    "question": "População maior sempre compensa um plantio atrasado de milho?",
+    "answer": "População maior não compensa sempre um plantio atrasado de milho. O atraso altera a disponibilidade de água e radiação; aumentar a população pode intensificar a competição, dependendo do híbrido e do ambiente."
+  },
+  {
+    "id": "AG-027",
+    "question": "Por que a mesma densidade de plantas pode ter respostas diferentes entre híbridos?",
+    "answer": "A mesma densidade de plantas pode produzir respostas diferentes entre híbridos porque arquitetura, tolerância ao adensamento e ciclo variam. A competição por luz e água depende dessas características e do ambiente."
+  },
+  {
+    "id": "AG-028",
+    "question": "Qual a diferença entre emergência desuniforme e espaçamento desuniforme?",
+    "answer": "Emergência desuniforme é variação no momento em que as plântulas aparecem. Espaçamento desuniforme é variação na distância entre plantas na linha; os dois problemas podem ocorrer juntos, mas têm causas distintas."
+  },
+  {
+    "id": "AG-029",
+    "question": "Uma crosta na superfície pode explicar plântulas retorcidas?",
+    "answer": "Uma crosta na superfície pode impor resistência mecânica e explicar plântulas retorcidas. Isso é uma hipótese: verifique a crosta, a posição da semente, a umidade e possíveis danos antes de concluir."
+  }
+]
