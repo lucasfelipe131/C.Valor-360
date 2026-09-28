@@ -254,12 +254,23 @@ const genericTopicTerms=new Set(['aplicacao','aplicacoes','cultura','cultivo','o
 
 // Lexical overlap with "milho" or "aplicação" is insufficient if the answer
 // drops the actual pest/concept. This checks relevance, not factual truth.
-export function generalAnswerTopicMatches(question,answer,{curated=false}={}){
+export function generalAnswerTopicDecision(question,answer,{curated=false}={}){
  const frequency=corpusVocabulary(loadKnowledgeLibrary())
  const requested=baseTokens(stripMessagePreamble(question)||question)
  const anchors=[...requested].filter(token=>token.length>=5&&!exemptWordForm(token)&&!conceptTerms.has(token)&&!genericTopicTerms.has(token)&&(curated||(frequency.get(token)||0)<=discriminatingFrequency))
  const answerWords=[...baseTokens(answer)]
- return anchors.every(anchor=>answerWords.some(word=>word===anchor||word.length>=5&&word.slice(0,5)===anchor.slice(0,5)))&&!conceptConflict(exclusiveConcepts(question),exclusiveConcepts(answer))
+ const matchedAnchors=anchors.filter(anchor=>answerWords.some(word=>word===anchor||word.length>=5&&word.slice(0,5)===anchor.slice(0,5)))
+ const missingAnchors=anchors.filter(anchor=>!matchedAnchors.includes(anchor))
+ const conflict=conceptConflict(exclusiveConcepts(question),exclusiveConcepts(answer))
+ return {accepted:missingAnchors.length===0&&!conflict,requestedAnchors:anchors,matchedAnchors,missingAnchors,conceptConflict:Boolean(conflict)}
+}
+
+export function generalAnswerTopicMatches(question,answer,options){return generalAnswerTopicDecision(question,answer,options).accepted}
+
+// Logs expose stable anchor identifiers, never raw question/name fragments.
+export function generalTopicDiagnostic(decision){
+ const refs=items=>items.map(anchor=>'ANCHOR_'+createHash('sha256').update(anchor).digest('hex').slice(0,16))
+ return {TOPIC_REQUESTED_ANCHORS:refs(decision.requestedAnchors),TOPIC_MATCHED_ANCHORS:refs(decision.matchedAnchors),TOPIC_MISSING_ANCHORS:refs(decision.missingAnchors),TOPIC_CONCEPT_CONFLICT:decision.conceptConflict}
 }
 
 // Retrieval relevance does not imply that a statement answers the whole question.

@@ -5,9 +5,10 @@ import {executeCopilotCalculator} from '../agronomic-calculator-adapter.js'
 import {conversationStateContext,lastCompletedAssistantTurn,normalizeConversationState} from './conversation-state.js'
 import {assertActiveProducerBoundary,assertContextScopeAliases,classifyValContextDomain,explicitlyGlobalContext} from './context-selector.js'
 import {evaluateReasoningGrounding} from './response-grounding.js'
+import {applyGeneralTopicGrounding,generalGroundingHasNoViolations} from './general-topic-grounding.js'
 import {compactKnowledgeRefs} from '../commercial/knowledge-support.js'
 import {selectKnowledge} from '../knowledge/library.js'
-import {describeSelectionMatch,generalAnswerTopicMatches,curatedAnswerCoverageDecision} from '../knowledge/selection.js'
+import {describeSelectionMatch,generalAnswerTopicMatches,generalAnswerTopicDecision,generalTopicDiagnostic,curatedAnswerCoverageDecision} from '../knowledge/selection.js'
 import {generalTopicClarification} from './general-question-context.js'
 import {stripMessagePreamble} from '../message-preamble.js'
 import {generalProductCatalogGuidance} from '../product-intelligence.js'
@@ -805,7 +806,8 @@ export function buildCapabilityExecutionResponse({execution,route,message='',org
   premises:{recomputed_for_request:true,source:'authorized_capability_execution',profile_specific:Boolean(clientId)&&route?.tool_hint!=='AGRONOMIC_TOOL_CATALOG',conversation_is_not_confirmed_memory:true,confirmed_memory_refs:[],context_scope:{tenant_id:String(organizationId),owner_id:ownerId?String(ownerId):null,producer_id:clientId?String(clientId):null,conversation_id:clean(conversationId,180)||'stateless',context_epoch:contextEpoch,domain:selectedDomain}},voice_output:{version:'val.voice_output.v1',speakable_text:summary,persistence:'NONE',automatic_memory_effect:false},decision_interview:{version:'val.decision_interview.v1',status:tool?.status==='INPUT_REQUIRED'?'NEEDS_INPUT':'NOT_NEEDED',questions:[],material_missing_information:tool?.required_inputs||[],non_material_missing_information:[],session_context:{conversation_id:clean(conversationId,180)||'stateless',persistence_mode:'NONE'},explanation:tool?.status==='INPUT_REQUIRED'?'Faltam entradas materiais; nenhum valor foi inventado.':'A capability respondeu sem alterar memória.'},quality:{status:'NOT_EVALUATED',dimensions:{},automatic_tests:{}}
  }
  const groundingBlocks=route?.session_command?{'session_turn.reading':summary,'recommended_strategy.action':reasoning.recommended_strategy.action,'session_turn.voice':summary}:{'recommended_strategy.reading':summary,'recommended_strategy.action':reasoning.recommended_strategy.action,'voice_output.speakable_text':summary}
- const evaluatedGrounding=evaluateReasoningGrounding({question:message,domain:selectedDomain,evidence:sourceRefs,activeProducerId:clientId,activeProducerName:clean(clientName,180),tenantId:String(organizationId),ownerId:String(ownerId||''),blocks:groundingBlocks,now:new Date(createdAt)})
+ const rawGrounding=evaluateReasoningGrounding({question:message,domain:selectedDomain,evidence:sourceRefs,activeProducerId:clientId,activeProducerName:clean(clientName,180),tenantId:String(organizationId),ownerId:String(ownerId||''),blocks:groundingBlocks,now:new Date(createdAt)})
+ const evaluatedGrounding=applyGeneralTopicGrounding({grounding:rawGrounding,question:message,summary,clientId,sources:sourceRefs,tool,trusted:trustedCapabilityExecutions.has(execution)})
  const scopedSessionCommand=Boolean(route?.session_command?.requires_previous_turn&&sourceRefs.length&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  const trustedGeneralGuidance=Boolean(!clientId&&sourceRefs.length===1&&sourceRefs[0].id==='system:general-guidance:v1'&&sourceRefs[0].capability==='GENERAL_GUIDANCE'&&tool?.capability==='GENERAL_GUIDANCE'&&evaluatedGrounding.question_relevance==='PASS'&&evaluatedGrounding.unsupported_claims.length===0&&evaluatedGrounding.scope_violations.length===0&&evaluatedGrounding.incompatible_evidence.length===0&&evaluatedGrounding.provenance_violations.length===0&&evaluatedGrounding.temporal_violations.length===0)
  // Pedido de esclarecimento por falta de cobertura curada: texto fixo do servidor, sem fonte e
@@ -948,7 +950,7 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
    built.advice.ai_reasoning.evidence_status='UNVERIFIED_MODEL_KNOWLEDGE'
   }
   const grounding=built.advice.ai_reasoning.grounding
-  built.responseMetadata.decisionTrace={...decisionTrace,...(execution.tool_result?.context?.knowledge_item_id?{selection_grounding_decision:grounding?.blocked?'BLOCKED':'PASS'}:{}),GROUNDING_REASON:grounding?.blocked?'OUTPUT_GROUNDING_BLOCKED':grounding?.passed?'OUTPUT_GROUNDING_PASSED':'NOT_EVALUATED',grounding_decision:grounding?.blocked?'BLOCKED':grounding?.passed?'PASS':'NOT_EVALUATED',FALLBACK_ORIGIN:execution.tool_result?.mode==='no_coverage'?topicClarification?'SPECIFIC_TOPIC_CLARIFICATION':libraryOnly?'LIBRARY_NO_DATA':'GENERAL_DETERMINISTIC_NO_COVERAGE':'NONE'}
+  built.responseMetadata.decisionTrace={...decisionTrace,GROUNDING_OVERRIDE:grounding?.grounding_override||'NONE',GROUNDING_BLOCK_REASON:grounding?.grounding_block_reason||'NONE',...(execution.tool_result?.context?.knowledge_item_id?{selection_grounding_decision:grounding?.blocked?'BLOCKED':'PASS'}:{}),GROUNDING_REASON:grounding?.blocked?'OUTPUT_GROUNDING_BLOCKED':grounding?.passed?'OUTPUT_GROUNDING_PASSED':'NOT_EVALUATED',grounding_decision:grounding?.blocked?'BLOCKED':grounding?.passed?'PASS':'NOT_EVALUATED',FALLBACK_ORIGIN:execution.tool_result?.mode==='no_coverage'?topicClarification?'SPECIFIC_TOPIC_CLARIFICATION':libraryOnly?'LIBRARY_NO_DATA':'GENERAL_DETERMINISTIC_NO_COVERAGE':'NONE'}
   built.responseMetadata.generalKnowledge={coverage:guidance?.coverage||'NOT_APPLICABLE',contextRequired,topicClarification:Boolean(topicClarification),libraryOnly,aiUnavailableReason:aiUnavailableReason||null}
   return built
  }
@@ -965,11 +967,18 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   return finalize(deepFreeze({path:route.path,capabilities_planned:route.capabilities||['KNOWLEDGE_LIBRARY'],capabilities_used:['AI_GENERAL_KNOWLEDGE'],capability_results:[{capability:'AI_GENERAL_KNOWLEDGE',status:'EXECUTED',source_ref:aiUnverifiedSourceRef,tool_result:tool}],tool_result:tool,active_context:null}),{unverified:true})
  }
  const rejectedReasons=new Set(),groundingReasons=new Set()
+ let retryMissingAnchors=[]
  const validAnswer=answer=>{
   let grounding=null
-  const reason=!answer?'EMPTY_ANSWER':!generalAnswerTopicMatches(message,answer)?'TOPIC_MISMATCH':!safeGeneralModelAnswer(answer)?'UNSAFE_GENERAL_ANSWER':(grounding=buildAiResponse(answer).advice.ai_reasoning.grounding)?.blocked===true?'GROUNDING_BLOCKED':null
+  const topic=generalAnswerTopicDecision(message,answer)
+  const safe=Boolean(answer)&&safeGeneralModelAnswer(answer)&&!regulatedBrandClaim(answer)
+  if(safe)grounding=buildAiResponse(answer).advice.ai_reasoning.grounding
+  const reason=!answer?'EMPTY_ANSWER':!topic.accepted?'TOPIC_MISMATCH':!safe?'UNSAFE_GENERAL_ANSWER':grounding?.blocked===true?'GROUNDING_BLOCKED':null
+  retryMissingAnchors=reason==='TOPIC_MISMATCH'&&safe&&!topic.conceptConflict&&generalGroundingHasNoViolations(grounding)?topic.missingAnchors:[]
+  Object.assign(decisionTrace,generalTopicDiagnostic(topic),{GROUNDING_OVERRIDE:grounding?.grounding_override||'NONE',GROUNDING_BLOCK_REASON:grounding?.grounding_block_reason||(safe?'NOT_EVALUATED':'UNSAFE_ANSWER')})
+  observe('knowledge.general.topic',{topicRequestedAnchors:decisionTrace.TOPIC_REQUESTED_ANCHORS.join(','),topicMatchedAnchors:decisionTrace.TOPIC_MATCHED_ANCHORS.join(','),topicMissingAnchors:decisionTrace.TOPIC_MISSING_ANCHORS.join(','),topicConceptConflict:topic.conceptConflict,groundingOverride:decisionTrace.GROUNDING_OVERRIDE,groundingBlockReason:decisionTrace.GROUNDING_BLOCK_REASON})
   decisionTrace.general_validation_decision=reason==='EMPTY_ANSWER'?'NOT_EVALUATED':reason?'REJECTED':'ACCEPTED'
-  decisionTrace.validation_checks.push({check:decisionTrace.validation_checks.length+1,reason:reason||'ACCEPTED',grounding_decision:grounding?.blocked?'BLOCKED':grounding?.passed?'PASS':'NOT_RUN'})
+  decisionTrace.validation_checks.push({check:decisionTrace.validation_checks.length+1,reason:reason||'ACCEPTED',...generalTopicDiagnostic(topic),GROUNDING_OVERRIDE:decisionTrace.GROUNDING_OVERRIDE,GROUNDING_BLOCK_REASON:decisionTrace.GROUNDING_BLOCK_REASON,grounding_decision:grounding?.blocked?'BLOCKED':grounding?.passed?'PASS':'NOT_RUN'})
   if(reason){
    rejectedReasons.add(reason)
    for(const violation of grounding?.provenance_violations||[])for(const code of violation.reason_codes||[])groundingReasons.add(code)
@@ -978,11 +987,12 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
   return reason===null
  }
  const generate=async()=>{
+  retryMissingAnchors=[] // A rejected cache entry is not the first provider attempt.
   const first=await generateGeneralModelAnswer({message,aiClient,model:aiModel,signal,onDecision:decision=>decisionTrace.provider_attempts.push(decision)})
   if(!first.retryable&&(!first.text||validAnswer(first.text)))return first
   // At most two provider calls, whether recovery follows a token limit or an
   // irrelevant answer. Rejected/partial text never enters evidence or the cache.
-  const retry=await generateGeneralModelAnswer({message,aiClient,model:aiModel,reformulate:true,signal,onDecision:decision=>decisionTrace.provider_attempts.push(decision)})
+  const retry=await generateGeneralModelAnswer({message,aiClient,model:aiModel,reformulate:true,topicRetryAnchors:retryMissingAnchors,signal,onDecision:decision=>decisionTrace.provider_attempts.push(decision)})
   // A recusa por afirmacao regulada precisa sobreviver ao descarte do texto: sem isso o motivo
   // some junto com a resposta e a tela volta a pedir que o consultor reformule a pergunta.
   const accepted=validAnswer(retry.text)
@@ -996,6 +1006,7 @@ export async function buildGeneralNoClientResponse({message='',route={},organiza
  const accepted=Boolean(result.text&&validAnswer(result.text))
  const delivered=accepted?buildAiResponse(result.text):finalize(noCoverageExecution(providerFailure,regulatedClaim))
  delivered.responseMetadata.decisionTrace={...delivered.responseMetadata.decisionTrace,provider_attempts:decisionTrace.provider_attempts,validation_checks:decisionTrace.validation_checks,
+  TOPIC_REQUESTED_ANCHORS:decisionTrace.TOPIC_REQUESTED_ANCHORS||[],TOPIC_MATCHED_ANCHORS:decisionTrace.TOPIC_MATCHED_ANCHORS||[],TOPIC_MISSING_ANCHORS:decisionTrace.TOPIC_MISSING_ANCHORS||[],TOPIC_CONCEPT_CONFLICT:decisionTrace.TOPIC_CONCEPT_CONFLICT||false,GROUNDING_OVERRIDE:decisionTrace.GROUNDING_OVERRIDE||'NONE',GROUNDING_BLOCK_REASON:decisionTrace.GROUNDING_BLOCK_REASON||'NONE',
   PROVIDER_REASON:result.unavailableReason||decisionTrace.provider_attempts.at(-1)?.reason||(['HIT','COALESCED'].includes(result.cache?.status)?`CACHE_${result.cache.status}`:'NOT_CALLED'),
   FALLBACK_ORIGIN:accepted?'NONE':aiBudgetExhausted?'AI_BUDGET_EXHAUSTED':providerFailure?'GENERAL_PROVIDER_FAILURE':regulatedClaim?'REGULATED_CLAIM_POLICY':result.unavailableReason?'GENERAL_PROVIDER_OUTPUT_UNAVAILABLE':rejectedReasons.size?'GENERAL_ANSWER_VALIDATOR':'GENERAL_PROVIDER_OUTPUT_UNAVAILABLE',
   LANGUAGE_REJECTION_REASON:'NOT_IN_GENERAL_ANSWER_PATH',

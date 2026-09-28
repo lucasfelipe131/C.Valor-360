@@ -881,10 +881,11 @@ const cropOnlyGrainsQuestion=question=>{
  return matchedValContextDomains(source).includes('GRAINS')&&!remaining.includes('GRAINS')&&remaining.length>0
 }
 
-function directlyAnswersQuestion({domain,question,answer,unsupportedClaims,activeProducerName='',facetEvidence=false}){
+function directlyAnswersQuestion({domain,question,answer,unsupportedClaims,activeProducerName='',facetEvidence=false,onFailure=null}){
+ const fail=reason=>{onFailure?.(reason);return false}
  const source=normalize(answer)
- if(!source)return false
- if(unsupportedClaims.length)return false
+ if(!source)return fail('EMPTY_ANSWER')
+ if(unsupportedClaims.length)return fail('UNSUPPORTED_CLAIM')
  const answerClaims=splitClaims(answer)
  const safetyRefusal=/\b(?:reteve qualquer orientacao tecnica acionavel|evite liberar orientacao tecnica acionavel|encaminhe (?:o contexto e as fontes|a solicitacao) ao responsavel habilitado)\b/.test(source)
  const asksTechnicalAction=/\b(?:dose|dosagem|aplicar|aplicacao|mistura|prescrever|prescricao|recomendar|recomendacao|produto|manejo)\b/.test(normalize(question))
@@ -894,10 +895,10 @@ function directlyAnswersQuestion({domain,question,answer,unsupportedClaims,activ
   return isPureInsufficiencyClaim(claim,question,domain)||uncertainty.test(normalized)||declaredGap.test(normalized)||neutralProcessStrategy.test(normalized)
  })
  if(safeAbsence)return true
- if(domain==='PROFILE')return /\bperfil (?:principal|comportamental)\b/.test(source)&&/\bconfianca\b/.test(source)&&(/\bcomo abordar\b/.test(source)||/\bo que ainda nao sabemos\b/.test(source))&&unsupportedClaims.length===0
+ if(domain==='PROFILE')return /\bperfil (?:principal|comportamental)\b/.test(source)&&/\bconfianca\b/.test(source)&&(/\bcomo abordar\b/.test(source)||/\bo que ainda nao sabemos\b/.test(source))&&unsupportedClaims.length===0||fail('PROFILE_REQUIREMENTS')
  const facet=contextFacet(domain,question)
- if(!answerClaimsMatchFacet(facet,answer))return false
- if(facet&&!evidenceMatchesFacet(facet,source,''))return false
+ if(!answerClaimsMatchFacet(facet,answer))return fail('FACET_CONFLICT')
+ if(facet&&!evidenceMatchesFacet(facet,source,''))return fail('FACET_EVIDENCE_MISSING')
  // The authorized typed record, validated claim by claim, is the relevance
  // proof for a completed visit. Lexical overlap is not a second source of truth
  // for completion labels such as Realizada versus concluída.
@@ -908,12 +909,12 @@ function directlyAnswersQuestion({domain,question,answer,unsupportedClaims,activ
   // único motivo do GRAINS e a pergunta tem outro domínio material ("janela de plantio da soja"),
   // a resposta não precisa repetir vocabulário de grãos: basta cobrir o domínio da pergunta.
   const requested=matchedValContextDomains(question).filter(item=>!(item==='GRAINS'&&cropOnlyGrainsQuestion(question)))
-  if(!(requested.length>0&&requested.every(item=>answerDomains.includes(item))))return false
+  if(!(requested.length>0&&requested.every(item=>answerDomains.includes(item))))return fail('DOMAIN_MISMATCH')
  }
  // No domain keyword is an unknown classification, not a conflicting domain.
  // Elliptical definitions still have to pass material-topic overlap below.
  const domainCompatible=answerDomains.length===0||domain==='MULTI_DOMAIN'||answerDomains.includes(domain)||domain==='COMMERCIAL'&&answerDomains.includes('OPPORTUNITY')
- if(!['GENERAL','MULTI_DOMAIN'].includes(domain)&&!domainCompatible)return false
+ if(!['GENERAL','MULTI_DOMAIN'].includes(domain)&&!domainCompatible)return fail('DOMAIN_MISMATCH')
  // Resumos determinísticos de calculadora devolvem o resultado, não repetem
  // todas as entradas da pergunta. Considere-os diretamente relevantes apenas
  // quando pedido e resposta compartilham o mesmo tópico material e a resposta
@@ -952,7 +953,7 @@ function directlyAnswersQuestion({domain,question,answer,unsupportedClaims,activ
  // "daninhas" por "daninha". A comparação usa radical leve; o suporte de cada claim já foi validado.
  const answerStems=new Set(tokens(answer).map(lexicalStem))
  const overlap=questionTokens.filter(token=>answerStems.has(lexicalStem(token))).length
- return overlap>=Math.max(1,Math.ceil(questionTokens.length*.5))
+ return overlap>=Math.max(1,Math.ceil(questionTokens.length*.5))||fail('LEXICAL_OVERLAP')
 }
 
 /**
@@ -1033,13 +1034,14 @@ export function evaluateReasoningGrounding({question='',domain='',evidence=[],ac
  // suficiente" - a VAL negando o dado que ela mesma carregou.
  const selectedDomain=domain||classifyValContextDomain(question)
  const facetEvidence=authorizedVisitFacet({domain:selectedDomain,question,claims:claimLedger.filter(claim=>answerFields.test(claim.field)),evidence,activeProducerId,tenantId,ownerId,now})
- const relevance=directlyAnswersQuestion({domain:selectedDomain,question,answer:answerEntries.map(([,value])=>value).join(' '),unsupportedClaims,activeProducerName:clean(activeProducerId,180)?clean(activeProducerName,180):'',facetEvidence})
+ let questionRelevanceReason='PASS'
+ const relevance=directlyAnswersQuestion({onFailure:reason=>{questionRelevanceReason=reason},domain:selectedDomain,question,answer:answerEntries.map(([,value])=>value).join(' '),unsupportedClaims,activeProducerName:clean(activeProducerId,180)?clean(activeProducerName,180):'',facetEvidence})
  return Object.freeze({
   version:responseGroundingVersion,domain:domain||classifyValContextDomain(question),
   passed:results.length>0&&results.every(result=>result.passed)&&relevance,
   unsupported_terms:[...new Set(results.flatMap(result=>result.unsupported_terms))],unsupported_claims:results.flatMap(result=>result.unsupported_claims),
   scope_violations:[...new Set(results.flatMap(result=>result.scope_violations))],incompatible_evidence:[...new Set(results.flatMap(result=>result.incompatible_evidence))],provenance_violations:results.flatMap(result=>result.provenance_violations).filter((item,index,items)=>items.findIndex(candidate=>candidate.source_ref===item.source_ref&&candidate.reason_codes.join('|')===item.reason_codes.join('|'))===index),temporal_violations:[...new Set(results.flatMap(result=>result.temporal_violations))],
-  question_relevance:relevance?'PASS':'FAIL',evidence_count:list(evidence).length,claim_ledger:claimLedger
+  question_relevance:relevance?'PASS':'FAIL',question_relevance_reason:questionRelevanceReason,evidence_count:list(evidence).length,claim_ledger:claimLedger
  })
 }
 
