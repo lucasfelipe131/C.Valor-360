@@ -83,3 +83,16 @@ test('cache rejection cannot supply topic retry anchors for a length-limited fir
  await buildGeneralNoClientResponse({message:question,route:routeSystemCapability({message:question,hasClient:false}),organizationId:'test',ownerId:'test',aiModel:'offline',sharedAnswerCache:{resolve:async({validate,generate})=>{validate('O solo possui poros.');return generate()}},aiClient:{responses:{create:async input=>{requests.push(input);return requests.length===1?{status:'incomplete',incomplete_details:{reason:'max_output_tokens'},output_text:''}:{status:'completed',output_text:answer}}}}})
  assert.equal(requests.length,2);assert.doesNotMatch(requests[1].instructions,/termos materiais do pedido/)
 })
+
+test('empty discriminating anchors are not a positive topic proof for an override',async()=>{
+ const q='População maior sempre compensa um plantio atrasado de milho?'
+ const unrelated='A fotossíntese transforma energia luminosa em energia química.'
+ assert.deepEqual(generalAnswerTopicDecision(q,unrelated).requestedAnchors,[])
+ const {result}=await respond(q,[unrelated])
+ assert.notEqual(result.responseMetadata.decisionTrace.FALLBACK_ORIGIN,'NONE')
+ assert.notEqual(result.advice.answer,unrelated)
+ const relevant='População elevada não resolve necessariamente plantio atrasado de milho. A competição pode aumentar quando há menor disponibilidade hídrica e luminosa.'
+ const delivered=await respond(q,[relevant])
+ assert.equal(delivered.result.advice.answer,relevant)
+ assert.equal(delivered.result.responseMetadata.decisionTrace.FALLBACK_ORIGIN,'NONE')
+})
