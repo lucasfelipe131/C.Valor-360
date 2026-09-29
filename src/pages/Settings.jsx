@@ -1,4 +1,5 @@
 import ProfileEditor from '../components/ProfileEditor'
+import Pr011QaProbe from '../components/Pr011QaProbe'
 import React,{useEffect,useState} from 'react'
 import {
  BrainCircuit,CheckCircle2,Database,Download,KeyRound,Layers3,LoaderCircle,
@@ -118,6 +119,7 @@ export default function Settings({clients,visits,opportunities=[],currentUser,on
    </div>
   </section>
 
+  <Pr011QaProbe key={currentUser?.storageScope} currentUser={currentUser}/>
   <section className="settings-grid">
    <article className="panel setting-card"><div className="setting-icon"><UserCog/></div><h3>Meu perfil</h3><ProfileEditor/><div className="user-setting"><div className="user-avatar">{accountInitials}</div><div><b>{accountLabel}</b><span>{currentUser?.demo?'Modo demonstrativo sem credencial configurada':'Acesso protegido do piloto'}</span></div></div><button className="soft-btn danger-text" onClick={onLogout}><LogOut size={16}/>Encerrar sessão</button></article>
    {/* Quando a carteira nao carrega, App zera as listas - decisao correta, nao inventar dado. O erro

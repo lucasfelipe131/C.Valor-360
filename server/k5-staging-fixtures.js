@@ -7,6 +7,7 @@ export const K5_SOURCE='k5_synthetic_fixture'
 export const K5_ACCOUNTS=['uat.val.20260919.a@example.test','uat.val.20260919.b@example.test']
 export const K5_STAGING={RAILWAY_PROJECT_ID:'3689bcaa-603c-42f7-9e36-0b01274207c1',RAILWAY_ENVIRONMENT_ID:'8117b07b-7053-4a5a-a5c8-3f3401fef195',RAILWAY_SERVICE_ID:'28d9c5f8-40bb-412e-8a58-40a11c892f2a'}
 export const isK5Staging=env=>Object.entries(K5_STAGING).every(([key,value])=>env[key]===value)
+export const canUsePr011Probe=(session,env=process.env)=>isK5Staging(env)&&Boolean(session?.id)&&session.role==='consultant'&&session.status==='active'&&!session.mustChangePassword&&!session.demo&&K5_ACCOUNTS.includes(session.email)
 const idFor=(tenant,key)=>{
  const h=createHash('sha256').update(`${K5_SOURCE}:${tenant}:${key}`).digest('hex')
  return `${h.slice(0,8)}-${h.slice(8,12)}-5${h.slice(13,16)}-a${h.slice(17,20)}-${h.slice(20,32)}`

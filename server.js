@@ -1,5 +1,5 @@
 import {attachValResponseOutcome} from './server/val-response-outcome.js'
-import {prepareK5StagingFixtures} from './server/k5-staging-fixtures.js'
+import {prepareK5StagingFixtures,canUsePr011Probe} from './server/k5-staging-fixtures.js'
 import {registeredFactQuery,registeredFactPresentation} from './server/registered-fact-query.js'
 import {readDailyVisitSuggestions} from './server/daily-visit-suggestions.js'
 import {profilePhoto} from './server/profile-photo.js'
@@ -184,7 +184,7 @@ const database=createDatabase(config)
 try{const k5=await prepareK5StagingFixtures({db:database,tenantId:config.defaultTenantId});if(k5.status!=='SKIPPED_NOT_K5_STAGING')console.info(JSON.stringify({event:'k5_fixture_preparation',...k5}))}catch(error){console.error(JSON.stringify({event:'k5_fixture_preparation',status:'BLOCKED',reason:error.code||error.message}))}
 const sharedAnswerCache=createSharedKnowledgeAnswerCache({database})
 const auth=createAuth(config)
-const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,tenantId:session.tenantId||config.defaultTenantId,ownerId:session.id||session.sub||session.email,storageScope:auth.storageScope(session)}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,tenantId:config.defaultTenantId,ownerId:'demo@valor360.local',storageScope:'demo'}
+const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,tenantId:session.tenantId||config.defaultTenantId,ownerId:session.id||session.sub||session.email,storageScope:auth.storageScope(session),...(canUsePr011Probe(session)?{pr011Qa:true}:{})}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,tenantId:config.defaultTenantId,ownerId:'demo@valor360.local',storageScope:'demo'}
 const repository=new ValRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const visitRouteService=createVisitRouteService({repository})
 const managementService=createManagementService({db:database,tenantId:config.defaultTenantId})

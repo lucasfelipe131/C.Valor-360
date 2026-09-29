@@ -43,6 +43,12 @@ test('canonical seed is idempotent, owns separate portfolios and does not change
   assert.equal(new Set(result.fixtures.map(f=>f.owner)).size,2)
   assert.equal(result.fixtures.filter(f=>f.owner===id(1)).length,2)
   assert.equal(result.fixtures.filter(f=>f.owner===id(2)).length,1)
+  // Exact external keys used by the UI probe exercise the real scoped repository.
+  const scopedRepository=new ValRepository({db,tenantId})
+  for(const [ownerId,clientId] of [[id(1),'k5-uat-producer-a'],[id(2),'k5-uat-portfolio-b-exclusive']]){
+   assert.ok((await scopedRepository.getClientContext({tenantId,ownerId,clientId})).client.id)
+  }
+  await assert.rejects(scopedRepository.getClientContext({tenantId,ownerId:id(1),clientId:'k5-uat-portfolio-b-exclusive'}),error=>error.statusCode===404&&error.message==='Cliente não encontrado na base autorizada.')
   const portfolio=await new ValRepository({db,tenantId}).getIntelligence(id(1))
   assert.equal(portfolio.clients.filter(c=>c.source===K5_SOURCE).length,2)
   assert.equal(relationshipSummary(portfolio.clients).total,1)
