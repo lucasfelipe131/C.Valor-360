@@ -1,3 +1,4 @@
+import {isMarketEvidenceQuestion,isWeatherConceptQuestion} from '../current-data-intent.js'
 import {observe} from '../observability.js'
 import {generalAnswerTopicDecision} from './selection.js'
 // This path has no producer records or external sources. Its answer is always
@@ -58,9 +59,11 @@ export function requiresVerifiedGeneralSource(message=''){
  // Separating soil-sampling strata is not a tank-mix prescription. Only
  // remove this bounded, negative sampling instruction; any other mixture or
  // regulated request elsewhere in the question still goes through the guard.
+ const diagnosticMethod=/\b(?:perguntas?|limites?|evidencias?|hipotese|cuidados?|evitar|sem fazer|antes do)\b/.test(source)&&/\bdiagnostico\b/.test(source)&&!/\b(?:diagnostique|determine|identifique|qual (?:e )?a doenca|qual praga)\b/.test(source)
+ const diagnosticSource=diagnosticMethod?source.replace(/\bdiagnostico\b/g,''):source
  const regulatorySource=/\bamostragem\b/.test(source)
-  ?source.replace(/\bsem misturar\s+(?:amostras?|solo|solos|baixadas?|encostas?|camadas?|profundidades?|talhoes|areas|e|de|da|do|das|dos|a|o|as|os|\s)+(?=[?.!]|$)/g,'')
-  :source
+  ?diagnosticSource.replace(/\bsem misturar\s+(?:amostras?|solo|solos|baixadas?|encostas?|camadas?|profundidades?|talhoes|areas|e|de|da|do|das|dos|a|o|as|os|\s)+(?=[?.!]|$)/g,'')
+  :diagnosticSource
  return !concept&&/\b(?:dose|dosagem)\b/.test(source)
   // "mistura" e "misture" estavam na lista e "misturar" nao: "posso misturar X com Y no tanque?"
   // atravessava o portao. A forma verbal completa fecha a lacuna.
@@ -74,7 +77,7 @@ export function requiresVerifiedGeneralSource(message=''){
   // foi liberado?" atravessavam porque a lista tinha "aprovar" e "liberar". Lacuna pre-existente,
   // fechada aqui porque alargar o lado que BLOQUEIA e a direcao segura.
   ||/\b(?:financiamento|emprestimo|credito|taxa de juros|parcelamento)\b.{0,40}\b(?:aprova\w*|libera\w*|liminar|contrat\w*|limite)\b/.test(source)
-  ||/\b(?:cotacao|preco atual|clima atual|previsao do tempo|quanto esta|hoje|agora)\b/.test(source)
+  ||!isMarketEvidenceQuestion(source)&&!isWeatherConceptQuestion(source)&&(/\b(?:cotacao|preco atual|clima atual|previsao do tempo|quanto esta)\b/.test(source)||/\b(?:hoje|agora)\b/.test(source)&&/\b(?:noticias?|dolar|cambio|taxa|mercado|clima|tempo|chuva|temperatura|preco)\b/.test(source))
 }
 
 // Indicacao de uso de marca em cultura ou alvo, desempenho e superioridade sao campos de BULA, e a

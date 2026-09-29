@@ -23,6 +23,7 @@ export function registeredFactQuery(message,{previousMessage=''}={}){
  const area=/\b(?:hectares?|ha|area|planta|plantados?)\b/.test(text)
  const continuation=/^\s*e\s+(?:de\s+)?(?:soja|milho|trigo|canola|arroz)\s*\??$/.test(text)&&/hectare|\barea\b|\bha\b|planta/.test(normalized(previousMessage))
  if(crop&&(area||continuation))return {kind:'crop_area',crop,season:text.match(/\b(?:safra\s+)?(\d{4}\/\d{2,4}|\d{4}[iv])\b/)?.[1]||null}
+ if(/\b(?:qual|recupere|mostre)\b/.test(text)&&/\bcanal(?:\s+(?:de\s+)?(?:contato|atendimento|comunicacao))?\b/.test(text)&&!/\b(?:melhor|ideal|recomend|preferir|deveria|hipotetic|se )/.test(text))return {kind:'contact_channel'}
  if(/\b(?:hobb(?:y|ies)|passatempo|lazer)\b/.test(text))return {kind:'hobby'}
  return null
 }
@@ -32,6 +33,14 @@ export function registeredFactQuery(message,{previousMessage=''}={}){
 const thirdPartyArea=/\b(?:vizinh[oa]s?|compadre|comadre|irmaos?|irmas?|prim[oa]s?|sogr[oa]|genro|nora|cunhad[oa]s?|soci[oa]s?|arrendatari[oa]s?|arrendante|parceir[oa]s?|outro produtor|produtor ao lado)\b/
 const STALE_MS=548*24*60*60*1000
 export function registeredFactPresentation({query,client,declaredSeasons=[],properties=[],narratives=[],now=new Date()}){
+ if(query.kind==='contact_channel'){
+  const channel=String(client.servicePreference??client.preferred_channel??'').trim()
+  const origin=String(client.source??'').trim()
+  const found=Boolean(channel&&origin)
+  const statement=found?`Canal de contato registrado de ${client.name}: ${channel}. Origem do dado: ${origin}.`:'Informação ausente: canal de contato com origem identificada no cadastro deste produtor.'
+  const sourceRef=found?`client:${client.id}:preferred_channel`:null
+  return {dataPath:'REGISTERED_DETAIL',answer:statement,primaryFound:found,sourceRef,factsUsed:found?[{id:sourceRef,source_type:'client_registration',observed_at:client.updatedAt||client.updated_at||null,statement}]:[],action:'Confira a confirmação e a atualidade no cadastro antes de contatar.',missing:'canal de contato com origem identificada',doNotDo:'Não inferir canal por perfil comportamental nem afirmar confirmação recente sem registro.',capabilityStatus:found?'EXECUTED':'NO_DATA',stale:false}
+ }
  if(query.kind==='spouse'){
   const spouse=typeof client.relationship?.spouse==='string'?client.relationship.spouse.trim():''
   const found=Boolean(spouse)

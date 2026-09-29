@@ -68,7 +68,7 @@ const naturalReferencePatterns=Object.freeze([
 // Interrogativo, quantificador, ordinal e substantivo de agenda nunca sao nome de produtor:
 // "quem eu tenho que visitar hoje?" virava a busca por um produtor chamado "quem" e a conversa
 // travava com 422.
-const nonNameReference=/^(?:quem|qual|quais|quantos|quantas|alguem|algu[eé]m|alguns|algumas|todos|todas|ninguem|ningu[eé]m|nada|primeiro|primeira|ultimo|[uú]ltimo|ultima|[uú]ltima|agenda|rota|roteiro|semana|hoje|amanha|amanh[aã]|gente|pessoal|time|equipe)\b/iu
+const nonNameReference=/^(?:um|uma|pulverizacao|pulverização|aplicacao|aplicação|diagnostico|diagnóstico|declarou|disse|afirmou|quem|qual|quais|quantos|quantas|alguem|algu[eé]m|alguns|algumas|todos|todas|ninguem|ningu[eé]m|nada|primeiro|primeira|ultimo|[uú]ltimo|ultima|[uú]ltima|agenda|rota|roteiro|semana|hoje|amanha|amanh[aã]|gente|pessoal|time|equipe)\b/iu
 // Substantivo-entidade SOZINHO ("a fazenda", "o produtor", "essa propriedade") e outra forma de dizer
 // "o produtor aberto", nao o nome de alguem. Precisa casar a referencia INTEIRA: como prefixo isto
 // derrubaria "Fazenda Boa Vista", que e nome de produtor de verdade.

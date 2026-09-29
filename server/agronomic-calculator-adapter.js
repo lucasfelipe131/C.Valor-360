@@ -1,3 +1,4 @@
+import {suppliedDimensionalArithmetic} from './dimensional-arithmetic.js'
 import {AGRONOMIC_CALCULATORS,agronomicCalculatorContractVersion,calculatePlanter,executeAgronomicCalculator} from '../src/lib/agronomic-calculators.js'
 import {consultZarc} from './zarc-provider.js'
 
@@ -189,13 +190,32 @@ function plantsPerMeter(message=''){
  return {population_plants_ha:population,spacing_cm:spacing,linear_meters_ha:linearMetersHa,plants_per_meter:canonical.targetPlantsMeter,formula:'plants_per_meter = population_plants_ha * (spacing_cm / 100) / 10000'}
 }
 
+// Dimensional cost arithmetic: BRL / ha and BRL/ha * ha are distinct operations.
+// Never infer a cost from an arbitrary price/revenue elsewhere in the request.
 function legacyCostPerHectare(message=''){
- const source=String(message).normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/\./g,'').replace(/,(?=\d{1,2}\b)/g,'.')
- // "gastei 750 mil reais em 300 hectares": o verbo de gasto e "N mil reais" tambem identificam o total.
- const costMatch=source.match(/(?:custo(?:\s+total)?|total|gastei|gasto|gastos|investi|investimento|paguei|custou)\s*(?:de|=|:|foi|foi de)?\s*(?:r\$\s*)?(\d+(?:\.\d+)?)(\s*mil\b)?/i)||source.match(/r\$\s*(\d+(?:\.\d+)?)(\s*mil\b)?/i)||source.match(/(\d+(?:\.\d+)?)(\s*mil\b)?\s*reais/i)
- const areaMatch=source.match(/(?:area|em)\s*(?:de|=|:)?\s*(\d+(?:\.\d+)?)\s*(?:ha|hectares?)/i)||source.match(/(\d+(?:\.\d+)?)\s*(?:ha|hectares?)/i)
- const total=Number(costMatch?.[1])*(costMatch?.[2]?1000:1);const area=Number(areaMatch?.[1])
- return total>0&&area>0?{total_cost:total,area_ha:area,cost_per_ha:Number((total/area).toFixed(2)),currency:'BRL',formula:'total_cost / area_ha'}:null
+ const source=normalize(message)
+ if(!/\b(?:custo|custa|custou|gastei|gasto|gastos|investi|investimento|paguei)\b/.test(source))return null
+ const numeric=String.raw`\d+(?:\.\d{3})*(?:[.,]\d+)?`
+ const money=[...source.matchAll(new RegExp(String.raw`r\$\s*(${numeric})(\s*mil\b)?\s*((?:\/\s*|por\s+)(?:ha\b|hectares?\b|sc\b|sacas?\b|t\b|toneladas?\b))?`,'g'))]
+ // Multiple monetary operands require another formula; do not choose the first.
+ if(money.length>1)return null
+ const costMatch=money[0]||source.match(new RegExp(String.raw`(?:custo(?:\s+total)?|gastei|gasto|gastos|investi|investimento|paguei|custou)\s*(?:de|=|:|foi|foi de)?\s*(${numeric})(\s*mil\b)?`))||source.match(new RegExp(String.raw`(${numeric})(\s*mil\b)?\s*reais`))
+ if(!costMatch)return null
+ const value=localNumber(costMatch[1])*(costMatch[2]?1000:1)
+ const unit=costMatch[3]||''
+ if(unit&&!/(?:ha\b|hectare)/.test(unit))return null
+ const areas=[...source.matchAll(new RegExp(String.raw`(${numeric})\s*(?:ha|hectares?)\b`,'g'))].filter(match=>!/[\w/]/.test(source[match.index-1]||''))
+ if(areas.length!==1)return null
+ const area=localNumber(areas[0][1])
+ if(!(value>=0)||!(area>0)||!Number.isFinite(value)||!Number.isFinite(area))return null
+ const rate=Boolean(unit)
+ // A supplied rate is not a total and cannot be divided by area again.
+ if(rate){
+  if(!/\b(?:custo\s+total|total\s+(?:do|da|de)|quanto\s+(?:custa|custara|vou gastar))\b/.test(source))return null
+  return {total_cost:Number((value*area).toFixed(2)),area_ha:area,cost_per_ha:value,currency:'BRL',formula:'cost_per_ha * area_ha'}
+ }
+ if(/\b(?:receita|equilibrio|produtividade|rendimento|juros|margem|incremental)\b/.test(source))return null
+ return {total_cost:value,area_ha:area,cost_per_ha:Number((value/area).toFixed(2)),currency:'BRL',formula:'total_cost / area_ha'}
 }
 
 const summaryFor=(key,output)=>{
@@ -215,6 +235,8 @@ const summaryFor=(key,output)=>{
 
 export async function executeCopilotCalculator(message='',options={}){
  options.signal?.throwIfAborted?.()
+ const supplied=suppliedDimensionalArithmetic(message)
+ if(supplied)return {...supplied,adapter_version:copilotCalculatorAdapterVersion}
  const calculator=identifyAgronomicCalculator(message)
  // "populacao" so faz sentido com cultura/cultivar; se a frase traz apenas numeros, e aritmetica.
  const recommendation=calculator==='populacao'&&(()=>{const parsed=parseAgronomicCalculatorRequest(message,'populacao');return Boolean(parsed.crop||parsed.cultivar)})()
@@ -222,7 +244,10 @@ export async function executeCopilotCalculator(message='',options={}){
  if(arithmetic)return {adapter_version:copilotCalculatorAdapterVersion,contract_version:'val.plants_per_meter.v1',calculator:'plantas_por_metro',status:'EXECUTED',input:{population_plants_ha:arithmetic.population_plants_ha,spacing_cm:arithmetic.spacing_cm},output:arithmetic,summary:`Plantabilidade calculada: ${arithmetic.linear_meters_ha.toLocaleString('pt-BR')} m lineares/ha e ${arithmetic.plants_per_meter.toLocaleString('pt-BR',{maximumFractionDigits:2})} plantas/m para ${arithmetic.population_plants_ha.toLocaleString('pt-BR')} plantas/ha em ${arithmetic.spacing_cm} cm.`,source_ref:'calculator:plantas_por_metro'}
  if(!calculator){
   const legacy=legacyCostPerHectare(message)
-  if(legacy)return {adapter_version:copilotCalculatorAdapterVersion,contract_version:'val.legacy_cost_per_ha.v1',calculator:'cost_per_ha',status:'EXECUTED',input:{total_cost_brl:legacy.total_cost,area_ha:legacy.area_ha},output:legacy,summary:`Custo calculado: R$ ${legacy.cost_per_ha.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}/ha, usando custo total e área informados.`,source_ref:'calculator:cost_per_ha'}
+  if(legacy){
+   const multiply=legacy.formula==='cost_per_ha * area_ha'
+   return {adapter_version:copilotCalculatorAdapterVersion,contract_version:'val.legacy_cost_per_ha.v1',calculator:multiply?'total_cost':'cost_per_ha',status:'EXECUTED',input:multiply?{cost_per_ha_brl:legacy.cost_per_ha,area_ha:legacy.area_ha}:{total_cost_brl:legacy.total_cost,area_ha:legacy.area_ha},output:legacy,summary:multiply?`Custo total calculado: R$ ${legacy.total_cost.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}, multiplicando R$ ${legacy.cost_per_ha.toLocaleString('pt-BR')}/ha por ${legacy.area_ha.toLocaleString('pt-BR')} ha.`:`Custo calculado: R$ ${legacy.cost_per_ha.toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2})}/ha, usando custo total e área informados.`,source_ref:multiply?'calculator:total_cost':'calculator:cost_per_ha'}
+  }
   const costPerArea=/custo\s*(?:\/\s*ha|por\s+hectare)/i.test(message)
   return {adapter_version:copilotCalculatorAdapterVersion,contract_version:agronomicCalculatorContractVersion,calculator:null,status:/\b(?:calcule|calcular|quanto|resultado)\b/i.test(message)||costPerArea?'INPUT_REQUIRED':'READY',required_inputs:costPerArea?['total_cost_brl','area_ha']:[],catalog:AGRONOMIC_CALCULATORS,summary:'Escolha uma das nove calculadoras canônicas ou informe o cálculo e suas entradas.'}
  }

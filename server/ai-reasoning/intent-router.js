@@ -1,3 +1,5 @@
+import {suppliedDimensionalArithmetic} from '../dimensional-arithmetic.js'
+import {requestsCurrentMarketValue,isMarketEvidenceQuestion,isWeatherConceptQuestion} from '../current-data-intent.js'
 import {routeSessionCommand} from '../decision-copilot/session-command-router.js'
 import {generalTopicClarification} from '../decision-copilot/general-question-context.js'
 
@@ -83,6 +85,8 @@ function semanticGeneralConceptIntent(source='',allowOpenQuestion=true){
 function semanticCurrentDataIntent(source=''){
  const folded=fold(source)
  const definitional=definitionalShape.test(folded)
+ if(isMarketEvidenceQuestion(source)||isWeatherConceptQuestion(source))return ''
+ if(requestsCurrentMarketValue(source))return 'ASK_COMMODITY'
  if(/\b(?:bula|registro agrofit|rotulo)\b/.test(folded))return 'CHECK_LABEL'
  // Dose de defensivo é uma consulta de uso registrado, mesmo sem a palavra “bula”.
  // Explicações conceituais e cálculos de nutrientes continuam na rota de conhecimento.
@@ -160,13 +164,15 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
  // A resolução do backend é evidência de que “me fala do Antônio” refere-se à carteira.
  // O nome não precisa constar no vocabulário do roteador, e a simples seleção de um produtor
  // continua insuficiente para transformar uma pergunta geral em pergunta da conta.
- const semanticGeneral=resolvedClientReference||generalTopicClarification(source)&&currentDataIntents.has(hinted)?'':semanticGeneralConceptIntent(source,!toolHint&&!currentDataIntents.has(hinted))
+ const evidenceConcept=isMarketEvidenceQuestion(source)||isWeatherConceptQuestion(source)
+ const semanticGeneral=evidenceConcept?'ASK_GENERAL':resolvedClientReference||generalTopicClarification(source)&&currentDataIntents.has(hinted)?'':semanticGeneralConceptIntent(source,!toolHint&&!currentDataIntents.has(hinted))
  const folded=fold(source)
  const individual=hasClient||individualReference.test(folded)
  // Hints may come from an older client. They cannot downgrade an explicit
  // current-data request or a new explicit task into stale continuation.
  // Persistence remains fail-closed and can only be requested explicitly.
  const genericAgroToolOverride=hinted==='ASK_AGRONOMIC'?toolIntent:''
+ const dimensionalCostRequest=/\d/.test(folded)&&/r\$|\breais\b/.test(folded)&&/\b(?:ha|hectares?)\b/.test(folded)&&/\b(?:qual|quanto|calcule)\b[^?]*\bcusto(?:\s+total|\s*\/\s*ha|\s+por\s+hectare)\b/.test(folded)
  const explicitCalculatorAction=/\b(?:calcul\w*|simul\w*|rod\w*|execut\w*|abr\w*)\b/i.test(source)
  const calculatorToolOverride=toolHint==='CALCULATOR'&&explicitCalculatorAction?'CALCULATE':''
  // "Registra que a cotacao da soja subiu" e um pedido de registro, nao uma consulta de mercado:
@@ -174,7 +180,7 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
  // o conteudo de uma nota quase sempre tem lexema de safra, praga, cotacao ou objecao.
  // "salva a informacao de que ..." e "anota a nota ..." tambem sao registro explicito, mesmo com safra/praga no conteudo.
  const explicitRegister=/^(?:val[, ]+)?(?:(?:registra|registre|anota|anote)\s+que\b|(?:registra|registre|registrar|anota|anote|anotar|salva|salve|salvar|grava|grave|gravar)\s+(?:(?:a|o|uma|um|essa|esse|esta|este)\s+)?(?:informa[cç][aã]o|nota|mem[oó]ria|fato|dado|observa[cç][aã]o)\b)/i.test(source)?'REGISTER_INFORMATION':''
- let intent=sessionCommand?.command==='REGISTER_LAST'?'REGISTER_INFORMATION':persistenceIntents.has(hinted)?hinted:explicitRegister||semanticCurrent||semanticCommand||semanticClientIdentity||semanticGeneral||calculatorToolOverride||genericAgroToolOverride||hinted
+ let intent=sessionCommand?.command==='REGISTER_LAST'?'REGISTER_INFORMATION':persistenceIntents.has(hinted)?hinted:explicitRegister||semanticCurrent||(dimensionalCostRequest||suppliedDimensionalArithmetic(source)?'CALCULATE':'')||semanticCommand||semanticClientIdentity||semanticGeneral||calculatorToolOverride||genericAgroToolOverride||hinted
  if(!intent){
   if(/\b(?:mercado|commodity|commodities|not[ií]cia econ[oô]mica)\b/i.test(source))intent='ASK_MARKET'
   // Interpretar um laudo e ferramenta; "qual a funcao do potassio na planta" e conhecimento.
