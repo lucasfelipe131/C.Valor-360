@@ -1,5 +1,5 @@
 import {suppliedDimensionalArithmetic} from '../dimensional-arithmetic.js'
-import {requestsCurrentMarketValue,isMarketEvidenceQuestion,isWeatherConceptQuestion} from '../current-data-intent.js'
+import {requestsCurrentMarketValue,isMarketEvidenceQuestion,isWeatherConceptQuestion,isGeneralToolMethodQuestion} from '../current-data-intent.js'
 import {routeSessionCommand} from '../decision-copilot/session-command-router.js'
 import {generalTopicClarification} from '../decision-copilot/general-question-context.js'
 
@@ -86,6 +86,9 @@ function semanticCurrentDataIntent(source=''){
  const folded=fold(source)
  const definitional=definitionalShape.test(folded)
  if(isMarketEvidenceQuestion(source)||isWeatherConceptQuestion(source))return ''
+ // The current market adapter supplies grain references, not exchange rates.
+ // Currency requests retain the general path's explicit CURRENT_DATA source gate.
+ if(requestsCurrentMarketValue(source)&&/\b(?:cambio|dolar|euro)\b/.test(folded)&&!/\b(?:soja|milho|trigo|sorgo|feijao|arroz|cevada)\b/.test(folded))return 'ASK_GENERAL'
  if(requestsCurrentMarketValue(source))return 'ASK_COMMODITY'
  if(/\b(?:bula|registro agrofit|rotulo)\b/.test(folded))return 'CHECK_LABEL'
  // Dose de defensivo é uma consulta de uso registrado, mesmo sem a palavra “bula”.
@@ -164,7 +167,7 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
  // A resolução do backend é evidência de que “me fala do Antônio” refere-se à carteira.
  // O nome não precisa constar no vocabulário do roteador, e a simples seleção de um produtor
  // continua insuficiente para transformar uma pergunta geral em pergunta da conta.
- const evidenceConcept=isMarketEvidenceQuestion(source)||isWeatherConceptQuestion(source)
+ const evidenceConcept=isMarketEvidenceQuestion(source)||isWeatherConceptQuestion(source)||!attachmentTypes.length&&isGeneralToolMethodQuestion(source)
  const semanticGeneral=evidenceConcept?'ASK_GENERAL':resolvedClientReference||generalTopicClarification(source)&&currentDataIntents.has(hinted)?'':semanticGeneralConceptIntent(source,!toolHint&&!currentDataIntents.has(hinted))
  const folded=fold(source)
  const individual=hasClient||individualReference.test(folded)
@@ -180,7 +183,7 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
  // o conteudo de uma nota quase sempre tem lexema de safra, praga, cotacao ou objecao.
  // "salva a informacao de que ..." e "anota a nota ..." tambem sao registro explicito, mesmo com safra/praga no conteudo.
  const explicitRegister=/^(?:val[, ]+)?(?:(?:registra|registre|anota|anote)\s+que\b|(?:registra|registre|registrar|anota|anote|anotar|salva|salve|salvar|grava|grave|gravar)\s+(?:(?:a|o|uma|um|essa|esse|esta|este)\s+)?(?:informa[cç][aã]o|nota|mem[oó]ria|fato|dado|observa[cç][aã]o)\b)/i.test(source)?'REGISTER_INFORMATION':''
- let intent=sessionCommand?.command==='REGISTER_LAST'?'REGISTER_INFORMATION':persistenceIntents.has(hinted)?hinted:explicitRegister||semanticCurrent||(dimensionalCostRequest||suppliedDimensionalArithmetic(source)?'CALCULATE':'')||semanticCommand||semanticClientIdentity||semanticGeneral||calculatorToolOverride||genericAgroToolOverride||hinted
+ let intent=sessionCommand?.command==='REGISTER_LAST'?'REGISTER_INFORMATION':persistenceIntents.has(hinted)?hinted:explicitRegister||(suppliedDimensionalArithmetic(source)?'CALCULATE':'')||semanticCurrent||(dimensionalCostRequest?'CALCULATE':'')||semanticCommand||semanticClientIdentity||semanticGeneral||calculatorToolOverride||genericAgroToolOverride||hinted
  if(!intent){
   if(/\b(?:mercado|commodity|commodities|not[ií]cia econ[oô]mica)\b/i.test(source))intent='ASK_MARKET'
   // Interpretar um laudo e ferramenta; "qual a funcao do potassio na planta" e conhecimento.

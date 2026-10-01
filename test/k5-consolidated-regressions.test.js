@@ -17,7 +17,12 @@ test('total divided by area remains distinct, including zero',async()=>{
  }
 })
 test('arbitrary prices, multiple operands and unit rates never become total costs',async()=>{
- for(const message of ['Simule receita de 50 sc/ha em 80 ha a R$ 105/sc.','Custo R$ 25/ha, receita R$ 80/ha, área 10 ha; qual o resultado?','Custo R$ 25 por hectare em 10 hectares. Qual o preço de equilíbrio?','Custo total R$ 300 em 0 ha; quanto por hectare?'])assert.notEqual((await executeCopilotCalculator(message)).status,'EXECUTED',message)
+ const revenue=await executeCopilotCalculator('Simule receita de 50 sc/ha em 80 ha a R$ 105/sc.')
+ assert.equal(revenue.calculator,'scenario_revenue')
+ assert.deepEqual(revenue.output.revenue_brl,[420000])
+ assert.equal(revenue.output.formula,'area_ha * yield_sc_ha * price_brl_sc')
+ assert.equal(revenue.output.total_cost,undefined)
+ for(const message of ['Custo R$ 25/ha, receita R$ 80/ha, área 10 ha; qual o resultado?','Custo R$ 25 por hectare em 10 hectares. Qual o preço de equilíbrio?','Custo total R$ 300 em 0 ha; quanto por hectare?'])assert.notEqual((await executeCopilotCalculator(message)).status,'EXECUTED',message)
 })
 test('live market references use market capability, not a product-label refusal',()=>{
  for(const crop of ['milho','trigo','arroz']){
