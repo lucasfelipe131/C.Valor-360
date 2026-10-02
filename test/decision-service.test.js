@@ -12,7 +12,7 @@ import {DecisionService} from '../server/decision-service.js'
 import {createManagementService} from '../server/management-service.js'
 import {createAuth} from '../server/auth.js'
 
-const tenantId=randomUUID(),foreignTenant=randomUUID()
+const tenantId=process.env.VAL_DECISION_TEST_DATABASE_URL?'00000000-0000-4000-8000-000000000001':randomUUID(),foreignTenant=randomUUID()
 const actor={id:randomUUID(),tenantId,role:'consultant'},other={id:randomUUID(),tenantId,role:'consultant'},admin={id:randomUUID(),tenantId,role:'admin'},viewer={id:randomUUID(),tenantId,role:'bi_viewer'},foreign={id:randomUUID(),tenantId:foreignTenant,role:'consultant'}
 let db,pg,repository,service,management,unit
 const now=Date.now(),recent=new Date(now-3600000).toISOString(),soon=new Date(now+86400000).toISOString()
@@ -37,7 +37,7 @@ before(async()=>{
   for(const migration of await listVersionedMigrations())await pg.exec(migration.sql)
   db={configured:true,query:(...args)=>pg.query(...args),transaction:work=>pg.transaction(tx=>work({query:(...args)=>tx.query(...args)})),close:()=>pg.close()}
  }
- for(const id of [tenantId,foreignTenant])await db.query('INSERT INTO organizations(id,name,slug) VALUES($1::uuid,$2,$1::text)',[id,'SYNTHETIC decision test'])
+ for(const id of [tenantId,foreignTenant])await db.query('INSERT INTO organizations(id,name,slug) VALUES($1::uuid,$2,$1::text) ON CONFLICT(id) DO NOTHING',[id,'SYNTHETIC decision test'])
  for(const user of [actor,other,admin,viewer,foreign]){
   await db.query('INSERT INTO users(id,name,email,password_hash) VALUES($1,$2,$3,$4)',[user.id,'SYNTHETIC decision owner',`${user.id}@example.test`,'synthetic-no-login'])
   await db.query('INSERT INTO memberships(tenant_id,user_id,role) VALUES($1,$2,$3)',[user.tenantId,user.id,user.role])
