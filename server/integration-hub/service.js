@@ -143,7 +143,7 @@ export class IntegrationHub {
  }
  async overview({tenantId,ownerId,status='',limit=50,offset=0}){
   const scope=this.scope({tenantId,ownerId})
-  status=String(status).toUpperCase()
+  status=String(status||'').toUpperCase()
   if(status&&!HUB_STATUSES.includes(status))throw fault('hub_status_invalid',400)
   limit=Math.max(1,Math.min(100,Number.parseInt(limit)||50));offset=Math.max(0,Math.min(100000,Number.parseInt(offset)||0))
   const counts=(await this.db.query(`SELECT source,COUNT(*)::integer total,COUNT(*) FILTER (WHERE status='processed')::integer processed,COUNT(*) FILTER (WHERE status='rejected')::integer rejected,COUNT(*) FILTER (WHERE status='review_required')::integer review,COUNT(*) FILTER (WHERE status='failed')::integer failures,COALESCE(SUM(GREATEST(attempt_count-1,0)),0)::integer retries,ROUND(AVG(latency_ms))::integer latency_ms,MAX(processed_at) last_sync,MAX(ingested_at) last_received FROM integration_events WHERE tenant_id=$1 AND owner_user_id=$2 GROUP BY source`,scope)).rows

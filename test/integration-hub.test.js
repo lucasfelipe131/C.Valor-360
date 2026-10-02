@@ -172,7 +172,7 @@ test('Hub tenant/owner isolation for identity, event ids, audit, reads and retry
  for(const method of ['detail','retry'])await assert.rejects(hub[method]({tenantId,ownerId:otherOwner,eventId:first.eventId}),e=>e.statusCode===404)
  await assert.rejects(hub.overview({tenantId:otherTenant,ownerId}),e=>e.statusCode===403)
  await assert.rejects(receive({...event,ownerUserId:otherOwner}),e=>e.statusCode===403)
- const overview=await hub.overview({tenantId,ownerId:otherOwner})
+ const overview=await hub.overview({tenantId,ownerId:otherOwner,status:null})
  assert.ok(overview.events.every(x=>x.id!==first.eventId&&x.id!==third.eventId))
 })
 test('Hub resolves owner reassignment without revealing current producer data to old owner',async()=>{
@@ -214,7 +214,8 @@ if(process.env.VAL_HUB_TEST_DATABASE_URL)test('Hub real HTTP: signed Manual webh
   assert.equal((await call(privatePath,{headers:{cookie:cookie(otherOwner)}})).status,404)
   assert.equal((await call(privatePath+'/retry',{method:'POST',headers:{cookie:cookie(otherOwner)}})).status,404)
   const own=await call(privatePath,{headers:{cookie:cookie(ownerId)}});assert.equal(own.status,200);assert.match(own.headers.get('cache-control'),/no-store/)
-  const overview=await (await call(`/api/integration-hub/overview?ownerId=${ownerId}`,{headers:{cookie:cookie(otherOwner)}})).json()
+  const overviewResponse=await call(`/api/integration-hub/overview?ownerId=${ownerId}`,{headers:{cookie:cookie(otherOwner)}})
+  const overview=await overviewResponse.json();assert.equal(overviewResponse.status,200,JSON.stringify(overview))
   assert.ok(overview.events.every(x=>x.id!==result.eventId),'query owner cannot override session')
   await db.query("UPDATE memberships SET role='bi_viewer' WHERE tenant_id=$1 AND user_id=$2",[httpTenant,otherOwner])
   assert.equal((await call('/api/integration-hub/overview',{headers:{cookie:cookie(otherOwner)}})).status,403)
