@@ -155,6 +155,7 @@ test('NBA migration is repeatable without deleting decisions, settings or audit'
 })
 
 if(process.env.VAL_DECISION_TEST_DATABASE_URL)test('NBA real HTTP authenticated cards, spoofed scopes, review, registry and same-engine Copilot',async()=>{
+ const named=await producer(actor,{name:'SYNTHETIC João NBA único'})
  const listener=createServer();await new Promise(resolve=>listener.listen(0,'127.0.0.1',resolve))
  const port=listener.address().port;await new Promise(resolve=>listener.close(resolve))
  const config={adminEmail:`nba-admin-${randomUUID()}@example.test`,adminPassword:'Synthetic-nba-test-42!',sessionSecret:'synthetic-nba-session-test-only-42',defaultTenantId:tenantId,sessionTtlSeconds:3600}
@@ -179,8 +180,7 @@ if(process.env.VAL_DECISION_TEST_DATABASE_URL)test('NBA real HTTP authenticated 
    assert.equal(response.status,200,JSON.stringify(body));assert.equal(body.responseMetadata?.providerCalls,0,JSON.stringify(body))
    assert.ok(body.decisionCards.length);assert.equal(body.advice.ai_reasoning.premises.context_scope.owner_id,actor.id)
   }
-  const named=await producer(actor,{name:'SYNTHETIC João NBA único'})
-  repository.invalidateAuthorizedClientReferences({ownerId:actor.id})
+  // Fixtures precede server startup; direct SQL does not invalidate its process-local cache.
   const namedResponse=await call('/api/val/chat',actor,{method:'POST',body:JSON.stringify({clientId:client.key,message:'Por que SYNTHETIC João NBA único está em primeiro?',conversationId:randomUUID()})}),namedBody=await namedResponse.json()
   assert.equal(namedResponse.status,200,JSON.stringify(namedBody));assert.equal(namedBody.decisionCards?.[0]?.producer_id,named.key,JSON.stringify(namedBody))
   assert.equal((await call(`/api/management/decisions?start=${period.start}&end=${period.end}`,viewer)).status,200)
