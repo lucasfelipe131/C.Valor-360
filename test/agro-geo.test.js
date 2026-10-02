@@ -27,3 +27,11 @@ test('freshness differs by evidence type and future observations are not current
 test('same property name does not merge clients; ambiguous seasons enter review',()=>{const c=fixture();c.properties.push({...c.properties[0],id:'other',client_id:'another'});c.properties[0].fields[0].seasons.push({id:'s2',season:'2026/27',crop:'milho'});const t=build(c);assert.equal(t.properties.length,1);assert.ok(t.conflicts.some(c=>c.type==='CROP_SEASON_CONFLICT'))})
 test('100 properties and 500 fields produce bounded useful cards without quadratic portfolio joins',()=>{const c=fixture();c.ndviObservations=[];c.properties=Array.from({length:100},(_,p)=>({...fixture().properties[0],id:`p${p}`,fields:Array.from({length:5},(_,f)=>({...fixture().properties[0].fields[0],id:`f${p}-${f}`,property_id:`p${p}`}))}));const start=performance.now(),t=build(c);assert.equal(t.properties.flatMap(p=>p.fields).length,500);assert.ok(performance.now()-start<2000)})
 test('all requested territorial Copilot questions use same route',()=>{for(const q of ['Qual talhão eu deveria olhar primeiro?','Onde estão as principais anomalias?','Por que esse talhão está prioritário?','Tem algum sinal de problema nesta propriedade?','Compare os talhões desta safra.','Cruze solo, NDVI e histórico.','Que informação falta para concluir?'])assert.equal(agronomicDecisionQuery(q),true,q)})
+
+test('territorial Copilot preserves exact canonical response scope',async()=>{
+ const {assertValResponseScope}=await import('../server/decision-copilot/response-scope.js')
+ for(const domain of ['AGRONOMY','GEO','GENERAL','MULTI_DOMAIN']){
+  const payload=agronomicDecisionResponse({enabled:true,items:[]},{tenantId:'t',ownerId:'o',clientId:'c',conversationId:'chat',contextEpoch:3,domain})
+  assert.doesNotThrow(()=>assertValResponseScope(payload,{tenantId:'t',ownerId:'o',producerId:'c',conversationId:'chat',contextEpoch:3,domain}))
+ }
+})

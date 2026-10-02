@@ -866,7 +866,7 @@ async function handleApi(request,response,url){
   }
   if(agronomicDecisionQuery(message)&&!attachmentIds.length&&database.configured){
    const result=await agroGeoService.generate(identity,{clientId:clientId||null})
-   return json(response,200,completeSession(agronomicDecisionResponse(result,{tenantId,ownerId:scopedOwnerId,clientId:clientId||null,conversationId,contextEpoch:sessionState.context_epoch}),{intent:'AGRONOMIC_DECISION'}))
+   return json(response,200,completeSession(agronomicDecisionResponse(result,{tenantId,ownerId:scopedOwnerId,clientId:clientId||null,conversationId,contextEpoch:sessionState.context_epoch,domain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent)}),{intent:'AGRONOMIC_DECISION'}))
   }
   if(portfolioDecisionQuery(message).matched&&!attachmentIds.length&&database.configured){
    const decisionResult=await decisionService.generate(identity)
