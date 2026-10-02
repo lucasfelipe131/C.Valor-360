@@ -107,6 +107,22 @@ test('Hub rejects unresolved and archived targets instead of silently reviving o
  const result=await receive({...event,externalId:randomUUID()})
  assert.equal(result.errorCode,'hub_producer_archived');assert.equal((await client(created.canonicalClientId)).status,'archived')
 })
+test('Hub accepts Manual record before producer, then resolves the exact dependency without duplicate or cross-owner retry',async()=>{
+ const producer=input()
+ const event=input({type:'manual.record.saved',clientExternalKey:producer.clientExternalKey,payload:{recordId:randomUUID(),recordType:'producer_change',title:'SYNTHETIC out-of-order record'}})
+ const early=await receive(event),foreign=await receive({...event,ownerUserId:otherOwner},{ownerId:otherOwner})
+ assert.equal(early.status,'REVIEW_REQUIRED');assert.equal(early.retryEligible,true)
+ // Preserve and recover unresolved records written by the first Hub staging build.
+ await db.query('UPDATE integration_events SET retry_eligible=false WHERE id=$1',[early.eventId])
+ const created=await receive(producer)
+ const resolved=await ledger(early.eventId)
+ assert.equal(resolved.status,'processed');assert.equal(resolved.canonical_client_id,created.canonicalClientId)
+ assert.equal(resolved.attempt_count,2);assert.equal((await ledger(foreign.eventId)).status,'review_required')
+ assert.deepEqual((await hub.detail({...scope,eventId:early.eventId})).audit.map(x=>x.action),['RECEIVED','REVIEW_REQUIRED','IDENTITY_RECHECK','PROCESSED'])
+ assert.equal((await receive(event)).status,'DUPLICATE')
+ const context=await repository.getClientContext({...scope,clientId:producer.clientExternalKey})
+ assert.equal(context.manualRecords.filter(x=>x.id===early.eventId).length,1)
+})
 test('Hub older / same-version conflict / newer versions do not overwrite out of order',async()=>{
  const event=input({sourceVersion:2}),first=await receive(event)
  const change=(version,name,occurredAt)=>({...event,externalId:randomUUID(),sourceVersion:version,occurredAt,payload:{producer:{...event.payload.producer,name}}})

@@ -2044,7 +2044,7 @@ export class ValRepository{
     if(this.db.configured){
       try{
         const project=async client=>{
-          const inserted=integrationEventId?await client.query("SELECT id FROM integration_events WHERE tenant_id=$1 AND owner_user_id=$2 AND id=$3 AND hub_contract_version=1 AND status IN ('received','failed')",[tenantId,ownerId,integrationEventId]):await client.query(`INSERT INTO integration_events (tenant_id,owner_user_id,external_id,event_type,schema_version,source,occurred_at,client_external_key,property_external_key,field_external_key,payload,payload_hash,status)
+          const inserted=integrationEventId?await client.query("SELECT id FROM integration_events WHERE tenant_id=$1 AND owner_user_id=$2 AND id=$3 AND hub_contract_version=1 AND status IN ('received','failed','review_required')",[tenantId,ownerId,integrationEventId]):await client.query(`INSERT INTO integration_events (tenant_id,owner_user_id,external_id,event_type,schema_version,source,occurred_at,client_external_key,property_external_key,field_external_key,payload,payload_hash,status)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'processed') ON CONFLICT (tenant_id,owner_user_id,source,external_id) DO NOTHING RETURNING id`,[tenantId,ownerId,event.externalId,event.type,event.schemaVersion,event.source,event.occurredAt,event.clientExternalKey||null,event.propertyExternalKey||null,event.fieldExternalKey||null,jsonbParameter(event.payload),event.payloadHash])
           if(!(inserted.rowCount??inserted.rows.length)){
             if(integrationEventId)throw domainError('Evento do Hub fora do escopo.',403,'hub_projection_scope_invalid')

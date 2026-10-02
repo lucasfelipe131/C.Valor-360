@@ -122,7 +122,11 @@ GET `/api/integration-hub/events/:id` retorna proveniência e auditoria segura.
 POST `/api/integration-hub/events/:id/retry` reutiliza o evento persistido;
 não recebe payload substituto. Falhas transitórias admitem até cinco tentativas
 totais, com backoff de 30, 60, 120 e 240 segundos. O painel permite solicitar
-retry após o prazo. Não há worker externo ou agendamento pago. Revisões são
+retry após o prazo. Não há worker externo ou agendamento pago. Se um registro chegar antes do
+cadastro do produtor, fica preservado para revisão e retry. A confirmação de
+um produtor reavalia até 25 registros pendentes de identidade exata no mesmo
+tenant/owner/source, reutilizando seus eventos. Ambiguidades e conflitos não
+entram nessa reavaliação automática. Revisões restantes são
 resolvidas corrigindo a origem e enviando uma nova versão; esta entrega não
 autoriza fusão manual de produtores nem edição arbitrária de payloads.
 

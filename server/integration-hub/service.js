@@ -40,7 +40,9 @@ export class IntegrationHub {
    }
    const row=(await connection.query(`INSERT INTO integration_events (tenant_id,owner_user_id,external_id,event_type,schema_version,source,occurred_at,client_external_key,property_external_key,field_external_key,payload,payload_hash,status,hub_contract_version,external_entity_type,external_entity_id,source_version,envelope_hash,observed_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'received',$13,$14,$15,$16,$17,$18) RETURNING *`,[...scope,event.externalId,event.type,event.schemaVersion,event.source,event.occurredAt,event.clientExternalKey||null,event.propertyExternalKey||null,event.fieldExternalKey||null,JSON.stringify(event.payload),descriptor.payloadHash,HUB_CONTRACT_VERSION,descriptor.entityType,descriptor.entityId,descriptor.sourceVersion,descriptor.envelopeHash,descriptor.observedAt])).rows[0]
    await this.audit(connection,scope,row,'RECEIVED',descriptor)
-   return this.process(connection,scope,row,event,descriptor)
+   const result=await this.process(connection,scope,row,event,descriptor)
+   if(result.processed&&event.type==='manual.producer.updated')await this.resumeIdentified(connection,scope,event.source,result.canonicalClientId)
+   return result
   })
  }
  async resolveIdentity(connection,scope,event,descriptor){
@@ -120,10 +122,25 @@ export class IntegrationHub {
    decision=error.statusCode===409?(errorCode.includes('conflict')?'CONFLICT':'REVIEW_REQUIRED'):status
   }
   row.latency_ms=Math.max(0,Date.now()-start)
-  const eligible=status==='FAILED'&&row.attempt_count<5
+  const eligible=(status==='FAILED'||(status==='REVIEW_REQUIRED'&&errorCode==='hub_identity_unresolved'&&event.type!=='manual.producer.updated'))&&row.attempt_count<5
   const updated=(await connection.query(`UPDATE integration_events SET status=$4::text,decision=$5,canonical_client_id=$6,error_code=$7::text,error=$7::text,retry_eligible=$8,attempt_count=$9,next_retry_at=CASE WHEN $8 THEN NOW()+($10*interval '1 second') ELSE NULL END,processed_at=CASE WHEN $4::text='processed' THEN NOW() ELSE NULL END,latency_ms=$11 WHERE tenant_id=$1 AND owner_user_id=$2 AND id=$3 RETURNING *`,[...scope,row.id,status.toLowerCase(),decision,canonicalId,errorCode,eligible,row.attempt_count,Math.min(3600,30*2**(row.attempt_count-1)),row.latency_ms])).rows[0]
   await this.audit(connection,scope,updated,status,descriptor,actorId,errorCode)
   return {eventId:row.id,duplicate:status==='DUPLICATE',processed:status==='PROCESSED',status,decision,canonicalClientId:canonicalId,signals:status==='PROCESSED'?result.signals:0,retryEligible:eligible,errorCode,...(result.measurementSetStatus?{measurementSetStatus:result.measurementSetStatus}:{})}
+ }
+ async resumeIdentified(connection,scope,source,canonicalId){
+  if(!canonicalId)return
+  const client=(await connection.query('SELECT id,external_key,commercial_profile FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND id=$3',[...scope,canonicalId])).rows[0]
+  if(!client)return
+  const identity=client.commercial_profile?.manual_identity||{}
+  const keys=[...new Set([client.id,client.external_key,identity.producer_id,...(identity.external_key_aliases||[])].filter(Boolean))]
+  // A new exact identity can unblock earlier child events. Never auto-retry an
+  // ambiguity/conflict, never change their payload, and bound work per delivery.
+  const waiting=(await connection.query(`SELECT * FROM integration_events WHERE tenant_id=$1 AND owner_user_id=$2 AND source=$3 AND client_external_key=ANY($4::text[]) AND status='review_required' AND error_code='hub_identity_unresolved' AND attempt_count<5 AND event_type<>'manual.producer.updated' ORDER BY ingested_at,id LIMIT 25 FOR UPDATE`,[...scope,source,keys])).rows
+  for(const row of waiting){
+   const event=asEvent(row),descriptor=describeEvent(event)
+   await this.audit(connection,scope,row,'IDENTITY_RECHECK',descriptor)
+   await this.process(connection,scope,row,event,descriptor)
+  }
  }
  async retry({tenantId,ownerId,eventId}){
   const scope=this.scope({tenantId,ownerId})
@@ -134,11 +151,13 @@ export class IntegrationHub {
    if(!source)throw fault('hub_event_not_found',404)
    await connection.query('SELECT pg_advisory_xact_lock(hashtext($1))',[`hub:${scope.join(':')}:${source}`])
    const row=(await connection.query('SELECT * FROM integration_events WHERE tenant_id=$1 AND owner_user_id=$2 AND id=$3 FOR UPDATE',[...scope,eventId])).rows[0]
-   if(row.status!=='failed'||!row.retry_eligible||!row.hub_contract_version)throw fault('hub_retry_not_eligible',409)
+   if(!['failed','review_required'].includes(row.status)||!row.retry_eligible||!row.hub_contract_version)throw fault('hub_retry_not_eligible',409)
    if(new Date(row.next_retry_at)>new Date())throw fault('hub_retry_backoff',429)
    const event=asEvent(row),descriptor=describeEvent(event)
    await this.audit(connection,scope,row,'RETRY_REQUESTED',descriptor,ownerId)
-   return this.process(connection,scope,row,event,descriptor,ownerId)
+   const result=await this.process(connection,scope,row,event,descriptor,ownerId)
+   if(result.processed&&event.type==='manual.producer.updated')await this.resumeIdentified(connection,scope,event.source,result.canonicalClientId)
+   return result
   })
  }
  async overview({tenantId,ownerId,status='',limit=50,offset=0}){
