@@ -1,3 +1,4 @@
+import {governGeometryChange} from './agronomic-geometry-bridge.js'
 import {GrainRepository} from './grain-repository.js'
 import {saveWorkspaceOpportunity,workspaceDetails} from './opportunity-workspace.js'
 import {createHash,randomUUID} from 'node:crypto'
@@ -946,15 +947,30 @@ export class ValRepository{
       COALESCE((SELECT jsonb_agg(v ORDER BY v.id) FROM visits v WHERE v.tenant_id=c.tenant_id AND v.client_id=c.id AND v.consultant_id=$2),'[]') visits,
       COALESCE((SELECT jsonb_agg(k ORDER BY k.id) FROM val_commitments k WHERE k.tenant_id=c.tenant_id AND k.client_id=c.id AND (k.owner_type<>'USER' OR k.owner_id=$2::text)),'[]') commitments,
       COALESCE((SELECT jsonb_agg(i ORDER BY i.occurred_at DESC) FROM (SELECT id,occurred_at,channel,summary FROM interactions WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY occurred_at DESC,id LIMIT 20) i),'[]') interactions,
-      COALESCE((SELECT jsonb_agg(f ORDER BY f.observed_at DESC) FROM (SELECT id,observed_at,created_at,summary,validated_at FROM field_reports WHERE tenant_id=c.tenant_id AND client_id=c.id AND owner_user_id=$2 ORDER BY observed_at DESC,id LIMIT 20) f),'[]') field_reports,
-      COALESCE((SELECT jsonb_agg(s ORDER BY s.sampled_at DESC) FROM (SELECT id,sampled_at,created_at,laboratory,validated_at FROM soil_analyses WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY sampled_at DESC,id LIMIT 20) s),'[]') soil_analyses,
+      COALESCE((SELECT jsonb_agg(f ORDER BY f.observed_at DESC) FROM (SELECT * FROM field_reports WHERE tenant_id=c.tenant_id AND client_id=c.id AND owner_user_id=$2 ORDER BY observed_at DESC,id LIMIT 20) f),'[]') field_reports,
+      COALESCE((SELECT jsonb_agg(s ORDER BY s.sampled_at DESC) FROM (SELECT *, $2::uuid owner_user_id FROM soil_analyses WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY sampled_at DESC,id LIMIT 20) s),'[]') soil_analyses,
       COALESCE((SELECT jsonb_agg(h ORDER BY h.ingested_at DESC) FROM (SELECT id,source,external_id,event_type,status,error_code,canonical_client_id,observed_at,occurred_at,ingested_at,source_version,payload_hash,hub_contract_version FROM integration_events WHERE tenant_id=c.tenant_id AND owner_user_id=$2 AND hub_contract_version IS NOT NULL AND (canonical_client_id=c.id OR (canonical_client_id IS NULL AND client_external_key=c.external_key)) ORDER BY ingested_at DESC,id LIMIT 40) h),'[]') hub_evidence
       ,COALESCE((SELECT jsonb_agg(m ORDER BY m.valid_from DESC) FROM (SELECT * FROM val_memories WHERE tenant_id=c.tenant_id AND client_id=c.id AND created_by=$2 ORDER BY valid_from DESC,id LIMIT 100) m),'[]') decision_memories
       FROM clients c WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' AND ($3::text IS NULL OR c.id::text=$3 OR c.external_key=$3) ORDER BY c.id`,[this.tenantId,ownerId,clientId])
     if(clientId&&!result.rows.length)throw domainError('Produtor não encontrado na carteira autorizada.',404)
+    const territorial=await connection.query(`SELECT p.*,
+      COALESCE((SELECT jsonb_agg(f ORDER BY f.id) FROM (SELECT f.*,
+        COALESCE((SELECT jsonb_agg(s ORDER BY s.created_at DESC,s.id) FROM crop_seasons s WHERE s.tenant_id=f.tenant_id AND s.field_id=f.id),'[]') seasons
+        FROM fields f WHERE f.tenant_id=p.tenant_id AND f.property_id=p.id) f),'[]') fields
+      FROM properties p JOIN clients c ON c.id=p.client_id AND c.tenant_id=p.tenant_id
+      WHERE p.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' AND ($3::text IS NULL OR c.id::text=$3 OR c.external_key=$3)`,[this.tenantId,ownerId,clientId])
+    const scopedIds=result.rows.map(r=>r.id)
+    const signalValidations=await connection.query('SELECT * FROM val_agro_signal_validation WHERE tenant_id=$1 AND owner_id=$2 AND client_id=ANY($3::uuid[]) ORDER BY id DESC',[this.tenantId,ownerId,scopedIds])
+    const ndvi=await connection.query('SELECT * FROM ndvi_observations WHERE tenant_id=$1 AND owner_user_id=$2 AND client_id=ANY($3::uuid[]) ORDER BY observed_at DESC,id',[this.tenantId,ownerId,scopedIds])
+    const measurements=await connection.query(`SELECT m.* FROM soil_measurements m JOIN soil_analyses a ON a.id=m.analysis_id AND a.tenant_id=m.tenant_id JOIN clients c ON c.tenant_id=a.tenant_id AND c.id=a.client_id WHERE a.tenant_id=$1 AND c.consultant_id=$2 AND a.client_id=ANY($3::uuid[]) AND m.superseded_at IS NULL`,[this.tenantId,ownerId,scopedIds])
+    const observations=await connection.query(`SELECT o.* FROM field_observations o JOIN field_reports r ON r.id=o.report_id AND r.tenant_id=o.tenant_id WHERE r.tenant_id=$1 AND r.owner_user_id=$2 AND r.client_id=ANY($3::uuid[])`,[this.tenantId,ownerId,scopedIds])
     const grainWorkspace=await new GrainRepository({db:{configured:true,query:(...args)=>connection.query(...args)},tenantId:this.tenantId}).getWorkspace(ownerId)
     return result.rows.map(row=>{
-      const context={client:{...clientFromRow(row),updatedAt:iso(row.updated_at)},canonicalClientId:row.id,opportunities:row.opportunities,visits:row.visits,commitments:row.commitments,interactions:row.interactions,fieldReports:row.field_reports,soilAnalyses:row.soil_analyses,hubEvidence:row.hub_evidence,memories:[],manualRecords:[],properties:[],signals:[],businessHistory:[],priorRecommendations:[]}
+      const context={client:{...clientFromRow(row),updatedAt:iso(row.updated_at)},canonicalClientId:row.id,opportunities:row.opportunities,visits:row.visits,commitments:row.commitments,interactions:row.interactions,fieldReports:row.field_reports,soilAnalyses:row.soil_analyses,hubEvidence:row.hub_evidence,memories:[],manualRecords:[],properties:territorial.rows.filter(p=>p.client_id===row.id),ndviObservations:ndvi.rows.filter(n=>n.client_id===row.id),signals:[],businessHistory:[],priorRecommendations:[]}
+      for(const collection of ['properties','fieldReports','soilAnalyses','ndviObservations'])context[collection]=context[collection].map(r=>({...r,canonical_client_id:row.id}))
+      context.signalValidations=signalValidations.rows.filter(v=>v.client_id===row.id)
+      context.fieldReports=context.fieldReports.map(r=>({...r,observations:observations.rows.filter(o=>o.report_id===r.id)}))
+      context.soilAnalyses=context.soilAnalyses.map(r=>({...r,measurements:measurements.rows.filter(m=>m.analysis_id===r.id)}))
       context.memories=(row.decision_memories||[]).map(m=>({...m,client_id:context.client.id,subject_id:m.subject_type==='client'&&(!m.subject_id||m.subject_id===row.id)?context.client.id:m.subject_id}))
       context.memoryHistory=context.memories
       const grain=grainWorkspace.intentions.filter(i=>i.clientId===context.client.id&&!['closed','cancelled'].includes(i.status)).sort((a,b)=>String(a.deliveryEnd||'9999').localeCompare(String(b.deliveryEnd||'9999'))||a.id.localeCompare(b.id))[0]
@@ -1206,10 +1222,12 @@ export class ValRepository{
     try{
       let savedPropertyId
       await this.db.transaction(async connection=>{
+        await connection.query("SELECT set_config('val.geo_actor',$1,true),set_config('val.geo_source','consultant-map-draw',true),set_config('val.geo_reason',$2,true)",[ownerId,String(input.geometryReason||'Explicit property map save by consultant').slice(0,1000)])
         const selected=await connection.query(`SELECT id,external_key,name,municipality,commercial_profile FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND (id::text=$3 OR external_key=$3) AND status='active' LIMIT 1 FOR UPDATE`,[this.tenantId,ownerId,clientId])
         if(!selected.rowCount)throw domainError('Produtor não encontrado na sua carteira.',404)
         const client=selected.rows[0]
         const current=await connection.query(`SELECT id,external_key,name,metadata FROM properties WHERE tenant_id=$1 AND client_id=$2 AND ($3::text IS NULL OR id::text=$3) ORDER BY (metadata ? 'location') DESC,updated_at DESC LIMIT 1 FOR UPDATE`,[this.tenantId,client.id,profile.propertyId??null])
+        if(!profile.propertyId){const ambiguity=await connection.query('SELECT count(*)::int count FROM properties WHERE tenant_id=$1 AND client_id=$2',[this.tenantId,client.id]);if(ambiguity.rows[0]?.count>1)throw domainError('Selecione a propriedade canônica antes de salvar.',409,'property_identity_review_required')}
         let property=current.rows[0]||null
         if(profile.propertyId&&!property)throw domainError('Propriedade não encontrada na sua carteira.',404,'property_not_found')
         const propertyName=profile.propertyName||property?.name||String(jsonObject(client.commercial_profile).property||'').trim().slice(0,180)||'Propriedade principal'
@@ -1228,6 +1246,7 @@ export class ValRepository{
         for(const field of profile.fields){
           const stored=field.id?await connection.query(`SELECT id,external_key,geometry_ref FROM fields WHERE tenant_id=$1 AND property_id=$2 AND id::text=$3 LIMIT 1 FOR UPDATE`,[this.tenantId,property.id,field.id]):{rows:[]}
           let fieldRow=stored.rows[0]||null
+          if(field.id&&!fieldRow)throw domainError('Talhão não encontrado nesta propriedade.',404,'field_identity_not_found')
           if(fieldRow){
             await connection.query(`UPDATE fields SET name=$4,area_ha=COALESCE($5,area_ha),updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id,field.name,field.areaHa])
           }else{
@@ -1248,7 +1267,7 @@ export class ValRepository{
                 points:field.points,areaHa:field.areaHa,
                 provenance:{source:'valor360-produtor-360',method:'consultant-map-draw',observedAt:now,capturedBy:ownerId}
               })
-              await connection.query(`UPDATE fields SET geometry_ref=$4,geometry_version=$5,area_ha=$6,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id,encodeCanonicalGeometryRef(canonical),canonical.geometryVersion,field.areaHa??canonical.measurements.calculatedAreaHa])
+              if(await governGeometryChange(connection,{tenantId:this.tenantId,ownerId,clientId:client.id,propertyId:property.id,fieldId:fieldRow.id,canonical}))await connection.query(`UPDATE fields SET geometry_ref=$4,geometry_version=$5,area_ha=$6,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id,encodeCanonicalGeometryRef(canonical),canonical.geometryVersion,field.areaHa??canonical.measurements.calculatedAreaHa])
             }catch(error){throw domainError(`O contorno do talhão ${field.name} foi rejeitado: ${error.message}`,422,error.code||'agronomic_geometry_invalid')}
           }else if(field.clearGeometry){
             await connection.query(`UPDATE fields SET geometry_ref=NULL,geometry_version=NULL,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id])
@@ -2071,6 +2090,7 @@ export class ValRepository{
     if(this.db.configured){
       try{
         const project=async client=>{
+          await client.query("SELECT set_config('val.geo_actor',$1,true),set_config('val.geo_source',$2,true),set_config('val.geo_reason',$3,true)",[ownerId,event.source||'integration',`Source event ${event.externalId||integrationEventId||event.eventType}`])
           const inserted=integrationEventId?await client.query("SELECT id FROM integration_events WHERE tenant_id=$1 AND owner_user_id=$2 AND id=$3 AND hub_contract_version=1 AND status IN ('received','failed','review_required')",[tenantId,ownerId,integrationEventId]):await client.query(`INSERT INTO integration_events (tenant_id,owner_user_id,external_id,event_type,schema_version,source,occurred_at,client_external_key,property_external_key,field_external_key,payload,payload_hash,status)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'processed') ON CONFLICT (tenant_id,owner_user_id,source,external_id) DO NOTHING RETURNING id`,[tenantId,ownerId,event.externalId,event.type,event.schemaVersion,event.source,event.occurredAt,event.clientExternalKey||null,event.propertyExternalKey||null,event.fieldExternalKey||null,jsonbParameter(event.payload),event.payloadHash])
           if(!(inserted.rowCount??inserted.rows.length)){
@@ -2141,7 +2161,7 @@ export class ValRepository{
                     geometry:field.geometry,points:field.points,polygons:field.polygons,areaHa:field.areaHa??field.area,
                     provenance:{...jsonObject(field.geometryProvenance),source:'manual-do-agronomo',sourceRef:`integration-event:${inserted.rows[0].id}`,sourceEventId:event.externalId,observedAt:event.occurredAt,capturedBy:ownerId}
                   })
-                  await client.query(`UPDATE fields SET geometry_ref=$4,geometry_version=$5,area_ha=$6,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[tenantId,propertyId,fieldId,encodeCanonicalGeometryRef(canonical),canonical.geometryVersion,canonical.measurements.calculatedAreaHa])
+                  if(await governGeometryChange(client,{tenantId,ownerId,clientId:resolvedClientId,propertyId,fieldId,canonical,sourceRef:event.externalId}))await client.query(`UPDATE fields SET geometry_ref=$4,geometry_version=$5,area_ha=$6,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[tenantId,propertyId,fieldId,encodeCanonicalGeometryRef(canonical),canonical.geometryVersion,canonical.measurements.calculatedAreaHa])
                 }catch(error){throw domainError(`A geometria do talhão ${fieldName} foi rejeitada: ${error.message}`,422,error.code||'agronomic_geometry_invalid')}
               }else if(fieldId&&field.geometryAction==='CLEAR'){
                 await client.query(`UPDATE fields SET geometry_ref=NULL,geometry_version=NULL,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[tenantId,propertyId,fieldId])

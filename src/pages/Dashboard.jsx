@@ -1,3 +1,4 @@
+import AgroTerritoryPanel from '../components/AgroTerritoryPanel'
 import DecisionPanel from '../components/DecisionPanel'
 import {realBusinessClients,realBusinessRecords} from '../lib/business-metrics-scope.js'
 import React,{useEffect,useMemo,useState} from 'react'
@@ -176,6 +177,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  // números, pergunta longa, radar — e fica a um toque, no desktop e no celular.
  return <div className="page-stack val-copilot-home">
   <DecisionPanel scope={currentUser?.storageScope||currentUser?.id} onClient={id=>{const c=clients.find(c=>String(c.id)===String(id));if(c)onClient(c)}} onPrepare={id=>{const c=clients.find(c=>String(c.id)===String(id));if(c)onPrepare(c)}}/>
+  <AgroTerritoryPanel scope={currentUser?.storageScope||currentUser?.id}/>
   <div className="home-cockpit">
    <div className="home-cockpit-main">
 

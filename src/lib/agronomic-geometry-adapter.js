@@ -48,6 +48,8 @@ function normalizePolygon(value,path,counter){
 
 export function normalizeCanonicalGeometry(value){
  const candidate=value?.geometry&&typeof value.geometry==='object'?value.geometry:value
+ const declared=value?.crs||candidate?.crs
+ if(declared&&!['EPSG:4326','urn:ogc:def:crs:OGC:1.3:CRS84'].includes(typeof declared==='string'?declared:declared?.properties?.name))fail('CRS não suportado; forneça WGS84 explicitamente.','geometry_crs_unsupported')
  if(!candidate||typeof candidate!=='object')fail('Geometria ausente.','geometry_missing')
  const counter={count:0}
  if(candidate.type==='Polygon')return {type:'Polygon',coordinates:normalizePolygon(candidate.coordinates,'geometry.coordinates',counter)}

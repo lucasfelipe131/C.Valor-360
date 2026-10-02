@@ -1,3 +1,4 @@
+import {AgronomicDecisionCard} from './AgronomicDecisionCard'
 import {DecisionCard as PortfolioDecisionCard} from './DecisionPanel'
 import {isDemoRecord} from '../lib/producer-display'
 import React,{useEffect,useMemo,useRef,useState} from 'react'
@@ -130,6 +131,7 @@ export function ReasoningResponse({payload,sourceAttachments=[],density,outputMo
   <DecisionCard reasoning={reasoning} answer={answer} action="" audioNode={audioNode}/>
  </article>
  return <article className={`global-val-answer is-${density}`}>
+  {payload?.agronomicDecisionCards?.length>0&&<div className="agro-territory-grid">{payload.agronomicDecisionCards.slice(0,5).map(card=><AgronomicDecisionCard key={card.id} card={card}/>)}</div>}
   {payload?.decisionCards?.length>0&&<details className="nba-panel"><summary>Decisões e evidências da carteira</summary><div className="nba-grid">{payload.decisionCards.slice(0,5).map(card=><PortfolioDecisionCard key={card.id} card={card}/>)}</div></details>}
   {isBehavioralProfile?<ProfileResponse reasoning={reasoning} answer={answer} facts={facts} outputMode={outputMode} audioNode={audioNode}/>:<>
   <DecisionCard reasoning={reasoning} answer={answer} action={degraded||generalGuidance?'':strategy.action} audioNode={audioNode}/>

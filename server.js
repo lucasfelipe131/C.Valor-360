@@ -1,3 +1,5 @@
+import {agronomicDecisionQuery,agronomicDecisionResponse} from './server/decision-copilot/agronomic-decision.js'
+import {AgroGeoService} from './server/agro-geo-service.js'
 import {attachValResponseOutcome} from './server/val-response-outcome.js'
 import {prepareK5StagingFixtures,canUsePr011Probe} from './server/k5-staging-fixtures.js'
 import {registeredFactQuery,registeredFactPresentation} from './server/registered-fact-query.js'
@@ -194,6 +196,7 @@ const visitRouteService=createVisitRouteService({repository})
 const managementService=createManagementService({db:database,tenantId:config.defaultTenantId})
 const demoProducerEnvironment=String(process.env.VAL_DEMO_ENVIRONMENT||'').toLowerCase()
 const decisionService=new DecisionService({db:database,repository,tenantId:config.defaultTenantId,environment:demoProducerEnvironment,config})
+const agroGeoService=new AgroGeoService({decisionService})
 const demoProducerEnabled=['staging','test'].includes(demoProducerEnvironment)
 const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const accessRepository=new AccessRepository({db:database,tenantId:config.defaultTenantId,runtimeConfig:config})
@@ -348,7 +351,7 @@ async function handleApi(request,response,url){
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
  const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
- const protectedPath=url.pathname.startsWith('/api/decisions')||url.pathname.startsWith('/api/integration-hub/')||url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/agro-geo')||url.pathname.startsWith('/api/decisions')||url.pathname.startsWith('/api/integration-hub/')||url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const requestStartedAt=performance.now()
  let valRequestController=null
@@ -401,6 +404,15 @@ async function handleApi(request,response,url){
   }
   return json(response,404,{error:'Recurso do Hub não encontrado.'})
  }
+ if(url.pathname==='/api/agro-geo'&&request.method==='GET')return json(response,200,await agroGeoService.generate(identity,{clientId:url.searchParams.get('clientId')||null}))
+ if(url.pathname==='/api/agro-geo/reviews'&&request.method==='GET')return json(response,200,await agroGeoService.queue(identity))
+ if(url.pathname==='/api/agro-geo/history'&&request.method==='GET')return json(response,200,await agroGeoService.history(identity,url.searchParams.get('clientId')))
+ const geoReviewRoute=url.pathname.match(/^\/api\/agro-geo\/reviews\/([^/]+)$/)
+ if(geoReviewRoute&&request.method==='POST')return json(response,200,await agroGeoService.resolve(identity,geoReviewRoute[1],await body(request)))
+ const geoSignalRoute=url.pathname.match(/^\/api\/agro-geo\/signals\/([^/]+)\/validation$/)
+ if(geoSignalRoute&&request.method==='POST')return json(response,200,await agroGeoService.validateSignal(identity,geoSignalRoute[1],await body(request)))
+ const geoAnalysisRoute=url.pathname.match(/^\/api\/agro-geo\/analyses\/([^/]+)\/link$/)
+ if(geoAnalysisRoute&&request.method==='POST')return json(response,200,await agroGeoService.linkAnalysis(identity,geoAnalysisRoute[1],await body(request)))
  if(url.pathname==='/api/decisions'&&request.method==='GET')return json(response,200,await decisionService.generate(identity,{clientId:url.searchParams.get('clientId')||null}))
  if(url.pathname==='/api/decisions/registry'&&request.method==='GET')return json(response,200,await decisionService.registryView(identity))
  if(url.pathname==='/api/decisions/settings'&&request.method==='PATCH')return json(response,200,await decisionService.configure(identity,await body(request)))
@@ -851,6 +863,10 @@ async function handleApi(request,response,url){
    const completed=attachConversationState(payloadResult,sessionState,{reasoningState:turnOnlyClientOverride?requestConversationState:sessionState})
    const withResolution=conversationResolution?.status==='RESOLVED'?{...completed,conversationResolution}:completed
    return workspaceRoute.workspace_action?{...withResolution,workspaceAction:workspaceRoute.workspace_action,globalIntent:workspaceRoute}:withResolution
+  }
+  if(agronomicDecisionQuery(message)&&!attachmentIds.length&&database.configured){
+   const result=await agroGeoService.generate(identity,{clientId:clientId||null})
+   return json(response,200,completeSession(agronomicDecisionResponse(result,{tenantId,ownerId:scopedOwnerId,clientId:clientId||null,conversationId,contextEpoch:sessionState.context_epoch}),{intent:'AGRONOMIC_DECISION'}))
   }
   if(portfolioDecisionQuery(message).matched&&!attachmentIds.length&&database.configured){
    const decisionResult=await decisionService.generate(identity)
