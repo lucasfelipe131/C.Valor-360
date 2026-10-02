@@ -20,6 +20,10 @@ const EMAIL_CONFIRMATION_HOURS = 72;
 const INITIAL_ADMIN_PASSWORD_HASH =
   "scrypt$8fa2866df1748263e47def5e862ebcbd$01621bae94ea8bb0b8f20438690d84890edc8fa6509e6b94452dbfc54a4ef380f3167b93d38847480427eb91f890e3ca98e1668c9009a83c706a27ddeb25b613";
 
+// Contas provisionadas a partir de uma sessão embutida do VALOR 360 não possuem senha local:
+// o esquema "embedded" nunca é aceito por verifyPassword, então o login direto fica bloqueado.
+const EMBEDDED_ACCOUNT_PASSWORD_HASH = "embedded$valor360$sem-senha-local";
+
 export type AccessRole = "admin" | "tester";
 
 export type AccessUser = {
@@ -118,7 +122,7 @@ async function embeddedSession(request: NextRequest) {
         identity.email,
         identity.displayName,
         identity.role,
-        INITIAL_ADMIN_PASSWORD_HASH,
+        EMBEDDED_ACCOUNT_PASSWORD_HASH,
       ],
     );
     row = created.rows[0];

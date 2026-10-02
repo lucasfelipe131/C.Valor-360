@@ -34,7 +34,10 @@ function publicOrigin(request: NextRequest) {
 }
 
 export async function GET(request: NextRequest) {
-  const destination = new URL("/", publicOrigin(request));
+  // Em deploy independente o portal vive sob o basePath "/tecnico" ("/" seria 404 no Next). Embutido no VALOR 360,
+  // "/tecnico/" exige sessão da plataforma, então o link do e-mail volta para a entrada do VALOR 360.
+  const embedded = process.env.NEXT_PUBLIC_VALOR360_EMBEDDED === "1";
+  const destination = new URL(embedded ? "/" : "/tecnico/", publicOrigin(request));
   try {
     const token = request.nextUrl.searchParams.get("token")?.trim() ?? "";
     if (!/^[A-Za-z0-9_-]{32,100}$/.test(token)) {
