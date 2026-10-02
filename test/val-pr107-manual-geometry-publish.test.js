@@ -18,6 +18,29 @@ const ownerId='00000000-0000-4000-8000-000000000710'
 const ring=[[-54,-28],[-53.99,-28],[-53.99,-28.01],[-54,-28.01],[-54,-28]]
 const inner=[[-53.998,-28.002],[-53.995,-28.002],[-53.995,-28.005],[-53.998,-28.005],[-53.998,-28.002]]
 
+test('Manual → Hub conserva versão do snapshot e não anuncia revisão como sincronização concluída',async()=>{
+ const received=[];let status='PROCESSED'
+ const server=createServer(async(request,response)=>{let raw='';for await(const chunk of request)raw+=chunk;received.push(JSON.parse(raw));response.writeHead(202,{'content-type':'application/json'});response.end(JSON.stringify({status}))})
+ const oldUrl=process.env.VALOR360_WEBHOOK_URL,oldSecret=process.env.VALOR360_WEBHOOK_SECRET
+ try{
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve))
+  process.env.VALOR360_WEBHOOK_URL=`http://127.0.0.1:${server.address().port}/events`;process.env.VALOR360_WEBHOOK_SECRET='synthetic-hub-publisher'
+  const producers=[{id:'synthetic-versioned',name:'SYNTHETIC versioned producer'}]
+  const timestamp='2026-09-27T10:00:00.000Z'
+  for(let i=0;i<2;i++)assert.equal((await publishWorkspaceToValor(producers,[],ownerId,'',timestamp)).delivered,1)
+  assert.equal(received[0].sourceVersion,Date.parse(timestamp));assert.equal(received[0].occurredAt,timestamp)
+  assert.equal(received[0].externalId,received[1].externalId)
+  status='REVIEW_REQUIRED'
+  const review=await publishWorkspaceToValor(producers,[],ownerId,'','2026-09-28T10:00:00.000Z')
+  assert.equal(review.delivered,0);assert.equal(review.failed,1);assert.match(review.errors[0].error,/REVIEW_REQUIRED/)
+  assert.notEqual(received[2].externalId,received[1].externalId)
+ }finally{
+  if(oldUrl===undefined)delete process.env.VALOR360_WEBHOOK_URL;else process.env.VALOR360_WEBHOOK_URL=oldUrl
+  if(oldSecret===undefined)delete process.env.VALOR360_WEBHOOK_SECRET;else process.env.VALOR360_WEBHOOK_SECRET=oldSecret
+  await new Promise(resolve=>server.close(resolve))
+ }
+})
+
 test('Manual preserva geometria no percurso bootstrap → publisher HMAC → ingestão PostgreSQL',async t=>{
  const pg=new PGlite()
  const db={configured:true,query:(...args)=>pg.query(...args),transaction:work=>pg.transaction(tx=>work({query:(...args)=>tx.query(...args)}))}

@@ -1,6 +1,6 @@
 export const VAL_WORKSPACE_CONTEXT_VERSION='val.workspace_context.v1'
 
-export const VAL_WORKSPACE_MODULES=Object.freeze(['dashboard','clients','datahub','client360','visits','opportunities','val','agro','questionnaire','reports','settings','admin','copilot'])
+export const VAL_WORKSPACE_MODULES=Object.freeze(['dashboard','clients','datahub','integrations','client360','visits','opportunities','val','agro','questionnaire','reports','settings','admin','copilot'])
 const modules=new Set(VAL_WORKSPACE_MODULES)
 const clean=(value,max=180)=>String(value??'').replace(/[\u0000-\u001f\u007f]+/g,' ').replace(/\s+/g,' ').trim().slice(0,max)
 const ref=(value,type)=>{

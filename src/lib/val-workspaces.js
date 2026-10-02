@@ -26,6 +26,7 @@ export const MODULES={
  clients:{label:'Carteira',icon:Users,workspace:'produtor'},
  client360:{label:'Produtor 360',icon:UserRound,workspace:'produtor',contextual:true},
  questionnaire:{label:'Coletar preferências',icon:ClipboardList,workspace:'produtor'},
+ integrations:{label:'Hub / Integrações',icon:DatabaseZap,workspace:'gestao',roles:['admin','manager','consultant','technical_reviewer']},
  datahub:{label:'Base Inteligente',icon:DatabaseZap,workspace:'produtor'},
  visits:{label:'Visitas',icon:CalendarDays,workspace:'comercial'},
  opportunities:{label:'Oportunidades',icon:Target,workspace:'comercial'},
@@ -76,6 +77,7 @@ const NAV={
   {id:'clima',label:'Clima e mercado',icon:CloudSun,page:'agro',tool:'clima'}
  ],
  gestao:[
+  {id:'integrations',label:'Hub / Integrações',icon:DatabaseZap,page:'integrations',roles:['admin','manager','consultant','technical_reviewer']},
   {id:'management',label:'Visão gerencial',icon:BarChart3,page:'management',roles:['admin','manager','bi_viewer']},
   {id:'reports',label:'Indicadores e relatórios',icon:FileBarChart,page:'reports'},
   {id:'biblioteca',label:'Documentos',icon:Library,page:'agro',tool:'biblioteca'}

@@ -23,7 +23,7 @@ const FERRAMENTAS_ANTES=[
 
 test('nenhum módulo do inventário desapareceu na navegação por workspaces',()=>{
  for(const id of MODULOS_ANTES)assert.ok(MODULES[id],`módulo "${id}" sumiu do registro`)
- assert.deepEqual(Object.keys(MODULES).filter(id=>!MODULOS_ANTES.includes(id)),['management'],'somente o módulo gerencial foi acrescentado')
+ assert.deepEqual(Object.keys(MODULES).filter(id=>!MODULOS_ANTES.includes(id)),['integrations','management'],'somente Hub e módulo gerencial foram acrescentados')
  assert.ok(workspaceModules('gestao','admin').some(item=>item.id==='management'))
  assert.ok(workspaceModules('gestao','manager').some(item=>item.id==='management'))
  assert.ok(!workspaceModules('gestao','consultant').some(item=>item.id==='management'))

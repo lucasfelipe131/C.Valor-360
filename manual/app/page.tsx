@@ -18,6 +18,7 @@ import RecordsArchive from "./RecordsArchive";
 import SeasonReports from "./SeasonReports";
 import ZarcPlanner from "./ZarcPlanner";
 import { saveRecord, setRecordOwner, syncLocalRecordsToServer } from "./records";
+import { reconcileValor360Bootstrap } from "./lib/valor360-bootstrap";
 import AccessPortal, { type AccessSessionUser } from "./AccessPortal";
 import AdminAccessPanel from "./AdminAccessPanel";
 import ProducerCrmImport from "./ProducerCrmImport";
@@ -152,6 +153,8 @@ type Producer = {
   id: string;
   name: string;
   crmCode?: string;
+  valor360ExternalKey?: string;
+  valor360BootstrapKey?: string;
   valor360LegacyExternalKeys?: string[];
   document: string;
   phone: string;
@@ -2642,34 +2645,9 @@ export default function Home() {
           const incoming = normalizeProducerItems(
             Array.isArray(payload.producers) ? payload.producers : [],
           );
-          const currentById = new Map(nextProducers.map((producer) => [producer.id, producer]));
-          const incomingIds = new Set(incoming.map((producer) => producer.id));
-          nextProducers = [
-            ...incoming.map((producer) => {
-              const current = currentById.get(producer.id);
-              if (!current) return producer;
-              return {
-                ...producer,
-                ...current,
-                name: producer.name || current.name,
-                crmCode: producer.crmCode || current.crmCode,
-                phone: producer.phone || current.phone,
-                email: producer.email || current.email,
-                city: current.city || producer.city,
-                properties: current.properties || producer.properties,
-                area: current.area || producer.area,
-                cultures: Array.from(new Set([
-                  ...(producer.cultures ?? []),
-                  ...(current.cultures ?? []),
-                ])),
-                notes: Array.from(new Set([current.notes, producer.notes].filter(Boolean))).join("\n"),
-                fields: current.fields ?? [],
-                registrations: current.registrations ?? [],
-                crmSource: "VALOR 360",
-              };
-            }),
-            ...nextProducers.filter((producer) => !incomingIds.has(producer.id)),
-          ];
+          nextProducers = reconcileValor360Bootstrap(
+            nextProducers, incoming, nextSoilAnalyses.map(analysis => analysis.producerId),
+          );
         } catch (error) {
           console.warn("A carteira comercial não pôde ser conciliada agora.", error);
         }

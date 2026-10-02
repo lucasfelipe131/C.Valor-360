@@ -87,6 +87,7 @@ export function normalizeIntegrationEvent(input){
   return {
     externalId,
     schemaVersion,
+    ...(input.sourceVersion!==undefined?{sourceVersion:input.sourceVersion}:{}),
     type,
     occurredAt:new Date(timestamp).toISOString(),
     source:clean(input.source).slice(0,80)||'manual-do-agronomo',

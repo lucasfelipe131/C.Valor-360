@@ -13,6 +13,7 @@ import {fileURLToPath} from 'node:url'
 import OpenAI from 'openai'
 import {config,getPublicEngineConfig} from './server/config.js'
 import {createDatabase} from './server/db.js'
+import {IntegrationHub} from './server/integration-hub/service.js'
 import {createSharedKnowledgeAnswerCache} from './server/knowledge/shared-answer-cache.js'
 import {resolveGeneralConversationQuestion} from './server/decision-copilot/general-question-context.js'
 import {createAuth} from './server/auth.js'
@@ -186,6 +187,7 @@ const sharedAnswerCache=createSharedKnowledgeAnswerCache({database})
 const auth=createAuth(config)
 const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,tenantId:session.tenantId||config.defaultTenantId,ownerId:session.id||session.sub||session.email,storageScope:auth.storageScope(session),...(canUsePr011Probe(session)?{pr011Qa:true}:{})}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,tenantId:config.defaultTenantId,ownerId:'demo@valor360.local',storageScope:'demo'}
 const repository=new ValRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
+const integrationHub=new IntegrationHub({db:database,repository,tenantId:config.defaultTenantId})
 const visitRouteService=createVisitRouteService({repository})
 const managementService=createManagementService({db:database,tenantId:config.defaultTenantId})
 const demoProducerEnvironment=String(process.env.VAL_DEMO_ENVIRONMENT||'').toLowerCase()
@@ -343,7 +345,7 @@ async function handleApi(request,response,url){
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
  const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
- const protectedPath=url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/integration-hub/')||url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const requestStartedAt=performance.now()
  let valRequestController=null
@@ -382,6 +384,20 @@ async function handleApi(request,response,url){
  if(valRecommendationPath&&config.openaiApiKey&&!database.configured)return json(response,503,{error:'Configure DATABASE_URL antes de ativar a IA com dados reais.'})
  const municipalityMatch=url.pathname.match(/^\/api\/geo\/municipalities\/(\d{7})\/boundary$/)
  if(municipalityMatch&&request.method==='GET')return json(response,200,await readMunicipalityBoundary(municipalityMatch[1]))
+ if(url.pathname.startsWith('/api/integration-hub/')){
+  if(!identity?.id)return json(response,401,{error:'Entre com sua conta para consultar as integrações.'})
+  response.setHeader('Cache-Control','private, no-store')
+  const scope={tenantId:identity.tenantId||config.defaultTenantId,ownerId:identity.id}
+  if(url.pathname==='/api/integration-hub/overview'&&request.method==='GET')return json(response,200,await integrationHub.overview({...scope,status:url.searchParams.get('status'),limit:url.searchParams.get('limit'),offset:url.searchParams.get('offset')}))
+  const hubEvent=url.pathname.match(/^\/api\/integration-hub\/events\/([0-9a-f-]{36})(\/retry)?$/i)
+  if(hubEvent&&!hubEvent[2]&&request.method==='GET')return json(response,200,await integrationHub.detail({...scope,eventId:hubEvent[1]}))
+  if(hubEvent?.[2]&&request.method==='POST'){
+   const result=await integrationHub.retry({...scope,eventId:hubEvent[1]})
+   if(result.processed){invalidateValContextScope(scope);repository.invalidateAuthorizedClientReferences(scope);invalidateDerivedPortfolioCaches({...scope,objections:true})}
+   return json(response,200,result)
+  }
+  return json(response,404,{error:'Recurso do Hub não encontrado.'})
+ }
  if(url.pathname==='/api/management/overview'&&request.method==='GET')return json(response,200,await managementService.overview(identity,Object.fromEntries(url.searchParams)))
  if(url.pathname==='/api/admin/management-units'&&request.method==='GET')return json(response,200,await managementService.units(identity))
  if(url.pathname==='/api/admin/management-units'&&request.method==='POST')return json(response,201,await managementService.createUnit(identity,await body(request)))
@@ -1097,14 +1113,14 @@ async function handleApi(request,response,url){
   observe('integration.received',{source:'manual-do-agronomo',eventType:event.type})
   if(requiresTechnicalSignature(event.type)&&!signed)return json(response,401,{error:'Eventos técnicos validados exigem assinatura HMAC do corpo.'})
   const ownerId=database.configured?await accessRepository.resolveIntegrationOwner(event.ownerUserId):null
-  const signals=deriveSignals(event);const result=await repository.ingestEvent({tenantId:config.defaultTenantId,ownerId,event,signals})
-  if(!result.duplicate&&ownerId){
+  const result=database.configured?await integrationHub.ingest({tenantId:config.defaultTenantId,ownerId,event}):await repository.ingestEvent({tenantId:config.defaultTenantId,ownerId,event,signals:deriveSignals(event)})
+  if((result.processed??!result.duplicate)&&ownerId){
    invalidateValContextScope({tenantId:config.defaultTenantId,ownerId,...(event.clientExternalKey?{clientId:event.clientExternalKey}:{})})
    if(event.type==='manual.producer.updated')repository.invalidateAuthorizedClientReferences({tenantId:config.defaultTenantId,ownerId})
    if(String(event.type||'').startsWith('business.'))invalidateDerivedPortfolioCaches({tenantId:config.defaultTenantId,ownerId,objections:true})
   }
-  if(!result.duplicate)await accessRepository.recordUsage(ownerId,{eventType:'manual_sync',page:'agro',entityType:'client',entityId:event.clientExternalKey||null,metadata:{eventType:event.type}})
-  return json(response,result.duplicate?200:202,{accepted:true,...result,eventType:event.type,externalId:event.externalId})
+  if(result.processed??!result.duplicate)await accessRepository.recordUsage(ownerId,{eventType:'manual_sync',page:'agro',entityType:'client',entityId:event.clientExternalKey||null,metadata:{eventType:event.type}})
+  return json(response,result.status==='FAILED'?503:result.status==='REJECTED'?422:result.status==='CONFLICT'?409:result.duplicate?200:202,{accepted:!['FAILED','REJECTED','CONFLICT'].includes(result.status),...result,eventType:event.type,externalId:event.externalId})
  }
  if(url.pathname==='/api/surveys'&&request.method==='GET')return json(response,200,await repository.listSurveys(identity?.id||identity?.email))
  if(url.pathname==='/api/surveys/invitations'&&request.method==='POST'){

@@ -193,6 +193,11 @@ async function publish(event: JsonRecord, requestId = ""): Promise<ValorPublishR
         error: detail || `VALOR 360 respondeu HTTP ${response.status}.`,
       };
     }
+    const receipt = await response.json().catch(() => null) as {status?: string; originalStatus?: string} | null;
+    const outcome = receipt?.status === "DUPLICATE" ? receipt.originalStatus : receipt?.status;
+    if (outcome && ["REVIEW_REQUIRED", "CONFLICT", "REJECTED", "FAILED"].includes(outcome)) {
+      return { ok: false, eventType, externalId, status: response.status, error: `Evento preservado no Hub: ${outcome}. Consulte Hub / Integrações na VAL.` };
+    }
     return { ok: true, eventType, externalId, status: response.status };
   } catch (error) {
     return {
@@ -212,6 +217,7 @@ function event(input: {
   propertyExternalKey?: string;
   fieldExternalKey?: string;
   ownerUserId?: string;
+  sourceVersion?: number;
   payload: JsonRecord;
 }) {
   return {
@@ -220,6 +226,7 @@ function event(input: {
     externalId: input.externalId.slice(0, 180),
     occurredAt: date(input.occurredAt),
     source: "manual-do-agronomo",
+    ...(input.sourceVersion !== undefined ? { sourceVersion: input.sourceVersion } : {}),
     ownerUserId: text(input.ownerUserId, 36),
     clientExternalKey: input.clientExternalKey || "",
     propertyExternalKey: input.propertyExternalKey || "",
@@ -519,6 +526,7 @@ export async function publishProducerToValor(
   soilAnalyses: unknown[] = [],
   ownerUserId = "",
   requestId = "",
+  workspaceObservedAt: unknown = null,
 ) {
   const producer = object(input);
   const clientExternalKey = clientKeyFor(producer);
@@ -554,9 +562,14 @@ export async function publishProducerToValor(
       scope: "producer-dossier",
     },
   };
+  const observedAt = workspaceObservedAt || producer.updatedAt || producer.savedAt;
+  const revision = observedAt ? Date.parse(String(observedAt)) : NaN;
+  const sourceVersion = Number.isSafeInteger(revision) && revision >= 0 ? revision : undefined;
   const producerEvent = event({
     type: "manual.producer.updated",
-    externalId: `manual-producer:${clientExternalKey}:${fingerprint(payload)}`,
+    externalId: sourceVersion === undefined ? `manual-producer:${clientExternalKey}:${fingerprint(payload)}` : `manual-producer:${fingerprint(clientExternalKey)}:${fingerprint(payload)}:v${sourceVersion}`,
+    occurredAt: observedAt,
+    sourceVersion,
     clientExternalKey,
     ownerUserId,
     payload,
@@ -572,6 +585,7 @@ export async function publishWorkspaceToValor(
   soilAnalyses: unknown[],
   ownerUserId = "",
   requestId = "",
+  workspaceObservedAt: unknown = null,
 ) {
   const queue = producers.slice(0, 1000);
   const soilQueue = soilAnalyses.slice(0, 2500);
@@ -580,7 +594,7 @@ export async function publishWorkspaceToValor(
   for (let index = 0; index < queue.length; index += concurrency) {
     const batch = queue.slice(index, index + concurrency);
     const published = await Promise.all(
-      batch.map((producer) => publishProducerToValor(producer, soilAnalyses, ownerUserId, requestId)),
+      batch.map((producer) => publishProducerToValor(producer, soilAnalyses, ownerUserId, requestId, workspaceObservedAt)),
     );
     results.push(...published.flat());
   }
