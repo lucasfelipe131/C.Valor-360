@@ -26,7 +26,7 @@ const dataRoot=process.env.DATA_DIR||join(appRoot,'.data')
 const storePath=join(dataRoot,'valor360-store.json')
 const profileMatrix=JSON.parse(readFileSync(join(appRoot,'src','data','profile-matrix.json'),'utf8'))
 const surveyOptions=buildSurveyOptions(profileMatrix)
-const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp','.woff2':'font/woff2'}
+const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf','.mjs':'application/javascript; charset=utf-8','.webmanifest':'application/manifest+json; charset=utf-8','.txt':'text/plain; charset=utf-8','.map':'application/json; charset=utf-8'}
 const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(self), microphone=(), geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"}
 
 mkdirSync(dataRoot,{recursive:true})
@@ -35,7 +35,7 @@ if(!existsSync(storePath))writeFileSync(storePath,JSON.stringify({surveys:[],imp
 function readStore(){try{return JSON.parse(readFileSync(storePath,'utf8'))}catch{return {surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[]}}}}
 function saveStore(store){const temporary=`${storePath}.tmp`;writeFileSync(temporary,JSON.stringify(store,null,2));renameSync(temporary,storePath)}
 function json(response,status,payload){response.writeHead(status,{...securityHeaders,'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify(payload))}
-function rawBody(request){return new Promise((resolve,reject)=>{let raw='';request.on('data',chunk=>{raw+=chunk;if(Buffer.byteLength(raw)>config.maxBodyBytes){reject(new Error('Arquivo ou requisição muito grande.'));request.destroy()}});request.on('end',()=>resolve(raw));request.on('error',reject)})}
+function rawBody(request){return new Promise((resolve,reject)=>{const chunks=[];let size=0;request.on('data',chunk=>{size+=chunk.length;if(size>config.maxBodyBytes){reject(Object.assign(new Error('Arquivo ou requisição muito grande.'),{statusCode:413}));request.destroy();return}chunks.push(chunk)});request.on('end',()=>resolve(Buffer.concat(chunks).toString('utf8')));request.on('error',reject)})}
 async function body(request){const raw=await rawBody(request);try{return raw?JSON.parse(raw):{}}catch{throw new Error('Conteúdo inválido.')}}
 async function limitedResponseText(upstream,limit){const reader=upstream.body?.getReader();if(!reader)return upstream.text();const chunks=[];let size=0;while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>limit){await reader.cancel();throw Object.assign(new Error('A planilha excede o limite seguro de importação.'),{statusCode:413})}chunks.push(value)}return new TextDecoder().decode(Buffer.concat(chunks.map(chunk=>Buffer.from(chunk))))}
 const clean=value=>String(value||'').trim().slice(0,240)
@@ -67,8 +67,9 @@ const valEngine=new ValEngine({runtimeConfig:config,repository})
 const valProgress=createValProgressTracker()
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
-function consumeRateLimit(scope,key,limit){const now=Date.now();const bucketKey=`${scope}:${key}`;const current=rateBuckets.get(bucketKey);if(!current||current.resetAt<=now){rateBuckets.set(bucketKey,{count:1,resetAt:now+600_000});return true}if(current.count>=limit)return false;current.count+=1;return true}
-const requestIdentity=request=>String(request.socket.remoteAddress||'unknown')
+function consumeRateLimit(scope,key,limit){const now=Date.now();if(rateBuckets.size>5000)for(const [bucket,entry] of rateBuckets)if(entry.resetAt<=now)rateBuckets.delete(bucket);const bucketKey=`${scope}:${key}`;const current=rateBuckets.get(bucketKey);if(!current||current.resetAt<=now){rateBuckets.set(bucketKey,{count:1,resetAt:now+600_000});return true}if(current.count>=limit)return false;current.count+=1;return true}
+// Atrás do proxy da Railway todo tráfego chega do mesmo endereço interno; o último valor de X-Forwarded-For é o que o proxy anexou.
+const requestIdentity=request=>{const forwarded=String(request.headers['x-forwarded-for']||'').split(',').map(item=>item.trim()).filter(Boolean);return String(forwarded[forwarded.length-1]||request.socket.remoteAddress||'unknown').slice(0,120)}
 const progressOwnerKey=(identity,request)=>String(identity?.id||identity?.email||requestIdentity(request))
 const demoIdentity=()=>({id:null,email:'demo@valor360.local',name:'Demonstração',role:'admin',tenantId:config.defaultTenantId,mustChangePassword:false,demo:true})
 async function sessionIdentity(request){
