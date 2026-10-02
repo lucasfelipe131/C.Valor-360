@@ -111,7 +111,8 @@ export function useAsyncResource({
  const setError=useCallback(value=>setState(current=>({...current,error:String(typeof value==='function'?value(current.error):value||'')})),[])
  const clearError=useCallback(()=>setState(current=>({...current,error:''})),[])
 
- useEffect(()=>()=>{mountedRef.current=false;sequenceRef.current+=1;abortCurrent()},[abortCurrent])
+ // Em desenvolvimento o StrictMode executa montagem → limpeza → montagem; sem rearmar o ref, nenhum setState chegaria à tela.
+ useEffect(()=>{mountedRef.current=true;return()=>{mountedRef.current=false;sequenceRef.current+=1;abortCurrent()}},[abortCurrent])
 
  return {state,loading:state.loading,data:state.data,error:state.error,run,cancel,reset,setData,setError,clearError}
 }

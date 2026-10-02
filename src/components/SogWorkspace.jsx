@@ -19,7 +19,7 @@ const dateTimeFormat=new Intl.DateTimeFormat('pt-BR',{day:'2-digit',month:'short
 const formatDate=value=>{if(!value)return 'Não informada';const parsed=new Date(value.length===10?`${value}T12:00:00`:value);return Number.isNaN(parsed.getTime())?'Não informada':dateFormat.format(parsed)}
 const formatDateTime=value=>{const parsed=new Date(value);return !value||Number.isNaN(parsed.getTime())?'Não informada':dateTimeFormat.format(parsed)}
 const localDateTime=()=>{const now=new Date(Date.now()-new Date().getTimezoneOffset()*60_000);return now.toISOString().slice(0,16)}
-const today=()=>new Date().toISOString().slice(0,10)
+const today=()=>localDateTime().slice(0,10)
 const freshness=value=>{const hours=Math.max(0,(Date.now()-new Date(value).getTime())/3_600_000);return hours<=24?{label:'Atual',state:'fresh'}:hours<=72?{label:'Atenção',state:'attention'}:hours<=168?{label:'No limite',state:'limit'}:{label:'Vencida',state:'expired'}}
 
 async function api(path,options={}){

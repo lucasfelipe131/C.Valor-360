@@ -25,7 +25,7 @@ export default function Client360({client,storageScope,onBack,onPrepare,onUpdate
  const [error,setError]=useState('')
  const [overviewRevision,setOverviewRevision]=useState(0)
  const additionalNeedLabel=client.additionalNeedStatus==='none_declared'?'Nenhuma necessidade adicional declarada':client.additionalNeed||'Não informado'
- const edit=(field,value)=>{revisions.current[field]=(revisions.current[field]||0)+1;setTech(current=>{const next={...current,[field]:value};sessionStorage.setItem(storageKey,JSON.stringify(next));return next})}
+ const edit=(field,value)=>{revisions.current[field]=(revisions.current[field]||0)+1;setTech(current=>{const next={...current,[field]:value};try{sessionStorage.setItem(storageKey,JSON.stringify(next))}catch{}return next})}
  const mergeRemote=(remote,started)=>setTech(current=>{const next={...current};contextFields.forEach(field=>{if(revisions.current[field]===started[field]&&remote?.[field]!==undefined)next[field]=String(remote[field]??'')});return next})
  useEffect(()=>{
   const controller=new AbortController();const started={...revisions.current};setLoadingContext(true);setError('')

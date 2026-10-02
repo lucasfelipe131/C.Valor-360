@@ -36,8 +36,10 @@ function parseDate(value){
  if(value instanceof Date)return value
  if(typeof value==='number'&&value>20000)return new Date(Math.round((value-25569)*86400*1000))
  const raw=String(value||'').trim();if(!raw)return null
- const br=raw.match(/(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})/)
- const date=br?new Date(Date.UTC(Number(br[3].length===2?`20${br[3]}`:br[3]),Number(br[2])-1,Number(br[1]))):new Date(raw)
+ // ISO (AAAA-MM-DD) precisa vir antes do padrão brasileiro: sem a âncora, "2024-03-15" era lido como dia 24, mês 03, ano 2015.
+ const iso=raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:$|[T\s])/)
+ const br=iso?null:raw.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})(?:$|[\sT,;])/)
+ const date=iso?new Date(Date.UTC(Number(iso[1]),Number(iso[2])-1,Number(iso[3]))):br?new Date(Date.UTC(Number(br[3].length===2?`20${br[3]}`:br[3]),Number(br[2])-1,Number(br[1]))):new Date(raw)
  return Number.isNaN(date.getTime())?null:date
 }
 
@@ -52,7 +54,7 @@ export function buildCommercialIntelligence(rows,mapping){
   const name=String(row[mapping.client]||'').trim();if(!name)return
   const key=normalizeText(name);const current=groups.get(key)||{name,rows:[],revenue:0,valueRows:0,wins:0,losses:0,knownOutcomes:0,products:new Set(),lastDate:null,observed:{value:0,date:0,product:0,status:0},municipality:'A definir',culture:'A definir',area:'A definir'}
   const rawValue=mapping.value?row[mapping.value]:null;const hasValue=rawValue!==null&&rawValue!==undefined&&String(rawValue).trim()!=='';const value=hasValue?parseMoney(rawValue):0
-  const date=parseDate(mapping.date?row[mapping.date]:null);const product=String(mapping.product?row[mapping.product]||'':'').trim();const status=mapping.status?row[mapping.status]:null;const isWon=won(status);const isLost=lost(status)
+  const date=parseDate(mapping.date?row[mapping.date]:null);const product=String(mapping.product?row[mapping.product]||'':'').trim();const status=mapping.status?row[mapping.status]:null;const isLost=lost(status);const isWon=!isLost&&won(status)
   current.rows.push(row);if(hasValue){current.revenue+=value;current.valueRows++;current.observed.value++}if(isWon||isLost){current.knownOutcomes++;current.observed.status++;if(isWon)current.wins++;if(isLost)current.losses++}if(product){current.products.add(product);current.observed.product++}if(date)current.observed.date++
   if(date&&(!current.lastDate||date>current.lastDate))current.lastDate=date
   if(row[mapping.municipality])current.municipality=String(row[mapping.municipality]);if(row[mapping.culture])current.culture=String(row[mapping.culture]);if(row[mapping.area])current.area=String(row[mapping.area])

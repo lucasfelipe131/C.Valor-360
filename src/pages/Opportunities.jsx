@@ -1,6 +1,6 @@
 import React,{useEffect,useMemo,useState} from 'react'
 import {ArrowRight,BarChart3,Calculator,CheckCircle2,ChevronRight,FileText,Handshake,Search,Sparkles,Target,TrendingUp} from 'lucide-react'
-import {advancePipelineItem,opportunityCacheKey,parseOpportunityCache,reconcilePipeline} from '../lib/opportunity-pipeline'
+import {advancePipelineItem,opportunityCacheKey,readOpportunityCache,writeOpportunityCache,reconcilePipeline} from '../lib/opportunity-pipeline'
 
 const stageConfig=[
  {name:'Diagnóstico',label:'Entender',hint:'Dor e impacto',progress:25,icon:Search},
@@ -14,13 +14,13 @@ const initials=name=>String(name||'Produtor').split(' ').filter(Boolean).slice(0
 
 export default function Opportunities({clients,storageScope,persistedItems=[],onPersist,onClient,onSaved}){
  const cacheKey=opportunityCacheKey(storageScope)
- const [items,setItems]=useState(()=>reconcilePipeline(clients,[...(cacheKey?parseOpportunityCache(localStorage.getItem(cacheKey)):[]),...persistedItems]))
+ const [items,setItems]=useState(()=>reconcilePipeline(clients,[...readOpportunityCache(cacheKey),...persistedItems]))
  const [activeStage,setActiveStage]=useState(stages[0])
  const [roi,setRoi]=useState({area:100,investment:180,returnPerHa:420})
  const [savingId,setSavingId]=useState('')
  const [error,setError]=useState('')
  useEffect(()=>{setItems(current=>reconcilePipeline(clients,[...current,...persistedItems]))},[clients,persistedItems])
- useEffect(()=>{if(cacheKey)localStorage.setItem(cacheKey,JSON.stringify(items))},[cacheKey,items])
+ useEffect(()=>{if(cacheKey)writeOpportunityCache(cacheKey,items)},[cacheKey,items])
  const metrics=useMemo(()=>{
   const total=items.reduce((sum,item)=>sum+Number(item.value||0),0)
   const openItems=items.filter(item=>item.stage!=='Fechado')
@@ -33,7 +33,7 @@ export default function Opportunities({clients,storageScope,persistedItems=[],on
  })),[items])
  const focus=useMemo(()=>items.filter(item=>item.stage!=='Fechado').sort((a,b)=>Number(b.value)-Number(a.value))[0],[items])
  const result=Math.max(0,(Number(roi.returnPerHa)-Number(roi.investment))*Number(roi.area))
- const ratio=Number(roi.investment)>0?(Number(roi.returnPerHa)/Number(roi.investment)).toFixed(1):'0.0'
+ const ratio=Number(roi.investment)>0?(Number(roi.returnPerHa)/Number(roi.investment)).toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1}):'0,0'
  const clientOf=id=>clients.find(client=>client.id===id)
  const advance=async item=>{
   const updated=advancePipelineItem(items,item.id)

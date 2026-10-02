@@ -59,7 +59,8 @@ export default function MultiDecisionMapPanel({data,client,opportunities=[],onSa
   const evidence=[...(Array.isArray(opportunity.evidence)?opportunity.evidence:[]),participant].slice(-30)
   const payload={
    clientId:client.id,
-   candidateKey:opportunity.candidateKey||opportunity.candidate_key||opportunity.title,
+   candidateKey:opportunity.candidateKey||opportunity.candidate_key||opportunity.evidence?.find?.(item=>item?.candidateKey)?.candidateKey||opportunity.title,
+   externalKey:opportunity.external_key||opportunity.externalKey||undefined,
    title:opportunity.title,
    category:opportunity.category||'',
    hypothesis:opportunity.hypothesis||'',

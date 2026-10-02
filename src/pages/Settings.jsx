@@ -3,7 +3,7 @@ import {
  BrainCircuit,CheckCircle2,Database,Download,KeyRound,Layers3,LoaderCircle,
  LogOut,RefreshCw,Server,ShieldCheck,Trash2,UserCog,Zap
 } from 'lucide-react'
-import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline} from '../lib/opportunity-pipeline'
+import {opportunityCacheKey,readOpportunityCache,reconcilePipeline} from '../lib/opportunity-pipeline'
 
 function displayValue(value,fallback='Não informado'){
  if(value===null||value===undefined||value==='')return fallback
@@ -62,7 +62,7 @@ export default function Settings({clients,visits,opportunities=[],currentUser,on
  useEffect(()=>{loadValStatus()},[])
 
  const backup=()=>{
-  const cached=scopedOpportunityKey?parseOpportunityCache(localStorage.getItem(scopedOpportunityKey)):[]
+  const cached=readOpportunityCache(scopedOpportunityKey)
   const payload={version:'0.4.0',exportedAt:new Date().toISOString(),clients,visits,opportunities:reconcilePipeline(clients,[...cached,...opportunities])}
   const url=URL.createObjectURL(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='valor360-backup.json';a.click();URL.revokeObjectURL(url);onNotify?.('Backup do piloto gerado com sucesso.')
  }

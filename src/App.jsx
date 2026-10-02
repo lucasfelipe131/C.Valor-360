@@ -22,18 +22,19 @@ import {normalizeText,reconcileOpportunityProjection} from './lib/profile'
 import {opportunityCacheKey} from './lib/opportunity-pipeline'
 
 const activeStorageScopeKey='valor360-active-storage-scope'
-const clearLegacyPortfolioCache=()=>{
+// Web Storage pode lançar exceção (cookies bloqueados, modo privado, cota). Nenhuma falha de cache local pode travar a validação da sessão.
+const clearLegacyPortfolioCache=()=>{try{
  for(const key of ['valor360-clients','valor360-visits','valor360-opportunities'])localStorage.removeItem(key)
  Object.keys(localStorage).filter(key=>key.startsWith('valor360-tech-')||key.startsWith('valor360-client-context:')).forEach(key=>localStorage.removeItem(key))
-}
-const clearSessionPortfolioCache=storageScope=>{
+}catch{}}
+const clearSessionPortfolioCache=storageScope=>{try{
  clearLegacyPortfolioCache()
  const effectiveScope=storageScope||sessionStorage.getItem(activeStorageScopeKey)
  const scopedOpportunityKey=opportunityCacheKey(effectiveScope);if(scopedOpportunityKey)localStorage.removeItem(scopedOpportunityKey)
  Object.keys(sessionStorage).filter(key=>key.startsWith('valor360-tech-')).forEach(key=>sessionStorage.removeItem(key))
  sessionStorage.removeItem(activeStorageScopeKey)
-}
-const rememberStorageScope=user=>{if(user?.storageScope)sessionStorage.setItem(activeStorageScopeKey,user.storageScope)}
+}catch{}}
+const rememberStorageScope=user=>{try{if(user?.storageScope)sessionStorage.setItem(activeStorageScopeKey,user.storageScope)}catch{}}
 
 const resetPageViewport=()=>{
  window.scrollTo({top:0,left:0,behavior:'auto'})
