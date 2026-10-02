@@ -192,17 +192,19 @@ test('Hub migration repeat keeps ledger and audit byte-equivalent',async()=>{
 // The same suite is executed against disposable PostgreSQL 16 by the CI gate.
 // Only that run can start the real application against the test database.
 if(process.env.VAL_HUB_TEST_DATABASE_URL)test('Hub real HTTP: signed Manual webhook, session ACL, spoofed owner, quarantine, liveness',async()=>{
+ const httpTenant='00000000-0000-4000-8000-000000000001'
+ for(const id of [ownerId,otherOwner])await db.query("INSERT INTO memberships(tenant_id,user_id,role) VALUES($1,$2,'consultant') ON CONFLICT (tenant_id,user_id) DO NOTHING",[httpTenant,id])
  const listener=createServer();await new Promise(resolve=>listener.listen(0,'127.0.0.1',resolve))
  const port=listener.address().port;await new Promise(resolve=>listener.close(resolve))
- const config={adminEmail:`hub-admin-${randomUUID()}@example.test`,adminPassword:'Synthetic-hub-test-42!',sessionSecret:'synthetic-hub-session-not-a-deployed-secret-42',defaultTenantId:tenantId,sessionTtlSeconds:3600}
+ const config={adminEmail:`hub-admin-${randomUUID()}@example.test`,adminPassword:'Synthetic-hub-test-42!',sessionSecret:'synthetic-hub-session-not-a-deployed-secret-42',defaultTenantId:httpTenant,sessionTtlSeconds:3600}
  const signingSecret='synthetic-hub-webhook-only'
  // Prevent the legacy bootstrap recovery from claiming deliberately synthetic users.
  await db.query("UPDATE users SET password_hash='synthetic-no-login' WHERE id=ANY($1::uuid[])",[[ownerId,otherOwner]])
- const child=spawn(process.execPath,['server/start.js'],{cwd:new URL('..',import.meta.url),env:{...process.env,PORT:String(port),DATABASE_URL:process.env.VAL_HUB_TEST_DATABASE_URL,PG_SSL:'false',AUTO_MIGRATE:'false',VAL_DEMO_MODE:'false',OPENAI_API_KEY:'',VAL_DEFAULT_TENANT_ID:tenantId,VAL_ADMIN_EMAIL:config.adminEmail,VAL_ADMIN_PASSWORD:config.adminPassword,VAL_SESSION_SECRET:config.sessionSecret,VAL_MANUAL_WEBHOOK_SECRET:signingSecret,VAL_INTEGRATION_TOKEN:'synthetic-hub-token-only'},stdio:['ignore','pipe','pipe']})
- const auth=createAuth(config),cookie=id=>`valor360_session=${auth.issue({id,email:`${id}@example.test`,tenantId,role:'consultant'})}`
+ const child=spawn(process.execPath,['server/start.js'],{cwd:new URL('..',import.meta.url),env:{...process.env,PORT:String(port),DATABASE_URL:process.env.VAL_HUB_TEST_DATABASE_URL,PG_SSL:'false',AUTO_MIGRATE:'false',VAL_DEMO_MODE:'false',OPENAI_API_KEY:'',VAL_DEFAULT_TENANT_ID:httpTenant,VAL_ADMIN_EMAIL:config.adminEmail,VAL_ADMIN_PASSWORD:config.adminPassword,VAL_SESSION_SECRET:config.sessionSecret,VAL_MANUAL_WEBHOOK_SECRET:signingSecret,VAL_INTEGRATION_TOKEN:'synthetic-hub-token-only'},stdio:['ignore','pipe','pipe']})
+ const auth=createAuth(config),cookie=id=>`valor360_session=${auth.issue({id,email:`${id}@example.test`,tenantId:httpTenant,role:'consultant'})}`
  const call=(path,options={})=>fetch(`http://127.0.0.1:${port}${path}`,options)
  try{
-  await new Promise((resolve,reject)=>{let output='';const timer=setTimeout(()=>reject(new Error('Hub HTTP startup timeout')),20000);child.stdout.on('data',chunk=>{output+=chunk;if(output.includes('VALOR 360 disponível na porta')){clearTimeout(timer);resolve()}});child.stderr.on('data',()=>{});child.once('exit',code=>{clearTimeout(timer);reject(new Error(`Hub HTTP exit ${code}`))})})
+  await new Promise((resolve,reject)=>{let output='',diagnostic='';const timer=setTimeout(()=>reject(new Error('Hub HTTP startup timeout')),20000);child.stdout.on('data',chunk=>{output+=chunk;if(output.includes('VALOR 360 disponível na porta')){clearTimeout(timer);resolve()}});child.stderr.on('data',chunk=>{diagnostic+=String(chunk).slice(0,1000)});child.once('exit',code=>{clearTimeout(timer);reject(new Error(`Hub HTTP exit ${code}: ${diagnostic.slice(0,1000)}`))})})
   assert.equal((await call('/api/integration-hub/overview')).status,401)
   const event=input(),{createHmac}=await import('node:crypto'),raw=JSON.stringify(event)
   const headers={'content-type':'application/json','x-valor-signature':`sha256=${createHmac('sha256',signingSecret).update(raw).digest('hex')}`}
@@ -214,7 +216,7 @@ if(process.env.VAL_HUB_TEST_DATABASE_URL)test('Hub real HTTP: signed Manual webh
   const own=await call(privatePath,{headers:{cookie:cookie(ownerId)}});assert.equal(own.status,200);assert.match(own.headers.get('cache-control'),/no-store/)
   const overview=await (await call(`/api/integration-hub/overview?ownerId=${ownerId}`,{headers:{cookie:cookie(otherOwner)}})).json()
   assert.ok(overview.events.every(x=>x.id!==result.eventId),'query owner cannot override session')
-  await db.query("UPDATE memberships SET role='bi_viewer' WHERE tenant_id=$1 AND user_id=$2",[tenantId,otherOwner])
+  await db.query("UPDATE memberships SET role='bi_viewer' WHERE tenant_id=$1 AND user_id=$2",[httpTenant,otherOwner])
   assert.equal((await call('/api/integration-hub/overview',{headers:{cookie:cookie(otherOwner)}})).status,403)
   const tampered=await call('/api/v1/integrations/manual/events',{method:'POST',headers,body:raw+' '});assert.equal(tampered.status,401)
   assert.equal((await call('/live')).status,200)
