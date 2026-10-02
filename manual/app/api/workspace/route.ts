@@ -108,6 +108,7 @@ export async function PUT(request: NextRequest) {
       body.soilAnalyses,
       valor360OwnerId,
       request.headers.get("x-request-id") ?? "",
+      result.rows[0].updatedAt,
     );
     const integrationNeedsAttention = !integration.configured ||
       integration.failed > 0 ||

@@ -16,6 +16,7 @@ const modules=Object.freeze([
  {page:'visits',label:'Visitas',pattern:/\b(?:visitas|agenda|compromissos)\b/},
  {page:'opportunities',label:'Oportunidades',pattern:/\b(?:oportunidades|pipeline|negocios|propostas)\b/},
  {page:'reports',label:'Relatórios',pattern:/\b(?:relatorios|indicadores)\b/},
+ {page:'integrations',label:'Hub / Integrações',pattern:/\b(?:hub de dados|hub de integracoes|integracoes|conectores)\b/},
  {page:'datahub',label:'Base Inteligente',pattern:/\b(?:base inteligente|data hub|datahub|importacao)\b/},
  {page:'agro',tool:'soil',manualPage:'solo',label:'Análise de solo',pattern:/\b(?:analise de solo|fertilidade|laudo de solo)\b/},
  {page:'agro',tool:'mapping',manualPage:'produtores',label:'Mapeamento',pattern:/\b(?:mapeamento|mapa de area|mapa da propriedade|mapa da fazenda)\b/},

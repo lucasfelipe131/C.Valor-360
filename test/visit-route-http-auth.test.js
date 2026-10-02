@@ -67,7 +67,7 @@ test('rotas, demonstração e propriedade recusam acesso sem sessão autenticada
    const denied=await fetch(base+path,{method,headers:{'Content-Type':'application/json'},...(method!=='GET'?{body:'{}'}:{})})
    assert.equal(denied.status,401,`${method} ${path}`)
   }
-  for(const path of ['/api/visit-routes/properties','/api/management/overview?start=2026-09-01&end=2026-09-12','/api/admin/management-units'])assert.equal((await fetch(base+path)).status,401,path)
+  for(const path of ['/api/integration-hub/overview','/api/integration-hub/events/00000000-0000-4000-8000-000000000001','/api/visit-routes/properties','/api/management/overview?start=2026-09-01&end=2026-09-12','/api/admin/management-units'])assert.equal((await fetch(base+path)).status,401,path)
   const live=await fetch(`${base}/live`);assert.equal(live.status,200)
  }finally{await stop(child);await rm(dataRoot,{recursive:true,force:true})}
 })

@@ -56,14 +56,16 @@ export async function POST(request: NextRequest) {
     );
     let producers: unknown[] = [];
     let soilAnalyses: unknown[] = [];
+    let workspaceObservedAt: unknown = null;
     try {
       const snapshot = await pool.query(
-        `SELECT producers, soil_analyses AS "soilAnalyses"
+        `SELECT producers, soil_analyses AS "soilAnalyses", updated_at AS "updatedAt"
          FROM app_workspace_data
          WHERE tenant_id = $1 AND workspace_id = $2
          LIMIT 1`,
         [session.tenantId, workspace],
       );
+      workspaceObservedAt = snapshot.rows[0]?.updatedAt ?? null;
       producers = Array.isArray(snapshot.rows[0]?.producers)
         ? snapshot.rows[0].producers
         : [];
@@ -80,6 +82,7 @@ export async function POST(request: NextRequest) {
       soilAnalyses,
       valor360OwnerId,
       request.headers.get("x-request-id") ?? "",
+      workspaceObservedAt,
     );
     const recordResults = [];
     const concurrency = 6;

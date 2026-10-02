@@ -30,6 +30,7 @@ const Reports=lazy(()=>import('./pages/Reports'))
 const Management=lazy(()=>import('./pages/Management'))
 const Settings=lazy(()=>import('./pages/Settings'))
 const DataHub=lazy(()=>import('./pages/DataHub'))
+const IntegrationHub=lazy(()=>import('./pages/IntegrationHub'))
 const Admin=lazy(()=>import('./pages/Admin'))
 const PublicSurvey=lazy(()=>import('./pages/PublicSurvey'))
 
@@ -86,6 +87,7 @@ class RouteBoundary extends React.Component{
 const meta={
  dashboard:['VAL','Seu copiloto comercial e agronômico para o que importa agora'],
  clients:['Clientes','Conheça o produtor antes de oferecer uma solução'],
+ integrations:['Hub / Integrações','Conectores, sincronizações e rastreabilidade da sua carteira'],
  datahub:['Base Inteligente','Importe históricos e organize contexto verificável da carteira'],
  client360:['Cliente 360','Perfil, relacionamento, contexto técnico e oportunidades'],
  visits:['Visitas','Planejamento, roteiro e próximos compromissos'],
@@ -231,7 +233,7 @@ export default function App(){
   }
   // Global modules leave the producer context. Keep stored threads available in
   // history, but detach the previous producer and start a fresh general thread.
-  if(next==='dashboard'||(Boolean(selected?.id||copilotClientRef.current)&&['clients','datahub','visits','opportunities','reports','management','settings','admin','questionnaire'].includes(next))){
+  if(next==='dashboard'||(Boolean(selected?.id||copilotClientRef.current)&&['clients','datahub','integrations','visits','opportunities','reports','management','settings','admin','questionnaire'].includes(next))){
    setSelected(null);setProducerPropertyId('');setCopilotPageContext(null);setPrepareVisitId('')
    setAgroLaunch(createEmptyAgroLaunch());copilotClientRef.current=''
    setCopilotOpen(false)
@@ -403,6 +405,7 @@ export default function App(){
     <Suspense fallback={<RouteFallback/>}>
     {page==='dashboard'&&<Dashboard clients={clientList} visits={visits} opportunities={opportunities} currentUser={currentUser} setPage={navigate} onClient={openClient} onPrepare={prepareClient} onRefreshPortfolio={refreshPortfolio} onOpenCopilot={openCopilot} onOpenProperty={(client,propertyId)=>openClient(client,{propertyId})}/>}
     {page==='clients'&&<Clients storageScope={copilotOwnerScope} clients={clientList} opportunities={opportunities} onClient={openClient} onNew={()=>navigate('questionnaire')}/>}
+    {page==='integrations'&&<IntegrationHub/>}
     {page==='datahub'&&<DataHub clients={clientList} onImport={importClients} onProfileImport={addClients} onUpdate={updateClient} onDelete={deleteClient} onNotify={notify}/>}
     {page==='client360'&&selected&&<Client360
      key={selected.id} client={selected} initialPropertyId={producerPropertyId} onPropertyChange={setProducerPropertyId} activeTab={producerTab} onTabChange={setProducerTab} visits={visits} opportunities={opportunities}
