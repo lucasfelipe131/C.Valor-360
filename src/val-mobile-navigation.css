@@ -96,3 +96,21 @@
  body.val-mobile-keyboard-open .val-fullscreen-page .val-conversation-opt-in{display:none}
  body.val-mobile-keyboard-open .val-fullscreen-page.p360-copilot.is-compact{display:none}
 }
+
+/* Voice follows the page with its own visible producer and microphone controls. */
+.app-shell .val-persistent-copilot.p360-copilot.is-compact:has(.p360-copilot-rail.has-voice){
+ inset:auto 16px 18px auto;width:min(390px,calc(100vw - 24px));height:66px;min-height:0;border-radius:20px
+}
+.p360-copilot-rail.has-voice{flex-direction:row;gap:4px;padding:8px}
+.p360-copilot-rail.has-voice .p360-copilot-rail-brand,
+.p360-copilot-rail.has-voice .p360-copilot-rail-client,
+.p360-copilot-rail.has-voice button[aria-label="Retomar conversa com a VAL"]{display:none}
+.p360-copilot-rail.has-voice button{flex:0 0 40px;width:40px;height:44px}
+.p360-copilot-rail.has-voice .p360-copilot-rail-status{margin:0;flex:0 0 36px;font-size:8px;gap:2px}
+.p360-copilot-rail-scope{display:flex;flex:1;min-width:0;flex-direction:column;color:#155947;font-size:11px}
+.p360-copilot-rail-scope small{font-size:9px;color:#59796e}
+.p360-copilot-rail-scope b{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+@media(max-width:1050px){
+ .app-shell .val-persistent-copilot.p360-copilot.is-compact:has(.p360-copilot-rail.has-voice){max-width:calc(100vw - 24px);width:360px!important;inset:auto 12px calc(var(--val-mobile-nav-space,0px) + 12px) auto!important}
+ body.val-mobile-keyboard-open .val-persistent-copilot.p360-copilot.is-compact:has(.p360-copilot-rail.has-voice){display:block}
+}

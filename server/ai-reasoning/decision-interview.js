@@ -1,3 +1,5 @@
+import {sessionInputEvidence} from './session-input.js'
+
 export const decisionInterviewVersion='val.decision_interview.v1'
 export const reasoningConfidenceVersion='val.reasoning_confidence.v1'
 
@@ -113,12 +115,14 @@ export function buildReasoningConfidence({context={},result={}}={}){
 
 export function buildDecisionInterview({intent='ASK_CLIENT',message='',context={},result={}}={}){
  const corpus=evidenceCorpus(context,message,intent)
+ const answeredFields=new Set(sessionInputEvidence(context,message).map(item=>item.field))
  const confidence=buildReasoningConfidence({context,result})
  // Visit preparation already contains questions for the producer. Do not replace
  // that useful preparation with a generic interview of the consultant.
  const base=intent==='PREPARE_VISIT'&&list(result.facts_used).some(item=>String(item.id).startsWith('visit-preparation:'))?[]:questionLibrary[intent]||[]
  const candidates=(base.length?base:fallbackCandidates(result)).filter(item=>{
   if(!item.question)return false
+  if(answeredFields.has(item.field))return false
   if(item.known?.test(corpus))return false
   const normalizedQuestion=normalized(item.question)
   return !conversationTurns(context).some(turn=>{

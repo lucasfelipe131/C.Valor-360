@@ -1,4 +1,5 @@
 import {routeSessionCommand} from './session-command-router.js'
+import {workspaceGuide} from './workspace-guide.js'
 
 export const globalIntentRouterVersion='val.global_intent_router.v1'
 
@@ -17,6 +18,15 @@ const modules=Object.freeze([
  {page:'opportunities',label:'Oportunidades',pattern:/\b(?:oportunidades|pipeline|negocios|propostas)\b/},
  {page:'reports',label:'Relatórios',pattern:/\b(?:relatorios|indicadores)\b/},
  {page:'datahub',label:'Base Inteligente',pattern:/\b(?:base inteligente|data hub|datahub|importacao)\b/},
+ {page:'questionnaire',label:'Coletar preferências',pattern:/\b(?:questionario|coletar preferencias)\b/},
+ {page:'settings',label:'Preferências',pattern:/\b(?:preferencias|configuracoes)\b/},
+ {page:'management',label:'Visão gerencial',pattern:/\b(?:visao gerencial|gestao da unidade)\b/},
+ {page:'admin',label:'Administração',pattern:/\b(?:administracao|gerenciar acessos)\b/},
+ {page:'val',label:'Análise avançada',pattern:/\b(?:analise avancada)\b/},
+ {page:'agro',tool:'manual',label:'Manual do Agrônomo',pattern:/\b(?:manual do agronomo)\b/},
+ {page:'agro',tool:'biblioteca',label:'Documentos',pattern:/\b(?:documentos|biblioteca)\b/},
+ {page:'agro',tool:'bulas',label:'Bulas e registros',pattern:/\b(?:bulas e registros)\b/},
+ {page:'agro',tool:'clima',label:'Clima e mercado',pattern:/\b(?:clima e mercado)\b/},
  {page:'agro',tool:'soil',manualPage:'solo',label:'Análise de solo',pattern:/\b(?:analise de solo|fertilidade|laudo de solo)\b/},
  {page:'agro',tool:'mapping',manualPage:'produtores',label:'Mapeamento',pattern:/\b(?:mapeamento|mapa de area|mapa da propriedade|mapa da fazenda)\b/},
  {page:'agro',tool:'mapping',manualPage:'produtores',label:'Propriedade e talhões',pattern:/\b(?:fazenda|propriedade|talhoes|talhao)\b/},
@@ -30,18 +40,20 @@ const action=({type,page='',label='',client=null,tool='',manualPage='',diagnosis
  contract_version:'val.workspace_action.v1',type,page,label,client_id:client?.id||null,client_name:client?.name||null,tool:tool||null,manual_page:manualPage||null,diagnosis_mode:diagnosisMode||null,requires_confirmation:Boolean(requiresConfirmation),persistence:'NONE'
 })
 
-const result=({intent='ASK',reason='GENERAL_ASK',direct=false,workspaceAction=null,summary='',requiresConfirmation=false}={})=>Object.freeze({
- contract_version:globalIntentRouterVersion,intent,reason,direct:Boolean(direct),requires_confirmation:Boolean(requiresConfirmation),workspace_action:workspaceAction,summary:clean(summary,500)
+const result=({intent='ASK',reason='GENERAL_ASK',direct=false,workspaceAction=null,workspaceGuide=null,summary='',requiresConfirmation=false}={})=>Object.freeze({
+ contract_version:globalIntentRouterVersion,intent,reason,direct:Boolean(direct),requires_confirmation:Boolean(requiresConfirmation),workspace_action:workspaceAction,...(workspaceGuide?{workspace_guide:workspaceGuide}:{}),summary:clean(summary,800)
 })
 
 /**
  * Deterministic router for UI/workspace operations. It never performs writes;
  * mutation intents remain confirmation-gated and are handed to canonical modules.
  */
-export function routeGlobalIntent({message='',client=null,workspaceContext=null}={}){
+export function routeGlobalIntent({message='',client=null,workspaceContext=null,role='consultant'}={}){
  const source=fold(message)
  const authorizedClient=clientRef(client)
  if(!source)return result()
+ const guide=workspaceGuide({message,workspaceContext,role})
+ if(guide)return result({intent:'EXPLAIN',reason:'WORKSPACE_GUIDE',direct:true,workspaceGuide:guide,summary:guide.summary})
  // "vai" e "va" so sao verbos de abrir como movimento ("vai para oportunidades"); como auxiliar
  // ("vai chover", "vai plantar", "vai ter geada") a frase e uma pergunta, nao navegacao.
  const openVerb=/\b(?:abre|abra|abrir|navega|navegue|mostra|mostre|mostrar|leva|ir para|volta para|volte para)\b|\b(?:vai|va)\s+(?:para|pra|pro|ao|a|na|no|em)\b/.test(source)
@@ -51,7 +63,8 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
  // com verbo de abrir ou de busca: "mostra o perfil dele" responde o perfil, "busca a cotacao da
  // soja" consulta o mercado. A resposta e do raciocinio ou da fonte, nao de uma troca de tela.
  const dataQuestion=/\?\s*$/.test(source)||/\b(?:perfil|cotacao|preco|clima|chover|geada|granizo|bula|quanto|quantos|quantas|qual|quais|como|quando|onde|por que|porque)\b/.test(source)
- const factualLookup=factualImperative||dataQuestion||/\b(?:ultima|ultimo|mais recente|principal)\b.*\b(?:visita|compra|objecao|compromisso)\b|\b(?:visita|compra|objecao|compromisso)\b(?:\s+confirmad[oa])?\s+(?:ultima|ultimo|mais recente|principal)\b(?:\s+(?:dele|dela))?|\b(?:quanto|qual|quais)\b.*\b(?:comprou|cultura|safra|area)\b/.test(source)
+ const explicitModuleOpen=/^(?:val[, ]+)?(?:(?:pode|poderia)\s+)?(?:abre|abra|abrir|mostre|mostra)\s+(?:(?:o|a|os|as)\s+)?(?:(?:tela|guia|aba)\s+(?:de\s+)?)?(?:inicio|carteira|clientes|produtores|visitas|agenda|oportunidades|relatorios|base inteligente|preferencias|configuracoes|questionario|coletar preferencias|visao gerencial|administracao|analise avancada|manual do agronomo|documentos|biblioteca|bulas e registros|clima e mercado|analise de solo|calculadoras|inteligencia agronomica)[.!?]*$/.test(source)
+ const factualLookup=!explicitModuleOpen&&(factualImperative||dataQuestion||/\b(?:ultima|ultimo|mais recente|principal)\b.*\b(?:visita|compra|objecao|compromisso)\b|\b(?:visita|compra|objecao|compromisso)\b(?:\s+confirmad[oa])?\s+(?:ultima|ultimo|mais recente|principal)\b(?:\s+(?:dele|dela))?|\b(?:quanto|qual|quais)\b.*\b(?:comprou|cultura|safra|area)\b/.test(source))
  // O roteador de sessao ja sabe QUAL comando e ("Por que?" -> EXPLAIN). Colapsar tudo em FOLLOW_UP
  // jogava fora essa classificacao, e a regra de EXPLAIN mais abaixo nunca era alcancada. O enum do
  // GLOBAL_INTENT_ROUTER tem EXPLAIN e COMPARE justamente para o pedido chegar nomeado.
@@ -109,6 +122,7 @@ export function routeGlobalIntent({message='',client=null,workspaceContext=null}
  if(!factualLookup&&openVerb){
   const module=modules.find(candidate=>candidate.pattern.test(source))
   if(module){
+   if((module.page==='admin'&&role!=='admin')||(module.page==='management'&&!['admin','manager','bi_viewer'].includes(role)))return result({intent:'EXPLAIN',reason:'WORKSPACE_GUIDE',direct:true,workspaceGuide:{page:module.page,label:'Acesso restrito'},summary:'Seu acesso não permite abrir essa área. Use uma das guias disponíveis no seu menu.'})
    const workspaceAction=action({type:'NAVIGATE',...module,client:['agro','visits','opportunities','client360'].includes(module.page)?authorizedClient:null})
    return result({intent:'NAVIGATE',reason:'NAVIGATE_CANONICAL_MODULE',direct:true,workspaceAction,summary:`Abrindo ${module.label}.`})
   }

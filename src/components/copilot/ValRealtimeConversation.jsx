@@ -93,7 +93,7 @@ export function ValRealtimeConversationStage({
 export default function ValRealtimeConversation({
  disabled=false,responseText='',responseKey='',processing=false,onTranscript,onError,onStateChange,onMetrics,onStart,onExit,
  onFallbackPushToTalk,onFallbackText,realtimeContext,onRealtimeUserTranscript,onRealtimeAssistantTranscript,onRealtimeToolCall,
- onRealtimeMemoryReview,onRealtimeContextSync,retryAfterSeconds=0,errorMessage='',canRetry=true,liveTranscript='',className='',autoStartKey=''
+ onRealtimeMemoryReview,onRealtimeContextSync,onControlsChange,retryAfterSeconds=0,errorMessage='',canRetry=true,liveTranscript='',className='',autoStartKey=''
 }){
  const conversation=useNaturalRealtimeVoice({disabled,clientId:realtimeContext?.clientId||'',conversationId:realtimeContext?.conversationId||'',contextEpoch:realtimeContext?.contextEpoch??0,activeContext:realtimeContext?.activeContext||null,onUserTranscript:onRealtimeUserTranscript,onAssistantTranscript:onRealtimeAssistantTranscript,onToolCall:onRealtimeToolCall,onMemoryReview:onRealtimeMemoryReview,onContextSync:onRealtimeContextSync,onError,onStateChange,onMetrics})
  const {state}=conversation
@@ -102,6 +102,7 @@ export default function ValRealtimeConversation({
   return conversation.start()
  }
  const leave=async()=>{await conversation.exit();onExit?.()}
+ useEffect(()=>{onControlsChange?.({pause:conversation.pause,resume:conversation.resume,exit:leave});return()=>onControlsChange?.(null)},[conversation.pause,conversation.resume,conversation.exit,onExit,onControlsChange])
  const switchTo=callback=>async()=>{await conversation.exit();onExit?.();callback?.()}
  const inactive=state.status===REALTIME_CONVERSATION_STATES.IDLE
  // Quem tocou em "Falar com a VAL" já disse o que quer: a conversa começa

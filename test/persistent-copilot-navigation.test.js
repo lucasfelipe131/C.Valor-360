@@ -310,19 +310,90 @@ for(const mobile of [false,true])test(`home detaches the producer and request co
  }finally{await app.dispose()}
 })
 
-test('returning home stops the old voice session and discards its late transcripts',async()=>{
+test('returning home keeps active voice and its producer separate from the page context',async()=>{
  const app=await mountApp()
  try{
   await app.open();await app.click('Iniciar modo conversa por voz')
   const old=app.peers[0]
   await app.navigate('dashboard')
+  assert.equal(app.streams[0].track.stopped,false)
+  assert.equal(old.connectionState,'connected')
+  assert.equal(app.stub('Topbar').props.client,null,'home has no implicit producer')
+  assert.equal(app.renderer.root.findByType('select').props.value,clients[0].id,'the voice conversation keeps its explicitly selected producer')
+  assert.match(app.panel().props.className,/is-compact/)
+  assert.ok(app.button('Pausar voz no painel compacto'))
+  await act(async()=>{old.dc.emit({type:'conversation.item.input_audio_transcription.completed',item_id:'on-home',transcript:'Continuamos a conversa na tela inicial'});await flush()})
+  assert.match(JSON.stringify(sessionStorage),/Continuamos a conversa na tela inicial/)
+  assert.equal(app.peers.length,1,'navigation does not create another provider session')
+  await app.click('Encerrar voz no painel compacto')
   assert.equal(app.streams[0].track.stopped,true)
-  assert.equal(old.connectionState,'closed')
-  await act(async()=>{old.dc.emit({type:'conversation.item.input_audio_transcription.completed',item_id:'late-home',transcript:'OLD_HOME_PRODUCER_TRANSCRIPT'});await flush()})
-  await act(async()=>{app.stub('Topbar').props.onOpenVal();await flush()})
-  assert.equal(app.renderer.root.findByType('select').props.value,'')
-  assert.doesNotMatch(JSON.stringify(sessionStorage),/OLD_HOME_PRODUCER_TRANSCRIPT/)
-  assert.equal(app.peers.length,1,'home does not start another microphone session automatically')
+  await act(async()=>{old.dc.emit({type:'conversation.item.input_audio_transcription.completed',item_id:'late',transcript:'AFTER_EXIT_MUST_NOT_APPEAR'});await flush()})
+  assert.doesNotMatch(JSON.stringify(sessionStorage),/AFTER_EXIT_MUST_NOT_APPEAR/)
+ }finally{await app.dispose()}
+})
+
+test('a spoken navigation request opens reports and completes on the same voice session',async()=>{
+ const app=await mountApp({apiResponse:(path,request)=>{
+  if(path!=='/api/val/chat')return null
+  const reply=replyFor(request,{client:clients[0]})
+  reply.responseScope.contextEpoch=0;reply.advice.ai_reasoning.premises.context_scope.context_epoch=0
+  reply.advice.answer='Abrindo Relatórios.';reply.advice.ai_reasoning.recommended_strategy.reading='Abrindo Relatórios.'
+  reply.advice.ai_reasoning.reasoning_id='navigation-answer'
+  reply.workspaceAction={contract_version:'val.workspace_action.v1',type:'NAVIGATE',page:'reports'}
+  return json(reply)
+ }})
+ try{
+  await app.open();await app.click('Iniciar modo conversa por voz')
+  const peer=app.peers[0]
+  await act(async()=>{
+   await peer.dc.emit({type:'conversation.item.input_audio_transcription.completed',item_id:'navigate-input',transcript:'Abra Relatórios'})
+   await peer.dc.emit({type:'response.created',response:{id:'navigation-tool'}})
+   await peer.dc.emit({type:'response.function_call_arguments.done',response_id:'navigation-tool',call_id:'navigate-call',name:'val_governed_tool',arguments:JSON.stringify({request:'Abra Relatórios',reason:'WORKSPACE'})})
+   await peer.dc.emit({type:'response.done',response:{id:'navigation-tool',status:'completed',output:[{type:'function_call'}]}})
+   await flush()
+  })
+  assert.equal(app.stub('Topbar').props.page,'reports')
+  assert.equal(app.peers.length,1);assert.equal(peer.connectionState,'connected')
+  assert.equal(app.voice().props['data-microphone-active'],'true')
+  const output=peer.dc.sent.find(event=>event.item?.type==='function_call_output')
+  assert.ok(output);assert.equal(JSON.parse(output.item.output).result,'Abrindo Relatórios.')
+  assert.equal(peer.dc.sent.filter(event=>event.type==='response.create').length,1)
+ }finally{await app.dispose()}
+})
+
+for(const mobile of [false,true])test(`voice follows global pages, keeps pause and sends the current screen to help (${mobile?'mobile':'desktop'})`,async()=>{
+ const app=await mountApp({mobile,apiResponse:(path,request)=>{
+  if(path!=='/api/val/chat')return null
+  const reply=replyFor(request,{client:clients[0]})
+  reply.responseScope.contextEpoch=0
+  reply.advice.ai_reasoning.premises.context_scope.context_epoch=0
+  return json(reply)
+ }})
+ try{
+  await app.open()
+  if(mobile)await act(async()=>{app.stub('Topbar').props.onOpenVal();await flush()})
+  await app.click('Iniciar modo conversa por voz')
+  const first=app.peers[0]
+  for(const target of ['dashboard','clients','datahub','visits','opportunities','reports','settings','questionnaire','val',{page:'agro',tool:'calculadoras'}]){
+   await app.navigate(target)
+   assert.equal(first.connectionState,'connected')
+   assert.equal(app.voice().props['data-microphone-active'],'true')
+   assert.equal(app.renderer.root.findAll(node=>node.type==='select'&&node.props.value===clients[0].id).length>=1,true)
+   assert.match(app.panel().props.className,/is-compact/)
+  }
+  assert.equal(app.peers.length,1);assert.equal(app.streams.length,1)
+  await app.click('Pausar voz no painel compacto')
+  await app.navigate('reports')
+  assert.equal(app.streams[0].track.enabled,false)
+  await app.click('Retomar voz no painel compacto')
+  assert.equal(app.streams[0].track.enabled,true)
+  await app.click('Ajuda da VAL nesta tela')
+  const request=app.requests.filter(r=>r.path==='/api/val/chat').at(-1).payload
+  assert.equal(request.message,'Como uso esta tela?')
+  assert.equal(request.workspaceContext.current_module,'reports')
+  assert.equal(request.clientId,clients[0].id)
+  assert.equal(request.conversationId,app.requests.find(r=>r.path==='/api/v1/realtime-voice/sessions').payload.conversationId)
+  assert.equal(app.peers.length,1)
  }finally{await app.dispose()}
 })
 
