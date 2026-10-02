@@ -278,6 +278,18 @@ export function generalTopicDiagnostic(decision){
 // also cover the requested subject and cannot silently assume a crop.
 export function curatedAnswerCoverageDecision(question,item){
  const requested=baseTokens(stripMessagePreamble(question)||question)
+ // Mentioning a term in an explanation does not define that term. A request
+ // for a definition must identify the subject in the curated title/aliases,
+ // not merely find it incidentally inside the statement of another concept.
+ const definition=/^(?:o que (?:e|sao|significa)|defina)\b/.test(normalizeSearchText(stripMessagePreamble(question)||question))
+ if(definition){
+  const subject=[...requested].filter(word=>!exemptWordForm(word))
+  const namedSubject=[item.title,...(item.triggers||[])].some(value=>{
+   const words=baseTokens(value)
+   return subject.length>0&&subject.every(word=>words.has(word))
+  })
+  if(!namedSubject)return {accepted:false,reason:'DEFINITION_SUBJECT_NOT_IDENTIFIED'}
+ }
  const exactSubject=[item.title,...(item.triggers||[])].some(value=>{
   const words=baseTokens(`${value} ${item.statement}`)
   return requested.size>0&&[...requested].every(word=>words.has(word))

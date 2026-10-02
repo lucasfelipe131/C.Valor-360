@@ -49,6 +49,17 @@ function suppliedScenarioArithmetic(s){
  const revenue=amounts.filter(m=>label(m,/\breceita\s*(?:de|e|:)?\s*$/))
  const costs=amounts.filter(m=>label(m,/\bcustos?\s*(?:(?:total|fixo|variavel)\s*)?(?:de|e|:)?\s*$/))
  const done=(key,input,output,formula,summary)=>({contract_version:'val.supplied_dimensional_arithmetic.v1',calculator:key,status:'EXECUTED',input,output:{...output,formula},summary,source_ref:`calculator:${key}`})
+ // Explicit physical stock minus an undelivered reservation is a scenario,
+ // never a live balance. Reject additional/ambiguous quantities or deliveries.
+ if(!amounts.length&&/\b(?:livre|disponivel)\b/.test(s)&&/\bsem outras reservas\b/.test(s)){
+  const physical=read(s,String.raw`${number}\s*(?:sacas?|sc)\s+fisicas?\b`)
+  const reserved=read(s,String.raw`contrato\s+de\s+${number}\s*(?:sacas?|sc)\s+ainda\s+nao\s+entregue\b`)
+  const quantities=[...s.matchAll(new RegExp(String.raw`${number}\s*(?:sacas?|sc)\b`,'g'))]
+  if(finite(physical)&&finite(reserved)&&quantities.length===2){
+   const free=physical-reserved
+   return done('available_quantity_scenario',{physical_sc:physical,undelivered_reserved_sc:reserved},{free_sc:free},'physical_sc - undelivered_reserved_sc',`Saldo livre no cenário informado: ${fmt(physical)} − ${fmt(reserved)} = ${fmt(free)} sacas, considerando a reserva ainda não entregue e a ausência declarada de outras reservas. ${free<0?'As reservas superam o estoque informado. ':''}Esta conta não confirma o saldo real nem autoriza uma venda.`)
+  }
+ }
  if(/\b(?:receita|faturamento)\b/.test(s)&&finite(qty)&&qty>=0&&amounts.length===1&&/sc|saca/.test(amounts[0].unit)&&!areas.length&&!rates.length){
   const price=amounts[0].value,result=qty*price
   return done('quantity_revenue',{quantity_sc:qty,price_brl_sc:price},{revenue_brl:result},'quantity_sc * price_brl_sc',`Receita estimada no cenário: ${fmt(qty)} sacas × R$ ${fmt(price)}/saca = R$ ${fmt(result)}. Não confirma venda ou recebimento.`)

@@ -194,11 +194,12 @@ const strategyInstruction=/^(?:nao\s+)?(?:abra|acompanhe|acompanhar|adapte|adapt
 const genericAssertionState=/\b(?:ele|ela|produtor\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:e|esta|tem|possui|carrega|mantem|demonstra|desvia|cultiva|quer|pretende|vai|parece|opera)\b/
 const genericAssertionPast=/\b(?:ele|ela|produtor\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:plantou|colheu|vendeu|comprou|pagou|arrendou|contratou|assinou|reclamou|atrasou|quitou|renegociou|aplicou|entregou|recebeu|fechou|perdeu|ganhou|investiu|financiou|antecipou|travou|fixou|deixou|prometeu|aceitou|recusou|cancelou)\b[^.!?;]{0,60}?\b(?:soja|milho|trigo|algodao|cafe|graos?|producao|safra|lavoura|talhao|hectares?|contratos?|propostas?|pedido|parcelas?|custeio|divida|credito|financiamento|emprestimo|banco|fatura|boleto|saldo|visita|compromisso|reuniao|atendimento|insumos?|fertilizante|defensivo|semente|adubo|maquina|trator|arrendamento|concorrente|desconto|pagamento|assinatura)\b/
 const genericAssertionPastBare=/\b(?:ele|ela|produtor\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:plantou|colheu|vendeu|comprou|pagou|arrendou|contratou|assinou|reclamou|atrasou|quitou|renegociou|aplicou|entregou|recebeu|fechou|perdeu|ganhou|investiu|financiou|antecipou|travou|fixou|deixou|prometeu|aceitou|recusou|cancelou)\b/
+const genericPresentTransaction=/\b(?:ele|ela|produtor\w*|cliente)\s+(?:paga|recebe|vende|compra|arrenda|contrata|financia|deve|possui|cultiva)\b[^.!?;]{0,80}(?:r\$|\b(?:divida|banco|contrato|hectares?|sacas?|graos?|parcela|custeio)\b)/
 // O objeto de transacao separa narracao individual de explicacao geral porque a explicacao retoma
 // uma COISA com pronome anaforico. Na PRIMEIRA frase do texto nao ha frase anterior que introduza a
 // coisa retomada, entao ali nao existe leitura anaforica e vale a forma larga - sem exigir objeto.
 const genericAssertionFirstSentence=value=>String(value??'').split(/(?<=[.!?])\s+/)[0]||''
-const genericAssertion={test:(value,{firstSentence=true}={})=>genericAssertionState.test(value)||genericAssertionPast.test(value)||(firstSentence&&genericAssertionPastBare.test(genericAssertionFirstSentence(value)))}
+const genericAssertion={test:(value,{firstSentence=true}={})=>genericAssertionState.test(value)||genericPresentTransaction.test(value)||genericAssertionPast.test(value)||(firstSentence&&genericAssertionPastBare.test(genericAssertionFirstSentence(value)))}
 // "deve" e a excecao que a lista nao resolve: modal ("ele deve ser aplicado antes da floracao") e
 // explicacao geral legitima, obrigacao ("ela deve ao banco") e afirmacao sobre uma pessoa. O que
 // separa os dois e o infinitivo logo depois.
@@ -222,6 +223,12 @@ const pronounObligation=new RegExp(
  +`|\\b(?:ele|ela)\\s+deve\\s+(?:${modalInterposer}\\s+)?\\w*(?:ar|er|ir)\\b[^.!?;]{0,50}?\\b(?:soja|milho|trigo|algodao|cafe|graos?|producao|safra|lavoura|talhao|hectares?|contratos?|propostas?|pedido|parcelas?|custeio|divida|credito|financiamento|emprestimo|banco|fatura|boleto|saldo|visita|compromisso|reuniao|atendimento|insumos?|fertilizante|defensivo|semente|adubo|maquina|trator|arrendamento|concorrente|desconto|pagamento|assinatura)\\b`)
 const safeNamedObjectFollower=new Set(['antes','como','com','depois','durante','em','na','nas','no','nos','para','por','sobre'])
 const nonNameClauseLeads=new Set(['a','ainda','basis','biblioteca','calagem','chuva','clima','como','confianca','cotacao','ctc','custo','estoque','evite','fitoscan','frete','hedge','informe','inteligencia','manual','margem','mercado','milho','na','nao','nenhum','nenhuma','nutriscan','o','perfil','ph','por','preco','priorize','producao','roi','safra','selecione','soja','sua','temperatura','trigo','use','valide','wasde'])
+// Sentence capitalization alone does not make a common concept a person.
+// Only a complete one-word subject is exempt: "Logística Silva" remains a name.
+const commonConceptSubjects=new Set('porcentagem percentagem proporcao fracao percentual amostragem saturacao compactacao infiltracao decomposicao rotacao alelopatia fotossintese evaporacao germinacao logistica planejamento comunicacao negociacao monitoramento diagnostico prevencao produtividade rendimento variacao correlacao causalidade probabilidade estatistica matematica aritmetica economia'.split(' '))
+// A denominator describes a unit, not land owned by an individual. Keep bare
+// hectares, amounts of land, possession, named subjects and all other guards.
+const generalUnitText=value=>value.replace(/\bpor\s+hectares?\b|\/\s*(?:ha|hectares?)\b/g,'por unidade de area')
 // Termos que ESCOLHEM entre registros ja selecionados ("a ultima", "a proxima", "a atual") em vez
 // de predicar atributo novo. Com o registro "Visita concluida em 08/09/2026 na Fazenda Boa Vista",
 // responder "A ultima visita concluida foi em 08/09/2026 na Fazenda Boa Vista." era descartado
@@ -511,7 +518,7 @@ function hasGlobalIndividualAssertion(rawText=''){
   const domains=matchedValContextDomains(source)
   const privateDomain=domains.some(domain=>!['AGRONOMY','GRAINS'].includes(domain))
   const named=hasNamedIndividualAssertion(clause)
-  const unsafe=implicitIndividualAttribute.test(source)||hasNamedIndividualAssertion(clause.replace(/^(Ele|Ela)\b/,word=>word.toLowerCase()))||pronounObligation.test(source)
+  const unsafe=implicitIndividualAttribute.test(generalUnitText(source))||hasNamedIndividualAssertion(clause.replace(/^(Ele|Ela)\b/,word=>word.toLowerCase()))||pronounObligation.test(source)
   // The PR106 resolver visits clauses separately. Preserve the round15 rule's
   // position in the whole response, rather than treating every clause as first.
   if(genericAssertion.test(source,{firstSentence:index===0})){
@@ -572,7 +579,7 @@ function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}
  // general_knowledge/system_capability, o vocabulário aqui é por definição imprevisível (qualquer
  // conceito), então a lista fechada de âncoras não se aplica; a proteção contra atribuição
  // individual acima (genericAssertion/hasNamedIndividualAssertion) continua valendo.
- if(sourceType==='model_general_knowledge')return !implicitIndividualAttribute.test(conceptText)
+ if(sourceType==='model_general_knowledge')return !implicitIndividualAttribute.test(generalUnitText(conceptText))
  if(sourceType==='system_safety_policy')return deterministicSafetyPolicy.test(text)
  return false
 }
@@ -704,12 +711,16 @@ function splitClaims(answer=''){
 function hasNamedIndividualAssertion(value=''){
  const source=String(value??'')
  const pattern=/(?:^|[.!?;,:—–]\s*|\be\s+)(\p{Lu}[\p{L}\p{M}'’-]*(?:\s+\p{Lu}[\p{L}\p{M}'’-]*){0,4})\s+([\p{Ll}\p{M}]+)/gu
- const individualPredicate=/^(?:e|esta|tem|possui|cultiva|quer|pretende|vai|parece|opera|mantem|demonstra|prefere|valoriza|pediu|solicitou|decide|afirmou|disse|relatou|comprou|vendeu)$/
+ const individualPredicate=/^(?:e|esta|tem|possui|cultiva|quer|pretende|vai|parece|opera|mantem|demonstra|prefere|valoriza|pediu|solicitou|decide|afirmou|disse|relatou|comprou|vendeu|paga|recebe|vende|compra|arrenda|contrata|financia|deve)$/
  for(const match of source.matchAll(pattern)){
   const lead=normalize(match[1]).split(' ')[0]
   const follower=normalize(match[2])
   const demonstrative=/^(?:isso|isto|aquilo)$/i.test(match[1])
-  if(!demonstrative&&!nonNameClauseLeads.has(lead)&&!strategyInstruction.test(lead)&&!safeNamedObjectFollower.has(follower)&&individualPredicate.test(follower))return true
+  const definitionTail=normalize(source.slice(match.index+match[0].length))
+  const commonConcept=!/\s/.test(match[1])&&commonConceptSubjects.has(lead)&&follower==='e'
+   &&/^(?:(?:a|o|um|uma)\s+)?(?:proporcao|fracao|medida|relacao|selecao|organizacao|processo|tecnica|metodo|fenomeno|capacidade|probabilidade|calculo|transformacao|variacao|decomposicao|comunicacao)\b/.test(definitionTail)
+  const modalPronoun=/^(?:ele|ela)$/i.test(match[1])&&follower==='deve'
+  if(!demonstrative&&!commonConcept&&!modalPronoun&&!nonNameClauseLeads.has(lead)&&!strategyInstruction.test(lead)&&!safeNamedObjectFollower.has(follower)&&individualPredicate.test(follower))return true
  }
  return false
 }

@@ -36,6 +36,10 @@ test('HTTP preserves cost dimensions and authorized contact provenance without p
   assert.ok(ready,log)
   const cost=await turn('O serviço custa R$ 35 por hectare em 40 hectares. Qual o custo total?','','cost')
   assert.match(cost.advice.answer,/1\.400,00/)
+  const available=await turn('Tenho 800 sacas físicas e contrato de 275 sacas ainda não entregue, sem outras reservas. Quanto está livre nesse cenário?','','quantity')
+  assert.match(available.advice.answer,/525/)
+  assert.match(available.advice.answer,/cenário informado/)
+  assert.match(available.advice.answer,/não confirma o saldo real/)
   for(const [clientId,channel,other] of [['producer-a','Telefone','Presencial'],['producer-b','Presencial','Telefone']]){
    const r=await turn('Qual canal de contato foi registrado e qual a origem do dado?',clientId,`contact-${clientId}`)
    assert.match(r.advice.answer,new RegExp(channel));assert.match(r.advice.answer,/synthetic-registration/);assert.doesNotMatch(r.advice.answer,new RegExp(other))

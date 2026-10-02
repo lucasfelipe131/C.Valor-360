@@ -145,6 +145,9 @@ seguinte seguintes anteriores atuais gerais especificos especificas comuns raros
 export const verbInfinitive=new Set(`
 agir manejar combater enfrentar controlar atacar mitigar tratar prevenir evitar eliminar erradicar
 bastar garantir concluir atribuir
+oferecer escrever descrever descobrir organizar distinguir confundir transformar explorar
+adaptar omitir expor proporcionar esclarecer interpretar apresentar comunicar formular
+mandar enviar receber esclarecer resumir sintetizar separar relacionar distorcer deduzir
 proteger aplicar pulverizar dessecar semear plantar colher adubar calcariar gessar irrigar
 monitorar amostrar identificar reconhecer diagnosticar avaliar medir calcular estimar prever
 planejar programar escalonar priorizar decidir escolher selecionar comparar classificar
