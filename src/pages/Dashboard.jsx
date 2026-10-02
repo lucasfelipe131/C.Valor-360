@@ -20,7 +20,7 @@ import ValPanel from '../components/ValPanel'
 import ConversionRadar from '../components/ConversionRadar'
 import ConversionOpportunityStudio from '../components/ConversionOpportunityStudio'
 import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
-import {opportunityCacheKey,parseOpportunityCache,reconcilePipeline,resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
+import {opportunityCacheKey,readOpportunityCache,reconcilePipeline,resolveOpportunityCandidate} from '../lib/opportunity-pipeline'
 
 const greeting=()=>{
  const hour=new Date().getHours()
@@ -55,7 +55,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  const totalPotential=portfolioMetrics.reduce((sum,item)=>sum+(item.metrics.potentialKnown?item.metrics.potentialTotal:0),0)
  const potentialKnown=portfolioMetrics.some(item=>item.metrics.potentialKnown)
  const relationships=relationshipSummary(clients)
- const irt=relationships.irtKnown?relationships.irtAverage.toFixed(1):'A medir'
+ const irt=relationships.irtKnown?relationships.irtAverage.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1}):'A medir'
  const priorities=portfolioMetrics.map(({client,metrics})=>({client,metrics,candidate:resolveOpportunityCandidate(client)})).filter(item=>item.candidate).sort((a,b)=>b.metrics.openPotential-a.metrics.openPotential).slice(0,3)
  const now=Date.now()
  const upcomingVisits=[...(visits||[])].filter(visit=>scheduledAtOf(visit)?.getTime()>=now&&!/^(realizada|cancelada)$/i.test(String(visit.status||''))).sort((a,b)=>scheduledAtOf(a)-scheduledAtOf(b))
@@ -68,7 +68,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
   {page:'val',label:'Abrir ambientes VAL',detail:'Insumos ou grãos',icon:BrainCircuit}
  ]
  const cacheKey=opportunityCacheKey(currentUser?.storageScope)
- const cachedItems=cacheKey?parseOpportunityCache(localStorage.getItem(cacheKey)):[]
+ const cachedItems=readOpportunityCache(cacheKey)
  const pipelineItems=reconcilePipeline(clients,[...cachedItems,...opportunities])
  const pipelineSummary=pipelineStages.map(stage=>{
   const stageItems=pipelineItems.filter(item=>item.stage===stage.name)
@@ -115,7 +115,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
   </section>
 
   <ConversionRadar clients={clients} onClient={onClient} onPrepare={onPrepare}/>
-  <ConversionOpportunityStudio clients={clients} onClient={onClient} onPrepare={onPrepare}/>
+  <ConversionOpportunityStudio clients={clients} onPrepare={onPrepare}/>
 
   <section className="dashboard-grid home-analysis">
    <article className="panel chart-panel">
@@ -143,7 +143,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
    <article className="panel segment-panel">
     <div className="panel-head"><div><span className="eyebrow">CARTEIRA</span><h3>Tags autodeclaradas</h3></div></div>
     <div className="donut-wrap"><div className="donut"><div><b>{clients.length}</b><small>Produtores</small></div></div>
-    <div className="legend">{['Analítico','Relacional','Conservador','Digital'].map((profile,index)=><span key={profile}><i className={`dot d${index}`}/>{profile}</span>)}</div></div>
+    <div className="legend">{['Analítico','Relacional','Conservador','Digital','Inovador'].map((profile,index)=><span key={profile}><i className={`dot d${index}`}/>{profile}</span>)}</div></div>
    </article>
    <article className="panel recent-panel">
     <div className="panel-head"><div><span className="eyebrow">ATIVIDADES</span><h3>Atividades recentes</h3></div><button onClick={()=>setPage('visits')}>Ver todas</button></div>

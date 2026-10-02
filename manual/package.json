@@ -10,7 +10,8 @@
     "build": "next build",
     "start": "next start",
     "build:railway": "next build",
-    "start:railway": "next start -H 0.0.0.0 -p ${PORT:-3000}"
+    "start:railway": "next start -H 0.0.0.0 -p ${PORT:-3000}",
+    "smoke": "node --conditions=react-server integration-smoke.mjs"
   },
   "dependencies": {
     "@tesseract.js-data/por": "^1.0.0",
@@ -21,6 +22,7 @@
     "pg": "^8.22.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "server-only": "^0.0.1",
     "tesseract.js": "^7.0.0",
     "xlsx": "npm:@e965/xlsx@^0.20.3"
   },

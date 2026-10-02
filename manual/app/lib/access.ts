@@ -20,6 +20,10 @@ const EMAIL_CONFIRMATION_HOURS = 72;
 const INITIAL_ADMIN_PASSWORD_HASH =
   "scrypt$8fa2866df1748263e47def5e862ebcbd$01621bae94ea8bb0b8f20438690d84890edc8fa6509e6b94452dbfc54a4ef380f3167b93d38847480427eb91f890e3ca98e1668c9009a83c706a27ddeb25b613";
 
+// Contas provisionadas a partir de uma sessão embutida do VALOR 360 não possuem senha local:
+// o esquema "embedded" nunca é aceito por verifyPassword, então o login direto fica bloqueado.
+const EMBEDDED_ACCOUNT_PASSWORD_HASH = "embedded$valor360$sem-senha-local";
+
 export type AccessRole = "admin" | "tester";
 
 export type AccessUser = {
@@ -118,7 +122,7 @@ async function embeddedSession(request: NextRequest) {
         identity.email,
         identity.displayName,
         identity.role,
-        INITIAL_ADMIN_PASSWORD_HASH,
+        EMBEDDED_ACCOUNT_PASSWORD_HASH,
       ],
     );
     row = created.rows[0];
@@ -179,6 +183,29 @@ export async function hashPassword(password: string) {
   const salt = randomBytes(16).toString("hex");
   const derived = (await scrypt(password, salt, 64)) as Buffer;
   return `scrypt$${salt}$${derived.toString("hex")}`;
+}
+
+// Limite de tentativas de login por endereço (10 a cada 10 minutos). Atrás do proxy do VALOR 360 ou da Railway o endereço real é o último X-Forwarded-For.
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+export function requestAddress(request: NextRequest) {
+  const forwarded = (request.headers.get("x-forwarded-for") ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+  return (forwarded[forwarded.length - 1] || request.headers.get("x-real-ip") || "unknown").slice(0, 120);
+}
+export function consumeLoginAttempt(request: NextRequest, limit = 10, windowMs = 600_000) {
+  const now = Date.now();
+  if (loginAttempts.size > 5000) for (const [key, entry] of loginAttempts) if (entry.resetAt <= now) loginAttempts.delete(key);
+  const key = requestAddress(request);
+  const current = loginAttempts.get(key);
+  if (!current || current.resetAt <= now) { loginAttempts.set(key, { count: 1, resetAt: now + windowMs }); return true; }
+  if (current.count >= limit) return false;
+  current.count += 1;
+  return true;
+}
+
+// Quando o usuário não existe, o scrypt roda mesmo assim contra um hash de referência: o tempo de resposta não pode revelar quais logins existem.
+export async function verifyPasswordConstantTime(password: string, encoded: string | null | undefined) {
+  if (!encoded) { await verifyPassword(password, INITIAL_ADMIN_PASSWORD_HASH); return false; }
+  return verifyPassword(password, encoded);
 }
 
 export async function verifyPassword(password: string, encoded: string) {

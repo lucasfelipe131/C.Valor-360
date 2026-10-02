@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sessionFromRequest } from "../../lib/access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -252,7 +253,9 @@ function applicationAssessment(forecast: ForecastData, next24: Array<{ time: str
 
 function deriveAgronomicData(forecast: ForecastData) {
   const now = forecast.current?.time ?? new Date().toISOString().slice(0, 16);
-  const nowDate = new Date(now);
+  // Os rótulos horários vêm no fuso local da coordenada, sem offset. Tratamos o rótulo como UTC apenas para
+  // somar/subtrair horas e voltar ao mesmo formato: assim a janela não se desloca quando o servidor não roda em UTC.
+  const nowDate = new Date(/Z$|[+-]\d{2}:?\d{2}$/.test(now) ? now : `${now.length === 16 ? `${now}:00` : now}Z`);
   const last24Start = new Date(nowDate.getTime() - 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
   const next24End = new Date(nowDate.getTime() + 24 * 60 * 60 * 1000).toISOString().slice(0, 16);
   const next48End = new Date(nowDate.getTime() + 48 * 60 * 60 * 1000).toISOString().slice(0, 16);
@@ -287,6 +290,8 @@ function deriveAgronomicData(forecast: ForecastData) {
 }
 
 export async function GET(request: NextRequest) {
+  const session = await sessionFromRequest(request);
+  if (!session) return NextResponse.json({ error: "Sessão expirada." }, { status: 401 });
   const latitude = numeric(request.nextUrl.searchParams.get("latitude"));
   const longitude = numeric(request.nextUrl.searchParams.get("longitude"));
   if (latitude === null || longitude === null || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {

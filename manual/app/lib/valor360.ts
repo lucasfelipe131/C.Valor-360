@@ -347,6 +347,35 @@ export async function publishManualRecordToValor(record: ManualRecordForValor, o
   return results;
 }
 
+function relatedSoilFor(producer: JsonRecord, soilAnalyses: unknown[]) {
+  const clientExternalKey = clientKeyFor(producer);
+  const producerId = text(producer.id);
+  const producerNameValue = producerName(producer);
+  return soilAnalyses.filter((analysis) => {
+    const item = object(analysis);
+    return (
+      (producerId && text(item.producerId) === producerId) ||
+      (producerNameValue &&
+        valor360ExternalKey(item.producerName || item.producer) === clientExternalKey)
+    );
+  });
+}
+
+/** Chave estável do produtor dentro do workspace (id, ou a chave externa derivada do nome). */
+export function producerSyncKey(input: unknown) {
+  const producer = object(input);
+  return text(producer.id) || clientKeyFor(producer);
+}
+
+/** Impressão digital do dossiê (produtor + análises de solo relacionadas): só o que mudou precisa ser republicado. */
+export function producerSyncFingerprint(input: unknown, soilAnalyses: unknown[] = []) {
+  const producer = object(input);
+  return fingerprint({
+    producer: cleanForStrategy(producer),
+    soilAnalyses: cleanForStrategy(relatedSoilFor(producer, soilAnalyses)),
+  });
+}
+
 export async function publishProducerToValor(
   input: unknown,
   soilAnalyses: unknown[] = [],
@@ -364,16 +393,7 @@ export async function publishProducerToValor(
     } satisfies ValorPublishResult];
   }
   const safeProducer = cleanForStrategy(producer) as JsonRecord;
-  const producerId = text(producer.id);
-  const producerNameValue = producerName(producer);
-  const relatedSoil = soilAnalyses.filter((analysis) => {
-    const item = object(analysis);
-    return (
-      (producerId && text(item.producerId) === producerId) ||
-      (producerNameValue &&
-        valor360ExternalKey(item.producerName || item.producer) === clientExternalKey)
-    );
-  });
+  const relatedSoil = relatedSoilFor(producer, soilAnalyses);
   const payload = {
     producer: safeProducer,
     soilAnalyses: cleanForStrategy(relatedSoil),

@@ -10,6 +10,8 @@ export function createDatabase(runtimeConfig){
     connectionTimeoutMillis:8_000,
     ssl:runtimeConfig.databaseSsl?{rejectUnauthorized:false}:undefined
   }):null
+  // Sem este listener, um cliente ocioso que perde a conexão derruba o processo inteiro (comportamento documentado do pg.Pool).
+  pool?.on('error',error=>console.error('PostgreSQL: conexão ociosa encerrada com erro.',error.message))
 
   async function query(text,params=[]){
     if(!pool)throw new Error('DATABASE_URL não configurada.')
@@ -40,5 +42,5 @@ export function createDatabase(runtimeConfig){
     }
   }
 
-  return {configured:Boolean(pool),pool,query,transaction,health,close:()=>pool?.end()}
+  return {configured:Boolean(pool),pool,query,transaction,health,close:async()=>{if(pool)await pool.end()}}
 }

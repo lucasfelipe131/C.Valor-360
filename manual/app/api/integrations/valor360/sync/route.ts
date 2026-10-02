@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     const workspaceResult = await publishWorkspaceToValor(
       producers,
       soilAnalyses,
-      session.valor360OwnerId ?? session.user.id,
+      session.valor360OwnerId ?? undefined,
     );
     const recordResults = [];
     const concurrency = 6;
@@ -76,7 +76,7 @@ export async function POST(request: NextRequest) {
       const results = await Promise.all(
         batch.map((record) => publishManualRecordToValor(
           record,
-          session.valor360OwnerId ?? session.user.id,
+          session.valor360OwnerId ?? undefined,
         )),
       );
       recordResults.push(...results.flat());

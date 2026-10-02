@@ -29,12 +29,12 @@ export default function Admin({currentUser,onNotify}){
    <header><div><span className="admin-section-icon"><Activity/></span><div><small>OPERAÇÃO DO SISTEMA</small><h3 id="administration-metrics-title">Acessos e interações</h3><p>Período móvel, com eventos novos e registros comerciais já persistidos.</p></div></div><div><select value={days} onChange={event=>setDays(Number(event.target.value))} aria-label="Período das métricas"><option value="7">7 dias</option><option value="30">30 dias</option><option value="90">90 dias</option></select><button type="button" onClick={load} disabled={state.loading}>{state.loading?<LoaderCircle className="val-spinner"/>:<RefreshCw/>}Atualizar</button></div></header>
    {state.error&&<div className="form-error" role="alert">{state.error}</div>}
    <div className="admin-summary-grid">
-    <SummaryCard icon={UsersRound} label="Usuários liberados" value={summary.users_active} detail={`${summary.users_blocked||0} bloqueado(s)`}/>
+    <SummaryCard icon={UsersRound} label="Usuários liberados" value={summary.users_active} detail={`${summary.users_blocked||0} ${Number(summary.users_blocked||0)===1?'bloqueado':'bloqueados'}`}/>
     <SummaryCard icon={Users} label="Usuários ativos no período" value={summary.active_users_period} detail={`de ${summary.users_total||0} acessos cadastrados`}/>
     <SummaryCard icon={MousePointerClick} label="Acessos registrados" value={summary.accesses} detail={`${summary.page_views||0} visualizações de módulos`} tone="is-blue"/>
     <SummaryCard icon={Activity} label="Ações rastreadas" value={summary.direct_interactions} detail="cadastros, memórias e retornos"/>
-    <SummaryCard icon={BrainCircuit} label="Análises da VAL" value={summary.val_analyses} detail={`${summary.val_feedback||0} retorno(s) de uso`} tone="is-lime"/>
-    <SummaryCard icon={Database} label="Produtores em nuvem" value={summary.producers} detail={`${summary.manual_syncs||0} sincronização(ões) do Manual`}/>
+    <SummaryCard icon={BrainCircuit} label="Análises da VAL" value={summary.val_analyses} detail={`${summary.val_feedback||0} ${Number(summary.val_feedback||0)===1?'retorno de uso':'retornos de uso'}`} tone="is-lime"/>
+    <SummaryCard icon={Database} label="Produtores em nuvem" value={summary.producers} detail={`${summary.manual_syncs||0} ${Number(summary.manual_syncs||0)===1?'sincronização do Manual':'sincronizações do Manual'}`}/>
     <SummaryCard icon={BarChart3} label="Visitas registradas" value={summary.visits} detail="no período selecionado"/>
     <SummaryCard icon={BarChart3} label="Oportunidades movimentadas" value={summary.opportunities} detail="no período selecionado"/>
    </div>

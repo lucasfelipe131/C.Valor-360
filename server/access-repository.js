@@ -56,7 +56,9 @@ export class AccessRepository{
     if(!validEmail(normalized)||!password)return null
     const result=await this.db.query(`SELECT user_record.*,membership.role FROM users user_record JOIN memberships membership ON membership.user_id=user_record.id AND membership.tenant_id=$1 WHERE LOWER(user_record.email)=LOWER($2) LIMIT 1`,[this.tenantId,normalized])
     const row=result.rows[0]
-    if(!row||row.status!=='active'||(row.expires_at&&new Date(row.expires_at)<=new Date())||!await verifyPassword(password,row.password_hash))return null
+    // Sem linha, ainda executamos o scrypt contra um hash de referência para que o tempo de resposta não revele quais e-mails existem.
+    if(!row){this.timingHash||=await hashPassword('tempo-constante-sem-conta',{enforcePolicy:false});await verifyPassword(password,this.timingHash);return null}
+    if(row.status!=='active'||(row.expires_at&&new Date(row.expires_at)<=new Date())||!await verifyPassword(password,row.password_hash))return null
     const updated=await this.db.query(`UPDATE users SET last_login_at=NOW(),updated_at=NOW() WHERE id=$1 RETURNING last_login_at,updated_at`,[row.id])
     const account=accountFromRow({...row,...updated.rows[0]},this.tenantId)
     await this.recordUsage(account,{eventType:'login',page:'login'})

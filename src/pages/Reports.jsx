@@ -5,7 +5,7 @@ import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercia
 
 export default function Reports({clients,visits}){
  const relationships=relationshipSummary(clients)
- const irt=relationships.irtKnown?relationships.irtAverage.toFixed(1):'A medir'
+ const irt=relationships.irtKnown?relationships.irtAverage.toLocaleString('pt-BR',{minimumFractionDigits:1,maximumFractionDigits:1}):'A medir'
  const promoters=relationships.promoters
  const clientMetrics=clients.map(commercialMetrics)
  const potential=clientMetrics.reduce((sum,metrics)=>sum+(metrics.potentialKnown?metrics.potentialTotal:0),0)

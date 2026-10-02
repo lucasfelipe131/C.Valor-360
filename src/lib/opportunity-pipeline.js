@@ -8,6 +8,8 @@ const stageEvidenceTypes=new Set(['manual_advance','manual_set','won'])
 
 export const opportunityCacheKey=storageScope=>storageScope?`valor360:${OPPORTUNITY_CACHE_VERSION}:${storageScope}:opportunities`:null
 export const parseOpportunityCache=raw=>{try{const parsed=JSON.parse(raw||'[]');return Array.isArray(parsed)?parsed:[]}catch{return []}}
+export const readOpportunityCache=key=>{if(!key)return [];try{return parseOpportunityCache(localStorage.getItem(key))}catch{return []}}
+export const writeOpportunityCache=(key,items)=>{if(!key)return;try{localStorage.setItem(key,JSON.stringify(items))}catch{}}
 
 export function resolveOpportunityCandidate(client={}){
  const commercial=client.commercial||{}

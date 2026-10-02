@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sessionFromRequest } from "../../../lib/access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -203,6 +204,8 @@ async function loadProducts(target: OfficialTarget) {
 
 export async function GET(request: NextRequest) {
   try {
+    const session = await sessionFromRequest(request);
+    if (!session) return NextResponse.json({ error: "Sessão expirada." }, { status: 401 });
     const targets = await loadTargets();
     const targetId = request.nextUrl.searchParams.get("id")?.trim();
     if (targetId) {

@@ -10,7 +10,7 @@ import MessageCalibrationPanel from './MessageCalibrationPanel'
 import '../conversion-studio.css'
 import '../objection-evidence.css'
 
-export default function ConversionOpportunityStudio({clients=[],onClient,onPrepare}){
+export default function ConversionOpportunityStudio({clients=[],onPrepare}){
  const [selectedId,setSelectedId]=useState(clients[0]?.id||'')
  const {data,loading,error,run}=useAsyncResource({initialData:null,initialLoading:Boolean(clients[0]),timeoutMs:30_000,timeoutMessage:'O dossiê demorou além do esperado.',fallbackMessage:'Não foi possível carregar o estúdio de conversão.'})
  const client=useMemo(()=>clients.find(item=>String(item.id)===String(selectedId))||clients[0]||null,[clients,selectedId])
@@ -18,16 +18,11 @@ export default function ConversionOpportunityStudio({clients=[],onClient,onPrepa
  useEffect(()=>{if(!selectedId&&clients[0]?.id)setSelectedId(clients[0].id)},[clients,selectedId])
  useEffect(()=>{
   if(!client?.id)return
-  run(({signal})=>fetchJsonResource(`/api/clients/${encodeURIComponent(client.id)}/context`,{signal,fallbackMessage:'Não foi possível carregar o dossiê deste produtor.'}),{keepData:false})
+  run(({signal})=>fetchJsonResource(`/api/clients/${encodeURIComponent(client.id)}/dossier`,{signal,fallbackMessage:'Não foi possível carregar o dossiê deste produtor.'}),{keepData:false})
  },[client?.id,run])
 
- const reload=()=>client?.id&&run(({signal})=>fetchJsonResource(`/api/clients/${encodeURIComponent(client.id)}/context`,{signal,fallbackMessage:'Não foi possível atualizar o dossiê deste produtor.'}),{keepData:true})
- const selectClient=event=>{
-  const id=event.target.value
-  setSelectedId(id)
-  const next=clients.find(item=>String(item.id)===String(id))
-  if(next)onClient?.(next)
- }
+ const reload=()=>client?.id&&run(({signal})=>fetchJsonResource(`/api/clients/${encodeURIComponent(client.id)}/dossier`,{signal,fallbackMessage:'Não foi possível atualizar o dossiê deste produtor.'}),{keepData:true})
+ const selectClient=event=>setSelectedId(event.target.value)
 
  if(!clients.length)return null
  const innovations=data?.conversionInnovations||{}

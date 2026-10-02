@@ -104,6 +104,7 @@ async function persistRecordOnServer(record: SavedRecord) {
   const response = await fetch("/api/records", {
     method: "POST",
     credentials: "same-origin",
+    signal: AbortSignal.timeout(20_000),
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
       id: record.id,

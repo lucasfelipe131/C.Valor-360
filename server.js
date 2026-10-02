@@ -26,7 +26,7 @@ const dataRoot=process.env.DATA_DIR||join(appRoot,'.data')
 const storePath=join(dataRoot,'valor360-store.json')
 const profileMatrix=JSON.parse(readFileSync(join(appRoot,'src','data','profile-matrix.json'),'utf8'))
 const surveyOptions=buildSurveyOptions(profileMatrix)
-const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp','.woff2':'font/woff2'}
+const mime={'.html':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'application/javascript; charset=utf-8','.svg':'image/svg+xml','.json':'application/json; charset=utf-8','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.webp':'image/webp','.woff2':'font/woff2','.woff':'font/woff','.ttf':'font/ttf','.mjs':'application/javascript; charset=utf-8','.webmanifest':'application/manifest+json; charset=utf-8','.txt':'text/plain; charset=utf-8','.map':'application/json; charset=utf-8'}
 const securityHeaders={'X-Content-Type-Options':'nosniff','Referrer-Policy':'strict-origin-when-cross-origin','Permissions-Policy':'camera=(self), microphone=(), geolocation=(self)','Content-Security-Policy':"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; worker-src 'self' blob:; frame-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self'"}
 
 mkdirSync(dataRoot,{recursive:true})
@@ -34,9 +34,17 @@ if(!existsSync(storePath))writeFileSync(storePath,JSON.stringify({surveys:[],imp
 
 function readStore(){try{return JSON.parse(readFileSync(storePath,'utf8'))}catch{return {surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[]}}}}
 function saveStore(store){const temporary=`${storePath}.tmp`;writeFileSync(temporary,JSON.stringify(store,null,2));renameSync(temporary,storePath)}
+// Erros de domínio carregam statusCode; erros de validação são Error simples (400 com a mensagem). Falhas de infraestrutura (pg, rede, TypeError) não podem vazar a mensagem interna nem passar despercebidas no log.
+function apiError(response,exception,request){
+ const declared=Number(exception?.statusCode)
+ const infrastructure=!declared&&(exception instanceof TypeError||exception instanceof RangeError||exception instanceof ReferenceError||Boolean(exception?.code))
+ if(infrastructure){console.error(`[api] ${request.method} ${request.url}:`,exception);if(response.headersSent){response.destroy();return}return json(response,500,{error:'Não foi possível processar a solicitação.'})}
+ if(response.headersSent){response.destroy();return}
+ return json(response,declared||400,{error:exception?.message||'Não foi possível processar a solicitação.'})
+}
 function json(response,status,payload){response.writeHead(status,{...securityHeaders,'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify(payload))}
-function rawBody(request){return new Promise((resolve,reject)=>{let raw='';request.on('data',chunk=>{raw+=chunk;if(Buffer.byteLength(raw)>config.maxBodyBytes){reject(new Error('Arquivo ou requisição muito grande.'));request.destroy()}});request.on('end',()=>resolve(raw));request.on('error',reject)})}
-async function body(request){const raw=await rawBody(request);try{return raw?JSON.parse(raw):{}}catch{throw new Error('Conteúdo inválido.')}}
+function rawBody(request){return new Promise((resolve,reject)=>{const chunks=[];let size=0;request.on('data',chunk=>{size+=chunk.length;if(size>config.maxBodyBytes){reject(Object.assign(new Error('Arquivo ou requisição muito grande.'),{statusCode:413}));request.destroy();return}chunks.push(chunk)});request.on('end',()=>resolve(Buffer.concat(chunks).toString('utf8')));request.on('error',reject)})}
+async function body(request){const raw=await rawBody(request);let parsed;try{parsed=raw?JSON.parse(raw):{}}catch{throw Object.assign(new Error('Conteúdo inválido.'),{statusCode:400})}if(parsed===null||typeof parsed!=='object'||Array.isArray(parsed))throw Object.assign(new Error('Conteúdo inválido.'),{statusCode:400});return parsed}
 async function limitedResponseText(upstream,limit){const reader=upstream.body?.getReader();if(!reader)return upstream.text();const chunks=[];let size=0;while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>limit){await reader.cancel();throw Object.assign(new Error('A planilha excede o limite seguro de importação.'),{statusCode:413})}chunks.push(value)}return new TextDecoder().decode(Buffer.concat(chunks.map(chunk=>Buffer.from(chunk))))}
 const clean=value=>String(value||'').trim().slice(0,240)
 const attachmentMaxBytes=6_000_000
@@ -59,6 +67,11 @@ const validatedSurveyAnswers=input=>validateSurveyAnswers(input,surveyOptions)
 
 const database=createDatabase(config)
 const auth=createAuth(config)
+if(config.demoMode&&database.configured&&!auth.configured){
+ // A identidade demonstrativa não tem dono no banco: toda consulta filtraria por consultant_id nulo e o webhook falharia ao criar o administrador. Melhor falhar no boot do que subir um sistema vazio.
+ console.error('VAL_DEMO_MODE=true não pode ser combinado com DATABASE_URL sem VAL_ADMIN_EMAIL, VAL_ADMIN_PASSWORD e VAL_SESSION_SECRET. Remova DATABASE_URL para demonstrar, ou configure o acesso seguro.')
+ process.exit(1)
+}
 const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,storageScope:auth.storageScope(session)}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,storageScope:'demo'}
 const repository=new ValRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
@@ -67,8 +80,9 @@ const valEngine=new ValEngine({runtimeConfig:config,repository})
 const valProgress=createValProgressTracker()
 const technicalWorkspace=createTechnicalWorkspace({appRoot,publicPort:port,runtimeConfig:config,json})
 const rateBuckets=new Map()
-function consumeRateLimit(scope,key,limit){const now=Date.now();const bucketKey=`${scope}:${key}`;const current=rateBuckets.get(bucketKey);if(!current||current.resetAt<=now){rateBuckets.set(bucketKey,{count:1,resetAt:now+600_000});return true}if(current.count>=limit)return false;current.count+=1;return true}
-const requestIdentity=request=>String(request.socket.remoteAddress||'unknown')
+function consumeRateLimit(scope,key,limit){const now=Date.now();if(rateBuckets.size>5000)for(const [bucket,entry] of rateBuckets)if(entry.resetAt<=now)rateBuckets.delete(bucket);const bucketKey=`${scope}:${key}`;const current=rateBuckets.get(bucketKey);if(!current||current.resetAt<=now){rateBuckets.set(bucketKey,{count:1,resetAt:now+600_000});return true}if(current.count>=limit)return false;current.count+=1;return true}
+// Atrás do proxy da Railway todo tráfego chega do mesmo endereço interno; o último valor de X-Forwarded-For é o que o proxy anexou.
+const requestIdentity=request=>{const forwarded=String(request.headers['x-forwarded-for']||'').split(',').map(item=>item.trim()).filter(Boolean);return String(forwarded[forwarded.length-1]||request.socket.remoteAddress||'unknown').slice(0,120)}
 const progressOwnerKey=(identity,request)=>String(identity?.id||identity?.email||requestIdentity(request))
 const demoIdentity=()=>({id:null,email:'demo@valor360.local',name:'Demonstração',role:'admin',tenantId:config.defaultTenantId,mustChangePassword:false,demo:true})
 async function sessionIdentity(request){
@@ -128,7 +142,7 @@ async function handleApi(request,response,url){
   const token=auth.issue(updated);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{saved:true,user:userPayload(updated)})
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
- const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname==='/api/val/progress'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname==='/api/val/progress'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname==='/api/clients/from-survey'||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|overview|dossier))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const identity=protectedPath?await sessionIdentity(request):null
  if(protectedPath&&auth.configured&&!identity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
@@ -311,6 +325,9 @@ async function handleApi(request,response,url){
  }
  const overviewMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/overview$/)
  if(overviewMatch&&request.method==='GET')return json(response,200,await repository.getClientOverview(decodeURIComponent(overviewMatch[1]),identity?.id))
+ // Dossiê de conversão: o mesmo contexto que alimenta a VAL (oportunidades, histórico e inovações de conversão). O Estúdio de Conversão lia /context, que devolve apenas a memória técnica.
+ const dossierMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/dossier$/)
+ if(dossierMatch&&request.method==='GET'){const clientId=decodeURIComponent(dossierMatch[1]);return json(response,200,await repository.getClientContext({tenantId:config.defaultTenantId,ownerId:identity?.id,clientId,client:{id:clientId}}))}
  if(url.pathname==='/api/intelligence/imports'&&request.method==='POST'){
   const payload=await body(request);const rows=Array.isArray(payload.rows)?payload.rows.slice(0,5000):[];const mapping=payload.mapping||{};if(!rows.length||!mapping.client||!payload.summary)return json(response,400,{error:'Importação inválida ou sem linhas para validação no servidor.'})
   const clients=buildCommercialIntelligence(rows,mapping);const learned=summarizeLearning(clients,rows.length,clean(payload.summary.fileName)||'importação comercial');const summary={...learned,id:randomUUID(),rawRowCount:rows.length,rawRowsSent:rows.length,truncated:Boolean(payload.summary.truncated)}
@@ -329,21 +346,32 @@ async function handleApi(request,response,url){
  return false
 }
 
+if(config.autoMigrate&&database.configured){
+ try{await database.query(readFileSync(join(appRoot,'database','schema.sql'),'utf8'));console.log('AUTO_MIGRATE=true: esquema do banco aplicado antes de iniciar.')}
+ catch(error){console.error('AUTO_MIGRATE=true, mas a migração falhou:',error.message);process.exit(1)}
+}
+
 technicalWorkspace.start()
 
-createServer(async(request,response)=>{
+function isServableFile(path){try{return existsSync(path)&&statSync(path).isFile()}catch{return false}}
+
+const server=createServer(async(request,response)=>{
  let url
  try{url=new URL(request.url||'/',`http://${request.headers.host||'localhost'}`)}catch{return json(response,400,{error:'URL inválida.'})}
  if(isTechnicalWorkspaceRequest(url.pathname)){
-  try{if(technicalWorkspace.handle(request,response,url,await sessionIdentity(request)))return}catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
+  try{
+   const session=await sessionIdentity(request)
+   if(session?.mustChangePassword)return json(response,403,{error:'Troque a senha temporária antes de acessar o núcleo técnico.'})
+   if(technicalWorkspace.handle(request,response,url,session))return
+  }catch(exception){return json(response,Number(exception.statusCode)||503,{error:exception.message||'Não foi possível validar o acesso ao núcleo técnico.'})}
  }
  if(url.pathname==='/live'||url.pathname==='/health'||url.pathname.startsWith('/api/')){
-  try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){return json(response,Number(exception.statusCode)||400,{error:exception.message||'Não foi possível processar a solicitação.'})}
+  try{const handled=await handleApi(request,response,url);if(handled!==false)return}catch(exception){return apiError(response,exception,request)}
   return json(response,404,{error:'Rota não encontrada.'})
  }
  const relative=normalize(url.pathname==='/'?'index.html':url.pathname.replace(/^\/+/,''))
  let target=resolve(root,relative)
- if((target!==root&&!target.startsWith(`${root}${sep}`))||!existsSync(target)||statSync(target).isDirectory())target=join(root,'index.html')
+ if((target!==root&&!target.startsWith(`${root}${sep}`))||!isServableFile(target))target=join(root,'index.html')
  const extension=extname(target).toLowerCase()
  const immutableAsset=/^\/assets\/.+-[a-z0-9_-]{8,}\.[a-z0-9]+$/i.test(url.pathname)
  const cacheControl=url.pathname==='/sw.js'
@@ -353,8 +381,18 @@ createServer(async(request,response)=>{
    :immutableAsset
     ?'public, max-age=31536000, immutable'
     :'no-cache'
- response.writeHead(200,{...securityHeaders,'Content-Type':mime[extension]||'application/octet-stream','Cache-Control':cacheControl})
- createReadStream(target).pipe(response)
-}).listen(port,'0.0.0.0',()=>console.log(`VALOR 360 disponível na porta ${port}`))
+ const stream=createReadStream(target)
+ stream.once('open',()=>response.writeHead(200,{...securityHeaders,'Content-Type':mime[extension]||'application/octet-stream','Cache-Control':cacheControl}))
+ stream.once('error',error=>{console.error(`[static] ${target}:`,error.message);if(response.headersSent){response.destroy();return}json(response,error.code==='ENOENT'?404:500,{error:error.code==='ENOENT'?'Interface não publicada neste build.':'Não foi possível ler o arquivo solicitado.'})})
+ stream.pipe(response)
+})
+if(!existsSync(join(root,'index.html')))console.error('[static] dist/index.html não encontrado: execute `npm run build` antes de iniciar o servidor.')
+server.listen(port,'0.0.0.0',()=>console.log(`VALOR 360 disponível na porta ${port}`))
 
-for(const signal of ['SIGTERM','SIGINT'])process.on(signal,async()=>{technicalWorkspace.close();await database.close();process.exit(0)})
+let shuttingDown=false
+for(const signal of ['SIGTERM','SIGINT'])process.on(signal,()=>{
+ if(shuttingDown)return;shuttingDown=true
+ // Para de aceitar conexões, deixa as requisições em andamento terminarem e só então encerra o pool e o núcleo técnico.
+ const forced=setTimeout(()=>process.exit(0),15_000);forced.unref()
+ server.close(async()=>{technicalWorkspace.close();await database.close().catch(()=>null);process.exit(0)})
+})

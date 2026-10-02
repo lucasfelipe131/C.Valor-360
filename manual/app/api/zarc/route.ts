@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sessionFromRequest } from "../../lib/access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -129,6 +130,8 @@ const soilLabels: Record<string, string> = { "1":"Arenoso · Tipo 1", "2":"Textu
 const cycleLabels: Record<string, string> = { "20":"Grupo I", "21":"Grupo II", "22":"Grupo III", "24":"Grupo IV", "25":"Grupo V", "26":"Grupo VI" };
 
 export async function GET(request: NextRequest) {
+  const session = await sessionFromRequest(request);
+  if (!session) return NextResponse.json({ error: "Sessão expirada." }, { status: 401 });
   const uf = (request.nextUrl.searchParams.get("uf") ?? "").toUpperCase();
   const municipality = request.nextUrl.searchParams.get("municipality") ?? "";
   const crop = request.nextUrl.searchParams.get("crop") ?? "";

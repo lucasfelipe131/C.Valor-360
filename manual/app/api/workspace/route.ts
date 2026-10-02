@@ -1,6 +1,10 @@
-import { NextRequest, NextResponse } from "next/server";
+import { after, NextRequest, NextResponse } from "next/server";
 import { ensureAccessSchema, sessionFromRequest } from "../../lib/access";
-import { publishWorkspaceToValor } from "../../lib/valor360";
+import { producerSyncFingerprint, producerSyncKey, publishWorkspaceToValor, valor360Configured } from "../../lib/valor360";
+
+// Impressões digitais já publicadas por workspace. Cada autosave (a cada alteração, com 700 ms de espera) republicava
+// todos os produtores dentro da requisição; agora só os alterados vão para o VALOR 360, e fora do caminho da resposta.
+const publishedFingerprints = new Map<string, Map<string, string>>();
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -73,6 +77,8 @@ export async function PUT(request: NextRequest) {
     if (body.producers.length > 5000 || body.soilAnalyses.length > 2500) {
       return NextResponse.json({ error: "Quantidade de registros acima do limite de segurança." }, { status: 413 });
     }
+    const producers = body.producers as unknown[];
+    const soilAnalyses = body.soilAnalyses as unknown[];
     const pool = await ensureWorkspaceSchema();
     const result = await pool.query(
       "INSERT INTO app_workspace_data (workspace_id, producers, soil_analyses, professional_profile) " +
@@ -82,16 +88,42 @@ export async function PUT(request: NextRequest) {
       'RETURNING updated_at AS "updatedAt"',
       [session.user.id, JSON.stringify(body.producers), JSON.stringify(body.soilAnalyses), JSON.stringify(body.professionalProfile)],
     );
-    const integration = await publishWorkspaceToValor(
-      body.producers,
-      body.soilAnalyses,
-      session.valor360OwnerId ?? session.user.id,
-    );
+    const ownerUserId = session.valor360OwnerId ?? undefined;
+    const workspaceKey = session.user.id;
+    const known = publishedFingerprints.get(workspaceKey) ?? new Map<string, string>();
+    const next = new Map<string, string>();
+    const changed: unknown[] = [];
+    for (const producer of producers) {
+      const key = producerSyncKey(producer);
+      if (!key) continue;
+      const digest = producerSyncFingerprint(producer, soilAnalyses);
+      next.set(key, digest);
+      if (known.get(key) !== digest) changed.push(producer);
+    }
+    publishedFingerprints.set(workspaceKey, next);
+    const configured = valor360Configured();
+    if (configured && changed.length) {
+      after(async () => {
+        try {
+          const outcome = await publishWorkspaceToValor(changed, soilAnalyses, ownerUserId);
+          // Falha parcial: esquece o que foi publicado para que o próximo salvamento tente de novo.
+          if (outcome.failed > 0) publishedFingerprints.delete(workspaceKey);
+        } catch (error) {
+          publishedFingerprints.delete(workspaceKey);
+          console.error("workspace:publish", error);
+        }
+      });
+    }
     return noStore(NextResponse.json({
       saved: true,
       updatedAt: result.rows[0]?.updatedAt ?? new Date().toISOString(),
       storage: "postgresql",
-      integration,
+      integration: {
+        configured,
+        queued: configured ? changed.length : 0,
+        unchanged: producers.length - changed.length,
+        mode: "background",
+      },
     }));
   } catch (error) {
     console.error("workspace:put", error);
