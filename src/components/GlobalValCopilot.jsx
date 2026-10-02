@@ -1,3 +1,4 @@
+import {DecisionCard as PortfolioDecisionCard} from './DecisionPanel'
 import {isDemoRecord} from '../lib/producer-display'
 import React,{useEffect,useMemo,useRef,useState} from 'react'
 import {ChevronsLeft,ChevronsRight,Mic,MicOff,Maximize2,Minimize2,Pin,ArrowLeft,BrainCircuit,Camera,CheckCircle2,ChevronDown,Clock3,FileText,History,ImagePlus,LoaderCircle,MessageSquareText,PanelRightOpen,Paperclip,Plus,Search,Send,Settings2,ShieldCheck,Sparkles,UserRound,Volume2,X} from 'lucide-react'
@@ -129,6 +130,7 @@ export function ReasoningResponse({payload,sourceAttachments=[],density,outputMo
   <DecisionCard reasoning={reasoning} answer={answer} action="" audioNode={audioNode}/>
  </article>
  return <article className={`global-val-answer is-${density}`}>
+  {payload?.decisionCards?.length>0&&<details className="nba-panel"><summary>Decisões e evidências da carteira</summary><div className="nba-grid">{payload.decisionCards.slice(0,5).map(card=><PortfolioDecisionCard key={card.id} card={card}/>)}</div></details>}
   {isBehavioralProfile?<ProfileResponse reasoning={reasoning} answer={answer} facts={facts} outputMode={outputMode} audioNode={audioNode}/>:<>
   <DecisionCard reasoning={reasoning} answer={answer} action={degraded||generalGuidance?'':strategy.action} audioNode={audioNode}/>
   {/* A VAL descartava a propria resposta e escrevia "Nao ha evidencia selecionada suficiente"

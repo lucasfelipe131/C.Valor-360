@@ -1,7 +1,8 @@
-import React,{useCallback,useEffect,useRef,useState} from 'react'
+import React,{lazy,Suspense,useCallback,useEffect,useRef,useState} from 'react'
 import {Activity,ArrowLeft,ArrowRight,CheckCircle2,Link2,RefreshCw,ShieldCheck} from 'lucide-react'
 import './IntegrationHub.css'
 
+const DecisionGovernance=lazy(()=>import('../components/DecisionGovernance'))
 const labels={PROCESSED:'Processado',OLDER:'Versão anterior',DUPLICATE:'Reenvio sem alteração',CONFLICT:'Conflito',REVIEW_REQUIRED:'Revisão necessária',REJECTED:'Rejeitado',FAILED:'Falha',RECEIVED:'Recebido',RETRY_REQUESTED:'Nova tentativa solicitada',IDENTITY_RECHECK:'Vínculo reavaliado',NEWER:'Versão mais recente',HEALTHY:'Saudável',ATTENTION:'Requer atenção',DEGRADED:'Com falhas',NO_EVENTS:'Aguardando eventos'}
 const date=value=>value?new Date(value).toLocaleString('pt-BR'):'Ainda não registrada'
 const messages={hub_identity_ambiguous:'Há mais de um produtor compatível. Confira as chaves no Manual antes de reenviar.',hub_identity_unresolved:'O produtor não foi identificado nesta carteira. Confira a chave de origem.',hub_identity_name_collision:'Já existe um produtor com este nome. Informe a chave do cadastro existente.',hub_canonical_data_conflict:'O conteúdo diverge de uma informação mantida na VAL. Revise na origem antes de reenviar.',hub_version_conflict:'A mesma versão contém informações diferentes. Revise na origem.',hub_external_id_content_conflict:'O identificador foi reenviado com outro conteúdo. O original foi preservado.',hub_approved_data_conflict:'Um dado validado não pode ser substituído por conteúdo sem aprovação.',hub_producer_archived:'O produtor está arquivado. Nenhum dado foi alterado.',hub_retry_backoff:'Aguarde o horário da próxima tentativa.',hub_retry_not_eligible:'Este evento não permite nova tentativa.'}
@@ -13,6 +14,7 @@ async function request(path,options){
 }
 export default function IntegrationHub(){
  const [data,setData]=useState(null),[status,setStatus]=useState(''),[offset,setOffset]=useState(0),[detail,setDetail]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('')
+ const [governanceOpen,setGovernanceOpen]=useState(false)
  const detailSequence=useRef(0)
  const load=useCallback(async signal=>{
   setBusy(true);setError('')
@@ -32,6 +34,7 @@ export default function IntegrationHub(){
  }
  const metrics=data?.connectors?.reduce((sum,item)=>({processed:sum.processed+item.metrics.processed,review:sum.review+item.metrics.review+item.metrics.conflicts,rejected:sum.rejected+item.metrics.rejected,failures:sum.failures+item.metrics.failures}),{processed:0,review:0,rejected:0,failures:0})
  return <div className="page-stack integration-hub">
+  <section className="panel"><button className="ghost-btn" onClick={()=>setGovernanceOpen(v=>!v)} aria-expanded={governanceOpen}>Governança de decisões e revisões</button>{governanceOpen&&<Suspense fallback={<p role="status">Carregando governança…</p>}><DecisionGovernance/></Suspense>}</section>
   <section className="panel hub-intro"><div><span className="eyebrow">VAL • HUB DE DADOS</span><h2>Integrações com origem e histórico.</h2><p>Acompanhe os dados que chegam à sua carteira e os eventos que precisam de atenção.</p><span className="hub-scope"><ShieldCheck size={16}/>Somente dados do seu acesso</span></div><button className="ghost-btn" disabled={busy} onClick={()=>load()}><RefreshCw size={17}/>{busy?'Atualizando…':'Atualizar'}</button></section>
   {error&&<div role="alert" className="form-error">{error}</div>}
   {notice&&<p role="status">{notice}</p>}

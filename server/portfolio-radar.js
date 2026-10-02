@@ -1,4 +1,4 @@
-import {buildDecisionIntelligence} from './decision-intelligence.js'
+import {buildDecisionIntelligence,buildNextBestAction} from './decision-intelligence.js'
 import {rankOpportunityPortfolio} from './sales-playbook.js'
 import {buildConversionFoundation} from './conversion-engine.js'
 
@@ -32,7 +32,13 @@ function evidenceIds(signal,opportunity,foundation){
  ]).slice(0,8)
 }
 
-export function buildPortfolioRadar(contexts=[],{now=Date.now(),maxItems=5}={}){
+export function buildPortfolioRadar(contexts=[],{now=Date.now(),maxItems=5,version='v1',policy}={}){
+ if(version==='v2'){
+  const cards=array(contexts).map(context=>buildNextBestAction(context,{now,policy})).sort((a,b)=>b.priority_score-a.priority_score||(timestamp(a.deadline)??Infinity)-(timestamp(b.deadline)??Infinity)||a.producer_id.localeCompare(b.producer_id,'en'))
+  cards.forEach((card,index)=>{card.rank=index+1})
+  const items=cards.filter(card=>card.eligible).slice(0,Math.max(1,Math.min(5,Number(maxItems)||5))).map(card=>({...card,clientId:card.producer_id,clientName:card.producer.name,score:card.priority_score,priority:card.priority_band==='NOW'?'agora':card.priority_band==='MONITOR'?'acompanhar':'esta_semana',reason:card.why_this_producer,nextAction:card.next_best_action,amount:card.expected_value.amount,evidenceIds:card.evidence_refs,evidenceCount:card.evidence.length,generatedAt:card.generated_at}))
+  return {version:'val-portfolio-radar-v2',generatedAt:new Date(now).toISOString(),items,cards,considered:cards.length,maxItems:5,policy:{version:policy?.version||cards[0]?.policy_version,automaticContact:false,automaticCrmWrite:false,usesRecordedSignalsOnly:true,tieBreak:'score_desc_deadline_asc_producer_id_asc'},emptyReason:items.length?'':'Nenhum produtor possui sinal comprovado para priorizar; consulte as informações materiais ausentes.'}
+ }
  const items=array(contexts).map(context=>{
   const client=context.client||{}
   const opportunities=array(context.opportunities).filter(item=>item&&!closed(item.stage))

@@ -26,7 +26,7 @@ await build({entryPoints:['src/App.jsx'],outfile:dir+'/App.js',bundle:true,platf
   if(!/\/src\/(components|pages)\//.test(candidate)||keep.has(name)||(!existsSync(candidate+'.jsx')&&!candidate.endsWith('.jsx')))return
   return {path:name,namespace:'ui-boundary'}
  })
- builder.onLoad({filter:/.*/,namespace:'ui-boundary'},args=>({loader:'js',contents:`import React from 'react';const Stub=props=>React.createElement('test-${args.path}',props);export default Stub;${args.path==='DecisionCards'?namedCards.map(name=>`export const ${name}=Stub;`).join(''):''}`}))
+ builder.onLoad({filter:/.*/,namespace:'ui-boundary'},args=>({loader:'js',contents:`import React from 'react';const Stub=props=>React.createElement('test-${args.path}',props);export default Stub;${args.path==='DecisionCards'?namedCards.map(name=>`export const ${name}=Stub;`).join(''):args.path==='DecisionPanel'?'export const DecisionCard=Stub;':''}`}))
 }}]})
 const App=(await import(pathToFileURL(dir+'/App.js'))).default
 const clients=[{id:'demo-a',name:'Produtor DEMO A',isDemo:true},{id:'demo-b',name:'Produtor DEMO B',isDemo:true}]
