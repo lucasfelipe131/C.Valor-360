@@ -1,0 +1,220 @@
+[
+  {
+    "id": "AG-001",
+    "request_id": "23e0eeb8-2150-4883-a8e5-c00e17aeb865",
+    "started_at": "2026-09-27T13:19:38.187Z",
+    "intent": "ASK_GENERAL",
+    "route": "CONTEXT",
+    "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+    "selected_ids": [],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  },
+  {
+    "id": "AG-003",
+    "request_id": "8fe115ef-13e5-4690-8c20-71d5f03d8c2d",
+    "started_at": "2026-09-27T13:21:06.949Z",
+    "intent": "ASK_AGRONOMIC",
+    "route": "CONTEXT",
+    "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+    "selected_ids": [],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  },
+  {
+    "id": "AG-006",
+    "request_id": "41aaf2df-8709-4998-8ef6-336cf1d30832",
+    "started_at": "2026-09-27T13:22:24.284Z",
+    "intent": "ASK_AGRONOMIC",
+    "route": "CONTEXT",
+    "retrieval_status": "SELECTED",
+    "selected_ids": [
+      "KI-137"
+    ],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  },
+  {
+    "id": "AG-007",
+    "request_id": "867635ba-8a93-4345-a7d0-7e91323e0d31",
+    "started_at": "2026-09-27T13:22:30.224Z",
+    "intent": "ASK_GENERAL",
+    "route": "CONTEXT",
+    "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+    "selected_ids": [],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  },
+  {
+    "id": "AG-011",
+    "request_id": "3ef3be9b-d4ed-49b2-b9d6-86c903993c96",
+    "started_at": "2026-09-27T13:24:07.486Z",
+    "intent": "ASK_GENERAL",
+    "route": "CONTEXT",
+    "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+    "selected_ids": [],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  },
+  {
+    "id": "AG-013",
+    "request_id": "57754c4b-cb64-43ec-b005-85ae9241f311",
+    "started_at": "2026-09-27T13:25:24.315Z",
+    "intent": "ASK_GENERAL",
+    "route": "CONTEXT",
+    "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+    "selected_ids": [],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  },
+  {
+    "id": "AG-014",
+    "request_id": "46b43f3a-372d-49e3-b00c-54acd5abe343",
+    "started_at": "2026-09-27T13:25:31.831Z",
+    "intent": "ASK_GENERAL",
+    "route": "CONTEXT",
+    "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+    "selected_ids": [],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  },
+  {
+    "id": "AG-016",
+    "request_id": "16a32827-152d-44f5-ae7d-e1d66cf1b7ed",
+    "started_at": "2026-09-27T13:25:49.143Z",
+    "intent": "ASK_AGRONOMIC",
+    "route": "CONTEXT",
+    "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+    "selected_ids": [],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  },
+  {
+    "id": "AG-018",
+    "request_id": "27b3203c-62ce-4bdd-96a4-880a5adf7ca0",
+    "started_at": "2026-09-27T13:26:28.433Z",
+    "intent": "ASK_GENERAL",
+    "route": "CONTEXT",
+    "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+    "selected_ids": [],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  },
+  {
+    "id": "AG-019",
+    "request_id": "c34800e2-8002-4cd2-ac01-ab93e545f38d",
+    "started_at": "2026-09-27T13:26:35.074Z",
+    "intent": "ASK_GENERAL",
+    "route": "CONTEXT",
+    "retrieval_status": "SELECTED",
+    "selected_ids": [
+      "KI-123"
+    ],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  },
+  {
+    "id": "AG-022",
+    "request_id": "9115eb49-4b87-4791-9ebe-6217bd333855",
+    "started_at": "2026-09-27T13:26:55.720Z",
+    "intent": "ASK_GENERAL",
+    "route": "CONTEXT",
+    "retrieval_status": "SELECTED",
+    "selected_ids": [
+      "KI-188"
+    ],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  },
+  {
+    "id": "AG-024",
+    "request_id": "6777597f-8358-41f2-bb73-72e7fdb8705c",
+    "started_at": "2026-09-27T13:27:10.016Z",
+    "intent": "ASK_GENERAL",
+    "route": "CONTEXT",
+    "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+    "selected_ids": [],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  },
+  {
+    "id": "AG-027",
+    "request_id": "81a7fa04-8fa8-4d07-b953-4d646cf0d540",
+    "started_at": "2026-09-27T13:27:35.766Z",
+    "intent": "ASK_GENERAL",
+    "route": "CONTEXT",
+    "retrieval_status": "SELECTED",
+    "selected_ids": [
+      "KI-127"
+    ],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  },
+  {
+    "id": "AG-028",
+    "request_id": "9d3cfcf2-ae5a-46dd-91e4-2973af97c472",
+    "started_at": "2026-09-27T13:27:43.054Z",
+    "intent": "ASK_GENERAL",
+    "route": "CONTEXT",
+    "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+    "selected_ids": [],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  },
+  {
+    "id": "AG-029",
+    "request_id": "e83f7f2e-0aa4-468d-8ba0-d6b63db2fa77",
+    "started_at": "2026-09-27T13:27:49.849Z",
+    "intent": "ASK_GENERAL",
+    "route": "CONTEXT",
+    "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+    "selected_ids": [],
+    "historical_provider_outcomes": [
+      "completed",
+      "completed"
+    ],
+    "historical_root_cause": null
+  }
+]

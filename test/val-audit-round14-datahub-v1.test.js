@@ -53,10 +53,13 @@ test('DH-02 — corrigir o valor e reimportar atualiza a compra, nao duplica',as
  // A impressao digital carregava valor, resultado e status, entao o ON CONFLICT nunca casava e a
  // venda de 10 mil virava 25 mil, com "negocios reconhecidos" = 2 para uma venda so.
  await pg.query('DELETE FROM business_events WHERE tenant_id=$1',[tenantId])
- await repository.ingestCommercialImport({ownerId,summary:resumo(1,'-a'),clients:clientes,rows:[linha()],mapping})
- await repository.ingestCommercialImport({ownerId,summary:resumo(1,'-b'),clients:clientes,rows:[linha()],mapping})
+ // A identidade da venda deve ser explícita: mesmo dia/produto não distingue
+ // correção de uma segunda venda. LEG-11 protege o caso sem essa evidência.
+ const identityMapping={...mapping,eventId:'Negocio'}
+ await repository.ingestCommercialImport({ownerId,summary:resumo(1,'-a'),clients:clientes,rows:[linha({Negocio:'NF-001/item-1'})],mapping:identityMapping})
+ await repository.ingestCommercialImport({ownerId,summary:resumo(1,'-b'),clients:clientes,rows:[linha({Negocio:'NF-001/item-1'})],mapping:identityMapping})
  assert.equal((await eventos()).length,1,'reenviar a mesma planilha nao pode duplicar')
- await repository.ingestCommercialImport({ownerId,summary:resumo(1,'-c'),clients:clientes,rows:[linha({Valor:'15000'})],mapping})
+ await repository.ingestCommercialImport({ownerId,summary:resumo(1,'-c'),clients:clientes,rows:[linha({Negocio:'NF-001/item-1',Valor:'15000'})],mapping:identityMapping})
  const depois=await eventos()
  assert.equal(depois.length,1,'corrigir o valor nao pode criar um segundo evento')
  assert.equal(Number(depois[0].value),15000,'o valor corrigido tem de valer')

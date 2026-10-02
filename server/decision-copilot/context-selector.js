@@ -27,7 +27,7 @@ export const contextQueryTokens=(value,minimum=4)=>[...new Set(normalize(value).
 
 const domainPatterns=Object.freeze({
  PROFILE:/\b(?:perfi(?:l|s)|comportament\w*|analitic\w*|relacional|inovador|conservador|digital|como (?:ele|ela|o produtor|a produtora) (?:decide|compra|pensa|escolhe|toma (?:as )?decis(?:ao|oes))|como (?:(?:devo|posso|deveria) )?(?:abordar|lidar com|conversar com|negociar com|falar com) (?:ele|ela|o produtor|a produtora)|(?:estilo|jeito)(?: de (?:decisao|decidir|compra|comprar))? (?:dele|dela))\b/,
- GRAINS:/\b(?:graos?|soja|milho|trigo|sorgo|cevada|commodity|commodities|contrato (?:de|dos?) graos?|trava(?:mento|r)?|fixa(?:cao|r)|saca|basis)\b/,
+ GRAINS:/\b(?:graos?|soja|milho|trigo|sorgo|cevada|commodity|commodities|contrato (?:de|dos?) graos?|trava(?:mento|r)?|fixa(?:cao|r)|sacas?|basis)\b|\bsc\s*\/\s*ha\b/,
  CREDIT:/\b(?:credito|financeir\w*|cpf|limite|score|inadimpl\w*|financiamento|prazo de pagamento)\b/,
  GEO:/\b(?:geo|mapa|mapeamento|geometria|poligono|coordenad\w*|talhao|area desenhada)\b/,
  AGRONOMY:/\b(?:agronom\w*|manejo|solo|ureia|nitrogenio|fosforo|potassio|cigarrinha\w*|lagarta\w*|adubacao|nutri[cç][aã]o\w*|fertiliz\w*|herbic\w*|insetic\w*|fungic\w*|praga\w*|doen[cç]a\w*|diagn[oó]stic\w*|fitoscan|nutriscan|lavoura\w*|safra\w*|cultur\w*|plantio\w*|semente\w*|semeadur\w*|germina[cç][aã]o|emerg[eê]ncia)\b/,

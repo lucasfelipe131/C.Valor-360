@@ -255,7 +255,7 @@ test('a Home conta as oportunidades pela mesma fonte do quadro',()=>{
  const dashboard=readFileSync(join(repositoryRoot,'src/pages/Dashboard.jsx'),'utf8')
  const settings=readFileSync(join(repositoryRoot,'src/pages/Settings.jsx'),'utf8')
  for(const source of [dashboard,settings]){
-  assert.match(source,/buildOpportunityWorkspace\(clients,opportunities\)/)
+  assert.match(source,source===dashboard?/buildOpportunityWorkspace\(metricClients,opportunities\)/:/buildOpportunityWorkspace\(clients,opportunities\)/)
   assert.doesNotMatch(source,/reconcilePipeline\(clients,\[\.\.\./)
  }
 })

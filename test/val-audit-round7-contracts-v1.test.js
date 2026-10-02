@@ -167,7 +167,7 @@ test('a Home usa o mesmo recorte do quadro, e não conta perdido nem arquivado',
  assert.equal(closed.length,1)
  assert.equal(closed.reduce((total,item)=>total+Number(item.value||0),0),50000)
  const dashboard=read('src/pages/Dashboard.jsx')
- assert.match(dashboard,/filterOpportunities\(buildOpportunityWorkspace\(clients,opportunities\),\{archived:false\}\)/)
+ assert.match(dashboard,/filterOpportunities\(buildOpportunityWorkspace\(metricClients,opportunities\),\{archived:false\}\)/)
 })
 
 // O Cliente 360 lia só o array cru e dizia "Nenhuma oportunidade ativa" para o produtor que a Home,

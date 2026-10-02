@@ -1,4 +1,13 @@
 const clean=(value,max=240)=>String(value??'').replace(/[\r\n\t]+/g,' ').replace(/\s+/g,' ').trim().slice(0,max)
+// Settle an interrupted request only in the thread that owned it. This is a
+// lifecycle notice, never a grounded answer or material for a follow-up.
+export function settleCancelledConversationTurn(threads,{threadKey,turnId,at=new Date().toISOString()}={}){
+ const turns=threads?.[threadKey]
+ if(!turnId||!Array.isArray(turns))return threads
+ const question=turns.find(turn=>turn.role==='user'&&turn.turnId===turnId)
+ if(!question||['failed','cancelled'].includes(question.status)||turns.some(turn=>turn.turnId===turnId&&turn.role!=='user'))return threads
+ return {...threads,[threadKey]:[...turns.map(turn=>turn===question?{...turn,status:'cancelled'}:turn),{role:'system',status:'cancelled',turnId,text:'Solicitação cancelada ao mudar de conversa ou iniciar outra pergunta. Nenhuma resposta foi concluída para este turno.',at,persistence:'NONE',followUpEligible:false}]}
+}
 const cleanAssistantText=(value,max=3000)=>String(value??'').replace(/[\r\t]+/g,' ').split('\n').map(line=>line.replace(/\s+/g,' ').trim()).filter(Boolean).join('\n').slice(0,max)
 const safePart=value=>encodeURIComponent(clean(value,180)||'none')
 const own=(value,key)=>Boolean(value)&&Object.prototype.hasOwnProperty.call(value,key)
@@ -428,6 +437,9 @@ export function debugContextTraceView(reasoning={},environment={}){
 }
 
 export function isBehavioralProfileResponse(reasoning={}){
+ // A general explanation can have PROFILE as its subject without having
+ // evaluated anyone. Do not replace that answer with a private profile card.
+ if(reasoning?.premises?.profile_specific===false||reasoning?.run?.tool_result?.capability==='AI_GENERAL_KNOWLEDGE')return false
  const dataPath=String(reasoning?.commercial_context?.data_path||reasoning?.premises?.data_path||'').toUpperCase()
  const domain=String(reasoning?.premises?.context_scope?.domain||'').toUpperCase()
  return dataPath==='BEHAVIORAL_PROFILE'||domain==='PROFILE'

@@ -1,4 +1,5 @@
 import {matchedValContextDomains} from './context-selector.js'
+import {registeredSpouseQuestion} from '../registered-fact-query.js'
 
 export const producerEntityResolverVersion='val.producer_entity_resolver.v1'
 export const clientReferenceResolutionVersion='val.client_reference_resolution.v1'
@@ -67,7 +68,7 @@ const naturalReferencePatterns=Object.freeze([
 // Interrogativo, quantificador, ordinal e substantivo de agenda nunca sao nome de produtor:
 // "quem eu tenho que visitar hoje?" virava a busca por um produtor chamado "quem" e a conversa
 // travava com 422.
-const nonNameReference=/^(?:quem|qual|quais|quantos|quantas|alguem|algu[eé]m|alguns|algumas|todos|todas|ninguem|ningu[eé]m|nada|primeiro|primeira|ultimo|[uú]ltimo|ultima|[uú]ltima|agenda|rota|roteiro|semana|hoje|amanha|amanh[aã]|gente|pessoal|time|equipe)\b/iu
+const nonNameReference=/^(?:um|uma|pulverizacao|pulverização|aplicacao|aplicação|diagnostico|diagnóstico|declarou|disse|afirmou|quem|qual|quais|quantos|quantas|alguem|algu[eé]m|alguns|algumas|todos|todas|ninguem|ningu[eé]m|nada|primeiro|primeira|ultimo|[uú]ltimo|ultima|[uú]ltima|agenda|rota|roteiro|semana|hoje|amanha|amanh[aã]|gente|pessoal|time|equipe)\b/iu
 // Substantivo-entidade SOZINHO ("a fazenda", "o produtor", "essa propriedade") e outra forma de dizer
 // "o produtor aberto", nao o nome de alguem. Precisa casar a referencia INTEIRA: como prefixo isto
 // derrubaria "Fazenda Boa Vista", que e nome de produtor de verdade.
@@ -85,6 +86,13 @@ const stripReference=value=>{
 export function extractNaturalClientReference(message){
  const source=clean(message,2000)
  if(!source)return Object.freeze({kind:'NONE',reference:null})
+ const spouse=registeredSpouseQuestion(source)
+ if(spouse){
+  if(!spouse.ownerReference)return Object.freeze({kind:'CURRENT_CLIENT',reference:'produtor atual'})
+  // An indirect relation is not an alias for the active producer. Require an
+  // explicit authorized identity instead of accepting a trailing "dele".
+  return Object.freeze({kind:spouse.indirectOwner?'EXPLICIT_NAME':'FACT_OWNER',reference:stripReference(spouse.ownerReference)})
+ }
  if(/\b(?:volta|volte|retoma|retome)\s+(?:(?:para|pro|pra|ao|no)\s+)?(?:(?:o\s+)?produtor\s+)?anterior\b/iu.test(source))return Object.freeze({kind:'PREVIOUS_CLIENT',reference:'anterior'})
  for(const {kind,pattern} of naturalReferencePatterns){
   const match=source.match(pattern)

@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto'
+import {legacyVisitLifecycle} from '../visit-loop/lifecycle.js'
 import {classifyValContextDomain,matchedValContextDomains} from './context-selector.js'
 
 export const responseGroundingVersion='val.response_grounding.v2'
@@ -193,11 +194,12 @@ const strategyInstruction=/^(?:nao\s+)?(?:abra|acompanhe|acompanhar|adapte|adapt
 const genericAssertionState=/\b(?:ele|ela|produtor\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:e|esta|tem|possui|carrega|mantem|demonstra|desvia|cultiva|quer|pretende|vai|parece|opera)\b/
 const genericAssertionPast=/\b(?:ele|ela|produtor\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:plantou|colheu|vendeu|comprou|pagou|arrendou|contratou|assinou|reclamou|atrasou|quitou|renegociou|aplicou|entregou|recebeu|fechou|perdeu|ganhou|investiu|financiou|antecipou|travou|fixou|deixou|prometeu|aceitou|recusou|cancelou)\b[^.!?;]{0,60}?\b(?:soja|milho|trigo|algodao|cafe|graos?|producao|safra|lavoura|talhao|hectares?|contratos?|propostas?|pedido|parcelas?|custeio|divida|credito|financiamento|emprestimo|banco|fatura|boleto|saldo|visita|compromisso|reuniao|atendimento|insumos?|fertilizante|defensivo|semente|adubo|maquina|trator|arrendamento|concorrente|desconto|pagamento|assinatura)\b/
 const genericAssertionPastBare=/\b(?:ele|ela|produtor\w*|cliente|fazenda|operacao|perfil|reputacao)(?:\s+(?:dele|dela|do produtor|da produtora|do cliente))?\s+(?:plantou|colheu|vendeu|comprou|pagou|arrendou|contratou|assinou|reclamou|atrasou|quitou|renegociou|aplicou|entregou|recebeu|fechou|perdeu|ganhou|investiu|financiou|antecipou|travou|fixou|deixou|prometeu|aceitou|recusou|cancelou)\b/
+const genericPresentTransaction=/\b(?:ele|ela|produtor\w*|cliente)\s+(?:paga|recebe|vende|compra|arrenda|contrata|financia|deve|possui|cultiva)\b[^.!?;]{0,80}(?:r\$|\b(?:divida|banco|contrato|hectares?|sacas?|graos?|parcela|custeio)\b)/
 // O objeto de transacao separa narracao individual de explicacao geral porque a explicacao retoma
 // uma COISA com pronome anaforico. Na PRIMEIRA frase do texto nao ha frase anterior que introduza a
 // coisa retomada, entao ali nao existe leitura anaforica e vale a forma larga - sem exigir objeto.
 const genericAssertionFirstSentence=value=>String(value??'').split(/(?<=[.!?])\s+/)[0]||''
-const genericAssertion={test:value=>genericAssertionState.test(value)||genericAssertionPast.test(value)||genericAssertionPastBare.test(genericAssertionFirstSentence(value))}
+const genericAssertion={test:(value,{firstSentence=true}={})=>genericAssertionState.test(value)||genericPresentTransaction.test(value)||genericAssertionPast.test(value)||(firstSentence&&genericAssertionPastBare.test(genericAssertionFirstSentence(value)))}
 // "deve" e a excecao que a lista nao resolve: modal ("ele deve ser aplicado antes da floracao") e
 // explicacao geral legitima, obrigacao ("ela deve ao banco") e afirmacao sobre uma pessoa. O que
 // separa os dois e o infinitivo logo depois.
@@ -221,6 +223,12 @@ const pronounObligation=new RegExp(
  +`|\\b(?:ele|ela)\\s+deve\\s+(?:${modalInterposer}\\s+)?\\w*(?:ar|er|ir)\\b[^.!?;]{0,50}?\\b(?:soja|milho|trigo|algodao|cafe|graos?|producao|safra|lavoura|talhao|hectares?|contratos?|propostas?|pedido|parcelas?|custeio|divida|credito|financiamento|emprestimo|banco|fatura|boleto|saldo|visita|compromisso|reuniao|atendimento|insumos?|fertilizante|defensivo|semente|adubo|maquina|trator|arrendamento|concorrente|desconto|pagamento|assinatura)\\b`)
 const safeNamedObjectFollower=new Set(['antes','como','com','depois','durante','em','na','nas','no','nos','para','por','sobre'])
 const nonNameClauseLeads=new Set(['a','ainda','basis','biblioteca','calagem','chuva','clima','como','confianca','cotacao','ctc','custo','estoque','evite','fitoscan','frete','hedge','informe','inteligencia','manual','margem','mercado','milho','na','nao','nenhum','nenhuma','nutriscan','o','perfil','ph','por','preco','priorize','producao','roi','safra','selecione','soja','sua','temperatura','trigo','use','valide','wasde'])
+// Sentence capitalization alone does not make a common concept a person.
+// Only a complete one-word subject is exempt: "Logística Silva" remains a name.
+const commonConceptSubjects=new Set('porcentagem percentagem proporcao fracao percentual amostragem saturacao compactacao infiltracao decomposicao rotacao alelopatia fotossintese evaporacao germinacao logistica planejamento comunicacao negociacao monitoramento diagnostico prevencao produtividade rendimento variacao correlacao causalidade probabilidade estatistica matematica aritmetica economia'.split(' '))
+// A denominator describes a unit, not land owned by an individual. Keep bare
+// hectares, amounts of land, possession, named subjects and all other guards.
+const generalUnitText=value=>value.replace(/\bpor\s+hectares?\b|\/\s*(?:ha|hectares?)\b/g,'por unidade de area')
 // Termos que ESCOLHEM entre registros ja selecionados ("a ultima", "a proxima", "a atual") em vez
 // de predicar atributo novo. Com o registro "Visita concluida em 08/09/2026 na Fazenda Boa Vista",
 // responder "A ultima visita concluida foi em 08/09/2026 na Fazenda Boa Vista." era descartado
@@ -500,6 +508,40 @@ function evidenceMatchesFacet(facet,text='',sourceType=''){
  return true
 }
 
+// Resolve only a local, explicit conceptual antecedent. A passive clause about
+// that concept is not a private producer attribute. Ambiguous, active, personal
+// or mixed predicates retain the existing fail-closed behavior.
+function hasGlobalIndividualAssertion(rawText=''){
+ let antecedent=null
+ for(const [index,clause] of splitClaims(rawText).entries()){
+  const source=normalize(clause)
+  const domains=matchedValContextDomains(source)
+  const privateDomain=domains.some(domain=>!['AGRONOMY','GRAINS'].includes(domain))
+  const named=hasNamedIndividualAssertion(clause)
+  const unsafe=implicitIndividualAttribute.test(generalUnitText(source))||hasNamedIndividualAssertion(clause.replace(/^(Ele|Ela)\b/,word=>word.toLowerCase()))||pronounObligation.test(source)
+  // The PR106 resolver visits clauses separately. Preserve the round15 rule's
+  // position in the whole response, rather than treating every clause as first.
+  if(genericAssertion.test(source,{firstSentence:index===0})){
+   const passive=source.match(/^(ele|ela)\s+(?:e|esta)\s+([a-z]+(?:ad|id)[oa])\b/)
+   const remainder=passive?source.slice(passive[0].length):source
+   const resolved=passive&&antecedent&&passive[1]===antecedent.pronoun&&domains.includes('AGRONOMY')&&!privateDomain&&!unsafe&&!genericAssertion.test(remainder)
+   if(!resolved)return true
+  }else if(named||pronounObligation.test(source))return true
+  // A new nominal subject replaces the antecedent; a pronoun does not establish
+  // one. Gender must agree, and a domain label alone never authorizes a person.
+  const nominal=source.match(/^(a|o|um|uma)\s+([a-z-]+)/)
+  if(nominal){
+   const subjectDomains=matchedValContextDomains(nominal[2])
+   const definition=source.match(/^(?:a|o|um|uma)\s+[a-z-]+\s+e\s+(?:um|uma)\s+([a-z-]+)/)
+   const definedConcept=definition&&matchedValContextDomains(definition[1]).includes('AGRONOMY')
+   const subjectIsProperName=/^(?:A|O|Um|Uma|a|o|um|uma)\s+\p{Lu}/u.test(clause)
+   antecedent=!subjectIsProperName&&(subjectDomains.includes('AGRONOMY')||definedConcept)&&!privateDomain&&!unsafe&&!genericAssertion.test(source)
+    ?{pronoun:['a','uma'].includes(nominal[1])?'ela':'ele'}:null
+  }else if(!/^(?:ele|ela)\b/.test(source))antecedent=null
+ }
+ return false
+}
+
 function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}){
  // GLOBAL describes the subject of the evidence; it cannot be used as an
  // escape hatch for an omitted producer id.  Market facts need an aggregate
@@ -509,7 +551,7 @@ function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}
  // Statement curado da Biblioteca fala do "produtor" como categoria ("o produtor tende a...") e
  // cita autores ("Fisher e Ury propõem"): não é afirmação sobre um indivíduo da carteira. O caminho
  // geral nunca lê dado de produtor, e a ingestão da Biblioteca é curada e fail-closed.
- if(sourceType!=='general_knowledge'&&(genericAssertion.test(text)||hasNamedIndividualAssertion(rawText)))return false
+ if(sourceType!=='general_knowledge'&&(sourceType==='model_general_knowledge'?hasGlobalIndividualAssertion(rawText):genericAssertion.test(text)||hasNamedIndividualAssertion(rawText)))return false
  if(sourceType==='market_snapshot'){
   if(!globalAggregateAnchor.test(text))return false
   // An aggregate prefix such as "Mercado:" must never launder an individual
@@ -537,7 +579,7 @@ function semanticallyGeneralGlobalEvidence({sourceType='',text='',rawText=''}={}
  // general_knowledge/system_capability, o vocabulário aqui é por definição imprevisível (qualquer
  // conceito), então a lista fechada de âncoras não se aplica; a proteção contra atribuição
  // individual acima (genericAssertion/hasNamedIndividualAssertion) continua valendo.
- if(sourceType==='model_general_knowledge')return !implicitIndividualAttribute.test(conceptText)
+ if(sourceType==='model_general_knowledge')return !implicitIndividualAttribute.test(generalUnitText(conceptText))
  if(sourceType==='system_safety_policy')return deterministicSafetyPolicy.test(text)
  return false
 }
@@ -557,7 +599,8 @@ function evidenceEntries(evidence=[],scope={}){
    id:sourceId,auditId:sourceId||`unresolved:${index+1}`,sourceType,
    text:normalize(rawText),rawText,
    producerId:producerOf(object),tenantId:tenantOf(object),ownerId:ownerOf(object),
-   evidenceType,global,scopeMarker
+   evidenceType,global,scopeMarker,
+   visitLifecycle:sourceType==='visit'?legacyVisitLifecycle({...object,status:object.status||rawText}):null
   }
   const aliasConflictCodes=[]
   const recursiveAliases=(node,extractor,seen=new Set())=>{
@@ -611,7 +654,7 @@ function evidenceEntries(evidence=[],scope={}){
   // pronome + verbo de estado/posse ("ele tem", "ela esta", "ele e") - medido em 8 de 8.
   const globalProducerSpecific=global&&sourceType!=='general_knowledge'&&/\b(?:este produtor|esse produtor|aquele produtor|o produtor|a produtora|do produtor|da produtora|para o produtor|para a produtora|este cliente|esse cliente|o cliente|do cliente|da cliente)\b/.test(entry.text)
   if(globalProducerSpecific)aliasConflictCodes.push('GLOBAL_PRODUCER_SPECIFIC_CLAIM')
-  if(global&&sourceType!=='general_knowledge'&&(genericAssertion.test(entry.text)||pronounObligation.test(entry.text)||hasNamedIndividualAssertion(rawText)))aliasConflictCodes.push('GLOBAL_INDIVIDUAL_ASSERTION')
+  if(global&&sourceType!=='general_knowledge'&&(sourceType==='model_general_knowledge'?hasGlobalIndividualAssertion(rawText):genericAssertion.test(entry.text)||pronounObligation.test(entry.text)||hasNamedIndividualAssertion(rawText)))aliasConflictCodes.push('GLOBAL_INDIVIDUAL_ASSERTION')
   if(global&&!semanticallyGeneralGlobalEvidence(entry))aliasConflictCodes.push('GLOBAL_NOT_SEMANTICALLY_GENERAL')
   if(global&&entry.producerId)aliasConflictCodes.push('GLOBAL_WITH_PRODUCER_ID')
   if(global&&!trustedGlobalSourceTypes.has(sourceType))aliasConflictCodes.push('UNTRUSTED_GLOBAL_SOURCE_TYPE')
@@ -668,11 +711,16 @@ function splitClaims(answer=''){
 function hasNamedIndividualAssertion(value=''){
  const source=String(value??'')
  const pattern=/(?:^|[.!?;,:—–]\s*|\be\s+)(\p{Lu}[\p{L}\p{M}'’-]*(?:\s+\p{Lu}[\p{L}\p{M}'’-]*){0,4})\s+([\p{Ll}\p{M}]+)/gu
- const individualPredicate=/^(?:e|esta|tem|possui|cultiva|quer|pretende|vai|parece|opera|mantem|demonstra|prefere|valoriza|pediu|solicitou|decide|afirmou|disse|relatou|comprou|vendeu)$/
+ const individualPredicate=/^(?:e|esta|tem|possui|cultiva|quer|pretende|vai|parece|opera|mantem|demonstra|prefere|valoriza|pediu|solicitou|decide|afirmou|disse|relatou|comprou|vendeu|paga|recebe|vende|compra|arrenda|contrata|financia|deve)$/
  for(const match of source.matchAll(pattern)){
   const lead=normalize(match[1]).split(' ')[0]
   const follower=normalize(match[2])
-  if(!nonNameClauseLeads.has(lead)&&!strategyInstruction.test(lead)&&!safeNamedObjectFollower.has(follower)&&individualPredicate.test(follower))return true
+  const demonstrative=/^(?:isso|isto|aquilo)$/i.test(match[1])
+  const definitionTail=normalize(source.slice(match.index+match[0].length))
+  const commonConcept=!/\s/.test(match[1])&&commonConceptSubjects.has(lead)&&follower==='e'
+   &&/^(?:(?:a|o|um|uma)\s+)?(?:proporcao|fracao|medida|relacao|selecao|organizacao|processo|tecnica|metodo|fenomeno|capacidade|probabilidade|calculo|transformacao|variacao|decomposicao|comunicacao)\b/.test(definitionTail)
+  const modalPronoun=/^(?:ele|ela)$/i.test(match[1])&&follower==='deve'
+  if(!demonstrative&&!commonConcept&&!modalPronoun&&!nonNameClauseLeads.has(lead)&&!strategyInstruction.test(lead)&&!safeNamedObjectFollower.has(follower)&&individualPredicate.test(follower))return true
  }
  return false
 }
@@ -844,10 +892,11 @@ const cropOnlyGrainsQuestion=question=>{
  return matchedValContextDomains(source).includes('GRAINS')&&!remaining.includes('GRAINS')&&remaining.length>0
 }
 
-function directlyAnswersQuestion({domain,question,answer,unsupportedClaims,activeProducerName=''}){
+function directlyAnswersQuestion({domain,question,answer,unsupportedClaims,activeProducerName='',facetEvidence=false,onFailure=null}){
+ const fail=reason=>{onFailure?.(reason);return false}
  const source=normalize(answer)
- if(!source)return false
- if(unsupportedClaims.length)return false
+ if(!source)return fail('EMPTY_ANSWER')
+ if(unsupportedClaims.length)return fail('UNSUPPORTED_CLAIM')
  const answerClaims=splitClaims(answer)
  const safetyRefusal=/\b(?:reteve qualquer orientacao tecnica acionavel|evite liberar orientacao tecnica acionavel|encaminhe (?:o contexto e as fontes|a solicitacao) ao responsavel habilitado)\b/.test(source)
  const asksTechnicalAction=/\b(?:dose|dosagem|aplicar|aplicacao|mistura|prescrever|prescricao|recomendar|recomendacao|produto|manejo)\b/.test(normalize(question))
@@ -857,20 +906,26 @@ function directlyAnswersQuestion({domain,question,answer,unsupportedClaims,activ
   return isPureInsufficiencyClaim(claim,question,domain)||uncertainty.test(normalized)||declaredGap.test(normalized)||neutralProcessStrategy.test(normalized)
  })
  if(safeAbsence)return true
- if(domain==='PROFILE')return /\bperfil (?:principal|comportamental)\b/.test(source)&&/\bconfianca\b/.test(source)&&(/\bcomo abordar\b/.test(source)||/\bo que ainda nao sabemos\b/.test(source))&&unsupportedClaims.length===0
+ if(domain==='PROFILE')return /\bperfil (?:principal|comportamental)\b/.test(source)&&/\bconfianca\b/.test(source)&&(/\bcomo abordar\b/.test(source)||/\bo que ainda nao sabemos\b/.test(source))&&unsupportedClaims.length===0||fail('PROFILE_REQUIREMENTS')
  const facet=contextFacet(domain,question)
- if(!answerClaimsMatchFacet(facet,answer))return false
- if(facet&&!evidenceMatchesFacet(facet,source,''))return false
+ if(!answerClaimsMatchFacet(facet,answer))return fail('FACET_CONFLICT')
+ if(facet&&!evidenceMatchesFacet(facet,source,''))return fail('FACET_EVIDENCE_MISSING')
+ // The authorized typed record, validated claim by claim, is the relevance
+ // proof for a completed visit. Lexical overlap is not a second source of truth
+ // for completion labels such as Realizada versus concluída.
+ if(facet==='LAST_VISIT'&&facetEvidence)return true
  const answerDomains=matchedValContextDomains(source)
  if(domain==='MULTI_DOMAIN'){
   // Um nome de cultura ("soja", "milho") classifica a pergunta também como GRAINS. Quando esse é o
   // único motivo do GRAINS e a pergunta tem outro domínio material ("janela de plantio da soja"),
   // a resposta não precisa repetir vocabulário de grãos: basta cobrir o domínio da pergunta.
   const requested=matchedValContextDomains(question).filter(item=>!(item==='GRAINS'&&cropOnlyGrainsQuestion(question)))
-  if(!(requested.length>0&&requested.every(item=>answerDomains.includes(item))))return false
+  if(!(requested.length>0&&requested.every(item=>answerDomains.includes(item))))return fail('DOMAIN_MISMATCH')
  }
- const domainCompatible=domain==='MULTI_DOMAIN'||answerDomains.includes(domain)||domain==='COMMERCIAL'&&answerDomains.includes('OPPORTUNITY')
- if(!['GENERAL','MULTI_DOMAIN'].includes(domain)&&!domainCompatible)return false
+ // No domain keyword is an unknown classification, not a conflicting domain.
+ // Elliptical definitions still have to pass material-topic overlap below.
+ const domainCompatible=answerDomains.length===0||domain==='MULTI_DOMAIN'||answerDomains.includes(domain)||domain==='COMMERCIAL'&&answerDomains.includes('OPPORTUNITY')
+ if(!['GENERAL','MULTI_DOMAIN'].includes(domain)&&!domainCompatible)return fail('DOMAIN_MISMATCH')
  // Resumos determinísticos de calculadora devolvem o resultado, não repetem
  // todas as entradas da pergunta. Considere-os diretamente relevantes apenas
  // quando pedido e resposta compartilham o mesmo tópico material e a resposta
@@ -909,7 +964,7 @@ function directlyAnswersQuestion({domain,question,answer,unsupportedClaims,activ
  // "daninhas" por "daninha". A comparação usa radical leve; o suporte de cada claim já foi validado.
  const answerStems=new Set(tokens(answer).map(lexicalStem))
  const overlap=questionTokens.filter(token=>answerStems.has(lexicalStem(token))).length
- return overlap>=Math.max(1,Math.ceil(questionTokens.length*.5))
+ return overlap>=Math.max(1,Math.ceil(questionTokens.length*.5))||fail('LEXICAL_OVERLAP')
 }
 
 /**
@@ -931,6 +986,14 @@ export function assertResponseQuestionRelevance({question='',answer='',domain=''
 export function factMatchesQuestionFacet({domain='',question='',statement='',sourceType=''}={}){
  const facet=contextFacet(domain||classifyValContextDomain(question),question)
  return evidenceMatchesFacet(facet,normalize(statement),clean(sourceType,120))
+}
+
+function authorizedVisitFacet({domain,question,claims,evidence,activeProducerId,tenantId,ownerId,now}){
+ if(contextFacet(domain,question)!=='LAST_VISIT'||!activeProducerId)return false
+ const entries=evidenceEntries(evidence,{domain,question,activeProducerId,tenantId,ownerId,now})
+ const authorized=new Set(entries.filter(entry=>entry.sourceType==='visit'&&entry.visitLifecycle==='COMPLETED'&&entry.scopeCompatible&&entry.domainCompatible&&entry.provenanceCompatible&&entry.temporalCompatible&&evidenceMatchesFacet('LAST_VISIT',entry.text,entry.sourceType)).map(entry=>entry.id))
+ const facts=claims.filter(claim=>claim.type==='FACT')
+ return facts.length>0&&facts.every(claim=>claim.supported&&claim.evidence_refs.length>0&&claim.evidence_refs.every(ref=>authorized.has(ref)))
 }
 
 export function evaluateResponseGrounding({question='',answer='',domain='',evidence=[],activeProducerId='',activeProducerName='',tenantId='',ownerId='',field='answer',now=new Date(),checkQuestionRelevance=true}={}){
@@ -958,7 +1021,8 @@ export function evaluateResponseGrounding({question='',answer='',domain='',evide
  const provenanceViolations=entries.filter(item=>!item.provenanceCompatible).map(item=>Object.freeze({source_ref:item.auditId,reason_codes:item.provenanceCodes}))
  const temporalViolations=entries.filter(item=>!item.temporalCompatible).map(item=>item.auditId)
  const unsupportedClaims=claims.filter(item=>!item.supported)
- const directlyAnswers=!checkQuestionRelevance||directlyAnswersQuestion({domain:selectedDomain,question,answer,unsupportedClaims,activeProducerName:scopeName})
+ const facetEvidence=checkQuestionRelevance&&authorizedVisitFacet({domain:selectedDomain,question,claims,evidence,activeProducerId,tenantId,ownerId,now:evaluatedAt})
+ const directlyAnswers=!checkQuestionRelevance||directlyAnswersQuestion({domain:selectedDomain,question,answer,unsupportedClaims,activeProducerName:scopeName,facetEvidence})
  return Object.freeze({
   version:responseGroundingVersion,domain:selectedDomain,
   passed:unsupportedClaims.length===0&&scopeViolations.length===0&&incompatibleEvidence.length===0&&provenanceViolations.length===0&&temporalViolations.length===0&&directlyAnswers,
@@ -979,13 +1043,16 @@ export function evaluateReasoningGrounding({question='',domain='',evidence=[],ac
  // caminho rapido: com a visita selecionada e em facts_used, "quando foi a ultima visita
  // concluida do Joao Pereira?" continuava respondida com "Nao ha evidencia selecionada
  // suficiente" - a VAL negando o dado que ela mesma carregou.
- const relevance=directlyAnswersQuestion({domain:domain||classifyValContextDomain(question),question,answer:answerEntries.map(([,value])=>value).join(' '),unsupportedClaims,activeProducerName:clean(activeProducerId,180)?clean(activeProducerName,180):''})
+ const selectedDomain=domain||classifyValContextDomain(question)
+ const facetEvidence=authorizedVisitFacet({domain:selectedDomain,question,claims:claimLedger.filter(claim=>answerFields.test(claim.field)),evidence,activeProducerId,tenantId,ownerId,now})
+ let questionRelevanceReason='PASS'
+ const relevance=directlyAnswersQuestion({onFailure:reason=>{questionRelevanceReason=reason},domain:selectedDomain,question,answer:answerEntries.map(([,value])=>value).join(' '),unsupportedClaims,activeProducerName:clean(activeProducerId,180)?clean(activeProducerName,180):'',facetEvidence})
  return Object.freeze({
   version:responseGroundingVersion,domain:domain||classifyValContextDomain(question),
   passed:results.length>0&&results.every(result=>result.passed)&&relevance,
   unsupported_terms:[...new Set(results.flatMap(result=>result.unsupported_terms))],unsupported_claims:results.flatMap(result=>result.unsupported_claims),
   scope_violations:[...new Set(results.flatMap(result=>result.scope_violations))],incompatible_evidence:[...new Set(results.flatMap(result=>result.incompatible_evidence))],provenance_violations:results.flatMap(result=>result.provenance_violations).filter((item,index,items)=>items.findIndex(candidate=>candidate.source_ref===item.source_ref&&candidate.reason_codes.join('|')===item.reason_codes.join('|'))===index),temporal_violations:[...new Set(results.flatMap(result=>result.temporal_violations))],
-  question_relevance:relevance?'PASS':'FAIL',evidence_count:list(evidence).length,claim_ledger:claimLedger
+  question_relevance:relevance?'PASS':'FAIL',question_relevance_reason:questionRelevanceReason,evidence_count:list(evidence).length,claim_ledger:claimLedger
  })
 }
 

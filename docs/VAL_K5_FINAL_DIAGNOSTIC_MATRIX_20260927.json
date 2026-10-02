@@ -1,0 +1,1000 @@
+{
+  "baseline_sha": "345ed8ec1a054dfa6f9ac31a3771693d4bbc415c",
+  "checkpoint_sha": "fbca0acf4e79569023b17d7fcb64310ef89b17e8",
+  "paid_calls": 0,
+  "root_cause_known": 0,
+  "root_cause_groups": 0,
+  "deterministic_prefix_groups": 5,
+  "deterministic_prefix_explained": 15,
+  "cases": [
+    {
+      "CASE_ID": "AG-001",
+      "QUESTION": "Por que a água infiltra devagar numa faixa do terreno e depressa na faixa vizinha?",
+      "HISTORICAL": {
+        "id": "AG-001",
+        "request_id": "23e0eeb8-2150-4883-a8e5-c00e17aeb865",
+        "started_at": "2026-09-27T13:19:38.187Z",
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+        "selected_ids": [],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "selected_ids": [],
+        "rejected_ids": [],
+        "candidate_rejections": [],
+        "delivery_rejected_ids": [],
+        "retrieval_reason": "QUESTION_OUTSIDE_CORPUS",
+        "rejection_reason": "NO_SELECTED_STATEMENT",
+        "eligibility_rejection_counts": {
+          "QUESTION_OUTSIDE_CORPUS": 198
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "No candidate selected",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    },
+    {
+      "CASE_ID": "AG-003",
+      "QUESTION": "Minhocas abundantes bastam para concluir que o solo está bem estruturado?",
+      "HISTORICAL": {
+        "id": "AG-003",
+        "request_id": "8fe115ef-13e5-4690-8c20-71d5f03d8c2d",
+        "started_at": "2026-09-27T13:21:06.949Z",
+        "intent": "ASK_AGRONOMIC",
+        "route": "CONTEXT",
+        "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+        "selected_ids": [],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_AGRONOMIC",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "selected_ids": [],
+        "rejected_ids": [],
+        "candidate_rejections": [],
+        "delivery_rejected_ids": [],
+        "retrieval_reason": "QUESTION_OUTSIDE_CORPUS",
+        "rejection_reason": "NO_SELECTED_STATEMENT",
+        "eligibility_rejection_counts": {
+          "QUESTION_OUTSIDE_CORPUS": 198
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "No candidate selected",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    },
+    {
+      "CASE_ID": "AG-006",
+      "QUESTION": "Um pH bom garante que o alumínio não limite as raízes?",
+      "HISTORICAL": {
+        "id": "AG-006",
+        "request_id": "41aaf2df-8709-4998-8ef6-336cf1d30832",
+        "started_at": "2026-09-27T13:22:24.284Z",
+        "intent": "ASK_AGRONOMIC",
+        "route": "CONTEXT",
+        "retrieval_status": "SELECTED",
+        "selected_ids": [
+          "KI-137"
+        ],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_AGRONOMIC",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 1,
+        "selected_count": 1,
+        "selected_ids": [
+          "KI-137"
+        ],
+        "rejected_ids": [
+          "KI-137"
+        ],
+        "candidate_rejections": [],
+        "delivery_rejected_ids": [
+          "KI-137"
+        ],
+        "retrieval_reason": "ELIGIBLE_CANDIDATES_FOUND",
+        "rejection_reason": "SUBJECT_NOT_FULLY_COVERED",
+        "eligibility_rejection_counts": {
+          "NO_DECISION_RELEVANCE": 167,
+          "SUBJECT_NOT_COVERED": 5,
+          "MODULE_NOT_APPLICABLE": 24,
+          "WEAK_QUERY_COVERAGE": 1
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [
+          {
+            "id": "KI-137",
+            "statement": "Em solos tropicais com óxidos de ferro e alumínio, o fósforo aplicado é fixado e fica menos disponível para a planta; aplicar o adubo fosfatado próximo à linha de semeadura reduz o contato do fertilizante com o solo, diminui a fixação e concentra o nutriente perto das raízes, favorecendo o estabelecimento inicial da lavoura."
+          }
+        ],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "Candidate rejected before delivery; no acceptance bug proved",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    },
+    {
+      "CASE_ID": "AG-007",
+      "QUESTION": "Em que situação a análise de subsolo acrescenta informação à camada de 0 a 20 cm?",
+      "HISTORICAL": {
+        "id": "AG-007",
+        "request_id": "867635ba-8a93-4345-a7d0-7e91323e0d31",
+        "started_at": "2026-09-27T13:22:30.224Z",
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+        "selected_ids": [],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "selected_ids": [],
+        "rejected_ids": [],
+        "candidate_rejections": [],
+        "delivery_rejected_ids": [],
+        "retrieval_reason": "QUESTION_OUTSIDE_CORPUS",
+        "rejection_reason": "NO_SELECTED_STATEMENT",
+        "eligibility_rejection_counts": {
+          "QUESTION_OUTSIDE_CORPUS": 198
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "No candidate selected",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    },
+    {
+      "CASE_ID": "AG-011",
+      "QUESTION": "O calcário corrige imediatamente toda a profundidade explorada pelas raízes?",
+      "HISTORICAL": {
+        "id": "AG-011",
+        "request_id": "3ef3be9b-d4ed-49b2-b9d6-86c903993c96",
+        "started_at": "2026-09-27T13:24:07.486Z",
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+        "selected_ids": [],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "selected_ids": [],
+        "rejected_ids": [],
+        "candidate_rejections": [],
+        "delivery_rejected_ids": [],
+        "retrieval_reason": "QUESTION_OUTSIDE_CORPUS",
+        "rejection_reason": "NO_SELECTED_STATEMENT",
+        "eligibility_rejection_counts": {
+          "QUESTION_OUTSIDE_CORPUS": 198
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "No candidate selected",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    },
+    {
+      "CASE_ID": "AG-013",
+      "QUESTION": "Por que aplicar gesso não equivale a corrigir o pH com calcário?",
+      "HISTORICAL": {
+        "id": "AG-013",
+        "request_id": "57754c4b-cb64-43ec-b005-85ae9241f311",
+        "started_at": "2026-09-27T13:25:24.315Z",
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+        "selected_ids": [],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "selected_ids": [],
+        "rejected_ids": [],
+        "candidate_rejections": [],
+        "delivery_rejected_ids": [],
+        "retrieval_reason": "QUESTION_OUTSIDE_CORPUS",
+        "rejection_reason": "NO_SELECTED_STATEMENT",
+        "eligibility_rejection_counts": {
+          "QUESTION_OUTSIDE_CORPUS": 198
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "No candidate selected",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    },
+    {
+      "CASE_ID": "AG-014",
+      "QUESTION": "O que devo verificar antes de relacionar folha amarelada à falta de nitrogênio?",
+      "HISTORICAL": {
+        "id": "AG-014",
+        "request_id": "46b43f3a-372d-49e3-b00c-54acd5abe343",
+        "started_at": "2026-09-27T13:25:31.831Z",
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+        "selected_ids": [],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "selected_ids": [],
+        "rejected_ids": [],
+        "candidate_rejections": [],
+        "delivery_rejected_ids": [],
+        "retrieval_reason": "QUESTION_OUTSIDE_CORPUS",
+        "rejection_reason": "NO_SELECTED_STATEMENT",
+        "eligibility_rejection_counts": {
+          "QUESTION_OUTSIDE_CORPUS": 198
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "No candidate selected",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    },
+    {
+      "CASE_ID": "AG-016",
+      "QUESTION": "Potássio elevado no solo significa automaticamente maior produtividade?",
+      "HISTORICAL": {
+        "id": "AG-016",
+        "request_id": "16a32827-152d-44f5-ae7d-e1d66cf1b7ed",
+        "started_at": "2026-09-27T13:25:49.143Z",
+        "intent": "ASK_AGRONOMIC",
+        "route": "CONTEXT",
+        "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+        "selected_ids": [],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_AGRONOMIC",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "selected_ids": [],
+        "rejected_ids": [],
+        "candidate_rejections": [],
+        "delivery_rejected_ids": [],
+        "retrieval_reason": "QUESTION_OUTSIDE_CORPUS",
+        "rejection_reason": "NO_SELECTED_STATEMENT",
+        "eligibility_rejection_counts": {
+          "QUESTION_OUTSIDE_CORPUS": 198
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "No candidate selected",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    },
+    {
+      "CASE_ID": "AG-018",
+      "QUESTION": "Por que não se deve comparar análise foliar de estádios diferentes sem critério?",
+      "HISTORICAL": {
+        "id": "AG-018",
+        "request_id": "27b3203c-62ce-4bdd-96a4-880a5adf7ca0",
+        "started_at": "2026-09-27T13:26:28.433Z",
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+        "selected_ids": [],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "selected_ids": [],
+        "rejected_ids": [],
+        "candidate_rejections": [],
+        "delivery_rejected_ids": [],
+        "retrieval_reason": "NO_ELIGIBLE_CANDIDATES",
+        "rejection_reason": "NO_SELECTED_STATEMENT",
+        "eligibility_rejection_counts": {
+          "NO_DECISION_RELEVANCE": 123,
+          "SUBJECT_NOT_COVERED": 48,
+          "MODULE_NOT_APPLICABLE": 24,
+          "WEAK_QUERY_COVERAGE": 3
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "No candidate selected",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    },
+    {
+      "CASE_ID": "AG-019",
+      "QUESTION": "Uma chuva leve depois da ureia sempre elimina o risco de volatilização?",
+      "HISTORICAL": {
+        "id": "AG-019",
+        "request_id": "c34800e2-8002-4cd2-ac01-ab93e545f38d",
+        "started_at": "2026-09-27T13:26:35.074Z",
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_status": "SELECTED",
+        "selected_ids": [
+          "KI-123"
+        ],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 4,
+        "selected_count": 1,
+        "selected_ids": [
+          "KI-123"
+        ],
+        "rejected_ids": [
+          "KI-102",
+          "KI-160",
+          "KI-146",
+          "KI-123"
+        ],
+        "candidate_rejections": [
+          {
+            "id": "KI-102",
+            "reason": "RANK_LIMIT"
+          },
+          {
+            "id": "KI-160",
+            "reason": "RANK_LIMIT"
+          },
+          {
+            "id": "KI-146",
+            "reason": "RANK_LIMIT"
+          }
+        ],
+        "delivery_rejected_ids": [
+          "KI-123"
+        ],
+        "retrieval_reason": "ELIGIBLE_CANDIDATES_FOUND",
+        "rejection_reason": "UNIVERSAL_QUALIFIER_NOT_COVERED",
+        "eligibility_rejection_counts": {
+          "NO_DECISION_RELEVANCE": 128,
+          "SUBJECT_NOT_COVERED": 42,
+          "MODULE_NOT_APPLICABLE": 24
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [
+          {
+            "id": "KI-123",
+            "statement": "As diferenças entre nitrogênio incorporado ao solo (nitrogênio enterrado) e nitrogênio aplicado em cobertura na superfície (nitrogênio aéreo) estão na perda por volatilização de amônia quando a fonte é ureia: a incorporação reduz essa perda, enquanto a aplicação superficial deixa a ureia mais exposta à perda, que pode ser expressiva e varia com umidade, temperatura, pH do solo e tempo até a próxima chuva ou irrigação."
+          }
+        ],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "Candidate rejected before delivery; no acceptance bug proved",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    },
+    {
+      "CASE_ID": "AG-022",
+      "QUESTION": "O vigor das sementes importa mesmo quando o teste de germinação é alto?",
+      "HISTORICAL": {
+        "id": "AG-022",
+        "request_id": "9115eb49-4b87-4791-9ebe-6217bd333855",
+        "started_at": "2026-09-27T13:26:55.720Z",
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_status": "SELECTED",
+        "selected_ids": [
+          "KI-188"
+        ],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 2,
+        "selected_count": 1,
+        "selected_ids": [
+          "KI-188"
+        ],
+        "rejected_ids": [
+          "KI-137",
+          "KI-188"
+        ],
+        "candidate_rejections": [
+          {
+            "id": "KI-137",
+            "reason": "RANK_LIMIT"
+          }
+        ],
+        "delivery_rejected_ids": [
+          "KI-188"
+        ],
+        "retrieval_reason": "ELIGIBLE_CANDIDATES_FOUND",
+        "rejection_reason": "SUBJECT_NOT_FULLY_COVERED",
+        "eligibility_rejection_counts": {
+          "NO_DECISION_RELEVANCE": 124,
+          "SUBJECT_NOT_COVERED": 23,
+          "CATEGORY_CONFLICT": 24,
+          "MODULE_NOT_APPLICABLE": 24,
+          "WEAK_QUERY_COVERAGE": 1
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [
+          {
+            "id": "KI-188",
+            "statement": "A substituição de semente certificada por semente salva reduz o desembolso e transfere para a lavoura o risco de sanidade, vigor e identidade genética, que só aparece depois, no estande e na sanidade."
+          }
+        ],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "Candidate rejected before delivery; no acceptance bug proved",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    },
+    {
+      "CASE_ID": "AG-024",
+      "QUESTION": "População maior sempre compensa um plantio atrasado de milho?",
+      "HISTORICAL": {
+        "id": "AG-024",
+        "request_id": "6777597f-8358-41f2-bb73-72e7fdb8705c",
+        "started_at": "2026-09-27T13:27:10.016Z",
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+        "selected_ids": [],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "selected_ids": [],
+        "rejected_ids": [],
+        "candidate_rejections": [],
+        "delivery_rejected_ids": [],
+        "retrieval_reason": "NO_ELIGIBLE_CANDIDATES",
+        "rejection_reason": "NO_SELECTED_STATEMENT",
+        "eligibility_rejection_counts": {
+          "NO_DECISION_RELEVANCE": 117,
+          "MODULE_NOT_APPLICABLE": 24,
+          "SUBJECT_NOT_COVERED": 34,
+          "WEAK_QUERY_COVERAGE": 1,
+          "CROP_CONFLICT": 22
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "No candidate selected",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    },
+    {
+      "CASE_ID": "AG-027",
+      "QUESTION": "Por que a mesma densidade de plantas pode ter respostas diferentes entre híbridos?",
+      "HISTORICAL": {
+        "id": "AG-027",
+        "request_id": "81a7fa04-8fa8-4d07-b953-4d646cf0d540",
+        "started_at": "2026-09-27T13:27:35.766Z",
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_status": "SELECTED",
+        "selected_ids": [
+          "KI-127"
+        ],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 6,
+        "selected_count": 1,
+        "selected_ids": [
+          "KI-127"
+        ],
+        "rejected_ids": [
+          "KI-147",
+          "KI-173",
+          "KI-166",
+          "KI-135",
+          "KI-198",
+          "KI-127"
+        ],
+        "candidate_rejections": [
+          {
+            "id": "KI-147",
+            "reason": "RANK_LIMIT"
+          },
+          {
+            "id": "KI-173",
+            "reason": "RANK_LIMIT"
+          },
+          {
+            "id": "KI-166",
+            "reason": "RANK_LIMIT"
+          },
+          {
+            "id": "KI-135",
+            "reason": "RANK_LIMIT"
+          },
+          {
+            "id": "KI-198",
+            "reason": "RANK_LIMIT"
+          }
+        ],
+        "delivery_rejected_ids": [
+          "KI-127"
+        ],
+        "retrieval_reason": "ELIGIBLE_CANDIDATES_FOUND",
+        "rejection_reason": "UNREQUESTED_CROP_IN_STATEMENT",
+        "eligibility_rejection_counts": {
+          "NO_DECISION_RELEVANCE": 135,
+          "WEAK_QUERY_COVERAGE": 33,
+          "MODULE_NOT_APPLICABLE": 24
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [
+          {
+            "id": "KI-127",
+            "statement": "A produtividade do milho responde à combinação entre população de plantas, espaçamento entre linhas e arquitetura foliar do híbrido: o rendimento cresce de forma consistente até cerca de 60 mil plantas/ha, e acima disso o comportamento diverge por arquitetura foliar, com híbridos de folha ereta ainda ganhando produtividade, os de folha semiereta estabilizando, e os de folha aberta se beneficiando mais de espaçamento reduzido; a população e o espaçamento ideais também dependem de disponibilidade hídrica, fertilidade do solo e época de semeadura."
+          }
+        ],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "Candidate rejected before delivery; no acceptance bug proved",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    },
+    {
+      "CASE_ID": "AG-028",
+      "QUESTION": "Qual a diferença entre emergência desuniforme e espaçamento desuniforme?",
+      "HISTORICAL": {
+        "id": "AG-028",
+        "request_id": "9d3cfcf2-ae5a-46dd-91e4-2973af97c472",
+        "started_at": "2026-09-27T13:27:43.054Z",
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+        "selected_ids": [],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "selected_ids": [],
+        "rejected_ids": [],
+        "candidate_rejections": [],
+        "delivery_rejected_ids": [],
+        "retrieval_reason": "QUESTION_OUTSIDE_CORPUS",
+        "rejection_reason": "NO_SELECTED_STATEMENT",
+        "eligibility_rejection_counts": {
+          "QUESTION_OUTSIDE_CORPUS": 198
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "No candidate selected",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    },
+    {
+      "CASE_ID": "AG-029",
+      "QUESTION": "Uma crosta na superfície pode explicar plântulas retorcidas?",
+      "HISTORICAL": {
+        "id": "AG-029",
+        "request_id": "e83f7f2e-0aa4-468d-8ba0-d6b63db2fa77",
+        "started_at": "2026-09-27T13:27:49.849Z",
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_status": "NO_APPLICABLE_KNOWLEDGE",
+        "selected_ids": [],
+        "historical_provider_outcomes": [
+          "completed",
+          "completed"
+        ],
+        "historical_root_cause": null
+      },
+      "REPLAY": {
+        "intent": "ASK_GENERAL",
+        "route": "CONTEXT",
+        "retrieval_expected_in_existing_path": true,
+        "retrieval_required_by_question": false,
+        "deterministic_answer_sufficient": false,
+        "specific_clarification_triggered": false,
+        "context_required": false,
+        "candidate_count": 0,
+        "selected_count": 0,
+        "selected_ids": [],
+        "rejected_ids": [],
+        "candidate_rejections": [],
+        "delivery_rejected_ids": [],
+        "retrieval_reason": "QUESTION_OUTSIDE_CORPUS",
+        "rejection_reason": "NO_SELECTED_STATEMENT",
+        "eligibility_rejection_counts": {
+          "QUESTION_OUTSIDE_CORPUS": 198
+        },
+        "grounding_decision": "NOT_REACHED_COVERAGE_REJECTED",
+        "language_validation_decision": "NOT_IN_GENERAL_ANSWER_PATH",
+        "selected_statements": [],
+        "replay_matches_observed_ids": true
+      },
+      "FINAL_FALLBACK_ORIGIN": "GENERAL_DETERMINISTIC_NO_COVERAGE (rendered text and code path)",
+      "FINAL_ROOT_CAUSE": "UNKNOWN_MISSING_PROVIDER_OUTPUT_OR_VALIDATION_DIAGNOSTICS",
+      "IMPROPER_GENERIC_FALLBACK": "NOT_PROVEN",
+      "CORRECT_FINAL_NO_DATA": "NOT_PROVEN",
+      "CLASSIFICATION": {
+        "A_correct_no_data": "Retrieval-stage absence only; final NO_DATA correctness not proven",
+        "B_specific_clarification": "No material clarification trigger in deterministic replay",
+        "C_routing_failure": "Not observed: ASK_GENERAL/CONTEXT reaches provider",
+        "D_retrieval_failure": "Rule decision replayed; no source outage proved",
+        "E_selection_failure": "No candidate selected",
+        "F_language_enhancer_rejection": "Not in this direct general-answer path",
+        "G_grounding_blocked": "Final generated-answer decision not recorded",
+        "H_provider_failure": "Two completed provider usage events; no provider failure proved",
+        "I_generic_deterministic_fallback": "Observed",
+        "J_other_proven": "Historical observability gap; exact internal rejection cannot be inferred from mocks"
+      }
+    }
+  ],
+  "evidence_limit": "Observed fields come from historical logs. REPLAY fields use the unchanged knowledge corpus/rules with observed intent and historical time. No original provider output is available. Authored mock rejection reasons are not historical root causes."
+}

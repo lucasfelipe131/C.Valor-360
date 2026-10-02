@@ -1,3 +1,4 @@
+import {isK5Synthetic} from './business-metrics-scope.js'
 import {reconcilePipeline} from './opportunity-pipeline.js'
 import {commercialMetrics} from './commercial-metrics.js'
 
@@ -78,6 +79,7 @@ export function filterOpportunities(items,filters={}){
   (filters.archived?['lost','archived'].includes(item.status):!['lost','archived'].includes(item.status)))
 }
 export function opportunityMetrics(items,now=new Date(),timeZone='America/Sao_Paulo'){
+ items=items.filter(item=>!isK5Synthetic(item.client))
  const open=items.filter(x=>x.stage!=='Fechado'&&x.status==='open')
  const known=open.filter(x=>opportunityValue(x)!==null)
  const month=dayKey(now,timeZone).slice(0,7)

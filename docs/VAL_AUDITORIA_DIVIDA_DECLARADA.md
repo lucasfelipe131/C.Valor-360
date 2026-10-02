@@ -168,6 +168,27 @@ varrer o histórico da conversa, e enunciado que só existe em transcript se per
 
 ## Como esta lista é mantida
 
+### Checkpoint de integração PR106 + rodada 15 — 20/09/2026
+
+Origens preservadas: `0f0813a853b71bcd83e48f10afad51d7d60e54be` e
+`bacf4d89f11d7ceec119f5f7eae69f581aed6b9e`. Não inclui commits posteriores.
+Esta anotação não homologa staging nem encerra os itens históricos acima.
+
+- Integração reproduziu e corrigiu a aplicação da regra de primeira frase GR15
+  a cada cláusula do resolvedor PR106. A posição agora é relativa à resposta;
+  as negativas de transação/obrigação privada permanecem exercitadas.
+- Seleção preserva léxico, palavras gramaticais, locuções simétricas e exclusão
+  de verbos do assunto estrito. `agir`, ausente do léxico, foi incluído após a
+  regressão existente do PR106 falhar. Sem fonte ou resposta nova.
+- **BLOCKED — compatibilidade de importação legada:** em PGlite sintético,
+  usando o fingerprint exato de `ffbe53a4…`, uma venda de 10000 reimportada sem
+  alteração pela implementação da rodada 14 resultou em duas compras, total
+  20000. O teste DH-02 novo→novo passa, mas não cobre essa transição. A reprodução
+  sanitizada acompanha `VAL_INTEGRACAO_PR106_RECONCILIADA_RESULTADO.md`.
+  Nenhuma migração, deduplicação ou mudança de identidade foi implementada.
+  Decidir tratamento compatível dos identificadores legados antes de promover;
+  CI verde não elimina este bloqueador. Não é defeito atribuído ao merge.
+
 Cada item nasce de uma medição e morre com outra. Um item sai daqui quando é corrigido — com o
 commit que o fecha — ou quando uma lente o refuta, e nesse caso a refutação também fica registrada.
 Item que só foi discutido, nunca medido, não entra.

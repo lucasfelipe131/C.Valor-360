@@ -1,3 +1,5 @@
+import {attachValResponseOutcome} from './server/val-response-outcome.js'
+import {prepareK5StagingFixtures,canUsePr011Probe} from './server/k5-staging-fixtures.js'
 import {registeredFactQuery,registeredFactPresentation} from './server/registered-fact-query.js'
 import {readDailyVisitSuggestions} from './server/daily-visit-suggestions.js'
 import {profilePhoto} from './server/profile-photo.js'
@@ -18,6 +20,7 @@ import {AccessRepository} from './server/access-repository.js'
 import {deriveSignals,normalizeIntegrationEvent,requiresTechnicalSignature,verifyIntegrationToken,verifyWebhookSignature} from './server/ingestion.js'
 import {normalizeGrainIntent,normalizeGrainMarketSnapshot,normalizeGrainProfile,intentStatuses} from './server/grain-intelligence.js'
 import {GrainRepository} from './server/grain-repository.js'
+import {readGrainBalance,appendGrainMovement} from './server/grain-balance.js'
 import {readProducerWorkspace} from './server/producer-workspace.js'
 import {ValRepository} from './server/repository.js'
 import {createVisitRouteService} from './server/visit-route-service.js'
@@ -84,7 +87,7 @@ if(!existsSync(storePath))writeFileSync(storePath,JSON.stringify({surveys:[],imp
 
 function readStore(){try{return JSON.parse(readFileSync(storePath,'utf8'))}catch{return {surveys:[],imports:[],val:{recommendations:[],feedback:[],integrationEvents:[],signals:[],conversations:[]}}}}
 function saveStore(store){const temporary=`${storePath}.tmp`;writeFileSync(temporary,JSON.stringify(store,null,2));renameSync(temporary,storePath)}
-function json(response,status,payload){response.writeHead(status,{...securityHeaders,'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify(payload))}
+function json(response,status,payload){const context=currentRequestContext();if(context?.method==='POST'&&context?.path==='/api/val/chat')payload=attachValResponseOutcome(payload,status,observe);response.writeHead(status,{...securityHeaders,'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});response.end(JSON.stringify(payload))}
 // O corpo e acumulado em Buffer e decodificado uma unica vez no fim: concatenar cada chunk como
 // string quebra o caractere multibyte partido entre dois segmentos TCP (acento vira U+FFFD e era
 // gravado assim no banco). O limite continua sendo medido em bytes.
@@ -177,9 +180,11 @@ const validatedSurveyAnswers=input=>validateSurveyAnswers(input,surveyOptions)
 
 const runtimeComposition=assertValRuntimeComposition()
 const database=createDatabase(config)
+// One controlled, idempotent staging fixture job; no product endpoint or new config.
+try{const k5=await prepareK5StagingFixtures({db:database,tenantId:config.defaultTenantId});if(k5.status!=='SKIPPED_NOT_K5_STAGING')console.info(JSON.stringify({event:'k5_fixture_preparation',...k5}))}catch(error){console.error(JSON.stringify({event:'k5_fixture_preparation',status:'BLOCKED',reason:error.code||error.message}))}
 const sharedAnswerCache=createSharedKnowledgeAnswerCache({database})
 const auth=createAuth(config)
-const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,tenantId:session.tenantId||config.defaultTenantId,ownerId:session.id||session.sub||session.email,storageScope:auth.storageScope(session)}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,tenantId:config.defaultTenantId,ownerId:'demo@valor360.local',storageScope:'demo'}
+const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,tenantId:session.tenantId||config.defaultTenantId,ownerId:session.id||session.sub||session.email,storageScope:auth.storageScope(session),...(canUsePr011Probe(session)?{pr011Qa:true}:{})}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,tenantId:config.defaultTenantId,ownerId:'demo@valor360.local',storageScope:'demo'}
 const repository=new ValRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const visitRouteService=createVisitRouteService({repository})
 const managementService=createManagementService({db:database,tenantId:config.defaultTenantId})
@@ -278,7 +283,7 @@ async function handleApi(request,response,url){
   if(auth.configured&&!statusIdentity)return json(response,401,{error:'Sua sessão expirou. Entre novamente no VALOR 360.'})
   const databaseHealth=await database.health();const status=await valEngine.status(databaseHealth)
   const engineConfigured=Boolean(config.openaiApiKey&&auth.configured&&databaseHealth.ready)
-  return json(response,200,{...getPublicEngineConfig(),...status,mode:engineConfigured?'openai':config.openaiApiKey?'locked':'demonstration',configured:engineConfigured,keyConfigured:Boolean(config.openaiApiKey),securityReady:auth.configured,realtimeVoice:await realtimeVoice.availability({identity:statusIdentity}),core:valCore.status(),composition:{version:runtimeComposition.version,order:[...runtimeComposition.order]}})
+  return json(response,200,{...getPublicEngineConfig(),...status,rateLimit:{limit:config.aiRequestsPerTenMinutes,windowMs:600_000,scope:'identity',policy:'fixed-window'},mode:engineConfigured?'openai':config.openaiApiKey?'locked':'demonstration',configured:engineConfigured,keyConfigured:Boolean(config.openaiApiKey),securityReady:auth.configured,realtimeVoice:await realtimeVoice.availability({identity:statusIdentity}),core:valCore.status(),composition:{version:runtimeComposition.version,order:[...runtimeComposition.order]}})
  }
  if(url.pathname==='/api/auth/session'&&request.method==='GET'){
   const session=await sessionIdentity(request)
@@ -294,7 +299,14 @@ async function handleApi(request,response,url){
   const payload=await body(request)
   const loginKey=`${requestIdentity(request)}|${String(payload?.email||'').trim().toLowerCase()}`
   if(!rateLimitAllows('login',loginKey,config.loginAttemptsPerTenMinutes))return json(response,429,{error:'Muitas tentativas de acesso. Aguarde alguns minutos.'})
-  const identity=await accessRepository.authenticate(payload.email,payload.password)
+  let identity=await accessRepository.authenticate(payload.email,payload.password)
+  // VAL_ADMIN_PASSWORD is a break-glass credential after bootstrap. If it is rotated in the
+  // environment, presenting the new bootstrap credentials once performs an audited recovery of
+  // the persisted admin hash instead of leaving Railway and PostgreSQL with two different truths.
+  if(!identity&&auth.verifyBootstrapCredentials(payload.email,payload.password)){
+    identity=await accessRepository.recoverBootstrapAdminPassword()
+    observe('auth.bootstrap_admin_recovered',{outcome:'ok'})
+  }
   if(!identity){consumeRateLimit('login',loginKey,config.loginAttemptsPerTenMinutes);return json(response,401,{error:'E-mail ou senha inválidos, acesso bloqueado ou expirado.'})}
   rateBuckets.delete(`login:${loginKey}`)
   const token=auth.issue(identity);response.setHeader('Set-Cookie',auth.cookie(request,token));return json(response,200,{authenticated:true,required:true,demo:false,user:userPayload(identity)})
@@ -471,6 +483,14 @@ async function handleApi(request,response,url){
   const workspace=await grainRepository.getWorkspace(identity?.id||identity?.email)
   return json(response,200,workspace)
  }
+ if(url.pathname==='/api/grains/balance'&&request.method==='GET'){
+  return json(response,200,await readGrainBalance(grainRepository,url.searchParams.get('clientId'),identity?.id||identity?.email))
+ }
+ if(url.pathname==='/api/grains/movements'&&request.method==='POST'){
+  const payload=await body(request)
+  const saved=await appendGrainMovement(grainRepository,payload.clientId,identity?.id||identity?.email,payload)
+  return json(response,saved.idempotent?200:201,{saved:true,...saved})
+ }
  if(url.pathname==='/api/grains/profiles'&&request.method==='PUT'){
   const profile=normalizeGrainProfile(await body(request));const saved=await grainRepository.saveProfile(profile,identity?.id||identity?.email)
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:profile.clientId})
@@ -572,7 +592,16 @@ async function handleApi(request,response,url){
   const requestController=valRequestController
   throwIfRequestAborted(requestController.signal)
   const rateIdentity=identity?.id||identity?.email||requestIdentity(request)
-  if(!consumeRateLimit('val',rateIdentity,config.aiRequestsPerTenMinutes))return json(response,429,{error:'Limite temporário de análises atingido. Aguarde alguns minutos.'})
+  const rateAllowed=consumeRateLimit('val',rateIdentity,config.aiRequestsPerTenMinutes)
+  const rateBucket=rateBuckets.get(`val:${rateIdentity}`)
+  response.setHeader('X-RateLimit-Limit',String(config.aiRequestsPerTenMinutes))
+  response.setHeader('X-RateLimit-Remaining',String(Math.max(0,config.aiRequestsPerTenMinutes-rateBucket.count)))
+  response.setHeader('X-RateLimit-Reset',String(Math.ceil(rateBucket.resetAt/1000)))
+  if(!rateAllowed){
+   const retryAfterSeconds=Math.max(1,Math.ceil((rateBucket.resetAt-Date.now())/1000))
+   response.setHeader('Retry-After',String(retryAfterSeconds))
+   return json(response,429,{error:'Limite temporário de análises atingido. Aguarde alguns minutos.',reason_code:'APPLICATION_RATE_LIMIT',retryAfterSeconds})
+  }
   const payload=await body(request);throwIfRequestAborted(requestController.signal);const attachmentIds=[...new Set((Array.isArray(payload.attachmentIds)?payload.attachmentIds:[]).map(attachmentId).filter(Boolean))].slice(0,3);const requestedMessage=String(payload.message??payload.question??'').trim();const message=(requestedMessage||(attachmentIds.length?'Leia os arquivos que enviei e me diga o que importa.':'Prepare a próxima melhor ação.')).slice(0,3000)
   const tenantId=identity?.tenantId||config.defaultTenantId;const scopedOwnerId=identity?.id||identity?.email
   const rawClarificationSelection=payload.clarificationSelection
@@ -625,7 +654,7 @@ async function handleApi(request,response,url){
   }
   // A comparação já resolveu e autorizou os dois nomes pela thread; não tratar
   // o texto "compare os dois" como candidato a um terceiro produtor.
-  const naturalClientReference=sessionCommandPreview||comparisonResolution?{kind:'NONE',reference:null}:extractNaturalClientReference(message)
+  const naturalClientReference=sessionCommandPreview||comparisonResolution||generalQuestion.conceptContinuation?{kind:'NONE',reference:null}:extractNaturalClientReference(message)
   if(naturalClientReference.kind==='CURRENT_CLIENT'&&!clientId)return json(response,422,{error:'Ainda não há um produtor ativo nesta conversa. Diga o nome para eu localizar a carteira correta.',code:'val_client_reference_context_required',conversationId,clarification:{question:'De qual produtor você está falando?'}})
   if(['EXPLICIT_NAME','AUTHORIZED_NAME_CANDIDATE','FACT_OWNER','PREVIOUS_CLIENT'].includes(naturalClientReference.kind)){
    entityLookupCount+=1
@@ -947,7 +976,7 @@ async function handleApi(request,response,url){
   // era invisivel: a consultora perguntava pelo Sirlei, recebia os hectares do Ivo e nada na frase
   // dizia de quem era. O resolvedor devolve status NONE (AUTHORIZED_NAME_EVIDENCE_ABSENT) nesse caso,
   // e nao NOT_FOUND, por isso o 422 mais acima nao alcancava este caminho.
-  if(detailQuery&&['EXPLICIT_NAME','AUTHORIZED_NAME_CANDIDATE'].includes(naturalClientReference.kind)&&conversationResolution?.status!=='RESOLVED'){
+  if(detailQuery&&(['EXPLICIT_NAME','AUTHORIZED_NAME_CANDIDATE'].includes(naturalClientReference.kind)||detailQuery.kind==='spouse'&&naturalClientReference.kind==='FACT_OWNER')&&conversationResolution?.status!=='RESOLVED'){
    return json(response,422,{error:`Não encontrei “${clean(naturalClientReference.reference,120)}” na sua carteira autorizada. Confirme o nome do produtor.`,code:'val_client_reference_not_found',conversationId,clarification:{question:'Qual é o nome do produtor na sua carteira?'}})
   }
   if(detailQuery&&!attachmentIds.length){
@@ -1096,11 +1125,17 @@ async function handleApi(request,response,url){
  }
  const submitMatch=url.pathname.match(/^\/api\/surveys\/([a-zA-Z0-9_-]+)\/submit$/)
  if(submitMatch&&request.method==='POST'){
-  // Por TOKEN, nao por endereco: um convite so pode ser respondido algumas vezes, e isso nao pode
-  // depender de quem mais esta atras do mesmo IP.
-  if(!consumeRateLimit('survey-submit',submitMatch[1],20))return json(response,429,{error:'Muitas tentativas. Aguarde alguns minutos.'})
+  // Token + origem impede que uma origem esgote a cota de outra para o mesmo convite.
+  // Convites legados continuam aceitos; tokens absurdamente longos nao ocupam baldes.
+  if(String(submitMatch[1]).length>64)return json(response,404,{error:'Este convite não foi encontrado.'})
+  // Identifique token desconhecido antes do corpo e do balde por convite. Assim payload
+  // invalido nao evade o limite por origem nem cria um balde por token inventado.
+  const invitation=await repository.getSurvey(submitMatch[1])
+  if(!invitation){if(!consumeRateLimit('survey-miss',requestIdentity(request),60))return json(response,429,{error:'Muitas tentativas. Aguarde alguns minutos.'});return json(response,404,{error:'Este convite não foi encontrado.'})}
+  if(!consumeRateLimit('survey-submit',`${submitMatch[1]}|${requestIdentity(request)}`,20))return json(response,429,{error:'Muitas tentativas. Aguarde alguns minutos.'})
   const payload=await body(request)
   const answers=validatedSurveyAnswers(payload.answers)
+  // O repository revalida existencia, expiracao e estado dentro da transacao.
   const survey=await repository.submitSurvey({token:submitMatch[1],answers,result:calculateProfile(answers,profileMatrix,'Questionário externo validado no servidor')});return json(response,200,{saved:true,status:survey.status})
  }
  const integrateMatch=url.pathname.match(/^\/api\/surveys\/([a-zA-Z0-9_-]+)\/integrate$/)
@@ -1298,8 +1333,9 @@ async function handleApi(request,response,url){
   // arquivado reaparecer na carteira da tela e o contador prometer 2.500 produtores quando 2.000
   // foram gravados.
   const archivedSkipped=persistence.archivedSkipped||[]
-  const acceptedClients=persistence.persisted?clients.slice(0,persistence.clientLimit||clients.length).filter(item=>!archivedSkipped.includes(String(item.id||'').slice(0,180))):clients
-  const acceptedSummary={...summary,clientCount:acceptedClients.length,rowCount:summary.rowCount,...(acceptedClients.length===clients.length?{}:{declaredClientCount:clients.length})}
+  const acceptedClients=persistence.persisted?persistence.acceptedClients:clients
+  const importCounts=persistence.persisted?Object.fromEntries(['persistedEventCount','createdEventCount','updatedEventCount','ignoredEventCount','ambiguousEventCount','rejectedEventCount','unrecognizedOutcomeCount','unrecognizedDateCount','rowResults'].map(key=>[key,persistence[key]])):{}
+  const acceptedSummary={...summary,...summarizeLearning(acceptedClients,summary.rowCount,summary.fileName),id:summary.id,...importCounts,clientCount:acceptedClients.length,rowCount:summary.rowCount,...(acceptedClients.length===clients.length?{}:{declaredClientCount:clients.length})}
   await accessRepository.recordUsage(identity,{eventType:'commercial_import',page:'datahub',metadata:{clientCount:acceptedClients.length,rowCount:rows.length}});return json(response,201,{saved:true,clientCount:acceptedClients.length,database:persistence.persisted,clients:acceptedClients,summary:acceptedSummary,...(persistence.clientsTruncated?{clientsTruncated:true,persistedClientCount:persistence.persistedClientCount,declaredClientCount:clients.length}:{}),...(archivedSkipped.length?{archivedSkipped}:{}),...(persistence.skippedEventCount?{skippedEventCount:persistence.skippedEventCount}:{}),...(persistence.persisted?{persistedEventCount:persistence.persistedEventCount,unrecognizedOutcomeCount:persistence.unrecognizedOutcomeCount,unrecognizedDateCount:persistence.unrecognizedDateCount}:{})})
  }
  if(url.pathname==='/api/import/google-sheet'&&request.method==='POST'){

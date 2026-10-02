@@ -16,6 +16,10 @@ test('tudo que o service worker pre-cacheia existe de verdade', () => {
  // navegador. No escritório nada denunciava o problema.
  const ausentes=[...lista('PRECACHE_SHELL'),...lista('PRECACHE_EXTRA')]
   .filter(caminho=>caminho!=='/')
+  // Vite emits /index.html from the root template. npm test also runs on
+  // clean checkouts before the build; the source template is authoritative
+  // there. Other paths still require a real public or generated asset.
+  .filter(caminho=>caminho!=='/index.html'||!existsSync(new URL('index.html',raiz)))
   .filter(caminho=>!existsSync(new URL(`public${caminho}`,raiz))&&!existsSync(new URL(`dist${caminho}`,raiz)))
  assert.deepEqual(ausentes,[],`pré-cache pede arquivo que não existe: ${ausentes.join(', ')}`)
 })

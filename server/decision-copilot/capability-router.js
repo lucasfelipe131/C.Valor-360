@@ -5,6 +5,7 @@ import {evaluateSourceFreshness} from '../memory/freshness-policy.js'
 import {assertResponseGrounding,assertResponseQuestionRelevance,evaluateResponseGrounding} from './response-grounding.js'
 import {assertActiveProducerBoundary,classifyValContextDomain,contextTraceEntry,matchedValContextDomains} from './context-selector.js'
 import {repairFacetTypos,stripMessagePreamble} from '../message-preamble.js'
+import {registeredFactQuery} from '../registered-fact-query.js'
 
 export const systemCapabilityRouterVersion='val.system_capability_router.v1'
 
@@ -249,8 +250,9 @@ export function classifyStructuredClientFact(message=''){
  // when it contains one of the same nouns.
  if(/^(?:agora\s+)?(?:compara|compare)\s+(?:os dois|ambos|essas duas contas|esses dois produtores)$/.test(source))return 'CLIENT_COMPARISON'
  const owner='(?:\\s+(?:dele|dela)|\\s+(?:do|da)\\s+[a-z][a-z0-9 \'-]{0,120})?'
+ const profileOwner='(?:\\s+(?:dele|dela)|\\s+(?:do|da)\\s+[a-z][a-z0-9 \'-]{0,120}|\\s+(?:deste|desse)\\s+produtor|\\s+(?:desta|dessa)\\s+produtora)?'
  if(new RegExp(`^(?:e\\s+)?qual\\s+(?:e\\s+)?(?:a\\s+)?area${owner}$`).test(source))return 'REGISTERED_AREA'
- const profileQuestion=new RegExp(`^(?:e\\s+)?(?:(?:qual|como)\\s+(?:e\\s+)?(?:o\\s+)?perfil(?:\\s+comportamental)?${owner}|(?:mostre|mostra|me\\s+mostre)\\s+(?:o\\s+)?perfil(?:\\s+comportamental)?${owner})$`)
+ const profileQuestion=new RegExp(`^(?:e\\s+)?(?:(?:qual|como)\\s+(?:e\\s+)?(?:o\\s+)?perfil(?:\\s+comportamental)?${profileOwner}|(?:mostre|mostra|me\\s+mostre)\\s+(?:o\\s+)?perfil(?:\\s+comportamental)?${profileOwner})$`)
  // The profile contract already supplies an evidence-based approach. Accept
  // only these two complete profile clauses; additional domains/actions stay contextual.
  const profileClauses=source.split(/\s+e\s+(?=como\b)/)
@@ -261,7 +263,7 @@ export function classifyStructuredClientFact(message=''){
  // Forma nominal, sem interrogativo: "perfil dele", "o perfil dele", "me fala do perfil comportamental
  // dele". O registro e o mesmo que "qual o perfil dele?" entrega; sem isto a VAL afirmava que nao ha
  // evidencia comportamental para um produtor com perfil e evidencia validas.
- if(new RegExp(`^(?:e\\s+)?(?:(?:me\\s+)?(?:fala|fale|conta|conte|diga|diz)\\s+(?:(?:do|da|sobre)\\s+)?)?(?:(?:o|a)\\s+)?perfil(?:\\s+comportamental)?${owner}$`).test(source))return 'BEHAVIORAL_PROFILE'
+ if(new RegExp(`^(?:e\\s+)?(?:(?:me\\s+)?(?:fala|fale|conta|conte|diga|diz)\\s+(?:(?:do|da|sobre)\\s+)?)?(?:(?:o|a)\\s+)?perfil(?:\\s+comportamental)?${profileOwner}$`).test(source))return 'BEHAVIORAL_PROFILE'
  if(/^(?:e\s+)?como\s+(?:eu\s+)?devo\s+abordar\s+(?:ele|ela|o\s+produtor|a\s+produtora)$/.test(source))return 'BEHAVIORAL_PROFILE'
  // Confirmacao ("ele e analitico?") e escolha ("ele e analitico ou relacional?") perguntam o mesmo
  // registro que "qual o perfil dele?" ja entrega. Fora da allowlist, a rota caia em CONTEXT, cujo
@@ -278,9 +280,13 @@ export function classifyStructuredClientFact(message=''){
  if(new RegExp(`^(?:e\\s+)?(?:qual\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?)?objecao\\s+(?:da|na)\\s+(?:ultima|mais recente)\\s+visita${owner}$`).test(source))return 'LATEST_VISIT_CONFIRMED_OBJECTION'
  if(new RegExp(`^(?:e\\s+)?(?:qual\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?)?(?:(?:ultima|mais recente)\\s+objecao\\s+confirmada|objecao\\s+confirmada\\s+(?:mais recente|ultima))${owner}$`).test(source))return 'LATEST_CONFIRMED_OBJECTION'
  if(/^(?:e\s+)?(?:ele|ela|o produtor|a produtora)\s+(?:tem|teve|fez|apresentou|levantou)\s+(?:alguma\s+)?objecao(?:\s+(?:registrada|confirmada|recente))?$/.test(source))return 'LATEST_CONFIRMED_OBJECTION'
+ // "Última visita" already means the latest completed visit. Explicit lifecycle
+ // wording and a reference to the current producer must use that same factual path.
+ const completedVisit='(?:(?:ultima|mais recente)\\s+visita(?:\\s+(?:concluida|realizada))?|visita(?:\\s+(?:concluida|realizada))?\\s+mais recente)'
+ const visitOwner='(?:\\s+(?:dele|dela)|\\s+(?:do|da)\\s+[a-z][a-z0-9 \'-]{0,120}|\\s+(?:deste|desse)\\s+produtor|\\s+(?:desta|dessa)\\s+produtora)?'
  const patterns=[
   ['LATEST_CONFIRMED_OBJECTION',new RegExp(`^(?:e\\s+)?(?:(?:qual\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?(?:(?:principal|ultima|mais recente)\\s+)?objecao)|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:a\\s+)?(?:(?:principal|ultima|mais recente)\\s+)?objecao)|(?:(?:a\\s+)?(?:principal|ultima|mais recente)\\s+objecao))${owner}$`)],
-  ['LATEST_VISIT',new RegExp(`^(?:e\\s+)?(?:(?:(?:qual|quando)\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?(?:(?:ultima|mais recente)\\s+visita|visita\\s+mais recente))|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:a\\s+)?(?:(?:ultima|mais recente)\\s+visita|visita\\s+mais recente))|(?:(?:a\\s+)?(?:ultima|mais recente)\\s+visita))${owner}$`)],
+  ['LATEST_VISIT',new RegExp(`^(?:e\\s+)?(?:(?:(?:qual|quando)\\s+(?:(?:foi|e)\\s+)?)|(?:(?:mostre|mostra|me\\s+mostre)\\s+))?(?:a\\s+)?${completedVisit}${visitOwner}$`)],
   ['LATEST_COMMITMENT',new RegExp(`^(?:e\\s+)?(?:(?:qual\\s+(?:(?:foi|e)\\s+)?(?:o\\s+)?(?:(?:ultimo|mais recente)\\s+)?compromisso(?:\\s+(?:pendente|aberto|em aberto|combinado))?)|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:o\\s+)?(?:ultimo|mais recente)\\s+compromisso)|(?:(?:o\\s+)?(?:ultimo|mais recente)\\s+compromisso)|(?:o\\s+que\\s+ficou\\s+(?:pendente|combinado)(?:\\s+(?:da|na)\\s+(?:ultima|mais recente)\\s+visita)?)|(?:(?:tem|ha|existe)\\s+(?:algum\\s+)?compromisso\\s+(?:pendente|aberto|em aberto)))${owner}$`)],
   ['NEXT_SCHEDULED_VISIT',new RegExp(`^(?:e\\s+)?(?:(?:(?:qual|quando)\\s+(?:(?:e|sera|vai ser|esta marcada|esta agendada)\\s+)?(?:a\\s+)?proxima\\s+visita)|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:a\\s+)?proxima\\s+visita)|(?:(?:a\\s+)?proxima\\s+visita)|(?:(?:(?:ele|ela)\\s+)?(?:tem|ha)\\s+(?:alguma\\s+)?visita\\s+(?:agendada|marcada)))${owner}$`)],
   ['LATEST_PURCHASE',new RegExp(`^(?:e\\s+)?(?:(?:(?:qual|quanto)\\s+(?:(?:foi|e)\\s+)?(?:a\\s+)?(?:ultima|mais recente)\\s+compra)|(?:(?:mostre|mostra|me\\s+mostre)\\s+(?:a\\s+)?(?:ultima|mais recente)\\s+compra)|(?:(?:a\\s+)?(?:ultima|mais recente)\\s+compra)|(?:(?:quanto|o\\s+que)\\s+(?:ele|ela|o produtor|a produtora)\\s+comprou(?:\\s+(?:por ultimo|da ultima vez|recentemente))?))${owner}$`)],
@@ -314,6 +320,8 @@ export function routeSystemCapability({message='',intentHint='',sessionCommandHi
   }else if(intentRoute.session_command.deterministic_follow_up){
    path='FAST';direct=true
   }else path='FAST',direct=true
+ }else if(hasClient&&!attachmentTypes.length&&registeredFactQuery(message)?.kind==='spouse'){
+  capabilities.push('CLIENT_CONTEXT');path='FAST';direct=true;dataPath='REGISTERED_DETAIL'
  }else if(structuredFact){
   const selected=structuredFact==='CLIENT_COMPARISON'
    ?['CLIENT_CONTEXT','VISIT_HISTORY','COMMERCIAL_HISTORY']

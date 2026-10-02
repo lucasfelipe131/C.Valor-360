@@ -1,3 +1,4 @@
+import {realBusinessClient} from './business-metrics-scope.js'
 import {managementRoles} from './management-access.js'
 import {managementVisitStatus,recordedTravel,summarizeManagement} from '../src/lib/management-data.js'
 
@@ -6,7 +7,7 @@ const fail=(message,statusCode=400)=>{throw Object.assign(new Error(message),{st
 const iso=value=>value?new Date(value).toISOString():null
 const number=value=>value==null||value===''?null:Number.isFinite(Number(value))?Number(value):null
 const MAX_ROWS=5000
-const realClient=`COALESCE(c.source,'') NOT LIKE 'val-demo-%'
+const realClient=`${realBusinessClient('c')} AND COALESCE(c.source,'') NOT LIKE 'val-demo-%'
  AND COALESCE(c.commercial_profile->>'isDemo','false')<>'true'
  AND COALESCE(c.commercial_profile->>'synthetic','false')<>'true'`
 

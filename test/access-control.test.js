@@ -1,5 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import {readFileSync} from 'node:fs'
 import {AccessRepository} from '../server/access-repository.js'
 import {generateTemporaryPassword,hashPassword,validPassword,verifyPassword} from '../server/auth.js'
 
@@ -48,6 +49,53 @@ test('bootstrap atribui a carteira comercial sem promover produtores técnicos d
  const portfolioAssignment=calls.find(call=>call.sql.includes('UPDATE clients client SET consultant_id'))
  assert.ok(portfolioAssignment)
  assert.match(portfolioAssignment.sql,/COALESCE\(client\.source,''\)<>'manual-do-agronomo'/)
+})
+
+test('recuperação bootstrap sincroniza a senha persistida e invalida sessões antigas',async()=>{
+ const tenantId='00000000-0000-4000-8000-000000000001'
+ const userId='00000000-0000-4000-8000-000000000010'
+ const oldPassword='SenhaAntiga123'
+ const newPassword='SenhaNova456'
+ const state={id:userId,name:'Administrador',email:'admin@example.com',status:'active',password_hash:await hashPassword(oldPassword),must_change_password:false,session_version:4,created_at:new Date('2026-08-10T12:00:00Z')}
+ const calls=[]
+ const connection={query:async(sql,params=[])=>{
+  calls.push({sql,params})
+  if(sql.includes('SELECT user_record.*,membership.role'))return {rowCount:1,rows:[{...state,role:'admin'}]}
+  if(sql.includes('UPDATE users SET password_hash=$1')){
+   state.password_hash=params[0]
+   state.status='active'
+   state.must_change_password=false
+   state.session_version+=1
+   state.last_login_at=new Date('2026-09-22T00:00:00Z')
+   return {rowCount:1,rows:[{...state}]}
+  }
+  return {rowCount:1,rows:[]}
+ }}
+ const db={
+  configured:true,
+  transaction:work=>work(connection),
+  query:async(sql,params=[])=>{calls.push({sql,params});return {rowCount:1,rows:[]}}
+ }
+ const repository=new AccessRepository({db,tenantId,runtimeConfig:{adminEmail:'admin@example.com',adminPassword:newPassword}})
+ const recovered=await repository.recoverBootstrapAdminPassword()
+ assert.equal(recovered.email,'admin@example.com')
+ assert.equal(recovered.role,'admin')
+ assert.equal(recovered.sessionVersion,5)
+ assert.equal(await verifyPassword(newPassword,state.password_hash),true)
+ assert.equal(await verifyPassword(oldPassword,state.password_hash),false)
+ assert.ok(calls.some(call=>call.sql.includes('bootstrap_admin_password_recovered')),'a recuperação precisa ficar auditada')
+ assert.ok(calls.some(call=>call.sql.includes('INSERT INTO memberships')&&call.sql.includes("'admin'")),'a recuperação preserva a associação administrativa')
+ assert.ok(calls.some(call=>call.sql.includes('usage_events')&&call.params?.[2]==='login'),'o login recuperado entra nas métricas normais')
+})
+
+test('login oferece recuperação break-glass somente após validar as credenciais bootstrap',()=>{
+ const source=readFileSync(new URL('../server.js',import.meta.url),'utf8')
+ const start=source.indexOf("if(url.pathname==='/api/auth/login'")
+ const end=source.indexOf("if(url.pathname==='/api/auth/logout'",start)
+ const route=source.slice(start,end)
+ assert.match(route,/verifyBootstrapCredentials\(payload\.email,payload\.password\)/)
+ assert.match(route,/recoverBootstrapAdminPassword\(\)/)
+ assert.match(route,/auth\.bootstrap_admin_recovered/)
 })
 
 test('métricas de uso aceitam somente eventos conhecidos e mantêm o login como proprietário',async()=>{

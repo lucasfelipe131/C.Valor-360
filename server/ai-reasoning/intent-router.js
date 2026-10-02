@@ -1,3 +1,5 @@
+import {suppliedDimensionalArithmetic} from '../dimensional-arithmetic.js'
+import {requestsCurrentMarketValue,isMarketEvidenceQuestion,isWeatherConceptQuestion,isGeneralToolMethodQuestion} from '../current-data-intent.js'
 import {routeSessionCommand} from '../decision-copilot/session-command-router.js'
 import {generalTopicClarification} from '../decision-copilot/general-question-context.js'
 
@@ -67,6 +69,10 @@ function semanticGeneralConceptIntent(source='',allowOpenQuestion=true){
  const question=folded.replace(greetingPrefix,'')
  if(generalTopicClarification(question))return 'ASK_GENERAL'
  if(/\b(?:ureia|nitrogenio|cigarrinha|lagarta|inseticida|herbicida|fungicida)\b/.test(question)&&!contextualReference.test(question)&&!individualReference.test(question))return 'ASK_GENERAL'
+ // Nominal comparisons are concepts too; selecting an account does not
+ // turn 'difference between X and Y' into a private fact. Explicit owners,
+ // pronouns and registered account fields retain the scoped route.
+ if(/^(?:(?:diferenca|distincao|comparacao) entre|(?:buscar|pesquisar|consultar) na biblioteca\s*:)/.test(question)&&!contextualReference.test(question)&&!individualReference.test(question)&&!accountFieldReference.test(question))return 'ASK_GENERAL'
  if(definitionalShape.test(question)&&!contextualReference.test(question))return 'ASK_GENERAL'
  if(narrativeShape.test(question)&&!contextualReference.test(question)&&!individualReference.test(question))return 'ASK_GENERAL'
  if(allowOpenQuestion&&openGeneralQuestion.test(question)&&!contextualReference.test(question)&&!individualReference.test(question)&&!accountFieldReference.test(question))return 'ASK_GENERAL'
@@ -79,6 +85,11 @@ function semanticGeneralConceptIntent(source='',allowOpenQuestion=true){
 function semanticCurrentDataIntent(source=''){
  const folded=fold(source)
  const definitional=definitionalShape.test(folded)
+ if(isMarketEvidenceQuestion(source)||isWeatherConceptQuestion(source))return ''
+ // The current market adapter supplies grain references, not exchange rates.
+ // Currency requests retain the general path's explicit CURRENT_DATA source gate.
+ if(requestsCurrentMarketValue(source)&&/\b(?:cambio|dolar|euro)\b/.test(folded)&&!/\b(?:soja|milho|trigo|sorgo|feijao|arroz|cevada)\b/.test(folded))return 'ASK_GENERAL'
+ if(requestsCurrentMarketValue(source))return 'ASK_COMMODITY'
  if(/\b(?:bula|registro agrofit|rotulo)\b/.test(folded))return 'CHECK_LABEL'
  // Dose de defensivo é uma consulta de uso registrado, mesmo sem a palavra “bula”.
  // Explicações conceituais e cálculos de nutrientes continuam na rota de conhecimento.
@@ -94,11 +105,22 @@ function semanticCurrentDataIntent(source=''){
 // Objecao e oportunidade sao comandos sobre um produtor concreto (o selecionado, ou "ele",
 // "dele", "esse cliente"). Sem essa referencia, "produtor nao quer mudar" e "custo de
 // oportunidade da terra" sao perguntas de conhecimento e seguem para a Biblioteca.
+// Resistance of an organism or to a pesticide is an agronomic subject. An
+// open producer must not turn it into that producer's commercial objection.
+// Explicit objection/refusal still wins, including mixed agricultural topics.
+const agronomicResistance=/^resistencia\s+(?:(?:de|da|das|do|dos|em|na|nas|no|nos)\s+(?:plantas?\s+daninhas?|daninhas?|pragas?|insetos?|fungos?|patogenos?)|(?:a|as|ao|aos)\s+(?:herbicidas?|inseticidas?|fungicidas?))\b/
+const commercialObjection=source=>{
+ if(/\b(?:obje[cç][aã]o|discord|recus|n[aã]o quer)\b/i.test(source))return true
+ const normalized=fold(source)
+ // Each occurrence keeps its own subject: a later agronomic resistance does
+ // not erase an earlier "resistência do produtor/dele" in the same question.
+ return [...normalized.matchAll(/\bresistencia\b/g)].some(match=>!agronomicResistance.test(normalized.slice(match.index)))
+}
 function semanticCommandIntent(source='',hasClient=false){
  const folded=fold(source)
  const individual=hasClient||individualReference.test(folded)
  if(/\b(?:prepar|roteiro|conduz|antes da)\w*\b.*\b(?:visit\w*|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b|\b(?:visit\w*|conversa|negoci(?:ar|a[cç][aã]o|a[cç][oõ]es))\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))return 'PREPARE_VISIT'
- if(individual&&/\b(?:obje[cç][aã]o|resist[eê]ncia|discord|recus|n[aã]o quer)\b/i.test(source))return 'OBJECTION_HELP'
+ if(individual&&commercialObjection(source))return 'OBJECTION_HELP'
  if(individual&&(/\b(?:oportunidades?|pipeline|neg[oó]cios?|propostas?)\b/i.test(source)||nextActionShape.test(source)))return 'CHECK_OPPORTUNITY'
  if(/\b(?:follow.?up|retomar|cobrar retorno|pr[oó]ximo contato)\b/i.test(source))return 'FOLLOW_UP_HELP'
  return ''
@@ -145,13 +167,15 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
  // A resolução do backend é evidência de que “me fala do Antônio” refere-se à carteira.
  // O nome não precisa constar no vocabulário do roteador, e a simples seleção de um produtor
  // continua insuficiente para transformar uma pergunta geral em pergunta da conta.
- const semanticGeneral=resolvedClientReference||generalTopicClarification(source)&&currentDataIntents.has(hinted)?'':semanticGeneralConceptIntent(source,!toolHint&&!currentDataIntents.has(hinted))
+ const evidenceConcept=isMarketEvidenceQuestion(source)||isWeatherConceptQuestion(source)||!attachmentTypes.length&&isGeneralToolMethodQuestion(source)
+ const semanticGeneral=evidenceConcept?'ASK_GENERAL':resolvedClientReference||generalTopicClarification(source)&&currentDataIntents.has(hinted)?'':semanticGeneralConceptIntent(source,!toolHint&&!currentDataIntents.has(hinted))
  const folded=fold(source)
  const individual=hasClient||individualReference.test(folded)
  // Hints may come from an older client. They cannot downgrade an explicit
  // current-data request or a new explicit task into stale continuation.
  // Persistence remains fail-closed and can only be requested explicitly.
  const genericAgroToolOverride=hinted==='ASK_AGRONOMIC'?toolIntent:''
+ const dimensionalCostRequest=/\d/.test(folded)&&/r\$|\breais\b/.test(folded)&&/\b(?:ha|hectares?)\b/.test(folded)&&/\b(?:qual|quanto|calcule)\b[^?]*\bcusto(?:\s+total|\s*\/\s*ha|\s+por\s+hectare)\b/.test(folded)
  const explicitCalculatorAction=/\b(?:calcul\w*|simul\w*|rod\w*|execut\w*|abr\w*)\b/i.test(source)
  const calculatorToolOverride=toolHint==='CALCULATOR'&&explicitCalculatorAction?'CALCULATE':''
  // "Registra que a cotacao da soja subiu" e um pedido de registro, nao uma consulta de mercado:
@@ -159,7 +183,7 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
  // o conteudo de uma nota quase sempre tem lexema de safra, praga, cotacao ou objecao.
  // "salva a informacao de que ..." e "anota a nota ..." tambem sao registro explicito, mesmo com safra/praga no conteudo.
  const explicitRegister=/^(?:val[, ]+)?(?:(?:registra|registre|anota|anote)\s+que\b|(?:registra|registre|registrar|anota|anote|anotar|salva|salve|salvar|grava|grave|gravar)\s+(?:(?:a|o|uma|um|essa|esse|esta|este)\s+)?(?:informa[cç][aã]o|nota|mem[oó]ria|fato|dado|observa[cç][aã]o)\b)/i.test(source)?'REGISTER_INFORMATION':''
- let intent=sessionCommand?.command==='REGISTER_LAST'?'REGISTER_INFORMATION':persistenceIntents.has(hinted)?hinted:explicitRegister||semanticCurrent||semanticCommand||semanticClientIdentity||semanticGeneral||calculatorToolOverride||genericAgroToolOverride||hinted
+ let intent=sessionCommand?.command==='REGISTER_LAST'?'REGISTER_INFORMATION':persistenceIntents.has(hinted)?hinted:explicitRegister||(suppliedDimensionalArithmetic(source)?'CALCULATE':'')||semanticCurrent||(dimensionalCostRequest?'CALCULATE':'')||semanticCommand||semanticClientIdentity||semanticGeneral||calculatorToolOverride||genericAgroToolOverride||hinted
  if(!intent){
   if(/\b(?:mercado|commodity|commodities|not[ií]cia econ[oô]mica)\b/i.test(source))intent='ASK_MARKET'
   // Interpretar um laudo e ferramenta; "qual a funcao do potassio na planta" e conhecimento.
@@ -171,7 +195,7 @@ export function routeValIntent({message='',intentHint='',sessionCommandHint='',h
   else if(/\b(?:prepar|roteiro|conduz|antes da)\w*\b.*\bvisit\w*\b|\bvisit\w*\b.*\b(?:prepar|roteiro)\w*\b/i.test(source))intent='PREPARE_VISIT'
   else if(/^(?:val[, ]+)?(?:registra|registre|anota|anote)\s+que\b/i.test(source)||/\b(?:registr|salv|grav|anot|memoriz)\w*\b.*\b(?:informa[cç][aã]o|nota|hist[oó]rico|mem[oó]ria|fato)\b/i.test(source))intent='REGISTER_INFORMATION'
   else if(/\b(?:p[oó]s[- ]?visita|depois da visita|resultado da visita)\b/i.test(source))intent='POST_VISIT'
-  else if(individual&&/\b(?:obje[cç][aã]o|resist[eê]ncia|discord|recus|n[aã]o quer)\b/i.test(source))intent='OBJECTION_HELP'
+  else if(individual&&commercialObjection(source))intent='OBJECTION_HELP'
   else if(individual&&(/\b(?:oportunidades?|pipeline|neg[oó]cios?|propostas?)\b/i.test(source)||nextActionShape.test(source)))intent='CHECK_OPPORTUNITY'
   else if(/\b(?:follow.?up|retomar|cobrar retorno|pr[oó]ximo contato)\b/i.test(source))intent='FOLLOW_UP_HELP'
   // Pergunta aritmetica de plantabilidade ("300 mil plantas por hectare em 45 cm") ou de custo

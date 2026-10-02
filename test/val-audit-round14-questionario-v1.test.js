@@ -62,7 +62,7 @@ test('PS-05 — nota decimal na faixa 19..24 e reconhecida como ausente antes do
  assert.throws(()=>validateSurveyAnswers(answers,surveyOptions),/entre 0 e 10/)
 })
 
-test('PS-02 — o balde por endereco so e gasto por token desconhecido, e o envio e limitado por token',()=>{
+test('PS-02 — o balde por endereco so e gasto por token desconhecido, e o envio usa token+endereco',()=>{
  // Atras de um CDN, de um NAT de cooperativa ou do wi-fi do escritorio, todos os produtores
  // compartilham o mesmo endereco de socket: 60 tentativas de UMA maquina desligavam o questionario
  // para todos, e o produtor legitimo pagava a cota gasta pela adivinhacao alheia.
@@ -70,8 +70,13 @@ test('PS-02 — o balde por endereco so e gasto por token desconhecido, e o envi
  const consulta=servidor.slice(servidor.indexOf("const surveyMatch=url.pathname.match"),servidor.indexOf("const submitMatch=url.pathname.match"))
  assert.doesNotMatch(consulta,/consumeRateLimit\('survey',requestIdentity/,'o token valido nao pode gastar o balde do endereco')
  assert.match(consulta,/if\(!survey\)\{if\(!consumeRateLimit\('survey-miss',requestIdentity\(request\),60\)\)/,'quem gasta o balde e o token desconhecido')
- const envio=servidor.slice(servidor.indexOf("const submitMatch=url.pathname.match"),servidor.indexOf("const submitMatch=url.pathname.match")+900)
- assert.match(envio,/consumeRateLimit\('survey-submit',submitMatch\[1\],20\)/,'o envio e limitado por token, nao por endereco')
+ const envio=servidor.slice(servidor.indexOf("const submitMatch=url.pathname.match"),servidor.indexOf("const integrateMatch=url.pathname.match"))
+ // Rodada 15: por TOKEN sozinho fechou a negacao de servico ampla e abriu uma dirigida - quem tem o
+ // link gastava as 20 tentativas e trancava o produtor fora do proprio questionario. A chave e o
+ // PAR token+endereco: o vizinho de NAT nao paga pelo atacante, e o atacante remoto nao paga pelo
+ // produtor. E token absurdamente longo nao entra no balde: ele e recusado antes.
+ assert.match(envio,/consumeRateLimit\('survey-submit',`\$\{submitMatch\[1\]\}\|\$\{requestIdentity\(request\)\}`,20\)/,'o envio e limitado pelo par token+endereco')
+ assert.match(envio,/String\(submitMatch\[1\]\)\.length>64/,'token fora do formato emitido nao pode ocupar o balde')
 })
 
 test('PS-04 — o questionario publico grava rascunho sob o escopo do token',()=>{

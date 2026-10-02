@@ -1,9 +1,12 @@
+import {realBusinessClients,realBusinessRecords} from '../lib/business-metrics-scope.js'
 import React from 'react'
 import {Download,FileBarChart,HeartHandshake,Percent,Printer,Target,Users} from 'lucide-react'
 import KpiCard from '../components/KpiCard'
 import {compactBRL,commercialMetrics,relationshipSummary} from '../lib/commercial-metrics'
 
-export default function Reports({clients,visits}){
+export default function Reports({clients:allClients,visits:allVisits}){
+ const clients=realBusinessClients(allClients)
+ const visits=realBusinessRecords(allVisits,allClients)
  const relationships=relationshipSummary(clients)
  const irt=relationships.irtKnown?relationships.irtAverage.toFixed(1):'A medir'
  const promoters=relationships.promoters

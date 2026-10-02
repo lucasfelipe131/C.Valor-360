@@ -12,7 +12,7 @@ import {AgronomicInsightCard,CalculationCard,CommitmentCard,DecisionCard,Diagnos
 import {canonicalVoiceChange} from '../lib/copilot-view-model'
 import {readConsultantExperiencePreference,writeConsultantExperiencePreference} from '../lib/consultant-experience-preference'
 import {buildMarketContinuationMessage,buildRegisterPrefill,buildSessionReplyMessage,limitValChatMessage,normalizeValChatPayload,selectMarketContinuation,sessionRepliesForAsk} from '../lib/global-val-conversation'
-import {assertResponseScopeForRequest,behavioralProfileViewModel,buildConversationHistory,contextStatusLabel,conversationContextEpoch,conversationScopeKey,conversationScopeLabel,conversationTurnVisibleInScope,createConversationThreadKey,createScopedRegistrationDraft,debugContextTraceView,isBehavioralProfileResponse,lastCompletedAssistantTurn,readConversationWorkspace,realtimeTurnMatchesScope,rehomeResolvedProducerExchange,rehomeResolvedProducerQuestion,registrationDraftTextForScope,responseCardActionMatchesScope,writeConversationWorkspace,valIntentLabel} from '../lib/full-screen-conversation'
+import {settleCancelledConversationTurn,assertResponseScopeForRequest,behavioralProfileViewModel,buildConversationHistory,contextStatusLabel,conversationContextEpoch,conversationScopeKey,conversationScopeLabel,conversationTurnVisibleInScope,createConversationThreadKey,createScopedRegistrationDraft,debugContextTraceView,isBehavioralProfileResponse,lastCompletedAssistantTurn,readConversationWorkspace,realtimeTurnMatchesScope,rehomeResolvedProducerExchange,rehomeResolvedProducerQuestion,registrationDraftTextForScope,responseCardActionMatchesScope,writeConversationWorkspace,valIntentLabel} from '../lib/full-screen-conversation'
 import {shouldAutoSubmitCopilotSeed} from '../lib/copilot-context'
 import {resolveAgroHeroFileMime,validateAgroHeroFile} from '../lib/agro-hero-actions'
 import {scopeWorkspaceToConversation} from '../lib/val-workspace-context'
@@ -271,9 +271,11 @@ export default function GlobalValCopilot({open,onClose,onPresentationChange,embe
  const visibleClients=useMemo(()=>{const query=historyQuery.trim().toLocaleLowerCase('pt-BR');return query?clients.filter(item=>String(item.name||'').toLocaleLowerCase('pt-BR').includes(query)).slice(0,8):clients.slice(0,6)},[clients,historyQuery])
 
  const cancelUploadRun=()=>{uploadRunRef.current.controller?.abort();uploadRunRef.current={generation:uploadRunRef.current.generation+1,controller:null,targetClientId:''};setUploading(false)}
- const cancelChatRun=({clearUi=true}={})=>{chatRunRef.current.controller?.abort();chatRunRef.current={generation:chatRunRef.current.generation+1,controller:null,threadKey:''};if(clearUi){setBusy(false);setProgress(null)}}
+ const settleChatCancellation=run=>{if(run.controller&&run.turnId)setThreads(current=>settleCancelledConversationTurn(current,run))}
+ const cancelChatRun=({clearUi=true}={})=>{settleChatCancellation(chatRunRef.current);chatRunRef.current.controller?.abort();chatRunRef.current={generation:chatRunRef.current.generation+1,controller:null,threadKey:''};if(clearUi){setBusy(false);setProgress(null)}}
  const beginChatRun=activeThreadKey=>{
   const previous=chatRunRef.current
+  settleChatCancellation(previous)
   previous.controller?.abort()
   const generation=previous.generation+1
   const controller=new AbortController()
@@ -507,6 +509,7 @@ export default function GlobalValCopilot({open,onClose,onPresentationChange,embe
   if(!activeReply){setSessionReplies(current=>({...current,[activeThreadKey]:[]}));setSessionReplyOffer(null)}
   if(!turnOptions.retry&&!turnOptions.skipUserAppend)append(userItem,activeThreadKey);setBusy(true);setError('');setMessage('');setReplyingTo(null);setProgress(client?initialValProgress():{stage:'current_data',label:'Consultando a fonte autorizada mais recente',done:false})
   const {generation,controller}=beginChatRun(activeThreadKey)
+  chatRunRef.current.turnId=turnId
   const isCurrent=()=>chatRunRef.current.generation===generation&&chatRunRef.current.controller===controller&&chatRunRef.current.threadKey===activeThreadKey
   const requestId=createValProgressRequestId();const stopProgress=client?startValProgressPolling({requestId,onProgress:value=>{if(isCurrent())setProgress(value)},signal:controller.signal}):()=>{}
   let timedOut=false

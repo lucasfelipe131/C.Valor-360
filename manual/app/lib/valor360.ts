@@ -25,6 +25,13 @@ export type ValorPublishResult = {
 
 const blockedKey = /(?:password|senha|token|secret|authorization|cookie|cpf|cnpj|document|data.?url|base64|image|imagem|photo|foto|file.?content|watermark)/i;
 
+class ValorGeometryTransportError extends Error {}
+
+function geometryTransportFailure(error: unknown, eventType: string, externalId: string): ValorPublishResult {
+  if (!(error instanceof ValorGeometryTransportError)) throw error;
+  return { ok: false, eventType, externalId, status: 422, error: error.message };
+}
+
 function object(value: unknown): JsonRecord {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as JsonRecord)
@@ -52,8 +59,13 @@ function number(value: unknown) {
   return normalized && Number.isFinite(parsed) ? parsed : null;
 }
 
-function cleanForStrategy(value: unknown, depth = 0): unknown {
-  if (depth > 7 || value === undefined) return undefined;
+function cleanForStrategy(value: unknown, depth = 0, path: string[] = []): unknown {
+  // The event envelope adds a level around producer.fields[].geometry. The
+  // generic depth/array caps would remove GeoJSON coordinates or shorten a
+  // contour before its canonical validator sees it. Match the receiving
+  // geometry transport bounds, while retaining the ordinary strategy caps.
+  const geometryScoped = path.some((key) => ["geometry", "points", "polygons"].includes(key));
+  if (depth > (geometryScoped ? 12 : 7) || value === undefined) return undefined;
   if (value === null || typeof value === "boolean") return value;
   if (typeof value === "number") return Number.isFinite(value) ? value : null;
   if (typeof value === "string") {
@@ -61,9 +73,12 @@ function cleanForStrategy(value: unknown, depth = 0): unknown {
     return value.slice(0, 10_000);
   }
   if (Array.isArray(value)) {
+    if (geometryScoped && value.length > 5_000) {
+      throw new ValorGeometryTransportError("A geometria excede 5000 posições e não pode ser truncada silenciosamente.");
+    }
     return value
-      .slice(0, 250)
-      .map((item) => cleanForStrategy(item, depth + 1))
+      .slice(0, geometryScoped ? 5_000 : 250)
+      .map((item) => cleanForStrategy(item, depth + 1, path))
       .filter((item) => item !== undefined);
   }
   if (typeof value === "object") {
@@ -73,7 +88,7 @@ function cleanForStrategy(value: unknown, depth = 0): unknown {
         .slice(0, 200)
         .map(([key, item]) => [
           key.slice(0, 100),
-          cleanForStrategy(item, depth + 1),
+          cleanForStrategy(item, depth + 1, [...path, key]),
         ])
         .filter(([, item]) => item !== undefined),
     );
@@ -471,6 +486,7 @@ function specializedRecordEvent(record: ManualRecordForValor, ownerUserId = "") 
 }
 
 export async function publishManualRecordToValor(record: ManualRecordForValor, ownerUserId = "", requestId = "") {
+  try {
   const clientExternalKey = recordProducerKey(record);
   const safePayload = cleanForStrategy(record.payload) as JsonRecord;
   const genericPayload = {
@@ -493,6 +509,9 @@ export async function publishManualRecordToValor(record: ManualRecordForValor, o
   const results = [await publish(generic, requestId)];
   if (specialized) results.push(await publish(specialized, requestId));
   return results;
+  } catch (error) {
+    return [geometryTransportFailure(error, "manual.record.saved", `manual-record:${record.id}`.slice(0, 180))];
+  }
 }
 
 export async function publishProducerToValor(
@@ -512,6 +531,7 @@ export async function publishProducerToValor(
       error: "Produtor sem nome ou chave externa.",
     } satisfies ValorPublishResult];
   }
+  try {
   const safeProducer = cleanForStrategy(producer) as JsonRecord;
   const identity = producerIdentityFor(producer, clientExternalKey);
   const producerId = text(producer.id);
@@ -542,6 +562,9 @@ export async function publishProducerToValor(
     payload,
   });
   return [await publish(producerEvent, requestId)];
+  } catch (error) {
+    return [geometryTransportFailure(error, "manual.producer.updated", `manual-producer:${clientExternalKey}`.slice(0, 180))];
+  }
 }
 
 export async function publishWorkspaceToValor(
@@ -593,8 +616,12 @@ export async function publishWorkspaceToValor(
         createdAt: text(item.importedAt),
         updatedAt: text(item.savedAt || item.importedAt),
       };
-      const specialized = specializedRecordEvent(record, ownerUserId);
-      return specialized ? publish(specialized, requestId) : null;
+      try {
+        const specialized = specializedRecordEvent(record, ownerUserId);
+        return specialized ? publish(specialized, requestId) : null;
+      } catch (error) {
+        return geometryTransportFailure(error, "soil_analysis.completed", `manual-soil:${record.id}`.slice(0, 180));
+      }
     }));
     results.push(...published.filter((item): item is ValorPublishResult => Boolean(item)));
   }

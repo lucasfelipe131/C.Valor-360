@@ -140,7 +140,7 @@ test('rodada 5: Home conta pela mesma fonte do funil, descarta cultura de preenc
  assert.equal(seasonCode('Inverno  2029'),'INVERNO 2029','espaco interno colapsa como o DOM faz')
  const dashboard=read5('src/pages/Dashboard.jsx')
  assert.match(dashboard,/onPrepare\(client,\{visitId:entry\.id\}\)/)
- assert.match(dashboard,/buildDayBriefing\(\{visits,opportunities:pipelineItems,clients\}\)/)
+ assert.match(dashboard,/buildDayBriefing\(\{visits:metricVisits,opportunities:pipelineItems,clients:metricClients\}\)/)
  assert.match(read5('src/App.jsx'),/const prepareClient=\(c,options=\{\}\)=>/)
  assert.match(read5('src/pages/Visits.jsx'),/const requested=initialVisitId\?candidates\.find/)
 })
