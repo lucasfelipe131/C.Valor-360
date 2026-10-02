@@ -12,6 +12,8 @@ import {describeEvent,SOURCE_SYSTEMS} from '../server/integration-hub/registry.j
 import {createAuth} from '../server/auth.js'
 import {spawn} from 'node:child_process'
 import {createServer} from 'node:net'
+import {technicalBootstrapFromValClients} from '../server/agronomic-geometry-bridge.js'
+import {reconcileValor360Bootstrap} from '../manual/app/lib/valor360-bootstrap.ts'
 
 const tenantId=randomUUID(),ownerId=randomUUID(),otherTenant=randomUUID(),otherOwner=randomUUID()
 const scope={tenantId,ownerId}
@@ -56,6 +58,17 @@ test('Hub creates once in canonical clients and preserves provenance without exp
  assert.deepEqual(detail.audit.map(x=>x.action),['RECEIVED','PROCESSED'])
  assert.ok(detail.provenance.receivedAt);assert.ok(detail.provenance.observedAt)
  assert.equal(detail.event.attempts,1);assert.equal('payload' in detail.event,false)
+})
+test('Hub canonical portfolio round trip preserves the Manual source ID and never mints a second producer',async()=>{
+ const event=input(),first=await receive(event)
+ const bootstrap=technicalBootstrapFromValClients(await repository.getTechnicalBootstrap(ownerId)).producers.find(p=>p.crmCode===event.clientExternalKey)
+ assert.ok(bootstrap);assert.equal(bootstrap.id,event.payload.producer.id)
+ const original={...bootstrap,notes:'SYNTHETIC local note',fields:[{id:'local-field'}]}
+ const roundTrip=reconcileValor360Bootstrap([original],[bootstrap])
+ assert.equal(roundTrip.length,1);assert.equal(roundTrip[0].id,original.id)
+ const next=await receive({...event,externalId:randomUUID(),occurredAt:'2026-09-29T10:00:00Z',payload:{producer:roundTrip[0]}})
+ assert.equal(next.status,'PROCESSED',JSON.stringify(next));assert.equal(next.canonicalClientId,first.canonicalClientId)
+ assert.equal((await db.query('SELECT COUNT(*)::int count FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND external_key=$3',[tenantId,ownerId,event.clientExternalKey])).rows[0].count,1)
 })
 test('Hub concurrent repeated deliveries preserve one event, one client and one projection',async()=>{
  const event=input(),results=await Promise.all(Array.from({length:6},()=>receive(event)))

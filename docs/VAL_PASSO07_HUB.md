@@ -83,6 +83,13 @@ pelo fluxo Manual de cadastro já existente, com chave e ID estáveis e sem
 colisão de nome na carteira. O vínculo conserva UUID e chave canônica; aliases
 e proveniência registram a identidade de origem.
 
+No retorno VAL → Manual, o bootstrap conserva o ID Manual já vinculado e a
+chave externa canônica. A conciliação não usa nomes nem códigos CRM compartilhados
+como prova suficiente. A vista duplicada de bootstraps anteriores só é retirada
+quando é exatamente reconstruível, sem dados locais adicionais ou referências
+de solo; trabalho local e ambiguidades permanecem para revisão. Eventos de
+conflito já recebidos continuam no histórico, mesmo após corrigir a origem.
+
 Um lock transacional por tenant/owner/source serializa entregas e retries;
 outras carteiras continuam independentes. O materializador usa savepoint na
 mesma transação do ledger. Uma falha desfaz integralmente as alterações de
