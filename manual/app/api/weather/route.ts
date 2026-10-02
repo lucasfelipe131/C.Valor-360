@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sessionFromRequest } from "../../lib/access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -289,6 +290,8 @@ function deriveAgronomicData(forecast: ForecastData) {
 }
 
 export async function GET(request: NextRequest) {
+  const session = await sessionFromRequest(request);
+  if (!session) return NextResponse.json({ error: "Sessão expirada." }, { status: 401 });
   const latitude = numeric(request.nextUrl.searchParams.get("latitude"));
   const longitude = numeric(request.nextUrl.searchParams.get("longitude"));
   if (latitude === null || longitude === null || Math.abs(latitude) > 90 || Math.abs(longitude) > 180) {

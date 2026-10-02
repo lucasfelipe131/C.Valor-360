@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { sessionFromRequest } from "../../lib/access";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -6,6 +7,8 @@ export const dynamic = "force-dynamic";
 const UF_PATTERN = /^(AC|AL|AP|AM|BA|CE|DF|ES|GO|MA|MT|MS|MG|PA|PB|PR|PE|PI|RJ|RN|RS|RO|RR|SC|SP|SE|TO)$/;
 
 export async function GET(request: NextRequest) {
+  const session = await sessionFromRequest(request);
+  if (!session) return NextResponse.json({ error: "Sessão expirada." }, { status: 401 });
   const uf = (request.nextUrl.searchParams.get("uf") ?? "").toUpperCase();
   if (!UF_PATTERN.test(uf)) {
     return NextResponse.json({ error: "UF inválida." }, { status: 400 });

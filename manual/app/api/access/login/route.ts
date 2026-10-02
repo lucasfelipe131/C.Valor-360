@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
+  consumeLoginAttempt,
   createSession,
   ensureAccessSchema,
   normalizeEmail,
   normalizeUsername,
   recordUsage,
   setSessionCookie,
-  verifyPassword,
+  verifyPasswordConstantTime,
 } from "../../../lib/access";
 
 export const runtime = "nodejs";
@@ -22,6 +23,9 @@ export async function POST(request: NextRequest) {
     if (!login || !password) {
       return NextResponse.json({ error: "Informe o usuário ou e-mail e a senha." }, { status: 400 });
     }
+    if (!consumeLoginAttempt(request)) {
+      return NextResponse.json({ error: "Muitas tentativas de acesso. Aguarde alguns minutos." }, { status: 429 });
+    }
     const pool = await ensureAccessSchema();
     const result = await pool.query(
       `SELECT id, username, email, display_name AS "displayName", role, status,
@@ -36,7 +40,7 @@ export async function POST(request: NextRequest) {
       [username, email],
     );
     const row = result.rows[0];
-    const valid = row ? await verifyPassword(password, String(row.password_hash)) : false;
+    const valid = await verifyPasswordConstantTime(password, row ? String(row.password_hash) : null);
     if (!row || !valid) {
       return NextResponse.json({ error: "Usuário/e-mail ou senha inválidos." }, { status: 401 });
     }

@@ -185,6 +185,29 @@ export async function hashPassword(password: string) {
   return `scrypt$${salt}$${derived.toString("hex")}`;
 }
 
+// Limite de tentativas de login por endereço (10 a cada 10 minutos). Atrás do proxy do VALOR 360 ou da Railway o endereço real é o último X-Forwarded-For.
+const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+export function requestAddress(request: NextRequest) {
+  const forwarded = (request.headers.get("x-forwarded-for") ?? "").split(",").map((item) => item.trim()).filter(Boolean);
+  return (forwarded[forwarded.length - 1] || request.headers.get("x-real-ip") || "unknown").slice(0, 120);
+}
+export function consumeLoginAttempt(request: NextRequest, limit = 10, windowMs = 600_000) {
+  const now = Date.now();
+  if (loginAttempts.size > 5000) for (const [key, entry] of loginAttempts) if (entry.resetAt <= now) loginAttempts.delete(key);
+  const key = requestAddress(request);
+  const current = loginAttempts.get(key);
+  if (!current || current.resetAt <= now) { loginAttempts.set(key, { count: 1, resetAt: now + windowMs }); return true; }
+  if (current.count >= limit) return false;
+  current.count += 1;
+  return true;
+}
+
+// Quando o usuário não existe, o scrypt roda mesmo assim contra um hash de referência: o tempo de resposta não pode revelar quais logins existem.
+export async function verifyPasswordConstantTime(password: string, encoded: string | null | undefined) {
+  if (!encoded) { await verifyPassword(password, INITIAL_ADMIN_PASSWORD_HASH); return false; }
+  return verifyPassword(password, encoded);
+}
+
 export async function verifyPassword(password: string, encoded: string) {
   const [scheme, salt, expectedHex] = encoded.split("$");
   if (scheme !== "scrypt" || !salt || !expectedHex) return false;

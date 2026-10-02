@@ -34,7 +34,8 @@ export function requiresTechnicalSignature(type){
 
 function compact(value,depth=0){
   if(depth>7)return null
-  if(Array.isArray(value))return value.slice(0,100).map(item=>compact(item,depth+1))
+  // O Manual envia até 500 medições por análise de solo; o corte anterior em 100 descartava amostras em silêncio.
+  if(Array.isArray(value))return value.slice(0,500).map(item=>compact(item,depth+1))
   if(value&&typeof value==='object')return Object.fromEntries(Object.entries(value).slice(0,100).map(([key,item])=>[clean(key).slice(0,80),compact(item,depth+1)]))
   if(typeof value==='string')return value.slice(0,10_000)
   if(typeof value==='number'||typeof value==='boolean'||value===null)return value

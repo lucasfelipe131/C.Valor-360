@@ -67,6 +67,11 @@ const validatedSurveyAnswers=input=>validateSurveyAnswers(input,surveyOptions)
 
 const database=createDatabase(config)
 const auth=createAuth(config)
+if(config.demoMode&&database.configured&&!auth.configured){
+ // A identidade demonstrativa não tem dono no banco: toda consulta filtraria por consultant_id nulo e o webhook falharia ao criar o administrador. Melhor falhar no boot do que subir um sistema vazio.
+ console.error('VAL_DEMO_MODE=true não pode ser combinado com DATABASE_URL sem VAL_ADMIN_EMAIL, VAL_ADMIN_PASSWORD e VAL_SESSION_SECRET. Remova DATABASE_URL para demonstrar, ou configure o acesso seguro.')
+ process.exit(1)
+}
 const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,storageScope:auth.storageScope(session)}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,storageScope:'demo'}
 const repository=new ValRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
@@ -339,6 +344,11 @@ async function handleApi(request,response,url){
   return json(response,200,{rows:parseCsv(csv)})
  }
  return false
+}
+
+if(config.autoMigrate&&database.configured){
+ try{await database.query(readFileSync(join(appRoot,'database','schema.sql'),'utf8'));console.log('AUTO_MIGRATE=true: esquema do banco aplicado antes de iniciar.')}
+ catch(error){console.error('AUTO_MIGRATE=true, mas a migração falhou:',error.message);process.exit(1)}
 }
 
 technicalWorkspace.start()
