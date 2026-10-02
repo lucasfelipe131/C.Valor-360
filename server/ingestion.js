@@ -77,8 +77,9 @@ export function normalizeIntegrationEvent(input){
   }
 }
 
+// agronomic_signals.severity é VARCHAR(40) e title é VARCHAR(240); valores maiores abortariam a transação inteira do evento.
 function signal(type,severity,title,evidence,commercialHypothesis,requiresAgronomist=true){
-  return {type,severity,title,evidence,commercialHypothesis,requiresAgronomist,status:'new'}
+  return {type,severity:String(severity||'attention').slice(0,40),title:String(title||'').slice(0,240),evidence,commercialHypothesis,requiresAgronomist,status:'new'}
 }
 
 export function hasTechnicalApproval(payload){
@@ -99,7 +100,7 @@ export function deriveSignals(event){
     const firstAction=actions[0]
     const actionText=clean(firstAction&&typeof firstAction==='object'?(firstAction.action||firstAction.text||firstAction.label):firstAction)
     const crop=clean(payload.cropStage)
-    const title=actionText?('Acompanhamento validado: '+actionText).slice(0,500):crop?('Relatório de '+crop+' aprovado para acompanhamento'):'Relatório de campo aprovado gerou acompanhamento'
+    const title=(actionText?('Acompanhamento validado: '+actionText):crop?('Relatório de '+crop+' aprovado para acompanhamento'):'Relatório de campo aprovado gerou acompanhamento').slice(0,240)
     return [signal('field_follow_up',clean(payload.severity)||'attention',title,{findings,validatedActions:actions,reportId:clean(payload.reportId),cropStage:crop,summary:clean(payload.summary),validation:payload.validation},'Usar o fechamento para confirmar prioridade, linha de base e próxima decisão; não converter a ação validada em prescrição automática.')]
   }
     if(event.type==='soil_analysis.completed'){

@@ -52,6 +52,9 @@ export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}
  const embedSecret=runtimeConfig.sessionSecret
  const proxy=httpProxy.createProxyServer({xfwd:true,changeOrigin:false,proxyTimeout:120_000,timeout:120_000})
  let child=null
+ let closing=false
+ let restarts=0
+ let restartTimer=null
 
  proxy.on('proxyRes',upstream=>{
   delete upstream.headers['x-powered-by']
@@ -62,7 +65,7 @@ export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}
  })
 
  function start(){
-  if(!enabled)return false
+  if(!enabled||closing)return false
   child=spawn(process.execPath,[manualEntry],{
    cwd:manualRoot,
    env:{
@@ -75,7 +78,16 @@ export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}
    },
    stdio:['ignore','inherit','inherit']
   })
-  child.on('exit',(code,signal)=>console.error(`Núcleo técnico encerrado (${signal||code||0}).`))
+  child.on('exit',(code,signal)=>{
+   console.error(`Núcleo técnico encerrado (${signal||code||0}).`)
+   child=null
+   if(closing)return
+   // Sem reinício, cada /tecnico responderia 503 até o contêiner inteiro ser reciclado; a política de restart da Railway só observa o processo principal.
+   const delay=Math.min(30_000,1_000*2**Math.min(restarts,5));restarts+=1
+   console.error(`Reiniciando o núcleo técnico em ${Math.round(delay/1000)} s (tentativa ${restarts}).`)
+   restartTimer=setTimeout(()=>{restartTimer=null;start()},delay);restartTimer.unref()
+  })
+  child.once('spawn',()=>{setTimeout(()=>{if(child&&child.exitCode===null)restarts=0},60_000).unref()})
   return true
  }
 
@@ -93,6 +105,8 @@ export function createTechnicalWorkspace({appRoot,publicPort,runtimeConfig,json}
  }
 
  function close(){
+  closing=true
+  if(restartTimer){clearTimeout(restartTimer);restartTimer=null}
   proxy.close()
   if(child&&!child.killed)child.kill('SIGTERM')
  }

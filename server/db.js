@@ -42,5 +42,5 @@ export function createDatabase(runtimeConfig){
     }
   }
 
-  return {configured:Boolean(pool),pool,query,transaction,health,close:()=>pool?.end()}
+  return {configured:Boolean(pool),pool,query,transaction,health,close:async()=>{if(pool)await pool.end()}}
 }
