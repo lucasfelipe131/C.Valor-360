@@ -1,3 +1,4 @@
+import DecisionPanel from '../components/DecisionPanel'
 import {realBusinessClients,realBusinessRecords} from '../lib/business-metrics-scope.js'
 import React,{useEffect,useMemo,useState} from 'react'
 import {
@@ -174,6 +175,7 @@ export default function Dashboard({clients,visits,opportunities=[],currentUser,s
  // precisa de mim, o Copiloto e as ações. Nível 2 é o que interessa às vezes —
  // números, pergunta longa, radar — e fica a um toque, no desktop e no celular.
  return <div className="page-stack val-copilot-home">
+  <DecisionPanel scope={currentUser?.storageScope||currentUser?.id} onClient={id=>{const c=clients.find(c=>String(c.id)===String(id));if(c)onClient(c)}} onPrepare={id=>{const c=clients.find(c=>String(c.id)===String(id));if(c)onPrepare(c)}}/>
   <div className="home-cockpit">
    <div className="home-cockpit-main">
 

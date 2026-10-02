@@ -179,5 +179,26 @@ export function createManagementService({db,tenantId}){
     travelScope:'period_and_consultant',portfolioScope:'current_unit',demoExcluded:true}
   })
  }
- return {units,createUnit,assignUnit,overview}
+ async function decisions(actor,input,settings){
+  check(actor);const filters=managementFilters(input)
+  return db.transaction(async connection=>{
+   await connection.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+   const access=await authorize(connection,actor)
+   if(!access.unit_id)return {configured:false,reason:'UNIT_NOT_ASSIGNED',items:[]}
+   if(!settings?.flags?.management_decision_view)return {configured:true,enabled:false,items:[]}
+   const team=(await connection.query(`SELECT u.id,u.name FROM val_management_memberships um JOIN users u ON u.id=um.user_id JOIN memberships m ON m.tenant_id=um.tenant_id AND m.user_id=um.user_id WHERE um.tenant_id=$1 AND um.unit_id=$2 AND u.status='active' AND (u.expires_at IS NULL OR u.expires_at>now()) ORDER BY u.id`,[tenantId,access.unit_id])).rows
+   if(filters.consultantId&&!team.some(m=>m.id===filters.consultantId))fail('Consultor não disponível na sua unidade.',403)
+   const owners=filters.consultantId?[filters.consultantId]:team.map(m=>m.id)
+   const rows=(await connection.query(`SELECT d.* FROM (SELECT DISTINCT ON (d.owner_id,d.client_id) d.* FROM val_decision_cards d JOIN clients c ON c.tenant_id=d.tenant_id AND c.id=d.client_id AND c.consultant_id=d.owner_id AND c.status='active' WHERE d.tenant_id=$1 AND d.owner_id=ANY($2::uuid[]) AND ($3::text='' OR lower(c.municipality)=lower($3)) AND ${realClient} ORDER BY d.owner_id,d.client_id,d.version DESC) d`,[tenantId,owners,filters.municipality])).rows
+   const activity=(await connection.query(`SELECT f.owner_id,f.feedback,COUNT(*)::int count,AVG(EXTRACT(EPOCH FROM (f.created_at-d.generated_at))) elapsed_seconds FROM val_decision_feedback f JOIN val_decision_cards d ON d.tenant_id=f.tenant_id AND d.owner_id=f.owner_id AND d.id=f.card_id JOIN clients c ON c.tenant_id=d.tenant_id AND c.id=d.client_id AND c.consultant_id=f.owner_id AND c.status='active' WHERE f.tenant_id=$1 AND f.owner_id=ANY($2::uuid[]) AND f.created_at>=($3::date::timestamp AT TIME ZONE 'America/Sao_Paulo') AND f.created_at<(($4::date+1)::timestamp AT TIME ZONE 'America/Sao_Paulo') AND ($5::text='' OR lower(c.municipality)=lower($5)) AND ${realClient} GROUP BY f.owner_id,f.feedback`,[tenantId,owners,filters.start,filters.end,filters.municipality])).rows
+   const moved=(await connection.query(`SELECT d.owner_id,COUNT(DISTINCT o.id)::int count FROM val_decision_cards d JOIN clients c ON c.tenant_id=d.tenant_id AND c.id=d.client_id AND c.consultant_id=d.owner_id AND c.status='active' JOIN opportunities o ON o.tenant_id=d.tenant_id AND o.client_id=d.client_id AND o.id::text=d.card->>'opportunity_id' AND o.updated_at>d.generated_at WHERE d.tenant_id=$1 AND d.owner_id=ANY($2::uuid[]) AND o.updated_at>=($3::date::timestamp AT TIME ZONE 'America/Sao_Paulo') AND o.updated_at<(($4::date+1)::timestamp AT TIME ZONE 'America/Sao_Paulo') AND ($5::text='' OR lower(c.municipality)=lower($5)) AND ${realClient} GROUP BY d.owner_id`,[tenantId,owners,filters.start,filters.end,filters.municipality])).rows
+   const items=team.filter(m=>owners.includes(m.id)).map(member=>{
+    const cards=rows.filter(row=>row.owner_id===member.id).map(row=>row.card),events=activity.filter(a=>a.owner_id===member.id)
+    const count=kind=>events.find(a=>a.feedback===kind)?.count||0
+    return {consultantId:member.id,consultant:member.name,cards:cards.length,priorities:cards.filter(c=>c.eligible).length,overdue:cards.filter(c=>c.priority_band==='NOW').length,withoutNextStep:cards.filter(c=>c.missing_information.some(m=>m.key==='next_action')).length,recordedValue:cards.reduce((sum,c)=>sum+(c.expected_value.amount||0),0),executed:count('ACTION_EXECUTED'),adapted:count('ACTION_ADAPTED'),dismissed:count('ACTION_DISMISSED'),useful:count('USEFUL'),notUseful:count('NOT_USEFUL'),meanSecondsToReportedAction:Number(events.find(a=>a.feedback==='ACTION_EXECUTED')?.elapsed_seconds)||null,opportunitiesChangedAfterDecision:moved.find(m=>m.owner_id===member.id)?.count||0,confidence:Object.fromEntries(['HIGH','MEDIUM','LOW'].map(level=>[level,cards.filter(c=>c.confidence.level===level).length])),freshEvidence:cards.reduce((sum,c)=>sum+c.confidence.fresh_count,0),totalEvidence:cards.reduce((sum,c)=>sum+c.evidence.length,0)}
+   })
+   return {configured:true,enabled:true,unit:{id:access.unit_id,name:access.unit_name},items,filters,scope:'CURRENT_UNIT',causality:'NOT_ESTABLISHED',actionSource:'SELF_REPORTED',valueLabel:'Valor registrado associado, não receita atribuída',portfolioAsOf:new Date().toISOString(),activityPeriod:{start:filters.start,end:filters.end}}
+  })
+ }
+ return {units,createUnit,assignUnit,overview,decisions}
 }

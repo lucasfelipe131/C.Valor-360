@@ -27,6 +27,8 @@ import {ValRepository} from './server/repository.js'
 import {createVisitRouteService} from './server/visit-route-service.js'
 import {readRouteProperties} from './server/route-properties.js'
 import {createManagementService} from './server/management-service.js'
+import {DecisionService} from './server/decision-service.js'
+import {portfolioDecisionQuery,portfolioDecisionResponse} from './server/decision-copilot/portfolio-decision.js'
 import {managementOnlyAllowed} from './server/management-access.js'
 import {seedDemoProducer,DEMO_PRODUCER_KEY} from './server/demo-producer.js'
 import {currentRequestContext,observe,requestIdFrom,runWithRequestContext,updateRequestContext} from './server/observability.js'
@@ -191,6 +193,7 @@ const integrationHub=new IntegrationHub({db:database,repository,tenantId:config.
 const visitRouteService=createVisitRouteService({repository})
 const managementService=createManagementService({db:database,tenantId:config.defaultTenantId})
 const demoProducerEnvironment=String(process.env.VAL_DEMO_ENVIRONMENT||'').toLowerCase()
+const decisionService=new DecisionService({db:database,repository,tenantId:config.defaultTenantId,environment:demoProducerEnvironment,config})
 const demoProducerEnabled=['staging','test'].includes(demoProducerEnvironment)
 const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const accessRepository=new AccessRepository({db:database,tenantId:config.defaultTenantId,runtimeConfig:config})
@@ -345,7 +348,7 @@ async function handleApi(request,response,url){
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
  const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
- const protectedPath=url.pathname.startsWith('/api/integration-hub/')||url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/decisions')||url.pathname.startsWith('/api/integration-hub/')||url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const requestStartedAt=performance.now()
  let valRequestController=null
@@ -398,6 +401,17 @@ async function handleApi(request,response,url){
   }
   return json(response,404,{error:'Recurso do Hub não encontrado.'})
  }
+ if(url.pathname==='/api/decisions'&&request.method==='GET')return json(response,200,await decisionService.generate(identity,{clientId:url.searchParams.get('clientId')||null}))
+ if(url.pathname==='/api/decisions/registry'&&request.method==='GET')return json(response,200,await decisionService.registryView(identity))
+ if(url.pathname==='/api/decisions/settings'&&request.method==='PATCH')return json(response,200,await decisionService.configure(identity,await body(request)))
+ if(url.pathname==='/api/decisions/reviews'&&request.method==='GET')return json(response,200,await decisionService.queue(identity))
+ const decisionMatch=url.pathname.match(/^\/api\/decisions\/cards\/([0-9a-f-]+)(?:\/(feedback|review))?$/i)
+ if(decisionMatch){
+  if(request.method==='GET'&&!decisionMatch[2])return json(response,200,await decisionService.detail(identity,decisionMatch[1]))
+  if(request.method==='POST'&&decisionMatch[2]==='feedback')return json(response,200,await decisionService.feedback(identity,decisionMatch[1],await body(request)))
+  if(request.method==='POST'&&decisionMatch[2]==='review')return json(response,200,await decisionService.review(identity,decisionMatch[1],await body(request)))
+ }
+ if(url.pathname==='/api/management/decisions'&&request.method==='GET')return json(response,200,await managementService.decisions(identity,Object.fromEntries(url.searchParams),await decisionService.settings()))
  if(url.pathname==='/api/management/overview'&&request.method==='GET')return json(response,200,await managementService.overview(identity,Object.fromEntries(url.searchParams)))
  if(url.pathname==='/api/admin/management-units'&&request.method==='GET')return json(response,200,await managementService.units(identity))
  if(url.pathname==='/api/admin/management-units'&&request.method==='POST')return json(response,201,await managementService.createUnit(identity,await body(request)))
@@ -670,11 +684,12 @@ async function handleApi(request,response,url){
   }
   // A comparação já resolveu e autorizou os dois nomes pela thread; não tratar
   // o texto "compare os dois" como candidato a um terceiro produtor.
-  const naturalClientReference=sessionCommandPreview||comparisonResolution||generalQuestion.conceptContinuation?{kind:'NONE',reference:null}:extractNaturalClientReference(message)
+  const decisionReference=portfolioDecisionQuery(message).producerReference
+  const naturalClientReference=decisionReference?{kind:'EXPLICIT_NAME',reference:decisionReference}:sessionCommandPreview||comparisonResolution||generalQuestion.conceptContinuation?{kind:'NONE',reference:null}:extractNaturalClientReference(message)
   if(naturalClientReference.kind==='CURRENT_CLIENT'&&!clientId)return json(response,422,{error:'Ainda não há um produtor ativo nesta conversa. Diga o nome para eu localizar a carteira correta.',code:'val_client_reference_context_required',conversationId,clarification:{question:'De qual produtor você está falando?'}})
   if(['EXPLICIT_NAME','AUTHORIZED_NAME_CANDIDATE','FACT_OWNER','PREVIOUS_CLIENT'].includes(naturalClientReference.kind)){
    entityLookupCount+=1
-   conversationResolution=await repository.resolveAuthorizedClientReference({tenantId,ownerId:scopedOwnerId,message,currentClientId:clientId||storedClientId||null,recentClientIds:(storedConversation?.recent_clients||[]).map(item=>item?.id).filter(Boolean),timeoutMs:config.databaseQueryTimeoutMs})
+   conversationResolution=await repository.resolveAuthorizedClientReference({tenantId,ownerId:scopedOwnerId,message,reference:decisionReference||'',currentClientId:clientId||storedClientId||null,recentClientIds:(storedConversation?.recent_clients||[]).map(item=>item?.id).filter(Boolean),timeoutMs:config.databaseQueryTimeoutMs})
    throwIfRequestAborted(requestController.signal)
    if(conversationResolution.status==='AMBIGUOUS'&&clarificationSelection){
     conversationResolution=selectAuthorizedClientClarification({resolution:conversationResolution,clientId:clarificationSelection.clientId,reference:clarificationSelection.reference})
@@ -836,6 +851,13 @@ async function handleApi(request,response,url){
    const completed=attachConversationState(payloadResult,sessionState,{reasoningState:turnOnlyClientOverride?requestConversationState:sessionState})
    const withResolution=conversationResolution?.status==='RESOLVED'?{...completed,conversationResolution}:completed
    return workspaceRoute.workspace_action?{...withResolution,workspaceAction:workspaceRoute.workspace_action,globalIntent:workspaceRoute}:withResolution
+  }
+  if(portfolioDecisionQuery(message).matched&&!attachmentIds.length&&database.configured){
+   const decisionResult=await decisionService.generate(identity)
+   if(decisionResult.enabled&&decisionResult.flags.decision_cards&&decisionResult.flags.portfolio_radar_v2){
+   const decisionPayload=portfolioDecisionResponse(decisionResult,{message,tenantId,ownerId:scopedOwnerId,clientId:clientId||null,conversationId,contextEpoch:sessionState.context_epoch,domain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent)})
+   return json(response,200,completeSession(decisionPayload,{intent:'PORTFOLIO_DECISION'}))
+   }
   }
   if(workspaceRoute.direct&&workspaceRoute.workspace_action){
    if(preferences.inputModality!=='voice')valRequestServiceClass='FAST'

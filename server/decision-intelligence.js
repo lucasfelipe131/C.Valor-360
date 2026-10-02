@@ -1,4 +1,6 @@
 import {compactBRL,commercialMetrics} from '../src/lib/commercial-metrics.js'
+import {buildDecisionInterview} from './ai-reasoning/decision-interview.js'
+import {DECISION_VERSION,SCORING_POLICIES,hashDecision} from './decision-governance.js'
 
 const DAY=86_400_000
 const array=value=>Array.isArray(value)?value:[]
@@ -403,4 +405,113 @@ export function buildNexoFallback(intelligence={},context={},methodologyStage='d
 
 export function isGenericValText(value=''){
   return /(?:conduzir uma conversa breve|explorar oportunidades|fortalecer (?:o )?relacionamento|gerar valor|entender melhor (?:a|o) situa[cç][aã]o|fazer a pergunta principal e registrar|identificar necessidades e apresentar solu[cç][oõ]es)/i.test(String(value))
+}
+
+const decisionClosed=value=>/^(fechado|ganho|perdido|cancelado|cancelada|concluido|concluida|closed|won|lost|cancelled|canceled|completed|done|rejected|archived)$/i.test(clean(value).normalize('NFD').replace(/[\u0300-\u036f]/g,''))
+const recordedNumber=value=>value!==null&&value!==undefined&&value!==''&&Number.isFinite(Number(value))?Number(value):null
+const decisionDate=item=>field(item,'observed_at','occurred_at','updated_at','updatedAt','created_at','createdAt')
+const stableRecordSort=(a,b)=>String(a.id||a.external_id||'').localeCompare(String(b.id||b.external_id||''),'en')
+
+/** One governed card from the existing NEXO facts. Scores are prioritization
+ * weights, never purchase probabilities, causal estimates or prescriptions. */
+export function buildNextBestAction(context={}, {now=Date.now(),policy=SCORING_POLICIES['val.decision-scoring.v1']}={}){
+ if(!SCORING_POLICIES[policy?.version])throw new Error('decision_policy_unknown')
+ const client=context.client||{},producerId=String(client.id||'')
+ if(!producerId)throw new Error('decision_producer_required')
+ const opportunities=array(context.opportunities).filter(item=>!decisionClosed(item.stage)&&!decisionClosed(item.status)&&!array(item.evidence).some(e=>e.type==='opportunity_workspace_v1'&&decisionClosed(e.status))).sort(stableRecordSort)
+ const commitments=array(context.commitments).filter(item=>!decisionClosed(item.status)).sort(stableRecordSort)
+ const visits=array(context.visits).filter(item=>!decisionClosed(item.status)&&!decisionClosed(item.lifecycle_status||item.lifecycleStatus)).sort(stableRecordSort)
+ const nexo=buildDecisionIntelligence({...context,memories:[],opportunities,commitments,visits},now)
+ const metrics=commercialMetrics(client),facts=[],missing=[],reviews=[],penalties=[]
+ const dimensions=Object.fromEntries(Object.keys(policy.weights).map(key=>[key,{state:'NO_DATA',points:0,weight:policy.weights[key],evidence_refs:[]}]))
+ const add=(id,claim,type,record={},options={})=>{
+  const observed=options.observed??decisionDate(record),time=timestamp(observed)
+  const days=time===null?null:(now-time)/DAY
+  const stale=days!==null&&days>(options.technical?policy.technicalFreshDays:policy.freshDays)
+  const ref={id,claim_supported:clean(claim,700),source_type:type,source_id:String(record.id||record.external_id||id),observed_at:time===null?null:new Date(time).toISOString(),freshness:time===null?'UNKNOWN':time>now+300000?'FUTURE':stale?'STALE':'CURRENT',quality:options.quality||'RECORDED',...options.provenance}
+  const existing=nexo.evidence.find(e=>e.source_id===ref.source_id&&e.source_type===type)||(type==='commercial_record'?nexo.evidence.find(e=>e.id==='commercial-context'):null)
+  if(existing&&!id.includes('-deadline:')){ref.claim_supported=existing.claim_supported;ref.engine_evidence_ref=existing.id}
+  if(ref.freshness==='FUTURE')reviews.push('INCOMPATIBLE_DATE')
+  facts.push(ref);return ref
+ }
+ const contribute=(dimension,strength,ref)=>{
+  const d=dimensions[dimension],factor=ref.freshness==='FUTURE'?0:ref.freshness==='STALE'?policy.staleFactor:1
+  const points=Math.round(d.weight*Math.min(1,Math.max(0,strength))*factor*100)/100
+  if(points>d.points){d.points=points;d.evidence_refs=[ref.id]}
+  d.state=d.points?'POSITIVE_SIGNAL':'RECORDED_NEUTRAL'
+  if(factor<1)penalties.push({dimension,reason:ref.freshness,points:Math.round(d.weight*strength*(1-factor)*100)/100,evidence_ref:ref.id})
+ }
+ const unknown=(key,question,reason)=>missing.push({key,classification:'MATERIAL_MISSING_INFORMATION',state:'NO_DATA',question,reason})
+ let commercial=null
+ if(metrics.openPotentialKnown||metrics.currentKnown||metrics.pipelineKnown){
+  commercial=add(`commercial:${producerId}`,`Potencial aberto ${compactBRL(metrics.openPotential,{known:metrics.openPotentialKnown})}; compras ${compactBRL(metrics.currentPurchases,{known:metrics.currentKnown})}; pipeline ${compactBRL(metrics.openPipeline,{known:metrics.pipelineKnown})}${metrics.shareKnown?`; share realizado ${metrics.realizedShare.toFixed(1)}%`:''}.`,'commercial_record',{id:producerId},{observed:client.commercial?.lastBusinessAt||client.updatedAt||client.updated_at})
+  if(metrics.openPotentialKnown)contribute('COMMERCIAL_VALUE',Math.min(1,metrics.openPotential/policy.commercialSaturation),commercial)
+ }
+ const ranked=opportunities.map(item=>({item,due:timestamp(field(item,'next_action_at','nextActionAt')),value:recordedNumber(field(item,'estimated_value','estimatedValue','value'))})).sort((a,b)=>(a.due??Infinity)-(b.due??Infinity)||(b.value??0)-(a.value??0)||stableRecordSort(a.item,b.item))
+ const opportunity=ranked[0]?.item||null
+ let opportunityRef=null
+ if(opportunity){
+  const value=ranked[0].value
+  opportunityRef=add(`opportunity:${opportunity.id}`,`Oportunidade “${clean(opportunity.title,160)}”, etapa ${clean(opportunity.stage)||'não informada'}${value===null?'':`, valor registrado ${compactBRL(value)}`}${field(opportunity,'next_action','nextAction')?`; próximo passo: ${clean(field(opportunity,'next_action','nextAction'))}`:''}.`,'opportunity',opportunity)
+  if(value!==null)contribute('COMMERCIAL_VALUE',Math.min(1,value/policy.commercialSaturation),opportunityRef)
+  if(!field(opportunity,'next_action','nextAction')){unknown('next_action','Qual é o próximo passo confirmado dessa oportunidade?','A oportunidade não possui próxima ação.');contribute('RISK',1,opportunityRef)}
+ }
+ const deadlines=[...commitments.map(item=>({item,type:'commitment',at:field(item,'due_at','dueAt'),label:field(item,'description','action')})),...opportunities.map(item=>({item,type:'opportunity',at:field(item,'next_action_at','nextActionAt'),label:item.title}))].filter(x=>timestamp(x.at)!==null).sort((a,b)=>timestamp(a.at)-timestamp(b.at)||stableRecordSort(a.item,b.item))
+ const due=deadlines[0]||null,days=due?(timestamp(due.at)-now)/DAY:null
+ let dueRef=null
+ if(due){dueRef=add(`${due.type}-deadline:${due.item.id}`,`${clean(due.label,200)||'Ação registrada'}: prazo ${dateLabel(due.at)}${days<0?' vencido':''}.`,due.type,due.item);contribute('URGENCY',days<0?1:days<=2?.9:days<=7?.7:days<=14?.3:0,dueRef)}
+ else unknown('deadline','Até quando essa decisão precisa acontecer?','Não há prazo registrado.')
+ const nextVisit=visits.filter(v=>timestamp(field(v,'scheduled_at','scheduledAt'))>=now).sort((a,b)=>timestamp(field(a,'scheduled_at','scheduledAt'))-timestamp(field(b,'scheduled_at','scheduledAt'))||stableRecordSort(a,b))[0]
+ let visitRef=null
+ if(nextVisit){visitRef=add(`visit:${nextVisit.id}`,`Visita agendada em ${dateLabel(field(nextVisit,'scheduled_at','scheduledAt'))}: ${clean(nextVisit.objective)||'objetivo não informado'}.`,'visit',nextVisit);contribute('TIMING',(timestamp(field(nextVisit,'scheduled_at','scheduledAt'))-now)/DAY<=7?1:.2,visitRef)}
+ const lastContact=latest(context.interactions,['occurred_at','occurredAt','created_at'])
+ if(lastContact){const ref=add(`interaction:${lastContact.id}`,`Última interação registrada em ${dateLabel(decisionDate(lastContact))}.`,'interaction',lastContact);if(timestamp(decisionDate(lastContact))!==null)contribute('RELATIONSHIP',(now-timestamp(decisionDate(lastContact)))/DAY>30?1:.2,ref)}
+ const technical=array(context.fieldReports).concat(array(context.soilAnalyses),array(context.ndviObservations)).sort((a,b)=>(timestamp(decisionDate(b)||b.sampled_at)||0)-(timestamp(decisionDate(a)||a.sampled_at)||0)||stableRecordSort(a,b))[0]
+ let technicalRef=null
+ if(technical){technicalRef=add(`technical:${technical.id}`,`${technical.validated_at?'Registro técnico validado':'Registro técnico ainda não validado'}: ${clean(technical.summary||technical.laboratory||technical.index_name||'Análise registrada')}.`,'agronomic_record',technical,{observed:technical.observed_at||technical.sampled_at||technical.created_at,technical:true,quality:technical.validated_at?'VALIDATED':'UNVALIDATED'});if(technical.validated_at)contribute('AGRONOMIC_SIGNAL',technicalRef.freshness==='CURRENT'?1:.3,technicalRef);else reviews.push('UNVALIDATED_AGRONOMY')}
+ for(const event of array(context.hubEvidence)){
+  if(event.status!=='processed'){reviews.push(event.error_code?.includes('identity')?'IDENTITY_AMBIGUITY':'EVIDENCE_CONFLICT');continue}
+  if(!event.canonical_client_id||event.canonical_client_id!==context.canonicalClientId)continue
+  add(`hub:${event.id}`,`Evento ${clean(event.event_type)} recebido de ${clean(event.source)}.`,'connector',event,{observed:event.observed_at||event.occurred_at,provenance:{source:event.source,external_id:event.external_id,canonical_entity:event.canonical_client_id,ingested_at:event.ingested_at,version:event.source_version??null,provenance:{event_id:event.id,payload_hash:event.payload_hash,contract_version:event.hub_contract_version}}})
+ }
+ if(array(context.evidenceConflicts).length)reviews.push('EVIDENCE_CONFLICT')
+ for(const memory of [...array(context.contextSnapshot?.facts),...array(context.contextSnapshot?.validated_knowledge)]){
+  if(memory.freshness!=='CURRENT')continue
+  add(`memory:${memory.memory_ref}`,`${memory.key}: ${compactObject(memory.value)}`,'governed_memory',{id:memory.memory_ref},{observed:memory.observed_at,quality:'GOVERNED',provenance:{source:memory.source_type,source_ref:memory.source_ref}})
+ }
+ if(array(context.contextSnapshot?.conflicts).length)reviews.push('EVIDENCE_CONFLICT')
+ const grain=context.grainDecision
+ if(grain){
+  const ref=add(`grain:${grain.id}`,`Volume registrado ${recordedNumber(grain.volume)??'não informado'} ${clean(grain.unit)||''}; praça ${clean(grain.place)||'não informada'}.`,'grain_record',grain)
+  if(!grain.marketSource?.url||timestamp(grain.marketSource?.observed_at)===null||timestamp(grain.marketSource?.observed_at)>now+300000)unknown('market_source','Qual é a fonte e a data da referência de mercado?','Sem fonte válida não há recomendação de preço.')
+  else if(now-timestamp(grain.marketSource.observed_at)>DAY)unknown('market_freshness','Qual é a referência atual de mercado?','A referência de mercado está vencida.')
+  if(recordedNumber(grain.targetPrice)===null)unknown('target_price','Qual é o preço-alvo?','Não há preço-alvo confirmado.')
+  if(grain.volumeConfirmed!==true)unknown('confirmed_volume','Esse volume está confirmado?','Volume ainda não confirmado.')
+  if(timestamp(grain.deadline)!==null)contribute('TIMING',(timestamp(grain.deadline)-now)/DAY<=7?1:.2,ref)
+ }
+ if(!facts.length)unknown('active_decision','Qual decisão do produtor precisa de atenção?','A carteira não contém evidência suficiente para priorização.')
+ const expected=ranked[0]?.value??(metrics.openPotentialKnown?metrics.openPotential:null)
+ const expectedValue=expected===null?{status:'UNKNOWN',amount:null,currency:null,basis:null}:{status:'RECORDED',amount:expected,currency:'BRL',basis:ranked[0]?.value!=null?'OPPORTUNITY_ESTIMATED_VALUE':'POTENTIAL_GAP',evidence_ref:ranked[0]?.value!=null?opportunityRef.id:commercial.id,not_expected_profit:true}
+ if(expected===null)unknown('expected_value','Qual é o valor ou volume registrado dessa decisão?','Sem base suficiente; não estimar ROI.')
+ const temporalRefs=[dueRef,visitRef,technicalRef].filter(Boolean)
+ const fresh=facts.filter(f=>f.freshness==='CURRENT').length,stale=facts.filter(f=>['STALE','FUTURE'].includes(f.freshness)).length
+ const confidenceLevel=!facts.length||!fresh||missing.length>=2||reviews.length||stale>facts.length/2?'LOW':facts.length>=3&&fresh>=2&&missing.length===0?'HIGH':'MEDIUM'
+ if(confidenceLevel==='LOW')reviews.push('LOW_CONFIDENCE')
+ let type=days!==null&&days<0?'REAGENDAR':due&&days<=7?'CONFIRMAR':technicalRef?'REVISAR_AGRONOMIA':opportunity?'REVISAR_OPORTUNIDADE':'COLETAR_DADO'
+ if(nextVisit&&((timestamp(field(nextVisit,'scheduled_at','scheduledAt'))-now)/DAY<=7)&&(opportunity||due||technicalRef))type='PREPARAR_VISITA'
+ if(reviews.some(x=>['EVIDENCE_CONFLICT','IDENTITY_AMBIGUITY','INCOMPATIBLE_DATE'].includes(x)))type='COLETAR_DADO'
+ const actions={REAGENDAR:`Confirmar o estado de “${clean(due?.label,160)}” e combinar um novo prazo.`,CONFIRMAR:`Confirmar “${clean(due?.label,160)}” até ${dateLabel(due?.at)}.`,REVISAR_OPORTUNIDADE:`Revisar “${clean(opportunity?.title,160)}” e confirmar o próximo passo com o produtor.`,REVISAR_AGRONOMIA:'Revisar o registro técnico e validar a hipótese com o responsável habilitado.',PREPARAR_VISITA:`Preparar a visita de ${dateLabel(field(nextVisit,'scheduled_at','scheduledAt'))} usando a decisão registrada e as perguntas SPIN/OPC/APC/EPA existentes.`,COLETAR_DADO:missing[0]?.question||'Revisar o conflito de evidência antes de recomendar avanço.'}
+ const score=Math.min(100,Math.round(Object.values(dimensions).reduce((s,d)=>s+d.points,0)))
+ const why=facts.filter(f=>f.source_type!=='connector').slice(0,3).map(f=>f.claim_supported)
+ const whyNow=temporalRefs.map(f=>f.claim_supported).join(' ')||'Não há urgência temporal comprovada; confirmar a janela antes de antecipar contato.'
+ const risk=days!==null&&days<0?dueRef.claim_supported:days!==null&&days<=7?`O prazo registrado termina em ${dateLabel(due.at)}.`:nextVisit?visitRef.claim_supported:opportunity&&!field(opportunity,'next_action','nextAction')?'A oportunidade continua sem próximo passo registrado.':'Consequência da espera ainda não comprovada.'
+ const interview=buildDecisionInterview({intent:'NBA_MATERIAL',context,result:{facts_used:facts,confidence:{score:confidenceLevel==='HIGH'?.9:confidenceLevel==='MEDIUM'?.6:.2},missing_information:missing.map(m=>m.key),golden_questions:missing.slice(0,1).map(m=>({question:m.question,reason:m.reason}))}})
+ const card={id:`decision:${producerId}`,version:DECISION_VERSION,producer_id:producerId,producer:{id:producerId,name:clean(client.name,160)},priority_score:score,priority_band:days!==null&&days<0&&dueRef?.freshness==='CURRENT'?'NOW':score>=50?'TODAY':score>=20?'THIS_WEEK':'MONITOR',decision_type:type,headline:opportunity?.title||technicalRef?.claim_supported||due?.label||'Confirmar decisão do produtor',why_this_producer:why.length?why.join(' '):'Não há dados suficientes para afirmar prioridade.',why_now:whyNow,next_best_action:actions[type],expected_value:expectedValue,risk_of_waiting:{statement:risk,financial_loss:null},confidence:{level:confidenceLevel,version:'val.decision-confidence.v1',evidence_count:facts.length,fresh_count:fresh,stale_count:stale,critical_missing:missing.length,consistency:reviews.length?'REVIEW_REQUIRED':'NO_CONFLICT_OBSERVED'},missing_information:missing,evidence:facts,deadline:due?.at||field(nextVisit,'scheduled_at','scheduledAt')||null,recommended_channel:client.servicePreference||client.commercial?.preferredChannel||'CONFIRMAR_COM_PRODUTOR',recommended_timing:due?.at?`Antes de ${dateLabel(due.at)}`:nextVisit?'Antes da visita registrada':'Confirmar disponibilidade',source_refs:facts.map(f=>f.id),generated_at:new Date(now).toISOString(),score_breakdown:{version:policy.version,total:score,dimensions,penalties,missing_data:missing.map(m=>m.key),missing_data_penalizes_producer:false},policy_version:policy.version,review_reasons:[...new Set(reviews)],status:reviews.length?'REVIEW_REQUIRED':'OPEN',decision_interview:interview,opportunity_id:opportunity?.id||null,visit_id:nextVisit?.id||null,eligible:score>0,context_snapshot_ref:context.contextSnapshot?.context_snapshot_id||context.contextSnapshot?.id||context.contextSnapshot?.snapshot_id||null,human_confirmation_required:true,automatic_execution:false,if_act:'Confirmar a situação e registrar a decisão humana; resultado comercial não garantido.',if_wait:risk}
+ card.commercial_gap=metrics.openPotentialKnown?metrics.openPotential:null
+ card.engine_version=nexo.version
+ card.engine_signals=nexo.signals.filter(signal=>signal.evidence_ids.length&&signal.evidence_ids.every(id=>facts.some(f=>f.engine_evidence_ref===id))).map(signal=>({id:signal.id,kind:signal.kind,evidence_refs:signal.evidence_ids.map(id=>facts.find(f=>f.engine_evidence_ref===id).id)}))
+ card.producer={...card.producer,canonical_id:context.canonicalClientId||null}
+ card.priority={score,band:card.priority_band};card.decision=type;card.why=card.why_this_producer;card.action=card.next_best_action;card.risk=card.risk_of_waiting;card.evidence_refs=card.source_refs
+ card.evidence_fingerprint=hashDecision(facts);card.decision_fingerprint=hashDecision({...card,generated_at:undefined,context_snapshot_ref:undefined})
+ return card
 }

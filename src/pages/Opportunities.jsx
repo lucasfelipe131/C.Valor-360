@@ -1,3 +1,4 @@
+import DecisionPanel from '../components/DecisionPanel'
 import React,{lazy,Suspense,useEffect,useMemo,useRef,useState} from 'react'
 import {ArrowRight,BarChart3,Calculator,CalendarDays,Check,ChevronRight,Coins,Download,FileText,LoaderCircle,MoreHorizontal,PanelRightOpen,Plus,RefreshCw,Search,Sparkles,Target,Trophy,X} from 'lucide-react'
 import OpportunityEditor,{OpportunityDialog} from '../components/opportunities/OpportunityEditor'
@@ -122,6 +123,7 @@ export default function Opportunities({clients=[],persistedItems=[],storageScope
      <header><Sparkles size={22}/><h2>VAL Copiloto</h2><button className="opp-icon-button" aria-label="Fechar painel VAL Copiloto" onClick={()=>setPanelOpen(false)}><X size={17}/></button></header>
      {!selected?<div className="opp-empty"><Target size={28}/><p>Selecione uma oportunidade para ver o próximo passo.</p></div>:<>
       <div className="opp-selected"><small>OPORTUNIDADE SELECIONADA</small><h3>{selected.client.name}</h3><p>{selected.title}</p><span className={'opp-stage-pill stage-'+OPPORTUNITY_STAGES.indexOf(selected.stage)}>{selected.stage}</span></div>
+      {!preview&&<DecisionPanel clientId={selected.clientId} scope={storageScope} title="Decisão e prioridade" opportunityId={selected.databaseId||selected.id?.replace(/^db:/,'')} onClient={()=>onClient?.(selected.client)}/>}
       <div className="opp-guidance"><h3><Target size={19}/>Próximo passo</h3><p>{guidance[selected.stage]}</p><button className="opp-button primary" onClick={ask}>Preparar conversa</button><button className="opp-button" onClick={simulate}><BarChart3 size={15}/>Simular cenário</button><button className="opp-button" onClick={()=>edit(selected,selected.stage,'return')}><FileText size={15}/>Registrar retorno</button></div>
       <div className="opp-history"><h3>Histórico</h3>
        {selected.history.length?selected.history.slice(0,5).reverse().map(event=><div className="opp-history-event" key={event.mutationId}><span><Check size={12}/></span><div><strong>{event.label}</strong><small>{timestamp(event.at,timeZone)}</small>{event.note&&<p>{event.note}</p>}</div></div>):<p className="opp-muted">{selected.stageEvidence?.at?'Etapa registrada em '+timestamp(selected.stageEvidence.at,timeZone):'Ainda não há alterações registradas para esta oportunidade.'}</p>}

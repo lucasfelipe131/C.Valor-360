@@ -1,3 +1,4 @@
+import {GrainRepository} from './grain-repository.js'
 import {saveWorkspaceOpportunity,workspaceDetails} from './opportunity-workspace.js'
 import {createHash,randomUUID} from 'node:crypto'
 import {readFileSync} from 'node:fs'
@@ -934,6 +935,32 @@ export class ValRepository{
     tenantId=assertTenantScope(this.tenantId,tenantId)
     const authorizedClients=await this.listAuthorizedClientReferences({tenantId,ownerId,timeoutMs})
     return reconcileAuthorizedClientReference({message,reference,authorizedClients,currentClientId,recentClientIds})
+  }
+
+  async getDecisionContexts(ownerId,clientId=null,connection=this.db,now=Date.now()){
+    if(!this.db.configured)throw serviceError('O PostgreSQL é obrigatório para decisões auditáveis.')
+    // A portfolio read over canonical tables, including all active producers.
+    // No top-N preselection that can hide an overdue low-value account.
+    const result=await connection.query(`SELECT c.*,
+      COALESCE((SELECT jsonb_agg(o ORDER BY o.id) FROM opportunities o WHERE o.tenant_id=c.tenant_id AND o.client_id=c.id),'[]') opportunities,
+      COALESCE((SELECT jsonb_agg(v ORDER BY v.id) FROM visits v WHERE v.tenant_id=c.tenant_id AND v.client_id=c.id AND v.consultant_id=$2),'[]') visits,
+      COALESCE((SELECT jsonb_agg(k ORDER BY k.id) FROM val_commitments k WHERE k.tenant_id=c.tenant_id AND k.client_id=c.id AND (k.owner_type<>'USER' OR k.owner_id=$2::text)),'[]') commitments,
+      COALESCE((SELECT jsonb_agg(i ORDER BY i.occurred_at DESC) FROM (SELECT id,occurred_at,channel,summary FROM interactions WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY occurred_at DESC,id LIMIT 20) i),'[]') interactions,
+      COALESCE((SELECT jsonb_agg(f ORDER BY f.observed_at DESC) FROM (SELECT id,observed_at,created_at,summary,validated_at FROM field_reports WHERE tenant_id=c.tenant_id AND client_id=c.id AND owner_user_id=$2 ORDER BY observed_at DESC,id LIMIT 20) f),'[]') field_reports,
+      COALESCE((SELECT jsonb_agg(s ORDER BY s.sampled_at DESC) FROM (SELECT id,sampled_at,created_at,laboratory,validated_at FROM soil_analyses WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY sampled_at DESC,id LIMIT 20) s),'[]') soil_analyses,
+      COALESCE((SELECT jsonb_agg(h ORDER BY h.ingested_at DESC) FROM (SELECT id,source,external_id,event_type,status,error_code,canonical_client_id,observed_at,occurred_at,ingested_at,source_version,payload_hash,hub_contract_version FROM integration_events WHERE tenant_id=c.tenant_id AND owner_user_id=$2 AND hub_contract_version IS NOT NULL AND (canonical_client_id=c.id OR (canonical_client_id IS NULL AND client_external_key=c.external_key)) ORDER BY ingested_at DESC,id LIMIT 40) h),'[]') hub_evidence
+      ,COALESCE((SELECT jsonb_agg(m ORDER BY m.valid_from DESC) FROM (SELECT * FROM val_memories WHERE tenant_id=c.tenant_id AND client_id=c.id AND created_by=$2 ORDER BY valid_from DESC,id LIMIT 100) m),'[]') decision_memories
+      FROM clients c WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' AND ($3::text IS NULL OR c.id::text=$3 OR c.external_key=$3) ORDER BY c.id`,[this.tenantId,ownerId,clientId])
+    if(clientId&&!result.rows.length)throw domainError('Produtor não encontrado na carteira autorizada.',404)
+    const grainWorkspace=await new GrainRepository({db:{configured:true,query:(...args)=>connection.query(...args)},tenantId:this.tenantId}).getWorkspace(ownerId)
+    return result.rows.map(row=>{
+      const context={client:{...clientFromRow(row),updatedAt:iso(row.updated_at)},canonicalClientId:row.id,opportunities:row.opportunities,visits:row.visits,commitments:row.commitments,interactions:row.interactions,fieldReports:row.field_reports,soilAnalyses:row.soil_analyses,hubEvidence:row.hub_evidence,memories:[],manualRecords:[],properties:[],signals:[],businessHistory:[],priorRecommendations:[]}
+      context.memories=(row.decision_memories||[]).map(m=>({...m,client_id:context.client.id,subject_id:m.subject_type==='client'&&(!m.subject_id||m.subject_id===row.id)?context.client.id:m.subject_id}))
+      context.memoryHistory=context.memories
+      const grain=grainWorkspace.intentions.filter(i=>i.clientId===context.client.id&&!['closed','cancelled'].includes(i.status)).sort((a,b)=>String(a.deliveryEnd||'9999').localeCompare(String(b.deliveryEnd||'9999'))||a.id.localeCompare(b.id))[0]
+      if(grain){const market=grainWorkspace.marketSnapshots.find(m=>m.commodity===grain.commodity&&m.priceUnit===grain.priceUnit&&m.region===grain.deliveryLocation);context.grainDecision={...grain,unit:grain.volumeUnit,place:grain.deliveryLocation,deadline:grain.deliveryEnd,volumeConfirmed:['confirmed','negotiating'].includes(grain.status),observed_at:grain.observedAt,marketSource:market?{id:market.id,url:market.sourceUrl,observed_at:market.observedAt,source:market.sourceName}:null}}
+      return attachContextSnapshot(context,{tenantId:this.tenantId,ownerId,clientId:context.client.id,repositoryClientId:row.id,contextRequest:{objective:'portfolio_decision',scope:'own_portfolio',now}})
+    })
   }
 
   async getTechnicalBootstrap(ownerId){
