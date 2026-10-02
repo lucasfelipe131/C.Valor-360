@@ -23,7 +23,7 @@ export const SWAPPED_COORDINATES_MESSAGE='As coordenadas parecem estar na ordem 
 const orient=(a,b,c)=>(b[0]-a[0])*(c[1]-a[1])-(b[1]-a[1])*(c[0]-a[0])
 const onSegment=(a,b,p)=>Math.abs(orient(a,b,p))<1e-12&&p[0]>=Math.min(a[0],b[0])-1e-12&&p[0]<=Math.max(a[0],b[0])+1e-12&&p[1]>=Math.min(a[1],b[1])-1e-12&&p[1]<=Math.max(a[1],b[1])+1e-12
 const intersects=(a,b,c,d)=>orient(a,b,c)*orient(a,b,d)<0&&orient(c,d,a)*orient(c,d,b)<0||onSegment(a,b,c)||onSegment(a,b,d)||onSegment(c,d,a)||onSegment(c,d,b)
-const ringsOf=g=>g?.type==='Polygon'?g.coordinates:g?.type==='MultiPolygon'?g.coordinates.flat():[]
+const ringsOf=g=>g?.type==='Polygon'&&Array.isArray(g.coordinates)?g.coordinates.filter(Array.isArray):g?.type==='MultiPolygon'&&Array.isArray(g.coordinates)?g.coordinates.filter(Array.isArray).flat().filter(Array.isArray):[]
 export function pointInGeoRing(point,ring){
  let inside=false
  for(let i=0,j=ring.length-1;i<ring.length;j=i++){

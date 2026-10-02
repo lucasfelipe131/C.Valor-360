@@ -20,3 +20,5 @@ export function cadastralContract(record={},now=Date.now()){
  const status=record.ambiguous?'AMBIGUOUS':record.not_found&&official?'NOT_FOUND':!official?'UNVERIFIED':agroFreshness('geometry',record.observed_at,now)!=='CURRENT'?'STALE':record.canonical_link_verified===true?'VERIFIED':'AVAILABLE'
  return {contract:'val.cadastral.v1',readiness:'CONTRACT_READY',LIVE_SOURCE_AVAILABLE:official&&record.live===true,status,source_ref:record.source_ref||null,official,automatic_link:false}
 }
+
+export const AGRONOMIC_ACTIONS=['VISTORIAR','AMOSTRAR','VALIDAR_DIAGNÓSTICO','REVISAR_ANALISE','REVISAR_TALHAO','CONFIRMAR_ESTAGIO','REVISAR_HISTORICO','COLETAR_IMAGEM','REVISAR_CLIMA']

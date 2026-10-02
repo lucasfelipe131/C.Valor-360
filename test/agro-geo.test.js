@@ -35,3 +35,7 @@ test('territorial Copilot preserves exact canonical response scope',async()=>{
   assert.doesNotThrow(()=>assertValResponseScope(payload,{tenantId:'t',ownerId:'o',producerId:'c',conversationId:'chat',contextEpoch:3,domain}))
  }
 })
+
+test('malformed and missing geometry stays explicit without a parser crash',()=>{
+ for(const geometry of [null,{}, {type:'Polygon'}, {type:'Polygon',coordinates:null},{type:'MultiPolygon',coordinates:{bad:true}}])assert.equal(assessGeoPlausibility(geometry).status,'REVIEW_REQUIRED')
+})
