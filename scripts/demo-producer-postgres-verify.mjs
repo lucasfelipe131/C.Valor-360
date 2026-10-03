@@ -54,7 +54,11 @@ async function verifyDemo(){
   assert.equal(seeded.created,true)
   assert.equal(seeded.clientId,fixture.clientId)
   const counts=await persistedCounts()
-  for(const [table,count] of Object.entries(counts))assert.equal(count,byTable(table).length,`Persisted ${table} count`)
+  // Passo 10 adds one canonical audit event for each inserted commitment.
+  for(const [table,count] of Object.entries(counts))assert.equal(count,byTable(table).length+(table==='audit_events'?byTable('val_commitments').length:0),`Persisted ${table} count`)
+  const commitmentAudit=await database.query("SELECT entity_id,actor_id FROM audit_events WHERE tenant_id=$1 AND action='commitment_created' ORDER BY entity_id",[tenantId])
+  assert.deepEqual(commitmentAudit.rows.map(row=>row.entity_id).sort(),byTable('val_commitments').map(row=>row.id).sort(),'Every seeded commitment has exactly one audit event')
+  assert.ok(commitmentAudit.rows.every(row=>row.actor_id===ownerId),'Commitment audit preserves its owner')
   assert.equal(counts.properties,2)
   assert.equal(counts.fields,4)
   assert.equal(counts.crop_seasons,12)

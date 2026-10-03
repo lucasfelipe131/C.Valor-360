@@ -1,3 +1,4 @@
+import {seedDemoProducer,buildDemoProducerFixture} from '../server/demo-producer.js'
 import {createDatabase} from '../server/db.js'
 import assert from 'node:assert/strict'
 import {randomUUID} from 'node:crypto'
@@ -105,4 +106,15 @@ test('large portfolio uses bounded batch queries rather than a write per coach c
  const batch=new RevenueService({decisionService:new DecisionService({db:counted,repository:decisions.repository,tenantId,environment:'test'})})
  const start=performance.now(),result=await batch.generate(other)
  assert.equal(result.producers.length,250);assert.ok(result.coach_cards.length>=1000);assert.ok(queries<=25,`Expected bounded queries, got ${queries}`);assert.ok(performance.now()-start<10000)
+})
+
+test('demo fixture accounts for canonical commitment audit and does not duplicate on replay',async()=>{
+ const now=new Date(),fixture=buildDemoProducerFixture({tenantId,ownerId:actor.id,now})
+ await seedDemoProducer({database:db,tenantId,ownerId:actor.id,environment:'test',now})
+ const ids=fixture.rows.filter(item=>item.table==='val_commitments').map(item=>item.row.id)
+ const events=()=>db.query("SELECT entity_id,actor_id FROM audit_events WHERE tenant_id=$1 AND action='commitment_created' AND entity_id=ANY($2::text[])",[tenantId,ids])
+ const first=(await events()).rows
+ assert.equal(first.length,ids.length);assert.ok(first.every(row=>row.actor_id===actor.id))
+ await seedDemoProducer({database:db,tenantId,ownerId:actor.id,environment:'test',now})
+ assert.deepEqual((await events()).rows,first)
 })
