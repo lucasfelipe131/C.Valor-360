@@ -24,7 +24,7 @@ test('territorial panel 100 properties/500 fields: filter, field selection, laye
   assert.equal(renderer.root.findByType('map-test').props.polygons.length,5)
   await act(async()=>renderer.root.findByType('map-test').props.polygons[0].onClick())
   assert.equal(renderer.root.findByType('map-test').props.polygons.length,1)
-  await act(async()=>renderer.root.findByType('input').props.onChange({target:{checked:false}}))
+  await act(async()=>renderer.root.findAllByType('input')[1].props.onChange({target:{checked:false}}))
   assert.equal(renderer.root.findAllByType('map-test').length,0)
   navigator.onLine=false;await act(async()=>events.offline())
   assert.match(JSON.stringify(renderer.toJSON()),/STALE_CACHE/)

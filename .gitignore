@@ -11,3 +11,7 @@ coverage/
 
 # Worktrees transitorios dos agentes de workflow: nao sao conteudo do projeto.
 .claude/worktrees/
+
+# Automated browser evidence
+test-results/
+playwright-report/

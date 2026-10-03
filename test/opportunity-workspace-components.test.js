@@ -10,7 +10,7 @@ import {previewClients,previewOpportunities,previewNow} from './visual/opportuni
 // Component renderer only: no browser, network, storage or production fixture route.
 const dir=await mkdtemp(new URL('../.opp-components-',import.meta.url).pathname)
 after(()=>rm(dir,{recursive:true,force:true}))
-await build({entryPoints:['src/pages/Opportunities.jsx','src/components/opportunities/OpportunityEditor.jsx'],outdir:dir,bundle:true,platform:'node',format:'esm',packages:'external',loader:{'.css':'empty'},logLevel:'silent'})
+await build({entryPoints:['src/pages/Opportunities.jsx','src/components/opportunities/OpportunityEditor.jsx'],outdir:dir,bundle:true,platform:'node',format:'esm',packages:'external',plugins:[{name:'component-css-boundary',setup(b){b.onResolve({filter:/\.css$/},args=>({path:args.path,namespace:'empty-css'}));b.onLoad({filter:/.*/,namespace:'empty-css'},()=>({contents:'',loader:'js'}))}}],loader:{'.css':'empty'},logLevel:'silent'})
 const Opportunities=(await import(pathToFileURL(dir+'/pages/Opportunities.js'))).default
 const Editor=(await import(pathToFileURL(dir+'/components/opportunities/OpportunityEditor.js'))).default
 const text=node=>typeof node==='string'?node:(node?.children||[]).map(text).join(' ')

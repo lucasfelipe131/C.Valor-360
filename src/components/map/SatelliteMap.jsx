@@ -19,7 +19,7 @@ const PIN_TONES={visited:'Visita realizada',current:'Visita atual',planned:'Visi
 const routePoint=value=>validLocation(Array.isArray(value)?{lat:value[0],lng:value[1]}:value)
 
 export default function SatelliteMap({
- viewKey='',center=null,zoom=15,pins=[],polygons=[],route=[],routes=[],draft=[],fit=true,onClick,onPinClick,selectedId=null,
+ viewKey='',center=null,zoom=15,pins=[],polygons=[],route=[],routes=[],draft=[],fit=true,onClick,onPinClick,selectedId=null,focusPoints=[],focusKey='',
  height=280,className='',label='Mapa de satélite',interactive=true,controls=true,editorTools=null,editorActions=[],footerTools=null,adaptive=false,onNavigateMap,onPanelChange,onDraftPointClick=null,onDraftPointMove=null,onDraftPointInsert=null,clientId=null,onUseReference=null,adoptionDisabled=false
 }){
  const shell=useRef(null)
@@ -35,6 +35,7 @@ export default function SatelliteMap({
  const renderRef=useRef(()=>{})
  const fitRef=useRef(()=>{})
  const initialFitRef=useRef(false)
+ const appliedFocusRef=useRef(null)
  const restoredViewRef=useRef(false)
  // O mapa nasce na visao do Brasil enquanto a carteira carrega. Se o consultor navegar ate a regiao
  // dele nesse intervalo, o enquadramento automatico rodava quando os pinos chegavam e jogava fora a
@@ -225,9 +226,11 @@ export default function SatelliteMap({
    const coordinates=ring.map(point=>[point.lat,point.lng])
    everything.push(...coordinates)
    const polygonCoordinates=polygon.holes?.length?[coordinates,...polygon.holes.map(r=>r.map(validLocation).filter(Boolean).map(p=>[p.lat,p.lng]))]:coordinates
-   const shape=L.polygon(polygonCoordinates,{color:polygon.color||'#c8f25e',weight:2,fillColor:polygon.color||'#c8f25e',fillOpacity:.18,interactive:Boolean(polygon.onClick)}).addTo(group)
+   const shape=L.polygon(polygonCoordinates,{renderer:polygon.kind?L.svg():undefined,className:polygon.kind?`val-map-polygon is-${polygon.kind}${polygon.selected?' is-selected':''}`:'',color:polygon.color||'#c8f25e',weight:polygon.weight??2,dashArray:polygon.dashArray,fillColor:polygon.color||'#c8f25e',fillOpacity:polygon.fillOpacity??.18,interactive:Boolean(polygon.onClick)}).addTo(group)
+   const shapeElement=shape.getElement?.()
+   if(shapeElement&&polygon.kind){shapeElement.setAttribute('data-polygon-id',polygon.id);shapeElement.setAttribute('aria-label',polygon.label||polygon.id);shapeElement.setAttribute('role','button');shapeElement.setAttribute('tabindex','0');shapeElement.setAttribute('aria-pressed',String(Boolean(polygon.selected)));shapeElement.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();polygon.onClick?.()}})}
    if(polygon.onClick)shape.on('click',polygon.onClick)
-   if(polygon.label)shape.bindTooltip(escapeHtml(polygon.label),{permanent:true,direction:'center',className:'val-map-label'})
+   if(polygon.label)shape.bindTooltip(escapeHtml(polygon.label),{permanent:polygon.kind!=='property',direction:'center',className:'val-map-label'})
   }
   const routeLayers=[...(route.length?[{points:route,kind:'planned',color:'#00c896'}]:[]),...routes]
   for(const line of routeLayers){
@@ -295,9 +298,10 @@ export default function SatelliteMap({
    }else marker.setLatLng(point)
   }
   everything=[...everything,...coordinates]
-  const start=validLocation(center)
+  const start=validLocation(center),focusedPoints=focusPoints.map(validLocation).filter(Boolean).map(p=>[p.lat,p.lng])
   fitRef.current=()=>{
-   if(everything.length>1)map.fitBounds(L.latLngBounds(everything),{padding:[44,44],maxZoom:17})
+   if(focusedPoints.length>1){map.fitBounds(L.latLngBounds(focusedPoints),{padding:[44,44],maxZoom:17,animate:false});return}
+   if(everything.length>1)map.fitBounds(L.latLngBounds(everything),{padding:[44,44],maxZoom:17,animate:false})
    else if(everything.length===1)map.setView(everything[0],zoom)
    else if(start)map.setView([start.lat,start.lng],zoom)
    else map.setView(BRAZIL_VIEW.center,BRAZIL_VIEW.zoom)
@@ -306,6 +310,7 @@ export default function SatelliteMap({
   if(fit&&!restoredViewRef.current&&!userMovedRef.current&&(!initialFitRef.current||!previousFitRef.current)&&(everything.length||start)){
    fitRef.current();initialFitRef.current=true
   }
+  if(focusKey&&appliedFocusRef.current!==focusKey){fitRef.current();appliedFocusRef.current=focusKey}
   previousFitRef.current=fit
   const selection=selectedPin?.key??null
   if(selection!==selectionRef.current){
@@ -348,7 +353,7 @@ export default function SatelliteMap({
    map.zoomControl?.setPosition('topright')
    // Dentro de um <details> fechado o mapa nasce com 0px; quando abre, o
    // Leaflet precisa ser avisado para buscar os tiles do tamanho real.
-   if(typeof ResizeObserver!=='undefined'){observer=new ResizeObserver(()=>map.invalidateSize());observer.observe(container.current)}
+   if(typeof ResizeObserver!=='undefined'){observer=new ResizeObserver(()=>{if(!disposed)map.invalidateSize()});observer.observe(container.current)}
    if(viewKey){
     try{const saved=JSON.parse(sessionStorage.getItem(`val:map-view:${viewKey}`)||'null');const point=validLocation(saved);if(point&&Number.isFinite(saved.zoom)){map.setView([point.lat,point.lng],saved.zoom);initialFitRef.current=true;restoredViewRef.current=true;selectionRef.current=selectedId==null?null:String(selectedId)}}catch{}
     map.on('moveend',()=>{try{const point=map.getCenter();sessionStorage.setItem(`val:map-view:${viewKey}`,JSON.stringify({lat:point.lat,lng:point.lng,zoom:map.getZoom()}))}catch{}})
@@ -361,7 +366,7 @@ export default function SatelliteMap({
    observer?.disconnect();map?.remove();mapRef.current=null;layersRef.current=null
    setMapStatus('error')
   })
-  return()=>{disposed=true;observer?.disconnect();map?.remove();mapRef.current=null;layersRef.current=null;fitRef.current=()=>{}}
+  return()=>{disposed=true;observer?.disconnect();map?.stop();map?.remove();mapRef.current=null;layersRef.current=null;fitRef.current=()=>{}}
  },[mapAttempt])
 
  useEffect(()=>{
@@ -381,7 +386,7 @@ export default function SatelliteMap({
   return()=>{disposed=true;clearTimeout(timer);layer.off();if(map.hasLayer(layer))map.removeLayer(layer)}
  },[basemap,tileAttempt,mapStatus])
 
- const signature=JSON.stringify({baseSignature,draft,center,fit,zoom})
+ const signature=JSON.stringify({baseSignature,draft,center,fit,zoom,focusPoints,focusKey})
  useEffect(()=>{renderRef.current()},[signature,Boolean(onPinClick),Boolean(onDraftPointClick),Boolean(onDraftPointMove),Boolean(onDraftPointInsert)])
 
  useEffect(()=>{
@@ -427,7 +432,7 @@ export default function SatelliteMap({
    </div>
    <div className="val-map-worktools">
     {editorTools}
-    <div hidden={railPanel!=='layers'}><CadastralLayers panelOnly onChange={setReferenceLayers} viewport={viewport} onStatusChange={setCadastralNotice} clientId={clientId} adoptionDisabled={adoptionDisabled} onFocusReference={geojson=>{const L=leafletRef.current;if(L&&mapRef.current)mapRef.current.fitBounds(L.geoJSON(geojson).getBounds(),{padding:[44,44],maxZoom:17})}} onUseReference={onUseReference?(...args)=>{if(onUseReference(...args)!==false)setRailPanel(null)}:null}/></div>
+    <div hidden={railPanel!=='layers'}><CadastralLayers panelOnly onChange={setReferenceLayers} viewport={viewport} onStatusChange={setCadastralNotice} clientId={clientId} adoptionDisabled={adoptionDisabled} onFocusReference={geojson=>{const L=leafletRef.current;if(L&&mapRef.current)mapRef.current.fitBounds(L.geoJSON(geojson).getBounds(),{padding:[44,44],maxZoom:17,animate:false})}} onUseReference={onUseReference?(...args)=>{if(onUseReference(...args)!==false)setRailPanel(null)}:null}/></div>
     {railPanel==='boundaries'&&<section className="val-map-filter-panel"><header><strong>Divisas no mapa</strong><button type="button" aria-label="Fechar filtros de divisas" onClick={()=>setRailPanel(null)}><X size={16}/></button></header><label><input type="checkbox" checked={showStates} onChange={e=>setShowStates(e.target.checked)}/>Divisas estaduais</label><label><input type="checkbox" disabled={!municipality} checked={showMunicipality} onChange={e=>setShowMunicipality(e.target.checked)}/>Divisa do município selecionado</label><p>{municipality?`${municipality[1]} — ${municipality[2]}`:'Selecione um município na busca.'}</p><p>Referência administrativa IBGE; não define limites da propriedade.</p></section>}
     {railPanel==='help'&&<section className="val-map-filter-panel"><header><strong>Como mapear</strong><button type="button" aria-label="Fechar ajuda" onClick={()=>setRailPanel(null)}><X size={16}/></button></header><p>1. Busque o município e escolha a safra.</p><p>2. Use Sede para marcar a localização ou Talhão / cultura para tocar nos cantos da área produtiva.</p><p>3. Toque em um ponto azul para apagá-lo. Conclua a área e salve.</p><p>Safras e culturas filtram o mesmo talhão físico. Camadas exibe CAR, SIGEF e arquivos de matrícula.</p></section>}
    </div>

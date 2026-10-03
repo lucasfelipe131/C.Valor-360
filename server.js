@@ -1,3 +1,4 @@
+import {prepareStep09StagingFixture} from './server/step09-staging-fixture.js'
 import {agronomicDecisionQuery,agronomicDecisionResponse} from './server/decision-copilot/agronomic-decision.js'
 import {AgroGeoService} from './server/agro-geo-service.js'
 import {attachValResponseOutcome} from './server/val-response-outcome.js'
@@ -197,6 +198,7 @@ const auth=createAuth(config)
 const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,tenantId:session.tenantId||config.defaultTenantId,ownerId:session.id||session.sub||session.email,storageScope:auth.storageScope(session),...(canUsePr011Probe(session)?{pr011Qa:true}:{})}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,tenantId:config.defaultTenantId,ownerId:'demo@valor360.local',storageScope:'demo'}
 const repository=new ValRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const integrationHub=new IntegrationHub({db:database,repository,tenantId:config.defaultTenantId})
+try{const step09=await prepareStep09StagingFixture({db:database,tenantId:config.defaultTenantId});if(step09.status==='READY')console.info(JSON.stringify({event:'step09_fixture_preparation',...step09}))}catch(error){console.error(JSON.stringify({event:'step09_fixture_preparation',status:'BLOCKED',reason:error.code||error.message}))}
 const visitRouteService=createVisitRouteService({repository})
 const managementService=createManagementService({db:database,tenantId:config.defaultTenantId})
 const demoProducerEnvironment=String(process.env.VAL_DEMO_ENVIRONMENT||'').toLowerCase()

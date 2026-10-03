@@ -28,7 +28,8 @@
     "db:restore:verify": "node scripts/db-restore-verify.mjs",
     "repo:protection:verify": "node scripts/verify-github-protection.mjs",
     "knowledge:sync": "node server/sync-knowledge.js",
-    "pwa:verify": "node scripts/pwa-release.mjs verify"
+    "pwa:verify": "node scripts/pwa-release.mjs verify",
+    "test:agro:browser": "playwright test --config playwright.agro.config.js"
   },
   "dependencies": {
     "@fontsource-variable/manrope": "^5.3.0",
@@ -45,6 +46,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "0.5.8",
+    "@playwright/test": "1.58.2",
     "@vitejs/plugin-react": "4.3.4",
     "react-test-renderer": "18.3.1",
     "vite": "5.4.19"
