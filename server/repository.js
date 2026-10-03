@@ -19,6 +19,7 @@ import {createProducerEntityIndexCache} from './decision-copilot/producer-entity
 import {selectScopedPriorRecommendations} from './conversation-thread-context.js'
 import {commercialSourceScope,resolveCommercialRows} from './commercial-import-identity.js'
 import {buildCommercialIntelligence} from '../src/lib/commercial-intelligence.js'
+import {CRED_SOURCE,credPropertyMetadata} from './cred-events.js'
 
 export function jsonbParameter(value){
   if(value===undefined)return null
@@ -1001,6 +1002,18 @@ export class ValRepository{
         WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' ORDER BY c.name LIMIT 5000`,[this.tenantId,ownerId])
       return result.rows.map(row=>({...clientFromRow(row,{defaults:true}),properties:Array.isArray(row.properties)?row.properties:[]}))
     }catch{throw serviceError('A carteira técnica não pôde ser lida no PostgreSQL configurado.')}
+  }
+
+  // Posse mínima (UUID + chave externa) para rotas que consultam outro sistema pela chave do produtor.
+  async getClientIdentity(clientId,ownerId){
+    const key=String(clientId??'').trim().slice(0,180)
+    if(!ownerId)throw domainError('O proprietário da carteira é obrigatório para consultar o produtor.',403,'owner_scope_required')
+    if(!this.db.configured){const client=(await this.getIntelligence(ownerId)).clients.find(item=>String(item.id)===key||String(item.externalKey??item.external_key??'')===key);if(!key||!client)throw domainError('Produtor não encontrado na sua carteira.',404);return {id:String(client.id),externalKey:String(client.externalKey??client.external_key??client.id)}}
+    try{
+      const selected=await this.db.query(`SELECT id,external_key FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND (id::text=$3 OR external_key=$3) AND status='active' LIMIT 1`,[this.tenantId,ownerId,key])
+      if(!key||!selected.rowCount)throw domainError('Produtor não encontrado na sua carteira.',404)
+      return {id:String(selected.rows[0].id),externalKey:String(selected.rows[0].external_key||'')}
+    }catch(error){if(error.statusCode)throw error;throw serviceError('O produtor não pôde ser consultado no PostgreSQL.')}
   }
 
   async getClientOverview(clientId,ownerId){
@@ -2193,6 +2206,14 @@ export class ValRepository{
           const resolvedProperty=event.propertyExternalKey?await client.query(`SELECT property.id,property.client_id FROM properties property JOIN clients account ON account.id=property.client_id AND account.tenant_id=property.tenant_id WHERE property.tenant_id=$1 AND account.consultant_id=$2 AND (property.id::text=$3 OR property.external_key=$3) AND property.client_id=COALESCE($4::uuid,property.client_id) LIMIT 1`,[tenantId,ownerId,event.propertyExternalKey,resolvedClientId]):{rows:[]}
           const resolvedPropertyId=resolvedProperty.rows[0]?.id||null
           const resolvedPropertyClientId=resolvedProperty.rows[0]?.client_id||null
+          // VAL Cred: só acrescenta metadata.valCred numa propriedade que já existe para o mesmo
+          // produtor e dono, com a chave do nome. Nunca cria propriedade nem toca location/nome/área.
+          let valCredMaterialization=null
+          if(event.type==='credit.property.updated'&&event.source===CRED_SOURCE){
+            const credTarget=resolvedClientId&&resolvedPropertyId&&String(resolvedPropertyClientId)===String(resolvedClientId)&&event.propertyExternalKey===relatedExternalKey(event.clientExternalKey,jsonObject(event.payload.property).name)
+            const applied=credTarget?await client.query(`UPDATE properties SET metadata=COALESCE(metadata,'{}'::jsonb)||jsonb_build_object('valCred',(CASE WHEN jsonb_typeof(metadata->'valCred')='object' THEN metadata->'valCred' ELSE '{}'::jsonb END)||$4::jsonb) WHERE tenant_id=$1 AND client_id=$2 AND id=$3 AND COALESCE(metadata->'valCred'->>'occurredAt','')<=$5 RETURNING id`,[tenantId,resolvedClientId,resolvedPropertyId,jsonbParameter(credPropertyMetadata(event)),event.occurredAt]):null
+            valCredMaterialization=!credTarget?'NO_TARGET':(applied.rowCount??applied.rows?.length)?'APPLIED':'STALE_IGNORED'
+          }
           const soilFieldMustBePropertyScoped=event.type==='soil_analysis.completed';const soilFieldIdentity=event.payload.fieldId||event.payload.fieldName;const legacySoilFieldKey=soilFieldMustBePropertyScoped?relatedExternalKey(event.clientExternalKey,soilFieldIdentity):null;const canonicalSoilFieldKey=soilFieldMustBePropertyScoped?propertyScopedFieldExternalKey(event.propertyExternalKey,soilFieldIdentity):null
           const resolvedField=event.fieldExternalKey&&(!soilFieldMustBePropertyScoped||resolvedPropertyId)?await client.query(`SELECT field.id,field.property_id,property.client_id FROM fields field JOIN properties property ON property.id=field.property_id AND property.tenant_id=field.tenant_id JOIN clients account ON account.id=property.client_id AND account.tenant_id=property.tenant_id WHERE field.tenant_id=$1 AND account.consultant_id=$2 AND (field.id::text=$3 OR field.external_key=$3 OR ($5::text IS NOT NULL AND field.external_key=$5) OR ($6::text IS NOT NULL AND field.external_key=$6)) AND field.property_id=COALESCE($4::uuid,field.property_id) LIMIT 1`,[tenantId,ownerId,event.fieldExternalKey,soilFieldMustBePropertyScoped?resolvedPropertyId:null,legacySoilFieldKey,canonicalSoilFieldKey]):{rows:[]}
           const resolvedFieldId=resolvedField.rows[0]?.id||null
@@ -2302,7 +2323,7 @@ export class ValRepository{
            const business=await client.query(`INSERT INTO business_events (tenant_id,owner_user_id,client_id,client_external_key,source,external_id,occurred_at,outcome,category,value,currency,loss_reason,payload) VALUES ($1,$13,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (tenant_id,owner_user_id,source,external_id) DO NOTHING RETURNING id`,[tenantId,resolvedClientId,event.clientExternalKey||null,event.source,event.externalId,event.occurredAt,event.type==='business.closed'?'won':event.type==='business.lost'?'lost':'open',event.payload.category||null,parseMoney(event.payload.value),/^[A-Z]{3}$/.test(String(event.payload.currency||'').toUpperCase())?String(event.payload.currency).toUpperCase():'BRL',event.payload.lossReason||event.payload.reason||null,jsonbParameter(event.payload),ownerId])
            if(!business.rowCount)throw domainError('Já existe um evento comercial com este identificador externo na sua carteira.',409,'business_event_external_id_conflict')
           }
-          return {duplicate:false,canonicalClientId:resolvedClientId,signals:acceptedSignals.length,...(measurementSetStatus?{measurementSetStatus}:{})}
+          return {duplicate:false,canonicalClientId:resolvedClientId,signals:acceptedSignals.length,...(measurementSetStatus?{measurementSetStatus}:{}),...(valCredMaterialization?{valCredMaterialization}:{})}
         }
         return connection?await project(connection):await this.db.transaction(project)
       }catch(error){if(connection||error.statusCode)throw error;throw serviceError('Não foi possível persistir o evento de integração no banco configurado.')}
