@@ -65,7 +65,8 @@ export function validateValuePlan(value){
  if(!commercialStages.includes(value.commercial_stage))violations.push('commercial_stage')
  if(!Array.isArray(value.questions)||value.questions.length>3)violations.push('questions')
  for(const key of ['implications','proof_strategy','expected_objections','objection_guidance','cross_sell_candidates'])if(!Array.isArray(value[key]))violations.push(key)
- for(const key of ['organization_id','subject_id','problem_statement','value_thesis','commitment_target','follow_up','version','context_snapshot_id'])if(!text(value[key]))violations.push(key)
+ for(const key of ['organization_id','subject_id','version','context_snapshot_id'])if(!text(value[key]))violations.push(key)
+ for(const key of ['problem_statement','value_thesis','commitment_target','follow_up'])if(value.status!=='INCOMPLETE'&&!text(value[key]))violations.push(key)
  if(value.analogy_optional!=null&&!object(value.analogy_optional))violations.push('analogy_optional')
  return [...new Set(violations)]
 }

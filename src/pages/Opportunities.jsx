@@ -1,3 +1,4 @@
+import RevenuePanel from '../components/RevenuePanel'
 import DecisionPanel from '../components/DecisionPanel'
 import React,{lazy,Suspense,useEffect,useMemo,useRef,useState} from 'react'
 import {ArrowRight,BarChart3,Calculator,CalendarDays,Check,ChevronRight,Coins,Download,FileText,LoaderCircle,MoreHorizontal,PanelRightOpen,Plus,RefreshCw,Search,Sparkles,Target,Trophy,X} from 'lucide-react'
@@ -77,6 +78,7 @@ export default function Opportunities({clients=[],persistedItems=[],storageScope
  }
  const setFilter=(key,value)=>setFilters(f=>({...f,[key]:value}))
  return <div className={'opp-page'+(!panelOpen?' panel-closed':'')+(chatOpen?' chat-active':'')}>
+  {!preview&&<RevenuePanel clientId={filters.clientId||''} scope={storageScope}/>}
   <header className="opp-page-header">
    <div><div className="opp-breadcrumb">COMERCIAL <span>/</span> OPORTUNIDADES</div><div className="opp-heading"><h1>Oportunidades</h1>{preview&&<span className="opp-preview-label">PRÉVIA • DADOS FICTÍCIOS</span>}</div><p>Da necessidade ao compromisso com o produtor.</p></div>
    <div className="opp-header-actions"><button className="opp-button" onClick={()=>setReports(true)}><BarChart3 size={16}/>Relatórios</button><button className="opp-button primary" onClick={()=>edit()}><Plus size={18}/>Nova oportunidade</button></div>

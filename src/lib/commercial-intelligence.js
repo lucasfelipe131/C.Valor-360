@@ -89,3 +89,9 @@ export function summarizeLearning(clients,rowCount,fileName){
  const totalRevenue=clients.reduce((sum,client)=>sum+Number(client.commercial?.revenue||0),0)
  return {id:`import-${Date.now()}`,fileName,rowCount,clientCount:clients.length,totalRevenue,averageTicket:clients.reduce((sum,client)=>sum+Number(client.commercial?.averageTicket||0),0)/Math.max(clients.length,1),highIndex:clients.filter(client=>client.commercial?.priority==='Alta').length,createdAt:new Date().toISOString()}
 }
+
+export function summarizeRevenueProjections(producers=[]){
+ const sum=key=>producers.some(producer=>producer.metrics[key]===null)?null:producers.reduce((value,producer)=>value+producer.metrics[key],0)
+ const outcomes=producers.flatMap(producer=>producer.outcomes||[])
+ return {metrics:Object.fromEntries(['potential_total','open_potential','open_pipeline','won_value','lost_value','stalled_value','value_in_decision'].map(key=>[key,sum(key)])),outcomes_recorded:outcomes.length,outcome_counts:Object.fromEntries(['WON','LOST','NO_DECISION','TECHNICAL_RESULT','RELATIONSHIP_PROGRESS','FOLLOW_UP','PARTIAL','NO_CHANGE'].map(type=>[type,outcomes.filter(outcome=>outcome.outcome_type===type).length])),additive:false}
+}

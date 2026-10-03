@@ -1,3 +1,4 @@
+import RevenuePanel from '../components/RevenuePanel'
 import ManagementDecisions from '../components/ManagementDecisions'
 import React,{useEffect,useMemo,useState} from 'react'
 import {BarChart3,CalendarCheck2,Download,FileText,LogOut,MapPin,RefreshCw,Route,ShieldCheck,Users} from 'lucide-react'
@@ -63,7 +64,7 @@ export default function Management({currentUser,standalone=false,onLogout,onConf
    <button className="mg-button mg-primary" disabled={loading}><RefreshCw size={16}/>Aplicar</button>
   </form>
   {loading?<div className="mg-skeleton" role="status" aria-label="Carregando indicadores gerenciais">{[1,2,3,4].map(item=><i key={item}/>)}</div>:error?<div className="mg-empty" role="alert"><h2>A consulta não foi concluída</h2><p>{error}</p><button className="mg-button" onClick={()=>setRetry(value=>value+1)}>Tentar novamente</button></div>:data&&!data.configured?<div className="mg-empty"><ShieldCheck size={32}/><h2>Vincule este acesso a uma unidade</h2><p>O administrador precisa cadastrar a unidade e vincular os consultores e o gestor. Assim, cada gestor consulta apenas a equipe da própria unidade.</p>{currentUser.role==='admin'&&onConfigure&&<button className="mg-button mg-primary" onClick={onConfigure}>Configurar unidade</button>}</div>:data?.configured&&<>
-   <ManagementDecisions params={params} scope={currentUser?.storageScope||currentUser?.id}/>
+   <RevenuePanel managementParams={params} scope={currentUser?.storageScope||currentUser?.id}/><ManagementDecisions params={params} scope={currentUser?.storageScope||currentUser?.id}/>
    <div className="mg-cards">{[
     {icon:CalendarCheck2,label:'Visitas realizadas',value:data.summary.completed,hint:`${data.summary.visits} visitas no período filtrado`},
     {icon:Users,label:'Produtores atendidos',value:data.summary.reached,hint:`${data.summary.producers} produtores na carteira filtrada`},

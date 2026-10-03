@@ -122,7 +122,7 @@ test('Fase 6 12 — próximo passo é obrigatório ou explicitamente nenhuma aç
 })
 
 test('Fase 6 13 — Outcome WON é contratualmente válido e aceita evidência',()=>{
- const outcome=buildOutcome({organizationId:phase6TenantA,visitId:phase6VisitA,clientId:'producer-a',outcomeType:'WON',result:{order:'pedido-1'},evidenceRefs:[{id:'pedido:1'}],recordedBy:phase6ActorA,now})
+ const outcome=buildOutcome({organizationId:phase6TenantA,visitId:phase6VisitA,clientId:'producer-a',outcomeType:'WON',result:{order:'pedido-1'},evidenceRefs:[{id:'pedido:1',type:'ORDER',confirmed:true}],recordedBy:phase6ActorA,now})
  assert.deepEqual(validateOutcome(outcome),[])
  assert.equal(outcome.outcome_type,'WON')
  assert.equal(outcome.evidence_refs.length,1)
@@ -135,7 +135,7 @@ test('Fase 6 14 — Outcome NO_DECISION não é confundido com perda',()=>{
 })
 
 test('Fase 6 15 — Outcome técnico existe sem depender de fechamento comercial',()=>{
- const outcome=buildOutcome({organizationId:phase6TenantA,visitId:phase6VisitA,clientId:'producer-a',outcomeType:'TECHNICAL_RESULT',result:{observation:'coleta solicitada'},recordedBy:phase6ActorA,now})
+ const outcome=buildOutcome({organizationId:phase6TenantA,visitId:phase6VisitA,clientId:'producer-a',outcomeType:'TECHNICAL_RESULT',result:{observation:'coleta solicitada'},evidenceRefs:[{id:'field-observation:1',type:'TECHNICAL_OBSERVATION'}],recordedBy:phase6ActorA,now})
  assert.equal(outcome.outcome_type,'TECHNICAL_RESULT')
  assert.deepEqual(validateOutcome(outcome),[])
 })

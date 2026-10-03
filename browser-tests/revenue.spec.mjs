@@ -1,0 +1,17 @@
+import {test,expect} from '@playwright/test'
+for(const width of [360,390,430])test(`revenue coach and impact usable at ${width}px`,async({page})=>{
+ await page.setViewportSize({width,height:844})
+ await page.goto('/browser-tests/fixtures/revenue.html')
+ await expect(page.getByRole('heading',{name:'MEU IMPACTO'})).toBeVisible()
+ await expect(page.getByRole('strong').filter({hasText:'Desconhecido'})).toBeVisible()
+ await page.getByText('Produtor sintético · 1 resultados registrados').click()
+ await expect(page.getByText('Share: Desconhecido',{exact:false})).toBeVisible()
+ await page.getByText('Orientações para a execução · 1').click()
+ await page.getByText('Registrar retorno',{exact:true}).click()
+ await page.getByLabel('Resultado observado').fill('SYNTHETIC: compromisso combinado.')
+ await page.getByRole('button',{name:'Registrar feedback'}).click()
+ await expect(page.getByText('Feedback registrado.',{exact:false})).toBeVisible()
+ await page.getByText('Impacto observado: Produtividade').click()
+ await expect(page.getByText('CAUSAL_NOT_PROVEN',{exact:false})).toBeVisible()
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+})

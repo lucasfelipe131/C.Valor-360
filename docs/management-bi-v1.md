@@ -28,3 +28,8 @@ O arquivo pode ser aberto pelo conector [Texto/CSV do Power Query](https://learn
 ## Validação
 
 `test/management.test.js` executa o esquema e as migrações reais em PostgreSQL embarcado, com organizações, unidades e usuários sintéticos isolados. Cobre isolamento, papel revogado, vínculos, auditoria, filtros, exclusão de DEMO, relatos confirmados e ausência de GPS. Os testes montados do roteiro cobrem múltiplas propriedades do mesmo produtor, dias vazios, buscas, legendas seguras e respostas antigas após troca de carteira.
+
+
+## Passo 10 — extensão governada
+
+A extensão de receita, ValuePlan vinculado, evidência de outcomes, impacto, coach e RBAC está documentada em `docs/REVENUE_COACH_IMPACT_v1.md`. Os contratos v1 e os motores existentes são preservados; não há score ou CRM paralelo.

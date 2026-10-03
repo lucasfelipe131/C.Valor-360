@@ -1,3 +1,4 @@
+import {commercialProof} from './revenue-policy.js'
 import {buildValueBridge} from './product-intelligence.js'
 import {buildGrainOpportunities} from './grain-intelligence.js'
 
@@ -102,4 +103,10 @@ export function buildPostConversionExpansion(context={},options={}){
   emptyReason:candidates.length?'':'O fechamento foi reconhecido, mas os catálogos e sinais SOG não sustentam uma expansão específica. Faça uma descoberta aberta sem sugerir produto ou intenção.',
   guardrail:'Candidatas de insumos são apenas pontos de descoberta e exigem fonte vigente e revisão técnica. Sinais de grãos exigem confirmação do produtor. Não prometa equivalência, resultado ou urgência.'
  }
+}
+
+// Revenue projection only promotes evidence-backed canonical outcomes to discovery.
+export function expansionFromOutcomes(context,options={}){
+ const proved=array(context.outcomes).filter(outcome=>outcome.outcome_type==='WON'&&commercialProof(outcome.evidence_refs))
+ return buildPostConversionExpansion({...context,businessHistory:proved.map(outcome=>({id:outcome.id||outcome.outcome_id,event_type:'business.closed',occurred_at:outcome.measured_at,product:outcome.result?.product,category:outcome.result?.category,evidence_refs:outcome.evidence_refs}))},options)
 }
