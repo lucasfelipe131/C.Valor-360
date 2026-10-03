@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://val.local/contracts/v1/integration-event.schema.json",
+  "title": "VAL Integration Event Envelope v1",
+  "description": "Envelope servidor-servidor validado por normalizeIntegrationEvent (server/ingestion.js) e gravado em integration_events com idempotência por (tenant_id, owner_user_id, source, external_id) e payload_hash. Cada rota aceita só os próprios tipos: POST /api/v1/integrations/manual/events recebe os tipos do Manual do Agrônomo; POST /api/v1/integrations/cred/events recebe somente os tipos do VAL Cred descritos abaixo (contrato val-cred-integration.v1). Em ambas, o tenant vem do servidor e a origem é forçada pela rota: um tenantId ou source enviado no corpo nunca troca o escopo.",
+  "type": "object",
+  "required": ["schemaVersion", "type", "externalId", "payload"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "type": {"type": "string", "minLength": 1, "maxLength": 100},
+    "externalId": {"type": "string", "minLength": 4, "maxLength": 180, "description": "Único por versão de conteúdo. O mesmo externalId com o mesmo conteúdo responde 200 duplicate; com conteúdo diferente responde 409."},
+    "occurredAt": {"type": "string", "format": "date-time"},
+    "source": {"type": "string", "maxLength": 80, "description": "Informativo. A rota grava manual-do-agronomo ou val-cred, independentemente do valor enviado."},
+    "tenantId": {"type": "string", "format": "uuid", "description": "Opcional. Se vier, precisa ser o tenant da VAL; outro valor responde 403."},
+    "ownerUserId": {"type": "string", "format": "uuid", "description": "Login dono na VAL. Ausente: o evento fica com o administrador de bootstrap. Inválido ou inativo: 403."},
+    "clientExternalKey": {"type": "string", "maxLength": 180, "description": "clients.external_key do produtor na carteira do dono."},
+    "propertyExternalKey": {"type": "string", "maxLength": 180, "description": "properties.external_key = <clientExternalKey>:<slug do nome>."},
+    "fieldExternalKey": {"type": "string", "maxLength": 180},
+    "payload": {"type": "object"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"type": {"enum": ["credit.request.updated", "credit.analysis.completed", "credit.decision.recorded", "credit.property.updated", "cooperative.unit.upserted"]}}, "required": ["type"]},
+      "then": {"$ref": "#/$defs/credEvent"}
+    }
+  ],
+  "$defs": {
+    "credTypes": {"enum": ["credit.request.updated", "credit.analysis.completed", "credit.decision.recorded", "credit.property.updated", "cooperative.unit.upserted"]},
+    "uuid": {"type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"},
+    "number": {"type": "number"},
+    "flag": {"type": "boolean"},
+    "unit": {
+      "type": "object",
+      "description": "Unidade da cooperativa no VAL Cred. Sem CNPJ.",
+      "properties": {
+        "code": {"type": "string"},
+        "name": {"type": "string"},
+        "uf": {"type": "string", "pattern": "^[A-Za-z]{2}$"},
+        "valTenantId": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}], "description": "Se vier, precisa ser o tenant desta VAL (403 caso contrário)."}
+      }
+    },
+    "credPayloadBase": {
+      "type": "object",
+      "required": ["contract"],
+      "properties": {
+        "contract": {"const": "val-cred-integration.v1"},
+        "sentAt": {"type": "string", "format": "date-time"},
+        "unit": {"$ref": "#/$defs/unit"}
+      },
+      "not": {"anyOf": [{"required": ["cpf"]}, {"required": ["cnpj"]}, {"required": ["document"]}, {"required": ["documents"]}]},
+      "description": "Chaves com cpf, cnpj, documen, passw, senha, secret ou token são removidas pela VAL em qualquer profundidade antes do hash; nunca envie documentos."
+    },
+    "credEvent": {
+      "type": "object",
+      "required": ["schemaVersion", "type", "externalId", "payload"],
+      "properties": {
+        "source": {"const": "val-cred"},
+        "payload": {"$ref": "#/$defs/credPayloadBase"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"type": {"const": "cooperative.unit.upserted"}}},
+          "then": {
+            "not": {"anyOf": [{"required": ["clientExternalKey"]}, {"required": ["propertyExternalKey"]}]},
+            "properties": {"payload": {"required": ["unit"], "properties": {"unit": {
+              "type": "object",
+              "required": ["id"],
+              "properties": {"id": {"type": "string", "minLength": 1}, "code": {"type": "string"}, "name": {"type": "string"}, "municipality": {"type": "string"}, "uf": {"type": "string"}, "active": {"type": "boolean"}, "valTenantId": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]}}
+            }}}}
+          },
+          "else": {"required": ["clientExternalKey"], "properties": {"clientExternalKey": {"minLength": 1}}}
+        },
+        {
+          "if": {"properties": {"type": {"const": "credit.request.updated"}}},
+          "then": {"properties": {"payload": {"required": ["request"], "properties": {"request": {
+            "type": "object",
+            "required": ["id", "status"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "title": {"type": "string"},
+              "status": {"type": "string", "minLength": 1, "description": "Rótulos do VAL Cred: rascunho, dados_incompletos, analisada, parecer_registrado, complementacao, favoravel, desfavoravel."},
+              "revision": {"type": "integer", "minimum": 0},
+              "purpose": {"type": "string"},
+              "periodStart": {"type": "string"},
+              "principal": {"type": "number", "minimum": 0},
+              "termMonths": {"type": "integer", "minimum": 1, "maximum": 600},
+              "properties": {"type": "array"}
+            }
+          }}}}}
+        },
+        {
+          "if": {"properties": {"type": {"const": "credit.analysis.completed"}}},
+          "then": {"properties": {"payload": {"required": ["analysis"], "properties": {"analysis": {
+            "type": "object",
+            "required": ["id", "requestId"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "requestId": {"type": "string", "minLength": 1},
+              "revision": {"type": "integer", "minimum": 0},
+              "model": {"type": "string"},
+              "status": {"type": "string"},
+              "coverage": {"type": "number", "description": "Disponível dividido pela dívida no cenário base."},
+              "coversPayments": {"type": "boolean"},
+              "stressCoverage": {"type": "number"},
+              "stressCoversPayments": {"type": "boolean"},
+              "installment": {"type": "number"},
+              "missing": {"type": "integer", "minimum": 0},
+              "warnings": {"type": "integer", "minimum": 0}
+            }
+          }}}}}
+        },
+        {
+          "if": {"properties": {"type": {"const": "credit.decision.recorded"}}},
+          "then": {"properties": {"payload": {"required": ["decision"], "properties": {"decision": {
+            "type": "object",
+            "required": ["id", "requestId", "decision", "humanDecision"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "requestId": {"type": "string", "minLength": 1},
+              "analysisId": {"type": "string"},
+              "decision": {"enum": ["favoravel", "desfavoravel", "complementacao"]},
+              "humanDecision": {"const": true, "description": "A VAL só aceita parecer registrado por uma pessoa; não existe decisão automática nem score."}
+            }
+          }}}}}
+        },
+        {
+          "if": {"properties": {"type": {"const": "credit.property.updated"}}},
+          "then": {
+            "required": ["propertyExternalKey"],
+            "description": "propertyExternalKey precisa começar com <clientExternalKey>:. A VAL só acrescenta properties.metadata.valCred numa propriedade que já existe com essa chave; nunca cria propriedade nem altera nome, área ou localização da VAL.",
+            "properties": {"payload": {"required": ["property"], "properties": {"property": {
+              "type": "object",
+              "required": ["name"],
+              "properties": {
+                "name": {"type": "string", "minLength": 1},
+                "municipality": {"type": "string"},
+                "areaHa": {"type": "number", "minimum": 0},
+                "tenure": {"type": "string"},
+                "location": {"type": "object", "required": ["lat", "lng"], "properties": {"lat": {"type": "number", "minimum": -90, "maximum": 90}, "lng": {"type": "number", "minimum": -180, "maximum": 180}, "source": {"type": "string"}}},
+                "mapping": {"type": "object", "properties": {"revision": {"type": "integer", "minimum": 0}, "totalHa": {"type": "number", "minimum": 0}, "productiveHa": {"type": "number", "minimum": 0}}},
+                "registry": {"type": "object", "properties": {"matricula": {"type": "string"}, "cartorio": {"type": "string"}, "cnm": {"type": "string"}, "car": {"type": "string"}, "sigef": {"type": "string"}, "georeferenced": {"type": "boolean"}, "confirmed": {"type": "boolean"}, "activeLienTypes": {"type": "array", "items": {"type": "string"}}}},
+                "details": {"type": "object", "properties": {"activities": {"type": "array"}, "crops": {"type": "array"}, "irrigation": {}, "arableHa": {"type": "number", "minimum": 0}, "storageCapacityT": {"type": "number", "minimum": 0}, "carStatus": {"type": "string"}}},
+                "crosscheck": {"type": "object", "properties": {"at": {"type": "string", "format": "date-time"}, "summary": {"type": "string"}, "divergences": {"type": "array", "items": {"type": "object", "properties": {"severity": {"type": "string"}, "code": {"type": "string"}}}}}}
+              }
+            }}}}
+          }
+        }
+      ]
+    }
+  }
+}

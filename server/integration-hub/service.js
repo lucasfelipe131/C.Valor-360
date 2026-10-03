@@ -11,7 +11,7 @@ const asEvent=row=>({externalId:row.external_id,type:row.event_type,schemaVersio
 const summary=row=>({id:row.id,externalId:row.external_id,eventType:row.event_type,source:row.source,status:String(row.status).toUpperCase(),decision:row.decision,canonicalClientId:row.visible_client_id||null,clientName:row.client_name||null,externalEntityId:row.external_entity_id,sourceVersion:row.source_version,observedAt:row.observed_at||row.occurred_at,receivedAt:row.ingested_at,processedAt:row.processed_at,errorCode:row.error_code,retryEligible:row.retry_eligible,attempts:row.attempt_count,nextRetryAt:row.next_retry_at,latencyMs:row.latency_ms,reviewRequired:row.review_required===true})
 
 export class IntegrationHub {
- constructor({db,repository,tenantId}){this.db=db;this.repository=repository;this.tenantId=tenantId}
+ constructor({db,repository,tenantId,sources=SOURCE_SYSTEMS}){this.db=db;this.repository=repository;this.tenantId=tenantId;this.sources=sources}
  scope({tenantId=this.tenantId,ownerId}){
   tenantId=assertTenantScope(this.tenantId,tenantId)
   if(!uuid.test(String(ownerId||'')))throw fault('hub_authenticated_owner_required',401)
@@ -24,7 +24,7 @@ export class IntegrationHub {
  async ingest({tenantId=this.tenantId,ownerId,event}){
   const scope=this.scope({tenantId,ownerId})
   if(event.ownerUserId&&event.ownerUserId!==ownerId)throw fault('hub_owner_mismatch',403)
-  const connector=SOURCE_SYSTEMS[event.source]
+  const connector=this.sources[event.source]
   if(!connector||!connector.events.includes(event.type))throw fault('hub_connector_event_unsupported')
   const descriptor=describeEvent(event)
   return this.db.transaction(async connection=>{

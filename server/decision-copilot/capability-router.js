@@ -449,7 +449,7 @@ function marketSelection(workspace,message,now){
  const requestedRange=dateRangeFrom(message,requestedSeason)
  const temporalSelectionRequired=Boolean(requestedRange&&(requestedMarketKind==='forward'||requestedMarketKind==='futures'||/\b(?:entrega|janela|vencimento)\b/.test(normalize(message))))
  const candidates=list(workspace?.marketSnapshots)
-  .filter(item=>item?.status!=='inactive'&&(!commodity||item?.commodity===commodity))
+  .filter(item=>item?.status!=='inactive'&&!item?.isSynthetic&&(!commodity||item?.commodity===commodity))
   .filter(item=>!requestedMarketKind||normalize(item?.marketKind??item?.market_kind)===requestedMarketKind)
   .filter(item=>!requestedPriceUnit||clean(item?.priceUnit??item?.price_unit,40)===requestedPriceUnit)
   .filter(item=>sameRegion(item?.region,requestedRegion))
@@ -467,7 +467,7 @@ function marketSelection(workspace,message,now){
  const undatedCandidates=candidates.filter(item=>item?.sourceName&&Number.isFinite(Number(item?.price))&&(!item?.observedAt||Number.isNaN(new Date(item.observedAt).getTime()))).length
  const snapshots=candidates
   .filter(item=>item?.sourceName&&item?.observedAt&&Number.isFinite(Number(item?.price))&&freshness(item.observedAt,now).state!=='INVALID')
-  .sort((left,right)=>new Date(right.observedAt)-new Date(left.observedAt))
+  .sort((left,right)=>Number(freshness(left.observedAt,now).state==='STALE')-Number(freshness(right.observedAt,now).state==='STALE')||Number(right.sourceOrigin==='VAL_SOG')-Number(left.sourceOrigin==='VAL_SOG')||new Date(right.observedAt)-new Date(left.observedAt))
  const latest=snapshots[0]||null
  const previous=latest?snapshots.find(item=>item.id!==latest.id&&item.commodity===latest.commodity&&item.priceUnit===latest.priceUnit&&item.region===latest.region&&item.marketKind===latest.marketKind&&dateOnly(item.deliveryStart??item.delivery_start)===dateOnly(latest.deliveryStart??latest.delivery_start)&&dateOnly(item.deliveryEnd??item.delivery_end)===dateOnly(latest.deliveryEnd??latest.delivery_end))||null:null
  return {commodity,requestedMarketKind,requestedSeason,requestedPriceUnit,requestedRegion,requestedRange,latest,previous,undatedCandidates,freshness:latest?freshness(latest.observedAt,now):null}
@@ -479,7 +479,7 @@ export function answerCurrentMarket({workspace={},message='',intentHint='',now=n
   const readings=['soja','milho','trigo'].map(commodity=>answerCurrentMarket({workspace,message:`${message} ${commodity}`,intentHint,now,overview:false})).filter(item=>item.source)
   if(readings.length>1){
    const first=readings[0],allCurrent=readings.every(item=>item.status==='CURRENT')
-   return {...first,status:allCurrent?'CURRENT':readings.some(item=>item.status==='STALE')?'STALE':'DATED',answer:readings.map(item=>item.answer).join('\n\n'),facts:readings.flatMap(item=>item.facts),sources:readings.map(item=>item.source),readings,action:'Compare as referências com a praça, o frete, a unidade e o preço-alvo na SOG. Referências internacionais não representam uma oferta local.'}
+   return {...first,status:allCurrent?'CURRENT':readings.some(item=>item.status==='STALE')?'STALE':'DATED',answer:readings.map(item=>item.answer).join('\n\n'),facts:readings.flatMap(item=>item.facts),sources:readings.map(item=>item.source),readings,action:'Compare as referências com a praça, o frete, a unidade e o preço-alvo na SOG. Médias estaduais complementam a SOG e não representam uma oferta na praça do produtor.'}
   }
  }
  const selected=marketSelection(workspace,message,now)
@@ -533,11 +533,11 @@ export function answerCurrentMarket({workspace={},message='',intentHint='',now=n
  // "Ela é ..." fazia o guardiao de evidencia global ler uma afirmacao sobre um individuo (o texto
  // desta resposta e tambem o statement da evidencia) e derrubar a conversa com HTTP 400 sempre que
  // a cotacao passava de 24h. A ressalva continua a mesma para o consultor, sem o pronome solto.
- const warning=(selected.freshness.state==='CURRENT'?'':` Esta referência é ${selected.freshness.label}; confirme uma atualização antes de tratá-la como preço de hoje.`)+(quote.priceUnit==='USD/bu'?' Referência dos EUA em dólares por bushel; não equivale a uma cotação local em reais por saca.':'')
+ const warning=(selected.freshness.state==='CURRENT'?'':` Esta referência é ${selected.freshness.label}; confirme uma atualização antes de tratá-la como preço de hoje.`)+(quote.sourceOrigin==='BRAZIL_PUBLIC'?' Média estadual brasileira de compra no atacado; confirme a oferta, o frete e a qualidade na praça da SOG.':'')+(quote.priceUnit==='USD/bu'?' Referência dos EUA em dólares por bushel; não equivale a uma cotação local em reais por saca.':'')
  return {
   route,
   status:selected.freshness.state,
-  answer:`${currentPrefix} é de ${label}: ${money(quote.price,quote.priceUnit)} ${clean(quote.priceUnit,40)} em ${clean(quote.region,120)}. Tipo de mercado: ${kindLabel}.${deliveryText} Fonte ${clean(quote.sourceName,180)}, observada em ${dateText}.${movement}${warning}`,
+  answer:`${quote.sourceOrigin==='VAL_SOG'?'Referência registrada na VAL SOG. ':quote.sourceOrigin==='BRAZIL_PUBLIC'?'Complemento brasileiro da VAL SOG. ':''}${currentPrefix} é de ${label}: ${money(quote.price,quote.priceUnit)} ${clean(quote.priceUnit,40)} em ${clean(quote.region,120)}. Tipo de mercado: ${kindLabel}.${deliveryText} Fonte ${clean(quote.sourceName,180)}, observada em ${dateText}.${movement}${warning}`,
   action:selected.freshness.state==='CURRENT'?'Cruze esta referência com praça, frete, janela e preço-alvo do produtor antes de avançar.':'Atualize a cotação na área Mercado antes de orientar uma negociação.',
   // Cotacao fora da janela DATED so pode chegar ao consultor como historico declarado. Sem esta marca
   // o contrato de evidencia recusava por idade e o turno morria em 400 - o consultor pedia o preco e

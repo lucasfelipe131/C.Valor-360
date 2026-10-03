@@ -9,7 +9,7 @@ export default function ProducerCredit({client}){
  const endpoint=`/api/clients/${encodeURIComponent(client.id)}/credit`
  useEffect(()=>{
   const controller=new AbortController();setResource(null);setError('');setProducerId('');setDocument('')
-  fetch(endpoint,{signal:controller.signal}).then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error||'A consulta de crédito não pôde ser concluída.');return data}).then(data=>{if(!controller.signal.aborted)setResource(data)}).catch(e=>{if(!controller.signal.aborted)setError(e.message)})
+  fetch(`${endpoint}/context`,{signal:controller.signal}).then(async response=>{const data=await response.json();if(!response.ok)throw new Error(data.error||'A consulta de crédito não pôde ser concluída.');return data}).then(data=>{if(!controller.signal.aborted)setResource(data)}).catch(e=>{if(!controller.signal.aborted)setError(e.message)})
   return()=>controller.abort()
  },[endpoint,revision])
  async function mutate(operation){

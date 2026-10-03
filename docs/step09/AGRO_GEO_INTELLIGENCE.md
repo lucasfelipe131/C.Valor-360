@@ -33,3 +33,13 @@ Home e Visitas mostram até cinco cards. Cliente 360 e Agro reutilizam Satellite
 `test/agro-geo.test.js`: adversariais de escopo, geometria, unidades, NDVI, clima, CAR, estados e projeção de 100 propriedades/500 talhões. `test/decision-service.test.js`: persistência, histórico imutável, isolamento, flags, rollback, vínculos, auditoria e HTTP quando executado com PostgreSQL 16 no CI. Suítes existentes cobrem KML/GeoJSON e o mapa reutilizado.
 
 Situação de validação: execução em andamento. CI, smoke de staging e revisão visual mobile devem ser concluídos antes de declarar candidato pronto. Não executar K5 completo, não mergear e não promover produção.
+
+## Fechamento de cards, contornos e mobile
+
+A fixture `step09_synthetic_fixture` é idempotente e limitada pelos três IDs exatos do projeto, ambiente e serviço de staging. Usa somente a carteira UAT A já ativa e não troca senha nem permissão. Cria um produtor, propriedade, talhão e safra explicitamente sintéticos, com contornos sintéticos e origem rastreável. Um evento interno percorre normalização → Integration Hub → relatório/observação → sinal → prioridade → card persistido. A fonte de teste não é habilitada nos webhooks públicos. A transação confirma que contagem de produtores e valor de oportunidades reais permanecem iguais; o mesmo filtro de fonte se aplica aos indicadores de frontend.
+
+O card prioriza título, próxima ação, motivo atual, confiança e prazo, com evidências expansíveis. Preserva source_ref, evento Hub, registro, sinal, política e identidade/revisão do card. Sem evidência exibe `INSUFFICIENT_EVIDENCE`. O mapa abre em diálogo modal nativo, isolando o toque da navegação inferior, e devolve o foco ao botão do card ao fechar.
+
+Propriedade usa azul tracejado; talhão usa verde e o selecionado usa âmbar. O foco verifica vínculo e versão contra a leitura territorial autorizada e enquadra propriedade e talhão juntos, preservando o contexto do contorno externo. Geometria inválida não é desenhada; a fila e o motivo de revisão permanecem disponíveis. Fonte, referência, proveniência, versão, área e data de validação continuam no contrato. Seleção aceita toque e teclado.
+
+`npm run test:agro:browser` executa Leaflet e os componentes/CSS reais com respostas sintéticas isoladas, nos viewports 375×667, 430×932 e 393×851. Verifica abertura/fechamento, foco, contornos, camadas, zoom, gesto touch de pan, detalhes, alvos mínimos e ausência de overflow horizontal. O CI instala Chromium e preserva relatório JSON e screenshots. Para ambientes que já dispõem de Chromium, `AGRO_CHROMIUM_PATH` permite indicar seu executável sem modificar o contrato CI. A emulação não substitui dispositivo físico: `MOBILE_PHYSICAL=PENDING_HUMAN` até UAT humano.

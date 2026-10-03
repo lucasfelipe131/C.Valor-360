@@ -67,20 +67,24 @@ export function buildAgronomicTerritory(context={}, {now=Date.now(),tenantId,own
  const scope={tenant_id:tenantId,owner_id:ownerId,canonical_client_id:producer.canonical_id}
  const addConflict=(property,field,type,refs=[])=>conflicts.push({...scope,property_id:property.id,field_id:field?.id||null,type,source_refs:refs})
  for(const raw of list(context.properties)){
-  if(raw.tenant_id!==tenantId||(raw.canonical_client_id||raw.client_id)!==producer.canonical_id)continue
+  if(raw.tenant_id!==tenantId||(raw.canonical_client_id||raw.client_id)!==producer.canonical_id||raw.owner_user_id&&raw.owner_user_id!==ownerId)continue
   const property={...raw,property_id:raw.id,area_total_ha:raw.area_ha,area_productive_ha:raw.metadata?.area_productive_ha??null,state:raw.metadata?.state||null,geometry:raw.metadata?.geometry||null,geometry_version:raw.metadata?.geometry_version||null,source:raw.metadata?.source||'canonical',source_ref:raw.metadata?.source_ref||`properties:${raw.id}`,provenance:raw.metadata?.provenance||null,validated_at:raw.metadata?.validated_at||null,status:raw.metadata?.status||'UNVERIFIED',fields:[]}
+  if(property.geometry&&assessGeoPlausibility(property.geometry).status!=='VALID'){addConflict(property,null,'PROPERTY_GEOMETRY',['INVALID_GEOMETRY']);property.geometry=null}
   const siblings=list(raw.fields).map(f=>({id:f.id,geometry:geometryOf(f,tenantId)}))
   for(const field of list(raw.fields)){
-   if(field.tenant_id!==tenantId||field.property_id!==raw.id)continue
+   if(field.tenant_id!==tenantId||field.property_id!==raw.id||field.owner_user_id&&field.owner_user_id!==ownerId)continue
    const geometry=geometryOf(field,tenantId),seasons=list(field.seasons),current=seasons[0]||{},missing=[]
    let calculatedAreaHa=null;try{if(geometry)calculatedAreaHa=canonicalGeometryAreaHa(geometry)}catch{}
    const plausibility=assessGeoPlausibility(geometry,{areaHa:field.area_ha,calculatedAreaHa,propertyAreaHa:raw.area_ha,parentGeometry:property.geometry,municipalityCenter:raw.metadata?.municipality_center,otherGeometries:siblings.filter(f=>f.id!==field.id&&f.geometry).map(f=>f.geometry)})
    if(plausibility.reasons.length)addConflict(property,field,'GEOMETRY',plausibility.reasons)
    for(const season of seasons)if(seasons.some(s=>s.id!==season.id&&s.season===season.season&&s.crop!==season.crop))addConflict(property,field,'CROP_SEASON_CONFLICT',seasons.filter(s=>s.season===season.season).map(s=>s.id))
    if(!geometry)missing.push('Geometria do talhão não disponível.')
+   else if(plausibility.status!=='VALID')missing.push('Geometria do talhão requer revisão; contorno indisponível.')
    if(!current.season)missing.push('Safra não informada.')
    if(!current.crop)missing.push('Cultura não informada.')
-   const fieldView={...field,field_id:field.id,geometry,season:current.season||null,crop:current.crop||null,status:plausibility.status,plausibility,source_ref:`fields:${field.id}`,missing_information:missing}
+   let geometryProvenance=field.geometry_provenance||null;try{geometryProvenance=decodeCanonicalGeometryRef(field.geometry_ref,{expectedOrganizationId:tenantId}).provenance}catch{}
+   const usable=plausibility.status==='VALID'?geometry:null
+   const fieldView={...field,field_id:field.id,geometry:usable,source:geometryProvenance?.source||'canonical',provenance:geometryProvenance,validated_at:field.geometry_validated_at||null,season:current.season||null,crop:current.crop||null,status:plausibility.status,plausibility,source_ref:geometryProvenance?.sourceRef||`fields:${field.id}`,missing_information:missing}
    property.fields.push(fieldView)
    const scoped=rows=>list(rows).filter(r=>r.tenant_id===tenantId&&r.owner_user_id===ownerId&&(r.canonical_client_id||r.client_id)===producer.canonical_id&&r.property_id===raw.id&&r.field_id===field.id)
    const records=[...scoped(context.ndviObservations).map(r=>({...r,kind:'ndvi',hasSignal:r.anomaly?.flag===true,category:'VIGOR'})),...scoped(context.fieldReports).flatMap(r=>(list(r.observations).length?list(r.observations):[{id:`report:${r.id}`,observation_type:'UNKNOWN',value:{summary:r.summary}}]).map(o=>({...r,observation:o,kind:'field_report',hasSignal:true,category:FIELD_ANOMALIES.includes(o.observation_type)?o.observation_type:'UNKNOWN'}))),...scoped(context.soilAnalyses).map(r=>({...r,kind:'soil',hasSignal:true,category:'SOIL_VARIABILITY'}))]
@@ -115,7 +119,7 @@ export function buildAgronomicTerritory(context={}, {now=Date.now(),tenantId,own
     const weights=AGRO_GEO_POLICIES.field_priority_policy.weights,score=priorityEnabled?Math.round(Object.entries(dimensions).reduce((sum,[key,value])=>sum+weights[key]*value,0)*(freshness==='CURRENT'?1:.25)):null
     signal.priority={score,dimensions,weights,policy_version:AGRO_GEO_POLICIES.field_priority_policy.version,reason:'Prioridade para coleta e validação; não confirma causa.',automatic_scheduling:false}
     signals.push(signal)
-    cards.push({...scope,id:`agro:${signal.signal_id}`,producer,property:signal.property,field:signal.field,season:signal.season,headline:signal.headline,signal,why:`Evidência registrada em ${observed||'data desconhecida'}; ${signal.signal_type}. Anomalia não é diagnóstico.`,why_now:freshness==='CURRENT'?'Observação recente disponível para vistoria.':'Atualizar a evidência antes de concluir.',recommended_next_step:signal.recommended_next_step,confidence:signal.confidence,validation_state:signal.validation_state,evidence_refs:sourceRefs,source_refs:sourceRefs,missing_information:signalMissing,map_focus:{property_id:raw.id,field_id:field.id,geometry,geometry_version:field.geometry_version||null},priority:signal.priority,deadline:validated?record.observation?.value?.window_end||null:null,generated_at:new Date(now).toISOString(),version:'val.agronomic-decision-card.v1',automatic_execution:false})
+    cards.push({...scope,id:`agro:${signal.signal_id}`,producer,property:signal.property,field:signal.field,season:signal.season,crop:current.crop||null,signal_type:signal.signal_type,observed_at:signal.observed_at,source:record.source||null,headline:signal.headline,signal,why:`Evidência registrada em ${observed||'data desconhecida'}; ${signal.signal_type}. Anomalia não é diagnóstico.`,why_now:freshness==='CURRENT'?'Observação recente disponível para vistoria.':'Atualizar a evidência antes de concluir.',recommended_next_step:signal.recommended_next_step,confidence:signal.confidence,validation_state:signal.validation_state,evidence_refs:sourceRefs,source_refs:sourceRefs,missing_information:signalMissing,map_focus:{property_id:raw.id,field_id:field.id,geometry:usable,geometry_version:field.geometry_version||null,property_geometry:property.geometry,property_geometry_version:property.geometry_version,source:fieldView.source,source_ref:fieldView.source_ref,provenance:geometryProvenance,validated_at:fieldView.validated_at,area_ha:field.area_ha},priority:signal.priority,deadline:validated?record.observation?.value?.window_end||null:null,generated_at:new Date(now).toISOString(),version:'val.agronomic-decision-card.v1',automatic_execution:false})
    }
   }
   properties.push(property)

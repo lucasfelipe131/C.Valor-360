@@ -1,45 +1,60 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import {parseUsdaGrainReport,createOpenMarketFeed,withOpenMarketReferences} from '../server/open-market-feed.js'
+import {readFileSync} from 'node:fs'
+import {parseBrazilGrainReport,createOpenMarketFeed,withOpenMarketReferences} from '../server/open-market-feed.js'
 import {createValCreditService,creditPresentation} from '../server/val-credit-service.js'
-import {buildFastMarketResponse,buildFastClientResponse} from '../server/decision-copilot/capability-router.js'
+import {answerCurrentMarket,buildFastMarketResponse,buildFastClientResponse} from '../server/decision-copilot/capability-router.js'
 import {evaluateResponseGrounding} from '../server/decision-copilot/response-grounding.js'
-import {buildGrainOpportunities} from '../server/grain-intelligence.js'
-
 const now=new Date('2026-10-03T11:00:00Z')
-const report='Grain Report for 10/2/2026 - Final State Average Price: Corn -- $4.55 Soybeans -- $12.19 Futures Settlements CBOT Corn 497.75 (Dec 26) CBOT Soybeans 1278.25 (Nov 26) CBOT Wheat 683.00 (Dec 26)'
+const report=readFileSync(new URL('./fixtures/deral-grain-2026-10-02.html',import.meta.url),'utf8')
 const scope={tenantId:'tenant-a',ownerId:'owner-a',clientId:'client-a'}
-test('USDA dollar benchmarks never become local BRL trade targets',()=>{
- const [opportunity]=buildGrainOpportunities({intentions:[{id:'i1',clientId:'client-a',commodity:'soja',direction:'sell',volume:100,volumeUnit:'sc_60kg',targetPrice:150,priceUnit:'BRL/sc_60kg',status:'confirmed',confidence:90,observedAt:now.toISOString()}],marketSnapshots:parseUsdaGrainReport(report,{now})},{now})
- assert.equal(opportunity.marketReference,null);assert.equal(opportunity.priceGapPercent,null)
+test('Brazil bulletin reads statewide means, retaining BRL/sack and original publication day',()=>{
+ const rows=parseBrazilGrainReport(report,{now})
+ assert.deepEqual(rows.map(r=>r.price),[55.53,139.11,80.09])
+ assert.ok(rows.every(r=>r.priceUnit==='BRL/sc_60kg'&&r.region==='Paraná, Brasil'&&r.observedDate==='2026-10-02'&&r.timePrecision==='DAY'))
+ assert.throws(()=>parseBrazilGrainReport(report.replace('02/10/2026','04/10/2026'),{now}),/BRAZIL_REPORT_DATE_INVALID/)
+ assert.throws(()=>parseBrazilGrainReport(report.replace('02/10/2026','31/02/2026'),{now}),/BRAZIL_REPORT_DATE_INVALID/)
+ assert.throws(()=>parseBrazilGrainReport(report.replace('MÉDIA<br>DIA','MÉDIA MENSAL'),{now}),/BRAZIL_REPORT_LAYOUT_CHANGED/)
+ assert.throws(()=>parseBrazilGrainReport('unknown'),/BRAZIL_REPORT_DATE_MISSING/)
 })
-test('USDA retains USD/bushel, cash/futures, contract month and publication date',()=>{
- const rows=parseUsdaGrainReport(report,{now});assert.equal(rows.length,5)
- assert.deepEqual(rows.map(r=>r.price),[4.55,12.19,4.9775,12.7825,6.83])
- assert.ok(rows.every(r=>r.priceUnit==='USD/bu'&&r.observedDate==='2026-10-02'&&r.timePrecision==='DAY'))
- assert.equal(rows.at(-1).deliveryEnd,'2026-12-31')
- assert.throws(()=>parseUsdaGrainReport(report.replace('10/2/2026','10/4/2026'),{now}),/USDA_REPORT_DATE_INVALID/)
- assert.throws(()=>parseUsdaGrainReport('unknown'),/USDA_REPORT_DATE_MISSING/)
-})
-test('public cache materializes distinct owner evidence; failures keep original observation date',async()=>{
+test('Brazil cache isolates portfolios and outage never changes observation dates or retries continuously',async()=>{
  let clock=now,failed=false,calls=0
- const feed=createOpenMarketFeed({clock:()=>clock,extractPdf:async()=>report,fetchImpl:async url=>{calls++;if(failed)throw new Error('offline');return new Response(String(url).endsWith('.pdf')?'pdf':JSON.stringify([{data:'02/10/2026',valor:'5.30'}]))}})
+ const feed=createOpenMarketFeed({clock:()=>clock,fetchImpl:async()=>{calls++;if(failed)throw new Error('offline');return new Response(report)}})
  const first=await feed.read(scope),second=await feed.read({...scope,ownerId:'owner-b'})
- assert.equal(calls,2);assert.notEqual(first.marketSnapshots[0].id,second.marketSnapshots[0].id)
- assert.equal(first.marketSnapshots[0].contextOwnerId,'owner-a');assert.equal(second.marketSnapshots[0].contextOwnerId,'owner-b')
+ assert.equal(calls,1);assert.notEqual(first.marketSnapshots[0].id,second.marketSnapshots[0].id)
+ assert.equal(second.marketSnapshots[0].contextOwnerId,'owner-b')
  failed=true;clock=new Date(now.getTime()+16*60*1000)
  const cached=await feed.read(scope);assert.equal(cached.cacheStatus,'STALE_CACHE');assert.equal(cached.marketSnapshots[0].observedDate,'2026-10-02')
+ await feed.read(scope);assert.equal(calls,2)
  await assert.rejects(feed.read({}),/MARKET_AUTHENTICATED_SCOPE_REQUIRED/)
 })
-test('Copilot market overview independently grounds all three grains without local price conversion',async()=>{
- const feed=createOpenMarketFeed({clock:()=>now,extractPdf:async()=>report,fetchImpl:async url=>new Response(String(url).endsWith('.pdf')?'pdf':'[]')})
+test('Brazil source honors ISO-8859-1 declared inside an HTML page',async()=>{
+ const feed=createOpenMarketFeed({clock:()=>now,fetchImpl:async()=>new Response(Buffer.from('<meta charset="ISO-8859-1">'+report,'latin1'),{headers:{'Content-Type':'text/html'}})})
+ const current=await feed.read(scope)
+ assert.equal(current.status,'AVAILABLE');assert.equal(current.marketSnapshots[1].price,139.11)
+})
+test('VAL SOG is the principal source; synthetic quotes are excluded and state averages do not substitute a requested local plaza',async()=>{
+ const feed=createOpenMarketFeed({clock:()=>now,fetchImpl:async()=>new Response(report)})
+ const local={id:'sog-soja',commodity:'soja',marketKind:'spot',region:'São Luiz Gonzaga/RS',price:145,priceUnit:'BRL/sc_60kg',sourceName:'Cooperativa regional',observedAt:'2026-10-01T15:00:00Z',tenantId:scope.tenantId,contextOwnerId:scope.ownerId,scope:'MARKET'}
+ const synthetic={...local,id:'fake',price:999,sourceName:'VAL G2 SINTÉTICO — NÃO É COTAÇÃO REAL',observedAt:now.toISOString()}
+ const workspace=await withOpenMarketReferences({marketSnapshots:[local,synthetic]},feed,scope)
+ assert.equal(workspace.marketBase,'VAL_SOG')
+ assert.match(answerCurrentMarket({workspace,message:'Preço da soja?',now}).answer,/145/)
+ assert.match(answerCurrentMarket({workspace,message:'Preço da soja?',now}).answer,/VAL SOG/)
+ assert.doesNotMatch(answerCurrentMarket({workspace,message:'Preço da soja?',now}).answer,/999/)
+ const publicOnly=await withOpenMarketReferences({marketSnapshots:[synthetic]},feed,scope)
+ assert.equal(answerCurrentMarket({workspace:publicOnly,message:'Preço da soja em São Luiz Gonzaga?',now}).status,'UNAVAILABLE')
+ assert.match(answerCurrentMarket({workspace:publicOnly,message:'Preço da soja?',now}).answer,/139,11/)
+})
+test('Copilot independently grounds three Brazilian grains with dated, statewide qualification',async()=>{
+ const feed=createOpenMarketFeed({clock:()=>now,fetchImpl:async()=>new Response(report)})
  const workspace=await withOpenMarketReferences({marketSnapshots:[]},feed,scope)
  const result=buildFastMarketResponse({workspace,message:'Como está o mercado?',organizationId:scope.tenantId,ownerId:scope.ownerId,now})
  const reasoning=result.advice.ai_reasoning
- assert.match(reasoning.situation_summary,/soja/i);assert.match(reasoning.situation_summary,/milho/i);assert.match(reasoning.situation_summary,/trigo/i)
+ for(const label of ['soja','milho','trigo'])assert.match(reasoning.situation_summary,new RegExp(label,'i'))
  assert.equal(reasoning.facts_used.length,3)
  for(const item of reasoning.facts_used)assert.equal(evaluateResponseGrounding({question:'mercado',answer:item.statement,domain:'GRAINS',evidence:[item],tenantId:scope.tenantId,ownerId:scope.ownerId,now,checkQuestionRelevance:false}).passed,true)
- assert.match(reasoning.situation_summary,/EUA/);assert.doesNotMatch(reasoning.situation_summary,/R\$ 12/)
+ assert.match(reasoning.situation_summary,/Média estadual brasileira/);assert.doesNotMatch(reasoning.situation_summary,/EUA|USD/)
 })
 test('credit response rejects another portfolio and removes outdated decisions',async()=>{
  const good={contract:'val.credit.v1',status:'LINKED',...scope,producer:{id:'cred-a',name:'Produtor A'},requests:[{id:'r1',title:'Custeio',status:'rascunho',principal:100000,revision:2,observedAt:'2026-10-02T10:00:00Z',analysisStatus:'OUTDATED_REVISION',decision:{value:'aprovado'}}],fetchedAt:now.toISOString()}
