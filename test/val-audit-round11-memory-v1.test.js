@@ -271,7 +271,7 @@ test('a tela diz quando a VAL descarta a resposta com registro em maos', async (
   }
  })
  try{
-  await build({entryPoints:['src/components/GlobalValCopilot.jsx'],outfile:join(directory,'copilot.js'),bundle:true,platform:'node',format:'esm',packages:'external',loader:{'.css':'empty','.json':'json'},logLevel:'silent'})
+  await build({entryPoints:['src/components/GlobalValCopilot.jsx'],outfile:join(directory,'copilot.js'),bundle:true,platform:'node',format:'esm',packages:'external',plugins:[{name:'component-css-boundary',setup(b){b.onResolve({filter:/\.css$/},args=>({path:args.path,namespace:'empty-css'}));b.onLoad({filter:/.*/,namespace:'empty-css'},()=>({contents:'',loader:'js'}))}}],loader:{'.css':'empty','.json':'json'},logLevel:'silent'})
   const {ReasoningResponse}=await import(pathToFileURL(join(directory,'copilot.js')).href)
   globalThis.window={addEventListener(){},removeEventListener(){},matchMedia:()=>({matches:false,addEventListener(){},removeEventListener(){}})}
   const textoDe=payload=>{

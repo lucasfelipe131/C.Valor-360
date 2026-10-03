@@ -1,0 +1,1122 @@
+{
+  "enabled": true,
+  "territories": [
+    {
+      "version": "val.agro-geo.v1",
+      "scope": {
+        "tenant_id": "synthetic-tenant",
+        "owner_id": "synthetic-owner",
+        "canonical_client_id": "synthetic-client"
+      },
+      "producer": {
+        "id": "synthetic-client",
+        "canonical_id": "synthetic-client",
+        "name": "SINTÉTICO PASSO 09 — viewport"
+      },
+      "properties": [
+        {
+          "id": "synthetic-property",
+          "tenant_id": "synthetic-tenant",
+          "client_id": "synthetic-client",
+          "name": "Propriedade SINTÉTICA",
+          "metadata": {
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -54.95,
+                    -28.42
+                  ],
+                  [
+                    -54.944,
+                    -28.42
+                  ],
+                  [
+                    -54.944,
+                    -28.416
+                  ],
+                  [
+                    -54.95,
+                    -28.416
+                  ],
+                  [
+                    -54.95,
+                    -28.42
+                  ]
+                ]
+              ]
+            },
+            "geometry_version": "pv1",
+            "source": "step09_synthetic_fixture"
+          },
+          "fields": [
+            {
+              "id": "synthetic-field",
+              "tenant_id": "synthetic-tenant",
+              "property_id": "synthetic-property",
+              "name": "Talhão SINTÉTICO",
+              "geometry": {
+                "type": "Polygon",
+                "coordinates": [
+                  [
+                    [
+                      -54.949,
+                      -28.419
+                    ],
+                    [
+                      -54.946,
+                      -28.419
+                    ],
+                    [
+                      -54.946,
+                      -28.417
+                    ],
+                    [
+                      -54.949,
+                      -28.417
+                    ],
+                    [
+                      -54.949,
+                      -28.419
+                    ]
+                  ]
+                ]
+              },
+              "geometry_version": "fv1",
+              "seasons": [
+                {
+                  "season": "2026/27",
+                  "crop": "Soja"
+                }
+              ],
+              "field_id": "synthetic-field",
+              "source": "canonical",
+              "provenance": null,
+              "validated_at": null,
+              "season": "2026/27",
+              "crop": "Soja",
+              "status": "VALID",
+              "plausibility": {
+                "status": "VALID",
+                "reasons": [],
+                "corrected": false
+              },
+              "source_ref": "fields:synthetic-field",
+              "missing_information": []
+            }
+          ],
+          "property_id": "synthetic-property",
+          "area_productive_ha": null,
+          "state": null,
+          "geometry": {
+            "type": "Polygon",
+            "coordinates": [
+              [
+                [
+                  -54.95,
+                  -28.42
+                ],
+                [
+                  -54.944,
+                  -28.42
+                ],
+                [
+                  -54.944,
+                  -28.416
+                ],
+                [
+                  -54.95,
+                  -28.416
+                ],
+                [
+                  -54.95,
+                  -28.42
+                ]
+              ]
+            ]
+          },
+          "geometry_version": "pv1",
+          "source": "step09_synthetic_fixture",
+          "source_ref": "properties:synthetic-property",
+          "provenance": null,
+          "validated_at": null,
+          "status": "UNVERIFIED"
+        }
+      ],
+      "signals": [
+        {
+          "tenant_id": "synthetic-tenant",
+          "owner_id": "synthetic-owner",
+          "canonical_client_id": "synthetic-client",
+          "signal_id": "a0c266653b71c223cbcae15f93d96d2a",
+          "evidence_fingerprint": "3d86cfc71003a48cfc6c5a02061f0e0b46761af5a22bb46cc986859444a03232",
+          "human_validation": null,
+          "producer": {
+            "id": "synthetic-client",
+            "canonical_id": "synthetic-client",
+            "name": "SINTÉTICO PASSO 09 — viewport"
+          },
+          "property": {
+            "id": "synthetic-property",
+            "name": "Propriedade SINTÉTICA"
+          },
+          "field": {
+            "id": "synthetic-field",
+            "name": "Talhão SINTÉTICO"
+          },
+          "season": "2026/27",
+          "signal_type": "ESTANDE",
+          "headline": "Observação de campo · Talhão SINTÉTICO",
+          "evidence": {
+            "id": "synthetic-report",
+            "tenant_id": "synthetic-tenant",
+            "owner_user_id": "synthetic-owner",
+            "client_id": "synthetic-client",
+            "property_id": "synthetic-property",
+            "field_id": "synthetic-field",
+            "source": "step09_synthetic_fixture",
+            "external_id": "synthetic:step09:viewport",
+            "observed_at": "2026-10-03T11:00:00.000Z",
+            "created_at": "2026-10-03T11:00:00.000Z",
+            "observations": [
+              {
+                "id": "synthetic-observation",
+                "observation_type": "ESTANDE",
+                "value": {},
+                "evidence_ref": "synthetic:step09:viewport"
+              }
+            ],
+            "observation": {
+              "id": "synthetic-observation",
+              "observation_type": "ESTANDE",
+              "value": {},
+              "evidence_ref": "synthetic:step09:viewport"
+            },
+            "kind": "field_report",
+            "hasSignal": true,
+            "category": "ESTANDE",
+            "causal_diagnosis": false,
+            "comparisons_allowed": true
+          },
+          "observed_at": "2026-10-03T11:00:00.000Z",
+          "ingested_at": "2026-10-03T11:00:00.000Z",
+          "confidence": "MEDIUM",
+          "validation_state": "HYPOTHESIS",
+          "recommended_next_step": "VISTORIAR",
+          "source_refs": [
+            {
+              "type": "field_report",
+              "id": "synthetic-report",
+              "source": "step09_synthetic_fixture",
+              "source_ref": "synthetic:step09:viewport",
+              "source_document_id": null,
+              "source_event_id": "synthetic-hub-event",
+              "observed_at": "2026-10-03T11:00:00.000Z",
+              "ingested_at": "2026-10-03T11:00:00.000Z",
+              "provenance": null
+            }
+          ],
+          "freshness": "CURRENT",
+          "missing_information": [],
+          "priority": {
+            "score": 55,
+            "dimensions": {
+              "anomaly": 1,
+              "urgency": 0,
+              "season": 1,
+              "window": 0,
+              "visit": 0,
+              "confidence": 0.5,
+              "freshness": 1,
+              "impact": 0,
+              "quality": 1
+            },
+            "weights": {
+              "anomaly": 25,
+              "urgency": 15,
+              "season": 5,
+              "window": 10,
+              "visit": 5,
+              "confidence": 10,
+              "freshness": 10,
+              "impact": 10,
+              "quality": 10
+            },
+            "policy_version": "val.field-priority.v1",
+            "reason": "Prioridade para coleta e validação; não confirma causa.",
+            "automatic_scheduling": false
+          }
+        }
+      ],
+      "cards": [
+        {
+          "tenant_id": "synthetic-tenant",
+          "owner_id": "synthetic-owner",
+          "canonical_client_id": "synthetic-client",
+          "id": "agro:a0c266653b71c223cbcae15f93d96d2a",
+          "producer": {
+            "id": "synthetic-client",
+            "canonical_id": "synthetic-client",
+            "name": "SINTÉTICO PASSO 09 — viewport"
+          },
+          "property": {
+            "id": "synthetic-property",
+            "name": "Propriedade SINTÉTICA"
+          },
+          "field": {
+            "id": "synthetic-field",
+            "name": "Talhão SINTÉTICO"
+          },
+          "season": "2026/27",
+          "crop": "Soja",
+          "signal_type": "ESTANDE",
+          "observed_at": "2026-10-03T11:00:00.000Z",
+          "source": "step09_synthetic_fixture",
+          "headline": "Observação de campo · Talhão SINTÉTICO",
+          "signal": {
+            "tenant_id": "synthetic-tenant",
+            "owner_id": "synthetic-owner",
+            "canonical_client_id": "synthetic-client",
+            "signal_id": "a0c266653b71c223cbcae15f93d96d2a",
+            "evidence_fingerprint": "3d86cfc71003a48cfc6c5a02061f0e0b46761af5a22bb46cc986859444a03232",
+            "human_validation": null,
+            "producer": {
+              "id": "synthetic-client",
+              "canonical_id": "synthetic-client",
+              "name": "SINTÉTICO PASSO 09 — viewport"
+            },
+            "property": {
+              "id": "synthetic-property",
+              "name": "Propriedade SINTÉTICA"
+            },
+            "field": {
+              "id": "synthetic-field",
+              "name": "Talhão SINTÉTICO"
+            },
+            "season": "2026/27",
+            "signal_type": "ESTANDE",
+            "headline": "Observação de campo · Talhão SINTÉTICO",
+            "evidence": {
+              "id": "synthetic-report",
+              "tenant_id": "synthetic-tenant",
+              "owner_user_id": "synthetic-owner",
+              "client_id": "synthetic-client",
+              "property_id": "synthetic-property",
+              "field_id": "synthetic-field",
+              "source": "step09_synthetic_fixture",
+              "external_id": "synthetic:step09:viewport",
+              "observed_at": "2026-10-03T11:00:00.000Z",
+              "created_at": "2026-10-03T11:00:00.000Z",
+              "observations": [
+                {
+                  "id": "synthetic-observation",
+                  "observation_type": "ESTANDE",
+                  "value": {},
+                  "evidence_ref": "synthetic:step09:viewport"
+                }
+              ],
+              "observation": {
+                "id": "synthetic-observation",
+                "observation_type": "ESTANDE",
+                "value": {},
+                "evidence_ref": "synthetic:step09:viewport"
+              },
+              "kind": "field_report",
+              "hasSignal": true,
+              "category": "ESTANDE",
+              "causal_diagnosis": false,
+              "comparisons_allowed": true
+            },
+            "observed_at": "2026-10-03T11:00:00.000Z",
+            "ingested_at": "2026-10-03T11:00:00.000Z",
+            "confidence": "MEDIUM",
+            "validation_state": "HYPOTHESIS",
+            "recommended_next_step": "VISTORIAR",
+            "source_refs": [
+              {
+                "type": "field_report",
+                "id": "synthetic-report",
+                "source": "step09_synthetic_fixture",
+                "source_ref": "synthetic:step09:viewport",
+                "source_document_id": null,
+                "source_event_id": "synthetic-hub-event",
+                "observed_at": "2026-10-03T11:00:00.000Z",
+                "ingested_at": "2026-10-03T11:00:00.000Z",
+                "provenance": null
+              }
+            ],
+            "freshness": "CURRENT",
+            "missing_information": [],
+            "priority": {
+              "score": 55,
+              "dimensions": {
+                "anomaly": 1,
+                "urgency": 0,
+                "season": 1,
+                "window": 0,
+                "visit": 0,
+                "confidence": 0.5,
+                "freshness": 1,
+                "impact": 0,
+                "quality": 1
+              },
+              "weights": {
+                "anomaly": 25,
+                "urgency": 15,
+                "season": 5,
+                "window": 10,
+                "visit": 5,
+                "confidence": 10,
+                "freshness": 10,
+                "impact": 10,
+                "quality": 10
+              },
+              "policy_version": "val.field-priority.v1",
+              "reason": "Prioridade para coleta e validação; não confirma causa.",
+              "automatic_scheduling": false
+            }
+          },
+          "why": "Evidência registrada em 2026-10-03T11:00:00.000Z; ESTANDE. Anomalia não é diagnóstico.",
+          "why_now": "Observação recente disponível para vistoria.",
+          "recommended_next_step": "VISTORIAR",
+          "confidence": "MEDIUM",
+          "validation_state": "HYPOTHESIS",
+          "evidence_refs": [
+            {
+              "type": "field_report",
+              "id": "synthetic-report",
+              "source": "step09_synthetic_fixture",
+              "source_ref": "synthetic:step09:viewport",
+              "source_document_id": null,
+              "source_event_id": "synthetic-hub-event",
+              "observed_at": "2026-10-03T11:00:00.000Z",
+              "ingested_at": "2026-10-03T11:00:00.000Z",
+              "provenance": null
+            }
+          ],
+          "source_refs": [
+            {
+              "type": "field_report",
+              "id": "synthetic-report",
+              "source": "step09_synthetic_fixture",
+              "source_ref": "synthetic:step09:viewport",
+              "source_document_id": null,
+              "source_event_id": "synthetic-hub-event",
+              "observed_at": "2026-10-03T11:00:00.000Z",
+              "ingested_at": "2026-10-03T11:00:00.000Z",
+              "provenance": null
+            }
+          ],
+          "missing_information": [],
+          "map_focus": {
+            "property_id": "synthetic-property",
+            "field_id": "synthetic-field",
+            "geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -54.949,
+                    -28.419
+                  ],
+                  [
+                    -54.946,
+                    -28.419
+                  ],
+                  [
+                    -54.946,
+                    -28.417
+                  ],
+                  [
+                    -54.949,
+                    -28.417
+                  ],
+                  [
+                    -54.949,
+                    -28.419
+                  ]
+                ]
+              ]
+            },
+            "geometry_version": "fv1",
+            "property_geometry": {
+              "type": "Polygon",
+              "coordinates": [
+                [
+                  [
+                    -54.95,
+                    -28.42
+                  ],
+                  [
+                    -54.944,
+                    -28.42
+                  ],
+                  [
+                    -54.944,
+                    -28.416
+                  ],
+                  [
+                    -54.95,
+                    -28.416
+                  ],
+                  [
+                    -54.95,
+                    -28.42
+                  ]
+                ]
+              ]
+            },
+            "property_geometry_version": "pv1",
+            "source": "canonical",
+            "source_ref": "fields:synthetic-field",
+            "provenance": null,
+            "validated_at": null
+          },
+          "priority": {
+            "score": 55,
+            "dimensions": {
+              "anomaly": 1,
+              "urgency": 0,
+              "season": 1,
+              "window": 0,
+              "visit": 0,
+              "confidence": 0.5,
+              "freshness": 1,
+              "impact": 0,
+              "quality": 1
+            },
+            "weights": {
+              "anomaly": 25,
+              "urgency": 15,
+              "season": 5,
+              "window": 10,
+              "visit": 5,
+              "confidence": 10,
+              "freshness": 10,
+              "impact": 10,
+              "quality": 10
+            },
+            "policy_version": "val.field-priority.v1",
+            "reason": "Prioridade para coleta e validação; não confirma causa.",
+            "automatic_scheduling": false
+          },
+          "deadline": null,
+          "generated_at": "2026-10-03T11:00:00.000Z",
+          "version": "val.agronomic-decision-card.v1",
+          "automatic_execution": false
+        }
+      ],
+      "conflicts": [],
+      "unlinked": [],
+      "weather": {
+        "contract": "val.weather.v1",
+        "status": "UNAVAILABLE",
+        "CURRENT_WEATHER": "UNAVAILABLE",
+        "source": null,
+        "observed_at": null,
+        "forecast_generated_at": null,
+        "location": null,
+        "resolution": null,
+        "confidence": null,
+        "reason": "Nenhuma fonte meteorológica atual autorizada conectada."
+      },
+      "cadastre": {
+        "CAR": {
+          "contract": "val.cadastral.v1",
+          "readiness": "CONTRACT_READY",
+          "LIVE_SOURCE_AVAILABLE": false,
+          "status": "UNVERIFIED",
+          "source_ref": null,
+          "official": false,
+          "automatic_link": false
+        },
+        "SIGEF": {
+          "contract": "val.cadastral.v1",
+          "readiness": "CONTRACT_READY",
+          "LIVE_SOURCE_AVAILABLE": false,
+          "status": "UNVERIFIED",
+          "source_ref": null,
+          "official": false,
+          "automatic_link": false
+        },
+        "MATRICULA": {
+          "contract": "val.cadastral.v1",
+          "readiness": "CONTRACT_READY",
+          "LIVE_SOURCE_AVAILABLE": false,
+          "status": "UNVERIFIED",
+          "source_ref": null,
+          "official": false,
+          "automatic_link": false
+        }
+      },
+      "policies": {
+        "geo_plausibility_policy": {
+          "version": "val.geo-plausibility.v1",
+          "areaTolerance": 0.2,
+          "municipalityDistanceKm": 100,
+          "maxVertices": 5000
+        },
+        "geometry_version_policy": {
+          "version": "val.geometry-history.v1",
+          "appendOnly": true,
+          "reasonRequired": true
+        },
+        "agronomic_signal_policy": {
+          "version": "val.agronomic-signal.v1",
+          "automaticPrescription": false,
+          "anomalyIsDiagnosis": false
+        },
+        "field_priority_policy": {
+          "version": "val.field-priority.v1",
+          "weights": {
+            "anomaly": 25,
+            "urgency": 15,
+            "season": 5,
+            "window": 10,
+            "visit": 5,
+            "confidence": 10,
+            "freshness": 10,
+            "impact": 10,
+            "quality": 10
+          },
+          "commercialWeightCap": 15
+        },
+        "agro_freshness_policy": {
+          "version": "val.agro-freshness.v1",
+          "days": {
+            "weather": 1,
+            "ndvi": 14,
+            "field_report": 14,
+            "soil": 365,
+            "geometry": 730,
+            "crop_stage": 7,
+            "disease_observation": 3
+          }
+        },
+        "geo_identity_policy": {
+          "version": "val.geo-identity.v1",
+          "nameMatchAllowed": false,
+          "canonicalScopeRequired": true
+        }
+      },
+      "generated_at": "2026-10-03T11:00:00.000Z"
+    }
+  ],
+  "cards": [
+    {
+      "tenant_id": "synthetic-tenant",
+      "owner_id": "synthetic-owner",
+      "canonical_client_id": "synthetic-client",
+      "id": "agro:a0c266653b71c223cbcae15f93d96d2a",
+      "producer": {
+        "id": "synthetic-client",
+        "canonical_id": "synthetic-client",
+        "name": "SINTÉTICO PASSO 09 — viewport"
+      },
+      "property": {
+        "id": "synthetic-property",
+        "name": "Propriedade SINTÉTICA"
+      },
+      "field": {
+        "id": "synthetic-field",
+        "name": "Talhão SINTÉTICO"
+      },
+      "season": "2026/27",
+      "crop": "Soja",
+      "signal_type": "ESTANDE",
+      "observed_at": "2026-10-03T11:00:00.000Z",
+      "source": "step09_synthetic_fixture",
+      "headline": "Observação de campo · Talhão SINTÉTICO",
+      "signal": {
+        "tenant_id": "synthetic-tenant",
+        "owner_id": "synthetic-owner",
+        "canonical_client_id": "synthetic-client",
+        "signal_id": "a0c266653b71c223cbcae15f93d96d2a",
+        "evidence_fingerprint": "3d86cfc71003a48cfc6c5a02061f0e0b46761af5a22bb46cc986859444a03232",
+        "human_validation": null,
+        "producer": {
+          "id": "synthetic-client",
+          "canonical_id": "synthetic-client",
+          "name": "SINTÉTICO PASSO 09 — viewport"
+        },
+        "property": {
+          "id": "synthetic-property",
+          "name": "Propriedade SINTÉTICA"
+        },
+        "field": {
+          "id": "synthetic-field",
+          "name": "Talhão SINTÉTICO"
+        },
+        "season": "2026/27",
+        "signal_type": "ESTANDE",
+        "headline": "Observação de campo · Talhão SINTÉTICO",
+        "evidence": {
+          "id": "synthetic-report",
+          "tenant_id": "synthetic-tenant",
+          "owner_user_id": "synthetic-owner",
+          "client_id": "synthetic-client",
+          "property_id": "synthetic-property",
+          "field_id": "synthetic-field",
+          "source": "step09_synthetic_fixture",
+          "external_id": "synthetic:step09:viewport",
+          "observed_at": "2026-10-03T11:00:00.000Z",
+          "created_at": "2026-10-03T11:00:00.000Z",
+          "observations": [
+            {
+              "id": "synthetic-observation",
+              "observation_type": "ESTANDE",
+              "value": {},
+              "evidence_ref": "synthetic:step09:viewport"
+            }
+          ],
+          "observation": {
+            "id": "synthetic-observation",
+            "observation_type": "ESTANDE",
+            "value": {},
+            "evidence_ref": "synthetic:step09:viewport"
+          },
+          "kind": "field_report",
+          "hasSignal": true,
+          "category": "ESTANDE",
+          "causal_diagnosis": false,
+          "comparisons_allowed": true
+        },
+        "observed_at": "2026-10-03T11:00:00.000Z",
+        "ingested_at": "2026-10-03T11:00:00.000Z",
+        "confidence": "MEDIUM",
+        "validation_state": "HYPOTHESIS",
+        "recommended_next_step": "VISTORIAR",
+        "source_refs": [
+          {
+            "type": "field_report",
+            "id": "synthetic-report",
+            "source": "step09_synthetic_fixture",
+            "source_ref": "synthetic:step09:viewport",
+            "source_document_id": null,
+            "source_event_id": "synthetic-hub-event",
+            "observed_at": "2026-10-03T11:00:00.000Z",
+            "ingested_at": "2026-10-03T11:00:00.000Z",
+            "provenance": null
+          }
+        ],
+        "freshness": "CURRENT",
+        "missing_information": [],
+        "priority": {
+          "score": 55,
+          "dimensions": {
+            "anomaly": 1,
+            "urgency": 0,
+            "season": 1,
+            "window": 0,
+            "visit": 0,
+            "confidence": 0.5,
+            "freshness": 1,
+            "impact": 0,
+            "quality": 1
+          },
+          "weights": {
+            "anomaly": 25,
+            "urgency": 15,
+            "season": 5,
+            "window": 10,
+            "visit": 5,
+            "confidence": 10,
+            "freshness": 10,
+            "impact": 10,
+            "quality": 10
+          },
+          "policy_version": "val.field-priority.v1",
+          "reason": "Prioridade para coleta e validação; não confirma causa.",
+          "automatic_scheduling": false
+        }
+      },
+      "why": "Evidência registrada em 2026-10-03T11:00:00.000Z; ESTANDE. Anomalia não é diagnóstico.",
+      "why_now": "Observação recente disponível para vistoria.",
+      "recommended_next_step": "VISTORIAR",
+      "confidence": "MEDIUM",
+      "validation_state": "HYPOTHESIS",
+      "evidence_refs": [
+        {
+          "type": "field_report",
+          "id": "synthetic-report",
+          "source": "step09_synthetic_fixture",
+          "source_ref": "synthetic:step09:viewport",
+          "source_document_id": null,
+          "source_event_id": "synthetic-hub-event",
+          "observed_at": "2026-10-03T11:00:00.000Z",
+          "ingested_at": "2026-10-03T11:00:00.000Z",
+          "provenance": null
+        }
+      ],
+      "source_refs": [
+        {
+          "type": "field_report",
+          "id": "synthetic-report",
+          "source": "step09_synthetic_fixture",
+          "source_ref": "synthetic:step09:viewport",
+          "source_document_id": null,
+          "source_event_id": "synthetic-hub-event",
+          "observed_at": "2026-10-03T11:00:00.000Z",
+          "ingested_at": "2026-10-03T11:00:00.000Z",
+          "provenance": null
+        }
+      ],
+      "missing_information": [],
+      "map_focus": {
+        "property_id": "synthetic-property",
+        "field_id": "synthetic-field",
+        "geometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                -54.949,
+                -28.419
+              ],
+              [
+                -54.946,
+                -28.419
+              ],
+              [
+                -54.946,
+                -28.417
+              ],
+              [
+                -54.949,
+                -28.417
+              ],
+              [
+                -54.949,
+                -28.419
+              ]
+            ]
+          ]
+        },
+        "geometry_version": "fv1",
+        "property_geometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                -54.95,
+                -28.42
+              ],
+              [
+                -54.944,
+                -28.42
+              ],
+              [
+                -54.944,
+                -28.416
+              ],
+              [
+                -54.95,
+                -28.416
+              ],
+              [
+                -54.95,
+                -28.42
+              ]
+            ]
+          ]
+        },
+        "property_geometry_version": "pv1",
+        "source": "canonical",
+        "source_ref": "fields:synthetic-field",
+        "provenance": null,
+        "validated_at": null
+      },
+      "priority": {
+        "score": 55,
+        "dimensions": {
+          "anomaly": 1,
+          "urgency": 0,
+          "season": 1,
+          "window": 0,
+          "visit": 0,
+          "confidence": 0.5,
+          "freshness": 1,
+          "impact": 0,
+          "quality": 1
+        },
+        "weights": {
+          "anomaly": 25,
+          "urgency": 15,
+          "season": 5,
+          "window": 10,
+          "visit": 5,
+          "confidence": 10,
+          "freshness": 10,
+          "impact": 10,
+          "quality": 10
+        },
+        "policy_version": "val.field-priority.v1",
+        "reason": "Prioridade para coleta e validação; não confirma causa.",
+        "automatic_scheduling": false
+      },
+      "deadline": null,
+      "generated_at": "2026-10-03T11:00:00.000Z",
+      "version": "val.agronomic-decision-card.v1",
+      "automatic_execution": false
+    }
+  ],
+  "items": [
+    {
+      "tenant_id": "synthetic-tenant",
+      "owner_id": "synthetic-owner",
+      "canonical_client_id": "synthetic-client",
+      "id": "agro:a0c266653b71c223cbcae15f93d96d2a",
+      "producer": {
+        "id": "synthetic-client",
+        "canonical_id": "synthetic-client",
+        "name": "SINTÉTICO PASSO 09 — viewport"
+      },
+      "property": {
+        "id": "synthetic-property",
+        "name": "Propriedade SINTÉTICA"
+      },
+      "field": {
+        "id": "synthetic-field",
+        "name": "Talhão SINTÉTICO"
+      },
+      "season": "2026/27",
+      "crop": "Soja",
+      "signal_type": "ESTANDE",
+      "observed_at": "2026-10-03T11:00:00.000Z",
+      "source": "step09_synthetic_fixture",
+      "headline": "Observação de campo · Talhão SINTÉTICO",
+      "signal": {
+        "tenant_id": "synthetic-tenant",
+        "owner_id": "synthetic-owner",
+        "canonical_client_id": "synthetic-client",
+        "signal_id": "a0c266653b71c223cbcae15f93d96d2a",
+        "evidence_fingerprint": "3d86cfc71003a48cfc6c5a02061f0e0b46761af5a22bb46cc986859444a03232",
+        "human_validation": null,
+        "producer": {
+          "id": "synthetic-client",
+          "canonical_id": "synthetic-client",
+          "name": "SINTÉTICO PASSO 09 — viewport"
+        },
+        "property": {
+          "id": "synthetic-property",
+          "name": "Propriedade SINTÉTICA"
+        },
+        "field": {
+          "id": "synthetic-field",
+          "name": "Talhão SINTÉTICO"
+        },
+        "season": "2026/27",
+        "signal_type": "ESTANDE",
+        "headline": "Observação de campo · Talhão SINTÉTICO",
+        "evidence": {
+          "id": "synthetic-report",
+          "tenant_id": "synthetic-tenant",
+          "owner_user_id": "synthetic-owner",
+          "client_id": "synthetic-client",
+          "property_id": "synthetic-property",
+          "field_id": "synthetic-field",
+          "source": "step09_synthetic_fixture",
+          "external_id": "synthetic:step09:viewport",
+          "observed_at": "2026-10-03T11:00:00.000Z",
+          "created_at": "2026-10-03T11:00:00.000Z",
+          "observations": [
+            {
+              "id": "synthetic-observation",
+              "observation_type": "ESTANDE",
+              "value": {},
+              "evidence_ref": "synthetic:step09:viewport"
+            }
+          ],
+          "observation": {
+            "id": "synthetic-observation",
+            "observation_type": "ESTANDE",
+            "value": {},
+            "evidence_ref": "synthetic:step09:viewport"
+          },
+          "kind": "field_report",
+          "hasSignal": true,
+          "category": "ESTANDE",
+          "causal_diagnosis": false,
+          "comparisons_allowed": true
+        },
+        "observed_at": "2026-10-03T11:00:00.000Z",
+        "ingested_at": "2026-10-03T11:00:00.000Z",
+        "confidence": "MEDIUM",
+        "validation_state": "HYPOTHESIS",
+        "recommended_next_step": "VISTORIAR",
+        "source_refs": [
+          {
+            "type": "field_report",
+            "id": "synthetic-report",
+            "source": "step09_synthetic_fixture",
+            "source_ref": "synthetic:step09:viewport",
+            "source_document_id": null,
+            "source_event_id": "synthetic-hub-event",
+            "observed_at": "2026-10-03T11:00:00.000Z",
+            "ingested_at": "2026-10-03T11:00:00.000Z",
+            "provenance": null
+          }
+        ],
+        "freshness": "CURRENT",
+        "missing_information": [],
+        "priority": {
+          "score": 55,
+          "dimensions": {
+            "anomaly": 1,
+            "urgency": 0,
+            "season": 1,
+            "window": 0,
+            "visit": 0,
+            "confidence": 0.5,
+            "freshness": 1,
+            "impact": 0,
+            "quality": 1
+          },
+          "weights": {
+            "anomaly": 25,
+            "urgency": 15,
+            "season": 5,
+            "window": 10,
+            "visit": 5,
+            "confidence": 10,
+            "freshness": 10,
+            "impact": 10,
+            "quality": 10
+          },
+          "policy_version": "val.field-priority.v1",
+          "reason": "Prioridade para coleta e validação; não confirma causa.",
+          "automatic_scheduling": false
+        }
+      },
+      "why": "Evidência registrada em 2026-10-03T11:00:00.000Z; ESTANDE. Anomalia não é diagnóstico.",
+      "why_now": "Observação recente disponível para vistoria.",
+      "recommended_next_step": "VISTORIAR",
+      "confidence": "MEDIUM",
+      "validation_state": "HYPOTHESIS",
+      "evidence_refs": [
+        {
+          "type": "field_report",
+          "id": "synthetic-report",
+          "source": "step09_synthetic_fixture",
+          "source_ref": "synthetic:step09:viewport",
+          "source_document_id": null,
+          "source_event_id": "synthetic-hub-event",
+          "observed_at": "2026-10-03T11:00:00.000Z",
+          "ingested_at": "2026-10-03T11:00:00.000Z",
+          "provenance": null
+        }
+      ],
+      "source_refs": [
+        {
+          "type": "field_report",
+          "id": "synthetic-report",
+          "source": "step09_synthetic_fixture",
+          "source_ref": "synthetic:step09:viewport",
+          "source_document_id": null,
+          "source_event_id": "synthetic-hub-event",
+          "observed_at": "2026-10-03T11:00:00.000Z",
+          "ingested_at": "2026-10-03T11:00:00.000Z",
+          "provenance": null
+        }
+      ],
+      "missing_information": [],
+      "map_focus": {
+        "property_id": "synthetic-property",
+        "field_id": "synthetic-field",
+        "geometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                -54.949,
+                -28.419
+              ],
+              [
+                -54.946,
+                -28.419
+              ],
+              [
+                -54.946,
+                -28.417
+              ],
+              [
+                -54.949,
+                -28.417
+              ],
+              [
+                -54.949,
+                -28.419
+              ]
+            ]
+          ]
+        },
+        "geometry_version": "fv1",
+        "property_geometry": {
+          "type": "Polygon",
+          "coordinates": [
+            [
+              [
+                -54.95,
+                -28.42
+              ],
+              [
+                -54.944,
+                -28.42
+              ],
+              [
+                -54.944,
+                -28.416
+              ],
+              [
+                -54.95,
+                -28.416
+              ],
+              [
+                -54.95,
+                -28.42
+              ]
+            ]
+          ]
+        },
+        "property_geometry_version": "pv1",
+        "source": "canonical",
+        "source_ref": "fields:synthetic-field",
+        "provenance": null,
+        "validated_at": null
+      },
+      "priority": {
+        "score": 55,
+        "dimensions": {
+          "anomaly": 1,
+          "urgency": 0,
+          "season": 1,
+          "window": 0,
+          "visit": 0,
+          "confidence": 0.5,
+          "freshness": 1,
+          "impact": 0,
+          "quality": 1
+        },
+        "weights": {
+          "anomaly": 25,
+          "urgency": 15,
+          "season": 5,
+          "window": 10,
+          "visit": 5,
+          "confidence": 10,
+          "freshness": 10,
+          "impact": 10,
+          "quality": 10
+        },
+        "policy_version": "val.field-priority.v1",
+        "reason": "Prioridade para coleta e validação; não confirma causa.",
+        "automatic_scheduling": false
+      },
+      "deadline": null,
+      "generated_at": "2026-10-03T11:00:00.000Z",
+      "version": "val.agronomic-decision-card.v1",
+      "automatic_execution": false
+    }
+  ]
+}

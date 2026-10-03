@@ -45,6 +45,7 @@ const sourceContracts=new Map([
  ['commitment',sourceContract(['FACT','INTENTION'],{maxAgeMs:180*DAY_MS})],
  ['opportunity',sourceContract(['FACT','INFERENCE','INTENTION','HYPOTHESIS'],{maxAgeMs:180*DAY_MS,validUntilMayExtend:false})],
  ['credit_snapshot',sourceContract(['FACT','OBSERVATION'],{maxAgeMs:30*DAY_MS})],
+ ['credit_request',sourceContract(['FACT'],{maxAgeMs:30*DAY_MS,validUntilMayExtend:false})],
  ['behavioral_profile',sourceContract(['INFERENCE','HYPOTHESIS'],{requiresValidUntil:true})],
  ['producer_profile',sourceContract(['FACT','OBSERVATION','INFERENCE','HYPOTHESIS'],{requiresValidUntil:true})],
  ['legacy_profile_score',sourceContract(['INFERENCE','HYPOTHESIS'],{requiresValidUntil:true})],

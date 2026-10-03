@@ -50,11 +50,14 @@ function compact(value,depth=0,path=[]){
   return clean(value)
 }
 
-export function normalizeIntegrationEvent(input){
+// Cada conector passa a própria lista de tipos e a própria origem. O padrão continua
+// sendo o conjunto compartilhado do Manual: nenhuma rota ganha tipos de outra.
+export function normalizeIntegrationEvent(input,{allowedTypes=supportedIntegrationEvents,source}={}){
   const schemaVersion=Number(input?.schemaVersion??input?.schema_version??1)
   if(schemaVersion!==1)throw new Error('Versão de evento não suportada pela engine da VAL.')
   const type=clean(input?.type)
-  if(!supportedIntegrationEvents.has(type))throw new Error('Tipo de evento não suportado pela engine da VAL.')
+  const allowed=allowedTypes instanceof Set?allowedTypes:new Set(Array.isArray(allowedTypes)?allowedTypes:[])
+  if(!allowed.has(type))throw new Error('Tipo de evento não suportado pela engine da VAL.')
   const externalId=externalKey(input.externalId||input.external_id)
   if(externalId.length<4)throw new Error('externalId é obrigatório para impedir importações duplicadas.')
   const rawOccurredAt=clean(input.occurredAt||input.occurred_at)||new Date().toISOString()
@@ -90,7 +93,7 @@ export function normalizeIntegrationEvent(input){
     ...(input.sourceVersion!==undefined?{sourceVersion:input.sourceVersion}:{}),
     type,
     occurredAt:new Date(timestamp).toISOString(),
-    source:clean(input.source).slice(0,80)||'manual-do-agronomo',
+    source:clean(source!==undefined?source:input.source).slice(0,80)||'manual-do-agronomo',
     ownerUserId,
     clientExternalKey:externalKey(input.clientExternalKey||input.client_external_key),
     propertyExternalKey:externalKey(input.propertyExternalKey||input.property_external_key),

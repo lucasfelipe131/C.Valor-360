@@ -143,7 +143,7 @@ const windowOverlap=(intent,quote)=>{
 }
 const day=value=>{const text=String(value??'').slice(0,10);return /^\d{4}-\d{2}-\d{2}$/.test(text)?text:''}
 const matchingQuote=(intent,quotes,now)=>{
- const candidates=quotes.filter(quote=>quote.status!=='inactive'&&quote.commodity===intent.commodity).map(quote=>({...quote,_freshness:freshnessFor(quote.observedAt,now),_regional:locationMatch(intent,quote),_window:windowOverlap(intent,quote)}))
+ const candidates=quotes.filter(quote=>quote.status!=='inactive'&&!quote.isSynthetic&&quote.commodity===intent.commodity&&priceUnits.has(quote.priceUnit)&&priceUnits.has(intent.priceUnit)).map(quote=>({...quote,_freshness:freshnessFor(quote.observedAt,now),_regional:locationMatch(intent,quote),_window:windowOverlap(intent,quote)}))
  candidates.sort((left,right)=>Number(left._freshness.state==='expired')-Number(right._freshness.state==='expired')||right._window-left._window||Number(right._regional)-Number(left._regional)||new Date(right.observedAt)-new Date(left.observedAt))
  return candidates[0]||null
 }

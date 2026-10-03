@@ -25,6 +25,7 @@ Os contratos desta pasta são aditivos e versionados. Eles não substituem os pa
 - `knowledge-item.schema.json`: item externo estruturado com lifecycle, autoridade, risco, geografia, fontes e policy de uso; nunca representa fato do produtor.
 - `knowledge-source.schema.json`: registro curado e versionado das fontes que sustentam KnowledgeItems.
 - `knowledge-selection.schema.json`: seleção determinística de no máximo três itens, com motivos, caveats e provenance; não contém dump do catálogo.
+- `integration-event.schema.json`: envelope v1 servidor-servidor de `integration_events` (Manual e VAL Cred), com os tipos `credit.*` e `cooperative.unit.upserted` do contrato `val-cred-integration.v1`; tenant e origem são sempre do servidor. Ver `docs/VAL_CRED_INTEGRATION.md`.
 - contratos antigos permanecem disponíveis em `/api/val/chat` e `/api/val/recommendations` por meio do adaptador legado.
 
 ## VoiceInteraction v1

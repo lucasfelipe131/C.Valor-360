@@ -1,3 +1,4 @@
+import {buildAgronomicTerritory} from './agronomic-geometry-bridge.js'
 import {buildPortfolioRadar} from './portfolio-radar.js'
 import {DECISION_FLAGS,SCORING_POLICIES,decisionRegistries,stagingDecisionDefaults,hashDecision} from './decision-governance.js'
 
@@ -14,7 +15,7 @@ export class DecisionService{
  }
  async settings(connection=this.db){
   const row=(await connection.query('SELECT * FROM val_decision_settings WHERE tenant_id=$1',[this.tenantId])).rows[0]
-  if(row)return {...row,runtime_registry_drift:hashDecision(row.registry)!==hashDecision(this.registry)}
+  if(row)return {...row,flags:{...stagingDecisionDefaults(this.environment),...row.flags},runtime_registry_drift:hashDecision(row.registry)!==hashDecision(this.registry)}
   return {revision:0,flags:stagingDecisionDefaults(this.environment),policy_version:'val.decision-scoring.v1',registry:this.registry,runtime_registry_drift:false}
  }
  async registryView(actor){await this.authorize(actor);const state=await this.settings();return {...state,history:(await this.db.query('SELECT revision,policy_version,reason,created_at FROM val_decision_settings_history WHERE tenant_id=$1 ORDER BY revision DESC LIMIT 50',[this.tenantId])).rows,environment:this.environment||'unclassified',mutable:actor.role==='admin'&&['staging','test','development'].includes(this.environment)}}
@@ -52,6 +53,7 @@ export class DecisionService{
    const settings=await this.settings(connection)
    if(!settings.flags.nba_v1)return {enabled:false,flags:settings.flags,cards:[],items:[],reason:'CAPABILITY_DISABLED'}
    const contexts=await this.repository.getDecisionContexts(actor.id,clientId,connection,now)
+   if(settings.flags.agro_geo_v1)for(const context of contexts)context.agroTerritory=buildAgronomicTerritory(context,{now,tenantId:this.tenantId,ownerId:actor.id,priorityEnabled:settings.flags.field_priority_v1})
    const radar=buildPortfolioRadar(contexts,{now,version:'v2',policy:SCORING_POLICIES[settings.policy_version]})
    const cards=[]
    for(const card of radar.cards){

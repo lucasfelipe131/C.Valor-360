@@ -59,7 +59,7 @@ test('NBA feedback requires a separate confirmation and only posts the decision 
 test('NBA review UI requires a reason and preserves evidence; nonadmin flags are read-only',async()=>{
  await component('src/components/DecisionGovernance.jsx',async({default:Governance})=>{
   const calls=[];const item={id:'review',card_id:'card-a',producer:{name:'SYNTHETIC a'},status:'PENDING',reasons:['LOW_CONFIDENCE']}
-  globalThis.fetch=async(url,options={})=>{calls.push({url,options});return json(url.endsWith('/registry')?{revision:0,flags:{nba_v1:true},policy_version:'v1',mutable:false,history:[],registry:{prompts:[],models:[],policies:[]}}:url.endsWith('/reviews')?{items:[item]}:url.endsWith('/review')?{saved:true}:{card:fixture('a')})}
+  globalThis.fetch=async(url,options={})=>{calls.push({url,options});return json(url==='/api/agro-geo/reviews'?{items:[]}:url.endsWith('/registry')?{revision:0,flags:{nba_v1:true},policy_version:'v1',mutable:false,history:[],registry:{prompts:[],models:[],policies:[]}}:url.endsWith('/reviews')?{items:[item]}:url.endsWith('/review')?{saved:true}:{card:fixture('a')})}
   let renderer;try{
    await act(async()=>{renderer=TestRenderer.create(React.createElement(Governance))})
    assert.equal(renderer.root.findByType('input').props.disabled,true)

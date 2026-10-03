@@ -1,3 +1,4 @@
+import AgroTerritoryPanel from '../components/AgroTerritoryPanel'
 import React,{useEffect,useMemo,useRef,useState} from 'react'
 import {AlertTriangle,ArrowLeft,BrainCircuit,CheckCircle2,FileText,History,Image,Keyboard,LoaderCircle,Maximize2,Mic,Minimize2,Paperclip,Search,Send,ShieldCheck,Sprout,Square,UsersRound,X} from 'lucide-react'
 import Logo from '../components/Logo'
@@ -261,6 +262,7 @@ export default function Agro({onAsk,onCapture,onTelemetry,onContextChange,onInit
  const feedbackTitle=feedback?.phase==='composer_open'?'Composer pronto':feedback?.status==='error'?'Não foi possível concluir':feedback?.status==='success'?'Ação encaminhada':'Processando ação'
 
  return <div className="agro-decision-page">
+  <AgroTerritoryPanel clientId={agroContext.clientId||''} map/>
   <section className="agro-decision-hero" aria-labelledby="agro-decision-title">
    <div className="agro-decision-copy"><span><Sprout/>INTELIGÊNCIA AGRONÔMICA DA VAL</span><h2 id="agro-decision-title">Use a ferramenta ou fale com a VAL.</h2><p>Comece por voz, texto, foto ou arquivo. O contexto ativo acompanha a análise; nenhuma hipótese vira memória ou prescrição automaticamente.</p>
     {agroContext.context_refs.length>0&&<div className="agro-hero-context" aria-label="Contexto agronômico ativo">{agroContext.context_refs.filter(item=>item.type!=='agronomic_tool').map(item=><span key={`${item.type}-${item.id||item.label}`}><small>{item.type==='producer'?'PRODUTOR':item.type==='property'?'PROPRIEDADE':item.type==='field'?'TALHÃO':'ANÁLISE'}</small><b>{item.label||item.id}</b></span>)}</div>}

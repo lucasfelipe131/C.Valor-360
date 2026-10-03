@@ -135,7 +135,18 @@ export class GrainRepository{
 
  async updateIntentStatus(id,status,ownerId){
   if(!this.db.configured){const store=this.fallback();const record=store.grains.intentions.find(item=>fallbackIntentMatches(item,this.tenantId,ownerId)&&item.id===id);if(!record)throw domainError('Intenção não encontrada.',404);if(record.status!==status&&!allowedIntentTransitions[record.status]?.has(status))throw domainError('Esta mudança de estado exige uma nova validação da intenção.',409);record.status=status;record.updatedAt=new Date().toISOString();this.saveStore(store);return intentRecord(record)}
-  try{return await this.db.transaction(async connection=>{const selected=await connection.query(`SELECT * FROM sog_negotiation_intents WHERE id=$3 AND tenant_id=$1 AND owner_user_id=$2 LIMIT 1 FOR UPDATE`,[this.tenantId,ownerId,id]);if(!selected.rowCount)throw domainError('Intenção não encontrada.',404);const current=selected.rows[0];if(current.status!==status&&!allowedIntentTransitions[current.status]?.has(status))throw domainError('Esta mudança de estado exige uma nova validação da intenção.',409);const result=await connection.query(`UPDATE sog_negotiation_intents SET status=$4,updated_at=NOW() WHERE id=$3 AND tenant_id=$1 AND owner_user_id=$2 RETURNING *`,[this.tenantId,ownerId,id,status]);return intentRecord(result.rows[0])})}catch(error){if(error.statusCode)throw error;throw serviceError('O estado da intenção não pôde ser atualizado.')}
+  // A chave do cliente vem junto da trava: sem ela o DTO saía com clientId=UUID interno, diferente do bootstrap e do saveIntent.
+  try{return await this.db.transaction(async connection=>{const selected=await connection.query(`SELECT i.*,c.external_key client_external_key,c.name client_name,c.municipality FROM sog_negotiation_intents i JOIN clients c ON c.id=i.client_id AND c.tenant_id=i.tenant_id WHERE i.id=$3 AND i.tenant_id=$1 AND i.owner_user_id=$2 LIMIT 1 FOR UPDATE OF i`,[this.tenantId,ownerId,id]);if(!selected.rowCount)throw domainError('Intenção não encontrada.',404);const current=selected.rows[0];if(current.status!==status&&!allowedIntentTransitions[current.status]?.has(status))throw domainError('Esta mudança de estado exige uma nova validação da intenção.',409);const result=await connection.query(`UPDATE sog_negotiation_intents SET status=$4,updated_at=NOW() WHERE id=$3 AND tenant_id=$1 AND owner_user_id=$2 RETURNING *`,[this.tenantId,ownerId,id,status]);return intentRecord({...result.rows[0],client_external_key:current.client_external_key,client_name:current.client_name,municipality:current.municipality})})}catch(error){if(error.statusCode)throw error;throw serviceError('O estado da intenção não pôde ser atualizado.')}
+ }
+
+ // Leitura por cliente para a integração com o VAL Cred: UUID interno + chave externa dos clientes ativos do dono.
+ // Sem PostgreSQL não há UUID de cliente, então nada é devolvido.
+ async clientLinks(ownerId,{keys=[]}={}){
+  const wanted=[...new Set((Array.isArray(keys)?keys:[keys]).map(key=>String(key??'').trim().slice(0,180)).filter(Boolean))].slice(0,5000)
+  if(!this.db.configured)return []
+  const filter=wanted.length?' AND (id::text=ANY($3::text[]) OR external_key=ANY($3::text[]))':''
+  try{const result=await this.db.query(`SELECT id,external_key FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND status='active'${filter} ORDER BY external_key LIMIT 5000`,wanted.length?[this.tenantId,ownerId,wanted]:[this.tenantId,ownerId]);return result.rows.map(row=>({id:String(row.id),externalKey:String(row.external_key||'')}))}
+  catch{throw serviceError('Os vínculos de clientes da SOG não puderam ser consultados no PostgreSQL.')}
  }
 
  async saveMarketSnapshot(input,ownerId){

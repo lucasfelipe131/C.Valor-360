@@ -66,6 +66,11 @@ export const config=Object.freeze({
   knowledgeVectorStoreId:String(process.env.VAL_KNOWLEDGE_VECTOR_STORE_ID||''),
   manualWebhookSecret:String(process.env.VAL_MANUAL_WEBHOOK_SECRET||''),
   integrationToken:String(process.env.VAL_INTEGRATION_TOKEN||''),
+  // VAL Cred (contrato val-cred-integration.v1). Cada variável ausente desliga só a sua parte.
+  credWebhookSecret:String(process.env.VAL_CRED_WEBHOOK_SECRET||''),
+  credBaseUrl:String(process.env.VAL_CRED_BASE_URL||'').trim().replace(/\/+$/,''),
+  credInboundSecret:String(process.env.VAL_CRED_INBOUND_SECRET||''),
+  credReadToken:String(process.env.VAL_CRED_READ_TOKEN||''),
   adminEmail:String(process.env.VAL_ADMIN_EMAIL||''),
   adminPassword:String(process.env.VAL_ADMIN_PASSWORD||''),
   sessionSecret:String(process.env.VAL_SESSION_SECRET||''),
@@ -78,11 +83,19 @@ export const config=Object.freeze({
   maxBodyBytes:Number(process.env.VAL_MAX_BODY_BYTES||10_000_000)
 })
 
+// Entrada (A) só com o segredo do webhook; saída (B) e leitura (C) só com endereço http(s) e a credencial de cada uma.
+export function credIntegrationStatus(source=config){
+  const baseUrl=/^https?:\/\/[^\s/]+/i.test(String(source.credBaseUrl||''))
+  return {inboundConfigured:Boolean(source.credWebhookSecret),outboundConfigured:Boolean(baseUrl&&source.credInboundSecret),readConfigured:Boolean(baseUrl&&source.credReadToken)}
+}
+
 export function getPublicEngineConfig(){
   return {
     aiConfigured:Boolean(config.openaiApiKey),
     databaseConfigured:Boolean(config.databaseUrl),
     manualIntegrationConfigured:Boolean(config.manualWebhookSecret||config.integrationToken),
+    // Só indica o que está ligado; segredos, token e endereço do VAL Cred nunca saem daqui.
+    credIntegration:credIntegrationStatus(config),
     securityConfigured:Boolean(config.adminEmail&&config.adminPassword&&config.sessionSecret),
     demoMode:config.demoMode,
     knowledgeBaseConfigured:Boolean(config.knowledgeVectorStoreId),

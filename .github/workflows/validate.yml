@@ -30,6 +30,16 @@ jobs:
       - run: npm ci
       - name: Install server-side audio validator
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - name: Install Chromium for territorial mobile contracts
+        run: npx playwright install --with-deps chromium
+      - name: Territorial browser viewport contracts
+        run: npm run test:agro:browser
+      - name: Upload territorial mobile evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: step09-mobile-browser
+          path: test-results/
       - name: Run full test suite
         run: npm test
       - name: Run VAL Core and API contract regression

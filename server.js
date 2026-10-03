@@ -1,3 +1,6 @@
+import {prepareStep09StagingFixture} from './server/step09-staging-fixture.js'
+import {agronomicDecisionQuery,agronomicDecisionResponse} from './server/decision-copilot/agronomic-decision.js'
+import {AgroGeoService} from './server/agro-geo-service.js'
 import {attachValResponseOutcome} from './server/val-response-outcome.js'
 import {prepareK5StagingFixtures,canUsePr011Probe} from './server/k5-staging-fixtures.js'
 import {registeredFactQuery,registeredFactPresentation} from './server/registered-fact-query.js'
@@ -21,6 +24,8 @@ import {AccessRepository} from './server/access-repository.js'
 import {deriveSignals,normalizeIntegrationEvent,requiresTechnicalSignature,verifyIntegrationToken,verifyWebhookSignature} from './server/ingestion.js'
 import {normalizeGrainIntent,normalizeGrainMarketSnapshot,normalizeGrainProfile,intentStatuses} from './server/grain-intelligence.js'
 import {GrainRepository} from './server/grain-repository.js'
+import {createOpenMarketFeed,withOpenMarketReferences} from './server/open-market-feed.js'
+import {createValCreditService,creditPresentation} from './server/val-credit-service.js'
 import {readGrainBalance,appendGrainMovement} from './server/grain-balance.js'
 import {readProducerWorkspace} from './server/producer-workspace.js'
 import {ValRepository} from './server/repository.js'
@@ -33,6 +38,9 @@ import {managementOnlyAllowed} from './server/management-access.js'
 import {seedDemoProducer,DEMO_PRODUCER_KEY} from './server/demo-producer.js'
 import {currentRequestContext,observe,requestIdFrom,runWithRequestContext,updateRequestContext} from './server/observability.js'
 import {publicStorageScope} from './server/storage-policy.js'
+import {handleCredEvent} from './server/cred-events.js'
+import {backfillOwnerToCred,publishSogChange} from './server/cred-publisher.js'
+import {buildCreditView,fetchCreditSummary,listCredEvents as listCredEventViews} from './server/cred-client.js'
 import {ValEngine} from './server/val-engine.js'
 import {assertValRuntimeComposition} from './server/core/composition.js'
 import {legacyRecommendationResponse,ValCore} from './server/core/val-core.js'
@@ -94,7 +102,9 @@ function json(response,status,payload){const context=currentRequestContext();if(
 // O corpo e acumulado em Buffer e decodificado uma unica vez no fim: concatenar cada chunk como
 // string quebra o caractere multibyte partido entre dois segmentos TCP (acento vira U+FFFD e era
 // gravado assim no banco). O limite continua sendo medido em bytes.
-function rawBody(request){return new Promise((resolve,reject)=>{let chunks=[];let size=0;let settled=false;const tooLarge=()=>Object.assign(new Error('Arquivo ou requisição muito grande.'),{statusCode:413,code:'request_too_large'});const fail=error=>{if(settled)return;settled=true;chunks=[];reject(error)};const drain=()=>{request.off('data',onData);request.resume()};const onData=chunk=>{const buffer=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);size+=buffer.length;if(size>config.maxBodyBytes){drain();fail(tooLarge());return}chunks.push(buffer)};const declared=Number(request.headers['content-length']);request.on('end',()=>{if(settled)return;settled=true;resolve(Buffer.concat(chunks).toString('utf8'))});request.on('error',fail);if(Number.isFinite(declared)&&declared>config.maxBodyBytes){drain();fail(tooLarge());return}request.on('data',onData)})}
+function rawBodyBuffer(request){return new Promise((resolve,reject)=>{let chunks=[];let size=0;let settled=false;const tooLarge=()=>Object.assign(new Error('Arquivo ou requisição muito grande.'),{statusCode:413,code:'request_too_large'});const fail=error=>{if(settled)return;settled=true;chunks=[];reject(error)};const drain=()=>{request.off('data',onData);request.resume()};const onData=chunk=>{const buffer=Buffer.isBuffer(chunk)?chunk:Buffer.from(chunk);size+=buffer.length;if(size>config.maxBodyBytes){drain();fail(tooLarge());return}chunks.push(buffer)};const declared=Number(request.headers['content-length']);request.on('end',()=>{if(settled)return;settled=true;resolve(Buffer.concat(chunks))});request.on('error',fail);if(Number.isFinite(declared)&&declared>config.maxBodyBytes){drain();fail(tooLarge());return}request.on('data',onData)})}
+// Texto para as rotas JSON. Webhook que assina bytes (VAL Cred) usa rawBodyBuffer: o HMAC é sobre o corpo exato recebido.
+function rawBody(request){return rawBodyBuffer(request).then(buffer=>buffer.toString('utf8'))}
 async function body(request){
  const raw=await rawBody(request);let parsed
  try{parsed=raw?JSON.parse(raw):{}}catch{throw Object.assign(new Error('Conteúdo inválido.'),{statusCode:400,code:'invalid_body'})}
@@ -190,12 +200,22 @@ const auth=createAuth(config)
 const userPayload=session=>session?{id:session.id||session.sub,email:session.email,name:session.name,role:session.role,status:session.status||'active',mustChangePassword:Boolean(session.mustChangePassword),demo:false,tenantId:session.tenantId||config.defaultTenantId,ownerId:session.id||session.sub||session.email,storageScope:auth.storageScope(session),...(canUsePr011Probe(session)?{pr011Qa:true}:{})}:{id:null,email:null,name:'Demonstração',role:'admin',mustChangePassword:false,demo:true,tenantId:config.defaultTenantId,ownerId:'demo@valor360.local',storageScope:'demo'}
 const repository=new ValRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const integrationHub=new IntegrationHub({db:database,repository,tenantId:config.defaultTenantId})
+try{const step09=await prepareStep09StagingFixture({db:database,tenantId:config.defaultTenantId});if(step09.status==='READY')console.info(JSON.stringify({event:'step09_fixture_preparation',...step09}))}catch(error){console.error(JSON.stringify({event:'step09_fixture_preparation',status:'BLOCKED',reason:error.code||error.message}))}
 const visitRouteService=createVisitRouteService({repository})
 const managementService=createManagementService({db:database,tenantId:config.defaultTenantId})
 const demoProducerEnvironment=String(process.env.VAL_DEMO_ENVIRONMENT||'').toLowerCase()
 const decisionService=new DecisionService({db:database,repository,tenantId:config.defaultTenantId,environment:demoProducerEnvironment,config})
+const agroGeoService=new AgroGeoService({decisionService})
 const demoProducerEnabled=['staging','test'].includes(demoProducerEnvironment)
 const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
+const openMarketFeed=createOpenMarketFeed()
+const valCredit=createValCreditService()
+const marketScope=ownerId=>({tenantId:config.defaultTenantId,ownerId})
+const readCurrentMarket=async ownerId=>withOpenMarketReferences(await grainRepository.getMarketReferences(ownerId),openMarketFeed,marketScope(ownerId))
+const readCurrentGrainWorkspace=async ownerId=>{
+ const workspace=await withOpenMarketReferences(await grainRepository.getWorkspace(ownerId),openMarketFeed,marketScope(ownerId))
+ return {...grainRepository.assemble(workspace),openMarket:workspace.openMarket}
+}
 const accessRepository=new AccessRepository({db:database,tenantId:config.defaultTenantId,runtimeConfig:config})
 const valEngine=new ValEngine({runtimeConfig:config,repository})
 const valCore=new ValCore({engine:valEngine,tenantId:config.defaultTenantId})
@@ -233,6 +253,9 @@ function invalidateDerivedPortfolioCaches({tenantId=config.defaultTenantId,owner
   objections:objections?clearObjectionLibraryCache({tenantId:scopedTenant,ownerId:scopedOwner}):0
  }
 }
+// SOG -> VAL Cred (val-cred-integration.v1, parte B): roda depois da gravação, sem await, e nunca muda a resposta da rota.
+// Sem VAL_CRED_BASE_URL e VAL_CRED_INBOUND_SECRET publishSogChange devolve [] sem consultar banco nem rede.
+function publishSogToCred(identity,kind,dto){void publishSogChange({kind,dto,ownerUserId:identity?.id||identity?.email,tenantId:identity?.tenantId||config.defaultTenantId,repository:grainRepository,config})}
 const mutationClientId=value=>clean(value?.client_id??value?.clientId??value?.client?.id??value?.visit?.client_id??value?.visit?.clientId??value?.action_plan?.client_id??value?.actionPlan?.clientId??value?.outcome?.client_id??value?.outcome?.clientId)
 const realtimeVoiceCostStore=createPostgresRealtimeCostStore({database,tenantId:config.defaultTenantId})
 const realtimeVoice=createRealtimeVoiceService({runtimeConfig:config,client:voiceOpenAI,repository,conversationSessions:valConversationSessions,costStore:realtimeVoiceCostStore,logger:event=>observe('val.realtime_voice',{sessionId:event.sessionId,model:event.model,costUsd:event.costUsd,outcome:event.event,errorCode:event.failureCode,providerStatus:event.providerStatus,retryAfterSeconds:event.retryAfterSeconds})})
@@ -348,7 +371,7 @@ async function handleApi(request,response,url){
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
  const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
- const protectedPath=url.pathname.startsWith('/api/decisions')||url.pathname.startsWith('/api/integration-hub/')||url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/agro-geo')||url.pathname.startsWith('/api/decisions')||url.pathname.startsWith('/api/integration-hub/')||url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans|credit(?:\/(?:context|link|unlink))?))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const requestStartedAt=performance.now()
  let valRequestController=null
@@ -385,6 +408,21 @@ async function handleApi(request,response,url){
  if(storageScope==='public-survey'&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para acessar questionários fora do modo demonstrativo.'})}
  if(valRecommendationPath&&config.openaiApiKey&&!auth.configured)return json(response,503,{error:'Configure VAL_ADMIN_EMAIL, VAL_ADMIN_PASSWORD e VAL_SESSION_SECRET antes de ativar a IA em produção.'})
  if(valRecommendationPath&&config.openaiApiKey&&!database.configured)return json(response,503,{error:'Configure DATABASE_URL antes de ativar a IA com dados reais.'})
+ const creditBridgeMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/credit\/(context|link|unlink)$/)
+ if(creditBridgeMatch){
+  const operation=creditBridgeMatch[2]||'context'
+  if((operation==='context'&&request.method!=='GET')||(operation!=='context'&&request.method!=='POST'))return json(response,405,{error:'Operação não disponível.'})
+  if(!identity?.id)return json(response,401,{error:'Entre com sua conta para consultar crédito.'})
+  if(operation!=='context'&&identity.role!=='admin')return json(response,403,{error:'O vínculo precisa ser verificado por um administrador.'})
+  if(operation!=='context'&&request.headers.origin&&new URL(request.headers.origin).host!==request.headers.host)return json(response,403,{error:'Origem da alteração não autorizada.'})
+  const facts=await repository.getFastClientFacts({tenantId:identity.tenantId||config.defaultTenantId,ownerId:identity.id,clientId:decodeURIComponent(creditBridgeMatch[1]),dataPath:'REGISTERED_AREA',timeoutMs:config.databaseQueryTimeoutMs})
+  const scope={tenantId:identity.tenantId||config.defaultTenantId,ownerId:identity.id,clientId:String(facts.client.id)}
+  if(operation==='context')return json(response,200,{...await valCredit.read(scope),applicationUrl:valCredit.applicationUrl,canLink:identity.role==='admin'})
+  if(!valCredit.configured)return json(response,503,{error:'A integração de crédito ainda não foi configurada.'})
+  const result=operation==='link'?await valCredit.link(scope,await body(request)):await valCredit.unlink(scope)
+  await accessRepository.recordUsage(identity,{eventType:'page_view',page:'credit',entityType:'client',entityId:scope.clientId,metadata:{action:operation}})
+  return json(response,200,result)
+ }
  const municipalityMatch=url.pathname.match(/^\/api\/geo\/municipalities\/(\d{7})\/boundary$/)
  if(municipalityMatch&&request.method==='GET')return json(response,200,await readMunicipalityBoundary(municipalityMatch[1]))
  if(url.pathname.startsWith('/api/integration-hub/')){
@@ -401,6 +439,15 @@ async function handleApi(request,response,url){
   }
   return json(response,404,{error:'Recurso do Hub não encontrado.'})
  }
+ if(url.pathname==='/api/agro-geo'&&request.method==='GET')return json(response,200,await agroGeoService.generate(identity,{clientId:url.searchParams.get('clientId')||null}))
+ if(url.pathname==='/api/agro-geo/reviews'&&request.method==='GET')return json(response,200,await agroGeoService.queue(identity))
+ if(url.pathname==='/api/agro-geo/history'&&request.method==='GET')return json(response,200,await agroGeoService.history(identity,url.searchParams.get('clientId')))
+ const geoReviewRoute=url.pathname.match(/^\/api\/agro-geo\/reviews\/([^/]+)$/)
+ if(geoReviewRoute&&request.method==='POST')return json(response,200,await agroGeoService.resolve(identity,geoReviewRoute[1],await body(request)))
+ const geoSignalRoute=url.pathname.match(/^\/api\/agro-geo\/signals\/([^/]+)\/validation$/)
+ if(geoSignalRoute&&request.method==='POST')return json(response,200,await agroGeoService.validateSignal(identity,geoSignalRoute[1],await body(request)))
+ const geoAnalysisRoute=url.pathname.match(/^\/api\/agro-geo\/analyses\/([^/]+)\/link$/)
+ if(geoAnalysisRoute&&request.method==='POST')return json(response,200,await agroGeoService.linkAnalysis(identity,geoAnalysisRoute[1],await body(request)))
  if(url.pathname==='/api/decisions'&&request.method==='GET')return json(response,200,await decisionService.generate(identity,{clientId:url.searchParams.get('clientId')||null}))
  if(url.pathname==='/api/decisions/registry'&&request.method==='GET')return json(response,200,await decisionService.registryView(identity))
  if(url.pathname==='/api/decisions/settings'&&request.method==='PATCH')return json(response,200,await decisionService.configure(identity,await body(request)))
@@ -510,7 +557,7 @@ async function handleApi(request,response,url){
   }
  }
  if(url.pathname==='/api/grains/bootstrap'&&request.method==='GET'){
-  const workspace=await grainRepository.getWorkspace(identity?.id||identity?.email)
+  const workspace=await readCurrentGrainWorkspace(identity?.id||identity?.email)
   return json(response,200,workspace)
  }
  if(url.pathname==='/api/grains/balance'&&request.method==='GET'){
@@ -526,6 +573,7 @@ async function handleApi(request,response,url){
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:profile.clientId})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,grains:true})
   await accessRepository.recordUsage(identity,{eventType:'sog_profile_saved',page:'val',entityType:'client',entityId:profile.clientId,metadata:{confirmed:profile.confirmed,source:profile.source}})
+  publishSogToCred(identity,'profile',saved)
   return json(response,200,{saved:true,profile:saved})
  }
  if(url.pathname==='/api/grains/intents'&&request.method==='POST'){
@@ -533,6 +581,7 @@ async function handleApi(request,response,url){
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:intention.clientId})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,grains:true})
   await accessRepository.recordUsage(identity,{eventType:'sog_intent_saved',page:'val',entityType:'client',entityId:intention.clientId,metadata:{commodity:intention.commodity,status:intention.status,source:intention.source}})
+  publishSogToCred(identity,'intent',saved)
   return json(response,201,{saved:true,intention:saved})
  }
  const grainIntentMatch=url.pathname.match(/^\/api\/grains\/intents\/([0-9a-f-]{36})$/i)
@@ -543,6 +592,7 @@ async function handleApi(request,response,url){
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId:mutationClientId(intention)})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,grains:true})
   await accessRepository.recordUsage(identity,{eventType:'sog_intent_status',page:'val',entityType:'grain_intent',entityId:grainIntentMatch[1],metadata:{status}})
+  publishSogToCred(identity,'intent',intention)
   return json(response,200,{saved:true,intention})
  }
  if(url.pathname==='/api/grains/market'&&request.method==='POST'){
@@ -550,7 +600,16 @@ async function handleApi(request,response,url){
   invalidateValContextScope({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email})
   invalidateDerivedPortfolioCaches({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,grains:true})
   await accessRepository.recordUsage(identity,{eventType:'sog_market_saved',page:'val',entityType:'grain_market',entityId:saved.id,metadata:{commodity:snapshot.commodity,source:snapshot.sourceName}})
+  publishSogToCred(identity,'market',saved)
   return json(response,201,{saved:true,marketSnapshot:saved})
+ }
+ if(url.pathname==='/api/grains/cred-sync'&&request.method==='POST'){
+  // Republica no VAL Cred todo o workspace SOG do consultor logado. Idempotente: o que já chegou volta como duplicate.
+  const ownerUserId=identity?.id||identity?.email
+  if(!consumeRateLimit('cred-sync',String(ownerUserId||requestIdentity(request)),6))return json(response,429,{error:'Aguarde alguns minutos antes de republicar a SOG no VAL Cred.'})
+  const result=await backfillOwnerToCred({repository:grainRepository,ownerUserId,tenantId:identity?.tenantId||config.defaultTenantId,config})
+  const failures=result.results.filter(item=>!item.ok).slice(0,20).map(item=>({type:item.type,externalId:item.externalId,outcome:item.outcome,status:item.status??null,error:item.error||null}))
+  return json(response,result.error?503:200,{enabled:result.enabled,events:result.events,summary:result.summary,failures,...(result.error?{error:result.error}:{})})
  }
  if(url.pathname==='/api/technical/bootstrap'&&request.method==='GET'){
   const clients=await repository.getTechnicalBootstrap(identity?.id||identity?.email)
@@ -852,6 +911,10 @@ async function handleApi(request,response,url){
    const withResolution=conversationResolution?.status==='RESOLVED'?{...completed,conversationResolution}:completed
    return workspaceRoute.workspace_action?{...withResolution,workspaceAction:workspaceRoute.workspace_action,globalIntent:workspaceRoute}:withResolution
   }
+  if(agronomicDecisionQuery(message)&&!attachmentIds.length&&database.configured){
+   const result=await agroGeoService.generate(identity,{clientId:clientId||null})
+   return json(response,200,completeSession(agronomicDecisionResponse(result,{tenantId,ownerId:scopedOwnerId,clientId:clientId||null,conversationId,contextEpoch:sessionState.context_epoch,domain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent)}),{intent:'AGRONOMIC_DECISION'}))
+  }
   if(portfolioDecisionQuery(message).matched&&!attachmentIds.length&&database.configured){
    const decisionResult=await decisionService.generate(identity)
    if(decisionResult.enabled&&decisionResult.flags.decision_cards&&decisionResult.flags.portfolio_radar_v2){
@@ -883,7 +946,7 @@ async function handleApi(request,response,url){
    if(activeContext)validateActiveContext({activeContext,context:{},clientId:''})
    if(capability.current_data_required&&capability.capabilities.some(item=>['WEATHER','LABELS'].includes(item)))return json(response,422,{error:'A fonte atual autorizada não está conectada neste ambiente. A VAL não usará memória ou conteúdo antigo como dado atual.',code:'val_current_source_unavailable',intent:routedIntent.intent,reasoningPath:capability.path,capabilitiesPlanned:capability.capabilities})
    if(capability.capabilities.includes('MARKET_COMMODITY')){
-    const startedAt=Date.now();latency.start('TOOL');const workspace=await withOperationTimeout(()=>grainRepository.getMarketReferences(scopedOwnerId),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
+    const startedAt=Date.now();latency.start('TOOL');const workspace=await withOperationTimeout(()=>readCurrentMarket(scopedOwnerId),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
     const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),latencyMs:Date.now()-startedAt,executionCounts:{entityResolutions:entityLookupCount,dataLookups:1,toolCalls:1,hops:entityLookupCount+1}})
     const final=complete(fast)
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'portfolio',entityId:null,metadata:{mode:capability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:capability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
@@ -935,6 +998,14 @@ async function handleApi(request,response,url){
    latency.end('CONTEXT');return authorizedContext
   }
   const completeClient=(payloadResult,execution=toolExecution)=>{latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(payloadResult,{latency:values,path:clientCapability.path,intent:routedIntent.intent,toolExecution:execution});const measuredLatency=enriched?.responseMetadata?.performance?.latency||values;valLatencyMetrics.record({path:clientCapability.path,intent:routedIntent.intent,latency:measuredLatency});observe('val.answer.completed',{mode:clientCapability.path.toLowerCase(),engineMode:payloadResult?.engineMode||'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,capability:execution?.tool_result?.capability||clientCapability.capabilities[0],capabilityStatus:execution?.tool_result?.status,materialityScore:clientCapability.materiality.score,engineRequired:clientCapability.materiality.engine_required,ttfrMs:measuredLatency.TTFR,outcome:'ok'});const responseClient=authorizedContext?.client||enriched?.advice?.ai_reasoning?.client||{id:clientId};return completeSession(enriched,{client:{id:clientId,name:responseClient?.name||responseClient?.label},active:activeContextRef})}
+  if(!attachmentIds.length&&classifyValContextDomain(message,routedIntent.intent)==='CREDIT'&&!isGeneralConceptRequest(message)){
+   const startedAt=Date.now()
+   const facts=await repository.getFastClientFacts({tenantId,ownerId:scopedOwnerId,clientId,dataPath:'REGISTERED_AREA',timeoutMs:config.databaseQueryTimeoutMs})
+   const scope={tenantId,ownerId:scopedOwnerId,clientId:String(facts.client.id)}
+   const credit=await valCredit.read(scope).catch(()=>({status:'UNAVAILABLE',requests:[]}))
+   const fast=buildFastClientResponse({facts,presentationOverride:creditPresentation(credit,scope),message,organizationId:tenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:'CREDIT',latencyMs:Date.now()-startedAt,executionCounts:{entityResolutions:entityLookupCount,dataLookups:2,toolCalls:1,hops:entityLookupCount+2}})
+   return json(response,200,completeClient(fast,null))
+  }
   // Pergunta conceitual ou cumprimento com produtor selecionado: responde pelo mesmo caminho geral
   // de quem nao tem produtor (Biblioteca governada, definicoes fixas, IA nao verificada com
   // orcamento), sem ler contexto privado nem acionar a engine, e mantem o produtor ativo na sessao.
@@ -1030,7 +1101,7 @@ async function handleApi(request,response,url){
   if(clientCapability.capabilities.includes('MARKET_COMMODITY')){
    const startedAt=Date.now()
    if(!attachmentIds.length&&['FAST','LIVE_DATA'].includes(clientCapability.path)&&clientCapability.direct){
-    latency.start('TOOL');const workspace=await withOperationTimeout(()=>grainRepository.getMarketReferences(scopedOwnerId),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
+    latency.start('TOOL');const workspace=await withOperationTimeout(()=>readCurrentMarket(scopedOwnerId),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
     const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,clientName:requestConversationState.current_client?.name||payload.client?.name||'',conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent),latencyMs:Date.now()-startedAt,executionCounts:{entityResolutions:entityLookupCount,dataLookups:1,toolCalls:1,hops:entityLookupCount+1}})
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:clientCapability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
     return json(response,200,completeClient(fast,null))
@@ -1038,7 +1109,7 @@ async function handleApi(request,response,url){
    latency.start('DATABASE')
    const [context,workspace,facts]=await withOperationTimeout(()=>Promise.all([
     loadAuthorizedContext(),
-    grainRepository.getWorkspace(scopedOwnerId),
+    readCurrentGrainWorkspace(scopedOwnerId),
     repository.getFastClientFacts({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,timeoutMs:config.databaseQueryTimeoutMs})
    ]),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_context_timeout',message:'A composição de mercado excedeu o tempo seguro.',signal:requestController.signal})
    latency.end('DATABASE')
@@ -1143,6 +1214,13 @@ async function handleApi(request,response,url){
   }
   if(result.processed??!result.duplicate)await accessRepository.recordUsage(ownerId,{eventType:'manual_sync',page:'agro',entityType:'client',entityId:event.clientExternalKey||null,metadata:{eventType:event.type}})
   return json(response,result.status==='FAILED'?503:result.status==='REJECTED'?422:result.status==='CONFLICT'?409:result.duplicate?200:202,{accepted:!['FAILED','REJECTED','CONFLICT'].includes(result.status),...result,eventType:event.type,externalId:event.externalId})
+ }
+ if(url.pathname==='/api/v1/integrations/cred/events'&&request.method==='POST'){
+  // VAL Cred (val-cred-integration.v1, parte A): só HMAC do corpo bruto com VAL_CRED_WEBHOOK_SECRET (sem segredo, 503),
+  // origem 'val-cred' e tenant definidos aqui, tipos próprios e idempotência de integration_events. Ver server/cred-events.js.
+  const result=await handleCredEvent({rawBody:await rawBodyBuffer(request),headers:request.headers,config,repository,accessRepository,tenantId:config.defaultTenantId})
+  if(result.body?.valCredMaterialization==='APPLIED'&&result.ownerId)invalidateValContextScope({tenantId:config.defaultTenantId,ownerId:result.ownerId,clientId:result.event?.clientExternalKey})
+  return json(response,result.status,result.body)
  }
  if(url.pathname==='/api/surveys'&&request.method==='GET')return json(response,200,await repository.listSurveys(identity?.id||identity?.email))
  if(url.pathname==='/api/surveys/invitations'&&request.method==='POST'){
@@ -1354,6 +1432,13 @@ async function handleApi(request,response,url){
  }
  const overviewMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/overview$/)
  if(overviewMatch&&request.method==='GET')return json(response,200,await repository.getClientOverview(decodeURIComponent(overviewMatch[1]),identity?.id||identity?.email))
+ const creditMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/credit$/)
+ if(creditMatch&&request.method==='GET'){
+  // Posse antes de chamar o VAL Cred: o resumo é indexado só pela chave do produtor (mesmo escopo de /overview).
+  const ownerId=identity?.id||identity?.email;const client=await repository.getClientIdentity(decodeURIComponent(creditMatch[1]),ownerId)
+  const [result,events]=await Promise.all([fetchCreditSummary({clientExternalKey:client.externalKey,config:{baseUrl:config.credBaseUrl,readToken:config.credReadToken}}),listCredEventViews(database,{tenantId:identity?.tenantId||config.defaultTenantId,ownerId,clientExternalKey:client.externalKey})])
+  return json(response,200,buildCreditView({result,events}))
+ }
  if(url.pathname==='/api/intelligence/imports'&&request.method==='POST'){
   const payload=await body(request);const rows=Array.isArray(payload.rows)?payload.rows.slice(0,5000):[];const mapping=payload.mapping||{};if(!rows.length||!mapping.client||!payload.summary)return json(response,400,{error:'Importação inválida ou sem linhas para validação no servidor.'})
   const clients=buildCommercialIntelligence(rows,mapping);const learned=summarizeLearning(clients,rows.length,clean(payload.summary.fileName)||'importação comercial')

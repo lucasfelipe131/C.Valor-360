@@ -1,3 +1,4 @@
+import {governGeometryChange} from './agronomic-geometry-bridge.js'
 import {GrainRepository} from './grain-repository.js'
 import {saveWorkspaceOpportunity,workspaceDetails} from './opportunity-workspace.js'
 import {createHash,randomUUID} from 'node:crypto'
@@ -18,6 +19,7 @@ import {createProducerEntityIndexCache} from './decision-copilot/producer-entity
 import {selectScopedPriorRecommendations} from './conversation-thread-context.js'
 import {commercialSourceScope,resolveCommercialRows} from './commercial-import-identity.js'
 import {buildCommercialIntelligence} from '../src/lib/commercial-intelligence.js'
+import {CRED_SOURCE,credPropertyMetadata} from './cred-events.js'
 
 export function jsonbParameter(value){
   if(value===undefined)return null
@@ -946,15 +948,30 @@ export class ValRepository{
       COALESCE((SELECT jsonb_agg(v ORDER BY v.id) FROM visits v WHERE v.tenant_id=c.tenant_id AND v.client_id=c.id AND v.consultant_id=$2),'[]') visits,
       COALESCE((SELECT jsonb_agg(k ORDER BY k.id) FROM val_commitments k WHERE k.tenant_id=c.tenant_id AND k.client_id=c.id AND (k.owner_type<>'USER' OR k.owner_id=$2::text)),'[]') commitments,
       COALESCE((SELECT jsonb_agg(i ORDER BY i.occurred_at DESC) FROM (SELECT id,occurred_at,channel,summary FROM interactions WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY occurred_at DESC,id LIMIT 20) i),'[]') interactions,
-      COALESCE((SELECT jsonb_agg(f ORDER BY f.observed_at DESC) FROM (SELECT id,observed_at,created_at,summary,validated_at FROM field_reports WHERE tenant_id=c.tenant_id AND client_id=c.id AND owner_user_id=$2 ORDER BY observed_at DESC,id LIMIT 20) f),'[]') field_reports,
-      COALESCE((SELECT jsonb_agg(s ORDER BY s.sampled_at DESC) FROM (SELECT id,sampled_at,created_at,laboratory,validated_at FROM soil_analyses WHERE tenant_id=c.tenant_id AND client_id=c.id ORDER BY sampled_at DESC,id LIMIT 20) s),'[]') soil_analyses,
+      COALESCE((SELECT jsonb_agg(f ORDER BY f.observed_at DESC,f.id) FROM (SELECT * FROM field_reports WHERE tenant_id=c.tenant_id AND client_id=c.id AND owner_user_id=$2) f),'[]') field_reports,
+      COALESCE((SELECT jsonb_agg(s ORDER BY s.sampled_at DESC,s.id) FROM (SELECT *, $2::uuid owner_user_id FROM soil_analyses WHERE tenant_id=c.tenant_id AND client_id=c.id) s),'[]') soil_analyses,
       COALESCE((SELECT jsonb_agg(h ORDER BY h.ingested_at DESC) FROM (SELECT id,source,external_id,event_type,status,error_code,canonical_client_id,observed_at,occurred_at,ingested_at,source_version,payload_hash,hub_contract_version FROM integration_events WHERE tenant_id=c.tenant_id AND owner_user_id=$2 AND hub_contract_version IS NOT NULL AND (canonical_client_id=c.id OR (canonical_client_id IS NULL AND client_external_key=c.external_key)) ORDER BY ingested_at DESC,id LIMIT 40) h),'[]') hub_evidence
       ,COALESCE((SELECT jsonb_agg(m ORDER BY m.valid_from DESC) FROM (SELECT * FROM val_memories WHERE tenant_id=c.tenant_id AND client_id=c.id AND created_by=$2 ORDER BY valid_from DESC,id LIMIT 100) m),'[]') decision_memories
       FROM clients c WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' AND ($3::text IS NULL OR c.id::text=$3 OR c.external_key=$3) ORDER BY c.id`,[this.tenantId,ownerId,clientId])
     if(clientId&&!result.rows.length)throw domainError('Produtor não encontrado na carteira autorizada.',404)
+    const territorial=await connection.query(`SELECT p.*,
+      COALESCE((SELECT jsonb_agg(f ORDER BY f.id) FROM (SELECT f.*,
+        COALESCE((SELECT jsonb_agg(s ORDER BY s.created_at DESC,s.id) FROM crop_seasons s WHERE s.tenant_id=f.tenant_id AND s.field_id=f.id),'[]') seasons
+        FROM fields f WHERE f.tenant_id=p.tenant_id AND f.property_id=p.id) f),'[]') fields
+      FROM properties p JOIN clients c ON c.id=p.client_id AND c.tenant_id=p.tenant_id
+      WHERE p.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' AND ($3::text IS NULL OR c.id::text=$3 OR c.external_key=$3)`,[this.tenantId,ownerId,clientId])
+    const scopedIds=result.rows.map(r=>r.id)
+    const signalValidations=await connection.query('SELECT * FROM val_agro_signal_validation WHERE tenant_id=$1 AND owner_id=$2 AND client_id=ANY($3::uuid[]) ORDER BY id DESC',[this.tenantId,ownerId,scopedIds])
+    const ndvi=await connection.query('SELECT * FROM ndvi_observations WHERE tenant_id=$1 AND owner_user_id=$2 AND client_id=ANY($3::uuid[]) ORDER BY observed_at DESC,id',[this.tenantId,ownerId,scopedIds])
+    const measurements=await connection.query(`SELECT m.* FROM soil_measurements m JOIN soil_analyses a ON a.id=m.analysis_id AND a.tenant_id=m.tenant_id JOIN clients c ON c.tenant_id=a.tenant_id AND c.id=a.client_id WHERE a.tenant_id=$1 AND c.consultant_id=$2 AND a.client_id=ANY($3::uuid[]) AND m.superseded_at IS NULL`,[this.tenantId,ownerId,scopedIds])
+    const observations=await connection.query(`SELECT o.* FROM field_observations o JOIN field_reports r ON r.id=o.report_id AND r.tenant_id=o.tenant_id WHERE r.tenant_id=$1 AND r.owner_user_id=$2 AND r.client_id=ANY($3::uuid[])`,[this.tenantId,ownerId,scopedIds])
     const grainWorkspace=await new GrainRepository({db:{configured:true,query:(...args)=>connection.query(...args)},tenantId:this.tenantId}).getWorkspace(ownerId)
     return result.rows.map(row=>{
-      const context={client:{...clientFromRow(row),updatedAt:iso(row.updated_at)},canonicalClientId:row.id,opportunities:row.opportunities,visits:row.visits,commitments:row.commitments,interactions:row.interactions,fieldReports:row.field_reports,soilAnalyses:row.soil_analyses,hubEvidence:row.hub_evidence,memories:[],manualRecords:[],properties:[],signals:[],businessHistory:[],priorRecommendations:[]}
+      const context={client:{...clientFromRow(row),updatedAt:iso(row.updated_at)},canonicalClientId:row.id,opportunities:row.opportunities,visits:row.visits,commitments:row.commitments,interactions:row.interactions,fieldReports:row.field_reports,soilAnalyses:row.soil_analyses,hubEvidence:row.hub_evidence,memories:[],manualRecords:[],properties:territorial.rows.filter(p=>p.client_id===row.id),ndviObservations:ndvi.rows.filter(n=>n.client_id===row.id),signals:[],businessHistory:[],priorRecommendations:[]}
+      for(const collection of ['properties','fieldReports','soilAnalyses','ndviObservations'])context[collection]=context[collection].map(r=>({...r,canonical_client_id:row.id}))
+      context.signalValidations=signalValidations.rows.filter(v=>v.client_id===row.id)
+      context.fieldReports=context.fieldReports.map(r=>({...r,observations:observations.rows.filter(o=>o.report_id===r.id)}))
+      context.soilAnalyses=context.soilAnalyses.map(r=>({...r,measurements:measurements.rows.filter(m=>m.analysis_id===r.id)}))
       context.memories=(row.decision_memories||[]).map(m=>({...m,client_id:context.client.id,subject_id:m.subject_type==='client'&&(!m.subject_id||m.subject_id===row.id)?context.client.id:m.subject_id}))
       context.memoryHistory=context.memories
       const grain=grainWorkspace.intentions.filter(i=>i.clientId===context.client.id&&!['closed','cancelled'].includes(i.status)).sort((a,b)=>String(a.deliveryEnd||'9999').localeCompare(String(b.deliveryEnd||'9999'))||a.id.localeCompare(b.id))[0]
@@ -985,6 +1002,18 @@ export class ValRepository{
         WHERE c.tenant_id=$1 AND c.consultant_id=$2 AND c.status='active' ORDER BY c.name LIMIT 5000`,[this.tenantId,ownerId])
       return result.rows.map(row=>({...clientFromRow(row,{defaults:true}),properties:Array.isArray(row.properties)?row.properties:[]}))
     }catch{throw serviceError('A carteira técnica não pôde ser lida no PostgreSQL configurado.')}
+  }
+
+  // Posse mínima (UUID + chave externa) para rotas que consultam outro sistema pela chave do produtor.
+  async getClientIdentity(clientId,ownerId){
+    const key=String(clientId??'').trim().slice(0,180)
+    if(!ownerId)throw domainError('O proprietário da carteira é obrigatório para consultar o produtor.',403,'owner_scope_required')
+    if(!this.db.configured){const client=(await this.getIntelligence(ownerId)).clients.find(item=>String(item.id)===key||String(item.externalKey??item.external_key??'')===key);if(!key||!client)throw domainError('Produtor não encontrado na sua carteira.',404);return {id:String(client.id),externalKey:String(client.externalKey??client.external_key??client.id)}}
+    try{
+      const selected=await this.db.query(`SELECT id,external_key FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND (id::text=$3 OR external_key=$3) AND status='active' LIMIT 1`,[this.tenantId,ownerId,key])
+      if(!key||!selected.rowCount)throw domainError('Produtor não encontrado na sua carteira.',404)
+      return {id:String(selected.rows[0].id),externalKey:String(selected.rows[0].external_key||'')}
+    }catch(error){if(error.statusCode)throw error;throw serviceError('O produtor não pôde ser consultado no PostgreSQL.')}
   }
 
   async getClientOverview(clientId,ownerId){
@@ -1206,10 +1235,12 @@ export class ValRepository{
     try{
       let savedPropertyId
       await this.db.transaction(async connection=>{
+        await connection.query("SELECT set_config('val.geo_actor',$1,true),set_config('val.geo_source','consultant-map-draw',true),set_config('val.geo_reason',$2,true)",[ownerId,String(input.geometryReason||'Explicit property map save by consultant').slice(0,1000)])
         const selected=await connection.query(`SELECT id,external_key,name,municipality,commercial_profile FROM clients WHERE tenant_id=$1 AND consultant_id=$2 AND (id::text=$3 OR external_key=$3) AND status='active' LIMIT 1 FOR UPDATE`,[this.tenantId,ownerId,clientId])
         if(!selected.rowCount)throw domainError('Produtor não encontrado na sua carteira.',404)
         const client=selected.rows[0]
         const current=await connection.query(`SELECT id,external_key,name,metadata FROM properties WHERE tenant_id=$1 AND client_id=$2 AND ($3::text IS NULL OR id::text=$3) ORDER BY (metadata ? 'location') DESC,updated_at DESC LIMIT 1 FOR UPDATE`,[this.tenantId,client.id,profile.propertyId??null])
+        if(!profile.propertyId){const ambiguity=await connection.query('SELECT count(*)::int count FROM properties WHERE tenant_id=$1 AND client_id=$2',[this.tenantId,client.id]);if(ambiguity.rows[0]?.count>1)throw domainError('Selecione a propriedade canônica antes de salvar.',409,'property_identity_review_required')}
         let property=current.rows[0]||null
         if(profile.propertyId&&!property)throw domainError('Propriedade não encontrada na sua carteira.',404,'property_not_found')
         const propertyName=profile.propertyName||property?.name||String(jsonObject(client.commercial_profile).property||'').trim().slice(0,180)||'Propriedade principal'
@@ -1228,6 +1259,7 @@ export class ValRepository{
         for(const field of profile.fields){
           const stored=field.id?await connection.query(`SELECT id,external_key,geometry_ref FROM fields WHERE tenant_id=$1 AND property_id=$2 AND id::text=$3 LIMIT 1 FOR UPDATE`,[this.tenantId,property.id,field.id]):{rows:[]}
           let fieldRow=stored.rows[0]||null
+          if(field.id&&!fieldRow)throw domainError('Talhão não encontrado nesta propriedade.',404,'field_identity_not_found')
           if(fieldRow){
             await connection.query(`UPDATE fields SET name=$4,area_ha=COALESCE($5,area_ha),updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id,field.name,field.areaHa])
           }else{
@@ -1248,7 +1280,7 @@ export class ValRepository{
                 points:field.points,areaHa:field.areaHa,
                 provenance:{source:'valor360-produtor-360',method:'consultant-map-draw',observedAt:now,capturedBy:ownerId}
               })
-              await connection.query(`UPDATE fields SET geometry_ref=$4,geometry_version=$5,area_ha=$6,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id,encodeCanonicalGeometryRef(canonical),canonical.geometryVersion,field.areaHa??canonical.measurements.calculatedAreaHa])
+              if(await governGeometryChange(connection,{tenantId:this.tenantId,ownerId,clientId:client.id,propertyId:property.id,fieldId:fieldRow.id,canonical}))await connection.query(`UPDATE fields SET geometry_ref=$4,geometry_version=$5,area_ha=$6,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id,encodeCanonicalGeometryRef(canonical),canonical.geometryVersion,field.areaHa??canonical.measurements.calculatedAreaHa])
             }catch(error){throw domainError(`O contorno do talhão ${field.name} foi rejeitado: ${error.message}`,422,error.code||'agronomic_geometry_invalid')}
           }else if(field.clearGeometry){
             await connection.query(`UPDATE fields SET geometry_ref=NULL,geometry_version=NULL,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[this.tenantId,property.id,fieldRow.id])
@@ -2071,6 +2103,7 @@ export class ValRepository{
     if(this.db.configured){
       try{
         const project=async client=>{
+          await client.query("SELECT set_config('val.geo_actor',$1,true),set_config('val.geo_source',$2,true),set_config('val.geo_reason',$3,true)",[ownerId,event.source||'integration',`Source event ${event.externalId||integrationEventId||event.eventType}`])
           const inserted=integrationEventId?await client.query("SELECT id FROM integration_events WHERE tenant_id=$1 AND owner_user_id=$2 AND id=$3 AND hub_contract_version=1 AND status IN ('received','failed','review_required')",[tenantId,ownerId,integrationEventId]):await client.query(`INSERT INTO integration_events (tenant_id,owner_user_id,external_id,event_type,schema_version,source,occurred_at,client_external_key,property_external_key,field_external_key,payload,payload_hash,status)
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,'processed') ON CONFLICT (tenant_id,owner_user_id,source,external_id) DO NOTHING RETURNING id`,[tenantId,ownerId,event.externalId,event.type,event.schemaVersion,event.source,event.occurredAt,event.clientExternalKey||null,event.propertyExternalKey||null,event.fieldExternalKey||null,jsonbParameter(event.payload),event.payloadHash])
           if(!(inserted.rowCount??inserted.rows.length)){
@@ -2141,7 +2174,7 @@ export class ValRepository{
                     geometry:field.geometry,points:field.points,polygons:field.polygons,areaHa:field.areaHa??field.area,
                     provenance:{...jsonObject(field.geometryProvenance),source:'manual-do-agronomo',sourceRef:`integration-event:${inserted.rows[0].id}`,sourceEventId:event.externalId,observedAt:event.occurredAt,capturedBy:ownerId}
                   })
-                  await client.query(`UPDATE fields SET geometry_ref=$4,geometry_version=$5,area_ha=$6,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[tenantId,propertyId,fieldId,encodeCanonicalGeometryRef(canonical),canonical.geometryVersion,canonical.measurements.calculatedAreaHa])
+                  if(await governGeometryChange(client,{tenantId,ownerId,clientId:resolvedClientId,propertyId,fieldId,canonical,sourceRef:event.externalId}))await client.query(`UPDATE fields SET geometry_ref=$4,geometry_version=$5,area_ha=$6,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[tenantId,propertyId,fieldId,encodeCanonicalGeometryRef(canonical),canonical.geometryVersion,canonical.measurements.calculatedAreaHa])
                 }catch(error){throw domainError(`A geometria do talhão ${fieldName} foi rejeitada: ${error.message}`,422,error.code||'agronomic_geometry_invalid')}
               }else if(fieldId&&field.geometryAction==='CLEAR'){
                 await client.query(`UPDATE fields SET geometry_ref=NULL,geometry_version=NULL,updated_at=NOW() WHERE tenant_id=$1 AND property_id=$2 AND id=$3`,[tenantId,propertyId,fieldId])
@@ -2173,6 +2206,14 @@ export class ValRepository{
           const resolvedProperty=event.propertyExternalKey?await client.query(`SELECT property.id,property.client_id FROM properties property JOIN clients account ON account.id=property.client_id AND account.tenant_id=property.tenant_id WHERE property.tenant_id=$1 AND account.consultant_id=$2 AND (property.id::text=$3 OR property.external_key=$3) AND property.client_id=COALESCE($4::uuid,property.client_id) LIMIT 1`,[tenantId,ownerId,event.propertyExternalKey,resolvedClientId]):{rows:[]}
           const resolvedPropertyId=resolvedProperty.rows[0]?.id||null
           const resolvedPropertyClientId=resolvedProperty.rows[0]?.client_id||null
+          // VAL Cred: só acrescenta metadata.valCred numa propriedade que já existe para o mesmo
+          // produtor e dono, com a chave do nome. Nunca cria propriedade nem toca location/nome/área.
+          let valCredMaterialization=null
+          if(event.type==='credit.property.updated'&&event.source===CRED_SOURCE){
+            const credTarget=resolvedClientId&&resolvedPropertyId&&String(resolvedPropertyClientId)===String(resolvedClientId)&&event.propertyExternalKey===relatedExternalKey(event.clientExternalKey,jsonObject(event.payload.property).name)
+            const applied=credTarget?await client.query(`UPDATE properties SET metadata=COALESCE(metadata,'{}'::jsonb)||jsonb_build_object('valCred',(CASE WHEN jsonb_typeof(metadata->'valCred')='object' THEN metadata->'valCred' ELSE '{}'::jsonb END)||$4::jsonb) WHERE tenant_id=$1 AND client_id=$2 AND id=$3 AND COALESCE(metadata->'valCred'->>'occurredAt','')<=$5 RETURNING id`,[tenantId,resolvedClientId,resolvedPropertyId,jsonbParameter(credPropertyMetadata(event)),event.occurredAt]):null
+            valCredMaterialization=!credTarget?'NO_TARGET':(applied.rowCount??applied.rows?.length)?'APPLIED':'STALE_IGNORED'
+          }
           const soilFieldMustBePropertyScoped=event.type==='soil_analysis.completed';const soilFieldIdentity=event.payload.fieldId||event.payload.fieldName;const legacySoilFieldKey=soilFieldMustBePropertyScoped?relatedExternalKey(event.clientExternalKey,soilFieldIdentity):null;const canonicalSoilFieldKey=soilFieldMustBePropertyScoped?propertyScopedFieldExternalKey(event.propertyExternalKey,soilFieldIdentity):null
           const resolvedField=event.fieldExternalKey&&(!soilFieldMustBePropertyScoped||resolvedPropertyId)?await client.query(`SELECT field.id,field.property_id,property.client_id FROM fields field JOIN properties property ON property.id=field.property_id AND property.tenant_id=field.tenant_id JOIN clients account ON account.id=property.client_id AND account.tenant_id=property.tenant_id WHERE field.tenant_id=$1 AND account.consultant_id=$2 AND (field.id::text=$3 OR field.external_key=$3 OR ($5::text IS NOT NULL AND field.external_key=$5) OR ($6::text IS NOT NULL AND field.external_key=$6)) AND field.property_id=COALESCE($4::uuid,field.property_id) LIMIT 1`,[tenantId,ownerId,event.fieldExternalKey,soilFieldMustBePropertyScoped?resolvedPropertyId:null,legacySoilFieldKey,canonicalSoilFieldKey]):{rows:[]}
           const resolvedFieldId=resolvedField.rows[0]?.id||null
@@ -2282,7 +2323,7 @@ export class ValRepository{
            const business=await client.query(`INSERT INTO business_events (tenant_id,owner_user_id,client_id,client_external_key,source,external_id,occurred_at,outcome,category,value,currency,loss_reason,payload) VALUES ($1,$13,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) ON CONFLICT (tenant_id,owner_user_id,source,external_id) DO NOTHING RETURNING id`,[tenantId,resolvedClientId,event.clientExternalKey||null,event.source,event.externalId,event.occurredAt,event.type==='business.closed'?'won':event.type==='business.lost'?'lost':'open',event.payload.category||null,parseMoney(event.payload.value),/^[A-Z]{3}$/.test(String(event.payload.currency||'').toUpperCase())?String(event.payload.currency).toUpperCase():'BRL',event.payload.lossReason||event.payload.reason||null,jsonbParameter(event.payload),ownerId])
            if(!business.rowCount)throw domainError('Já existe um evento comercial com este identificador externo na sua carteira.',409,'business_event_external_id_conflict')
           }
-          return {duplicate:false,canonicalClientId:resolvedClientId,signals:acceptedSignals.length,...(measurementSetStatus?{measurementSetStatus}:{})}
+          return {duplicate:false,canonicalClientId:resolvedClientId,signals:acceptedSignals.length,...(measurementSetStatus?{measurementSetStatus}:{}),...(valCredMaterialization?{valCredMaterialization}:{})}
         }
         return connection?await project(connection):await this.db.transaction(project)
       }catch(error){if(connection||error.statusCode)throw error;throw serviceError('Não foi possível persistir o evento de integração no banco configurado.')}

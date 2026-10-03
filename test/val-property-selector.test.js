@@ -74,6 +74,7 @@ function databaseRepository(){
    return rows([{id:`field-${params[1]}`,name:`Talhão ${params[1]}`}])
   }
   if(sql.startsWith('INSERT INTO audit_events'))return rows([])
+  if(sql.includes("set_config('val.geo_actor'"))return rows([])
   throw new Error(`Unexpected query: ${sql}`)
  }
  return {repository:new ValRepository({tenantId,db:{configured:true,query,transaction:work=>work({query})}}),properties,queries}

@@ -515,12 +515,125 @@ paths:
                 properties:
                   contract_version: {const: val.insight_feed.v1}
                   items: {type: array, maxItems: 5, items: {$ref: '../contracts/v1/insight-card.schema.json'}}
+  /api/v1/integrations/cred/events:
+    post:
+      summary: Recebe eventos assinados do VAL Cred (contrato val-cred-integration.v1)
+      description: >-
+        Servidor-servidor, fora da sessão do navegador. Exige X-Valor-Signature com o HMAC-SHA256 em hexadecimal
+        do corpo bruto, calculado com VAL_CRED_WEBHOOK_SECRET; não aceita Bearer nem o segredo do Manual.
+        A origem gravada é sempre val-cred e o tenant é sempre o desta VAL. Aceita somente credit.request.updated,
+        credit.analysis.completed, credit.decision.recorded, credit.property.updated e cooperative.unit.upserted;
+        tipos do Manual são recusados aqui (400) e os tipos do VAL Cred são recusados na rota do Manual.
+        Sem VAL_CRED_WEBHOOK_SECRET a rota fica desligada e responde 503. Crédito não gera sinal nem decisão na VAL:
+        o evento fica em integration_events e, para credit.property.updated, só acrescenta properties.metadata.valCred
+        numa propriedade que já existe para o mesmo produtor e dono.
+      security:
+        - valCredSignature: []
+      parameters:
+        - name: X-Valor-Signature
+          in: header
+          required: true
+          schema: {type: string, pattern: '^sha256=[0-9a-f]{64}$'}
+        - $ref: '#/components/parameters/RequestId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '../contracts/v1/integration-event.schema.json'}
+      responses:
+        '202':
+          description: Evento novo aceito
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CredEventReply'}
+        '200':
+          description: Mesmo externalId com o mesmo conteúdo; nada foi regravado
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CredEventReply'}
+        '400':
+          description: Envelope, tipo ou payload fora do contrato (recusa definitiva)
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CredEventReply'}
+        '401':
+          description: Assinatura ausente ou inválida
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CredEventReply'}
+        '403':
+          description: Tenant diferente desta VAL ou ownerUserId inválido ou inativo
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CredEventReply'}
+        '409':
+          description: externalId já usado com conteúdo diferente
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CredEventReply'}
+        '503':
+          description: Integração desligada (sem segredo) ou PostgreSQL indisponível; o VAL Cred tenta de novo
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CredEventReply'}
+  /api/grains/cred-sync:
+    post:
+      summary: Republica no VAL Cred todo o workspace SOG do consultor logado
+      description: >-
+        Envia perfis, intenções (inclusive canceladas e encerradas) e cotações ativas como sog.profile.upserted,
+        sog.intent.upserted e sog.market.snapshot, mais val.client.upserted dos produtores citados. É idempotente:
+        o que já chegou volta como duplicate. Sem VAL_CRED_BASE_URL e VAL_CRED_INBOUND_SECRET responde enabled=false
+        sem chamar a rede. As rotas PUT /api/grains/profiles, POST /api/grains/intents, PATCH /api/grains/intents/{id}
+        e POST /api/grains/market já publicam cada gravação sem esperar o VAL Cred e sem mudar a própria resposta.
+      security: [{sessionCookie: []}]
+      responses:
+        '200':
+          description: Resumo do envio
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CredSyncResult'}
+        '401': {$ref: '#/components/responses/Error'}
+        '429': {$ref: '#/components/responses/Error'}
+        '503':
+          description: O workspace SOG não pôde ser lido
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/CredSyncResult'}
+  /api/clients/{clientId}/credit:
+    get:
+      summary: Resumo de crédito do VAL Cred e eventos val-cred recebidos para um produtor da carteira
+      description: >-
+        A posse é conferida antes de qualquer chamada ao VAL Cred (mesmo escopo de /api/clients/{clientId}/overview).
+        Lê GET {VAL_CRED_BASE_URL}/api/v1/integrations/val/producers/{clientExternalKey}/credit-summary com
+        Authorization Bearer VAL_CRED_READ_TOKEN, com cache curto e sem nunca expor CPF, CNPJ ou documentos.
+        Responde 200 em todos os estados do VAL Cred; status=not_configured quando a leitura está desligada.
+      security: [{sessionCookie: []}]
+      parameters:
+        - name: clientId
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 180}
+          description: UUID de clients.id ou clients.external_key.
+      responses:
+        '200':
+          description: Visão consumida pelo CreditSummaryCard
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ClientCreditView'}
+        '401': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '503': {$ref: '#/components/responses/Error'}
 components:
   securitySchemes:
     sessionCookie:
       type: apiKey
       in: cookie
       name: valor360_session
+    valCredSignature:
+      type: apiKey
+      in: header
+      name: X-Valor-Signature
+      description: sha256=<hex do HMAC-SHA256 do corpo bruto com VAL_CRED_WEBHOOK_SECRET>.
   parameters:
     RequestId:
       name: X-Request-ID
@@ -725,3 +838,90 @@ components:
       $ref: '../contracts/v1/outcome.schema.json'
     LearningCandidate:
       $ref: '../contracts/v1/learning-candidate.schema.json'
+    CredEventReply:
+      type: object
+      required: [accepted]
+      properties:
+        accepted: {type: boolean}
+        duplicate: {type: boolean}
+        status: {type: string, description: CONFLICT no 409}
+        eventType: {type: string}
+        externalId: {type: string}
+        signals: {type: integer, minimum: 0}
+        canonicalClientId: {type: [string, 'null']}
+        valCredMaterialization: {enum: [APPLIED, STALE_IGNORED, NO_TARGET], description: Só em credit.property.updated}
+        error: {type: string}
+        code: {type: string, maxLength: 100}
+    CredSyncResult:
+      type: object
+      required: [enabled, events, summary, failures]
+      properties:
+        enabled: {type: boolean}
+        events: {type: integer, minimum: 0}
+        summary:
+          type: object
+          additionalProperties: false
+          properties:
+            sent: {type: integer, minimum: 0}
+            duplicate: {type: integer, minimum: 0}
+            conflict: {type: integer, minimum: 0}
+            rejected: {type: integer, minimum: 0}
+            retry: {type: integer, minimum: 0}
+            skipped: {type: integer, minimum: 0}
+            invalid: {type: integer, minimum: 0}
+        failures:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            properties:
+              type: {type: string}
+              externalId: {type: string}
+              outcome: {enum: [conflict, rejected, retry, skipped, invalid]}
+              status: {type: [integer, 'null']}
+              error: {type: [string, 'null']}
+        error: {type: string}
+    ClientCreditView:
+      type: object
+      required: [contract, configured, status, summary, events, eventsAvailable]
+      properties:
+        contract: {const: val-cred-integration.v1}
+        configured: {type: boolean}
+        status: {enum: [ok, not_linked, unavailable, not_configured]}
+        error: {type: string}
+        eventsAvailable: {type: boolean}
+        summary:
+          oneOf:
+            - type: 'null'
+            - type: object
+              properties:
+                schemaVersion: {const: 1}
+                source: {const: val-cred}
+                clientExternalKey: {type: string}
+                generatedAt: {type: [string, 'null'], format: date-time}
+                producer:
+                  type: object
+                  properties:
+                    name: {type: [string, 'null']}
+                    municipality: {type: [string, 'null']}
+                    unit: {type: [object, 'null']}
+                properties: {type: array, items: {type: object}}
+                requests: {type: array, items: {type: object}}
+                governance:
+                  type: object
+                  properties:
+                    automaticDecision: {const: false}
+                    humanDecisionRequired: {const: true}
+                    documentsShared: {const: false}
+        events:
+          type: array
+          maxItems: 20
+          items:
+            type: object
+            required: [type]
+            properties:
+              id: {type: string}
+              type: {enum: [credit.request.updated, credit.analysis.completed, credit.decision.recorded, credit.property.updated, cooperative.unit.upserted]}
+              occurredAt: {type: [string, 'null']}
+              receivedAt: {type: [string, 'null']}
+              status: {type: [string, 'null']}
