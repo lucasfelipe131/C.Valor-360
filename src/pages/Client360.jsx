@@ -1,4 +1,5 @@
 import AgroTerritoryPanel from '../components/AgroTerritoryPanel'
+import ProducerCredit from '../components/ProducerCredit'
 import DecisionPanel from '../components/DecisionPanel'
 import ProfileEditor from '../components/ProfileEditor'
 import ProducerSeasons,{useProducerSeasons} from '../components/ProducerSeasons'
@@ -85,7 +86,7 @@ export default function Client360(props){
   </>}
   {tab==='season'&&<>{seasonCard}<ProducerSeasons key={client.id} client={client} resource={budget}/></>}
   {tab==='grains'&&<>{seasonCard}<ProducerGrains client={client} onAsk={onAsk}/></>}
-  {tab==='credit'&&<section className="p360-card"><header><h3>Crédito</h3></header><Metric {...metricProps} icon={WalletCards} label="Limite cadastrado" value={knownCredit?Number(client.commercial.creditLimit).toLocaleString('pt-BR',{style:'currency',currency:'BRL'}):null} detail={knownCredit?'Registro comercial, não é análise de necessidade':'Sem informação de crédito'}/><Empty>Necessidade de crédito ainda não calculada.</Empty></section>}
+  {tab==='credit'&&<ProducerCredit key={client.id} client={client}/>}
   {tab==='technical-report'&&<Suspense fallback={<Skeleton/>}><TechnicalReport key={client.id} client={client} seasons={[...seasons,...budget.seasons]}/></Suspense>}
   {tab==='documents'&&<ProducerDocuments client={client} onAsk={onAsk}/>}
   {tab==='commercial'&&<Suspense fallback={<Skeleton/>}><DecisionWorkspace embedded clients={[client]} selectedClient={client} onSelect={()=>go('profile')} onPrepareVisit={onPrepare}/></Suspense>}

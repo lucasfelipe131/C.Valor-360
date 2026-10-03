@@ -227,7 +227,7 @@ export default function SatelliteMap({
    const polygonCoordinates=polygon.holes?.length?[coordinates,...polygon.holes.map(r=>r.map(validLocation).filter(Boolean).map(p=>[p.lat,p.lng]))]:coordinates
    const shape=L.polygon(polygonCoordinates,{color:polygon.color||'#c8f25e',weight:2,fillColor:polygon.color||'#c8f25e',fillOpacity:.18,interactive:Boolean(polygon.onClick)}).addTo(group)
    if(polygon.onClick)shape.on('click',polygon.onClick)
-   if(polygon.label)shape.bindTooltip(escapeHtml(polygon.label),{permanent:true,direction:'center',className:'val-map-label'})
+   if(polygon.label)shape.bindTooltip(escapeHtml(polygon.label),{permanent:polygon.labelPermanent??false,direction:'center',className:'val-map-label'})
   }
   const routeLayers=[...(route.length?[{points:route,kind:'planned',color:'#00c896'}]:[]),...routes]
   for(const line of routeLayers){

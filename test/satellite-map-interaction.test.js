@@ -8,7 +8,7 @@ import {transformWithEsbuild} from 'vite'
 // Run the actual component with a small Leaflet boundary double. The browser
 // owns tile fetching and DOM layout; these checks cover our lifecycle behavior.
 const source=readFileSync(new URL('../src/components/map/SatelliteMap.jsx',import.meta.url),'utf8')
- .replace(/import '[^']+\.css'\n/g,'')
+ .replace(/import '[^']+\.css'\r?\n/g,'')
  .replace("import CadastralLayers from './CadastralLayers'",'const CadastralLayers=()=>null')
  .replace("from 'lucide-react'",`from '${import.meta.resolve('lucide-react')}'`)
  .replace("from 'react'",`from '${import.meta.resolve('react')}'`)
