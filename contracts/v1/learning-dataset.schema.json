@@ -1,0 +1,85 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "$id": "https://val.local/contracts/v1/learning-dataset.schema.json",
+  "title": "learning-dataset",
+  "required": [
+    "dataset_id",
+    "version",
+    "created_at",
+    "period_start",
+    "period_end",
+    "scope",
+    "row_count",
+    "labeled_count",
+    "unlabeled_count",
+    "excluded_count",
+    "exclusion_reasons",
+    "feature_schema_version",
+    "source_versions",
+    "hash",
+    "created_by"
+  ],
+  "properties": {
+    "dataset_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "period_start": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "period_end": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "scope": {
+      "type": "object"
+    },
+    "row_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "labeled_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "unlabeled_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "excluded_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "exclusion_reasons": {
+      "type": "object"
+    },
+    "feature_schema_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "source_versions": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "hash": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_by": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

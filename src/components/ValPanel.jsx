@@ -268,6 +268,7 @@ export default function ValPanel({clients=[],selectedClient,onSelect}){
  const [mode,setMode]=useState('daily')
  const [message,setMessage]=useState('')
  const [response,setResponse]=useState(null)
+ useEffect(()=>{if(response?.recommendationId)fetch(`/api/learning/recommendations/${response.recommendationId}/displayed`,{method:'POST'}).catch(()=>{})},[response?.recommendationId])
  const [activeMethod,setActiveMethod]=useState('spin')
  const [sequenceControl,setSequenceControl]=useState(()=>createSequenceControl())
  const {state:status,run:loadStatus}=useAsyncResource({initialData:null,initialLoading:true,timeoutMs:8_000,timeoutMessage:'A VAL está operando com contexto local.',fallbackMessage:'A VAL está operando com contexto local.'})

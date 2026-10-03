@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "$id": "https://val.local/contracts/v1/learning-promotion.schema.json",
+  "title": "learning-promotion",
+  "required": [
+    "candidate_id",
+    "kind",
+    "current_version",
+    "candidate_version",
+    "reason",
+    "risk",
+    "expected_effect",
+    "rollback_target"
+  ],
+  "properties": {
+    "candidate_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "kind": {
+      "enum": [
+        "KNOWLEDGE",
+        "PROMPT",
+        "POLICY",
+        "WEIGHT",
+        "MODEL",
+        "QUESTION",
+        "RULE"
+      ]
+    },
+    "current_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "candidate_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1
+    },
+    "risk": {
+      "type": "string",
+      "minLength": 1
+    },
+    "expected_effect": {
+      "type": "string",
+      "minLength": 1
+    },
+    "rollback_target": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}

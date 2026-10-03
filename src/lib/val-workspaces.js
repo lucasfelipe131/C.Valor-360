@@ -87,6 +87,7 @@ const NAV={
 // Sempre visível no rodapé da navegação, fora dos workspaces.
 export const SETTINGS_NAV=[
  {id:'admin',label:'Administração',icon:ShieldCheck,page:'admin',role:'admin'},
+ {id:'learning-review',label:'Central de Aprendizado',icon:ShieldCheck,page:'admin',role:'technical_reviewer'},
  {id:'settings',label:'Preferências',icon:Settings,page:'settings'}
 ]
 

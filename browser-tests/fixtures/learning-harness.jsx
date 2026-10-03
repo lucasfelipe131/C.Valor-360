@@ -1,0 +1,7 @@
+import React from 'react'
+import {createRoot} from 'react-dom/client'
+import LearningCenter from '../../src/components/LearningCenter'
+const candidate={id:'synthetic-candidate',hypothesis:'Há evidência limitada no cenário sintético.',status:'CANDIDATE',scope:{geography_scope:'LOCAL'},supporting_evidence:[{id:'support'}],contrary_evidence:[{id:'contrary'}],confidence:.5,learning_metadata:{classification:'ACCOUNT_OBSERVATION'}}
+const data={summary:{visible_candidates:1,review_pending:1,sample_note:'Contagem da página; amostra insuficiente.'},candidates:[candidate],patterns:[{id:'pattern',payload:{metric:{numerator:1,denominator:2},attribution:'CAUSAL_NOT_PROVEN'}}],datasets:[{id:'dataset',kind:'DATASET',payload:{row_count:2,quality:{ELIGIBLE:2,LABELED:1,UNLABELED:1}}}],shadow:[{id:'shadow',kind:'SHADOW',payload:{mode:'SHADOW',production_changed:false}}],promotions:[{id:'proposal',kind:'PROMPT',status:'DRAFT',revision:1,payload:{reason:'Hipótese sintética',automatic_apply:false}}],drift:[{id:'drift',payload:{state:'INSUFFICIENT_SAMPLE'}}],history:[],rollback_history:[],knowledge:[]}
+window.fetch=async(url,options)=>{if(options?.method==='POST'){candidate.status='UNDER_REVIEW';return new Response(JSON.stringify({saved:true}),{status:200})}return new Response(JSON.stringify(data),{status:200})}
+createRoot(document.getElementById('root')).render(<LearningCenter currentUser={{id:'synthetic-admin',role:'admin'}}/>)

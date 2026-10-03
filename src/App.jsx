@@ -1,3 +1,4 @@
+import LearningCenter from './components/LearningCenter'
 import React,{lazy,Suspense,useCallback,useEffect,useMemo,useRef,useState} from 'react'
 import {BrainCircuit} from 'lucide-react'
 import ProducerNavigation from './components/ProducerNavigation'
@@ -423,6 +424,7 @@ export default function App(){
     {page==='reports'&&<Reports clients={clientList} visits={visits}/>}
     {page==='management'&&<Management currentUser={currentUser} onConfigure={()=>navigate('admin')}/>}
     {page==='settings'&&<Settings clients={clientList} visits={visits} opportunities={opportunities} loadError={portfolioError} currentUser={currentUser} onLogout={logout} onNotify={notify}/>}
+    {page==='admin'&&currentUser?.role==='technical_reviewer'&&<LearningCenter currentUser={currentUser}/>}
     {page==='admin'&&currentUser?.role==='admin'&&<Admin currentUser={currentUser} onNotify={notify}/>}
     </Suspense>
     </RouteBoundary>

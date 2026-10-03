@@ -56,3 +56,7 @@ Esta versão não cria tabela, API pública, vector store ou recurso pago. `npm 
 ## Observabilidade
 
 Somente policy version, status, quantidade, IDs pseudonimizados/permitidos e reason codes podem ser registrados. Statement, áudio, transcrição e trechos de fonte não entram em logs.
+
+## Passo 11 — promoção explícita
+
+A biblioteca existente permanece a autoridade. `val_learning_publications` registra o histórico de aprovação/publicação de versões do mesmo KnowledgeItem; não é um segundo mecanismo de retrieval. O adapter `server/knowledge/promotion.js` reutiliza contratos, fontes e policy de segurança. `knowledge/approved`, `knowledge/library` e `server/sync-knowledge.js` não são reescritos automaticamente. A inclusão em release requer aprovação separada. Nenhum vector store ou dependência paga foi criado.

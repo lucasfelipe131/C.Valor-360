@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "$id": "https://val.local/contracts/v1/recommendation-snapshot.schema.json",
+  "title": "recommendation-snapshot",
+  "required": [
+    "context_timestamp",
+    "engine_version",
+    "prompt_version",
+    "policy_version",
+    "model_version",
+    "score_components",
+    "data_quality",
+    "confidence",
+    "evidence_refs",
+    "selected_candidate",
+    "alternatives"
+  ],
+  "properties": {
+    "context_timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "engine_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "prompt_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "policy_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "model_version": {
+      "type": "string",
+      "minLength": 1
+    },
+    "score_components": {
+      "type": "object"
+    },
+    "data_quality": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "confidence": {
+      "type": [
+        "number",
+        "null"
+      ]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "selected_candidate": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "alternatives": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  }
+}

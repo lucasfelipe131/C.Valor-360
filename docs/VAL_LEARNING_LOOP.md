@@ -315,3 +315,17 @@ Uma versão candidata só pode ser apresentada para aprovação quando:
 - existe explicação das principais features;
 - existe plano de rollback;
 - o resultado em shadow mode foi revisado por pessoas responsáveis.
+
+## Passo 11 — implementação governada
+
+O módulo `server/learning/` evolui este loop. A entrada de feedback continua canônica; não há segundo feedback engine. `val_learning_candidates` mantém o contrato v1 e ganha metadados de proveniência. Uma aprovação de candidato não publica conhecimento.
+
+Snapshots de recomendação são capturados na persistência e imutáveis. A confirmação de exibição é separada; ausência de confirmação, snapshot ou identidade exclui o registro do dataset. DecisionCards e coach entram apenas por joins canônicos, com feedback vinculado como confirmação de uso. Features usam allowlist numérica; texto livre e dados pessoais não são exportados. Dados anteriores sem snapshot suficiente não recebem backfill inventado.
+
+Datasets são solicitados explicitamente por administrador, limitados a 5.000 registros por origem e período de até 366 dias. São persistidos e paginados; abrir a Central não reconstrói datasets. O hash identifica conteúdo e período; repetição reutiliza a identidade. Registros sem resultado permanecem UNLABELED. O corte temporal remove resultados posteriores ao treino e grupos de oportunidade compartilhados.
+
+Políticas SAMPLE e DRIFT não têm thresholds ativos por padrão. Um administrador propõe valores e outro revisa explicitamente. Sem essa política, a amostra permanece INSUFFICIENT_FOR_PROMOTION e o ranker não ordena grupos. O score shadow é priorização, não probabilidade. Métricas de ranking exigem rótulos de todas as candidatas do grupo; cobertura parcial não é tratada como derrota. Relatórios REGRESSION assinados e revisados vinculam segurança, isolamento, grounding, revisão técnica e proveniência à avaliação exata.
+
+A publicação é um registro versionado revisado na biblioteca governada, usando o KnowledgeItem e o registro de fontes existentes. Não ativa prompt, policy, peso, ranker ou conhecimento no runtime de produção. Essa ativação exige release separado autorizado. Rollback muda o estado e registra alvo, versão anterior, autor, data e motivo; histórico e publicação são append-only.
+
+Wait for CI continua gate de deploy/release, não de implementação. Produção desabilitada; K5 completo e UAT físico ficam fora do Passo 11.
