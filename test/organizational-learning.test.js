@@ -76,3 +76,11 @@ test('same KnowledgeItem contract blocks scope expansion and unregistered source
  assert.throws(()=>validatePromotedKnowledge({...item,risk:'HIGH'},{scope,now}),/technical_review/)
  assert.equal(publishedKnowledgeView([{kind:'KNOWLEDGE',payload:{knowledge_item:item},valid_until:'2026-01-01',review_at:'2025-12-01'}],now)[0].status,'EXPIRED')
 })
+
+test('internal Copilot cites contrary evidence and keeps monthly/page scope explicit',async()=>{
+ const {learningDecisionQuery,learningDecisionResponse}=await import('../server/decision-copilot/learning-decision.js')
+ for(const q of ['O que a VAL aprendeu neste mês?','Quais padrões estão aguardando revisão?','Qual evidência sustenta este candidato?','Existe evidência contrária?','Quais mudanças foram publicadas?','Qual foi revertida?'])assert.equal(learningDecisionQuery(q),true)
+ const result={candidates:[{id:'c',hypothesis:'Limited pattern',created_at:'2026-10-02',supporting_evidence:[{id:'s'}],contrary_evidence:[{id:'against'}],status:'UNDER_REVIEW',scope:{geography:'LOCAL'}}],summary:{visible_candidates:1}}
+ assert.match(learningDecisionResponse(result,{message:'Existe evidência contrária?'}).advice.answer,/against/)
+ assert.match(learningDecisionResponse(result,{message:'O que a VAL aprendeu neste mês?',now:Date.parse('2026-10-03')}).advice.answer,/mês corrente.*UTC/)
+})

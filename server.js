@@ -947,7 +947,7 @@ async function handleApi(request,response,url){
   }
   if(learningDecisionQuery(message)&&!attachmentIds.length&&database.configured){
    if(!['admin','technical_reviewer','manager'].includes(identity?.role))return json(response,403,{error:'Acesso interno autorizado obrigatório.'})
-   return json(response,200,completeSession(learningDecisionResponse(await learningService.center(identity)),{intent:'ORGANIZATIONAL_LEARNING'}))
+   return json(response,200,completeSession(learningDecisionResponse(await learningService.center(identity),{message}),{intent:'ORGANIZATIONAL_LEARNING'}))
   }
   if(revenueDecisionQuery(message)&&!attachmentIds.length&&database.configured){
    const result=await revenueService.generate(identity,{clientId:clientId||null})
