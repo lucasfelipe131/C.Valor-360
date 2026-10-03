@@ -45,3 +45,7 @@ KnowledgeItem não é memória, resposta final, prescrição nem KnowledgeItem p
 ## Provenance
 
 Toda influência material deve carregar `knowledge_item_id`, `version`, o conjunto canônico completo de `source_refs`, caveats e motivo/superfície de uso. Knowledge não entra em `evidence_refs` factuais. O texto integral não é necessário no artefato de execução.
+
+## Publicação governada — Passo 11
+
+`server/knowledge/promotion.js` valida o mesmo contrato e o mesmo source registry. Toda nova publicação exige validade, revisão futura, proveniência do candidato e escopo preservado. Fontes não registradas, injeção, expansão de geografia/cultura/safra e ausência de revisão técnica em alto risco bloqueiam publicação. A publicação registra uma versão candidata e não modifica o catálogo de runtime por si só. Consulta reavalia expiração, revisão pendente, supersessão e rollback.

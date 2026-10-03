@@ -1,3 +1,5 @@
+import {LearningService} from './server/learning/service.js'
+import {learningDecisionQuery,learningDecisionResponse} from './server/decision-copilot/learning-decision.js'
 import {revenueDecisionQuery,revenueDecisionResponse} from './server/decision-copilot/revenue-decision.js'
 import {RevenueService} from './server/revenue-service.js'
 import {prepareStep09StagingFixture} from './server/step09-staging-fixture.js'
@@ -209,6 +211,7 @@ const demoProducerEnvironment=String(process.env.VAL_DEMO_ENVIRONMENT||'').toLow
 const decisionService=new DecisionService({db:database,repository,tenantId:config.defaultTenantId,environment:demoProducerEnvironment,config})
 const agroGeoService=new AgroGeoService({decisionService})
 const revenueService=new RevenueService({decisionService})
+const learningService=new LearningService({decisionService})
 const demoProducerEnabled=['staging','test'].includes(demoProducerEnvironment)
 const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const openMarketFeed=createOpenMarketFeed()
@@ -374,7 +377,7 @@ async function handleApi(request,response,url){
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
  const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
- const protectedPath=url.pathname.startsWith('/api/revenue')||url.pathname.startsWith('/api/agro-geo')||url.pathname.startsWith('/api/decisions')||url.pathname.startsWith('/api/integration-hub/')||url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans|credit(?:\/(?:context|link|unlink))?))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/learning')||url.pathname.startsWith('/api/revenue')||url.pathname.startsWith('/api/agro-geo')||url.pathname.startsWith('/api/decisions')||url.pathname.startsWith('/api/integration-hub/')||url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans|credit(?:\/(?:context|link|unlink))?))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const requestStartedAt=performance.now()
  let valRequestController=null
@@ -442,6 +445,23 @@ async function handleApi(request,response,url){
   }
   return json(response,404,{error:'Recurso do Hub não encontrado.'})
  }
+ if(url.pathname==='/api/learning/controls'&&request.method==='POST')return json(response,201,await learningService.control(identity,await body(request)))
+ const learningControlReview=/^\/api\/learning\/controls\/([0-9a-f-]{36})\/review$/.exec(url.pathname)
+ if(learningControlReview&&request.method==='POST')return json(response,200,await learningService.reviewControl(identity,learningControlReview[1],await body(request)))
+ if(url.pathname==='/api/learning/center'&&request.method==='GET')return json(response,200,await learningService.center(identity,Object.fromEntries(url.searchParams)))
+ if(url.pathname==='/api/learning/candidates'&&request.method==='POST')return json(response,201,await learningService.createCandidate(identity,await body(request)))
+ if(url.pathname==='/api/learning/datasets'&&request.method==='POST')return json(response,201,await learningService.dataset(identity,await body(request)))
+ if(url.pathname==='/api/learning/shadow'&&request.method==='POST')return json(response,201,await learningService.runShadow(identity,await body(request)))
+ if(url.pathname==='/api/learning/drift'&&request.method==='POST')return json(response,201,await learningService.drift(identity,await body(request)))
+ if(url.pathname==='/api/learning/promotions'&&request.method==='POST')return json(response,201,await learningService.propose(identity,await body(request)))
+ const learningRoute=/^\/api\/learning\/(candidates|promotions|recommendations)\/([0-9a-f-]{36})(?:\/(review|displayed|evidence))?$/.exec(url.pathname)
+ if(learningRoute&&request.method==='GET'&&learningRoute[1]==='candidates'&&!learningRoute[3])return json(response,200,await learningService.candidateDetail(identity,learningRoute[2]))
+ if(learningRoute&&request.method==='POST'){
+  if(learningRoute[1]==='candidates'&&learningRoute[3]==='evidence')return json(response,200,await learningService.addContrary(identity,learningRoute[2],await body(request)))
+  if(learningRoute[1]==='recommendations'&&learningRoute[3]==='displayed')return json(response,200,await learningService.displayed(identity,learningRoute[2]))
+  if(learningRoute[3]==='review'&&['candidates','promotions'].includes(learningRoute[1]))return json(response,200,await learningService[learningRoute[1]==='candidates'?'reviewCandidate':'reviewPromotion'](identity,learningRoute[2],await body(request)))
+ }
+ if(/^\/api\/learning\/(candidates|patterns|datasets|promotions|shadow|drift)$/.test(url.pathname)&&request.method==='GET'){const result=await learningService.center(identity,Object.fromEntries(url.searchParams));return json(response,200,{items:result[url.pathname.split('/').pop()],page:result.page})}
  const impactValidationRoute=/^\/api\/revenue\/impacts\/([0-9a-f-]{36})\/validation$/.exec(url.pathname)
  if(impactValidationRoute&&request.method==='POST')return json(response,200,await revenueService.validateImpact(identity,impactValidationRoute[1],await body(request)))
  const learningReviewRoute=/^\/api\/revenue\/learning\/([0-9a-f-]{36})\/review$/.exec(url.pathname)
@@ -924,6 +944,10 @@ async function handleApi(request,response,url){
    const completed=attachConversationState(payloadResult,sessionState,{reasoningState:turnOnlyClientOverride?requestConversationState:sessionState})
    const withResolution=conversationResolution?.status==='RESOLVED'?{...completed,conversationResolution}:completed
    return workspaceRoute.workspace_action?{...withResolution,workspaceAction:workspaceRoute.workspace_action,globalIntent:workspaceRoute}:withResolution
+  }
+  if(learningDecisionQuery(message)&&!attachmentIds.length&&database.configured){
+   if(!['admin','technical_reviewer','manager'].includes(identity?.role))return json(response,403,{error:'Acesso interno autorizado obrigatório.'})
+   return json(response,200,completeSession(learningDecisionResponse(await learningService.center(identity),{message}),{intent:'ORGANIZATIONAL_LEARNING'}))
   }
   if(revenueDecisionQuery(message)&&!attachmentIds.length&&database.configured){
    const result=await revenueService.generate(identity,{clientId:clientId||null})

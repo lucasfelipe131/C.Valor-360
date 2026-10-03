@@ -245,6 +245,10 @@ jobs:
         env:
           VAL_DECISION_TEST_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_staging
         run: node --experimental-strip-types --test --test-reporter=tap test/decision-service.test.js | tee .gate/decision-engine-postgres.tap
+      - name: Verify organizational learning, temporal isolation and governed promotion in PostgreSQL 16
+        env:
+          VAL_LEARNING_TEST_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_staging
+        run: node --experimental-strip-types --test --test-reporter=tap test/learning-service.test.js | tee .gate/learning-postgres.tap
       - name: Verify revenue, outcomes, impact, coach and management isolation in PostgreSQL 16
         env:
           VAL_REVENUE_TEST_DATABASE_URL: postgresql://gate:gate-only@127.0.0.1:5432/val_staging

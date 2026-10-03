@@ -1,3 +1,4 @@
+import LearningCenter from '../components/LearningCenter'
 import React,{useEffect,useMemo,useState} from 'react'
 import {
  Activity,BarChart3,BrainCircuit,Cloud,Database,LoaderCircle,MousePointerClick,
@@ -26,6 +27,7 @@ export default function Admin({currentUser,onNotify}){
  if(currentUser?.role!=='admin')return <section className="panel admin-denied"><ShieldCheck/><h2>Área restrita</h2><p>Somente a administração pode visualizar métricas globais e gerenciar acessos.</p></section>
  return <div className="page-stack administration-page">
   <section className="module-hero administration-hero"><div><span className="eyebrow">ACESSO EXCLUSIVO</span><h2>Administração do VALOR 360</h2><p>Uso, interação, carteiras e liberações consolidados sem expor dados entre consultores.</p></div><span className="environment-badge is-ready"><Cloud/><i/>PostgreSQL por login</span></section>
+  <LearningCenter currentUser={currentUser}/>
   <section className="administration-metrics" aria-labelledby="administration-metrics-title">
    <header><div><span className="admin-section-icon"><Activity/></span><div><small>OPERAÇÃO DO SISTEMA</small><h3 id="administration-metrics-title">Acessos e interações</h3><p>Período móvel, com eventos novos e registros comerciais já persistidos.</p></div></div><div><select value={days} onChange={event=>setDays(Number(event.target.value))} aria-label="Período das métricas"><option value="7">7 dias</option><option value="30">30 dias</option><option value="90">90 dias</option></select><button type="button" onClick={load} disabled={state.loading}>{state.loading?<LoaderCircle className="val-spinner"/>:<RefreshCw/>}Atualizar</button></div></header>
    {state.error&&<div className="form-error" role="alert">{state.error}</div>}

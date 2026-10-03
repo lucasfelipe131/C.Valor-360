@@ -1,0 +1,17 @@
+import {test,expect} from '@playwright/test'
+for(const width of [360,390,430])test(`learning center review and shadow usable at ${width}px`,async({page})=>{
+ await page.setViewportSize({width,height:844});await page.goto('/browser-tests/fixtures/learning.html')
+ await expect(page.getByRole('heading',{name:'Central de Aprendizado'})).toBeVisible()
+ await page.getByRole('button',{name:'Candidatos',exact:true}).click()
+ await expect(page.getByText('Há evidência limitada no cenário sintético.')).toBeVisible()
+ await page.getByText('Revisão humana',{exact:true}).click()
+ await page.getByLabel('Justificativa').fill('SYNTHETIC revisão das duas evidências')
+ await page.getByLabel('IDs das evidências revisadas',{exact:true}).fill('support')
+ await page.getByLabel('IDs das evidências contrárias revisadas').fill('contrary')
+ await page.getByRole('button',{name:'Registrar revisão'}).click()
+ await expect(page.getByText(/UNDER_REVIEW ·/)).toBeVisible()
+ await page.getByRole('button',{name:'Contradições',exact:true}).click();await expect(page.locator('pre')).toContainText('contrary')
+ await page.getByRole('button',{name:'Shadow mode',exact:true}).click();await expect(page.locator('pre')).toContainText('"production_changed": false')
+ await page.getByRole('button',{name:'Datasets',exact:true}).click();await expect(page.locator('pre')).toContainText('UNLABELED')
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true)
+})

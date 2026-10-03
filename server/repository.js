@@ -1,3 +1,4 @@
+import {snapshotFromRecommendation} from './learning/policy.js'
 import {governGeometryChange} from './agronomic-geometry-bridge.js'
 import {GrainRepository} from './grain-repository.js'
 import {saveWorkspaceOpportunity,workspaceDetails} from './opportunity-workspace.js'
@@ -2041,8 +2042,8 @@ export class ValRepository{
               ON CONFLICT (id) DO NOTHING`,[snapshot.context_snapshot_id,tenantId,snapshot.request_id||null,record.ownerId,snapshot.subject?.type,snapshot.subject?.id,snapshot.objective,snapshot.contract_version,snapshot.selection?.policy_version,snapshot.freshness?.policy_version,selectedRefs,excludedRefs,exclusionReasonCodes,snapshot.confidence?.level||null,jsonbParameter(snapshot),snapshot.freshness?.generated_at])
             throwIfPersistenceCancelled(record.signal)
           }
-          await connection.query(`INSERT INTO val_recommendations (id,tenant_id,consultant_id,client_id,client_external_key,user_question,mode,model_version,prompt_version,input_context,source_ids,generated_content,confidence,status,context_snapshot_id,context_snapshot_version,created_at)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NOW())`,[id,tenantId,record.ownerId,clientId,clientExternalKey,record.question,record.mode,record.model,record.promptHash||null,jsonbParameter(persistedContext),jsonbParameter(sourceIds),jsonbParameter(persistedAdvice),persistedConfidence,recommendationStatus,snapshot?.context_snapshot_id||null,snapshot?.contract_version||null])
+          await connection.query(`INSERT INTO val_recommendations (id,tenant_id,consultant_id,client_id,client_external_key,user_question,mode,model_version,prompt_version,input_context,source_ids,generated_content,confidence,status,context_snapshot_id,context_snapshot_version,learning_snapshot,created_at)
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,NOW())`,[id,tenantId,record.ownerId,clientId,clientExternalKey,record.question,record.mode,record.model,record.promptHash||null,jsonbParameter(persistedContext),jsonbParameter(sourceIds),jsonbParameter(persistedAdvice),persistedConfidence,recommendationStatus,snapshot?.context_snapshot_id||null,snapshot?.contract_version||null,jsonbParameter(snapshotFromRecommendation(record,persistedContext,persistedAdvice,sourceIds))])
           throwIfPersistenceCancelled(record.signal)
           if(record.modelRun){const run=record.modelRun;await connection.query(`INSERT INTO model_runs (id,tenant_id,recommendation_id,model,prompt_version,latency_ms,input_tokens,output_tokens,status,error_code,error_details,provider_response_id,provider_request_id,created_at) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW())`,[randomUUID(),tenantId,id,run.model,run.promptVersion||null,run.latencyMs||null,run.inputTokens||null,run.outputTokens||null,run.status,run.errorCode||null,jsonbParameter(run.errorDetails),run.responseId||null,run.requestId||null])}
           throwIfPersistenceCancelled(record.signal)

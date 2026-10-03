@@ -1,3 +1,4 @@
+import LearningCenter from '../components/LearningCenter'
 import RevenuePanel from '../components/RevenuePanel'
 import ManagementDecisions from '../components/ManagementDecisions'
 import React,{useEffect,useMemo,useState} from 'react'
@@ -52,7 +53,7 @@ export default function Management({currentUser,standalone=false,onLogout,onConf
   const url=URL.createObjectURL(blob);const anchor=document.createElement('a');anchor.href=url;anchor.download=`val-${kind}-${filters.start}-${filters.end}${csvExportIsPartial(exportScope)?'-parcial':''}.csv`;anchor.click();setTimeout(()=>URL.revokeObjectURL(url),1000)
  }
  if(!allowed)return <div className="mg-empty"><ShieldCheck/><h2>Acesso gerencial restrito</h2><p>Solicite ao administrador o perfil e o vínculo com sua unidade.</p></div>
- return <div className={`mg-page${standalone?' mg-standalone':''}`}>
+ return <div className={`mg-page${standalone?' mg-standalone':''}`}><LearningCenter currentUser={currentUser}/>
   <header className="mg-header"><div className="mg-brand">VAL <span>GESTÃO</span></div><div className="mg-header-account"><span><ShieldCheck size={15}/>Somente consulta</span>{standalone&&<button className="mg-button" onClick={onLogout}><LogOut size={17}/>Sair</button>}</div></header>
   <section className="mg-title"><div><span className="mg-eyebrow">INTELIGÊNCIA DA UNIDADE</span><h1>Uma visão da equipe em campo.</h1><p>Visitas, carteira e deslocamentos para acompanhar a execução e planejar metas.</p></div><span className="mg-unit"><MapPin size={18}/>{data?.unit?.name||'Sua unidade'}</span></section>
   <form className="mg-filters" onSubmit={event=>{event.preventDefault();setFilters({...draft});setRetry(value=>value+1)}}>
