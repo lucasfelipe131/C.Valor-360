@@ -1,10 +1,11 @@
+import {commercialProof,LOSS_REASONS} from './revenue-policy.js'
 import {createHash,randomUUID} from 'node:crypto'
 import {WORKSPACE_METADATA,WORKSPACE_EVENT,OPPORTUNITY_STAGES,BUSINESS_TYPES,knownNumber} from '../src/lib/opportunity-workspace.js'
 
 const fail=(message,statusCode=400)=>Object.assign(new Error(message),{statusCode})
 const text=(value,length)=>String(value??'').trim().slice(0,length)
 const has=(object,key)=>Object.prototype.hasOwnProperty.call(object,key)
-const fields=['crop','season','businessType','status','lossReason','volume','volumeUnit','waitingProducer','nextActionDone','closedAt']
+const fields=['crop','season','businessType','status','lossReason','volume','volumeUnit','waitingProducer','nextActionDone','closedAt','commercialEvidence','lossCategory']
 export function workspaceDetails(evidence=[]){return (Array.isArray(evidence)?evidence:[]).find(x=>x?.type===WORKSPACE_METADATA)||{}}
 const numeric=(value,label)=>{
  if(value===null||value===undefined||(typeof value==='string'&&value.trim()===''))return null
@@ -29,6 +30,10 @@ export function buildWorkspaceMutation(current,input,{ownerId,now=new Date().toI
  if((input.stage==='Fechado')===(status==='open'))throw fail('Confira a etapa e o resultado do negócio.')
  const lossReason=text(get('lossReason'),2000)
  if(status==='lost'&&!lossReason)throw fail('Informe o motivo da perda.')
+ const commercialEvidence=get('commercialEvidence')||[]
+ if(status==='won'&&!commercialProof(commercialEvidence))throw fail('Ganho exige referência a pedido, faturamento ou registro comercial confirmado.',422)
+ const lossCategory=text(get('lossCategory'),40)
+ if(status==='lost'&&(!LOSS_REASONS.includes(lossCategory)||lossCategory==='NO_DECISION'))throw fail('Selecione o motivo da perda; sem decisão não é perda.',422)
  const businessType=text(get('businessType'),30)
  if(businessType&&!BUSINESS_TYPES.includes(businessType))throw fail('Tipo de negócio inválido.')
  const volume=numeric(get('volume'),'Volume'),volumeUnit=text(get('volumeUnit'),20)
@@ -40,7 +45,7 @@ export function buildWorkspaceMutation(current,input,{ownerId,now=new Date().toI
   category:businessType||text(BUSINESS_TYPES.includes(input.category??current?.category)?'':(input.category??current?.category),120),
   hypothesis:text(input.hypothesis??current?.hypothesis,4000),
   nextAction:text(input.nextAction,2000),nextActionAt:timestamp(input.nextActionAt,'Prazo'),
-  crop:text(get('crop'),120),season:text(get('season'),60),businessType,status,lossReason,
+  crop:text(get('crop'),120),season:text(get('season'),60),businessType,status,lossReason,lossCategory,commercialEvidence,
   volume,volumeUnit:volume===null?'':volumeUnit,waitingProducer:get('waitingProducer')===true,
   nextActionDone:get('nextActionDone')===true,
   closedAt:status==='won'?(previous.status==='won'&&previous.closedAt?previous.closedAt:now):null}

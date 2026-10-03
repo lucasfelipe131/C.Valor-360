@@ -25,3 +25,8 @@ Sequência determinística:
 6. discutir condição comercial apenas quando apropriado e autorizado.
 
 `automatic_discount` é sempre `false`. Analogias são opcionais, marcadas `evidence:false` e nunca substituem prova técnica/econômica.
+
+
+## Passo 10 — extensão governada
+
+A extensão de receita, ValuePlan vinculado, evidência de outcomes, impacto, coach e RBAC está documentada em `docs/REVENUE_COACH_IMPACT_v1.md`. Os contratos v1 e os motores existentes são preservados; não há score ou CRM paralelo.

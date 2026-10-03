@@ -351,3 +351,35 @@ export function buildFallbackAdvice({client={},profile={},message='',mode='daily
   guardrails:['Confirmar lacunas antes de avançar.','Não confundir associação comercial com causalidade.','Não usar tag de perfil, informação pessoal ou imagem para pressionar.',...(productLayer.value_bridge?.status!=='not_applicable'?['Comparar produtos na mesma base e confirmar fonte oficial vigente antes de qualquer alegação.']:[])]
  }
 }
+
+// Observable process feedback. These cards never score the consultant.
+export function buildCommercialCoach(revenue,{now=Date.now()}={}){
+ const cards=[]
+ const add=(signal,context,observation,behavior,refs)=>{
+  refs=refs.filter(ref=>ref?.id)
+  if(!refs.length)return
+  cards.push({id:`${revenue.producer}:${context||refs[0].id}:${signal}`,consultant:revenue.owner,context:{producer:revenue.producer,opportunity:context},signal,observation,why_it_matters:'Um próximo passo verificável permite revisar a decisão e aprender com o resultado.',recommended_behavior:behavior,example:signal==='weak_commitment'?'Quem fará o quê, até quando, com qual evidência e para decidir o quê?':'Qual problema, impacto e prova sustentam a próxima decisão?',evidence_refs:refs,confidence:.8,status:'PROPOSED',created_at:new Date(now).toISOString(),version:'val.commercial-coach.v1',methodology:['SPIN','OPC/APC','EPA','ValuePlan','Decision Interview']})
+ }
+ for(const opportunity of revenue.opportunities.filter(o=>o.open)){
+  const refs=[{type:'OPPORTUNITY',id:opportunity.id,observed_at:opportunity.last_movement}]
+  if(!opportunity.id)continue
+  if(!opportunity.next_action)add('opportunity_without_next_step',opportunity.id,'Oportunidade aberta sem próxima ação registrada.','Combine uma ação e uma data com o produtor.',refs)
+  if(!opportunity.commitments.length)add('missing_commitment',opportunity.id,'Não há compromisso vinculado à oportunidade.','Defina uma decisão e o compromisso necessário para alcançá-la.',refs)
+  for(const commitment of opportunity.commitments){
+   const complete=(commitment.action||commitment.description)&&commitment.owner_id&&commitment.due_at&&commitment.evidence_refs?.length&&(commitment.next_decision||commitment.success_criteria)
+   add(complete?'good_commitment_capture':'weak_commitment',opportunity.id,complete?'Compromisso tem ação, responsável, prazo, evidência e próxima decisão.':'Compromisso registrado com campos materiais ausentes.',complete?'Acompanhe a prova e registre o resultado.':'Complete os campos do compromisso com o produtor.',[{type:'COMMITMENT',id:commitment.id}])
+  }
+  const plan=opportunity.value_plan
+  if(!plan?.questions?.length)add('decision_interview_incomplete',opportunity.id,'Perguntas da decisão ainda não registradas.','Identifique a informação que pode mudar a decisão e confirme-a com o produtor.',refs)
+  if(!plan?.problem_statement)add('weak_problem_definition',opportunity.id,'Problema ainda não registrado no ValuePlan.','Retome a pergunta de problema antes de construir a proposta.',refs)
+  if(!plan?.economic_case||plan.economic_case.status==='INSUFFICIENT_DATA')add('missing_value_case',opportunity.id,'Caso econômico ainda sem base suficiente.','Colete baseline, unidades e premissas confirmadas.',refs)
+  else if(plan.economic_case.status==='CALCULATED')add('strong_value_quantification',opportunity.id,'Caso econômico calculado com entradas conhecidas.','Confirme as premissas e preserve a fórmula na decisão.',refs)
+  if(!plan?.proof_strategy?.length)add('missing_proof_plan',opportunity.id,'Plano de prova não registrado.','Defina como e quando observar o resultado.',refs)
+  if(opportunity.stalled)add('stalled_follow_up',opportunity.id,'Oportunidade atende à política de estagnação.','Revalide a decisão, o responsável e a data do próximo passo.',refs)
+  const timeline=opportunity.evidence_refs.filter(ref=>Number.isFinite(Date.parse(ref.observed_at)))
+  const price=timeline.find(ref=>ref.type==='PRICE_DISCUSSION'),problem=timeline.find(ref=>ref.type==='PROBLEM_CONFIRMED'),value=timeline.find(ref=>ref.type==='VALUE_CONFIRMED')
+  if(price&&((problem&&Date.parse(price.observed_at)<Date.parse(problem.observed_at))||(value&&Date.parse(price.observed_at)<Date.parse(value.observed_at))))add('price_too_early',opportunity.id,'O registro de preço precede as confirmações de problema e valor.','Retorne ao problema e quantifique o impacto sem bloquear a negociação.',[price,problem,value].filter(Boolean))
+ }
+ for(const loop of revenue.visit_loops||[])if(loop.state==='OPEN')add('unclosed_visit_loop',null,'Visita sem ciclo verificável de decisão, ação, compromisso e outcome.','Confirme qual decisão ocorreu, o compromisso e a evidência do resultado.',[{type:'VISIT',id:loop.visit_id}])
+ return cards
+}

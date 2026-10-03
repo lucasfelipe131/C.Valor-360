@@ -1,0 +1,6 @@
+import React from 'react'
+import {createRoot} from 'react-dom/client'
+import RevenuePanel from '../../src/components/RevenuePanel'
+const fixture={enabled:true,producers:[{producer:'synthetic',name:'Produtor sintético',metrics:{current_purchases:100,potential_total:null,realized_share_percent:null,open_pipeline:500,won_value:200,open_potential:null,stalled_value:100,value_in_decision:400,lost_value:0},warnings:[],outcomes:[{id:'outcome'}],opportunities:[{id:'opportunity',title:'Necessidade sintética',health:'MISSING_NEXT_STEP',scenario:'NEEDS_VALIDATION',value:500,next_action:null}],visit_loops:[{state:'OPEN'}],overdue_commitments:1}],coach_cards:[{id:'synthetic-card',observation:'Oportunidade sem próxima ação registrada.',recommended_behavior:'Combine uma ação e uma data.',evidence_refs:[{id:'synthetic-opportunity'}]}],impacts:[{impact_id:'synthetic-impact',metric:'Produtividade',before:40,after:50,delta:10,unit:'sc/ha',attribution_status:'CAUSAL_NOT_PROVEN',measured_at:'2026-10-01',source_refs:['synthetic-measurement']}]}
+window.fetch=async(url,options)=>new Response(JSON.stringify(options?.method==='POST'?{saved:true}:fixture),{status:200,headers:{'Content-Type':'application/json'}})
+createRoot(document.getElementById('root')).render(<main style={{maxWidth:960,margin:'auto',fontFamily:'sans-serif'}}><RevenuePanel scope="synthetic" visits/></main>)

@@ -62,3 +62,11 @@ export function compactBRL(value,{known=true}={}){
 }
 
 export const metricValue=(value,known,suffix='')=>known?`${Number(value).toLocaleString('pt-BR',{maximumFractionDigits:1})}${suffix}`:'A medir'
+
+// Governed revenue view: an explicit share is not a substitute for its denominator.
+export function governedWalletShare(currentPurchases,potentialTotal){
+ const valid=value=>typeof value==='number'&&Number.isFinite(value)&&value>=0
+ if(!valid(currentPurchases)||!valid(potentialTotal)||potentialTotal===0)return {status:'UNKNOWN',realized:null,open:null,formula:'current_purchases / potential_total × 100',warnings:[]}
+ const realized=100*currentPurchases/potentialTotal
+ return {status:'KNOWN',realized,open:Math.max(0,100-realized),formula:'current_purchases / potential_total × 100',warnings:realized>100?['PURCHASES_EXCEED_POTENTIAL']:[]}
+}

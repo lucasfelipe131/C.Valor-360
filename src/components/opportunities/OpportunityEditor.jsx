@@ -21,7 +21,7 @@ export default function OpportunityEditor({item=null,stage='Diagnóstico',mode='
   candidateKey:item?.candidateKey||'manual:'+crypto.randomUUID(),databaseId:item?.databaseId,
   value:opportunityValue(item)??'',crop:item?.crop||'',season:item?.season||'',businessType:item?.businessType||'',
   volume:item?.volume??'',volumeUnit:item?.volumeUnit||'',status:item?.status||(stage==='Fechado'?'':'open'),
-  lossReason:item?.lossReason||'',hypothesis:item?.hypothesis||'',waitingProducer:item?.waitingProducer===true,
+  lossCategory:item?.lossCategory||'',commercialProofId:item?.commercialEvidence?.[0]?.id||'',commercialProofType:item?.commercialEvidence?.[0]?.type||'ORDER',commercialProofConfirmed:item?.commercialEvidence?.[0]?.confirmed===true,lossReason:item?.lossReason||'',hypothesis:item?.hypothesis||'',waitingProducer:item?.waitingProducer===true,
   nextAction:item?.nextAction||'',nextActionAt:localDate(item?.nextActionAt),nextActionDone:item?.nextActionDone===true,
   returnNote:'',expectedUpdatedAt:item?.updatedAt||null,mutationId:crypto.randomUUID()
  }))
@@ -32,7 +32,7 @@ export default function OpportunityEditor({item=null,stage='Diagnóstico',mode='
   event.preventDefault();if(inFlight.current)return
   inFlight.current=true;setBusy(true);setError('')
   try{
-   await onSave({...draft,workspaceVersion:1,value:draft.value===''?null:Number(draft.value),volume:draft.volume===''?null:Number(draft.volume),nextActionAt:draft.nextActionAt?new Date(draft.nextActionAt).toISOString():null})
+   await onSave({...draft,commercialEvidence:draft.status==='won'?[{id:draft.commercialProofId,type:draft.commercialProofType,confirmed:draft.commercialProofConfirmed}]:[],workspaceVersion:1,value:draft.value===''?null:Number(draft.value),volume:draft.volume===''?null:Number(draft.volume),nextActionAt:draft.nextActionAt?new Date(draft.nextActionAt).toISOString():null})
    onClose()
   }catch(exception){setError(exception.message||'Não foi possível salvar. Seus campos foram preservados.')}
   finally{inFlight.current=false;setBusy(false)}
@@ -51,6 +51,8 @@ export default function OpportunityEditor({item=null,stage='Diagnóstico',mode='
      <label>Valor informado (R$)<input type="number" min="0" step="0.01" value={draft.value} onChange={e=>update('value',e.target.value)}/><small>Em branco: valor ainda não estimado.</small></label>
      <label>Volume<div className="opp-volume-input"><input aria-label="Volume" type="number" min="0" step="any" value={draft.volume} onChange={e=>update('volume',e.target.value)}/><select aria-label="Unidade do volume" required={draft.volume!==''} value={draft.volumeUnit} onChange={e=>update('volumeUnit',e.target.value)}><option value="">Unidade</option>{['sc','t','kg','L','un'].map(u=><option key={u}>{u}</option>)}</select></div></label>
      {draft.stage==='Fechado'&&<label className="opp-form-wide">Resultado<select required value={draft.status} onChange={e=>update('status',e.target.value)}><option value="">Selecione o resultado</option><option value="won">Ganho</option><option value="lost">Perdido</option><option value="archived">Arquivado</option>{item?.status==='closed'&&<option value="closed">Fechado — resultado não informado</option>}</select><small>O fechamento comercial não confirma faturamento, entrega ou pagamento.</small></label>}
+     {draft.status==='won'&&<><label>Tipo de evidência<select value={draft.commercialProofType} onChange={e=>update('commercialProofType',e.target.value)}><option value="ORDER">Pedido</option><option value="INVOICE">Faturamento</option><option value="COMMERCIAL_EVENT">Evento comercial</option><option value="CONFIRMED_RECORD">Registro confirmado</option></select></label><label>Referência da evidência<input required value={draft.commercialProofId} onChange={e=>update('commercialProofId',e.target.value)}/></label><label><input required type="checkbox" checked={draft.commercialProofConfirmed} onChange={e=>update('commercialProofConfirmed',e.target.checked)}/>Confirmei o registro comercial</label></>}
+     {draft.status==='lost'&&<label>Categoria da perda<select required value={draft.lossCategory} onChange={e=>update('lossCategory',e.target.value)}><option value="">Selecione</option>{[['PRICE','Preço'],['TIMING','Momento'],['COMPETITOR','Concorrente'],['TECHNICAL','Técnica'],['CREDIT','Crédito'],['RELATIONSHIP','Relacionamento'],['OTHER','Outra']].map(([value,label])=><option key={value} value={value}>{label}</option>)}</select></label>}
      {draft.status==='lost'&&<label className="opp-form-wide">Motivo da perda<textarea required maxLength={2000} value={draft.lossReason} onChange={e=>update('lossReason',e.target.value)}/></label>}
      <label className="opp-form-wide">Necessidade / contexto registrado<textarea maxLength={4000} value={draft.hypothesis} onChange={e=>update('hypothesis',e.target.value)}/></label>
      <label className="opp-form-wide">Próxima ação<input maxLength={2000} required={!!draft.nextActionAt} value={draft.nextAction} onChange={e=>update('nextAction',e.target.value)}/></label>

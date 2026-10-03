@@ -129,3 +129,8 @@ A interface existente consome os mesmos campos principais da VAL. Isso permite i
 8. O mesmo contexto, mensagem e relógio geram a mesma assinatura.
 9. Resposta genérica é substituída por orientação contextual.
 10. Feedback só altera pesos depois da amostra mínima.
+
+
+## Passo 10 — extensão governada
+
+A extensão de receita, ValuePlan vinculado, evidência de outcomes, impacto, coach e RBAC está documentada em `docs/REVENUE_COACH_IMPACT_v1.md`. Os contratos v1 e os motores existentes são preservados; não há score ou CRM paralelo.

@@ -81,7 +81,7 @@ test('repetir gravação não duplica; reutilizar chave com outro conteúdo é c
  assert.throws(()=>buildWorkspaceMutation(first,command({mutationId:'mutation-00000002',expectedUpdatedAt:'stale'}),{ownerId:'owner'}),e=>e.statusCode===409)
 })
 test('ganho não inventa entrega e mantém data do fechamento após atualização e retry',()=>{
- const input=command({stage:'Fechado',status:'won'})
+ const input=command({stage:'Fechado',status:'won',commercialEvidence:[{id:'SYNTHETIC-order',type:'ORDER',confirmed:true}]})
  const first=buildWorkspaceMutation(null,input,{ownerId:'owner',now:previewNow}).record
  assert.equal(first.workspaceDetails.closedAt,previewNow)
  assert.equal(first.delivered,undefined)

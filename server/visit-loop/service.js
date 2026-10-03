@@ -84,7 +84,7 @@ export function createVisitLoopService({repository,transcriptionProvider=createU
   async recordOutcome({tenantId,ownerId,actorId=ownerId,input={},requestId,now}={}){
    const visit=await repository.getVisit({tenantId,ownerId,id:text(input.visit_id??input.visitId,180)})
    if(!visit)throw Object.assign(new Error('Visita não encontrada na carteira autorizada.'),{code:'visit_not_found',statusCode:404})
-   const outcome=buildOutcome({organizationId:tenantId,visitId:visit.id,clientId:visit.clientId,visitReportId:input.visit_report_id,recommendationId:input.recommendation_id,actionPlanId:input.action_plan_id,commitmentId:input.commitment_id,outcomeType:input.outcome_type,result:input.result,evidenceRefs:input.evidence_refs,measuredAt:input.measured_at,recordedBy:actorId,confidence:input.confidence,notes:input.notes,now})
+   const outcome=buildOutcome({outcomeId:input.outcome_id,organizationId:tenantId,visitId:visit.id,clientId:visit.clientId,visitReportId:input.visit_report_id,recommendationId:input.recommendation_id,actionPlanId:input.action_plan_id,commitmentId:input.commitment_id,outcomeType:input.outcome_type,result:input.result,evidenceRefs:input.evidence_refs,measuredAt:input.measured_at,recordedBy:actorId,confidence:input.confidence,notes:input.notes,now})
    const saved=await repository.saveVisitOutcome({tenantId,ownerId,actorId,outcome,requestId})
    return {contract_version:'val.outcome.response.v1',outcome:saved}
   },

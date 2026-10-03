@@ -1,3 +1,4 @@
+import {outcomeEvidenceViolations} from '../revenue-policy.js'
 export const visitLifecycleVersion='val.visit_lifecycle.v1'
 export const visitReportVersion='val.visit_report.v1'
 export const visitTranscriptVersion='val.visit_transcript.v1'
@@ -86,6 +87,7 @@ export function validateOutcome(value){
  if(value.contract_version!==outcomeVersion||value.version!==outcomeVersion)violations.push('contract_version')
  for(const key of ['outcome_id','organization_id','visit_id','client_id','outcome_type','measured_at','recorded_by','created_at'])if(!text(value[key]))violations.push(key)
  if(!outcomeTypes.includes(value.outcome_type))violations.push('outcome_type')
+ violations.push(...outcomeEvidenceViolations(value))
  if(!object(value.result))violations.push('result')
  if(!Array.isArray(value.evidence_refs))violations.push('evidence_refs')
  if(!finite(value.confidence)||Number(value.confidence)<0||Number(value.confidence)>1)violations.push('confidence')

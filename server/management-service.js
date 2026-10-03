@@ -1,3 +1,5 @@
+import {summarizeRevenueProjections} from '../src/lib/commercial-intelligence.js'
+import {buildRevenueIntelligence} from './conversion-engine.js'
 import {realBusinessClient} from './business-metrics-scope.js'
 import {managementRoles} from './management-access.js'
 import {managementVisitStatus,recordedTravel,summarizeManagement} from '../src/lib/management-data.js'
@@ -200,5 +202,32 @@ export function createManagementService({db,tenantId}){
    return {configured:true,enabled:true,unit:{id:access.unit_id,name:access.unit_name},items,filters,scope:'CURRENT_UNIT',causality:'NOT_ESTABLISHED',actionSource:'SELF_REPORTED',valueLabel:'Valor registrado associado, não receita atribuída',portfolioAsOf:new Date().toISOString(),activityPeriod:{start:filters.start,end:filters.end}}
   })
  }
- return {units,createUnit,assignUnit,overview,decisions}
+ async function revenue(actor,input,settings){
+  check(actor);const filters=managementFilters(input)
+  return db.transaction(async connection=>{
+   await connection.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY')
+   const access=await authorize(connection,actor)
+   if(!access.unit_id)return {configured:false,enabled:false,reason:'UNIT_NOT_ASSIGNED',producers:[]}
+   if(!settings?.flags?.management_revenue_view_v1||!settings?.flags?.revenue_intelligence_v1)return {configured:true,enabled:false,producers:[]}
+   const team=(await connection.query("SELECT u.id,u.name FROM val_management_memberships m JOIN users u ON u.id=m.user_id WHERE m.tenant_id=$1 AND m.unit_id=$2 AND u.status='active' AND (u.expires_at IS NULL OR u.expires_at>now()) ORDER BY u.name",[tenantId,access.unit_id])).rows
+   if(filters.consultantId&&!team.some(member=>member.id===filters.consultantId))fail('Consultor não disponível na sua unidade.',403)
+   const owners=filters.consultantId?[filters.consultantId]:team.map(member=>member.id)
+   const rows=(await connection.query(`SELECT c.*,
+    COALESCE((SELECT jsonb_agg(o) FROM opportunities o WHERE o.tenant_id=c.tenant_id AND o.client_id=c.id),'[]') opportunities,
+    COALESCE((SELECT jsonb_agg(o) FROM val_outcomes o WHERE o.tenant_id=c.tenant_id AND o.client_id=c.id AND o.recorded_by=c.consultant_id AND o.measured_at>=($3::date::timestamp AT TIME ZONE 'America/Sao_Paulo') AND o.measured_at<(($4::date+1)::timestamp AT TIME ZONE 'America/Sao_Paulo')),'[]') outcomes,
+    COALESCE((SELECT jsonb_agg(k) FROM val_commitments k WHERE k.tenant_id=c.tenant_id AND k.client_id=c.id AND k.owner_id=c.consultant_id::text),'[]') commitments,
+    COALESCE((SELECT jsonb_agg(v) FROM visits v WHERE v.tenant_id=c.tenant_id AND v.client_id=c.id AND v.consultant_id=c.consultant_id AND COALESCE(v.occurred_at,v.scheduled_at)>=($3::date::timestamp AT TIME ZONE 'America/Sao_Paulo') AND COALESCE(v.occurred_at,v.scheduled_at)<(($4::date+1)::timestamp AT TIME ZONE 'America/Sao_Paulo')),'[]') visits
+    FROM clients c WHERE c.tenant_id=$1 AND c.consultant_id=ANY($2::uuid[]) AND c.status='active' AND ($5::text='' OR lower(c.municipality)=lower($5)) AND ${realClient} ORDER BY c.id LIMIT ${MAX_ROWS+1}`,[tenantId,owners,filters.start,filters.end,filters.municipality])).rows
+   if(rows.length>MAX_ROWS)fail('Mais de 5.000 produtores. Filtre por consultor ou município.',422)
+   const producers=rows.map(row=>({...buildRevenueIntelligence({client:{id:row.id,name:row.name,commercial:row.commercial_profile},canonicalClientId:row.id,opportunities:row.opportunities,outcomes:row.outcomes,commitments:row.commitments,visits:row.visits},{tenantId,ownerId:row.consultant_id}),municipality:row.municipality,crops:row.cultures,consultant:team.find(member=>member.id===row.consultant_id)?.name}))
+   const open=producers.flatMap(producer=>producer.opportunities.filter(opportunity=>opportunity.open)),commitments=rows.flatMap(row=>row.commitments)
+   const percent=(count,total)=>total?100*count/total:null
+   const loops=producers.flatMap(producer=>producer.visit_loops||[]),nextTimes=open.filter(opportunity=>opportunity.next_action_at&&opportunity.last_movement&&Date.parse(opportunity.next_action_at)>=Date.parse(opportunity.last_movement)).map(opportunity=>(Date.parse(opportunity.next_action_at)-Date.parse(opportunity.last_movement))/3600000)
+   const groupBy=key=>[...new Set(producers.map(producer=>producer[key]||'UNKNOWN'))].sort().map(value=>({key:value,...summarizeRevenueProjections(producers.filter(producer=>(producer[key]||'UNKNOWN')===value))}))
+   const groups={consultant:groupBy('owner'),municipality:groupBy('municipality'),crop:groupBy('crops'),category:[...new Set(open.map(opportunity=>opportunity.category||'UNKNOWN'))].sort().map(category=>{const items=open.filter(opportunity=>(opportunity.category||'UNKNOWN')===category);return {key:category,count:items.length,pipeline_value:items.some(item=>item.value===null)?null:items.reduce((sum,item)=>sum+item.value,0)}})}
+   const impacts=settings.flags.impact_engine_v1?(await connection.query(`SELECT i.payload FROM val_observed_impacts i JOIN clients c ON c.tenant_id=i.tenant_id AND c.id=i.client_id AND c.consultant_id=i.owner_id WHERE i.tenant_id=$1 AND i.owner_id=ANY($2::uuid[]) AND c.status='active' AND ${realClient} AND ($5::text='' OR lower(c.municipality)=lower($5)) AND (i.payload->>'measured_at')::timestamptz>=($3::date::timestamp AT TIME ZONE 'America/Sao_Paulo') AND (i.payload->>'measured_at')::timestamptz<(($4::date+1)::timestamp AT TIME ZONE 'America/Sao_Paulo')`,[tenantId,owners,filters.start,filters.end,filters.municipality])).rows.map(row=>row.payload):[]
+   return {configured:true,enabled:true,unit:{id:access.unit_id,name:access.unit_name},producers,coach_cards:[],impacts,groups,summary:summarizeRevenueProjections(producers),filters,portfolio_as_of:new Date().toISOString(),outcome_period:{start:filters.start,end:filters.end},behavior:{visits_with_closed_loop_percent:percent(loops.filter(loop=>loop.state==='OUTCOME_RECORDED').length,loops.length),mean_hours_until_planned_next_step:nextTimes.length?nextTimes.reduce((sum,hours)=>sum+hours,0)/nextTimes.length:null,opportunities_with_next_step_percent:percent(open.filter(opportunity=>opportunity.next_action).length,open.length),opportunities_with_value_plan_percent:percent(open.filter(opportunity=>opportunity.value_plan).length,open.length),commitments_with_deadline_percent:percent(commitments.filter(commitment=>commitment.due_at).length,commitments.length)},scope:'CURRENT_UNIT',ranking:false,causality:'CAUSAL_NOT_PROVEN'}
+  })
+ }
+ return {units,createUnit,assignUnit,overview,decisions,revenue}
 }

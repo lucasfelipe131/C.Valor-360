@@ -9,3 +9,8 @@ O outcome liga tenant, visita, produtor e, quando aplicável, report, recomenda�
 `measured_at`, `recorded_by` e confidence são obrigatórios. `NO_DECISION` não é tratado como `LOST`, e resultado técnico/relacional não depende de fechamento comercial.
 
 A API aditiva é `POST /api/v1/outcomes`; tenant e ator vêm da sessão, nunca do corpo do navegador.
+
+
+## Passo 10 — extensão governada
+
+A extensão de receita, ValuePlan vinculado, evidência de outcomes, impacto, coach e RBAC está documentada em `docs/REVENUE_COACH_IMPACT_v1.md`. Os contratos v1 e os motores existentes são preservados; não há score ou CRM paralelo.

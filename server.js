@@ -1,3 +1,5 @@
+import {revenueDecisionQuery,revenueDecisionResponse} from './server/decision-copilot/revenue-decision.js'
+import {RevenueService} from './server/revenue-service.js'
 import {prepareStep09StagingFixture} from './server/step09-staging-fixture.js'
 import {agronomicDecisionQuery,agronomicDecisionResponse} from './server/decision-copilot/agronomic-decision.js'
 import {AgroGeoService} from './server/agro-geo-service.js'
@@ -206,6 +208,7 @@ const managementService=createManagementService({db:database,tenantId:config.def
 const demoProducerEnvironment=String(process.env.VAL_DEMO_ENVIRONMENT||'').toLowerCase()
 const decisionService=new DecisionService({db:database,repository,tenantId:config.defaultTenantId,environment:demoProducerEnvironment,config})
 const agroGeoService=new AgroGeoService({decisionService})
+const revenueService=new RevenueService({decisionService})
 const demoProducerEnabled=['staging','test'].includes(demoProducerEnvironment)
 const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
 const openMarketFeed=createOpenMarketFeed()
@@ -371,7 +374,7 @@ async function handleApi(request,response,url){
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
  const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
- const protectedPath=url.pathname.startsWith('/api/agro-geo')||url.pathname.startsWith('/api/decisions')||url.pathname.startsWith('/api/integration-hub/')||url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans|credit(?:\/(?:context|link|unlink))?))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/revenue')||url.pathname.startsWith('/api/agro-geo')||url.pathname.startsWith('/api/decisions')||url.pathname.startsWith('/api/integration-hub/')||url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans|credit(?:\/(?:context|link|unlink))?))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const requestStartedAt=performance.now()
  let valRequestController=null
@@ -439,6 +442,16 @@ async function handleApi(request,response,url){
   }
   return json(response,404,{error:'Recurso do Hub não encontrado.'})
  }
+ const impactValidationRoute=/^\/api\/revenue\/impacts\/([0-9a-f-]{36})\/validation$/.exec(url.pathname)
+ if(impactValidationRoute&&request.method==='POST')return json(response,200,await revenueService.validateImpact(identity,impactValidationRoute[1],await body(request)))
+ const learningReviewRoute=/^\/api\/revenue\/learning\/([0-9a-f-]{36})\/review$/.exec(url.pathname)
+ if(learningReviewRoute&&request.method==='POST')return json(response,200,await revenueService.reviewLearning(identity,learningReviewRoute[1],await body(request)))
+ const revenuePlanRoute=/^\/api\/revenue\/opportunities\/([0-9a-f-]{36})\/value-plan$/.exec(url.pathname)
+ if(revenuePlanRoute&&request.method==='PUT')return json(response,200,await revenueService.valuePlan(identity,revenuePlanRoute[1],await body(request)))
+ const coachFeedbackRoute=/^\/api\/revenue\/coach\/([0-9a-f-]{36})\/feedback$/.exec(url.pathname)
+ if(coachFeedbackRoute&&request.method==='POST')return json(response,200,await revenueService.feedback(identity,coachFeedbackRoute[1],await body(request)))
+ if(url.pathname==='/api/revenue/impacts'&&request.method==='POST')return json(response,201,await revenueService.impact(identity,await body(request)))
+ if(url.pathname==='/api/revenue'&&request.method==='GET')return json(response,200,await revenueService.generate(identity,{clientId:url.searchParams.get('clientId')||null}))
  if(url.pathname==='/api/agro-geo'&&request.method==='GET')return json(response,200,await agroGeoService.generate(identity,{clientId:url.searchParams.get('clientId')||null}))
  if(url.pathname==='/api/agro-geo/reviews'&&request.method==='GET')return json(response,200,await agroGeoService.queue(identity))
  if(url.pathname==='/api/agro-geo/history'&&request.method==='GET')return json(response,200,await agroGeoService.history(identity,url.searchParams.get('clientId')))
@@ -458,6 +471,7 @@ async function handleApi(request,response,url){
   if(request.method==='POST'&&decisionMatch[2]==='feedback')return json(response,200,await decisionService.feedback(identity,decisionMatch[1],await body(request)))
   if(request.method==='POST'&&decisionMatch[2]==='review')return json(response,200,await decisionService.review(identity,decisionMatch[1],await body(request)))
  }
+ if(url.pathname==='/api/management/revenue'&&request.method==='GET')return json(response,200,await managementService.revenue(identity,Object.fromEntries(url.searchParams),await decisionService.settings()))
  if(url.pathname==='/api/management/decisions'&&request.method==='GET')return json(response,200,await managementService.decisions(identity,Object.fromEntries(url.searchParams),await decisionService.settings()))
  if(url.pathname==='/api/management/overview'&&request.method==='GET')return json(response,200,await managementService.overview(identity,Object.fromEntries(url.searchParams)))
  if(url.pathname==='/api/admin/management-units'&&request.method==='GET')return json(response,200,await managementService.units(identity))
@@ -910,6 +924,10 @@ async function handleApi(request,response,url){
    const completed=attachConversationState(payloadResult,sessionState,{reasoningState:turnOnlyClientOverride?requestConversationState:sessionState})
    const withResolution=conversationResolution?.status==='RESOLVED'?{...completed,conversationResolution}:completed
    return workspaceRoute.workspace_action?{...withResolution,workspaceAction:workspaceRoute.workspace_action,globalIntent:workspaceRoute}:withResolution
+  }
+  if(revenueDecisionQuery(message)&&!attachmentIds.length&&database.configured){
+   const result=await revenueService.generate(identity,{clientId:clientId||null})
+   return json(response,200,completeSession(revenueDecisionResponse(result,{message,tenantId,ownerId:scopedOwnerId,clientId:clientId||null,conversationId,contextEpoch:sessionState.context_epoch}),{intent:'REVENUE_INTELLIGENCE'}))
   }
   if(agronomicDecisionQuery(message)&&!attachmentIds.length&&database.configured){
    const result=await agroGeoService.generate(identity,{clientId:clientId||null})

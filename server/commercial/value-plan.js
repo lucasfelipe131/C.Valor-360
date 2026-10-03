@@ -1,3 +1,4 @@
+import {calculateEconomicCase} from '../revenue-policy.js'
 import {assertContract,valuePlanVersion,validateValuePlan} from './contracts.js'
 import {compactKnowledgeRefs,normalizeKnowledgeRetrieval} from './knowledge-support.js'
 
@@ -145,4 +146,11 @@ export function buildValuePlan(input={}){
   knowledge_human_review_required:knowledgeSupport.some(item=>item.requires_human_review),
   guardrails:{automatic_discount:false,max_priority_questions:3,no_pressure:true,technical_facts_unchanged:true,margin_and_producer_value:true}
  },validateValuePlan,'ValuePlan v1')
+}
+
+// Opportunity-linked v1 plan: absent facts remain explicit gaps for the consultant.
+export function opportunityValuePlan({organizationId,subjectId,opportunityId,input={}}){
+ const stage=input.commercial_stage||'EXPLORE'
+ if(!['EXPLORE','DIAGNOSE','BUILD_VALUE','PROPOSE','NEGOTIATE','COMMIT'].includes(stage))throw Object.assign(new Error('Estágio do ValuePlan inválido.'),{statusCode:422})
+ return assertContract({contract_version:valuePlanVersion,version:valuePlanVersion,organization_id:organizationId,subject_id:subjectId,opportunity_id:opportunityId,context_snapshot_id:input.context_snapshot_id||`opportunity:${opportunityId}`,commercial_stage:stage,questions:Array.isArray(input.questions)?input.questions.slice(0,3):[],problem_statement:String(input.problem_statement||''),implications:Array.isArray(input.implications)?input.implications:[],value_thesis:String(input.value_thesis||''),economic_inputs:input.economic_inputs||{},economic_case:calculateEconomicCase(input.economic_inputs||{}),proof_strategy:Array.isArray(input.proof_strategy)?input.proof_strategy:[],expected_objections:Array.isArray(input.expected_objections)?input.expected_objections:[],objection_guidance:input.objection_guidance||[],commitment_target:String(input.commitment_target||''),cross_sell_candidates:[],follow_up:String(input.follow_up||''),value_hypothesis:Object.fromEntries(['baseline','act_now','wait','maintain','impact_to_quantify','value_metric','time_horizon','proof_plan','uncertainty'].map(key=>[key,input.value_hypothesis?.[key]??null])),status:input.problem_statement&&input.value_thesis&&input.commitment_target&&input.follow_up&&input.proof_strategy?.length?'RECORDED':'INCOMPLETE'},validateValuePlan,'Opportunity ValuePlan v1')
 }
