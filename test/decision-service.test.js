@@ -198,6 +198,24 @@ if(process.env.VAL_DECISION_TEST_DATABASE_URL)test('NBA real HTTP authenticated 
  }finally{child.kill('SIGTERM');await new Promise(resolve=>{child.once('exit',resolve);setTimeout(resolve,3000).unref()})}
 })
 
+test('Agro canonical database reads retain evidence for 100 properties and 500 fields',async()=>{
+ const {buildAgronomicTerritory}=await import('../server/agronomic-geometry-bridge.js')
+ const client=await producer(actor,{opportunity:false}),properties=Array.from({length:100},()=>randomUUID())
+ const fields=properties.flatMap(propertyId=>Array.from({length:5},()=>({id:randomUUID(),property_id:propertyId})))
+ await db.query("INSERT INTO properties(id,tenant_id,client_id,name) SELECT p,$1,$2,'SYNTHETIC scale property' FROM unnest($3::uuid[]) p",[tenantId,client.id,properties])
+ await db.query("INSERT INTO fields(id,tenant_id,property_id,name) SELECT f.id,$1,f.property_id,'SYNTHETIC scale field' FROM jsonb_to_recordset($2::jsonb) AS f(id uuid,property_id uuid)",[tenantId,JSON.stringify(fields)])
+ await db.query("INSERT INTO field_reports(id,tenant_id,owner_user_id,client_id,property_id,field_id,source,external_id,observed_at,summary) SELECT f.id,$1,$2,$3,f.property_id,f.id,'synthetic-scale',f.id::text,$5::timestamptz,'SYNTHETIC observation requiring review' FROM jsonb_to_recordset($4::jsonb) AS f(id uuid,property_id uuid)",[tenantId,actor.id,client.id,JSON.stringify(fields),recent])
+ await db.query("INSERT INTO soil_analyses(id,tenant_id,client_id,property_id,field_id,source,external_id,sampled_at) SELECT f.id,$1,$2,f.property_id,f.id,'synthetic-scale',f.id::text,$4::date FROM jsonb_to_recordset($3::jsonb) AS f(id uuid,property_id uuid)",[tenantId,client.id,JSON.stringify(fields),recent.slice(0,10)])
+ const [context]=await repository.getDecisionContexts(actor.id,client.key,db,now)
+ assert.equal(context.properties.length,100)
+ assert.equal(context.fieldReports.length,500)
+ assert.equal(context.soilAnalyses.length,500)
+ const territory=buildAgronomicTerritory(context,{now,tenantId,ownerId:actor.id})
+ assert.equal(territory.cards.length,1000)
+ assert.equal(new Set(territory.cards.map(card=>card.field.id)).size,500)
+ await assert.rejects(repository.getDecisionContexts(other.id,client.key,db,now),{statusCode:404})
+})
+
 test('Agro territorial persistence, isolation, audit, link history and logical rollback',async()=>{
  const {AgroGeoService}=await import('../server/agro-geo-service.js')
  const agro=new AgroGeoService({decisionService:service}),client=await producer(),foreignClient=await producer(other)

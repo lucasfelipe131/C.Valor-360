@@ -4,6 +4,8 @@ Base: `e22258347987cd2e9a2fb8df71dbdc055d923476`, branch do Passo 08. PR empilha
 
 A projeção territorial evolui `server/agronomic-geometry-bridge.js`, sobre propriedades, talhões, safras, observações, relatórios, análises e measurement sets canônicos. `getDecisionContexts` consulta essas entidades por tenant e carteira atual. A identidade canônica permanece explícita mesmo quando o ContextSnapshot usa a chave pública do produtor.
 
+Relatórios de campo e análises de solo são lidos sem corte global por produtor: um talhão não perde sua evidência porque outros talhões receberam mais de vinte registros recentes. O teste de banco constrói 100 propriedades e 500 talhões, confirma 500 relatórios e 500 análises e exige cobertura dos 500 talhões na projeção de sinais.
+
 `AgroGeoService` usa a autorização e as configurações do DecisionService. Persistência aditiva: versões de cards, revisões territoriais, histórico imutável de geometria/vínculo e validações humanas vinculadas ao fingerprint da evidência. O mapa do consultor e a projeção do Manual submetem contornos à mesma plausibilidade antes de substituir o valor canônico. Propostas incompatíveis ficam em revisão. O histórico conserva o registro anterior, origem, autor quando autenticado, data e motivo.
 
 Os cards exibem propriedade, talhão, safra, fonte, estado epistemológico, freshness, informação ausente e próximo passo. Índice de vegetação é observação, nunca diagnóstico causal. Solo sem unidade não permite comparação. Praga sem amostragem não estabelece nível de dano. Daninha sem identificação suficiente demanda coleta. Não há prescrição, dose, produto, mistura, aplicação ou agendamento automáticos.
