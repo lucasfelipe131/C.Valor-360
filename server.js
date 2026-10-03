@@ -24,6 +24,8 @@ import {AccessRepository} from './server/access-repository.js'
 import {deriveSignals,normalizeIntegrationEvent,requiresTechnicalSignature,verifyIntegrationToken,verifyWebhookSignature} from './server/ingestion.js'
 import {normalizeGrainIntent,normalizeGrainMarketSnapshot,normalizeGrainProfile,intentStatuses} from './server/grain-intelligence.js'
 import {GrainRepository} from './server/grain-repository.js'
+import {createOpenMarketFeed,withOpenMarketReferences} from './server/open-market-feed.js'
+import {createValCreditService,creditPresentation} from './server/val-credit-service.js'
 import {readGrainBalance,appendGrainMovement} from './server/grain-balance.js'
 import {readProducerWorkspace} from './server/producer-workspace.js'
 import {ValRepository} from './server/repository.js'
@@ -206,6 +208,14 @@ const decisionService=new DecisionService({db:database,repository,tenantId:confi
 const agroGeoService=new AgroGeoService({decisionService})
 const demoProducerEnabled=['staging','test'].includes(demoProducerEnvironment)
 const grainRepository=new GrainRepository({db:database,readStore,saveStore,tenantId:config.defaultTenantId})
+const openMarketFeed=createOpenMarketFeed()
+const valCredit=createValCreditService()
+const marketScope=ownerId=>({tenantId:config.defaultTenantId,ownerId})
+const readCurrentMarket=async ownerId=>withOpenMarketReferences(await grainRepository.getMarketReferences(ownerId),openMarketFeed,marketScope(ownerId))
+const readCurrentGrainWorkspace=async ownerId=>{
+ const workspace=await withOpenMarketReferences(await grainRepository.getWorkspace(ownerId),openMarketFeed,marketScope(ownerId))
+ return {...grainRepository.assemble(workspace),openMarket:workspace.openMarket}
+}
 const accessRepository=new AccessRepository({db:database,tenantId:config.defaultTenantId,runtimeConfig:config})
 const valEngine=new ValEngine({runtimeConfig:config,repository})
 const valCore=new ValCore({engine:valEngine,tenantId:config.defaultTenantId})
@@ -361,7 +371,7 @@ async function handleApi(request,response,url){
  }
  const storageScope=publicStorageScope(url.pathname,request.method)
  const valRecommendationPath=url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'
- const protectedPath=url.pathname.startsWith('/api/agro-geo')||url.pathname.startsWith('/api/decisions')||url.pathname.startsWith('/api/integration-hub/')||url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans|credit))?$/.test(url.pathname)
+ const protectedPath=url.pathname.startsWith('/api/agro-geo')||url.pathname.startsWith('/api/decisions')||url.pathname.startsWith('/api/integration-hub/')||url.pathname.startsWith('/api/management/')||url.pathname.startsWith('/api/geo/')||url.pathname.startsWith('/api/visit-routes/')||url.pathname==='/api/demo/producer'||url.pathname.startsWith('/api/grains/')||url.pathname.startsWith('/api/val/attachments')||url.pathname.startsWith('/api/v1/voice-interactions')||url.pathname.startsWith('/api/v1/realtime-voice')||url.pathname.startsWith('/api/v1/visits/')||url.pathname.startsWith('/api/v1/commitments')||url.pathname==='/api/v1/outcomes'||url.pathname==='/api/v1/action-plans'||url.pathname==='/api/v1/insights'||url.pathname==='/api/val/progress'||url.pathname==='/api/val/voice/transcribe'||url.pathname==='/api/val/latency-metrics'||url.pathname==='/api/val/chat'||url.pathname==='/api/val/recommendations'||url.pathname==='/api/v1/val/recommendations'||url.pathname==='/api/val/feedback'||url.pathname==='/api/intelligence'||url.pathname==='/api/intelligence/imports'||url.pathname==='/api/import/google-sheet'||url.pathname==='/api/technical/bootstrap'||url.pathname==='/api/visits'||url.pathname==='/api/opportunities'||url.pathname==='/api/surveys'||url.pathname==='/api/surveys/invitations'||url.pathname.startsWith('/api/clients/from-survey')||url.pathname==='/api/usage/events'||url.pathname.startsWith('/api/admin/')||url.pathname.startsWith('/api/portfolio-admin/')||/\/integrate$/.test(url.pathname)||/^\/api\/clients\/[^/]+(?:\/(?:context|conversion-studio|overview|property|workspace|season-plans|credit(?:\/(?:context|link|unlink))?))?$/.test(url.pathname)
  if(protectedPath&&!auth.configured&&!config.demoMode)return json(response,503,{error:'A autenticação do servidor ainda não foi configurada.'})
  const requestStartedAt=performance.now()
  let valRequestController=null
@@ -398,6 +408,21 @@ async function handleApi(request,response,url){
  if(storageScope==='public-survey'&&!config.demoMode){const databaseHealth=await database.health();if(!databaseHealth.ready)return json(response,503,{error:'O PostgreSQL precisa estar disponível para acessar questionários fora do modo demonstrativo.'})}
  if(valRecommendationPath&&config.openaiApiKey&&!auth.configured)return json(response,503,{error:'Configure VAL_ADMIN_EMAIL, VAL_ADMIN_PASSWORD e VAL_SESSION_SECRET antes de ativar a IA em produção.'})
  if(valRecommendationPath&&config.openaiApiKey&&!database.configured)return json(response,503,{error:'Configure DATABASE_URL antes de ativar a IA com dados reais.'})
+ const creditBridgeMatch=url.pathname.match(/^\/api\/clients\/([^/]+)\/credit\/(context|link|unlink)$/)
+ if(creditBridgeMatch){
+  const operation=creditBridgeMatch[2]||'context'
+  if((operation==='context'&&request.method!=='GET')||(operation!=='context'&&request.method!=='POST'))return json(response,405,{error:'Operação não disponível.'})
+  if(!identity?.id)return json(response,401,{error:'Entre com sua conta para consultar crédito.'})
+  if(operation!=='context'&&identity.role!=='admin')return json(response,403,{error:'O vínculo precisa ser verificado por um administrador.'})
+  if(operation!=='context'&&request.headers.origin&&new URL(request.headers.origin).host!==request.headers.host)return json(response,403,{error:'Origem da alteração não autorizada.'})
+  const facts=await repository.getFastClientFacts({tenantId:identity.tenantId||config.defaultTenantId,ownerId:identity.id,clientId:decodeURIComponent(creditBridgeMatch[1]),dataPath:'REGISTERED_AREA',timeoutMs:config.databaseQueryTimeoutMs})
+  const scope={tenantId:identity.tenantId||config.defaultTenantId,ownerId:identity.id,clientId:String(facts.client.id)}
+  if(operation==='context')return json(response,200,{...await valCredit.read(scope),applicationUrl:valCredit.applicationUrl,canLink:identity.role==='admin'})
+  if(!valCredit.configured)return json(response,503,{error:'A integração de crédito ainda não foi configurada.'})
+  const result=operation==='link'?await valCredit.link(scope,await body(request)):await valCredit.unlink(scope)
+  await accessRepository.recordUsage(identity,{eventType:'page_view',page:'credit',entityType:'client',entityId:scope.clientId,metadata:{action:operation}})
+  return json(response,200,result)
+ }
  const municipalityMatch=url.pathname.match(/^\/api\/geo\/municipalities\/(\d{7})\/boundary$/)
  if(municipalityMatch&&request.method==='GET')return json(response,200,await readMunicipalityBoundary(municipalityMatch[1]))
  if(url.pathname.startsWith('/api/integration-hub/')){
@@ -532,7 +557,7 @@ async function handleApi(request,response,url){
   }
  }
  if(url.pathname==='/api/grains/bootstrap'&&request.method==='GET'){
-  const workspace=await grainRepository.getWorkspace(identity?.id||identity?.email)
+  const workspace=await readCurrentGrainWorkspace(identity?.id||identity?.email)
   return json(response,200,workspace)
  }
  if(url.pathname==='/api/grains/balance'&&request.method==='GET'){
@@ -921,7 +946,7 @@ async function handleApi(request,response,url){
    if(activeContext)validateActiveContext({activeContext,context:{},clientId:''})
    if(capability.current_data_required&&capability.capabilities.some(item=>['WEATHER','LABELS'].includes(item)))return json(response,422,{error:'A fonte atual autorizada não está conectada neste ambiente. A VAL não usará memória ou conteúdo antigo como dado atual.',code:'val_current_source_unavailable',intent:routedIntent.intent,reasoningPath:capability.path,capabilitiesPlanned:capability.capabilities})
    if(capability.capabilities.includes('MARKET_COMMODITY')){
-    const startedAt=Date.now();latency.start('TOOL');const workspace=await withOperationTimeout(()=>grainRepository.getMarketReferences(scopedOwnerId),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
+    const startedAt=Date.now();latency.start('TOOL');const workspace=await withOperationTimeout(()=>readCurrentMarket(scopedOwnerId),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
     const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:sessionState.current_domain||classifyValContextDomain(message,routedIntent.intent),latencyMs:Date.now()-startedAt,executionCounts:{entityResolutions:entityLookupCount,dataLookups:1,toolCalls:1,hops:entityLookupCount+1}})
     const final=complete(fast)
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'portfolio',entityId:null,metadata:{mode:capability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:capability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
@@ -973,6 +998,14 @@ async function handleApi(request,response,url){
    latency.end('CONTEXT');return authorizedContext
   }
   const completeClient=(payloadResult,execution=toolExecution)=>{latency.firstUseful();const values=latency.finish({record:false});const enriched=attachLatencyPerformance(payloadResult,{latency:values,path:clientCapability.path,intent:routedIntent.intent,toolExecution:execution});const measuredLatency=enriched?.responseMetadata?.performance?.latency||values;valLatencyMetrics.record({path:clientCapability.path,intent:routedIntent.intent,latency:measuredLatency});observe('val.answer.completed',{mode:clientCapability.path.toLowerCase(),engineMode:payloadResult?.engineMode||'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,capability:execution?.tool_result?.capability||clientCapability.capabilities[0],capabilityStatus:execution?.tool_result?.status,materialityScore:clientCapability.materiality.score,engineRequired:clientCapability.materiality.engine_required,ttfrMs:measuredLatency.TTFR,outcome:'ok'});const responseClient=authorizedContext?.client||enriched?.advice?.ai_reasoning?.client||{id:clientId};return completeSession(enriched,{client:{id:clientId,name:responseClient?.name||responseClient?.label},active:activeContextRef})}
+  if(!attachmentIds.length&&classifyValContextDomain(message,routedIntent.intent)==='CREDIT'&&!isGeneralConceptRequest(message)){
+   const startedAt=Date.now()
+   const facts=await repository.getFastClientFacts({tenantId,ownerId:scopedOwnerId,clientId,dataPath:'REGISTERED_AREA',timeoutMs:config.databaseQueryTimeoutMs})
+   const scope={tenantId,ownerId:scopedOwnerId,clientId:String(facts.client.id)}
+   const credit=await valCredit.read(scope).catch(()=>({status:'UNAVAILABLE',requests:[]}))
+   const fast=buildFastClientResponse({facts,presentationOverride:creditPresentation(credit,scope),message,organizationId:tenantId,ownerId:scopedOwnerId,conversationId,contextEpoch:sessionState.context_epoch,contextDomain:'CREDIT',latencyMs:Date.now()-startedAt,executionCounts:{entityResolutions:entityLookupCount,dataLookups:2,toolCalls:1,hops:entityLookupCount+2}})
+   return json(response,200,completeClient(fast,null))
+  }
   // Pergunta conceitual ou cumprimento com produtor selecionado: responde pelo mesmo caminho geral
   // de quem nao tem produtor (Biblioteca governada, definicoes fixas, IA nao verificada com
   // orcamento), sem ler contexto privado nem acionar a engine, e mantem o produtor ativo na sessao.
@@ -1068,7 +1101,7 @@ async function handleApi(request,response,url){
   if(clientCapability.capabilities.includes('MARKET_COMMODITY')){
    const startedAt=Date.now()
    if(!attachmentIds.length&&['FAST','LIVE_DATA'].includes(clientCapability.path)&&clientCapability.direct){
-    latency.start('TOOL');const workspace=await withOperationTimeout(()=>grainRepository.getMarketReferences(scopedOwnerId),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
+    latency.start('TOOL');const workspace=await withOperationTimeout(()=>readCurrentMarket(scopedOwnerId),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_timeout',message:'A consulta de mercado excedeu o tempo seguro.',signal:requestController.signal});latency.end('TOOL')
     const fast=buildFastMarketResponse({workspace,message,intentHint:routedIntent.intent,organizationId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,clientName:requestConversationState.current_client?.name||payload.client?.name||'',conversationId,contextEpoch:requestConversationState.context_epoch,contextDomain:requestConversationState.current_domain||classifyValContextDomain(message,routedIntent.intent),latencyMs:Date.now()-startedAt,executionCounts:{entityResolutions:entityLookupCount,dataLookups:1,toolCalls:1,hops:entityLookupCount+1}})
     await accessRepository.recordUsage(identity,{eventType:'val_analysis',page:'val',entityType:'client',entityId:clientId,metadata:{mode:clientCapability.path.toLowerCase(),engineMode:'rules',intent:routedIntent.intent,reasoningPath:clientCapability.path,currentDataStatus:fast.responseMetadata.currentDataStatus}})
     return json(response,200,completeClient(fast,null))
@@ -1076,7 +1109,7 @@ async function handleApi(request,response,url){
    latency.start('DATABASE')
    const [context,workspace,facts]=await withOperationTimeout(()=>Promise.all([
     loadAuthorizedContext(),
-    grainRepository.getWorkspace(scopedOwnerId),
+    readCurrentGrainWorkspace(scopedOwnerId),
     repository.getFastClientFacts({tenantId:identity?.tenantId||config.defaultTenantId,ownerId:identity?.id||identity?.email,clientId,timeoutMs:config.databaseQueryTimeoutMs})
    ]),{timeoutMs:config.toolRequestTimeoutMs,code:'val_market_context_timeout',message:'A composição de mercado excedeu o tempo seguro.',signal:requestController.signal})
    latency.end('DATABASE')

@@ -230,7 +230,7 @@ export default function SatelliteMap({
    const shapeElement=shape.getElement?.()
    if(shapeElement&&polygon.kind){shapeElement.setAttribute('data-polygon-id',polygon.id);shapeElement.setAttribute('aria-label',polygon.label||polygon.id);shapeElement.setAttribute('role','button');shapeElement.setAttribute('tabindex','0');shapeElement.setAttribute('aria-pressed',String(Boolean(polygon.selected)));shapeElement.addEventListener('keydown',event=>{if(event.key==='Enter'||event.key===' '){event.preventDefault();polygon.onClick?.()}})}
    if(polygon.onClick)shape.on('click',polygon.onClick)
-   if(polygon.label)shape.bindTooltip(escapeHtml(polygon.label),{permanent:polygon.kind!=='property',direction:'center',className:'val-map-label'})
+   if(polygon.label)shape.bindTooltip(escapeHtml(polygon.label),{permanent:polygon.labelPermanent??Boolean(polygon.selected),direction:'center',className:'val-map-label'})
   }
   const routeLayers=[...(route.length?[{points:route,kind:'planned',color:'#00c896'}]:[]),...routes]
   for(const line of routeLayers){

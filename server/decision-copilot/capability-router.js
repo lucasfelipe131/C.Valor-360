@@ -104,6 +104,7 @@ function canonicalEvidence({id,sourceType,statement,observedAt=null,validUntil=n
 }
 
 function scopedMarketEvidence(market={}){
+ if(market.readings)return market.readings.flatMap(scopedMarketEvidence)
  if(!market.source?.id)return []
  return [canonicalEvidence({
   id:market.source.id,sourceType:'market_snapshot',statement:market.answer,observedAt:market.source.observed_at,epistemicType:'FACT',scope:market.source,global:true,
@@ -429,8 +430,8 @@ function freshness(observedAt,now){
  return {state:'STALE',hours:Number(hours.toFixed(1)),label:'histórica e precisa ser atualizada'}
 }
 
-function money(value){
- return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL',minimumFractionDigits:2,maximumFractionDigits:2}).format(Number(value||0))
+function money(value,unit='BRL/sc_60kg'){
+ return new Intl.NumberFormat('pt-BR',{style:'currency',currency:unit.startsWith('USD/')?'USD':'BRL',minimumFractionDigits:2,maximumFractionDigits:4}).format(Number(value||0))
 }
 
 function normalizedConfidence(value,fallback=.5){
@@ -448,7 +449,7 @@ function marketSelection(workspace,message,now){
  const requestedRange=dateRangeFrom(message,requestedSeason)
  const temporalSelectionRequired=Boolean(requestedRange&&(requestedMarketKind==='forward'||requestedMarketKind==='futures'||/\b(?:entrega|janela|vencimento)\b/.test(normalize(message))))
  const candidates=list(workspace?.marketSnapshots)
-  .filter(item=>item?.status!=='inactive'&&(!commodity||item?.commodity===commodity))
+  .filter(item=>item?.status!=='inactive'&&!item?.isSynthetic&&(!commodity||item?.commodity===commodity))
   .filter(item=>!requestedMarketKind||normalize(item?.marketKind??item?.market_kind)===requestedMarketKind)
   .filter(item=>!requestedPriceUnit||clean(item?.priceUnit??item?.price_unit,40)===requestedPriceUnit)
   .filter(item=>sameRegion(item?.region,requestedRegion))
@@ -466,14 +467,21 @@ function marketSelection(workspace,message,now){
  const undatedCandidates=candidates.filter(item=>item?.sourceName&&Number.isFinite(Number(item?.price))&&(!item?.observedAt||Number.isNaN(new Date(item.observedAt).getTime()))).length
  const snapshots=candidates
   .filter(item=>item?.sourceName&&item?.observedAt&&Number.isFinite(Number(item?.price))&&freshness(item.observedAt,now).state!=='INVALID')
-  .sort((left,right)=>new Date(right.observedAt)-new Date(left.observedAt))
+  .sort((left,right)=>Number(freshness(left.observedAt,now).state==='STALE')-Number(freshness(right.observedAt,now).state==='STALE')||Number(right.sourceOrigin==='VAL_SOG')-Number(left.sourceOrigin==='VAL_SOG')||new Date(right.observedAt)-new Date(left.observedAt))
  const latest=snapshots[0]||null
  const previous=latest?snapshots.find(item=>item.id!==latest.id&&item.commodity===latest.commodity&&item.priceUnit===latest.priceUnit&&item.region===latest.region&&item.marketKind===latest.marketKind&&dateOnly(item.deliveryStart??item.delivery_start)===dateOnly(latest.deliveryStart??latest.delivery_start)&&dateOnly(item.deliveryEnd??item.delivery_end)===dateOnly(latest.deliveryEnd??latest.delivery_end))||null:null
  return {commodity,requestedMarketKind,requestedSeason,requestedPriceUnit,requestedRegion,requestedRange,latest,previous,undatedCandidates,freshness:latest?freshness(latest.observedAt,now):null}
 }
 
-export function answerCurrentMarket({workspace={},message='',intentHint='',now=new Date()}={}){
+export function answerCurrentMarket({workspace={},message='',intentHint='',now=new Date(),overview=true}={}){
  const route=routeSystemCapability({message,intentHint,hasClient:false})
+ if(overview&&!commodityFrom(message)&&!regionFrom(message,workspace.marketSnapshots)&&!canonicalSeason(message)){
+  const readings=['soja','milho','trigo'].map(commodity=>answerCurrentMarket({workspace,message:`${message} ${commodity}`,intentHint,now,overview:false})).filter(item=>item.source)
+  if(readings.length>1){
+   const first=readings[0],allCurrent=readings.every(item=>item.status==='CURRENT')
+   return {...first,status:allCurrent?'CURRENT':readings.some(item=>item.status==='STALE')?'STALE':'DATED',answer:readings.map(item=>item.answer).join('\n\n'),facts:readings.flatMap(item=>item.facts),sources:readings.map(item=>item.source),readings,action:'Compare as referências com a praça, o frete, a unidade e o preço-alvo na SOG. Médias estaduais complementam a SOG e não representam uma oferta na praça do produtor.'}
+  }
+ }
  const selected=marketSelection(workspace,message,now)
  const requestedLabel=commodityLabels[selected.commodity]||'a commodity solicitada'
  if(!selected.latest){
@@ -504,7 +512,7 @@ export function answerCurrentMarket({workspace={},message='',intentHint='',now=n
  const label=commodityLabels[quote.commodity]||quote.commodity
  const kind=clean(quote.marketKind??quote.market_kind,80)
  const kindLabel=marketKindLabels[kind]||kind||'não informado'
- const dateText=new Date(quote.observedAt).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})
+ const dateText=quote.timePrecision==='DAY'?`${String(quote.observedDate||quote.observedAt.slice(0,10)).split('-').reverse().join('/')} (boletim diário, sem horário intradiário)` :new Date(quote.observedAt).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})
  const deliveryStart=dateOnly(quote.deliveryStart??quote.delivery_start)
  const deliveryEnd=dateOnly(quote.deliveryEnd??quote.delivery_end)
  const deliveryText=deliveryStart||deliveryEnd?` Janela de entrega: ${deliveryStart||deliveryEnd}${deliveryEnd&&deliveryEnd!==deliveryStart?` a ${deliveryEnd}`:''}.`:''
@@ -525,18 +533,18 @@ export function answerCurrentMarket({workspace={},message='',intentHint='',now=n
  // "Ela é ..." fazia o guardiao de evidencia global ler uma afirmacao sobre um individuo (o texto
  // desta resposta e tambem o statement da evidencia) e derrubar a conversa com HTTP 400 sempre que
  // a cotacao passava de 24h. A ressalva continua a mesma para o consultor, sem o pronome solto.
- const warning=selected.freshness.state==='CURRENT'?'':` Esta referência é ${selected.freshness.label}; confirme uma atualização antes de tratá-la como preço de hoje.`
+ const warning=(selected.freshness.state==='CURRENT'?'':` Esta referência é ${selected.freshness.label}; confirme uma atualização antes de tratá-la como preço de hoje.`)+(quote.sourceOrigin==='BRAZIL_PUBLIC'?' Média estadual brasileira de compra no atacado; confirme a oferta, o frete e a qualidade na praça da SOG.':'')+(quote.priceUnit==='USD/bu'?' Referência dos EUA em dólares por bushel; não equivale a uma cotação local em reais por saca.':'')
  return {
   route,
   status:selected.freshness.state,
-  answer:`${currentPrefix} é de ${label}: ${money(quote.price)} ${clean(quote.priceUnit,40)} em ${clean(quote.region,120)}. Tipo de mercado: ${kindLabel}.${deliveryText} Fonte ${clean(quote.sourceName,180)}, observada em ${dateText}.${movement}${warning}`,
+  answer:`${quote.sourceOrigin==='VAL_SOG'?'Referência registrada na VAL SOG. ':quote.sourceOrigin==='BRAZIL_PUBLIC'?'Complemento brasileiro da VAL SOG. ':''}${currentPrefix} é de ${label}: ${money(quote.price,quote.priceUnit)} ${clean(quote.priceUnit,40)} em ${clean(quote.region,120)}. Tipo de mercado: ${kindLabel}.${deliveryText} Fonte ${clean(quote.sourceName,180)}, observada em ${dateText}.${movement}${warning}`,
   action:selected.freshness.state==='CURRENT'?'Cruze esta referência com praça, frete, janela e preço-alvo do produtor antes de avançar.':'Atualize a cotação na área Mercado antes de orientar uma negociação.',
   // Cotacao fora da janela DATED so pode chegar ao consultor como historico declarado. Sem esta marca
   // o contrato de evidencia recusava por idade e o turno morria em 400 - o consultor pedia o preco e
   // nao recebia nada, em vez de receber a referencia antiga com a ressalva, como manda
   // VAL_MARKET_COMMODITY_ACCESS_v1 §Atualidade.
-  facts:[{id:clean(quote.id,180),source_type:'market_snapshot',scope:quoteScope.scope,producer_id:null,tenant_id:quoteScope.tenantId,context_owner_id:quoteScope.ownerId,...(selected.freshness.state==='CURRENT'?{}:{presented_as:'HISTORICAL_REFERENCE'}),statement:`${label}: ${money(quote.price)} ${clean(quote.priceUnit,40)} em ${clean(quote.region,120)}; tipo ${kindLabel}${deliveryStart||deliveryEnd?`; entrega ${deliveryStart||deliveryEnd}${deliveryEnd&&deliveryEnd!==deliveryStart?` a ${deliveryEnd}`:''}`:''}; fonte ${clean(quote.sourceName,180)}, observada em ${dateText}.`,observed_at:quote.observedAt,confidence:calibratedScore}],
-  source:{id:clean(quote.id,180),name:clean(quote.sourceName,180),url:clean(quote.sourceUrl,1000)||null,observed_at:quote.observedAt,commodity:clean(quote.commodity,80),price_unit:clean(quote.priceUnit,40),market_kind:kind,market_kind_label:kindLabel,region:clean(quote.region,120),delivery_start:deliveryStart||null,delivery_end:deliveryEnd||null,requested_season:selected.requestedSeason||null,requested_region:selected.requestedRegion||null,requested_price_unit:selected.requestedPriceUnit||null,freshness:selected.freshness,scope:quoteScope.scope,producer_id:null,tenant_id:quoteScope.tenantId,context_owner_id:quoteScope.ownerId},
+  facts:[{id:clean(quote.id,180),source_type:'market_snapshot',scope:quoteScope.scope,producer_id:null,tenant_id:quoteScope.tenantId,context_owner_id:quoteScope.ownerId,...(selected.freshness.state==='CURRENT'?{}:{presented_as:'HISTORICAL_REFERENCE'}),statement:`${label}: ${money(quote.price,quote.priceUnit)} ${clean(quote.priceUnit,40)} em ${clean(quote.region,120)}; tipo ${kindLabel}${deliveryStart||deliveryEnd?`; entrega ${deliveryStart||deliveryEnd}${deliveryEnd&&deliveryEnd!==deliveryStart?` a ${deliveryEnd}`:''}`:''}; fonte ${clean(quote.sourceName,180)}, observada em ${dateText}.`,observed_at:quote.observedAt,confidence:calibratedScore}],
+  source:{id:clean(quote.id,180),name:clean(quote.sourceName,180),url:clean(quote.sourceUrl,1000)||null,observed_at:quote.observedAt,observed_date:quote.observedDate||null,time_precision:quote.timePrecision||null,commodity:clean(quote.commodity,80),price_unit:clean(quote.priceUnit,40),market_kind:kind,market_kind_label:kindLabel,region:clean(quote.region,120),delivery_start:deliveryStart||null,delivery_end:deliveryEnd||null,requested_season:selected.requestedSeason||null,requested_region:selected.requestedRegion||null,requested_price_unit:selected.requestedPriceUnit||null,freshness:selected.freshness,scope:quoteScope.scope,producer_id:null,tenant_id:quoteScope.tenantId,context_owner_id:quoteScope.ownerId},
   confidence:{level:confidenceLevel,score:calibratedScore,rationale:`Confiança calibrada pela declaração da fonte, proveniência disponível e atualidade classificada como ${selected.freshness.label}; recência isolada não equivale a verificação.`}
  }
 }
@@ -565,7 +573,7 @@ export function buildFastMarketResponse({workspace={},message='',intentHint='',o
   decision_thesis:{CURRENT_SITUATION:market.answer,WHAT_MATTERS:'Atualidade, praça, unidade e fonte precisam acompanhar qualquer número de mercado.',KEY_UNCERTAINTY:market.status==='CURRENT'?'O efeito específico sobre a conta ainda depende da janela e do preço-alvo do produtor.':'A referência ainda representa o mercado atual?',THESIS:market.action,WHY:market.confidence.rationale,WHAT_TO_VALIDATE:'Praça, frete, janela, preço-alvo e horário da referência.',WHAT_WOULD_CHANGE_MY_VIEW:'Uma referência autorizada mais recente ou de praça mais aderente.'},
   golden_questions:[],recommended_strategy:{reading:market.answer,action:market.action,do_not_do:'Não apresentar cotação sem fonte e data como preço atual.'},evidence_to_use:marketFacts,agronomic_context:{status:'not_applicable',human_review_required:false,sources:{},safety_note:'Nenhuma recomendação agronômica foi produzida.'},commercial_context:{status:'current_market_reference'},next_commitment:market.action,risks:market.status==='CURRENT'?[]:['Referência não classificada como atual.'],confidence:market.confidence,reasoning_confidence:{context:market.confidence.score,thesis:market.confidence.score,question:.8,agronomy:null,knowledge:.9},knowledge_refs:market.source?[{id:market.source.id,title:market.source.name,source_refs:[market.source.url||market.source.id],status:market.status,requires_human_review:false}]:[],memory_refs:[],created_at:createdAt,model:'rules-market-v1',prompt_version:'val-decision-copilot-v3',
   run:{provider:'system-capability-router',model:'rules-market-v1',prompt_version:'val-decision-copilot-v3',context_hash:contextHash,latency_ms:Number(latencyMs)||0,status:'completed',fallback:false,path:'LIVE_DATA',model_call_count:0,tool_call_count:toolCalls,hop_count:hops,estimated_input_tokens:0,estimated_output_tokens:0,estimated_cost_usd:0,capabilities_planned:market.route.capabilities,capabilities_used:market.status==='UNAVAILABLE'?[]:['MARKET_COMMODITY'],capability_results:[{capability:'MARKET_COMMODITY',status:market.status==='UNAVAILABLE'?'NO_DATA':'EXECUTED',source_ref:market.source?.id||null}],latency_breakdown:{AUTH:null,CONTEXT_RETRIEVAL:null,MEMORY:null,DATABASE:null,MCA:null,MIA:null,EXTERNAL_DATA:null,MODEL_INPUT:null,MODEL_INFERENCE:null,VALIDATION:null,RESPONSE:null}},
-  premises:{recomputed_for_request:true,source:'authorized_current_data',profile_specific:false,conversation_is_not_confirmed_memory:true,context_scope:{tenant_id:String(organizationId),owner_id:clean(ownerId,180)||null,producer_id:responseProducerId||null,conversation_id:clean(conversationId,180)||'global',context_epoch:normalizedEpoch,domain:responseDomain,minimum_sufficient_context:true},current_data:{required:true,status:market.status,source:currentDataSource}},
+  premises:{recomputed_for_request:true,source:'authorized_current_data',profile_specific:false,conversation_is_not_confirmed_memory:true,context_scope:{tenant_id:String(organizationId),owner_id:clean(ownerId,180)||null,producer_id:responseProducerId||null,conversation_id:clean(conversationId,180)||'global',context_epoch:normalizedEpoch,domain:responseDomain,minimum_sufficient_context:true},current_data:{required:true,status:market.status,source:currentDataSource,sources:market.sources||[currentDataSource].filter(Boolean)}},
   voice_output:{version:'val.voice_output.v1',speakable_text:market.answer,persistence:'NONE',automatic_memory_effect:false},
   decision_interview:{version:'val.decision_interview.v1',status:'NOT_NEEDED',questions:[],material_missing_information:[],non_material_missing_information:[],session_context:{conversation_id:clean(conversationId,180)||'global',persistence_mode:'NONE'},explanation:'A capacidade de mercado respondeu com fonte e data; o cruzamento com um produtor pode exigir novas perguntas.'},
   quality:{status:'NOT_EVALUATED',dimensions:{},automatic_tests:{name_swap:{passed:null,evaluated:false,reason:'Não aplicável a uma cotação de carteira sem produtor.'},context_removal:{passed:null,evaluated:false,reason:'Não executado no FAST PATH determinístico.'}}}
@@ -824,7 +832,7 @@ export function buildClientMarketResponse({workspace={},context={},facts={},mess
   reasoning_confidence:{version:'val.reasoning_confidence.v1',context:intention||opportunity||profile.label?0.76:0.48,thesis:confidenceScore,question:missing.length?0.86:0.76,agronomy:null,knowledge:market.source?0.8:0.2,threshold:{ask_below:.72,answer_at_or_above:.72}},
   knowledge_refs:market.source?[{id:market.source.id,title:market.source.name,source_refs:[market.source.url||market.source.id],status:market.status,requires_human_review:false}]:[],memory_refs:memoryRefs,created_at:createdAt,model:'rules-client-market-v1',prompt_version:'val-decision-copilot-v3',
   run:{provider:'system-capability-router',model:'rules-client-market-v1',prompt_version:'val-decision-copilot-v3',context_hash:contextHash,latency_ms:Number(latencyMs)||0,status:'completed',fallback:false,path:'DEEP',capabilities_planned:planned,capabilities_used:used,capability_results:capabilityResults,latency_breakdown:{AUTH:null,CONTEXT_RETRIEVAL:null,MEMORY:null,DATABASE:null,MCA:null,MIA:null,EXTERNAL_DATA:null,MODEL_INPUT:null,MODEL_INFERENCE:null,VALIDATION:null,RESPONSE:null}},
-  premises:{recomputed_for_request:true,source:'confirmed_context_snapshot_plus_authorized_current_data_plus_session',profile_specific:true,confirmed_profile:profile.confirmed?{status:'CONFIRMED',label:profile.label,valid_until:profile.validUntil}:profile.status==='EXPIRED'?{status:'EXPIRED',valid_until:profile.validUntil}:null,profile_evaluation:{status:profile.status,valid_until:profile.validUntil},conversation_is_not_confirmed_memory:true,confirmed_memory_refs:memoryRefs,context_scope:{tenant_id:String(organizationId),owner_id:clean(ownerId,180)||null,producer_id:clientId,conversation_id:clean(conversationId,180)||'stateless',context_epoch:normalizedEpoch,domain:responseDomain,minimum_sufficient_context:true},session_context:{conversation_id:clean(conversationId,180)||'stateless',context_epoch:normalizedEpoch,current_domain:responseDomain,persistence_mode:'NONE',current_request:clean(message,1200)},current_data:{required:true,status:market.status,source:currentDataSource}},
+  premises:{recomputed_for_request:true,source:'confirmed_context_snapshot_plus_authorized_current_data_plus_session',profile_specific:true,confirmed_profile:profile.confirmed?{status:'CONFIRMED',label:profile.label,valid_until:profile.validUntil}:profile.status==='EXPIRED'?{status:'EXPIRED',valid_until:profile.validUntil}:null,profile_evaluation:{status:profile.status,valid_until:profile.validUntil},conversation_is_not_confirmed_memory:true,confirmed_memory_refs:memoryRefs,context_scope:{tenant_id:String(organizationId),owner_id:clean(ownerId,180)||null,producer_id:clientId,conversation_id:clean(conversationId,180)||'stateless',context_epoch:normalizedEpoch,domain:responseDomain,minimum_sufficient_context:true},session_context:{conversation_id:clean(conversationId,180)||'stateless',context_epoch:normalizedEpoch,current_domain:responseDomain,persistence_mode:'NONE',current_request:clean(message,1200)},current_data:{required:true,status:market.status,source:currentDataSource,sources:market.sources||[currentDataSource].filter(Boolean)}},
   voice_output:{version:'val.voice_output.v1',speakable_text:clean([answer,action,...spokenQuestions].join(' '),3800),persistence:'NONE',automatic_memory_effect:false},decision_interview:interview,
   quality:{status:'NOT_EVALUATED',dimensions:{},automatic_tests:{name_swap:{passed:null,evaluated:false,reason:'Disponível na regressão; não executado inline.'},context_removal:{passed:null,evaluated:false,reason:'Disponível na regressão; não executado inline.'}}}
  }
@@ -1639,7 +1647,7 @@ export function buildFastClientResponse({facts={},presentationOverride=null,mess
  const dataLookups=Math.max(0,Number(executionCounts.dataLookups??1)||0)
  const hops=Math.max(0,Number(executionCounts.hops??(entityResolutions+dataLookups))||0)
  const executionBudget=Object.freeze({entityResolutions,dataLookups,modelCalls:0,toolCalls:1,hops,estimatedInputTokens:0,estimatedOutputTokens:0,estimatedCostUsd:0})
- const groundingDomain={BEHAVIORAL_PROFILE:'PROFILE',LATEST_VISIT:'VISIT',NEXT_SCHEDULED_VISIT:'VISIT',LATEST_COMMITMENT:'VISIT',LATEST_CONFIRMED_OBJECTION:'COMMERCIAL',LATEST_VISIT_CONFIRMED_OBJECTION:'MULTI_DOMAIN',LATEST_PURCHASE:'COMMERCIAL',REGISTERED_CROPS:'AGRONOMY',REGISTERED_AREA:'GENERAL'}[presentation.dataPath]||'GENERAL'
+ const groundingDomain={BEHAVIORAL_PROFILE:'PROFILE',CREDIT_REQUEST:'CREDIT',LATEST_VISIT:'VISIT',NEXT_SCHEDULED_VISIT:'VISIT',LATEST_COMMITMENT:'VISIT',LATEST_CONFIRMED_OBJECTION:'COMMERCIAL',LATEST_VISIT_CONFIRMED_OBJECTION:'MULTI_DOMAIN',LATEST_PURCHASE:'COMMERCIAL',REGISTERED_CROPS:'AGRONOMY',REGISTERED_AREA:'GENERAL'}[presentation.dataPath]||'GENERAL'
  const responseDomain=scopedResponseDomain(message,route.intent,contextDomain)
  // O fato estruturado ja e a classificacao exata da pergunta (lista fechada de frases literais).
  // GENERAL significa que o classificador lexico nao achou palavra de dominio na frase - "o que ficou

@@ -29,7 +29,9 @@ test('grain environment opens the operational SOG without mixing the inputs jour
  for(const label of ['Oportunidades','Intenções','Mercado','Produtores','Alimentação'])assert.match(sog,new RegExp(label))
  assert.match(sog,/Nenhuma intenção é presumida/)
  assert.match(sog,/sem execução automática/)
- assert.match(sog,/A SOG não busca nem inventa cotações/)
+ assert.match(sog,/Base principal: VAL SOG/)
+ assert.match(sog,/Complemento oficial brasileiro: DERAL\/SEAB-PR/)
+ assert.match(sog,/médias estaduais não são ofertas na praça do produtor/)
 })
 
 test('direct producer preparation opens the focused visit journey while VAL navigation opens the selector',()=>{

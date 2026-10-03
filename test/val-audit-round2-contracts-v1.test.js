@@ -88,7 +88,8 @@ test('card de Decision Interview expõe as entradas materiais quando não há pe
  const panel=readFileSync(join(repositoryRoot,'src/components/copilot/ValContextualPanel.jsx'),'utf8')
  assert.match(panel,/clientVisits\.find\(completedVisit\)/)
  const copilot=readFileSync(join(repositoryRoot,'src/components/GlobalValCopilot.jsx'),'utf8')
- assert.match(copilot,/valIntentLabel\(latestReasoning\.intent\)/)
+ assert.match(copilot,/id="global-val-title" aria-label="VAL"><Logo variant="icon-only"/)
+ assert.doesNotMatch(copilot,/<header className="val-fs-header"/)
 })
 
 const matheus=scoped({id:'matheus',name:'Matheus Nascimento Jaeger',primaryProfile:'Analítico',decisionDriver:'Compara custo por hectare e retorno antes de decidir',technicalPresentation:'Prefere dados objetivos e comparáveis',profileUpdatedAt:ago(30),profileValidUntil:ahead(300),profileSourceRef:'profile-matheus',profileEvidence:[evidence('pm-1','profile-matheus','decisionDriver','Compara custo por hectare e retorno antes de decidir'),evidence('pm-2','profile-matheus','technicalPresentation','Prefere dados objetivos e comparáveis')]})

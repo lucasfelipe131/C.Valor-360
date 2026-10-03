@@ -64,9 +64,11 @@ export function MarketCard({reasoning={},onOpen}){
  const current=reasoning.premises?.current_data||{}
  const source=current.source||reasoning.commercial_context?.source||null
  const status=text(current.status||reasoning.commercial_context?.current_data_status||'SOURCE_REQUIRED',40)
+ const sources=current.sources?.length?current.sources:source?[source]:[]
+ const sourceDate=item=>item.time_precision==='DAY'?`${String(item.observed_date||item.observed_at?.slice(0,10)).split('-').reverse().join('/')} · boletim diário`:dateLabel(item.observed_at||item.observedAt||item.date)
  return <Card className="val-market-card" icon={CircleDollarSign} label="MERCADO / COMMODITY" title={status==='CURRENT'?'Referência atual identificada':'Situação da referência atual'} actionLabel="Abrir ambiente de mercado" onAction={()=>onOpen?.('val')}>
-  <div className="val-market-status"><span className={`is-${status.toLowerCase()}`}>{status.replaceAll('_',' ')}</span>{source&&<b>{source.commodity||source.name||source.source_name||'Fonte autorizada'}</b>}</div>
-  {source?<dl><div><dt>Fonte</dt><dd>{source.source_name||source.name||source.id||'Identificada'}</dd></div><div><dt>Data</dt><dd>{dateLabel(source.observed_at||source.observedAt||source.date)}</dd></div><div><dt>Praça / unidade</dt><dd>{[source.region||source.location,source.price_unit||source.unit].filter(Boolean).join(' • ')||'não informada'}</dd></div></dl>:<p>A VAL não transforma memória antiga em preço, clima ou notícia atual.</p>}
+  <div className="val-market-status"><span className={`is-${status.toLowerCase()}`}>{({CURRENT:'Referência recente',DATED:'Boletim desta semana',STALE:'Referência antiga',UNAVAILABLE:'Fonte indisponível',SOURCE_REQUIRED:'Fonte necessária'})[status]||status.replaceAll('_',' ')}</span>{source&&<b>{source.commodity||source.name||source.source_name||'Fonte autorizada'}</b>}</div>
+  {sources.length?sources.map(item=><dl key={item.id}><div><dt>Grão</dt><dd>{item.commodity}</dd></div><div><dt>Fonte</dt><dd>{item.source_name||item.name||item.id||'Identificada'}</dd></div><div><dt>Data</dt><dd>{sourceDate(item)}</dd></div><div><dt>Praça / unidade</dt><dd>{[item.region||item.location,item.price_unit||item.unit].filter(Boolean).join(' • ')||'não informada'}</dd></div></dl>):<p>A VAL não transforma memória antiga em preço, clima ou notícia atual.</p>}
  </Card>
 }
 

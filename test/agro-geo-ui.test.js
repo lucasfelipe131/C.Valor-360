@@ -2,11 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {mkdtemp,rm,readFile} from 'node:fs/promises'
 import {build} from 'esbuild'
+import {fileURLToPath,pathToFileURL} from 'node:url'
 import React from 'react'
 import TestRenderer,{act} from 'react-test-renderer'
 
 test('territorial panel 100 properties/500 fields: filter, field selection, layers, offline and scope reset',async()=>{
- const dir=await mkdtemp(new URL('../.agro-ui-',import.meta.url).pathname),oldFetch=globalThis.fetch,oldWindow=globalThis.window,nav=Object.getOwnPropertyDescriptor(globalThis,'navigator'),events={}
+ const dir=await mkdtemp(fileURLToPath(new URL('../.agro-ui-',import.meta.url))),oldFetch=globalThis.fetch,oldWindow=globalThis.window,nav=Object.getOwnPropertyDescriptor(globalThis,'navigator'),events={}
  const geometry={type:'Polygon',coordinates:[[[-50,-20],[-49.999,-20],[-49.999,-19.999],[-50,-20]]]}
  const properties=Array.from({length:100},(_,i)=>({id:`p${i}`,name:`Synthetic ${i}`,fields:Array.from({length:5},(_,j)=>({id:`f${i}-${j}`,name:`Field ${j}`,season:'2026/27',crop:'soja',geometry,status:'VALID'}))}))
  const result={enabled:true,territories:[{producer:{id:'c',name:'Synthetic'},properties,unlinked:[]}],cards:[]}
@@ -16,7 +17,7 @@ test('territorial panel 100 properties/500 fields: filter, field selection, laye
   Object.defineProperty(globalThis,'navigator',{configurable:true,value:{onLine:true}})
   globalThis.fetch=async()=>new Response(JSON.stringify(result),{headers:{'Content-Type':'application/json'}})
   await build({entryPoints:['src/components/AgroTerritoryPanel.jsx'],outfile:`${dir}/panel.js`,bundle:true,platform:'node',format:'esm',packages:'external',external:['react'],loader:{'.css':'empty'},plugins:[{name:'map-boundary',setup(b){b.onResolve({filter:/\/SatelliteMap$/},()=>({path:'map',namespace:'map-test'}));b.onLoad({filter:/.*/,namespace:'map-test'},()=>({contents:"import React from 'react';export default p=>React.createElement('map-test',p);",loader:'js'}))}}],logLevel:'silent'})
-  const Panel=(await import(`${dir}/panel.js`)).default,start=performance.now()
+  const Panel=(await import(pathToFileURL(`${dir}/panel.js`).href)).default,start=performance.now()
   await act(async()=>{renderer=TestRenderer.create(React.createElement(Panel,{scope:'owner-a',map:true}))})
   assert.equal(renderer.root.findByType('map-test').props.polygons.length,500)
   assert.ok(performance.now()-start<3000)
